@@ -175,7 +175,7 @@ extension AppModel {
         let conversation = chat.startNew()
         NotchFollow.shared.conversations.insert(conversation)
         guard let app = DoubleTap.shared.takeAskedIn(), settings.screenWorkAllowed else {
-            handleUserText(request, reveal: false)
+            handleUserText(request, reveal: false, note: DoubleTapLogic.notchAnswerNote)
             followInNotch()
             return
         }
@@ -185,7 +185,8 @@ extension AppModel {
         let looking = Task { @MainActor [weak self] in
             let note = await self?.attachFrontWindow(app) ?? ""
             guard let self, !Task.isCancelled else { return }
-            ScreenBrain.$routed.withValue(worker) { self.handleUserText(request, reveal: false, note: note) }
+            let asked = [note, DoubleTapLogic.notchAnswerNote].filter { !$0.isEmpty }.joined(separator: " ")
+            ScreenBrain.$routed.withValue(worker) { self.handleUserText(request, reveal: false, note: asked) }
             self.followInNotch()
         }
         viewModel.showWork(tr("doubletap.step.looking", app.localizedName ?? "")) { [weak self] in
@@ -235,7 +236,7 @@ extension AppModel {
         NookPresence.shared.heard()
         chat.select(id)
         NotchFollow.shared.conversations.insert(id)
-        ask(answer, in: id, reveal: false)
+        ask(answer, in: id, reveal: false, note: DoubleTapLogic.notchAnswerNote)
         followInNotch()
     }
 

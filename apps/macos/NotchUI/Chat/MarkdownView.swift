@@ -7,16 +7,19 @@ extension MarkdownBlock {
     ///
     /// Cached per text and size: `AttributedString(markdown:)` is slow, and every paragraph, bullet and table cell of every
     /// visible message asks for it again on each redraw (another message streaming in, hover, a keystroke).
-    static func inline(_ text: String, size: CGFloat = 14, files: Bool = false) -> AttributedString {
-        let key = "\(size)|\(files)|\(text)" as NSString
+    ///
+    /// `citations`: the text is an answer from Nook with numbered sources, so its `[2]` and `[2, 4]` become small raised
+    /// numbers (`citationMarks`) that open the source.
+    static func inline(_ text: String, size: CGFloat = 14, files: Bool = false, citations: Bool = false) -> AttributedString {
+        let key = "\(size)|\(files)|\(citations)|\(text)" as NSString
         if let hit = InlineCache.shared.object(forKey: key) { return hit.value }
-        let value = renderInline(text, size: size, files: files)
+        let value = renderInline(text, size: size, files: files, citations: citations)
         // The key holds the text in UTF-16, the value the text again with its runs.
         InlineCache.shared.setObject(InlineCache.Entry(value), forKey: key, cost: key.length * 6 + 64)
         return value
     }
 
-    private static func renderInline(_ text: String, size: CGFloat, files: Bool) -> AttributedString {
+    private static func renderInline(_ text: String, size: CGFloat, files: Bool, citations: Bool) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         guard let parsed = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
         // Answers can repeat text from mails or web pages: only web and mail links stay clickable, and a link whose text
@@ -35,6 +38,11 @@ extension MarkdownBlock {
         for run in parsed.runs {
             let code = run.inlinePresentationIntent?.contains(.code) == true
             for (text, link) in linkPieces(String(parsed[run.range].characters), link: run.link, code: code, files: files) {
+                if citations, !code, link == nil, Citations.contains(text) {
+                    close()
+                    result += citationMarks(text, size: size, attributes: run.attributes)
+                    continue
+                }
                 var piece = AttributedString(text, attributes: run.attributes)
                 let url = link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
                 piece.link = url
@@ -53,6 +61,48 @@ extension MarkdownBlock {
         }
         close()
         return result
+    }
+
+    /// The scheme of a citation's link: `nook-cite:2` opens source 2 of the answer (`answerReferences`).
+    static let citationScheme = "nook-cite"
+
+    /// The source number a citation link opens, or nil when the link is not one.
+    static func citationNumber(_ url: URL) -> Int? {
+        guard url.scheme == citationScheme else { return nil }
+        return Int(url.absoluteString.dropFirst(citationScheme.count + 1))
+    }
+
+    /// Text with `[2]` and `[3, 4]` in it, the citations as small raised numbers that open their source: "vandaag [5]"
+    /// reads as "vandaag⁵", and "[2][3]" as "²˒³" instead of a row of brackets. The space before a citation goes, so the
+    /// number sits against the fact it backs. Each number is marked with `CitationMark`, so the AppKit text can size it.
+    private static func citationMarks(_ text: String, size: CGFloat, attributes: AttributeContainer) -> AttributedString {
+        var result = AttributedString()
+        var previousWasMark = false
+        for piece in Citations.split(text) {
+            switch piece {
+            case .text(let words):
+                result += AttributedString(words, attributes: attributes)
+                previousWasMark = false
+            case .citation(let numbers):
+                for number in numbers {
+                    if previousWasMark { result += mark(",", number: nil, size: size) }
+                    result += mark("\(number)", number: number, size: size)
+                    previousWasMark = true
+                }
+            }
+        }
+        return result
+    }
+
+    /// One raised number of a citation (or the comma between two), quieter and smaller than the text around it.
+    private static func mark(_ text: String, number: Int?, size: CGFloat) -> AttributedString {
+        var mark = AttributedString(text)
+        mark.font = NookTheme.font(round(size * 0.7), .semibold)
+        mark.baselineOffset = round(size * 0.36)
+        mark.foregroundColor = NookTheme.textTertiary
+        mark[CitationMark.self] = number ?? 0
+        if let number { mark.link = URL(string: "\(citationScheme):\(number)") }
+        return mark
     }
 
     /// A run's text in pieces, each with the link it opens: a code span that is a web address (`http://localhost:8080/`)
@@ -230,6 +280,7 @@ extension MarkdownBlock {
 struct MarkdownView: View, Equatable {
     @Environment(\.fileLinkBase) private var fileLinkBase
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
+    @Environment(\.answerReferences) private var answerReferences
     let text: String
     var size: CGFloat = 14
     /// When set, the options of a question at the end of the answer become buttons that answer it.
@@ -258,7 +309,11 @@ struct MarkdownView: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
-        .environment(\.openURL, OpenURLAction { [fileLinkBase, pullRequestLinksBeside] url in
+        .environment(\.openURL, OpenURLAction { [fileLinkBase, pullRequestLinksBeside, answerReferences] url in
+            if let number = MarkdownBlock.citationNumber(url) {
+                MainActor.assumeIsolated { AnswerCitation.open(number, in: answerReferences) }
+                return .handled
+            }
             if MarkdownBlock.isFileLink(url) {
                 return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }
                     ? .handled : .discarded
@@ -321,7 +376,7 @@ struct MarkdownView: View, Equatable {
     }
 
     private func paragraph(_ text: String, color: Color = NookTheme.textStrong) -> some View {
-        Text(MarkdownBlock.inline(text, size: size, files: fileLinkBase != nil))
+        Text(MarkdownBlock.inline(text, size: size, files: fileLinkBase != nil, citations: !answerReferences.isEmpty))
             .font(NookTheme.font(size))
             .lineSpacing(5)
             .foregroundStyle(color)

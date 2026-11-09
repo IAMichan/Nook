@@ -82,8 +82,8 @@ struct SelectableProse: NSViewRepresentable {
         view.textContainer?.widthTracksTextView = true
         view.delegate = context.coordinator
         view.linkTextAttributes = [
-            // Links in the link blue without an underline; the pointer says they are links.
-            .foregroundColor: NSColor(NookTheme.blue),
+            // No underline and no color of its own: a link is in the link blue already (`inline`), a citation in its
+            // grey. The pointer says they are links.
             .cursor: NSCursor.pointingHand,
         ]
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -96,13 +96,17 @@ struct SelectableProse: NSViewRepresentable {
         context.coordinator.pullRequestLinksBeside = context.environment.pullRequestLinksBeside
         context.coordinator.quote = context.environment.quoteSelection
         context.coordinator.ask = context.environment.askAboutSelection
+        let references = context.environment.answerReferences
+        context.coordinator.references = references
         let files = context.environment.fileLinkBase != nil
+        let citations = !references.isEmpty
         // The same blocks as last time (a redraw on hover or while scrolling): nothing to build or compare. Comparing the
         // blocks is cheap next to describing them all for the cache key.
-        let input = Coordinator.Input(blocks: blocks, size: size, files: files, accent: NookTheme.accentHex)
+        let input = Coordinator.Input(blocks: blocks, size: size, files: files, accent: NookTheme.accentHex,
+                                      references: references)
         guard input != context.coordinator.input else { return }
         context.coordinator.input = input
-        let text = Self.attributed(blocks, size: size, files: files)
+        let text = Self.withCitationHelp(Self.attributed(blocks, size: size, files: files, citations: citations), references)
         // The cache hands back the same text for the same blocks: skip comparing it character by character on every
         // redraw (hover, scrolling, another message streaming in).
         guard text !== context.coordinator.shown else { return }
@@ -137,6 +141,8 @@ struct SelectableProse: NSViewRepresentable {
             let size: CGFloat
             let files: Bool
             let accent: UInt32
+            /// The answer's sources: its citations open them and name them in a hover.
+            let references: [SourceReference]
         }
         var input: Input?
         /// The text last put in the view, so an unchanged redraw returns at once.
@@ -150,6 +156,8 @@ struct SelectableProse: NSViewRepresentable {
         var quote: ((String) -> Void)?
         /// Quotes them and puts the keyboard in the reply box.
         var ask: ((String) -> Void)?
+        /// The answer's sources, for a click on a citation.
+        var references: [SourceReference] = []
         /// A quote longer than this is refused: the reply should point at a passage, not repeat the answer.
         static let quoteLimit = ComposerQuotes.characterLimit
 
@@ -244,6 +252,11 @@ struct SelectableProse: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+            if let url, let number = MarkdownBlock.citationNumber(url) {
+                let references = references
+                Task { @MainActor in AnswerCitation.open(number, in: references) }
+                return true
+            }
             if let url, MarkdownBlock.isFileLink(url) {
                 let base = fileLinkBase, beside = pullRequestLinksBeside
                 Task { @MainActor in _ = MarkdownBlock.openFileLink(url, base: base, beside: beside) }
@@ -300,8 +313,9 @@ struct SelectableProse: NSViewRepresentable {
 
     /// The blocks as one attributed text, in the same sizes, colors, and spacing as the SwiftUI blocks around them.
     /// `files`: a code span that names a file by a relative path becomes a link (there is a folder to read it from).
-    static func attributed(_ blocks: [MarkdownBlock], size: CGFloat, files: Bool = false) -> NSAttributedString {
-        let key = "\(size)|\(files)|\(NookTheme.accentHex)|\(cacheKey(blocks))" as NSString
+    /// `citations`: an answer from Nook with numbered sources, whose `[2]` become raised numbers that open them.
+    static func attributed(_ blocks: [MarkdownBlock], size: CGFloat, files: Bool = false, citations: Bool = false) -> NSAttributedString {
+        let key = "\(size)|\(files)|\(citations)|\(NookTheme.accentHex)|\(cacheKey(blocks))" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         let result = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {
@@ -310,15 +324,16 @@ struct SelectableProse: NSViewRepresentable {
             switch block {
             case .heading(let level, let text):
                 let headingSize = level <= 1 ? size + 6 : level == 2 ? size + 4 : level == 3 ? size + 2 : size
-                let line = inline(text, size: headingSize, weight: .semibold, color: NookTheme.paper, files: files)
+                let line = inline(text, size: headingSize, weight: .semibold, color: NookTheme.paper, files: files, citations: citations)
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
                 append(line, style: style(before: gap + 10, lineSpacing: 1), to: result)
             case .paragraph(let text):
                 // Running text a step softer than headings (answers at 80 % of the text color).
-                append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong, files: files), style: style(before: gap), to: result)
+                append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong, files: files, citations: citations),
+                       style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
-                    appendItem(item, before: itemIndex == 0 ? gap : 4, size: size, files: files, to: result)
+                    appendItem(item, before: itemIndex == 0 ? gap : 4, size: size, files: files, citations: citations, to: result)
                 }
             default:
                 break
@@ -351,7 +366,7 @@ struct SelectableProse: NSViewRepresentable {
     }
 
     /// A list item: its marker in a column, the text indented past it on every line, nested items further in.
-    private static func appendItem(_ item: MarkdownListItem, before: CGFloat, size: CGFloat, files: Bool,
+    private static func appendItem(_ item: MarkdownListItem, before: CGFloat, size: CGFloat, files: Bool, citations: Bool,
                                    to result: NSMutableAttributedString) {
         let indent = CGFloat(item.level) * (size + 4)
         let font = NSFont.systemFont(ofSize: size)
@@ -391,16 +406,31 @@ struct SelectableProse: NSViewRepresentable {
             paragraph.headIndent = indent + 16
         }
         line.append(NSAttributedString(string: "\t", attributes: [.font: font]))
-        line.append(inline(text, size: size, weight: .regular, color: color, files: files))
+        line.append(inline(text, size: size, weight: .regular, color: color, files: files, citations: citations))
         append(line, style: paragraph, to: result)
     }
 
     private static let bullets = ["•", "◦", "▪"]
 
+    /// The text with a hover on each citation that names its source; the text itself when there is nothing to name.
+    static func withCitationHelp(_ text: NSAttributedString, _ references: [SourceReference]) -> NSAttributedString {
+        guard !references.isEmpty else { return text }
+        var found = false
+        text.enumerateAttribute(.citation, in: NSRange(location: 0, length: text.length)) { value, _, stop in
+            if value != nil { found = true; stop.pointee = true }
+        }
+        guard found, let copy = text.mutableCopy() as? NSMutableAttributedString else { return text }
+        copy.enumerateAttribute(.citation, in: NSRange(location: 0, length: copy.length)) { value, range, _ in
+            guard let number = value as? Int, let help = MainActor.assumeIsolated({ AnswerCitation.help(number, in: references) }) else { return }
+            copy.addAttribute(.toolTip, value: help, range: range)
+        }
+        return copy
+    }
+
     /// `MarkdownBlock.inline` (with its link checks) carried over to AppKit fonts and colors.
     private static func inline(_ text: String, size: CGFloat, weight: NSFont.Weight, color: Color,
-                               files: Bool) -> NSMutableAttributedString {
-        let source = MarkdownBlock.inline(text, size: size, files: files)
+                               files: Bool, citations: Bool = false) -> NSMutableAttributedString {
+        let source = MarkdownBlock.inline(text, size: size, files: files, citations: citations)
         let result = NSMutableAttributedString()
         var previousCode = false
         for run in source.runs {
@@ -413,7 +443,12 @@ struct SelectableProse: NSViewRepresentable {
             previousCode = code
             var attributes: [NSAttributedString.Key: Any] = [:]
             var font: NSFont
-            if code {
+            if let mark = run[CitationMark.self] {
+                // A citation: a small raised number, grey like the source chips under the answer.
+                font = .systemFont(ofSize: round(size * 0.7), weight: .semibold)
+                attributes[.baselineOffset] = round(size * 0.36)
+                attributes[.citation] = mark
+            } else if code {
                 font = .monospacedSystemFont(ofSize: size * 0.85, weight: .regular)
                 attributes[.inlineCode] = true
             } else {
@@ -424,7 +459,9 @@ struct SelectableProse: NSViewRepresentable {
             if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             if let link = run.link { attributes[.link] = link }
             attributes[.font] = font
-            attributes[.foregroundColor] = NSColor(run[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] ?? color)
+            // A link takes the link blue here, a citation keeps its own grey (the view sets no color for links).
+            let linkColor = run.link != nil && run[CitationMark.self] == nil ? NookTheme.blue : nil
+            attributes[.foregroundColor] = NSColor(linkColor ?? run[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] ?? color)
             result.append(NSAttributedString(string: String(source[run.range].characters), attributes: attributes))
         }
         // A line break inside a paragraph stays a break within it, without the gap between paragraphs.
@@ -436,6 +473,8 @@ struct SelectableProse: NSViewRepresentable {
 extension NSAttributedString.Key {
     /// Marks an inline code span in an answer's text view; `InlineCodeLayoutManager` draws its chip.
     static let inlineCode = NSAttributedString.Key("NookInlineCode")
+    /// Marks a citation's raised number with its source's number (0 for the comma between two).
+    static let citation = NSAttributedString.Key("NookCitation")
 }
 
 /// Draws inline code as a rounded chip that hugs the code's glyphs: as tall as the monospaced font with a little room

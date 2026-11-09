@@ -220,9 +220,16 @@ struct Conversation: Identifiable, ConversationListItem {
         messages.last(where: { $0.role == .nook && !$0.text.isEmpty })?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    /// The last answer with its sources and offers, as the notch's card shows it (`NookAnswerView`); nil without one.
+    var lastNookAnswer: NookAnswer? {
+        guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return nil }
+        return NookAnswer(text: last.text.trimmingCharacters(in: .whitespacesAndNewlines), references: last.references, offers: last.offers)
+    }
+
     var preview: String {
         guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
-        let sample = String(last.text.prefix(240)).replacingOccurrences(of: "\n", with: " ")
+        // One line for a notification or the strip: the citations' numbers mean nothing there.
+        let sample = String(Citations.sanitize(last.text, valid: []).prefix(240)).replacingOccurrences(of: "\n", with: " ")
         let cleaned = String(sample.unicodeScalars.filter { !Self.markdownStripSet.contains($0) })
             .trimmingCharacters(in: .whitespaces)
         return String(cleaned.prefix(80))
