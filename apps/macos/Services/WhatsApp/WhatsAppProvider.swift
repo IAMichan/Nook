@@ -44,6 +44,9 @@ protocol WhatsAppProvider: Sendable {
     func groupName(_ chat: String) async -> String?
     /// The names of every group you are in, by JID, in one call: empty when the gateway cannot list them.
     func groupNames() async -> [String: String]
+    /// Every group you are in now, by JID (normalized), in one call: a group the phone still lists after you left it is
+    /// not among them. Nil when the gateway cannot say, or the call failed.
+    func joinedGroups() async -> Set<String>?
     /// A group's members (you among them), for who has your messages and who read them: empty when the gateway
     /// cannot list them.
     func groupMembers(_ chat: String) async -> [WAMember]
@@ -100,6 +103,7 @@ protocol WhatsAppProvider: Sendable {
 extension WhatsAppProvider {
     func avatar(_ chat: String) async -> URL? { nil }
     func groupNames() async -> [String: String] { [:] }
+    func joinedGroups() async -> Set<String>? { nil }
     func groupMembers(_ chat: String) async -> [WAMember] { [] }
     func channels() async -> [WAChannel] { [] }
     func setOnline(_ online: Bool, chat: String?) async {}
@@ -464,6 +468,11 @@ actor GOWAProvider: WhatsAppProvider {
     func groupNames() async -> [String: String] {
         guard let data = try? await scoped("GET", "/user/my/groups", timeout: 30) else { return [:] }
         return WAGOWA.groupNames(data)
+    }
+
+    func joinedGroups() async -> Set<String>? {
+        guard let data = try? await scoped("GET", "/user/my/groups", timeout: 30) else { return nil }
+        return WAGOWA.joinedGroups(data)
     }
 
     func groupMembers(_ chat: String) async -> [WAMember] {

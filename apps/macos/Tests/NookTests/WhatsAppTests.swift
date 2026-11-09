@@ -265,6 +265,19 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAGOWA.groupNames(Data("{}".utf8)).isEmpty)
     }
 
+    func testAGroupYouLeftIsMissingFromYourGroups() {
+        let json = #"{"code":"SUCCESS","results":{"data":[{"JID":"1@g.us","Name":"Familie"},{"jid":"2@g.us"}]}}"#
+        let joined = WAGOWA.joinedGroups(Data(json.utf8))
+        XCTAssertEqual(joined, ["1@g.us", "2@g.us"])
+        XCTAssertNil(WAGOWA.joinedGroups(Data("{}".utf8)), "an answer without a list says nothing")
+
+        let known = ["1@g.us", "2@g.us", "3@g.us", "31612345678@s.whatsapp.net"]
+        XCTAssertEqual(WhatsAppLeftGroups.left(known: known, joined: joined ?? []), ["3@g.us"], "people's chats are never left")
+        XCTAssertNil(WhatsAppLeftGroups.left(known: known, joined: []), "a list without any group you have is no answer")
+        XCTAssertNil(WhatsAppLeftGroups.left(known: known, joined: ["9@g.us"]))
+        XCTAssertEqual(WhatsAppLeftGroups.left(known: ["31612345678@s.whatsapp.net"], joined: []), [])
+    }
+
     func testGOWAFindsHomebrewsFFmpeg() {
         XCTAssertEqual(WAGOWA.searchPath("/usr/bin:/bin:/usr/sbin:/sbin"),
                        "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
