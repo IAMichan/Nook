@@ -600,13 +600,15 @@ struct WorkspaceSettingsSection: View {
             }
         }
         inheritable(.browserSignIns, path) {
-            Toggle(tr("settings.ws.browserSignIns"), isOn: Binding(
+            Picker(tr("settings.ws.browserSignIns"), selection: Binding(
                 get: { resolved.browserSignIns },
                 set: {
-                    ws.setOverride(.browserSignIns, $0 ? "on" : "off", for: path)
-                    if !$0 { BrowserProfiles.forget(project: path) }
-                }))
-                .help(tr("settings.ws.browserSignIns.help"))
+                    ws.setOverride(.browserSignIns, $0.stored, for: path)
+                    if $0 != .keep { BrowserProfiles.forget(project: path) }
+                })) {
+                ForEach(BrowserSignInPolicy.allCases) { Text(Self.label($0)).tag($0) }
+            }
+            .help(tr("settings.ws.browserSignIns.help"))
         }
         inheritable(.titleInstructions, path) {
             TextField(tr("settings.ws.titleInstructions"), text: Binding(
@@ -665,6 +667,26 @@ struct WorkspaceSettingsSection: View {
         Section(tr("settings.browser.title")) {
             BrowserSearchPicker()
             AgentLinkTargetPicker()
+            Picker(selection: Binding(
+                get: { ws.browserSignInPolicy },
+                set: {
+                    ws.browserSignInPolicy = $0
+                    BrowserProfiles.sweep()
+                })) {
+                ForEach(BrowserSignInPolicy.allCases) { Text(Self.label($0)).tag($0) }
+            } label: {
+                SettingText("settings.browser.signIns")
+            }
+            .help(tr("settings.browser.signIns.detail"))
+        }
+    }
+
+    /// How a choice for browser sign-ins reads in a picker.
+    static func label(_ policy: BrowserSignInPolicy) -> String {
+        switch policy {
+        case .ask: return tr("settings.browser.signIns.ask")
+        case .keep: return tr("settings.browser.signIns.keep")
+        case .forget: return tr("settings.browser.signIns.forget")
         }
     }
 
