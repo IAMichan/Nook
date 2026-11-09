@@ -129,6 +129,7 @@ struct SandboxedPageView: NSViewRepresentable {
         context.coordinator.onHeight = onHeight
         guard context.coordinator.loaded != html else { return }
         context.coordinator.loaded = html
+        context.coordinator.reset()
         view.pageZoom = 1
         view.loadHTMLString(RenderedPage.hostPage(html), baseURL: nil)
     }
@@ -143,6 +144,8 @@ struct SandboxedPageView: NSViewRepresentable {
         var onHeight: (Double) -> Void = { _ in }
         private var reported: Double?
 
+        func reset() { reported = nil }
+
         /// The page Nook loads and its own frame's srcdoc; everything else (links, redirects, forms) goes nowhere.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             let url = navigationAction.request.url?.absoluteString ?? ""
@@ -152,6 +155,7 @@ struct SandboxedPageView: NSViewRepresentable {
         /// macOS can end the page's process (memory pressure, a crash); the frame would stay empty until the row is rebuilt.
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             guard let loaded else { return }
+            reported = nil
             webView.pageZoom = 1
             webView.loadHTMLString(RenderedPage.hostPage(loaded), baseURL: nil)
         }
@@ -159,8 +163,8 @@ struct SandboxedPageView: NSViewRepresentable {
         /// The page's size, from the frame it is drawn in (never the host page around it): zoom out until it fits the
         /// width, then report its height at that zoom.
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard !message.frameInfo.isMainFrame, let view, let size = PageMeasure.Size(message.body) else { return }
-            let zoom = PageMeasure.zoom(current: Double(view.pageZoom), size)
+            guard !message.frameInfo.isMainFrame, let view, let size = RenderedPage.Measure.Size(message.body) else { return }
+            let zoom = RenderedPage.Measure.zoom(current: Double(view.pageZoom), size)
             if abs(zoom - Double(view.pageZoom)) > 0.01 {
                 view.pageZoom = CGFloat(zoom)
                 return  // Measured again at the new zoom.
@@ -192,65 +196,18 @@ final class FittingWebView: WKWebView {
     }
 }
 
-/// How large a page is drawn, read by a script in a content world of Nook's own: the page's scripts share its document
+/// Installs `RenderedPage.Measure` in a content world of Nook's own: the page's scripts share its document
 /// but not its world, so they can neither see the handler nor send through it.
 enum PageMeasure {
-    static let handler = "nookPageSize"
     static let world = WKContentWorld.world(name: "NookPageMeasure")
-    /// Never smaller than this: a page that needs more zoom than this to fit is better scrolled sideways.
-    static let minZoom = 0.4
-
-    struct Size {
-        let width: Double
-        let viewport: Double
-        let height: Double
-
-        init?(_ body: Any) {
-            guard let values = body as? [String: Any],
-                  let width = (values["w"] as? NSNumber)?.doubleValue, let viewport = (values["v"] as? NSNumber)?.doubleValue,
-                  let height = (values["h"] as? NSNumber)?.doubleValue,
-                  width.isFinite, viewport.isFinite, height.isFinite, viewport > 0 else { return nil }
-            self.width = width
-            self.viewport = viewport
-            self.height = height
-        }
-    }
-
-    /// The zoom at which the page's width fits its frame: lower while it is wider than the frame, never above 1.
-    static func zoom(current: Double, _ size: Size) -> Double {
-        guard size.width > size.viewport + 1 else { return current }
-        return max(minZoom, min(1, current * size.viewport / size.width))
-    }
-
-    /// Reports the document's scroll width, its viewport's width and its height whenever its layout changes.
-    private static let source = """
-    (() => {
-      const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(handler);
-      if (!handler) return;
-      let queued = false;
-      const report = () => {
-        queued = false;
-        const root = document.documentElement, body = document.body;
-        const width = Math.max(root.scrollWidth, body ? body.scrollWidth : 0);
-        const height = Math.max(root.scrollHeight, body ? body.scrollHeight : 0);
-        handler.postMessage({ w: width, v: root.clientWidth, h: height });
-      };
-      const queue = () => { if (!queued) { queued = true; setTimeout(report, 16); } };
-      const observer = new ResizeObserver(queue);
-      observer.observe(document.documentElement);
-      if (document.body) observer.observe(document.body);
-      window.addEventListener("load", queue);
-      queue();
-    })();
-    """
 
     static func install(in controller: WKUserContentController, reporting handler: WKScriptMessageHandler) {
-        controller.add(WeakHandler(handler), contentWorld: world, name: Self.handler)
-        controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: world))
+        controller.add(WeakHandler(handler), contentWorld: world, name: RenderedPage.Measure.handler)
+        controller.addUserScript(WKUserScript(source: RenderedPage.Measure.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: world))
     }
 
     static func uninstall(from controller: WKUserContentController) {
-        controller.removeScriptMessageHandler(forName: handler, contentWorld: world)
+        controller.removeScriptMessageHandler(forName: RenderedPage.Measure.handler, contentWorld: world)
         controller.removeAllUserScripts()
     }
 
