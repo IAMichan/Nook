@@ -244,6 +244,51 @@ extension AppModel {
     }
 }
 
+/// Where a chat of the usage breakdown lives in the Agents list: the id to select, and the name the list shows it by.
+struct UsageChatTarget: Equatable {
+    let selection: String
+    let title: String
+}
+
+/// The chats of the usage breakdown (Cost, Tokens and the limit windows), as the Agents list knows them.
+extension AppModel {
+    /// The session behind a usage chat (`agent:session id` of its latest transcript), in the order the Agents list prefers
+    /// them: a session Nook runs (under the name Nook gave it), a session running in its own app, then the transcript.
+    /// Nil for a chat the list does not show (Nook's own runs, or older than the history).
+    func usageChatTarget(_ chat: UsageLedger.Chat) -> UsageChatTarget? {
+        guard !demoMode, let kind = AgentKind(rawValue: chat.agent), let colon = chat.id.firstIndex(of: ":") else { return nil }
+        let sessionID = String(chat.id[chat.id.index(after: colon)...])
+        guard !sessionID.isEmpty else { return nil }
+        let past = history.sessions.first { $0.agent == kind && $0.isConversation(sessionID) }
+        let ids = Set([sessionID] + (past.map { [$0.sessionID] + $0.earlierIDs } ?? []))
+        let runs = workspace.runs.filter { AgentKind(agentName: $0.provider.displayName) == kind && ids.contains(where: $0.isConversation) }
+        if let run = runs.first(where: { !$0.archived }) ?? runs.first, !run.title.isEmpty {
+            return UsageChatTarget(selection: "run:" + run.id.uuidString, title: run.title)
+        }
+        let live = hub.sessions.first { session in
+            AgentKind(agentName: session.name) == kind && conversationID(for: session).map(ids.contains) == true
+        }
+        if let live {
+            let named = AgentFormat.sessionTitle(live, known: past)
+            return UsageChatTarget(selection: live.id, title: named.isEmpty ? live.project : named)
+        }
+        if let past { return UsageChatTarget(selection: "past:" + past.id, title: AgentFormat.title(past.title)) }
+        return nil
+    }
+
+    /// Opens a usage chat's session in the Agents tab, in the notch or the main window, and closes the usage modal.
+    func openUsageChat(_ target: UsageChatTarget) {
+        if target.selection.hasPrefix("run:"), let uuid = UUID(uuidString: String(target.selection.dropFirst(4))) {
+            workspace.selectedRunID = uuid
+        }
+        viewModel.selectedAgentID = target.selection
+        viewModel.sheet = nil
+        viewModel.windowSheet = nil
+        usageModalOpen = false
+        viewModel.show(.panel(.agents))
+    }
+}
+
 /// The merged session lists and the inputs they were worked out from (see `AppModel.sessionLists()`).
 struct SessionListsCache {
     /// Only what `sessionRecords()` reads of a running session or a session Nook runs: their steps, replies and streamed

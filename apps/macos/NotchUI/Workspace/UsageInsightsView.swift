@@ -465,21 +465,40 @@ struct UsageModelRow: View {
 extension UsageLedger.Chat {
     /// Its title, or what ran it when it has none.
     var displayTitle: String {
-        if !title.isEmpty { return title }
+        if !title.isEmpty { return AgentFormat.title(title) }
         return project == "Nook" ? tr("usage.chat.nook") : (project.isEmpty ? tr("usage.chat.untitled") : project)
     }
 }
 
 /// A chat in the breakdown: its rank, logo and title with a thin bar for its size and when it was last busy, then cost,
-/// share and tokens. `rank` and the share columns are left out where the row is compact (`UsageBlockRows`).
+/// share and tokens. `rank` and the share columns are left out where the row is compact (`UsageBlockRows`). Named as the
+/// Agents list names it, and a click opens it there.
 struct UsageChatRow: View {
+    @EnvironmentObject private var app: AppModel
     var rank: Int?
     let chat: UsageInsights.ChatTotal
     var fraction = 0.0
     var share = 0.0
     var compact = false
+    @State private var hovering = false
 
     var body: some View {
+        let target = app.usageChatTarget(chat.chat)
+        if let target {
+            Button { app.openUsageChat(target) } label: {
+                row(title: target.title)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : Color.clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(tr("usage.chat.open", target.title))
+        } else {
+            row(title: chat.chat.displayTitle).help(chat.chat.displayTitle)
+        }
+    }
+
+    private func row(title: String) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
@@ -489,7 +508,7 @@ struct UsageChatRow: View {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                         HStack(spacing: NookTheme.Spacing.sm) {
                             if let kind = AgentKind(rawValue: chat.chat.agent) { AgentLogo(kind, size: 13) }
-                            Text(chat.chat.displayTitle).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.tail)
+                            Text(title).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.tail)
                         }
                         Text(subtitle)
                             .font(NookTheme.TextStyle.caption)
@@ -519,7 +538,6 @@ struct UsageChatRow: View {
             .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
             NookDivider()
         }
-        .help(chat.chat.displayTitle)
     }
 
     /// "Nook · today 14:32" / "Nook · Mon 3 Nov 09:10 – 14:32": the project and when the chat used tokens.
