@@ -478,13 +478,15 @@ struct WorkspaceSettingsSection: View {
         SettingsFold(tr("settings.ws.modelsPerAgent"),
                      summary: app.modelName(ws.model(for: ws.defaultProvider), for: ws.defaultProvider)) {
             ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
-                Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
+                Picker(selection: Binding(
                     get: { ws.model(for: provider) },
                     set: { ws.setModel($0, for: provider) }
                 )) {
                     ForEach(defaultModelChoices(provider, saved: ws.model(for: provider)), id: \.self) { model in
                         Text(app.modelName(model, for: provider)).tag(model)
                     }
+                } label: {
+                    AgentName(provider.kind, name: provider.displayName)
                 }
             }
             // Off: the model list that came with the app is used, and nothing goes online for it.
@@ -554,11 +556,13 @@ struct WorkspaceSettingsSection: View {
             }
         }
         inheritable(.model(provider), path) {
-            Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
+            Picker(selection: Binding(
                 get: { resolved.model(for: provider) }, set: { ws.setOverride(.model(provider), $0, for: path) })) {
                 ForEach(defaultModelChoices(provider, saved: resolved.model(for: provider)), id: \.self) { model in
                     Text(app.modelName(model, for: provider)).tag(model)
                 }
+            } label: {
+                AgentName(provider.kind, name: tr("settings.ws.model", provider.displayName))
             }
         }
         inheritable(.permission, path) {
@@ -875,7 +879,7 @@ struct WorkspaceSettingsSection: View {
     /// you start yourself in a terminal (sessions Nook starts get it automatically).
     private var bridgeButtons: some View {
         ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
-            Button(provider.displayName) { link(provider) }
+            Button { link(provider) } label: { AgentName(provider.kind, name: provider.displayName) }
                 .controlSize(.small)
                 .help(WorkspaceBridgeScript.linkCommand(for: provider) ?? "")
         }
@@ -912,16 +916,24 @@ struct WorkspaceSettingsSection: View {
 }
 
 /// The organizations and repositories whose open pull requests show under Agents › Pull requests, beside your own and
-/// your reviews. Searched with every connected GitHub account; shown under Settings › Apps & accounts.
+/// your reviews. Searched with every connected GitHub account; shown under Settings › Pull requests. Each one is a
+/// connection row with Stop watching last in its "…" menu, and "+ Watch organization" in the header opens a small
+/// dialog to type one.
 struct WatchedPullRequestsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var watching = PullRequestWatchSettings.shared
-    @State private var text = ""
-    @State private var invalid = false
+    @State private var adding = false
 
     /// Pull requests are searched with your GitHub accounts: without one, the page says so first.
     private var gitHubLinked: Bool {
         (app.connectors.source(id: "github") as? any CloudConnectorConfig)?.isConfigured ?? false
+    }
+
+    private var full: Bool { watching.entries.count >= PullRequestWatchList.limit }
+
+    /// The header's button and the empty list's: none once the list is full.
+    private var addAction: (title: String, action: () -> Void)? {
+        full ? nil : (tr("watch.add"), { adding = true })
     }
 
     var body: some View {
@@ -937,46 +949,86 @@ struct WatchedPullRequestsSection: View {
         Section {
             SettingToggle(tr("settings.pulls.myOrganizations"), detail: tr("settings.pulls.myOrganizationsDetail"),
                           isOn: $watching.includeOrganizations)
+            if watching.entries.isEmpty {
+                ConnectionListEmpty(title: tr("watch.empty.title"), detail: tr("watch.empty.detail"), add: addAction)
+            }
             ForEach(watching.entries, id: \.self) { entry in
-                HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: PullRequestWatchList.isRepository(entry) ? "book.closed" : "building.2")
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .frame(width: 18)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(entry)
-                        Text(tr(PullRequestWatchList.isRepository(entry) ? "settings.pulls.repository" : "settings.pulls.organization"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                    }
-                    Spacer()
-                    ConfirmedButton(symbol: "trash", title: tr("settings.pulls.remove"), question: tr("confirm.stopWatching", entry)) {
+                let repository = PullRequestWatchList.isRepository(entry)
+                ConnectionRow(
+                    title: entry,
+                    status: .connected,
+                    statusText: tr(repository ? "settings.pulls.repository" : "settings.pulls.organization"),
+                    removal: ConnectionRemoval(title: tr("settings.pulls.remove"), question: tr("confirm.stopWatching", entry),
+                                               detail: tr("watch.stopDetail")) {
                         watching.remove(entry)
+                        ToastCenter.shared.success(tr("connection.removed", entry))
                     }
-                    .labelled(tr("settings.pulls.remove"))
-                    .buttonStyle(.borderless)
+                ) {
+                    Image(systemName: repository ? "book.closed" : "building.2")
+                        .font(NookTheme.font(16))
+                        .foregroundStyle(NookTheme.textSecondary)
+                } menu: {
+                    Button(tr("watch.openOnGitHub")) {
+                        if let url = URL(string: "https://github.com/" + entry) { NSWorkspace.shared.open(url) }
+                    }
                 }
             }
-            HStack {
-                TextField(tr("settings.pulls.add"), text: $text, prompt: Text(tr("settings.pulls.placeholder")))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(add)
-                    .onChange(of: text) { _, _ in invalid = false }
-                Button(tr("settings.pulls.addButton"), action: add)
-                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || watching.entries.count >= PullRequestWatchList.limit)
-            }
-            if invalid {
-                SettingNote(tr("settings.pulls.invalid"), tone: .warning)
-            } else if watching.entries.count >= PullRequestWatchList.limit {
+            if full {
                 SettingNote(tr("settings.pulls.full", PullRequestWatchList.limit))
             }
         } header: {
-            SettingsSectionTitle(tr("settings.pulls.title"), info: tr("settings.pulls.footer"))
+            ConnectionListHeader(title: tr("settings.pulls.title"), info: tr("settings.pulls.footer"), add: addAction)
+                // On the header, the one view that is always there, so the sheet is attached once and not to every row.
+                .sheet(isPresented: $adding) { AddSheet() }
         }
     }
 
-    private func add() {
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        if watching.add(text) { text = "" } else { invalid = true }
+    /// Typing an organization or repository to watch, with Cancel and Watch on the right.
+    private struct AddSheet: View {
+        @Environment(\.dismiss) private var dismiss
+        @ObservedObject private var watching = PullRequestWatchSettings.shared
+        @State private var text = ""
+        @State private var invalid = false
+
+        private var canAdd: Bool { !text.trimmingCharacters(in: .whitespaces).isEmpty }
+
+        var body: some View {
+            SetupSheet(title: tr("watch.addTitle"), subtitle: tr("settings.pulls.footer"), width: 460) {
+                ServiceTile(domain: "github.com", fallback: "building.2", size: 48)
+            } content: {
+                Text(tr("watch.name")).font(NookTheme.TextStyle.strong)
+                TextField("", text: $text, prompt: Text(tr("settings.pulls.placeholder")))
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(add)
+                    .onChange(of: text) { _, _ in invalid = false }
+                if invalid {
+                    SettingNote(tr("settings.pulls.invalid"), tone: .warning)
+                }
+            } footer: {
+                Spacer()
+                Button(tr("button.cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .controlSize(.large)
+                Button(tr("settings.pulls.addButton"), action: add)
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!canAdd)
+            }
+        }
+
+        /// Several entries may be typed at once (separated by commas or spaces); the toast names the ones that were new.
+        private func add() {
+            guard canAdd else { return }
+            let before = watching.entries
+            guard watching.add(text) else {
+                invalid = true
+                return
+            }
+            let added = watching.entries.filter { !before.contains($0) }
+            ToastCenter.shared.success(tr("connection.added", added.joined(separator: ", ")))
+            dismiss()
+        }
     }
 }
 

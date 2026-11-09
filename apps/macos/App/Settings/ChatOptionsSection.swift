@@ -131,8 +131,8 @@ struct ChatOptionsSection: View {
         .padding(.vertical, NookTheme.Spacing.xxs)
     }
 
-    /// One app whose notifications Nook collects: its icon, name and where its messages come from, with its switch (and a
-    /// remove button when you added it). The chat apps Nook links are in the overview above instead.
+    /// Another chat app whose notifications bring its chats, in the one connection row: the switch, and for an app you
+    /// added yourself Remove in its "…" menu.
     private func row(_ source: MessagingApp) -> some View {
         // An app is only on while collecting is: switching one on switches collecting on with it.
         let isOn = Binding(get: { capture.enabled && capture.sources.isOn(source.id) },
@@ -140,28 +140,18 @@ struct ChatOptionsSection: View {
                                capture.setSource(source.id, on: on)
                                if on, !capture.enabled { setCollecting(true) }
                            })
-        return Toggle(isOn: isOn) { label(source) }
-    }
-
-    private func label(_ source: MessagingApp) -> some View {
         let custom = !MessagingApps.builtIn.contains { $0.id == source.id }
-        return HStack(spacing: NookTheme.Spacing.md) {
-            SiteIcon(domain: source.site, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 20, source: source.id)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(source.name)
-                Text(origin(source))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-            }
-            if custom {
-                Spacer(minLength: NookTheme.Spacing.sm)
-                ConfirmedButton(symbol: "trash", title: tr("chats.settings.remove", source.name),
-                                question: tr("confirm.remove", source.name)) { capture.removeSource(source.id) }
-                    .labelled(tr("chats.settings.remove", source.name))
-                    .buttonStyle(.borderless)
-            }
+        return ConnectionRow(title: source.name, status: isOn.wrappedValue ? .connected : .off,
+                             statusText: isOn.wrappedValue ? tr("connection.fromNotifications") : nil,
+                             detail: origin(source), isOn: isOn,
+                             removal: custom ? ConnectionRemoval(title: tr("chats.settings.remove", source.name),
+                                                                 question: tr("confirm.remove", source.name),
+                                                                 detail: tr("connection.removeSourceDetail")) {
+                                 capture.removeSource(source.id)
+                             } : nil) {
+            SiteIcon(domain: source.site, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 22, source: source.id)
+        } menu: {
+            EmptyView()
         }
     }
 

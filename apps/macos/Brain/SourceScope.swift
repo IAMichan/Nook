@@ -541,14 +541,15 @@ enum SourceCapabilities {
         return (reads, writes)
     }
 
-    /// Single line summary: "API key · reading: read payments · writing: —".
+    /// What Nook can do with a source, in plain words for the sheet that links it: what it reads, and what it does
+    /// only after you say OK, or that it never changes anything. Empty when Nook knows no tools of it yet.
     static func line(_ sourceID: String, tools: [(name: String, isAction: Bool)]) -> String {
-        let kind = SourceCatalog.descriptor(sourceID).map { kindLabel($0.kind) } ?? ""
         let ops = describe(sourceID, tools: tools)
-        var parts = [kind].filter { !$0.isEmpty }
-        if !ops.reads.isEmpty { parts.append("lezen: " + ops.reads.joined(separator: ", ")) }
-        parts.append(ops.writes.isEmpty ? "schrijven: niets" : "schrijven (na jouw OK): " + ops.writes.joined(separator: ", "))
-        return parts.joined(separator: " · ")
+        guard !ops.reads.isEmpty || !ops.writes.isEmpty else { return "" }
+        var parts: [String] = []
+        if !ops.reads.isEmpty { parts.append(tr("caps.reads", ops.reads.joined(separator: ", "))) }
+        parts.append(ops.writes.isEmpty ? tr("caps.writesNothing") : tr("caps.writes", ops.writes.joined(separator: ", ")))
+        return parts.joined(separator: " ")
     }
 }
 

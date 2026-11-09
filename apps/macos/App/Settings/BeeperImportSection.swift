@@ -13,29 +13,39 @@ struct BeeperImportSection: View {
     @State private var token = ""
     @State private var open: ChatAppSheetItem?
 
+    /// The move in numbered steps, as every setup in Settings: Beeper's token, bringing everything over, linking each app
+    /// that was linked there (one connection row each), and saying the move is done.
     var body: some View {
         Section {
             IntroCard(title: tr("beeper.import.title"), text: tr("beeper.import.intro"))
-            if importer.hasToken {
-                runRow
-            } else {
-                tokenRow
+            SetupStep(number: 1, title: tr("beeper.import.token"), done: importer.hasToken) {
+                if !importer.hasToken { tokenRow }
             }
-            if let problem = importer.problem {
-                SettingNote(problem, tone: .warning)
-            }
-            if let imported = importer.imported {
-                StatusRow(title: tr("beeper.import.done"), detail: summary(imported), state: .done) { EmptyView() }
+            SetupStep(number: 2, title: tr("beeper.import.run"), done: importer.imported != nil) {
+                if importer.hasToken { runRow }
+                if let problem = importer.problem {
+                    SettingNote(problem, tone: .warning)
+                }
+                if let imported = importer.imported {
+                    SettingNote(tr("beeper.import.done") + " " + summary(imported), tone: .success)
+                }
             }
             if !importer.apps.isEmpty {
-                NookSectionLabel(tr("beeper.import.apps"))
-                ForEach(importer.apps, id: \.self) { row($0) }
+                SetupStep(number: 3, title: tr("beeper.import.apps"),
+                          done: importer.apps.allSatisfy { ChatAppStates.state($0)?.linked == true }) {
+                    ForEach(importer.apps, id: \.self) { row($0) }
+                }
             }
-            HStack(spacing: NookTheme.Spacing.md) {
-                SettingLabel(tr("beeper.import.finish"), detail: tr("beeper.import.finishDetail"))
-                Spacer()
-                Button(tr("beeper.import.finishButton")) { importer.finish() }
-                    .disabled(importer.isBusy)
+            SetupStep(number: importer.apps.isEmpty ? 3 : 4, title: tr("beeper.import.finish")) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Text(tr("beeper.import.finishDetail"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button(tr("beeper.import.finishButton")) { importer.finish() }
+                        .disabled(importer.isBusy)
+                }
             }
         } header: {
             SettingsSectionTitle(tr("beeper.import.header"), info: tr("beeper.import.footer"))
@@ -48,7 +58,10 @@ struct BeeperImportSection: View {
     /// Beeper's access token, pasted once: Nook did not keep one yet.
     private var tokenRow: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            SettingLabel(tr("beeper.import.token"), detail: tr("beeper.import.tokenDetail"))
+            Text(tr("beeper.import.tokenDetail"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: NookTheme.Spacing.sm) {
                 SecureField("", text: $token, prompt: Text(tr("beeper.import.token")))
                     .labelsHidden()
@@ -65,7 +78,10 @@ struct BeeperImportSection: View {
     /// The move itself, on your own click; again after linking more apps in Beeper, or to pick up what changed.
     private var runRow: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            SettingLabel(tr("beeper.import.run"), detail: tr("beeper.import.runDetail"))
+            Text(tr("beeper.import.runDetail"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
             if importer.isBusy { ProgressView().controlSize(.small) }
             Button(importer.imported == nil ? tr("beeper.import.start") : tr("beeper.import.again")) {
@@ -75,16 +91,18 @@ struct BeeperImportSection: View {
         }
     }
 
-    /// One app that was linked in Beeper: linked in Nook already, or its Link button.
+    /// One app that was linked in Beeper, in the one connection row: linked in Nook already, or Link in its "…" menu and
+    /// on a click (its steps open in a sheet, as adding anything does).
     private func row(_ app: String) -> some View {
         let known = MessagingApps.app(id: app)
         let linked = ChatAppStates.state(app)?.linked == true
-        return ServiceRowLayout(domain: known?.site, symbol: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris,
-                                title: known?.name ?? app, detail: detail(app, linked: linked),
-                                status: linked ? .connected : .notLinked, source: app) {
+        return ConnectionRow(title: known?.name ?? app, status: linked ? .connected : .notLinked,
+                             detail: detail(app, linked: linked)) {
+            ServiceTile(domain: known?.site, fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 28,
+                        source: app)
+        } menu: {
             if !linked {
                 Button(tr("chats.apps.link")) { open = ChatAppSheetItem(id: app) }
-                    .controlSize(.small)
             }
         }
     }

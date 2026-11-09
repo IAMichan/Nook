@@ -15,8 +15,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case start, general, appearance, notch, notifications, notificationApps, sound, shortcuts,
          brain, assistant, memory,
          autocomplete, autocompleteApps, autocompleteStyle, autocompletePlayground, autocompleteStats, dictation,
-         agents, sessions, automation, tokens, usage, archive,
-         projects, worktrees, openIn, browser, pullRequests,
+         agents, sessions, automation, usage, archive,
+         projects, worktrees, openIn, pullRequests,
          chats, connections, iphone, machines,
          privacy, permissions, onDevice, activityLog,
          maintenance, about
@@ -45,9 +45,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             case .typing: return [.autocomplete, .autocompleteApps, .autocompleteStyle, .autocompletePlayground,
                                   .autocompleteStats, .dictation]
             // The coding agents, how their sessions start and behave, what runs by itself, what they used, and what was put away.
-            case .agents: return [.agents, .sessions, .automation, .tokens, .usage, .archive]
+            case .agents: return [.agents, .sessions, .automation, .usage, .archive]
             // Where the agents work and what comes out of it.
-            case .code: return [.projects, .worktrees, .openIn, .browser, .pullRequests]
+            case .code: return [.projects, .worktrees, .openIn, .pullRequests]
             // Everything Nook is linked to: chat apps, services, the iPhone and other machines.
             case .connect: return [.chats, .connections, .iphone, .machines]
             // What Nook may see and send, and what it did.
@@ -96,13 +96,10 @@ final class SettingsPageAction: ObservableObject {
     @Published var requested: SettingsSection?
 
     /// The header button of `section`, if it has one: its title and symbol.
+    /// None any more:, adding sits in the header of the list it adds to ("+ Add machine"), once per page.
+    /// `requested` stays, so a link elsewhere in Nook can still open a page's add sheet.
     static func button(for section: SettingsSection) -> (title: String, symbol: String)? {
-        switch section {
-        case .chats: return (tr("hub.chats.add"), "plus")
-        case .connections: return (tr("hub.add"), "plus")
-        case .machines: return (tr("remote.add"), "plus")
-        default: return nil
-        }
+        nil
     }
 }
 
@@ -237,16 +234,20 @@ struct SettingsView: View {
         case .agents: agentsSection
         case .sessions: WorkspaceSettingsSection(part: .sessions, scope: $sessionScope)
         case .automation: WorkspaceSettingsSection(part: .automation, scope: $sessionScope)
-        case .tokens: TokenSettingsSection()
-        case .usage: usageSettingsSection
+        // What an agent costs, and how to spend fewer tokens: one subject, one page.
+        case .usage:
+            usageSettingsSection
+            TokenSettingsSection()
         case .archive: ArchiveSettingsSection()
         case .projects: WorkspaceSettingsSection(part: .projects, scope: $sessionScope)
         case .worktrees: WorkspaceSettingsSection(part: .worktrees, scope: $sessionScope)
-        case .openIn: WorkspaceSettingsSection(part: .openIn, scope: $sessionScope)
-        case .browser: WorkspaceSettingsSection(part: .browser, scope: $sessionScope)
+        // Where things open: the editor and terminal of a session, and Nook's browser.
+        case .openIn:
+            WorkspaceSettingsSection(part: .openIn, scope: $sessionScope)
+            WorkspaceSettingsSection(part: .browser, scope: $sessionScope)
         case .pullRequests:
             WatchedPullRequestsSection()
-            Section { ForgeHostsSection() }
+            ForgeHostsSection()
             WorkspaceSettingsSection(part: .commits, scope: $sessionScope)
         case .privacy: privacySection(.level)
         case .permissions: privacySection(.access)

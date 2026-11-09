@@ -2,7 +2,10 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Settings for the iPhone companion: switch it on, pair a phone (QR code or link, valid for five minutes) and remove phones.
+/// Settings for the iPhone companion, in the order you meet it: switch it on, the phones already paired (one
+/// `ConnectionRow` each, which opens to its permissions and details), pairing another in numbered steps (QR code or link,
+/// valid for five minutes), what the phones are told, and reaching this Mac away from home, folded because most people
+/// pair at home and never need it.
 struct CompanionSettingsRows: View {
     @ObservedObject private var store = CompanionStore.shared
     @ObservedObject private var server = CompanionServer.shared
@@ -19,36 +22,11 @@ struct CompanionSettingsRows: View {
     @State private var manualAddress = ""
 
     var body: some View {
-        // Three sections instead of one long row: the phone and its pairing, push notifications, and the key push
-        // needs from Apple (only while push is on).
         Section {
             Toggle(isOn: Binding(get: { store.enabled }, set: { store.enabled = $0; server.apply() })) { SettingText("companion.enable") }
             SettingNote(tr("companion.hint"))
             if store.enabled {
                 status
-                ForEach(store.devices) { device in
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
-                        SettingLabel(device.name, detail: deviceDetail(device))
-                        Spacer()
-                        ConfirmedButton(tr("companion.remove"), question: tr("confirm.remove", device.name),
-                                        detail: tr("confirm.removeDevice.detail")) { store.remove(device.id) }
-                    }
-                    if device.protocolVersion != nil, !CompanionCompatibility.phoneSupported(device.protocolVersion) {
-                        SettingNote(tr("companion.device.outdated"), tone: .error)
-                    }
-                    DisclosureGroup(tr("companion.scopes.title")) {
-                        scopeToggles(Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))
-                    }
-                    .padding(.leading, NookTheme.Spacing.xxl)
-                }
-                if store.devices.isEmpty { SettingNote(tr("companion.none")) }
-                if let link {
-                    pairing(link)
-                } else {
-                    Button(tr("companion.pair")) { link = server.pairingLink() }
-                        .disabled(!isListening)
-                }
                 // The local connection log, redacted (no addresses, names or keys), for the user to paste where they choose.
                 HStack(spacing: NookTheme.Spacing.md) {
                     Button(diagnosticsCopied.copied ? tr("companion.diagnostics.copied") : tr("companion.diagnostics.copy")) {
@@ -60,16 +38,141 @@ struct CompanionSettingsRows: View {
         } header: {
             SettingText("settings.devices.iphone")
         }
-        // The window closes by itself; also when a phone completes it.
-        .onChange(of: store.devices) { _, _ in link = nil }
+        // The window closes by itself; also when a phone completes it. A phone that just paired through this page's
+        // code is announced, as every other connection that is added.
+        .onChange(of: store.devices) { old, new in
+            if link != nil, let added = new.first(where: { device in !old.contains { $0.id == device.id } }) {
+                ToastCenter.shared.success(tr("connection.added", added.name))
+            }
+            link = nil
+        }
         .onChange(of: store.enabled) { _, on in if !on { link = nil } }
 
         if store.enabled {
-            Section { awayFromHome } header: { Text(tr("companion.away.title")) }
-            Section { pushSection }
+            pairedPhones
+            pairNew
+            Section { pushSection } header: { SettingText("pairedPhone.pushTitle") }
             if store.push.enabled {
                 Section { pushRoute } header: { Text(tr("companion.push.keyTitle")) }
             }
+            SettingsFold(tr("companion.away.title"), summary: awaySummary,
+                         keys: ["companion.relay.enable", "companion.awake.title"]) {
+                awayFromHome
+            }
+        }
+    }
+
+    // MARK: Paired iPhones
+
+    /// "+ Pair iPhone" shows the code in the steps below; there is nothing to show while this Mac does not listen, or
+    /// while a code is already up.
+    private var pairAction: (title: String, action: () -> Void)? {
+        guard isListening, link == nil else { return nil }
+        return (tr("companion.pair"), { link = server.pairingLink() })
+    }
+
+    private var pairedPhones: some View {
+        Section {
+            if store.devices.isEmpty {
+                ConnectionListEmpty(title: tr("pairedPhone.empty.title"), detail: tr("pairedPhone.empty.detail"), add: pairAction)
+            } else {
+                ForEach(store.devices) { deviceRow($0) }
+            }
+        } header: {
+            ConnectionListHeader(title: tr("pairedPhone.title"), add: pairAction)
+        }
+    }
+
+    /// One paired phone: its name and app version, how recently it was seen, and once opened what it may do and the
+    /// rest of what this Mac knows about it. Unpairing sits last in its "…" menu.
+    private func deviceRow(_ device: PairedDevice) -> some View {
+        let outdated = device.protocolVersion != nil && !CompanionCompatibility.phoneSupported(device.protocolVersion)
+        return ConnectionRow(
+            title: device.name,
+            version: device.appVersion,
+            status: outdated ? .expired : .connected,
+            statusText: outdated ? tr("pairedPhone.outdated") : tr("pairedPhone.paired"),
+            detail: lastSeen(device),
+            removal: ConnectionRemoval(title: tr("companion.remove"), question: tr("pairedPhone.unpairQuestion", device.name),
+                                       detail: tr("pairedPhone.unpairDetail")) {
+                store.remove(device.id)
+                ToastCenter.shared.success(tr("connection.removed", device.name))
+            }
+        ) {
+            Image(systemName: "iphone")
+                .font(NookTheme.font(16))
+                .foregroundStyle(NookTheme.textSecondary)
+        } expanded: {
+            if outdated {
+                SettingNote(tr("companion.device.outdated"), tone: .error)
+            }
+            SheetPart(tr("companion.scopes.title")) {
+                scopeToggles(Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))
+            }
+            SheetPart(tr("pairedPhone.details")) {
+                LabeledContent(tr("pairedPhone.lastSeen")) {
+                    Text(device.lastSeen.map { $0.formatted(.relative(presentation: .named)) } ?? tr("companion.neverSeen"))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                LabeledContent(tr("pairedPhone.pairedOn")) {
+                    Text(device.pairedAt.formatted(date: .abbreviated, time: .shortened))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                LabeledContent(tr("pairedPhone.appVersion")) {
+                    Text(device.appVersion ?? tr("pairedPhone.unknown"))
+                        .font(device.appVersion == nil ? NookTheme.TextStyle.body : NookTheme.mono(11))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+                LabeledContent(tr("pairedPhone.notifications")) {
+                    Text(device.pushToken != nil ? tr("pairedPhone.notificationsOn") : tr("pairedPhone.notificationsOff"))
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+        }
+    }
+
+    /// When the phone was last seen, for the line under its name.
+    private func lastSeen(_ device: PairedDevice) -> String {
+        device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) } ?? tr("companion.neverSeen")
+    }
+
+    // MARK: Pair a new iPhone
+
+    /// Pairing in the numbered steps every setup in Settings uses: the app, what the phone may do (asked before the
+    /// code, because the phone gets it the moment it scans), and the code itself.
+    private var pairNew: some View {
+        Section {
+            SetupStep(number: 1, title: tr("pairedPhone.step.install")) {
+                Text(tr("pairedPhone.step.installDetail"))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            SetupStep(number: 2, title: tr("pairedPhone.step.scopes")) {
+                scopeToggles($store.pendingScopes)
+            }
+            SetupStep(number: 3, title: tr("pairedPhone.step.scan")) {
+                if let link {
+                    pairing(link)
+                } else {
+                    Button(tr("pairedPhone.showCode")) { link = server.pairingLink() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!isListening)
+                    if !isListening { SettingNote(tr("pairedPhone.notListening")) }
+                }
+            }
+        } header: {
+            SettingText("pairedPhone.pairTitle")
+        }
+    }
+
+    /// What the folded "Away from home" group says while closed: whether a relay carries the phones there, and how.
+    private var awaySummary: String {
+        guard relay.enabled else { return tr("pairedPhone.away.off") }
+        switch relay.status {
+        case .connected: return tr("pairedPhone.away.relayConnected")
+        case .failed, .invalid: return tr("pairedPhone.away.relayProblem")
+        case .connecting, .off: return tr("pairedPhone.away.relayOn")
         }
     }
 
@@ -204,13 +307,6 @@ struct CompanionSettingsRows: View {
                 + CompanionScopes.names(device.grantedScopes).joined(separator: ",")
         }
         return about
-    }
-
-    /// When the phone was last seen, and which version of the app it runs once it said so.
-    private func deviceDetail(_ device: PairedDevice) -> String {
-        let seen = device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) } ?? tr("companion.neverSeen")
-        guard let version = device.appVersion else { return seen }
-        return seen + " · " + tr("companion.device.version", version)
     }
 
     private var isListening: Bool { if case .listening = server.state { return true }; return false }
@@ -376,9 +472,6 @@ struct CompanionSettingsRows: View {
                     if let url = link.url { copied.copy(url.absoluteString) }
                 }
                 Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil }
-                // What the phone that pairs now may do; changed later per phone above.
-                Text(tr("companion.scopes.pairing")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
-                scopeToggles($store.pendingScopes)
             }
         }
     }
