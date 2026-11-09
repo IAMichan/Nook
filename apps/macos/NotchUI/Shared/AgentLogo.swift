@@ -178,11 +178,13 @@ struct AccountBadge: View {
                             .minimumScaleFactor(0.5)
                     } else {
                         // Scaled to fit a square inside the circle, so wide and tall symbols alike stay in the middle.
+                        // The margin around it is a whole point on each side: a fractional one is rounded to the pixel
+                        // grid on one side only, which pushes the icon left on the small badges (an agent row's 8 pt).
                         Image(systemName: kind.symbol)
                             .resizable()
                             .scaledToFit()
                             .fontWeight(.bold)
-                            .frame(width: size * 0.54, height: size * 0.54)
+                            .frame(width: glyphSide, height: glyphSide)
                     }
                 }
                 .foregroundStyle(kind.glyph)
@@ -193,6 +195,9 @@ struct AccountBadge: View {
             .help(kind.label)
             .accessibilityLabel(kind.label)
     }
+
+    /// The icon's side: about 54% of the badge, with the same whole-point margin left and right, top and bottom.
+    private var glyphSide: CGFloat { max(1, size - 2 * (size * 0.23).rounded()) }
 }
 
 /// An agent's logo with the badge of the account it runs under.
@@ -220,8 +225,10 @@ extension View {
     func accountBadge(_ account: AccountTag?, size: CGFloat, ring: Color) -> some View {
         overlay(alignment: .bottomTrailing) {
             if let account {
-                AccountBadge(kind: account, size: max(8, size * 0.56), ring: ring)
-                    .offset(x: size * 0.28, y: size * 0.22)
+                // Whole points for its size and place, so the badge and the icon in it land on the pixel grid
+                // and the icon stays centered at every logo size.
+                AccountBadge(kind: account, size: max(8, (size * 0.56).rounded()), ring: ring)
+                    .offset(x: (size * 0.28).rounded(), y: (size * 0.22).rounded())
             }
         }
     }
