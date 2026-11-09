@@ -165,11 +165,16 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 // The cache in 8-bit instead of 16: half the memory (a few hundred MB for a full 8 192-token cache) for a
                 // difference in the predictions too small to measure. A quantized cache needs flash attention; where a
                 // context with both does not start, the model runs with the default 16-bit cache instead.
+                // Not for heads wider than 256 (Gemma 4's global layers have 512): Metal's flash attention then asks for
+                // more threadgroup memory than the GPU has (36 KB of 32), which Xcode stops on and a release build may
+                // compute wrongly.
                 var compact = params
                 compact.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED
                 compact.type_k = GGML_TYPE_Q8_0
                 compact.type_v = GGML_TYPE_Q8_0
-                guard let context = llama_init_from_model(model, compact) ?? llama_init_from_model(model, params) else {
+                let fitsFlashAttention = (Self.attentionHeadSize(of: model) ?? 0) <= Self.maxFlashAttentionHeadSize
+                let context = (fitsFlashAttention ? llama_init_from_model(model, compact) : nil) ?? llama_init_from_model(model, params)
+                guard let context else {
                     llama_model_free(model)
                     return continuation.resume(throwing: NookError(tr("autocomplete.error.memory")))
                 }
@@ -187,6 +192,23 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 continuation.resume(returning: completer)
             }
         }
+    }
+
+    /// The widest attention head flash attention runs on Metal within the GPU's 32 KB of threadgroup memory.
+    static let maxFlashAttentionHeadSize = 256
+
+    /// The model's widest attention head (keys or values, global or sliding-window layers), from its GGUF metadata; nil
+    /// when the file does not say.
+    private static func attentionHeadSize(of model: OpaquePointer) -> Int? {
+        func value(_ key: String) -> String? {
+            var buffer = [CChar](repeating: 0, count: 128)
+            guard llama_model_meta_val_str(model, key, &buffer, buffer.count) > 0 else { return nil }
+            return String(cString: buffer)
+        }
+        guard let architecture = value("general.architecture") else { return nil }
+        let sizes = ["key_length", "value_length", "key_length_swa", "value_length_swa"]
+            .compactMap { value("\(architecture).attention.\($0)").flatMap { Int($0) } }
+        return sizes.max()
     }
 
     /// Builds the tables `healed` spells unusual words from (every token's bytes, by their first bytes) right after loading,
