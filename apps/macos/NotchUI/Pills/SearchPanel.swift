@@ -23,6 +23,14 @@ struct SearchPanel: View {
     @State private var openWhenReady = false
     @FocusState private var focused: Bool
 
+    /// `kind` keeps one kind from the start: a tab's own window searches what that tab shows (Chats keeps chats), and
+    /// a chip or Tab widens it again.
+    init(kind: SearchKind? = nil, select: @escaping (PanelTab) -> Void, close: @escaping () -> Void) {
+        self.select = select
+        self.close = close
+        _kind = State(initialValue: kind)
+    }
+
     /// What a row is: a hit, or asking Nook what you typed.
     private enum Row: Identifiable {
         case hit(SearchHit, top: Bool)
