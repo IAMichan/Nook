@@ -565,7 +565,7 @@ struct ComposerUsageRing: View, Equatable {
 
     /// The fullest window: only shows 100 % once every window is full; otherwise the fullest one that is not (at most 99 %).
     private var used: Int {
-        Int(UsageLimits.effectiveHighestPercent(limits.map(\.percent)).rounded())
+        100 - LimitPool.left(UsageLimits.effectiveHighestPercent(limits.map(\.percent)))
     }
 
     /// "Limits of Work: 5 hours: 62% left · Week: 88% left".
