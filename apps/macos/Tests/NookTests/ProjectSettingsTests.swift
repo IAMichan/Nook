@@ -27,12 +27,25 @@ final class ProjectSettingsTests: XCTestCase {
         XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other"), global)
     }
 
-    func testBrowserSignInsStayOffUntilAProjectAsks() {
+    func testBrowserSignInsAskUntilAnsweredAndAProjectCanChooseItsOwn() {
         var overrides = ProjectOverrides()
-        XCTAssertFalse(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns)
+        XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns, .ask)
         overrides.set(.browserSignIns, .string("on"), for: "/repo")
-        XCTAssertTrue(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns)
-        XCTAssertFalse(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other").browserSignIns)
+        XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns, .keep)
+        XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/other").browserSignIns, .ask)
+        overrides.set(.browserSignIns, .string("off"), for: "/repo")
+        XCTAssertEqual(ProjectSettings.resolve(global: global, overrides: overrides, folder: "/repo").browserSignIns, .forget)
+        // A project that sets nothing follows the answer for all projects.
+        var kept = global
+        kept.browserSignIns = .keep
+        XCTAssertEqual(ProjectSettings.resolve(global: kept, overrides: overrides, folder: "/other").browserSignIns, .keep)
+    }
+
+    func testBrowserSignInPolicyReadsWhatProjectsStored() {
+        for policy in BrowserSignInPolicy.allCases {
+            XCTAssertEqual(BrowserSignInPolicy(stored: policy.stored), policy)
+        }
+        XCTAssertNil(BrowserSignInPolicy(stored: "maybe"))
     }
 
     func testAProjectCanSwitchWorktreeCleanupOff() {
