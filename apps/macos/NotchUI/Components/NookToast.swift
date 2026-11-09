@@ -73,10 +73,12 @@ struct NookToast: Identifiable, Equatable {
 ///     ToastCenter.shared.success(tr("settings.brain.keySaved"))
 ///     ToastCenter.shared.error(error, title: tr("toast.failed", tr("ws.quick.push")))
 ///
-/// Where it shows: on one surface with a `.nookToastHost()` (the panel in the notch, the main window, Settings), at its
-/// bottom edge, and only there: the key window's, else the one you opened last. With none of them on screen, the notch
-/// shows it in its own confirmation strip (`NotchViewModel.showToast`). Toasts wait their turn; the same message twice
-/// only restarts the timer. Errors stay longest, and any toast stays while the pointer is on it. Like every notice that
+/// Where it shows: on one surface with a `.nookToastHost()` (the panel in the notch, the main window, Settings), in its
+/// top-right corner under the header, and only there: the key window's, else the one you opened last. Up to
+/// `ToastCenter.limit` toasts show at once as a stack: the newest in front, the older ones peeking out under it, spread
+/// out while the pointer is on the stack; more wait their turn. With none of the surfaces on screen, the notch shows
+/// them one at a time in its own confirmation strip (`NotchViewModel.showToast`). The same message twice only restarts
+/// its timer. Errors stay longest, and every toast stays while the pointer is on the stack. Like every notice that
 /// closes by itself, it ends in the OK with the countdown ring of that time (`NookNotice`).
 ///
 /// A toast is for a result. What waits for a decision is a card or an approval (`NookNoticeActions`); a problem with a
@@ -85,9 +87,16 @@ struct NookToast: Identifiable, Equatable {
 final class ToastCenter: ObservableObject {
     static let shared = ToastCenter()
 
-    @Published private(set) var current: NookToast?
-    /// The host that shows `current`; nil while the notch shows it, or while nothing does.
+    /// How many toasts a surface shows at once; the notch's strip shows one.
+    static let limit = 3
+
+    /// On screen, oldest first: the last one is in front.
+    @Published private(set) var toasts: [NookToast] = []
+    /// The host that shows `toasts`; nil while the notch shows them, or while nothing does.
     @Published private(set) var activeHost: UUID?
+
+    /// The newest toast on screen.
+    var current: NookToast? { toasts.last }
 
     /// Set by the notch: shows a toast in its confirmation strip when no host is on screen. False when it cannot now
     /// (a card or a question is open there), and the toast is then left out rather than covering what waits for you.
@@ -100,12 +109,15 @@ final class ToastCenter: ObservableObject {
     /// In the order they appeared: the last one on screen is where you are looking.
     private var hosts: [Host] = []
     private var queue: [NookToast] = []
-    /// Runs out the current toast's time while the pointer is off it, like the ring on its OK.
-    private let clock = NoticeClock()
-    /// The pointer is on the toast: its clock and ring hold.
+    /// Runs out each toast's time while the pointer is off the stack, like the ring on its OK.
+    private var clocks: [UUID: NoticeClock] = [:]
+    /// The pointer is on the stack: every clock and ring holds.
     @Published private(set) var paused = false
-    /// New each time the current toast's time starts over (the same message again), so its ring starts over too.
-    @Published private(set) var stamp = UUID()
+    /// New each time a toast's time starts over (the same message again), so its ring starts over too.
+    @Published private(set) var stamps: [UUID: UUID] = [:]
+
+    /// As many as fit where they show now: a stack on a surface, one in the notch's strip.
+    private var capacity: Int { activeHost == nil ? 1 : Self.limit }
 
     // MARK: Showing
 
@@ -117,12 +129,14 @@ final class ToastCenter: ObservableObject {
         let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines)
         let toast = NookToast(kind: kind, title: title, detail: detail?.isEmpty == false ? detail : nil,
                               duration: duration ?? kind.duration, action: action)
-        if let current, current.says(toast) {
-            schedule(current)
+        if let shown = toasts.first(where: { $0.says(toast) }) {
+            schedule(shown)
             return
         }
         guard !queue.contains(where: { $0.says(toast) }) else { return }
-        if current == nil { present(toast) } else { queue.append(toast) }
+        // Where it would show now: a new stack goes to the surface you look at.
+        if toasts.isEmpty { pickHost() }
+        if toasts.count < capacity { present(toast) } else { queue.append(toast) }
     }
 
     func success(_ title: String, detail: String? = nil, action: NookToastAction? = nil) {
@@ -147,35 +161,44 @@ final class ToastCenter: ObservableObject {
         show(title ?? tr("toast.error"), detail: error.localizedDescription, kind: .error, action: action)
     }
 
-    /// Closes the current toast and shows the next one waiting.
-    func dismiss() {
-        clock.cancel()
-        paused = false
+    /// Closes the toast `id` (nil: the one in front, which is the one the notch's strip shows) and lets the next
+    /// one waiting take its place.
+    func dismiss(_ id: UUID? = nil) {
+        guard let id = id ?? current?.id, toasts.contains(where: { $0.id == id }) else { return }
+        forget(id)
         withAnimation(NookTheme.close) {
-            current = nil
-            activeHost = nil
+            toasts.removeAll { $0.id == id }
+            if toasts.isEmpty { activeHost = nil }
         }
+        if toasts.isEmpty { paused = false }
         guard !queue.isEmpty else { return }
-        let next = queue.removeFirst()
-        // Let the old one leave before the next comes in.
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(220))
-            self?.present(next)
+        if activeHost != nil {
+            fill()
+        } else {
+            // The notch's strip: let the old one leave before the next comes in.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(220))
+                guard let self, self.toasts.isEmpty, !self.queue.isEmpty else { return }
+                self.pickHost()
+                self.fill()
+            }
         }
     }
 
-    /// The pointer is on the toast: it stays, and runs out the rest of its time once the pointer leaves.
+    /// The pointer is on the stack: every toast stays, and runs out the rest of its time once the pointer leaves.
     func setPaused(_ paused: Bool) {
-        guard paused != self.paused, current != nil else { return }
+        guard paused != self.paused, !toasts.isEmpty || !paused else { return }
         self.paused = paused
-        if paused { clock.hold() } else { clock.resume() }
+        for clock in clocks.values {
+            if paused { clock.hold() } else { clock.resume() }
+        }
     }
 
-    /// Runs the toast's action and closes it.
-    func performAction() {
-        let action = current?.action
-        dismiss()
-        action?.perform()
+    /// Runs the action of toast `id` (nil: the one in front) and closes it.
+    func performAction(_ id: UUID? = nil) {
+        guard let toast = toasts.first(where: { $0.id == (id ?? current?.id) }) else { return }
+        dismiss(toast.id)
+        toast.action?.perform()
     }
 
     // MARK: Hosts
@@ -183,55 +206,102 @@ final class ToastCenter: ObservableObject {
     func register(_ id: UUID, window: NSWindow?) {
         hosts.removeAll { $0.id == id }
         hosts.append(Host(id: id, window: window))
-        // Opened while a toast shows in the notch, or on another surface: it moves to where you now look.
-        if current != nil { route() }
+        // Opened while a toast shows in the notch, or on another surface: they move to where you now look.
+        if !toasts.isEmpty { route() }
     }
 
     func unregister(_ id: UUID) {
         hosts.removeAll { $0.id == id }
-        guard activeHost == id, current != nil else { return }
-        // The surface that showed it went away (the panel closed): the toast goes with it, instead of turning up again in
-        // the notch's strip. It moves only to another surface that is on screen.
+        guard activeHost == id, !toasts.isEmpty else { return }
+        // The surface that showed them went away (the panel closed): the toasts go with it, instead of turning up again
+        // in the notch's strip. They move only to another surface that is on screen.
         hosts.removeAll { $0.window == nil }
         if hosts.contains(where: { $0.window?.isVisible == true }) {
             route()
         } else {
-            dismiss()
+            for toast in toasts { forget(toast.id) }
+            withAnimation(NookTheme.close) {
+                toasts.removeAll()
+                activeHost = nil
+            }
+            paused = false
+            dismissQueueToNotch()
+        }
+    }
+
+    /// The surface went away with its stack: what still waits shows in the notch, one at a time.
+    private func dismissQueueToNotch() {
+        guard !queue.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard let self, self.toasts.isEmpty else { return }
+            self.pickHost()
+            self.fill()
         }
     }
 
     private func present(_ toast: NookToast) {
-        withAnimation(NookTheme.open) { current = toast }
-        route()
-        guard current != nil else { return }
+        withAnimation(NookTheme.open) { toasts.append(toast) }
         schedule(toast)
+        if activeHost == nil { showInNotch() }
     }
 
-    /// Shows `current` on the key window's host, else the one opened last, or in the notch when no host is on screen.
-    private func route() {
-        guard let current else { return }
+    /// Brings the next ones waiting on screen, as far as there is room.
+    private func fill() {
+        while toasts.count < capacity, !queue.isEmpty {
+            present(queue.removeFirst())
+        }
+    }
+
+    /// The key window's host, else the one opened last; nil when no host is on screen.
+    private func pickHost() {
         hosts.removeAll { $0.window == nil }
         let visible = hosts.filter { $0.window?.isVisible == true }
         // The window you work in first; else the surface you opened last.
-        if let host = visible.last(where: { $0.window?.isKeyWindow == true }) ?? visible.last {
-            if activeHost != host.id { withAnimation(NookTheme.open) { activeHost = host.id } }
+        let host = visible.last(where: { $0.window?.isKeyWindow == true }) ?? visible.last
+        if activeHost != host?.id { withAnimation(NookTheme.open) { activeHost = host?.id } }
+    }
+
+    /// Shows the stack on the host where you look, or the toast in front in the notch when no host is on screen.
+    private func route() {
+        guard !toasts.isEmpty else { return }
+        pickHost()
+        if activeHost != nil {
+            fill()
             return
         }
-        activeHost = nil
+        // The notch's strip shows one: the older ones wait their turn again.
+        while toasts.count > 1 {
+            let older = toasts.removeFirst()
+            forget(older.id)
+            queue.insert(older, at: 0)
+        }
+        showInNotch()
+    }
+
+    /// Hands the toast in front to the notch's strip; when it cannot show it now, it is left out for the next one.
+    private func showInNotch() {
+        guard let current else { return }
         if notchFallback?(current) != true {
             // Nowhere to show it without covering something that waits for you: on to the next one.
-            dismiss()
+            dismiss(current.id)
         }
     }
 
     /// Starts the toast's time over, from its full duration.
     private func schedule(_ toast: NookToast) {
         let id = toast.id
-        stamp = UUID()
+        stamps[id] = UUID()
+        let clock = clocks[id] ?? NoticeClock()
+        clocks[id] = clock
         clock.start(toast.duration, held: paused) { [weak self] in
-            guard let self, self.current?.id == id else { return }
-            self.dismiss()
+            self?.dismiss(id)
         }
+    }
+
+    private func forget(_ id: UUID) {
+        clocks.removeValue(forKey: id)?.cancel()
+        stamps.removeValue(forKey: id)
     }
 }
 
@@ -243,8 +313,16 @@ struct NookToastView: View {
     var paused: Bool = false
     /// New when the toast's time starts over: its ring starts over with it.
     var restart: AnyHashable? = nil
+    /// Behind another toast in the folded stack: only its bubble shows, at this height (the one in front's), peeking out
+    /// under it. Nil when it shows in full.
+    var coveredHeight: CGFloat? = nil
+    /// Its full height, also while covered: where the stack puts the toasts behind it.
+    var onHeight: ((CGFloat) -> Void)? = nil
     let perform: () -> Void
     let close: () -> Void
+
+    /// Narrow enough to sit in a corner without covering the page under it.
+    static let maxWidth: CGFloat = 360
 
     var body: some View {
         NookNotice(title: toast.title, detail: toast.detail, symbol: toast.kind.symbol, tone: toast.kind.color,
@@ -255,7 +333,10 @@ struct NookToastView: View {
             }
         }
         .textSelection(.enabled)
-        .toastBubble(tone: toast.kind.color)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight?($0 + NookTheme.Spacing.md * 2) }
+        .opacity(coveredHeight == nil ? 1 : 0)
+        .frame(height: coveredHeight.map { max(0, $0 - NookTheme.Spacing.md * 2) }, alignment: .top)
+        .toastBubble(tone: toast.kind.color, maxWidth: Self.maxWidth)
     }
 }
 
@@ -279,38 +360,41 @@ extension AnyTransition {
     static func nookFloating(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
     }
+
+    /// The enter and leave of a toast in the top-right corner: it slides in from the trailing edge and back out, or only
+    /// fades under Reduce Motion.
+    static func nookToast(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .trailing))
+    }
 }
 
-/// Shows `ToastCenter`'s current toast over the bottom edge of this view, when this is the surface it belongs to, under
-/// `above`: what waits for you on this surface (a permission request), stacked with the toast instead of covered by it.
+/// Shows `ToastCenter`'s toasts in the top-right corner of this view, under the header, when this is the surface they
+/// belong to (`NookToastStack`). `above` (what waits for you on this surface: a permission request) keeps the bottom
+/// edge, just above the composer, so a result never covers what you are asked or the box you type in.
 private struct NookToastHost<Above: View>: ViewModifier {
     let above: Above
     @ObservedObject private var center = ToastCenter.shared
     @State private var id = UUID()
     @State private var window: NSWindow?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
-            // Over the bottom edge, but above the session's composer when one is on this surface, so the toast and what
-            // waits for you never cover the box you type in.
+            // What waits for you: over the bottom edge, but above the session's composer when one is on this surface, so
+            // it never covers the box you type in.
             .overlayPreferenceValue(SessionComposerBounds.self) { composer in
                 GeometryReader { proxy in
-                    VStack(spacing: NookTheme.Spacing.sm) {
-                        above
-                        if let toast = center.current, center.activeHost == id {
-                            NookToastView(toast: toast, paused: center.paused, restart: center.stamp,
-                                          perform: { center.performAction() }, close: { center.dismiss() })
-                                .onHover { center.setPaused($0) }
-                                .id(toast.id)
-                                .transition(.nookFloating(reduceMotion: reduceMotion))
-                                .onAppear { announce(toast) }
-                        }
-                    }
-                    .padding(.horizontal, NookTheme.Spacing.xl)
-                    .padding(.bottom, bottomInset(composer.map { proxy[$0] }, height: proxy.size.height))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    above
+                        .padding(.horizontal, NookTheme.Spacing.xl)
+                        .padding(.bottom, bottomInset(composer.map { proxy[$0] }, height: proxy.size.height))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 }
+            }
+            // The results: top right, under the header (the panel's tabs, the window's traffic lights), out of the way
+            // of the page and the composer.
+            .overlay(alignment: .topTrailing) {
+                NookToastStack(center: center, shown: center.activeHost == id)
+                    .padding(.top, PanelView.headerHeight + NookTheme.Spacing.md)
+                    .padding(.horizontal, NookTheme.Spacing.xl)
             }
             .background(ToastWindowReader { window = $0 })
             .onChange(of: window) { _, window in
@@ -330,6 +414,83 @@ private struct NookToastHost<Above: View>: ViewModifier {
         guard let composer, composer.height > 0,
               height - composer.maxY < Self.roomUnderComposer else { return NookTheme.Spacing.xl }
         return max(NookTheme.Spacing.xl, height - composer.minY + NookTheme.Spacing.sm)
+    }
+}
+
+/// The toasts of one surface as a stack them: the newest in front, each older one a step smaller and
+/// peeking out a little lower under it, its content hidden. With the pointer on the stack it spreads out into a column
+/// so every toast can be read, closed or acted on, and every clock holds. A new toast slides in from the trailing edge,
+/// and one that closes slides back out; the rest move up into place.
+struct NookToastStack: View {
+    @ObservedObject var center: ToastCenter
+    /// This surface shows the stack now.
+    let shown: Bool
+    @State private var expanded = false
+    /// Each toast's full height, unscaled: where the ones behind it go.
+    @State private var heights: [UUID: CGFloat] = [:]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// How far each older toast peeks out under the one in front of it.
+    private static let peek = NookTheme.Spacing.lg
+    /// How much smaller each step back is.
+    private static let shrink: CGFloat = 0.06
+
+    /// Newest first: depth 0 is in front.
+    private var stack: [NookToast] { shown ? center.toasts.reversed() : [] }
+
+    var body: some View {
+        let stack = stack
+        let front = stack.first.flatMap { heights[$0.id] } ?? 0
+        ZStack(alignment: .topTrailing) {
+            ForEach(Array(stack.enumerated()), id: \.element.id) { depth, toast in
+                let covered = !expanded && depth > 0
+                NookToastView(toast: toast, paused: center.paused, restart: center.stamps[toast.id],
+                              coveredHeight: covered ? front : nil, onHeight: { heights[toast.id] = $0 },
+                              perform: { center.performAction(toast.id) }, close: { center.dismiss(toast.id) })
+                    .scaleEffect(scale(depth), anchor: .top)
+                    .offset(y: offset(depth, in: stack, front: front))
+                    .zIndex(Double(-depth))
+                    .allowsHitTesting(!covered)
+                    .accessibilityHidden(covered)
+                    .transition(.nookToast(reduceMotion: reduceMotion))
+                    .onAppear { announce(toast) }
+            }
+        }
+        // The whole stack is the hover area, folded or spread out, so moving between toasts keeps it open.
+        .frame(height: stack.isEmpty ? 0 : height(of: stack, front: front), alignment: .top)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            withAnimation(NookTheme.reveal) { expanded = inside && stack.count > 1 }
+            center.setPaused(inside)
+        }
+        .onChange(of: stack.count) { _, count in
+            if count <= 1 { withAnimation(NookTheme.reveal) { expanded = false } }
+            let ids = Set(stack.map(\.id))
+            heights = heights.filter { ids.contains($0.key) }
+        }
+        .animation(reduceMotion ? nil : NookTheme.open, value: stack.map(\.id))
+    }
+
+    private func scale(_ depth: Int) -> CGFloat {
+        expanded ? 1 : max(0, 1 - CGFloat(depth) * Self.shrink)
+    }
+
+    /// Folded: the older toast, as tall as the one in front and a step smaller, its bottom edge `peek` under the one
+    /// before it. Spread out: under every newer toast.
+    private func offset(_ depth: Int, in stack: [NookToast], front: CGFloat) -> CGFloat {
+        guard depth > 0 else { return 0 }
+        if expanded {
+            return stack.prefix(depth).reduce(0) { $0 + (heights[$1.id] ?? 0) } + CGFloat(depth) * NookTheme.Spacing.md
+        }
+        return CGFloat(depth) * Self.peek + front * (1 - scale(depth))
+    }
+
+    private func height(of stack: [NookToast], front: CGFloat) -> CGFloat {
+        guard let last = stack.indices.last else { return 0 }
+        if expanded {
+            return offset(last, in: stack, front: front) + (heights[stack[last].id] ?? 0)
+        }
+        return front + CGFloat(last) * Self.peek
     }
 
     /// VoiceOver reads the toast without having to find it.
