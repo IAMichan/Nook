@@ -75,13 +75,16 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var pollVote: WAPollVote? = nil
     /// Changed after it was sent (by you from Nook, or by whoever wrote it on their phone).
     var edited = false
-    /// Deleted for everyone: it keeps its place in the chat, with nothing of what it said (`withdrawn()`).
+    /// Deleted for everyone: it keeps its place in the chat (`withdrawn()`).
     var deleted = false
 
-    /// What stays of it once it was deleted for everyone.
+    /// What stays of it once it was deleted for everyone: someone else's keeps what it said, as for every chat app
+    /// (`InboxMessage.withdrawn()`); your own keeps nothing of it.
     func withdrawn() -> WAMessage {
         var gone = self
         gone.deleted = true
+        gone.mentionsMe = false
+        guard fromMe else { return gone }
         gone.edited = false
         gone.text = ""
         gone.media = .none

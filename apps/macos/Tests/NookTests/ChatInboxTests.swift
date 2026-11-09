@@ -1244,8 +1244,10 @@ final class ChatInboxTests: XCTestCase {
         var thread = try! XCTUnwrap(inbox.threads.values.first)
         XCTAssertEqual(thread.messages.map(\.id), ["m1", "m2"])
         XCTAssertEqual(thread.messages[0].isDeleted, true)
-        XCTAssertNil(thread.messages[0].media, "nothing of what it held stays")
-        XCTAssertNil(thread.messages[0].reactions)
+        XCTAssertEqual(thread.messages[0].text, "look", "someone else's deleted message can still be read")
+        XCTAssertNotNil(thread.messages[0].media)
+        XCTAssertEqual(thread.messages[0].reactions?.first?.emoji, "❤️")
+        XCTAssertEqual(thread.messages[0].summary, tr("chat.message.deleted"), "the chat's line says it was deleted")
         XCTAssertEqual(thread.messages[1].text, "see you at 9")
         XCTAssertTrue(thread.messages[1].isEdited)
         // A later read that still brings the old message does not bring it back.
@@ -1257,8 +1259,15 @@ final class ChatInboxTests: XCTestCase {
         late.deleted = true
         XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [late], unread: nil), now: date))
         thread = try! XCTUnwrap(inbox.threads.values.first)
-        XCTAssertEqual(thread.messages.last?.text, "")
+        XCTAssertEqual(thread.messages.last?.text, "oops")
         XCTAssertEqual(thread.unread, 0)
+        // Your own message deleted for everyone keeps nothing of what it said.
+        var mine = changed
+        mine.deleted = true
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [mine], unread: 0), now: date))
+        thread = try! XCTUnwrap(inbox.threads.values.first)
+        XCTAssertTrue(thread.messages[1].isDeleted)
+        XCTAssertEqual(thread.messages[1].text, "")
     }
 
     func testLinkedChatDeletionsAndReactionsMerge() {

@@ -358,17 +358,21 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     /// Its app says it was changed after it was sent: the bubble says "Edited". Nil when the app does not say.
     var edited: Bool? = nil
     /// Deleted for everyone (by whoever wrote it, in its app or from Nook): the chat keeps its place and says so, the same
-    /// for every app, with nothing left of what it said (`withdrawn()`).
+    /// for every app (`withdrawn()`). Someone else's keeps what Nook already had of it, marked "Deleted".
     var deleted: Bool? = nil
 
     var isMine: Bool { fromMe == true }
     var isEdited: Bool { edited == true }
     var isDeleted: Bool { deleted == true }
 
-    /// What stays of the message once it was deleted for everyone: who wrote it and when, nothing of what it said.
+    /// What stays of the message once it was deleted for everyone: who wrote it and when. Someone else's keeps what it
+    /// said as far as Nook had it (text, file, poll, quote, emoji), so you can still read it, marked "Deleted" as an
+    /// edited one says "Edited"; your own says only that you deleted it.
     func withdrawn() -> InboxMessage {
         var gone = self
         gone.deleted = true
+        gone.mentionsMe = nil
+        guard isMine else { return gone }
         gone.edited = nil
         gone.text = ""
         gone.media = nil
