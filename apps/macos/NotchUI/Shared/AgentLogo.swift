@@ -87,6 +87,8 @@ struct AccountTag: Hashable {
     var accent: UInt32? = nil
     /// The account's name ("Work", "Acme"), for the letter on a colored badge and its tooltip.
     var name: String = ""
+    /// The account's own icon (an SF Symbol name, `AgentProfile.icon`), drawn centered on the badge instead of the letter.
+    var icon: String? = nil
 
     static let personal = AccountTag(role: .personal)
     static let work = AccountTag(role: .work)
@@ -98,6 +100,19 @@ struct AccountTag: Hashable {
     static let swatches: [(hex: UInt32, name: String)] = [
         (0x8B7BFF, "settings.accent.violet"), (0x5AA9FF, "settings.accent.blue"), (0x5ED6A6, "settings.accent.mint"),
         (0xF2B866, "settings.accent.amber"), (0xEF7B73, "settings.accent.coral"), (0xFF7EB6, "settings.accent.pink"),
+    ]
+
+    /// The icons offered for an account in Settings › Agents, each with the name VoiceOver reads.
+    static let symbols: [(symbol: String, name: String)] = [
+        ("person.fill", "accounts.icon.person"), ("briefcase.fill", "accounts.icon.briefcase"),
+        ("house.fill", "accounts.icon.home"), ("building.2.fill", "accounts.icon.building"),
+        ("star.fill", "accounts.icon.star"), ("heart.fill", "accounts.icon.heart"),
+        ("bolt.fill", "accounts.icon.bolt"), ("flame.fill", "accounts.icon.flame"),
+        ("leaf.fill", "accounts.icon.leaf"), ("globe", "accounts.icon.globe"),
+        ("graduationcap.fill", "accounts.icon.school"), ("flask.fill", "accounts.icon.lab"),
+        ("hammer.fill", "accounts.icon.tools"), ("terminal.fill", "accounts.icon.terminal"),
+        ("cloud.fill", "accounts.icon.cloud"), ("lock.fill", "accounts.icon.lock"),
+        ("key.fill", "accounts.icon.key"), ("sparkles", "accounts.icon.sparkles"),
     ]
 
     /// An account color as SwiftUI draws it; the one place a stored account color becomes a `Color`.
@@ -114,11 +129,12 @@ struct AccountTag: Hashable {
 
     /// The first letter of the account's name, shown on a colored badge instead of the role's symbol.
     fileprivate var initial: String? {
-        guard accent != nil, let letter = name.first(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        guard accent != nil, icon == nil, let letter = name.first(where: { $0.isLetter || $0.isNumber }) else { return nil }
         return String(letter).uppercased()
     }
 
     fileprivate var symbol: String {
+        if let icon { return icon }
         switch role {
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
@@ -143,7 +159,8 @@ struct AccountTag: Hashable {
 }
 
 /// A small round badge: a person for a personal account, a briefcase for a work account, a key for an API key; an account
-/// you gave a color shows that color with the first letter of its name.
+/// you gave a color shows that color with the first letter of its name, and one you gave an icon shows that icon.
+/// The letter or icon sits in the middle of the circle.
 struct AccountBadge: View {
     let kind: AccountTag
     var size: CGFloat = 10
@@ -154,16 +171,22 @@ struct AccountBadge: View {
         Circle()
             .fill(kind.fill)
             .overlay {
-                if let initial = kind.initial {
-                    Text(initial)
-                        .font(NookTheme.rounded(size * 0.62, .bold))
-                        .foregroundStyle(kind.glyph)
-                        .minimumScaleFactor(0.5)
-                } else {
-                    Image(systemName: kind.symbol)
-                        .font(NookTheme.font(size * 0.52, .bold))
-                        .foregroundStyle(kind.glyph)
+                Group {
+                    if let initial = kind.initial {
+                        Text(initial)
+                            .font(NookTheme.rounded(size * 0.62, .bold))
+                            .minimumScaleFactor(0.5)
+                    } else {
+                        // Scaled to fit a square inside the circle, so wide and tall symbols alike stay in the middle.
+                        Image(systemName: kind.symbol)
+                            .resizable()
+                            .scaledToFit()
+                            .fontWeight(.bold)
+                            .frame(width: size * 0.54, height: size * 0.54)
+                    }
                 }
+                .foregroundStyle(kind.glyph)
+                .frame(width: size, height: size, alignment: .center)
             }
             .frame(width: size, height: size)
             .overlay(Circle().stroke(ring, lineWidth: 1.5))
@@ -213,16 +236,16 @@ extension AgentLogo {
 
 extension AccountTag {
     /// Work when the account belongs to an organization, or when you named it that way ("Werk", "Business");
-    /// otherwise personal. Carries the color and name you gave the account (Settings › Agents).
+    /// otherwise personal. Carries the color, icon and name you gave the account (Settings › Agents).
     @MainActor
     static func of(_ profile: AgentProfile, app: AppModel) -> AccountTag {
         let organization = app.history.profileAccounts[profile.id]?.organization ?? ""
         let label = profile.label.lowercased()
         let role: Role = !organization.isEmpty || workWords.contains(where: { label.contains($0) }) ? .work : .personal
         // Only a colored badge shows the name; one without keeps "Work account" / "Personal account" as its tooltip.
-        guard profile.accent != nil else { return AccountTag(role: role) }
+        guard profile.hasOwnBadge else { return AccountTag(role: role) }
         let name = !profile.label.isEmpty ? profile.label : (!organization.isEmpty ? organization : tr("agents.personal"))
-        return AccountTag(role: role, accent: profile.accent, name: name)
+        return AccountTag(role: role, accent: profile.accent, name: name, icon: profile.icon)
     }
 }
 #endif
