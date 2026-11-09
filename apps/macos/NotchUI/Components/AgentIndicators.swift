@@ -179,10 +179,29 @@ struct PullRequestLiveStateBadge: View {
     /// What to show before any read has said (a watch's last look, say).
     var fallback: PullRequestBadge.Glyph = .open
     @ObservedObject private var statuses = PullRequestStatusStore.shared
+    @State private var gate = AttentionGate()
 
     var body: some View {
         PullRequestStateBadge(status: statuses.status(url)?.mergeStatus ?? PullRequestMergeStatus(fallback), number: Int(url.lastPathComponent))
-            .task(id: url) { await PullRequestStatusStore.follow(url) }
+            .attentionGate(gate)
+            .task(id: url) { await PullRequestStatusStore.follow(url, gate: gate) }
+    }
+}
+
+extension PullRequestStatusStore {
+    /// Keeps a shown pull request current until the task that runs it ends, every `followInterval`. Places showing the
+    /// same one share the reads: a read by any of them, the branch sync or a watch counts for all (`refresh` skips while
+    /// the last one is younger than the interval). Nothing is read while the badge's window is hidden (`gate`) or nobody
+    /// is at the Mac; the first tick back catches up.
+    static func follow(_ url: URL, gate: AttentionGate? = nil) async {
+        while !Task.isCancelled {
+            await gate?.waitUntilSeen()
+            let settled = shared.status(url).map { $0.glyph == .merged || $0.glyph == .closed } ?? false
+            let plan = EnergyMonitor.shared.plan
+            let interval = followInterval(settled: settled, plan: plan)
+            if !EnergyMonitor.shared.signals.idle { await shared.refresh(url, maxAge: min(interval, 20 * plan.slowdown)) }
+            try? await Task.sleep(for: .seconds(interval))
+        }
     }
 }
 
