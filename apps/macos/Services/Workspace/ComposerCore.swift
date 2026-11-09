@@ -320,6 +320,53 @@ enum ContextRefs {
         return String(projected[..<range.lowerBound])
     }
 
+    /// What your message shows in the timeline: as `visible`, but the files and folders attached at its end (`@Downloads`)
+    /// become their paths on lines of their own, followed by the paths of the pictures sent with it, so the message
+    /// shows them all as tiles above its bubble (`ImageAttachment.splittingPaths`). Relative paths start from `folder`.
+    static func timeline(_ projected: String, folder: String?) -> String {
+        guard let start = projected.range(of: "\n\n<nook_context>\n"),
+              let end = projected.range(of: "\n</nook_context>", range: start.upperBound..<projected.endIndex) else { return projected }
+        var words = String(projected[..<start.lowerBound])
+        let records = String(projected[start.upperBound..<end.lowerBound])
+        let pictures = projected[end.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        var files = fileRecords(in: records)
+        var attached: [String] = []
+        // The attached files close the words, one `@label` after another: take them off from the end.
+        while !files.isEmpty {
+            let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let index = files.lastIndex(where: { endsWithMarker(trimmed, of: $0) }) else { break }
+            let id = files.remove(at: index)
+            words = String(trimmed.dropLast(marker(of: id).count))
+            attached.insert(AnswerAttachments.absolutePath(id, folder: folder), at: 0)
+        }
+        let paths = (attached + (pictures.isEmpty ? [] : [pictures])).joined(separator: "\n")
+        let body = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !paths.isEmpty else { return body }
+        return body.isEmpty ? paths : body + "\n\n" + paths
+    }
+
+    /// The ids of the file records in an envelope, in order.
+    private static func fileRecords(in records: String) -> [String] {
+        records.components(separatedBy: "\n").compactMap { line in
+            let prefix = "<ref kind=\"file\" id=\""
+            guard line.hasPrefix(prefix), line.hasSuffix("\"/>") else { return nil }
+            let id = line.dropFirst(prefix.count).dropLast(3)
+            return id.replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&amp;", with: "&")
+        }
+    }
+
+    /// `@label` of a file as `project` writes it: files are labeled by their name.
+    private static func marker(of id: String) -> String {
+        "@" + (id as NSString).lastPathComponent.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")")
+    }
+
+    private static func endsWithMarker(_ text: String, of id: String) -> Bool {
+        let marker = marker(of: id)
+        guard text.hasSuffix(marker) else { return false }
+        let before = text.dropLast(marker.count)
+        return before.isEmpty || before.last?.isWhitespace == true
+    }
+
     /// The text as you read it back: links shown by their label.
     static func plain(_ text: String) -> String {
         var result = text

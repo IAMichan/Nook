@@ -5,6 +5,13 @@ import Foundation
 extension WorkspaceManager {
     func shownPrompt(_ id: UUID, _ prompt: String) -> String { displayPrompt[id] ?? prompt }
 
+    /// Your message as the timeline shows it: without the context envelope, with the files and folders you attached as
+    /// paths below your words (tiles above the bubble). A remote session's files are not on this Mac: they stay `@name`.
+    func shownMessage(_ id: UUID, _ message: String) -> String {
+        guard let run = run(id), !run.isRemote else { return ContextRefs.visible(message) }
+        return ContextRefs.timeline(message, folder: run.workingDirectory)
+    }
+
     /// Can this session be forked or switched right now? Not while the agent works: its conversation is still changing.
     func canTransfer(_ id: UUID) -> Bool {
         guard let run = run(id) else { return false }

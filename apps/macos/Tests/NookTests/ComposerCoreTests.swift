@@ -267,6 +267,27 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertEqual(ContextRefs.visible("plain text"), "plain text")
     }
 
+    func testTimelineShowsAttachedFilesAsPathsBelowTheWords() {
+        let folder = ContextRefs.link(ContextRef(kind: .file, id: "/Users/me/Downloads", label: "Downloads"))
+        let file = ContextRefs.link(ContextRef(kind: .file, id: "Sources/a.swift", label: "a.swift"))
+        let sent = ContextRefs.project(ComposerAttachments.spaced("Replace the old site \(folder) \(file) "))
+        XCTAssertEqual(ContextRefs.timeline(sent, folder: "/repo"),
+                       "Replace the old site\n\n/Users/me/Downloads\n/repo/Sources/a.swift")
+    }
+
+    func testTimelineKeepsPicturesSentAfterTheEnvelope() {
+        let folder = ContextRefs.link(ContextRef(kind: .file, id: "/Users/me/Downloads", label: "Downloads"))
+        let sent = ContextRefs.project("Look \(folder)") + "\n\n/tmp/shot.png"
+        XCTAssertEqual(ContextRefs.timeline(sent, folder: nil), "Look\n\n/Users/me/Downloads\n/tmp/shot.png")
+    }
+
+    func testTimelineLeavesAMentionInTheMiddleOfASentence() {
+        let file = ContextRefs.link(ContextRef(kind: .file, id: "a.swift", label: "a.swift"))
+        let sent = ContextRefs.project("Fix \(file) today")
+        XCTAssertEqual(ContextRefs.timeline(sent, folder: "/repo"), "Fix @a.swift today")
+        XCTAssertEqual(ContextRefs.timeline("plain text", folder: nil), "plain text")
+    }
+
     func testAnExcerptWithoutTextIsOnlyNamed() {
         let link = ContextRefs.link(ContextRef(kind: .excerpt, id: "x2", label: "Output"))
         XCTAssertTrue(ContextRefs.project(link).contains("<ref kind=\"excerpt\" id=\"x2\"/>"))
