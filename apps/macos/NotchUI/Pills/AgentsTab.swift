@@ -1044,7 +1044,7 @@ struct AgentListRow: View, Equatable {
 }
 
 /// What a row shows on hover, as in the Claude app: the session's name, then its project, the machine it runs on, its
-/// branch, and the model with the account it runs on.
+/// branch, and the model with the account it runs on. Once it is done, also the git step its branch needs.
 struct AgentHoverCard: View {
     let item: AgentListItem
 
@@ -1076,7 +1076,16 @@ struct AgentHoverCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // Done: the git step its branch needs, right here, as in the session panel's commit row.
+            if !item.isBusy, !item.path.isEmpty {
+                HoverCardGitAction(runID: runID, directory: item.path)
+            }
         }
+    }
+
+    /// The session Nook runs behind a "run:<uuid>" row; nil for one it only sees.
+    private var runID: UUID? {
+        item.id.hasPrefix("run:") ? UUID(uuidString: String(item.id.dropFirst(4))) : nil
     }
 
     /// "Claude Sonnet 5.5 · Personal"; the agent's name when the model is not known.
