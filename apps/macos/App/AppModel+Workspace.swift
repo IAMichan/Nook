@@ -498,15 +498,19 @@ extension AppModel {
             ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
-        // Each refresh scans every agent's session files: once the account shows the new login, stop asking.
+        // Only the login files are read while waiting (`refreshAccounts`); once the account shows the new login, one full
+        // refresh and a read of its limits follow, and the asking stops.
         let before = history.profileAccounts[profile.id]
         Task { [weak self] in
             for _ in 0..<60 {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard let self else { return }
-                self.history.refresh(minimumInterval: 0)
-                self.refreshQuotas()
-                if self.history.profileAccounts[profile.id] != before { return }
+                await self.history.refreshAccounts()
+                if self.history.profileAccounts[profile.id] != before {
+                    self.history.refresh(minimumInterval: 0)
+                    self.refreshQuotas()
+                    return
+                }
             }
         }
     }
@@ -536,9 +540,12 @@ extension AppModel {
             for _ in 0..<12 {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard let self else { return }
-                self.history.refresh(minimumInterval: 0)
-                // Signed out: the scan that showed it was the last one needed.
-                if self.history.profileAccounts[profile.id] != before { return }
+                await self.history.refreshAccounts()
+                // Signed out: one full refresh, and no more asking.
+                if self.history.profileAccounts[profile.id] != before {
+                    self.history.refresh(minimumInterval: 0)
+                    return
+                }
             }
         }
     }

@@ -66,6 +66,21 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(displayAsleep: true), mode: .full).pace, .paused)
     }
 
+    func testALockedScreenCountsLikeASleepingDisplay() {
+        let locked = EnergySignals(screenLocked: true)
+        XCTAssertTrue(locked.unseen)
+        XCTAssertTrue(locked.idle)
+        let plan = EnergyPolicy.plan(for: locked, mode: .full)
+        XCTAssertEqual(plan.pace, .paused)
+        XCTAssertEqual(plan.reasons, [.locked])
+        XCTAssertTrue(plan.unseen)
+        XCTAssertEqual(plan.progressFrameRate(attended: .attended), 0)
+        XCTAssertFalse(PullRequestBackgroundRefresh.isDue(lastRead: .distantPast, now: Date(), plan: plan, signals: locked))
+        // Unlocked and awake: nothing changes.
+        XCTAssertFalse(EnergySignals().unseen)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(), mode: .automatic).unseen)
+    }
+
     func testModelsOnThisMacOnlyRunOptionalWorkAtFullSpeed() {
         XCTAssertTrue(EnergyPolicy.plan(for: EnergySignals(), mode: .automatic).runsLocalModels)
         XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic).runsLocalModels)

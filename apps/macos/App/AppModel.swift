@@ -446,6 +446,13 @@ final class AppModel: ObservableObject {
                 if let bundleID { AudioLevelMonitor.shared.start(bundleID: bundleID) } else { AudioLevelMonitor.shared.stop() }
             }
             .store(in: &bag)
+        // Nobody looks (display asleep, screen locked, away): the tap stops, and the bars hold still (`EqualizerBars`).
+        EnergyMonitor.shared.$plan
+            .map(\.nobodyLooks)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { AudioLevelMonitor.shared.setSuspended($0) }
+            .store(in: &bag)
 
         // Track change: notch temporarily shows currently playing track.
         nowPlaying.$current
@@ -518,6 +525,11 @@ final class AppModel: ObservableObject {
 
         // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
+        // What reads the cache between questions: Think Along, Double Tap's screen text and the screen with every question.
+        screenContext.periodicReadsWanted = { [weak self] in
+            guard let self else { return false }
+            return self.settings.autoWatch || self.settings.screenWithEveryQuestion || DoubleTap.shared.enabled
+        }
         settings.$liveScreen
             .removeDuplicates()
             .receive(on: RunLoop.main)

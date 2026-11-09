@@ -6,7 +6,8 @@ import IOKit.ps
 /// Keeps the one answer to "how much may Nook do by himself right now" (`EnergyPlan`) for every background worker, so
 /// none of them reads the battery, the thermal state or the load average on its own. The plan follows your choice in
 /// Settings › Maintenance › Energy and the Mac's signals: it is read again every ten seconds and the moment macOS announces
-/// a change (the charger, the battery's charge, Low Power Mode, the thermal state, the displays going to sleep or waking up).
+/// a change (the charger, the battery's charge, Low Power Mode, the thermal state, the displays going to sleep or waking up,
+/// the screen locking or unlocking).
 ///
 /// Only a changed plan is published: the status line in Settings redraws for it, nothing else does for a tick that
 /// found the same.
@@ -56,6 +57,15 @@ final class EnergyMonitor: ObservableObject {
                 Task { @MainActor in self?.refresh() }
             })
         }
+        // The screen locking or unlocking: macOS posts these as distributed notifications.
+        // The session dictionary may still say the old state when the notification arrives, so the notification's own
+        // word counts for that read.
+        for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+            observers.append(DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil,
+                                                                                 queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refresh(screenLocked: locked) }
+            })
+        }
         // The charger and the charge: IOKit tells right away, so neither the plug nor a battery that runs low waits for the
         // next tick.
         if let source = IOPSNotificationCreateRunLoopSource({ _ in
@@ -68,8 +78,10 @@ final class EnergyMonitor: ObservableObject {
     }
 
     /// Reads the Mac again and publishes the plan when it changed.
-    func refresh() {
-        let now = SystemLoad.signals(wasLowBattery: signals.lowBattery)
+    /// `screenLocked` is what a lock or unlock notification just said, which wins over the session dictionary for this read.
+    func refresh(screenLocked: Bool? = nil) {
+        var now = SystemLoad.signals(wasLowBattery: signals.lowBattery)
+        if let screenLocked { now.screenLocked = screenLocked }
         if now != signals { signals = now }
         let next = EnergyPolicy.plan(for: now, mode: mode)
         if next != plan { plan = next }

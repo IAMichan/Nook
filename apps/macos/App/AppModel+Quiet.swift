@@ -32,9 +32,11 @@ extension AppModel {
         settings.quietWhileSharing != .normal || settings.quietInMeetings != .normal || quietViewers > 0
     }
 
-    /// The timer's tick: every two seconds while it matters. With only the meeting choice in play it is slower while you are
-    /// away or the Mac saves power; a choice for screen sharing keeps the two seconds, so a share that starts never shows
-    /// Nook to the viewers for longer than that. A changed choice still applies right away (`startQuietWatch`).
+    /// The timer's tick: every two seconds while a choice for screen sharing is in play, so a share that starts never shows
+    /// Nook to the viewers for longer than that; slower with only the meeting choice (`QuietPolicy.watchInterval`). Nothing
+    /// is read while the display sleeps or the screen is locked, nor while you are away and nothing is going on: starting a
+    /// share or a call takes a key or a click, and the first tick after it reads. The window list is only read while an
+    /// app runs that can show a sharing bar. A changed choice still applies right away (`startQuietWatch`).
     private func quietTimerTick() {
         guard quietWatchNeeded else {
             // Nook was still quiet or hidden for a choice you just changed to "change nothing": one more read puts it back.
@@ -43,20 +45,30 @@ extension AppModel {
         }
         // A sleeping display shares nothing and shows no meeting: reading every window then is for no one. The tick after
         // it wakes reads again.
-        if EnergyMonitor.shared.plan.reasons.contains(.displayAsleep) { return }
-        let interval = settings.quietWhileSharing == .normal ? 2 * EnergyMonitor.shared.plan.slowdown : 2
+        if EnergyMonitor.shared.plan.unseen { return }
+        let interval = QuietPolicy.watchInterval(watchesSharing: settings.quietWhileSharing != .normal, settingsOpen: quietViewers > 0,
+                                                 slowdown: EnergyMonitor.shared.plan.slowdown)
         guard Date().timeIntervalSince(lastQuietTick) >= interval - 0.5, !quietReading else { return }
         guard !demoMode else { return quietTick() }
+        // Away with nothing going on: no share or call starts without input. Read straight from the event source, not the
+        // energy plan's ten-second reading, so the first tick after a key or click reads. A share or meeting already going
+        // on keeps being read, so its end is noticed.
+        let calm = !quiet.situation.sharing && !quiet.situation.meeting
+        if calm, quietViewers == 0, SystemLoad.idleSeconds >= EnergySignals.awayAfter { return }
+        let sharingPossible = QuietPolicy.canShowSharingBar(runningApps: NSWorkspace.shared.runningApplications.map {
+            ($0.localizedName ?? "", $0.bundleIdentifier ?? "")
+        })
         // The read (every window on screen, every audio process) runs off the main thread, so a slow WindowServer or
         // coreaudiod never holds up the notch, or the keys and clicks autocomplete's event tap waits on.
         lastQuietTick = Date()
         quietReading = true
         let events = upcoming, useCalendar = settings.quietUseCalendar, recording = NoteTaker.shared.isRecording
         let countScreenshots = !settings.showInScreenshots
-        let microphoneInterval = 10 * EnergyMonitor.shared.plan.slowdown
+        let microphoneInterval = QuietPolicy.microphoneInterval * EnergyMonitor.shared.plan.slowdown
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let situation = QuietWatch.situation(events: events, useCalendar: useCalendar, recording: recording,
-                                                 countScreenshots: countScreenshots, microphoneInterval: microphoneInterval)
+                                                 countScreenshots: countScreenshots, microphoneInterval: microphoneInterval,
+                                                 sharingPossible: sharingPossible)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }

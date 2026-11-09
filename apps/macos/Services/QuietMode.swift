@@ -108,6 +108,29 @@ enum QuietPolicy {
         windows.contains { isSharingWindow($0, countSystemCapture: countSystemCapture) }
     }
 
+    /// Whether any running app (its name and bundle ID) could show a sharing bar `isSharingWindow` knows: a call app, a
+    /// browser or macOS' own recorder. With none of them running nothing can be shared, so the window list is not read.
+    /// Matches the way `isSharingWindow` matches a window's owner, so it never says no where that would say yes.
+    static func canShowSharingBar(runningApps: [(name: String, bundleID: String)]) -> Bool {
+        runningApps.contains { app in
+            let owner = (app.name + " " + app.bundleID).lowercased()
+            return systemRecorders.contains(where: { owner.contains($0) }) || browsers.contains(where: { owner.contains($0) })
+                || sharingCallApps.contains(where: { owner.contains($0) })
+        }
+    }
+
+    /// How often the watch reads while it matters. A choice for screen sharing keeps two seconds, so a share that starts
+    /// never shows Nook to the viewers for longer than that; Settings showing what Nook notices follows the plan from two
+    /// seconds. With only the meeting choice in play the window list adds nothing the microphone list (read every ten
+    /// seconds, stretched by the plan) does not, so it reads as often as that.
+    static func watchInterval(watchesSharing: Bool, settingsOpen: Bool, slowdown: Double) -> TimeInterval {
+        if watchesSharing { return 2 }
+        return (settingsOpen ? 2 : microphoneInterval) * slowdown
+    }
+
+    /// How old the list of apps with the microphone open may be at full speed.
+    static let microphoneInterval: TimeInterval = 10
+
     static func isSharingWindow(_ window: Window, countSystemCapture: Bool = true) -> Bool {
         let owner = (window.owner + " " + (window.bundleID ?? "")).lowercased()
         let name = window.name.lowercased()
