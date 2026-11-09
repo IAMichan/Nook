@@ -15,6 +15,14 @@ struct BridgeRequest: Identifiable, Equatable {
     let created: Date
     /// The agent's connection; when it goes away (the agent stopped), the request is withdrawn.
     let connection: String
+    /// A secret Nook does not keep yet: the request carries a field to type or paste its value in.
+    var secretName: String? = nil
+}
+
+/// A secret's value typed on the request itself, and whether to keep it in Nook's keychain.
+struct BridgeSecretAnswer: Equatable {
+    let value: String
+    let remember: Bool
 }
 
 /// The workspace bridge: Nook's terminal, browser and pull requests for coding agents (see WorkspaceBridgeProtocol for
@@ -41,6 +49,8 @@ final class WorkspaceBridge: ObservableObject {
     /// What ssh forwards sessions on other machines to: everything on it counts as coming from there (`RemoteBridge`).
     private let remoteServer = UnixSocketServer(path: NookPaths.remoteBridgeSocketURL.path)
     private var waiters: [String: CheckedContinuation<Bool, Never>] = [:]
+    /// Values typed on a secret request, until the call that asked picks them up.
+    private var secretAnswers: [String: BridgeSecretAnswer] = [:]
     /// Simulators each session opened with device_open, most recent last.
     private var openDevices: [String: [String]] = [:]
     /// Answers to calls that carried a client_request_id (see WorkspaceBridge+Tools).
@@ -90,6 +100,12 @@ final class WorkspaceBridge: ObservableObject {
 
     func decide(_ id: String, allow: Bool) { finish(id, allowed: allow) }
 
+    /// The value typed on a waiting secret request, given just before it is allowed; a denied request drops it.
+    func give(_ id: String, _ secret: BridgeSecretAnswer) {
+        guard waiters[id] != nil, !secret.value.isEmpty else { return }
+        secretAnswers[id] = secret
+    }
+
     private func finish(_ id: String, allowed: Bool) {
         guard let waiter = waiters.removeValue(forKey: id) else { return }
         pending.removeAll { $0.id == id }
@@ -99,9 +115,22 @@ final class WorkspaceBridge: ObservableObject {
 
     func ask(_ caller: BridgeCaller, tool: BridgeTool, title: String, detail: String, note: String, danger: Bool,
              connection: String) async -> Bool {
+        await ask(caller, tool: tool, title: title, detail: detail, note: note, danger: danger, connection: connection,
+                  secretName: nil).allowed
+    }
+
+    /// As `ask`, for a secret: with `secretName` the request shows a field, and what was typed there comes back.
+    func ask(_ caller: BridgeCaller, tool: BridgeTool, title: String, detail: String, note: String, danger: Bool,
+             connection: String, secretName: String?) async -> (allowed: Bool, secret: BridgeSecretAnswer?) {
         let id = String(UUID().uuidString.prefix(8)).lowercased()
         let request = BridgeRequest(id: id, caller: caller, tool: tool, title: title, detail: detail, note: note,
-                                    danger: danger, created: Date(), connection: connection)
+                                    danger: danger, created: Date(), connection: connection, secretName: secretName)
+        let allowed = await wait(request)
+        return (allowed, secretAnswers.removeValue(forKey: id))
+    }
+
+    private func wait(_ request: BridgeRequest) async -> Bool {
+        let id = request.id
         return await withCheckedContinuation { continuation in
             waiters[id] = continuation
             pending.append(request)

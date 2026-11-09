@@ -398,15 +398,20 @@ extension WorkspaceBridge {
         if case .refuse(let why) = verdict(.requestSecret, caller) { return .error(Self.refusal(why)) }
         let account = BridgeSecret.account(name)
         let stored = SecretStore.read(account) != nil
-        let allowed = await ask(caller, tool: .requestSecret, title: tr("bridge.approval.secret", caller.agent, name),
-                                detail: "\(name)\n\n\(String(reason.prefix(500)))",
-                                note: tr(stored ? "bridge.approval.secretStored" : "bridge.approval.secretPaste"),
-                                danger: false, connection: context.connection)
+        let (allowed, typed) = await ask(caller, tool: .requestSecret, title: tr("bridge.approval.secret", caller.agent, name),
+                                         detail: "\(name)\n\n\(String(reason.prefix(500)))",
+                                         note: tr(stored ? "bridge.approval.secretStored" : "bridge.approval.secretPaste"),
+                                         danger: false, connection: context.connection, secretName: stored ? nil : name)
         guard allowed else {
             audit(.requestSecret, caller, name, "niet toegestaan")
             return .error(Self.refusal(.secret))
         }
         var value = SecretStore.read(account)
+        // Typed on the request itself; a request allowed elsewhere (a card, the phone) still asks for it next.
+        if value == nil, let typed {
+            if typed.remember { SecretStore.write(typed.value, account: account) }
+            value = typed.value
+        }
         if value == nil {
             guard let pasted = BridgeSecretPrompt.ask(name: name, agent: caller.agent) else {
                 audit(.requestSecret, caller, name, "geannuleerd")

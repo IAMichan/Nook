@@ -12,6 +12,10 @@ struct ApprovalView: View {
     /// In a conversation: no card, the mark in the work lines' column and the words under it indented to theirs.
     var inline = false
     let onDecide: (ApprovalDecision) -> Void
+    /// Allow with the secret typed in the field (only for a secret Nook does not keep yet).
+    var onSecret: ((BridgeSecretAnswer) -> Void)? = nil
+    @State private var secretValue = ""
+    @State private var rememberSecret = false
 
     private var prPreview: PullRequestApprovalPreview? {
         PullRequestApprovalPreview.parse(approval.command)
@@ -29,9 +33,15 @@ struct ApprovalView: View {
         return 180
     }
 
-    @ViewBuilder
     var body: some View {
-        if inline { inlineBody } else { cardBody }
+        Group {
+            if inline { inlineBody } else { cardBody }
+        }
+        // A typed secret belongs to its own request only.
+        .onChange(of: approval.id) {
+            secretValue = ""
+            rememberSecret = false
+        }
     }
 
     private var inlineBody: some View {
@@ -39,6 +49,7 @@ struct ApprovalView: View {
             titleBlock
             Group {
                 content
+                secretField
                 AdaptiveActionRow {
                     Label(AgentDisplayState.approval.longWord, systemImage: "shield")
                         .font(NookTheme.TextStyle.detail)
@@ -65,6 +76,7 @@ struct ApprovalView: View {
                 }
             }
             content
+            secretField
         }
         .padding(NookTheme.Spacing.lg)
         .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
@@ -117,9 +129,43 @@ struct ApprovalView: View {
         }
     }
 
+    /// Where the value of a secret Nook does not keep yet is typed or pasted: hidden, and gone with the request.
+    @ViewBuilder
+    private var secretField: some View {
+        if let name = approval.secretName, onSecret != nil {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Image(systemName: "key.fill").foregroundStyle(NookTheme.textTertiary)
+                    SecureField(tr("bridge.approval.secretField", name), text: $secretValue)
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.TextStyle.body)
+                        .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                        .frame(minWidth: 160)
+                        .frame(height: 30)
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                        .onSubmit(allow)
+                }
+                Toggle(tr("bridge.secret.prompt.remember"), isOn: $rememberSecret)
+                    .toggleStyle(.checkbox)
+                    .font(NookTheme.TextStyle.caption)
+            }
+        }
+    }
+
+    /// Allow: with the typed secret when there is one, otherwise as usual (Nook then asks for the value itself).
+    private func allow() {
+        let value = secretValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if approval.secretName != nil, let onSecret, !value.isEmpty {
+            secretValue = ""
+            onSecret(BridgeSecretAnswer(value: value, remember: rememberSecret))
+        } else {
+            onDecide(.allow)
+        }
+    }
+
     private var actions: some View {
         NookNoticeActions(
-            primary: NookNoticeAction(tr("button.allow")) { onDecide(.allow) },
+            primary: NookNoticeAction(tr("button.allow")) { allow() },
             secondary: NookNoticeAction(tr("button.deny")) { onDecide(.deny) },
             extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
                 + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
