@@ -41,11 +41,9 @@ extension SettingsSection {
         case .autocompleteStyle: return "textformat"
         case .autocompletePlayground: return "character.cursor.ibeam"
         case .autocompleteStats: return "chart.line.uptrend.xyaxis"
-        case .tokens: return "gauge.with.dots.needle.33percent"
         case .archive: return "archivebox.fill"
         case .projects: return "folder.badge.gearshape"
         case .openIn: return "arrow.up.forward.app.fill"
-        case .browser: return "globe"
         case .permissions: return "checkmark.shield.fill"
         case .onDevice: return "lock.laptopcomputer"
         case .activityLog: return "list.bullet.rectangle.fill"
@@ -86,11 +84,9 @@ extension SettingsSection {
         case .autocompleteStyle: return "textformat"
         case .autocompletePlayground: return "character.cursor.ibeam"
         case .autocompleteStats: return "chart.line.uptrend.xyaxis"
-        case .tokens: return "gauge.with.dots.needle.33percent"
         case .archive: return "archivebox"
         case .projects: return "folder.badge.gearshape"
         case .openIn: return "arrow.up.forward.app"
-        case .browser: return "globe"
         case .permissions: return "checkmark.shield"
         case .onDevice: return "lock.laptopcomputer"
         case .activityLog: return "list.bullet.rectangle"
@@ -299,12 +295,15 @@ struct SettingsPickRow: View {
     }
 }
 
-/// Sheet chrome shared by every setup sheet: big icon and title on top, content, and one clear button at the bottom.
-/// One part of a sheet for something already set up ("Accounts", "In Nook"): its name, then its rows. A sheet of parts
-/// keeps them in the same order everywhere, with a `NookDivider` between them and anything rarely needed folded away last.
+/// One part of a sheet ("Account", "In Nook", "What Nook can do with it"): its name above a card with its rows, the same
+/// look as a group on a Settings page, so a sheet reads like the page it opened from. Every sheet keeps its parts in one
+/// order: first how to link it (numbered `SetupStep`s) or, once linked, the account; then what it does in Nook; then
+/// what Nook can do with it; anything rarely needed folded away last.
 struct SheetPart<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
+    /// Inside an opened row (`ConnectionRow`) the row is the card already.
+    @Environment(\.sheetEmbedded) private var embedded
 
     init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
@@ -312,24 +311,99 @@ struct SheetPart<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            NookSectionLabel(title, inset: 0)
-            content()
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                content()
+            }
+            .padding(embedded ? 0 : NookTheme.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                .fill(embedded ? Color.clear : NookTheme.surface))
         }
     }
 }
 
+/// What one step of linking asks you to do, laid out the same in every connection sheet: what happens (a strong line
+/// when the step needs one more word than its title), one line of explanation, and the button under it. Never a button
+/// beside a label in a step: that read as a settings row instead of the thing to do next.
+struct StepAction: View {
+    var title: String? = nil
+    let detail: String
+    let button: String
+    var prominent = true
+    var disabled = false
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            if let title {
+                Text(title).font(NookTheme.TextStyle.strong)
+            }
+            Text(detail)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if prominent {
+                Button(button, action: action).buttonStyle(.borderedProminent).disabled(disabled)
+            } else {
+                Button(button, action: action).disabled(disabled)
+            }
+        }
+    }
+}
+
+/// A coding agent by name, always with its logo: in a picker, a button, a list or a menu. Wherever Settings names an
+/// agent it uses this, so the logos are never there in one place and missing in the next.
+struct AgentName: View {
+    let kind: AgentKind
+    var name: String? = nil
+
+    init(_ kind: AgentKind, name: String? = nil) {
+        self.kind = kind
+        self.name = name
+    }
+
+    var body: some View {
+        Label {
+            Text(name ?? kind.name)
+        } icon: {
+            LogoImage.agent(kind)
+        }
+    }
+}
+
+/// Sheet chrome shared by every sheet Settings opens: the icon, title and one line on top (with the state of a linked
+/// connection beside them), the content, and the buttons at the bottom. Its buttons follow one rule: a sheet where the
+/// steps do the work has one button, Done; a sheet you fill in has Cancel and its one step (Return), both on the right;
+/// disconnecting or removing sits on the left.
 struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
     let title: String
     let subtitle: String
     /// Wider for a sheet that shows a file or a diff; every other sheet keeps the one width.
     var width: CGFloat = 520
+    /// How a linked connection is doing, shown as a pill beside the title; nil while it is not linked.
+    var status: ConnectionHealth? = nil
     @ViewBuilder var icon: () -> Icon
     @ViewBuilder var content: () -> Content
     @ViewBuilder var footer: () -> Footer
     @Environment(\.dismiss) private var dismiss
+    /// Shown inside an opened row of a list instead of in its own window: only the content, no header or buttons.
+    @Environment(\.sheetEmbedded) private var embedded
 
     var body: some View {
+        if embedded {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { content() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            window
+        }
+    }
+
+    private var window: some View {
         VStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.lg) {
                 icon()
@@ -340,6 +414,7 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
+                if let status { HealthPill(health: status) }
             }
             .padding(NookTheme.Spacing.xxl)
             Divider()

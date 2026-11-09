@@ -1,59 +1,100 @@
 import SwiftUI
 
-/// Agent accounts in Settings › Agents: one list of every account, each opening its sheet (sign-in method, re-login,
-/// API key, default, remove), and one button to add another.
+/// Agent accounts in Settings › Agents, in the connection rows every list in Settings uses: one row per account of
+/// every agent, which opens in place to manage it (name, sign-in method, re-login, API key), with Log in again, Make
+/// default and Remove in its "…" menu, and "+ Add account" in the section's header.
 struct AccountsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @State private var adding: AgentKind?
-    @State private var editingProfile: AgentProfile?
+    /// The accounts there were as the Add sheet opened, so the one it added can be told apart once it closes.
+    @State private var before: Set<String> = []
+    /// The account just added: its row opens by itself, so signing in or naming it is right there.
+    @State private var justAdded: String?
 
-    /// Every account of every agent in one list, its agent's logo on each row, and one Add button for another account.
-    /// ACP agents you added follow in a section of their own (pick from the registry, or enter a command).
+    /// Every account of every agent in one list, its agent's logo on each row. ACP agents you added follow in a section
+    /// of their own (pick from the registry, or enter a command).
     var body: some View {
         let kinds = AgentKind.allCases.filter { $0 != .acp }
+        let profiles = kinds.flatMap { app.profiles.profiles(for: $0) }
+        // The agents that hold one account each (Antigravity) say so behind the ⓘ instead of under each.
+        let info = kinds.compactMap(\.singleAccountNote).map { tr($0) }.joined(separator: "\n\n")
         Section {
-            ForEach(kinds) { kind in
-                ForEach(app.profiles.profiles(for: kind)) { profile in
-                    AgentAccountCardRow(profile: profile) {
-                        editingProfile = profile
-                    }
-                }
+            if profiles.isEmpty {
+                ConnectionListEmpty(title: tr("accounts.empty.title"), detail: tr("accounts.empty.detail"))
             }
-            Menu {
+            ForEach(profiles) { profile in
+                AgentAccountCardRow(profile: profile, startsOpen: profile.id == justAdded)
+                    // The new row was drawn while the sheet was still open; a fresh identity lets it open by itself.
+                    .id(profile.id == justAdded ? profile.id + ".added" : profile.id)
+            }
+        } header: {
+            ConnectionListMenuHeader(title: tr("settings.agents.accounts"), info: info.isEmpty ? nil : info,
+                                     add: tr("accounts.add")) {
                 // Every agent with account folders (Claude Code, Codex, Gemini CLI): see AgentKind.homeVariable.
                 ForEach(kinds.filter(\.supportsProfiles)) { kind in
-                    Button(kind.name) { adding = kind }
+                    Button { startAdding(kind) } label: { AgentName(kind) }
                 }
-            } label: {
-                Label(tr("accounts.add"), systemImage: "plus")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-        } header: {
-            // The agents that hold one account each (Antigravity) say so behind the ⓘ instead of under each.
-            SettingsSectionTitle(tr("settings.agents.accounts"),
-                                 info: kinds.compactMap(\.singleAccountNote).map { tr($0) }.joined(separator: "\n\n"))
         }
-        .sheet(item: $adding) { kind in
+        .sheet(item: $adding, onDismiss: noteAdded) { kind in
             AddAccountSheet(kind: kind)
-        }
-        .sheet(item: $editingProfile) { profile in
-            ManageAccountSheet(profile: profile) {
-                editingProfile = nil
-            }
         }
         AcpAgentsSection()
     }
+
+    private var profileIDs: Set<String> {
+        Set(AgentKind.allCases.filter { $0 != .acp }.flatMap { app.profiles.profiles(for: $0) }.map(\.id))
+    }
+
+    private func startAdding(_ kind: AgentKind) {
+        before = profileIDs
+        adding = kind
+    }
+
+    /// The sheet closed: when it added an account (it only closes on success or Cancel), say so and open its row.
+    private func noteAdded() {
+        guard let id = profileIDs.subtracting(before).first, let profile = app.profiles.profile(id: id) else { return }
+        justAdded = id
+        ToastCenter.shared.success(tr("connection.added", profile.label.isEmpty ? profile.kind.name : profile.label))
+    }
 }
 
-/// Clean row representing an agent profile / account
+/// The header of a list of connections whose Add first asks which kind ("+ Add account" › Claude Code, Codex, …):
+/// `ConnectionListHeader` with a menu in place of its button, so adding stays in the same place and looks the same.
+struct ConnectionListMenuHeader<Items: View>: View {
+    let title: String
+    var info: String? = nil
+    let add: String
+    @ViewBuilder var items: () -> Items
+
+    var body: some View {
+        HStack {
+            SettingsSectionTitle(title, info: info)
+            Spacer()
+            Menu {
+                items()
+            } label: {
+                Label(add, systemImage: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .controlSize(.small)
+        }
+    }
+}
+
+/// One agent account in the connection row: the agent's logo, the account's name, its state with whose account it is,
+/// and in its "…" menu signing in (again), Make default, and Remove for an account Nook added. Opened, it shows what the
+/// manage sheet used to: the name, how it signs in, the key.
 private struct AgentAccountCardRow: View {
     @EnvironmentObject private var app: AppModel
     let profile: AgentProfile
-    let onManage: () -> Void
+    var startsOpen = false
 
     private var account: AgentAccount? { app.history.profileAccounts[profile.id] }
     private var several: Bool { app.profiles.profiles(for: profile.kind).count > 1 }
+    private var busy: Bool { app.agentConnect[profile.id]?.isBusy == true }
 
     private var title: String {
         let label = profile.label.isEmpty ? (account?.organization.isEmpty == false ? account!.organization : tr("agents.personal")) : profile.label
@@ -64,7 +105,7 @@ private struct AgentAccountCardRow: View {
     private var antigravitySignedOut: Bool { profile.kind == .antigravity && app.antigravityUsage.noLogin }
 
     private var health: ConnectionHealth {
-        if let progress = app.agentConnect[profile.id], progress.isBusy { return .busy }
+        if busy { return .busy }
         if antigravitySignedOut { return .needsYou }
         if account != nil { return .working }
         if app.history.executables[profile.kind] == nil { return .notLinked }
@@ -72,20 +113,38 @@ private struct AgentAccountCardRow: View {
     }
 
     var body: some View {
-        // The same row as everything else that is linked: the agent's logo, the account with its state, whose account it
-        // is, and one button. A click anywhere on the row opens its sheet too.
-        ServiceRowShape(title: title, detail: detail, status: health.status, statusText: healthText) {
-            AgentTile(profile.kind)
-                .accountBadge(profile.accent == nil ? nil : AccountTag.of(profile, app: app), size: 20, ring: NookTheme.rowRest)
-        } actions: {
-            Button(account == nil || antigravitySignedOut ? tr("button.login") : tr("settings2.manage")) {
+        ConnectionRow(title: title, status: health.status, statusText: healthText, detail: detail,
+                      removal: removal, startsOpen: startsOpen) {
+            // The account's own color as a badge on the agent's logo, as everywhere the logo shows (`AccountTag`).
+            AgentLogo(profile.kind, size: 22)
+                .accountBadge(profile.accent == nil ? nil : AccountTag.of(profile, app: app), size: 22, ring: NookTheme.rowRest)
+        } menu: {
+            if antigravitySignedOut {
                 // Antigravity signs in right here, in your browser.
-                if antigravitySignedOut { app.connect(profile) } else { onManage() }
+                Button(tr("button.login")) { app.connect(profile) }
+                    .disabled(busy)
+            } else if !profile.usesAPIKey {
+                // Every agent signs in again its own way (`reauthenticate`); an account on a key has nothing to sign in to.
+                Button(account == nil ? tr("button.login") : tr("accounts.reauth")) { app.reauthenticate(profile) }
+                    .disabled(busy)
             }
-            .disabled(antigravitySignedOut && app.agentConnect[profile.id]?.isBusy == true)
+            if several, !app.profiles.isPreferred(profile) {
+                Button(tr("agents.makeDefault")) { app.makeDefault(profile) }
+            }
+        } expanded: {
+            ManageAccountSheet(profile: profile)
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onManage)
+    }
+
+    /// The account in the agent's default folder is the agent itself: it cannot be removed, only signed out of.
+    private var removal: ConnectionRemoval? {
+        guard !profile.isDefault else { return nil }
+        let name = title
+        return ConnectionRemoval(title: tr("agents.removeAccount"), question: tr("confirm.remove", name),
+                                 detail: tr("accounts.remove.detail", profile.displayHome)) {
+            app.removeAccount(profile)
+            ToastCenter.shared.success(tr("connection.removed", name))
+        }
     }
 
     /// Whose account it is, with "Default" in front when the agent has several.
@@ -102,9 +161,9 @@ private struct AgentAccountCardRow: View {
         return tr("agents.notLoggedIn")
     }
 
-    /// Who is signed in (name, organization, where its files live); nil while nobody is, when the pill says it all.
+    /// Who is signed in (name, organization, where its files live); nil while nobody is, when the state says it all.
     private var subtitle: String? {
-        if let progress = app.agentConnect[profile.id], progress.isBusy { return nil }
+        if busy { return nil }
         guard let account else {
             return profile.isDefault ? nil : profile.displayHome
         }
@@ -115,21 +174,19 @@ private struct AgentAccountCardRow: View {
     }
 }
 
-/// Manage sheet for an agent profile: child-simple actions
+/// What an agent account's row shows once opened: its name, how it signs in, and its key. Drawn by `SetupSheet` inside
+/// the row, so only its parts show, without a card around each.
 private struct ManageAccountSheet: View {
     @EnvironmentObject private var app: AppModel
     let profile: AgentProfile
-    let done: () -> Void
 
     @State private var name = ""
     @State private var key = ""
     @State private var saving = false
     @State private var error: String?
-    @State private var confirmRemove = false
 
     private var account: AgentAccount? { app.history.profileAccounts[profile.id] }
-    private var several: Bool { app.profiles.profiles(for: profile.kind).count > 1 }
-    /// The account as stored now: the sheet opened with a copy, and a color picked here changes the stored one.
+    /// The account as stored now: the row opened with a copy, and a color picked here changes the stored one.
     private var current: AgentProfile { app.profiles.profile(id: profile.id) ?? profile }
 
     var body: some View {
@@ -139,94 +196,52 @@ private struct ManageAccountSheet: View {
         ) {
             AgentMark(agent: profile.kind.name, account: current.accent == nil ? nil : AccountTag.of(current, app: app), size: 44)
         } content: {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-                // Name
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                    Text(tr("agents.name")).font(NookTheme.TextStyle.strong)
-                    HStack {
-                        TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit(saveName)
-                        Button(tr("button.save"), action: saveName)
-                            .disabled(!nameChanged)
-                    }
+            // The same parts as every sheet for something linked: the account, how it signs in, then its place in Nook.
+            SheetPart(tr("agents.name")) {
+                HStack {
+                    TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(saveName)
+                    Button(tr("button.save"), action: saveName)
+                        .disabled(!nameChanged)
                 }
-
-                // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                    Text(tr("accounts.color")).font(NookTheme.TextStyle.strong)
-                    AccountColorPicker(accent: Binding(get: { current.accent },
-                                                       set: { app.profiles.setAccent(profile.id, $0) }))
-                    SettingNote(tr("accounts.color.help"))
-                }
-
-                if profile.kind != .gemini && profile.kind != .antigravity {
-                    Divider()
-
-                    // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                        Text(tr("accounts.method")).font(NookTheme.TextStyle.strong)
-                        if profile.usesAPIKey {
-                            apiKeyView
-                            Button(tr("accounts.signInInstead")) { app.useCLILogin(profile) }
-                        } else {
-                            cliAuthView
-                            DisclosureGroup(tr("settings.fold.keyInstead")) {
-                                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                                    SettingNote(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
-                                    Button(tr("accounts.useKeyInstead")) { app.profiles.setAuth(profile.id, .apiKey) }
-                                }
-                                .padding(.top, NookTheme.Spacing.xs)
+            }
+            // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
+            SheetPart(tr("accounts.color")) {
+                AccountColorPicker(accent: Binding(get: { current.accent },
+                                                   set: { app.profiles.setAccent(profile.id, $0) }))
+                SettingNote(tr("accounts.color.help"))
+            }
+            if profile.kind != .gemini && profile.kind != .antigravity {
+                // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
+                SheetPart(tr("accounts.method")) {
+                    if profile.usesAPIKey {
+                        apiKeyView
+                        Button(tr("accounts.signInInstead")) { app.useCLILogin(profile) }
+                    } else {
+                        cliAuthView
+                        DisclosureGroup(tr("settings.fold.keyInstead")) {
+                            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                                SettingNote(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
+                                Button(tr("accounts.useKeyInstead")) { app.profiles.setAuth(profile.id, .apiKey) }
                             }
+                            .padding(.top, NookTheme.Spacing.xs)
                         }
                     }
                 }
-
-                if profile.kind == .antigravity {
-                    Divider()
-                    antigravitySignInView
-                }
-
-                if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.coral)
-                }
-
-                if several && !app.profiles.isPreferred(profile) {
-                    Divider()
-                    Button {
-                        app.makeDefault(profile)
-                    } label: {
-                        Label(tr("agents.makeDefault"), systemImage: "star")
-                    }
-                }
+            }
+            if profile.kind == .antigravity {
+                SheetPart(tr("accounts.method")) { antigravitySignInView }
+            }
+            if let error {
+                SettingNote(error, tone: .error)
             }
         } footer: {
-            if !profile.isDefault {
-                if confirmRemove {
-                    Text(tr("agents.removeConfirm", profile.displayHome))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Button(tr("button.cancel")) { confirmRemove = false }
-                        .keyboardShortcut(.cancelAction)
-                    Button(tr("agents.remove"), role: .destructive) {
-                        app.removeAccount(profile)
-                        done()
-                    }
-                } else {
-                    Button(tr("agents.removeAccount"), role: .destructive) { confirmRemove = true }
-                }
-            }
-            Spacer()
-            Button(tr("settings2.done")) {
-                saveName()
-                done()
-            }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            // Shown inside the account's row (`sheetEmbedded`), which has no buttons of its own: Make default and
+            // Remove are in the row's "…" menu, and a typed name is saved as the row closes.
+            EmptyView()
         }
+        .onDisappear(perform: saveName)
         .onAppear {
             name = profile.label
         }
@@ -236,7 +251,7 @@ private struct ManageAccountSheet: View {
         name != profile.label && !name.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// Renames the profile; also runs on Return and before Done closes the sheet, so a typed name is never lost.
+    /// Renames the profile; also runs on Return and as the row closes, so a typed name is never lost.
     private func saveName() {
         guard nameChanged else { return }
         app.profiles.rename(profile.id, to: name)

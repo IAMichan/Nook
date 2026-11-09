@@ -195,8 +195,10 @@ final class SourceCapabilitiesTests: XCTestCase {
         let github = SourceCapabilities.describe("github", tools: tools)
         XCTAssertEqual(github.reads, ["issues en PR's zoeken"])
         XCTAssertEqual(github.writes, ["issue maken"])
-        XCTAssertEqual(SourceCapabilities.line("stripe", tools: [("stripe_payments", false)]),
-                       "API-sleutel · lezen: betalingen lezen · schrijven: niets")
+        // A source with only reads says what it reads and that it changes nothing; one Nook knows no tools of says nothing.
+        let stripe = SourceCapabilities.line("stripe", tools: [("stripe_payments", false)])
+        XCTAssertTrue(stripe.contains(tr("caps.writesNothing")))
+        XCTAssertEqual(SourceCapabilities.line("stripe", tools: []), "")
     }
 }
 

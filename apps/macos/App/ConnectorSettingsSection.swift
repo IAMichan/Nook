@@ -111,26 +111,24 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
     /// The row's state in the words every row of Settings › Accounts & connections uses.
     private var status: ServiceStatus { signingIn ? .connecting : health.status }
 
-    /// The same row as every other connection: icon, name with its state, one line, then Fix when it needs you, the
-    /// switch, and Manage (its sheet).
+    /// The one connection row (`ConnectionRow`): icon, name with its state and one line, the switch (off keeps the key),
+    /// and the "…" menu with Sign in again or Fix when it needs you and Disconnect last. Opening the row manages it in
+    /// place: the key, the extra accounts and what Nook can do with it.
     var body: some View {
-        ServiceRowLayout(domain: connector.iconDomain, symbol: connector.symbol, tint: connector.accent, title: connector.title,
-                         detail: signingIn ? signingInDetail : repairFailure ?? ServiceState.summary(of: connector, health: health),
-                         status: status, detailIsError: health == .broken || repairFailure != nil, source: connector.id) {
+        ConnectionRow(title: connector.title, status: status,
+                      detail: signingIn ? signingInDetail : repairFailure ?? ServiceState.summary(of: connector, health: health),
+                      isOn: Binding(get: { isOn }, set: { setOn($0) }),
+                      removal: ConnectionRemoval(title: tr("settings2.disconnect"),
+                                                 question: tr("connect.disconnectTitle", connector.title),
+                                                 detail: tr("connection.disconnectDetail", connector.title)) { disconnect() }) {
+            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 28, source: connector.id)
+        } menu: {
             if health == .broken || health == .needsYou, !signingIn {
-                Button(tr("settings2.fix")) { repair() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(health.color)
-                    .controlSize(.small)
+                Button(repairsInPlace ? tr("connect.reauthorize") : tr("settings2.fix")) { repair() }
             }
-            Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .help(tr("settings2.service.toggleHelp"))
-            Button(tr("settings2.manage")) { showSetup = true }
-                .controlSize(.small)
-                .help(tr("settings2.service.manageHelp", connector.title))
+            Button(tr("connector.retry")) { refresh() }
+        } expanded: {
+            ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
         }
         .onAppear { isOn = ConnectorToggle.isOn(connector.id) }
         .sheet(isPresented: $showSetup, onDismiss: {
@@ -194,6 +192,15 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         refresh()
     }
 
+    /// Forgets the key (and any other field): the service is no longer linked and leaves the list.
+    private func disconnect() {
+        for field in connector.configFields {
+            Keychain.write("", account: field.account)
+        }
+        ToastCenter.shared.success(tr("connection.disconnected", connector.title))
+        refresh()
+    }
+
     private func refresh() {
         let target = connector
         let done = onChange
@@ -214,6 +221,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     let onChange: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sheetEmbedded) private var embedded
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
     @StateObject private var keyCatcher = ClipboardKeyCatcher()
 
@@ -237,7 +245,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     var body: some View {
         SetupSheet(
             title: connector.title,
-            subtitle: managing ? ServiceState.summary(of: connector, health: health) : tr("settings2.service.connectSubtitle", connector.title)
+            subtitle: managing ? ServiceState.summary(of: connector, health: health) : tr("settings2.service.connectSubtitle", connector.title),
+            status: managing ? health : nil
         ) {
             ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 48, source: connector.id)
         } content: {
@@ -257,7 +266,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 }
             }
             Spacer()
-            Button(health == .working ? tr("settings2.done") : tr("button.close")) { dismiss() }
+            Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -276,31 +285,48 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     // MARK: Connect (three steps)
 
+    /// Every service in numbered steps, as every connection sheet: GitHub signs in (step 1) and Nook checks it
+    /// (step 2), with a token as the other way folded inside step 1; any other service gets its key (1), you paste it
+    /// (2) and Nook checks it (3).
     @ViewBuilder
     private var connectContent: some View {
-        if isGitHub && GitHubSignIn.isAvailable {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                gitHubSignInButton
-                SettingNote(tr("settings2.github.easy"))
+        if isGitHub {
+            SetupStep(number: 1, title: tr("hub.signIn.step", connector.title), done: configured) {
+                if GitHubSignIn.isAvailable {
+                    gitHubSignInButton
+                    SettingNote(tr("settings2.github.easy"))
+                } else {
+                    ghCLIButton
+                }
+                DisclosureGroup(isExpanded: $showKeySteps) {
+                    tokenWay.padding(.top, NookTheme.Spacing.md)
+                } label: {
+                    Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
+                }
             }
-            DisclosureGroup(isExpanded: $showKeySteps) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { keySteps }
-                    .padding(.top, NookTheme.Spacing.lg)
-            } label: {
-                Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
-            }
-            if configured { resultStep(number: 1) }
-        } else if isGitHub {
-            ghCLIButton
-            DisclosureGroup(isExpanded: $showKeySteps) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { keySteps }
-                    .padding(.top, NookTheme.Spacing.lg)
-            } label: {
-                Text(tr("settings2.github.useToken")).font(NookTheme.TextStyle.body)
-            }
-            if configured { resultStep(number: 1) }
+            resultStep(number: 2, waiting: tr("settings2.step.checkAfterSignIn"))
         } else {
             keySteps
+        }
+    }
+
+    /// A token instead of signing in, without steps of its own: it sits inside a step already.
+    @ViewBuilder
+    private var tokenWay: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Text(connector.helpText)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let url = connector.signupURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                    keyCatcher.watch()
+                } label: {
+                    Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
+                }
+            }
+            fieldsAndPaste
         }
     }
 
@@ -364,17 +390,18 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         resultStep(number: 3)
     }
 
-    private func resultStep(number: Int) -> some View {
+    /// The last step of every connection: Nook checks the link. `waiting` says what has to happen first.
+    private func resultStep(number: Int, waiting: String = tr("settings2.step.checkWaiting")) -> some View {
         SetupStep(number: number, title: tr("settings2.step.check"), done: health == .working) {
-            resultView
+            resultView(waiting: waiting)
         }
     }
 
     @ViewBuilder
-    private var resultView: some View {
+    private func resultView(waiting: String) -> some View {
         switch health {
         case .notLinked:
-            Text(tr("settings2.step.checkWaiting"))
+            Text(waiting)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
         case .busy:
@@ -404,19 +431,25 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     @ViewBuilder
     private var manageContent: some View {
         SheetPart(tr("sheet.part.status")) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                HealthPill(health: health)
-                Spacer()
-                if health == .broken {
+            // How it is doing is the pill beside the title; here only what you can do about it.
+            if health == .broken {
+                HStack {
+                    Text(ServiceState.summary(of: connector, health: health))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
                     Button(tr("connector.retry")) { refreshNow() }
                 }
             }
-            SettingToggle(tr("settings2.service.useToggle"), detail: tr("settings2.service.useToggleDetail"),
-                          isOn: Binding(get: { isOn }, set: { setOn($0) }))
-                .toggleStyle(.switch)
+            // In a row the switch is the row's own; only the sheet shows it here.
+            if !embedded {
+                SettingToggle(tr("settings2.service.useToggle"), detail: tr("settings2.service.useToggleDetail"),
+                              isOn: Binding(get: { isOn }, set: { setOn($0) }))
+                    .toggleStyle(.switch)
+            } else if health != .broken {
+                SettingNote(ServiceState.summary(of: connector, health: health))
+            }
         }
-
-        NookDivider()
 
         SheetPart(tr("settings2.service.keyTitle")) {
             if replacing && isGitHub {
@@ -439,7 +472,6 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         }
 
         if isGitHub {
-            NookDivider()
             SheetPart(tr("chats.manage.accounts")) {
                 ExtraAccountsView(service: "github", field: "token", placeholder: "ghp_… / github_pat_…") { refreshNow() }
             }
@@ -448,17 +480,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     @ViewBuilder
     private var capabilityNote: some View {
+        // What Nook can do with it: a part of its own, last, as on every connection sheet.
         if !capabilities.isEmpty {
-            DisclosureGroup {
-                Text(capabilities)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, NookTheme.Spacing.sm)
-            } label: {
-                Label(tr("settings2.service.whatCanNook"), systemImage: "questionmark.circle")
-                    .font(NookTheme.TextStyle.body)
-            }
+            SheetPart(tr("sheet.part.canDo")) { SettingNote(capabilities) }
         }
     }
 
@@ -653,9 +677,8 @@ struct ExtraAccountsView: View {
     @State private var primaryLabel = ""
 
     var body: some View {
+        // Shown inside the "Accounts" part of the sheet or row, which already names it.
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Divider()
-            Text(tr("accounts.title")).font(NookTheme.TextStyle.strong)
             HStack {
                 TextField(tr("accounts.primaryName"), text: $primaryLabel, prompt: Text(tr("accounts.primaryPlaceholder")))
                     .textFieldStyle(.roundedBorder)
