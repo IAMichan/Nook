@@ -688,7 +688,8 @@ private final class HistoryScanner: @unchecked Sendable {
                 .filter { $0.session.prompts > 0 && !Self.isOwn($0.session.cwd, ownFolder: ownFolder) }
                 .sorted { $0.session.ended > $1.session.ended }
             // One conversation per resumed chat, for the Usage page's session counts (90 days); the list keeps to 30 days.
-            let conversations = Self.joinResumed(listed)
+            // Named as the list names them (Codex's thread names), so the Usage page's chats read the same.
+            let conversations = namedByCodex(Self.joinResumed(listed), homes: homes)
             sessions = conversations.filter { $0.ended >= listSince }
 
             for home in homes where fm.fileExists(atPath: home.url.path) {
