@@ -596,7 +596,7 @@ enum PullRequestNews {
         if new.checks != old.checks {
             switch new.checks {
             case "failure":
-                lines.append(Line(text: "CI failed" + (new.failedChecks.isEmpty ? "." : ": " + new.failedChecks.prefix(8).joined(separator: ", ") + "."), subject: .failedChecks))
+                lines.append(failedChecksLine(new))
             case "success" where !old.checks.isEmpty: lines.append(Line(text: "CI passed.", subject: .status))
             default: break
             }
@@ -614,9 +614,18 @@ enum PullRequestNews {
         return lines
     }
 
-    /// The first look at a watch reports nothing that happened before, except a conflict: that is still there to fix.
+    /// The first look at a watch reports nothing that happened before, except what is still there to fix: failing
+    /// checks and a conflict. Watching a pull request whose CI is already red sets the agent to work on it at once.
     static func firstLook(_ new: PullRequestSnapshot) -> [Line] {
-        conflictLine(old: false, new: new).map { [$0] } ?? []
+        var lines: [Line] = []
+        if new.state == "open", new.checks == "failure" { lines.append(failedChecksLine(new)) }
+        if let conflict = conflictLine(old: false, new: new) { lines.append(conflict) }
+        return lines
+    }
+
+    private static func failedChecksLine(_ new: PullRequestSnapshot) -> Line {
+        Line(text: "CI failed" + (new.failedChecks.isEmpty ? "." : ": " + new.failedChecks.prefix(8).joined(separator: ", ") + "."),
+             subject: .failedChecks)
     }
 
     private static func conflictLine(old: Bool?, new: PullRequestSnapshot) -> Line? {
