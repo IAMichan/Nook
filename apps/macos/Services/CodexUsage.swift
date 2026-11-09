@@ -21,15 +21,20 @@ final class CodexUsage: ObservableObject {
     private let queue = DispatchQueue(label: "nl.imdigital.nook.codexusage", qos: .utility)
     private var states: [String: HomeState] = [:]
 
-    /// Query `codex app-server` at most this often, unless a session log was modified in the interim.
-    private nonisolated static let appServerInterval: TimeInterval = 5 * 60
-    private nonisolated static let idleSlowdown: Double = 6
-    private nonisolated static let appServerRetryInterval: TimeInterval = 10 * 60
+    /// Query `codex app-server` on the timer at most this often (`UsageBackgroundRead`): a running session's log carries
+    /// the same limits, and a usage view that is open asks sooner (`maxAge`).
+    private nonisolated static let appServerInterval = UsageBackgroundRead.interval
+    private nonisolated static let appServerRetryInterval = UsageBackgroundRead.retryInterval
 
     func start() {
         timer?.invalidate()
         timer = Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            // Nobody at the Mac or the screen locked or asleep: no scan of the day folders, no app-server; the first tick
+            // back catches up.
+            Task { @MainActor in
+                guard UsageBackgroundRead.allowed else { return }
+                self?.refresh()
+            }
         }
         // The first reading can start `codex app-server` (Node, a few seconds of CPU): a little after launch, not during it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
@@ -191,9 +196,7 @@ final class CodexUsage: ObservableObject {
 
         // On battery or away, `codex app-server` (a Node process each time) is started less often (`EnergyPlan.slowdown`).
         // Someone looking at the limits (`maxAge`) makes it due sooner.
-        // With no session since the last reading, Codex used nothing here: half an hour is enough for what it used elsewhere.
-        let quiet: Double = sessionChanged ? 1 : idleSlowdown
-        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerInterval * slowdown * quiet } ?? true
+        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerInterval * slowdown } ?? true
         // A running session rewrites its log every minute, and each response in it carries the same limits the app-server
         // reports. Read those instead of starting a whole `codex app-server` each minute; it still runs when due.
         if hasSnapshot, sessionChanged, !due, let latest = sessions.first,
@@ -202,7 +205,7 @@ final class CodexUsage: ObservableObject {
             return result
         }
         // Without any limits yet (Codex installed but not signed in, or an app-server that does not answer) a new try every
-        // ten minutes, not on every one-minute tick: each one starts `codex app-server` and can wait 15 seconds for it.
+        // half hour, not on every one-minute tick: each one starts `codex app-server` and can wait 15 seconds for it.
         let retryDue = lastAppServerFetch.map { Date().timeIntervalSince($0) >= maxAge ?? appServerRetryInterval * slowdown } ?? true
         if let codex = codexExecutable() {
             if hasSnapshot ? (sessionChanged || due) : retryDue {
