@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chats · Nook</title>
+<meta name="description" content="Every conversation in one inbox: WhatsApp, Messages, Telegram, Slack, Teams, Signal, Instagram, Mail and more. Type @nook and Nook writes the reply; you send it.">
+<link rel="stylesheet" href="assets/nook.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="claude" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4M7.5 3.8l9 16.4M16.5 3.8l-9 16.4"/></g></symbol>
+    <symbol id="codex" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c3 2.5 3 14.5 0 17M3.5 12c2.5-3 14.5-3 17 0"/></g></symbol>
+    <symbol id="gemini" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10Z"/></symbol>
+    <symbol id="cursor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7Z"/><path d="M3.5 7 12 12l8.5-5M12 12v9.5"/></g></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2h9A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z"/></symbol>
+    <symbol id="branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7c0 5 6 4 6 10M18 7c0 5-6 4-6 10"/></g></symbol>
+    <symbol id="pr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V9a3 3 0 0 0-3-3h-4m2-2-2 2 2 2"/></g></symbol>
+  </defs>
+</svg>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="mascot" style="--s:26px"><i></i><i></i></span>Nook</a>
+    <div class="links"><a href="agents.html">Agents</a><a href="chats.html">Chats</a><a href="assistant.html">Assistant</a><a href="writing.html">Writing</a><a href="privacy.html">Privacy</a></div>
+    <div class="right">
+      <a class="btn quiet" href="https://github.com/IAMichan/nook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5Z"/></svg>GitHub</a>
+      <a class="btn primary" href="download.html">Download</a>
+      <button class="menu-btn" aria-label="Menu"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+  </div>
+</nav>
+<style>
+.inboxwin{height:580px}
+.inboxwin .ct-body{display:flex;flex-direction:column}
+.inboxwin .convwrap{flex:1;overflow:hidden;padding:20px 28px 0;display:flex;flex-direction:column;justify-content:flex-end}
+.inboxwin .convwrap .conv{max-width:620px;width:100%;margin:0 auto;padding-bottom:12px}
+.inboxwin .rfwrap{padding:14px 28px 18px}
+.inboxwin .rfwrap .rf{max-width:620px;margin:0 auto}
+.ticks{color:#53bdeb;font-size:11px;margin-left:4px}
+.grpline{font-size:11.5px;color:var(--t3);padding:2px 0 0 2px}
+.appwall{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:860px;margin:40px auto 0}
+.appwall span{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--strong);height:38px;padding:0 16px;border-radius:99px;background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair)}
+.appwall span i{width:8px;height:8px;border-radius:50%}
+.appwall span.more{color:var(--t3)}
+.notif{border-radius:18px;background:rgba(40,40,42,.72);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px -20px rgba(0,0,0,.9);padding:12px 14px;display:flex;gap:12px;align-items:flex-start;max-width:420px}
+.notif+.notif{margin-top:10px}
+.notif .appic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex:none;background:var(--smoke)}
+.notif .t{flex:1;min-width:0;font-size:13px;line-height:1.4}
+.notif .t b{font-weight:600;display:flex;gap:8px}
+.notif .t b small{margin-left:auto;font-weight:400;color:var(--t3);font-size:11.5px}
+.notif .t span{color:var(--strong)}
+.notif .nb{display:flex;gap:6px;margin-top:10px}
+.notif .nb span{flex:1;text-align:center;font-size:12px;font-weight:500;height:28px;display:grid;place-items:center;border-radius:8px;background:rgba(255,255,255,.08);color:var(--paper)}
+.phone{width:290px;height:560px;margin:0 auto;border-radius:46px;background:#000;box-shadow:0 0 0 2px #2a2a2c,0 0 0 9px #0d0d0e,0 0 0 10px #2a2a2c,0 50px 100px -30px rgba(0,0,0,1);padding:18px 16px;position:relative;overflow:hidden}
+.phone .isl{width:90px;height:26px;border-radius:99px;background:#0a0a0a;margin:0 auto 14px;box-shadow:inset 0 0 0 1px #151515}
+.phone .ptabs{display:flex;gap:4px;align-items:center;padding:4px;border-radius:99px;background:var(--surface);font-size:12.5px;color:var(--t3)}
+.phone .ptabs span{padding:6px 10px;border-radius:99px;display:flex;gap:5px;align-items:center}
+.phone .ptabs .mascot{padding:0}
+.phone .ptabs span.on{background:var(--smoke);color:var(--paper)}
+.phone .ptabs em{font-style:normal;font-size:10px;color:var(--amber);background:rgba(242,184,102,.16);border-radius:99px;padding:0 5px}
+.phone .item{padding:10px 4px}
+.phone .item .t1{font-size:13.5px}
+.phone .item .t2{font-size:12px}
+.phone .item .ic{width:30px;height:30px}
+.privacy-note{display:flex;gap:16px;align-items:flex-start;max-width:820px;margin:64px auto 0;padding:22px 24px;border-radius:var(--r-pill);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair)}
+.privacy-note svg{width:22px;height:22px;flex:none;color:var(--mint);stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-top:1px}
+.privacy-note b{display:block;font-size:16px;font-weight:500;margin-bottom:4px}
+.privacy-note span{font-size:14.5px;color:var(--t2);line-height:1.6}
+</style>
+
+<header class="page-hero" style="--tint:rgba(242,184,102,.12)">
+  <div class="wrap">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg>Chats</div>
+    <h1 class="rv d1">Every conversation,<br><span>one inbox.</span></h1>
+    <p class="lede rv d2">WhatsApp, Messages, Telegram, Slack, Teams, Signal, Instagram and every mail account in one calm list. Read and answer without switching apps, and let Nook write the reply when you'd rather not.</p>
+    <div class="ctas rv d3">
+      <a class="btn primary lg" href="download.html"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download for Mac</a>
+      <a class="btn quiet lg" href="#write">See @nook at work</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="stage rv d2">
+      <div class="win inboxwin">
+        <aside class="sb">
+          <div class="sb-head">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <span class="hbtn"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg></span>
+            <span class="hbtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+          </div>
+          <div class="tabbar">
+            <span class="tab"><span class="mascot" style="--s:16px"><i></i><i></i></span></span>
+            <span class="tab"><svg class="i" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/></svg></span>
+            <span class="tab on"><svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg><span class="lb">Chats</span><span class="badge">3</span></span>
+            <span class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg></span>
+          </div>
+          <hr>
+          <div class="sb-list" id="inboxList"></div>
+        </aside>
+        <div class="ct">
+          <div class="ct-head">Chats<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>Weekend crew</b><span class="right"><span class="chip"><span style="width:7px;height:7px;border-radius:50%;background:#25D366"></span>WhatsApp · 4 people</span></span></div>
+          <div class="ct-body">
+            <div class="convwrap"><div class="conv">
+              <div class="day">Yesterday</div>
+              <div class="grpline">Daan</div>
+              <div class="b th">Weather looks great this weekend ☀️<small>21:40</small></div>
+              <div class="b me">Finally! We should do something outside<small>21:52<span class="ticks">✓✓</span></small></div>
+              <div class="day">Today</div>
+              <div class="grpline">Noor</div>
+              <div class="b th">Who's in for a hike on Saturday? ⛰️<small>10:12</small></div>
+              <div class="grpline">Daan</div>
+              <div class="b th">Me! Leaving around 9?<small>10:15</small></div>
+              <div class="b me">Count me in. I can drive 🚗<small>10:21<span class="ticks">✓✓</span></small></div>
+              <div class="grpline">Noor</div>
+              <div class="b th">Perfect. Can you pick up Iris too?<small>10:24</small><span class="react">👍</span></div>
+            </div></div>
+            <div class="rfwrap"><div class="rf">
+              <div class="rf-text"><span class="ph">Message Weekend crew</span></div>
+              <div class="rf-foot"><span class="hbtn">+</span><span class="hbtn"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><span class="send" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="apps" style="padding-top:120px">
+  <div class="wrap center">
+    <div class="label rv">All your apps</div>
+    <h2 class="rv d1">The people you talk to, <span>wherever they are.</span></h2>
+    <p class="sub rv d2">Chats are grouped by Unread, Today, Yesterday and further back, and you can filter by app or search them all. <em style="font-style:normal;color:var(--strong)">@chat Anna</em> opens a chat from any app.</p>
+    <div class="appwall rv d2">
+      <span><i style="background:#25D366"></i>WhatsApp</span><span><i style="background:#34C759"></i>Messages</span><span><i style="background:#229ED9"></i>Telegram</span><span><i style="background:#E01E5A"></i>Slack</span><span><i style="background:#6264A7"></i>Teams</span><span><i style="background:#3A76F0"></i>Signal</span><span><i style="background:#E1306C"></i>Instagram</span><span><i style="background:#0084FF"></i>Messenger</span><span><i style="background:#5865F2"></i>Discord</span><span><i style="background:#0A66C2"></i>LinkedIn</span><span><i style="background:#dadada"></i>X</span><span><i style="background:#FFFC00"></i>Snapchat</span><span><i style="background:#0A84FF"></i>Mail</span><span class="more">and any app that shows notifications on your Mac</span>
+    </div>
+  </div>
+</section>
+
+<!-- nook writes for you -->
+<section id="write">
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>@nook</div>
+      <h2 class="rv d1">Type @nook. <span>It writes the message for you.</span></h2>
+      <p class="sub rv d2">In any chat's answer field, say what you want: <em style="color:var(--strong);font-style:normal">@nook say yes, but at eight</em>. Nook reads the conversation, checks your calendar and mail when it helps, and writes the reply. You read it, and you send it.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/></svg><div><b>Ready-made requests</b><span>Type @ for say yes, say no kindly, suggest another time, ask when it suits them, or thank them.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg><div><b>Steer the draft</b><span>Shorter, friendlier, more formal, other words, or tell it what to change.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><div><b>And what comes with it</b><span>Agreed on a time? Nook offers to put it in your calendar, with one Do it.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg><div><b>Ask about your chats</b><span>From the Nook tab: "what did Sam say about Saturday?" Nook looks through every app at once.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(244,244,246,.18),transparent)"></div>
+      <div class="panel">
+        <div class="ct-head">Chats<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>Sam</b><span class="right"><span class="chip"><span style="width:7px;height:7px;border-radius:50%;background:#25D366"></span>WhatsApp</span></span></div>
+        <div class="pad">
+          <div class="conv" style="padding:4px 4px 16px">
+            <div class="b th">Dinner tonight? I booked Luca's at 19:30 🍝<small>16:02</small></div>
+            <div class="b th join-t">Or is that too early for you?<small>16:02</small></div>
+          </div>
+          <div class="draftp" id="wDraft">
+            <div class="hd"><span class="mascot" style="--s:16px"><i></i><i></i></span><b>Nook's draft</b><span>· say yes, but at eight</span><span class="stop" id="wStop">Stop</span></div>
+            <div class="looks" id="wLooks"><span><i class="dotc" style="width:6px;height:6px;border-radius:50%;background:var(--t3)"></i>Calendar · free after 19:45</span><span><i style="width:6px;height:6px;border-radius:50%;background:var(--t3)"></i>Chat with Sam</span></div>
+            <div class="steer" id="wSteer"><span>Shorter</span><span>Friendlier</span><span>More formal</span><span>Other words</span><span style="color:var(--t3)">‹ 1 of 1 ›</span></div>
+            <div class="doit" id="wDo"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Dinner with Sam · today 20:00 · Luca's<span class="a y">Do it</span></div>
+          </div>
+          <div class="rf">
+            <div class="atmenu" id="wMenu">
+              <div class="sel"><span class="mascot" style="--s:16px"><i></i><i></i></span>@nook<small>write it for me</small></div>
+              <div>👍 Say yes</div><div>🙏 Say no kindly</div><div>🕗 Suggest another time</div><div>💛 Thank them</div>
+            </div>
+            <div class="rf-text" id="wText"><span class="ph">Message Sam</span></div>
+            <div class="rf-foot"><span class="hbtn">+</span><span class="hbtn"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><span class="send" id="wSend" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+
+<section id="field">
+  <div class="wrap">
+    <div class="label rv">More than text</div>
+    <h2 class="rv d1">Answer right where you read. <span>With everything you'd send from your phone.</span></h2>
+    <p class="sub rv d2">In WhatsApp, Telegram and every app Nook's chat helper links, you answer in Nook itself. Everything goes on your own click.</p>
+    <div class="fgrid">
+      <div class="rv"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg><b>Photos, videos and GIFs</b><span>Pick them with +, drop them on the chat or paste them. Stickers and emoji too.</span></div>
+      <div class="rv d1"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><b>Voice messages</b><span>Record one and send it, without picking up your phone.</span></div>
+      <div class="rv d2"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><b>Polls, places and contacts</b><span>A poll for the group, a location, or a contact card.</span></div>
+      <div class="rv"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/></svg><b>Files</b><span>Any file, the same way: choose, drop or paste.</span></div>
+      <div class="rv d1"><svg viewBox="0 0 24 24"><path d="M2 12.5 6.5 17 17 6.5M9 17l1 1L21 7"/></svg><b>Read receipts and groups</b><span>How far your message got, and in a group who's in it and who read it.</span></div>
+      <div class="rv d2"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><b>Every other app</b><span>Where Nook can't send, <kbd>⌘</kbd> <kbd>Return</kbd> copies your answer and opens the chat in its own app.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="notifications">
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><span class="st wait">Waiting on you</span></div>
+      <h2 class="rv d1">Answer from the notification. <span>Or let it wait.</span></h2>
+      <p class="sub rv d2">New messages arrive as one quiet notification per chat, grouped in Notification Center. Reply straight from it, or mark it as read.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><div><b>Reply in place</b><span>Your answer goes straight to the chat where Nook can write in it. Type @nook and the card opens so Nook can write it with you.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M2 12.5 6.5 17 17 6.5"/></svg><div><b>Gone once handled</b><span>Read the chat anywhere, in Nook or in its own app, and the notification goes away by itself.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><div><b>No double noise</b><span>Chat apps other than WhatsApp already show their own notifications, so Nook's are off for them until you turn them on.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative;display:flex;flex-direction:column;align-items:center">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(242,184,102,.25),transparent)"></div>
+      <div class="notif">
+        <span class="appic" style="background:#25D366"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg></span>
+        <div class="t"><b>Sam<small>now</small></b><span>Are we still on for tonight? 🍝</span><div class="nb"><span>Reply</span><span>Mark as read</span></div></div>
+      </div>
+      <div class="notif" style="opacity:.75;transform:scale(.97)">
+        <span class="appic" style="background:#E01E5A"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"><path d="M8 12h8M12 8v8"/></svg></span>
+        <div class="t"><b>Lotte · #design<small>4 min</small></b><span>Pushed the new mocks, can you take a look?</span></div>
+      </div>
+      <div class="notif" style="opacity:.5;transform:scale(.94)">
+        <span class="appic" style="background:#229ED9"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"><path d="m4 12 16-7-4 15-5-5-4 3Z"/></svg></span>
+        <div class="t"><b>Mom<small>12 min</small></b><span>Call me when you have a minute ❤️</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="phone">
+  <div class="wrap split rev">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>On your phone</div>
+      <h2 class="rv d1">The same inbox, <span>in your pocket.</span></h2>
+      <p class="sub rv d2">The Chats tab of Nook Companion shows every chat Nook collects on your Mac, newest first, with a badge for what's unread.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg><div><b>Answer WhatsApp from the phone</b><span>Also as a reply to one message: long‑press it. Other chats are read on the phone and answered in their own app.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><div><b>Encrypted, no server in between</b><span>Over your own Wi‑Fi, end‑to‑end encrypted, straight between your phone and your computer.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M2 12.5 6.5 17 17 6.5"/></svg><div><b>Read here, read there</b><span>Opening a chat on the phone reads it, just like on the Mac.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(94,214,166,.22),transparent)"></div>
+      <div class="phone">
+        <div class="isl"></div>
+        <div class="ptabs"><span class="mascot" style="--s:22px;margin:0 2px"><i></i><i></i></span><span>Nook</span><span>Agents</span><span class="on">Chats <em>3</em></span></div>
+        <div class="list" style="margin-top:14px" id="phoneList"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="setup">
+  <div class="wrap center">
+    <div class="label rv">Set up in a minute</div>
+    <h2 class="rv d1">Switch on the apps you use. <span>Nothing else to learn.</span></h2>
+  </div>
+  <div class="wrap">
+    <div class="steps">
+      <div class="step rv"><b>Open Settings › Chat apps</b><span>Or the + in the Chats tab. Switch each app on or off, and add any other source in one line, such as a website or a Mac app.</span></div>
+      <div class="step rv d1"><b>Link the ones that need it</b><span>Link WhatsApp, sign in to Telegram, Slack or Teams, and link Mail with every account in it.</span></div>
+      <div class="step rv d2"><b>Your chats arrive</b><span>Nook looks back two weeks the first time, and everything stays on your Mac. Coming from Beeper? Bring your chats over in one click.</span></div>
+    </div>
+    <div class="privacy-note rv">
+      <svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.3 3.2 8 7.5 9 4.3-1 7.5-4.7 7.5-9V6Z"/><path d="m9 12 2 2 4-4"/></svg>
+      <div><b>Sending is always your own click</b><span>Nook writes drafts, never sends them by itself. Every message, photo or file you send goes on your click and is written to Nook's local audit log. Collecting chats is off until you turn it on, and your chats stay on your Mac.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap center">
+    <div class="label rv">Questions</div>
+    <h2 class="rv d1">Good to know.</h2>
+    <div class="faq rv d2">
+      <details open><summary>Does Nook send messages by itself?</summary><p>No. @nook only writes the message into the field. You read it, change it if you like, and send it yourself.</p></details>
+      <details><summary>Which apps can I answer in Nook itself?</summary><p>WhatsApp, Telegram, and every app Nook's chat helper links, such as Instagram, Messenger and Signal. For the others, ⌘ Return copies your answer and opens the chat in its own app.</p></details>
+      <details><summary>Where are my chats stored?</summary><p>On your Mac. Collecting needs Full Disk Access, is off by default, and looks back two weeks the first time you turn it on.</p></details>
+      <details><summary>What does @nook look at when it writes?</summary><p>The newest messages of the chat, and when it helps your calendar, mail and other chats. You see each place it looked as a small chip above the draft.</p></details>
+      <details><summary>Can I keep using Beeper?</summary><p>You can, and you can also move over: Settings › Chat apps › Moving from Beeper brings your linked apps, chats with recent history, and pinned, muted and archived chats along. Each app is then linked once more in Nook.</p></details>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="band rv">
+    <span class="mascot" style="--s:64px;box-shadow:0 0 80px rgba(255,255,255,.2)"><i></i><i></i></span>
+    <h2 style="margin-top:28px">Never leave someone waiting.<br><span>Without living in your apps.</span></h2>
+    <p class="sub">One inbox, a buddy that writes along, and you always press send.</p>
+    <div class="ctas"><a class="btn primary lg" href="download.html"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download for Mac</a><a class="btn quiet lg" href="writing.html">Explore Writing</a></div>
+  </div>
+</div>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><a class="brand" href="index.html" style="font-size:16px"><span class="mascot" style="--s:22px"><i></i><i></i></span>Nook</a>
+      <p>The one calm place for everything that needs you: people, coding agents, music and your day.</p></div>
+    <div><h6>Product</h6><ul><li><a href="agents.html">Agents</a></li><li><a href="chats.html">Chats</a></li><li><a href="assistant.html">Assistant</a></li><li><a href="writing.html">Writing</a></li></ul></div>
+    <div><h6>Trust</h6><ul><li><a href="privacy.html">Privacy</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/SECURITY.md">Security</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/LICENSE">MIT License</a></li></ul></div>
+    <div><h6>Get Nook</h6><ul><li><a href="download.html">Download</a></li><li><a href="https://github.com/IAMichan/nook">GitHub</a></li><li><a href="https://github.com/IAMichan/nook/tree/main/docs">Documentation</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/CHANGELOG.md">Changelog</a></li></ul></div>
+    <div class="base"><span>Free and open source</span><span>Made for people who like a calm screen</span></div>
+  </div>
+</footer>
+<script src="assets/nook.js"></script>
+<script>
+const avc=(l,bg,fg,app)=>`<span class="ic" style="background:${bg};color:${fg}">${l}${app?`<span class="app" style="background:${app}"></span>`:''}</span>`;
+const avr=(l,bg,fg,app)=>`<span class="av-r" style="position:relative;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:12px;font-weight:600;background:${bg};color:${fg}">${l}<span style="position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;background:${app};box-shadow:0 0 0 2px #000"></span></span>`;
+
+/* inbox sidebar */
+const IN=[
+ ['Unread'],
+ ['W','#1d2a1a','#b9e39a','#25D366','Weekend crew','Noor: Can you pick up Iris too?','10:24',1,1],
+ ['S','#2b2018','#f2c48a','#25D366','Sam','Are we still on for tonight? 🍝','10:02',1],
+ ['L','#1b2a26','#8fe0bf','#E01E5A','Lotte · #design','Pushed the new mocks','9:40',1],
+ ['Today'],
+ ['M','#1a2333','#a9c4f5','#229ED9','Mom','Call me when you can ❤️','8:58'],
+ ['J','#2a2238','#cdbcf7','#0A84FF','Jules','Invoice attached, thanks!','8:14'],
+ ['Yesterday'],
+ ['T','#2b1d26','#f2a6c8','#E1306C','Tess','Sent you a reel 😂','Sun'],
+ ['K','#232323','#dadada','#5865F2','Kai','gg, rematch tomorrow?','Sun'],
+];
+$('#inboxList').innerHTML=IN.map(r=>r.length===1?`<div class="sec">${r[0]}</div>`:
+ `<div class="row${r[8]?' sel':''}">${avr(r[0],r[1],r[2],r[3])}<div class="grow"><div class="ttl" style="${r[7]?'':'font-weight:400'}">${r[4]}</div><div class="ln3" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r[5]}</div></div><span class="meta" style="align-self:flex-start;margin-top:3px;${r[7]?'color:var(--amber)':''}">${r[6]}</span></div>`).join('');
+
+/* phone list */
+const PH=[
+ ['S','#2b2018','#f2c48a','#25D366','Sam','Are we still on for tonight? 🍝','<span class="st wait">2 min</span>'],
+ ['W','#1d2a1a','#b9e39a','#25D366','Weekend crew','Noor: Can you pick up Iris too?','<span class="st wait">10:24</span>'],
+ ['L','#1b2a26','#8fe0bf','#E01E5A','Lotte','Pushed the new mocks','<span class="st wait">9:40</span>'],
+ ['M','#1a2333','#a9c4f5','#229ED9','Mom','Call me when you can ❤️','<span style="font-size:11.5px;color:var(--t3)">8:58</span>'],
+ ['J','#2a2238','#cdbcf7','#0A84FF','Jules','Invoice attached, thanks!','<span style="font-size:11.5px;color:var(--t3)">8:14</span>'],
+ ['T','#2b1d26','#f2a6c8','#E1306C','Tess','Sent you a reel 😂','<span style="font-size:11.5px;color:var(--t3)">Sun</span>'],
+];
+$('#phoneList').innerHTML=PH.map(r=>`<div class="item">${avc(r[0],r[1],r[2],r[3])}<div class="grow"><div class="t1">${r[4]}</div><div class="t2">${r[5]}</div></div>${r[6]}</div>`).join('');
+
+/* @nook demo */
+(function(){
+  const T=$('#wText'),M=$('#wMenu'),D=$('#wDraft'),L=[...$$('#wLooks span')],S=$('#wSteer'),DO=$('#wDo'),SEND=$('#wSend'),STOP=$('#wStop');
+  const req='@nook say yes, but at eight', ans="Yes, I'm in! Could we make it eight though? 19:30 is a bit tight for me. See you at Luca's 🍝";
+  let tm=[];const at=(ms,f)=>tm.push(setTimeout(f,ms));
+  function reset(){tm.forEach(clearTimeout);tm=[];T.innerHTML='<span class="ph">Message Sam</span>';M.classList.remove('on');D.classList.remove('on');L.forEach(l=>l.classList.remove('on'));S.classList.remove('on');DO.classList.remove('on');SEND.classList.remove('lit');STOP.style.opacity=1}
+  function run(){reset();let t=700;
+    for(let i=1;i<=req.length;i++){const k=i;at(t+=i===1?0:(k<6?110:55),()=>{const v=req.slice(0,k);
+      T.innerHTML=v.replace('@nook','<span class="at">@nook</span>')+'<span class="caret"></span>';
+      M.classList.toggle('on',k>=1&&k<=5);SEND.classList.toggle('lit',k>=5)})}
+    at(t+=600,()=>{T.innerHTML='<span class="caret"></span>';D.classList.add('on')});
+    L.forEach((l,i)=>at(t+=450,()=>l.classList.add('on')));
+    const w=ans.split(' ');let acc='';
+    w.forEach((x,i)=>at(t+=90,()=>{acc+=(i?' ':'')+x;T.innerHTML=acc+'<span class="caret"></span>'}));
+    at(t+=300,()=>{S.classList.add('on');STOP.style.opacity=0});
+    at(t+=500,()=>DO.classList.add('on'));
+    at(t+=6000,run);
+  }
+  whenVisible($('#write'),run);
+})();
+
+
+</script>
+</body>
+</html>

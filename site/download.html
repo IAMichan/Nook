@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download · Nook</title>
+<meta name="description" content="Download Nook for Mac (beta, Apple Silicon, macOS 15+), with the iPhone companion and early apps for Windows, Linux and Android. Free and open source.">
+<link rel="stylesheet" href="assets/nook.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="claude" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4M7.5 3.8l9 16.4M16.5 3.8l-9 16.4"/></g></symbol>
+    <symbol id="codex" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c3 2.5 3 14.5 0 17M3.5 12c2.5-3 14.5-3 17 0"/></g></symbol>
+    <symbol id="gemini" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10Z"/></symbol>
+    <symbol id="cursor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7Z"/><path d="M3.5 7 12 12l8.5-5M12 12v9.5"/></g></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2h9A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z"/></symbol>
+    <symbol id="branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7c0 5 6 4 6 10M18 7c0 5-6 4-6 10"/></g></symbol>
+    <symbol id="pr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V9a3 3 0 0 0-3-3h-4m2-2-2 2 2 2"/></g></symbol>
+  </defs>
+</svg>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="mascot" style="--s:26px"><i></i><i></i></span>Nook</a>
+    <div class="links"><a href="agents.html">Agents</a><a href="chats.html">Chats</a><a href="assistant.html">Assistant</a><a href="writing.html">Writing</a><a href="privacy.html">Privacy</a></div>
+    <div class="right">
+      <a class="btn quiet" href="https://github.com/IAMichan/nook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5Z"/></svg>GitHub</a>
+      <a class="btn primary" href="download.html">Download</a>
+      <button class="menu-btn" aria-label="Menu"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+  </div>
+</nav>
+<style>
+.dl-card{max-width:760px;margin:52px auto 0;border-radius:24px;background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:24px;display:flex;align-items:center;gap:20px;text-align:left}
+.dl-card .appicon{width:72px;height:72px;border-radius:18px;background:linear-gradient(160deg,#1c1c1e,#050506);display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 10px 30px rgba(0,0,0,.5);flex:none}
+.dl-card b{font-size:18px;font-weight:600;display:block}
+.dl-card small{display:block;font-size:13.5px;color:var(--t3);margin-top:4px;line-height:1.5}
+.dl-card .btn{margin-left:auto;flex:none}
+.surfs.five{grid-template-columns:repeat(5,1fr)}
+.surfs .sf .stl{display:block;margin-top:10px}
+.p-and{position:absolute;left:50%;top:14px;transform:translateX(-50%);width:84px;height:170px;border-radius:14px;background:#000;box-shadow:0 0 0 1.5px #2a2a2a;padding:16px 7px}
+.p-and p{height:16px;border-radius:5px;background:var(--graphite);margin-bottom:6px}
+.p-and p.a{background:var(--surface);box-shadow:inset 0 0 0 1px var(--sep)}
+.p-mac{position:absolute;inset:18px 18px -14px;border-radius:10px;background:#000;box-shadow:0 0 0 1px var(--sep);overflow:hidden}
+.p-mac .bar{height:16px;background:#0b0b0b;border-bottom:1px solid var(--sep);display:flex;gap:4px;align-items:center;padding:0 6px}
+.p-mac .bar i{width:5px;height:5px;border-radius:50%;background:#333}
+.p-mac .r{display:flex;align-items:center;gap:6px;font-size:9.5px;color:var(--strong);background:var(--surface);border-radius:6px;padding:5px 7px;margin:6px 8px 0}
+.p-mac .r .st{font-size:8.5px;margin-left:auto}
+.req{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px}
+.req>div{border-radius:var(--r-pill);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:24px}
+.req b{font-size:16px;font-weight:500;display:block;margin-bottom:12px}
+.req ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.req li{font-size:14px;color:var(--t2);line-height:1.5;padding-left:16px;position:relative}
+.req li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;background:var(--t3)}
+.req code,.note code{font:12.5px var(--mono);color:var(--strong);background:var(--surface);border-radius:5px;padding:1px 5px}
+.nokey{margin-top:16px;border-radius:var(--r-pill);padding:22px 24px;display:flex;align-items:center;gap:16px;background:rgba(94,214,166,.05);box-shadow:inset 0 0 0 1px rgba(94,214,166,.22)}
+.nokey b{font-size:16px;font-weight:500}
+.nokey span{font-size:14px;color:var(--t2)}
+.srcgrid{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;margin-top:48px;align-items:start}
+.note{font-size:14.5px;color:var(--t2);line-height:1.65}
+.note a{color:var(--blue)}
+@media (max-width:1000px){.surfs.five{grid-template-columns:repeat(2,1fr)}.req,.srcgrid{grid-template-columns:1fr}.dl-card{flex-direction:column;text-align:center}.dl-card .btn{margin:0}}
+</style>
+
+<header class="page-hero">
+  <div class="wrap">
+    <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>Download</div>
+    <h1 class="rv d1">Get Nook.<br><span>It's free.</span></h1>
+    <p class="lede rv d2">Start on your Mac, where Nook is most complete. Add the iPhone companion to approve and reply on the go. Windows, Linux and Android are on their way.</p>
+    <div class="dl-card rv d3">
+      <div class="appicon"><span class="mascot" style="--s:44px"><i></i><i></i></span></div>
+      <div><b>Nook for Mac</b><small>Beta · Apple Silicon (M1 or newer) · macOS 15 or newer. Not notarized yet: the release notes explain how to open it the first time.</small></div>
+      <a class="btn primary lg" href="https://github.com/IAMichan/nook/releases"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download .dmg</a>
+    </div>
+    <p class="fine rv d3">Prefer to build it yourself? <a href="#source" style="color:var(--strong)">Build from source</a></p>
+  </div>
+</header>
+
+<!-- first run -->
+<section style="padding-top:110px">
+  <div class="wrap center">
+    <div class="label rv">First run</div>
+    <h2 class="rv d1">Up and running <span>in a minute.</span></h2>
+  </div>
+  <div class="wrap">
+    <div class="steps">
+      <div class="step rv"><b>Download and open</b><span>Drag Nook to Applications. Because the beta is not notarized yet, open it the first time as the release notes describe.</span></div>
+      <div class="step rv d1"><b>Say hi</b><span>Nook lives in your menu bar. Press <kbd>⌥⌘W</kbd> for its window or <kbd>⌥⌘Space</kbd> to ask something from any app.</span></div>
+      <div class="step rv d2"><b>Connect what you like</b><span>Chat apps, coding agents, calendars and services, one by one in Settings. The notch is optional: turn it on in Settings › Notch if you like it.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- platforms -->
+<section id="platforms">
+  <div class="wrap">
+    <div class="label rv">Platforms</div>
+    <h2 class="rv d1">One Nook. <span>Honest about where it is.</span></h2>
+    <div class="surfs five">
+      <div class="sf rv"><div class="pic"><div class="p-mac"><div class="bar"><i></i><i></i><i></i></div><div class="r">Codex wants to push<span class="st wait">Ask</span></div><div class="r">Sam · WhatsApp<span class="st wait">Reply</span></div><div class="r">Refactor done<span class="st done">Done</span></div></div></div><b>Mac</b><span>The full app, and the one the others follow.</span><span class="st done stl">Beta</span></div>
+      <div class="sf rv d1"><div class="pic"><div class="p-phone"><div class="ap">Run swift test<i></i></div><p></p><p style="width:70%"></p><p></p><p style="width:60%"></p></div></div><b>iPhone</b><span>Nook Companion: follow and approve agents, chat with Nook.</span><span class="st work stl">Companion</span></div>
+      <div class="sf rv d2"><div class="pic"><div class="p-bar"><span class="mascot" style="--s:12px"><i></i><i></i></span>2 need you</div><div class="p-drop"><div class="r">Codex wants to push<span class="st wait">Ask</span></div><div class="r">Build finished<span class="st done">Done</span></div></div></div><b>Windows</b><span>A bar at the top of the screen. Compiles in CI, not yet run on a real PC.</span><span class="st wait stl">Early</span></div>
+      <div class="sf rv d3"><div class="pic"><div class="p-bar"><span class="mascot" style="--s:12px"><i></i><i></i></span>1 needs you</div><div class="p-drop"><div class="r">Lotte · Slack<span class="st wait">Reply</span></div><div class="r">Tests passed<span class="st done">Done</span></div></div></div><b>Linux</b><span>A bar at the top of the screen, tray and hotkeys on X11.</span><span class="st wait stl">Early</span></div>
+      <div class="sf rv d3"><div class="pic"><div class="p-and"><p class="a"></p><p></p><p style="width:70%"></p><p></p><p style="width:55%"></p></div></div><b>Android</b><span>Nooks, chat, settings and the phone side of the companion. APK built in CI.</span><span class="st wait stl">Early</span></div>
+    </div>
+
+    <table class="tbl rv">
+      <thead><tr><th>Windows, Linux and Android app</th><th>Windows</th><th>Linux</th><th>Android</th></tr></thead>
+      <tbody>
+        <tr><td>Bar at the top of the screen, or floating</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">Full screen</td></tr>
+        <tr><td>Main window with Nooks, chat and settings</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+        <tr><td>Tray and global hotkeys</td><td class="yes">Yes</td><td>X11 (no global hotkeys on Wayland)</td><td class="no">No</td></tr>
+        <tr><td>Local and cloud brains</td><td>Ollama, LM Studio, cloud</td><td>Ollama, LM Studio, cloud</td><td>Via a server on your network, cloud</td></tr>
+        <tr><td>Coding agents, terminals, git</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Approve via the companion</td></tr>
+        <tr><td>Services: GitHub, GitLab, calendars, Notion, MCP, WhatsApp…</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Yes (no stdio MCP)</td></tr>
+        <tr><td>Screen reading, Look Along, Think Along</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
+        <tr><td>Music controls</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
+        <tr><td>Talk, read aloud, dictation, call notes</td><td class="yes">Yes</td><td>Yes (X11)</td><td class="no">No</td></tr>
+        <tr><td>Companion</td><td>Server for the iPhone app</td><td>Server for the iPhone app</td><td>Phone side</td></tr>
+      </tbody>
+    </table>
+    <p class="note rv" style="margin-top:16px">Apple‑only features (the built‑in MLX models, Apple Foundation Models, Apple Calendar, Reminders, Mail and Notes) stay on the Mac. The Windows, Linux and Android app is Dutch‑only for now.</p>
+  </div>
+</section>
+
+<!-- requirements -->
+<section>
+  <div class="wrap">
+    <div class="label rv">Requirements</div>
+    <h2 class="rv d1">What you need.</h2>
+    <div class="req">
+      <div class="rv"><b>Mac app</b><ul><li>macOS 15 (Sequoia) or newer</li><li>Apple Silicon, M1 or newer</li><li>Any Mac: the notch is optional, Nook also floats or lives in its window</li><li>To build: Xcode 26 and XcodeGen</li></ul></div>
+      <div class="rv d1"><b>Windows, Linux and Android</b><ul><li>Rust (stable) and Node.js 22 to build</li><li>The Tauri prerequisites for your platform</li><li>For a local brain: Ollama or LM Studio</li></ul></div>
+      <div class="rv d2"><b>iPhone Companion</b><ul><li>Xcode and XcodeGen on a Mac to build it</li><li>Nook running on a Mac, Windows or Linux computer</li><li>The same Wi‑Fi network, end‑to‑end encrypted</li></ul></div>
+    </div>
+    <div class="nokey rv"><span class="mascot" style="--s:28px"><i></i><i></i></span><div><b>No API key required.</b> <span>Nook runs on your own computer out of the box. Cloud keys for Claude, OpenAI, Gemini and others are completely optional.</span></div></div>
+  </div>
+</section>
+
+<!-- build from source -->
+<section id="source">
+  <div class="wrap">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg>Build from source</div>
+    <h2 class="rv d1">Open source, <span>so you can build it yourself.</span></h2>
+    <div class="srcgrid">
+      <div class="rv d1">
+        <div class="note">Nook for Mac, in five commands. Press <kbd>⌘R</kbd> in Xcode to build and run.</div>
+        <div class="codeblock"><button class="copybtn" data-copy="brew install xcodegen
+git clone https://github.com/IAMichan/nook.git
+cd nook/apps/macos
+xcodegen
+open Nook.xcodeproj">Copy</button><span class="p">$ </span>brew install xcodegen<br><span class="p">$ </span>git clone https://github.com/IAMichan/nook.git<br><span class="p">$ </span>cd nook/apps/macos<br><span class="p">$ </span>xcodegen<br><span class="p">$ </span>open Nook.xcodeproj</div>
+        <div class="note" style="margin-top:22px">After every pull, run the update script from the repository root. It pulls the latest changes and regenerates the Xcode projects.</div>
+        <div class="codeblock"><button class="copybtn" data-copy="./update.sh">Copy</button><span class="p">$ </span>./update.sh</div>
+      </div>
+      <div class="rv d2">
+        <div class="note">Building the Windows, Linux or Android app (Tauri, in <code>apps/tauri</code>) or the iPhone Companion (<code>apps/ios</code>)? The <a href="https://github.com/IAMichan/nook#quick-start">Quick Start in the README</a> walks through each one, and <a href="https://github.com/IAMichan/nook/blob/main/CONTRIBUTING.md">CONTRIBUTING</a> explains how to send a change.</div>
+        <div class="note" style="margin-top:18px">Running from source? Nook can update itself: when a pull request is merged into main, an Update button appears in the Agents tab. One click fetches main, rebuilds and restarts Nook.</div>
+        <div class="ctas" style="justify-content:flex-start;margin-top:24px"><a class="btn quiet" href="https://github.com/IAMichan/nook">View on GitHub</a><a class="btn quiet" href="https://github.com/IAMichan/nook/tree/main/docs">Documentation</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- faq -->
+<section>
+  <div class="wrap center">
+    <div class="label rv">Questions</div>
+    <h2 class="rv d1">Before you download.</h2>
+  </div>
+  <div class="wrap">
+    <div class="faq rv">
+      <details open><summary>Is Nook free?</summary><p>Yes. Nook is open source under the MIT license. With a model on your Mac, questions cost nothing. Only a cloud provider you choose to connect may charge you, on your own account.</p></details>
+      <details><summary>Do I need a MacBook with a notch?</summary><p>No. The notch is an optional extra you can turn on in Settings › Notch. Nook works fully in its own window, from the menu bar and the keyboard, on any Apple Silicon Mac and on an external display.</p></details>
+      <details><summary>Which Macs are supported?</summary><p>Apple Silicon Macs (M1 or newer) with macOS 15 Sequoia or newer. The built‑in local model picks a size that fits your Mac's memory.</p></details>
+      <details><summary>Is it safe to open a build that isn't notarized?</summary><p>The beta is built in the open by a GitHub Actions workflow from the public source, but it is not notarized by Apple yet, so macOS asks you to confirm the first time. The release notes show how. If you'd rather not, build it from source in a few commands.</p></details>
+      <details><summary>Which languages does it speak?</summary><p>The Mac app is in English, Dutch, German, French and Spanish (Settings › General › App language).</p></details>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><a class="brand" href="index.html" style="font-size:16px"><span class="mascot" style="--s:22px"><i></i><i></i></span>Nook</a>
+      <p>The one calm place for everything that needs you: people, coding agents, music and your day.</p></div>
+    <div><h6>Product</h6><ul><li><a href="agents.html">Agents</a></li><li><a href="chats.html">Chats</a></li><li><a href="assistant.html">Assistant</a></li><li><a href="writing.html">Writing</a></li></ul></div>
+    <div><h6>Trust</h6><ul><li><a href="privacy.html">Privacy</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/SECURITY.md">Security</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/LICENSE">MIT License</a></li></ul></div>
+    <div><h6>Get Nook</h6><ul><li><a href="download.html">Download</a></li><li><a href="https://github.com/IAMichan/nook">GitHub</a></li><li><a href="https://github.com/IAMichan/nook/tree/main/docs">Documentation</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/CHANGELOG.md">Changelog</a></li></ul></div>
+    <div class="base"><span>Free and open source</span><span>Made for people who like a calm screen</span></div>
+  </div>
+</footer>
+<script src="assets/nook.js"></script>
+</body>
+</html>
