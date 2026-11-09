@@ -181,6 +181,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var steerByDefault: Bool {
         didSet { defaults.set(steerByDefault, forKey: "ws.steerByDefault") }
     }
+    /// A pull request a session opens (with the git button, pull_request_create or the agent's own `gh`) is watched from
+    /// the start: CI, reviews and comments become news and wake the agent. On by default; off: you follow one yourself.
+    @Published var watchNewPullRequests: Bool {
+        didSet { defaults.set(watchNewPullRequests, forKey: "ws.watchNewPullRequests") }
+    }
     /// Scheduled tasks (interval, fixed time, webhook) may start sessions. Off by default; nothing runs on its own until you turn it on.
     @Published var scheduledTasksEnabled: Bool {
         didSet { defaults.set(scheduledTasksEnabled, forKey: "ws.scheduledTasksEnabled") }
@@ -258,6 +263,7 @@ final class WorkspaceSettings: ObservableObject {
         autoCompactTokens = defaults.object(forKey: SizeCompaction.settingKey) as? Int ?? SizeCompaction.defaultTokens
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
+        watchNewPullRequests = defaults.object(forKey: "ws.watchNewPullRequests") as? Bool ?? true
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
         scheduledWebhooksPublic = defaults.bool(forKey: "ws.scheduledWebhooksPublic")
         scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0

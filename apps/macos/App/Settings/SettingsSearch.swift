@@ -144,6 +144,7 @@ enum SettingsSearch {
         .init("settings.privacy.forgetScreenText", .privacy),
         .init("settings.pulls.title", .pullRequests),
         .init("settings.ws.commitStyle", .pullRequests),
+        .init("settings.ws.watchNewPullRequests", .pullRequests),
         .init("codeHost.title", .pullRequests),
         .init("gitlab.title", .pullRequests),
         .init("settings.ws.autoTitles", .sessions),
