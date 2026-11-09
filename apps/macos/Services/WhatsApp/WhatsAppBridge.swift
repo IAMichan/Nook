@@ -111,8 +111,17 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
             let renamed = books[link.account] != book
             books[link.account] = book
             var made = Set<String>()
+            // A group you left (or were removed from) leaves Nook, though the phone still lists it; it is made again once
+            // you are back in it.
+            let left = link.leftGroups
+            for jid in left {
+                let key = link.chatKey(jid)
+                sources[key] = nil
+                hand(BridgedChat(app: app, name: "", messages: [], unread: nil, chatID: key, gone: true), key: key, to: &changed)
+            }
             // The chats that wrote since the phone was linked (or whose history was fetched), with their messages.
-            for conversation in link.inbox.conversations.values where !link.filters.ignored.contains(conversation.id) {
+            for conversation in link.inbox.conversations.values
+            where !link.filters.ignored.contains(conversation.id) && !left.contains(conversation.id) {
                 made.insert(conversation.id)
                 let facts = link.exportFacts(conversation.id, account: account, messages: conversation.messages)
                 let source = Source(conversation: conversation, name: conversation.name, facts: facts)
@@ -124,7 +133,7 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
             }
             // Every other chat on the phone, also the ones that wrote nothing since: their messages load when one opens.
             for info in link.knownChats where !made.contains(info.jid) && WAJID.kind(info.jid) != .status
-                && !link.filters.ignored.contains(info.jid) {
+                && !link.filters.ignored.contains(info.jid) && !left.contains(info.jid) {
                 let name = link.chatName(info.jid, fallback: info.name.isEmpty ? WAJID.displayNumber(info.jid) : info.name)
                 let facts = link.exportFacts(info.jid, account: account, messages: [])
                 let source = Source(info: info, name: name, facts: facts)

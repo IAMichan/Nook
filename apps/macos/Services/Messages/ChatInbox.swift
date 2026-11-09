@@ -444,6 +444,9 @@ struct BridgedChat: Equatable, Sendable {
     /// The app keeps this chat's messages and Nook only shows them: they stay in memory and are never written to disk
     /// (WhatsApp through the linked phone). What Nook knows of the chat itself (read, unread, its kind) is kept.
     var ephemeral: Bool = false
+    /// The app says this chat is no longer yours: you left the group (or were removed), or deleted the chat, there or
+    /// from Nook. It leaves Nook as a chat you removed (`ChatInbox.remove`): only a newer message brings it back.
+    var gone: Bool = false
 }
 
 /// Chat ids kept from before WhatsApp's chats joined the shared inbox: a linked phone's chat was "wa|<chat key>", and is
@@ -1118,6 +1121,14 @@ struct ChatInbox: Codable, Equatable, Sendable {
     private mutating func merge(_ chat: BridgedChat, now: Date, trimming: Bool) -> Bool {
         let key = Self.key(of: chat)
         let known = threads[key]
+        // A group you left or a chat you deleted goes, as one you removed in Nook; what it brought along (the app's own
+        // "You left") is no newer message.
+        if chat.gone {
+            guard let known else { return false }
+            let newest = (chat.messages.map(\.date) + known.messages.map(\.date) + [known.activity ?? .distantPast]).max()
+            remove(key, at: max(now, newest ?? now))
+            return true
+        }
         let gone = removed?[key]
         let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
         // Without new messages a bridge can still bring the app's unread count (or the group's people, or what it knows

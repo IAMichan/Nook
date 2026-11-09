@@ -808,6 +808,37 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["later"])
     }
 
+    func testAChatItsAppSaysIsGoneLeavesAndComesBackOnlyWithNewMessages() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "whatsapp", id: "group@g.us")
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Club", messages: [message("a", "hi")], unread: nil, listed: true, chatID: "group@g.us"))
+        XCTAssertNotNil(inbox.threads[key])
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "whatsapp", name: "", messages: [], unread: nil, chatID: "group@g.us", gone: true), now: now),
+                      "a group you left leaves Nook")
+        XCTAssertNil(inbox.threads[key])
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "whatsapp", name: "", messages: [], unread: nil, chatID: "group@g.us", gone: true), now: now),
+                       "said twice: nothing left to remove")
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "whatsapp", name: "Club", messages: [message("a", "hi")], unread: nil, listed: true,
+                                               chatID: "group@g.us"), now: now),
+                       "the phone still listing it, with what it had, does not bring it back")
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "whatsapp", name: "Club", messages: [message("b", "back", at: 60)], unread: nil,
+                                              chatID: "group@g.us"), now: now.addingTimeInterval(60)),
+                      "added again, a newer message brings it back")
+        XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["back"])
+    }
+
+    func testAGoneChatKeepsOutTheLeaveNoticeThatCameWithIt() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Club")
+        inbox.merge(BridgedChat(app: "telegram", name: "Club", messages: [message("a", "hi")], unread: nil), now: now)
+        // Telegram's "You left" can be dated a moment after Nook removed the chat.
+        let left = message("b", "You left", at: 30)
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Club", messages: [left], unread: nil, gone: true), now: now))
+        XCTAssertNil(inbox.threads[key])
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "telegram", name: "Club", messages: [left], unread: nil), now: now))
+        XCTAssertNil(inbox.threads[key])
+    }
+
     func testAListedChatShowsWithoutMessages() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "teams", chat: "Launch")

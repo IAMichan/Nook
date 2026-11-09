@@ -1893,6 +1893,12 @@ enum WAGOWA {
         return names
     }
 
+    /// `GET /user/my/groups` → every group you are in, by JID (normalized); nil when the answer holds no list.
+    static func joinedGroups(_ data: Data) -> Set<String>? {
+        guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return nil }
+        return Set(list.compactMap { group in (nonEmpty(group["JID"]) ?? nonEmpty(group["jid"])).map(WAJID.normalized) })
+    }
+
     /// `GET /group/info` → `results: {JID, Name, LinkedParentJID, …}` (whatsmeow's GroupInfo), or the same under
     /// `results.data` in newer versions. The group's own name, and the community it belongs to (whose name a group
     /// without one of its own takes).
@@ -2317,4 +2323,15 @@ enum WhatsAppRecipients {
 
 func waHMACSHA256(key: Data, message: Data) -> Data {
     Data(HMAC<SHA256>.authenticationCode(for: message, using: SymmetricKey(data: key)))
+}
+
+/// Which of the groups the phone knows you left: the ones missing from the list of groups you are in. A list that holds
+/// none of the known groups is no answer (a gateway that failed quietly): nil keeps what was known.
+enum WhatsAppLeftGroups {
+    static func left(known: [String], joined: Set<String>) -> Set<String>? {
+        let groups = Set(known.map(WAJID.normalized).filter(WAJID.isGroup))
+        guard !groups.isEmpty else { return [] }
+        guard !groups.isDisjoint(with: joined) else { return nil }
+        return groups.subtracting(joined)
+    }
 }
