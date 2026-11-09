@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(WebKit)
+import WebKit
+#endif
 
 /// Pages agents show inline with `render_page` (`RenderedPage`): arguments, where they are kept, and the sandbox.
 final class RenderedPageTests: XCTestCase {
@@ -65,4 +68,108 @@ final class RenderedPageTests: XCTestCase {
         XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: 10, fullSize: false), RenderedPage.minHeight)
         XCTAssertEqual(RenderedPage.shownHeight(asked: 360, measured: .nan, fullSize: true), 360)
     }
+
+    func testMeasureSizeAndZoom() {
+        XCTAssertNil(RenderedPage.Measure.Size(["w": 500, "v": 0, "h": 300]))
+        let fit = RenderedPage.Measure.Size(["w": 600, "v": 600, "h": 400])!
+        XCTAssertEqual(RenderedPage.Measure.zoom(current: 1, fit), 1)
+        let wide = RenderedPage.Measure.Size(["w": 1000, "v": 500, "h": 400])!
+        XCTAssertEqual(RenderedPage.Measure.zoom(current: 1, wide), 0.5, accuracy: 0.001)
+        let huge = RenderedPage.Measure.Size(["w": 5000, "v": 500, "h": 400])!
+        XCTAssertEqual(RenderedPage.Measure.zoom(current: 1, huge), RenderedPage.Measure.minZoom, accuracy: 0.001)
+    }
+
+    #if canImport(WebKit)
+    @MainActor
+    func testFullSizeExpansionDoesNotLoopOnViewportRelativeMockups() async throws {
+        // A mock-up like "Chat-apps: nu en voorstel": a 60px top bar + a `calc(100vh - 56px)` flex shell whose
+        // `.page` pane (`overflow: auto`) holds 1000px of content. Naively `scrollHeight` is `100vh + 4` at every
+        // frame height, which would grow by 4px every 16ms forever when expanded to `fullSize`.
+        let mockupHTML = """
+        <!doctype html><html><head><style>
+        *{box-sizing:border-box}body{margin:0}
+        .top{height:60px}
+        .win{display:flex;height:calc(100vh - 56px)}
+        .side{width:180px}
+        .page{flex:1;overflow:auto}
+        .content{height:1000px}
+        </style></head><body>
+        <div class="top"></div>
+        <div class="win"><div class="side"></div><div class="page"><div class="content"></div></div></div>
+        </body></html>
+        """
+        let harness = MeasureHarness(width: 700, asked: 560, html: mockupHTML)
+        let first = try await harness.nextHeight()
+        XCTAssertEqual(first, 1060, accuracy: 2, "measures the full content height including the inner scroll pane")
+
+        // Simulate clicking the top-right full-size button: resize the web view to `shownHeight(..., fullSize: true)`
+        // and verify no runaway growth reports follow.
+        harness.expandToFullSize()
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(harness.reports.count, 1, "resizing the frame height to fullSize must not trigger a feedback loop")
+        XCTAssertEqual(harness.view.frame.height, 1060, accuracy: 2)
+
+        // Also check a short page (no viewport units): shrinks to its own content height instead of `clientHeight`.
+        let shortHarness = MeasureHarness(width: 700, asked: 360, html: "<body style='margin:0'><div style='height:140px'></div></body>")
+        let shortHeight = try await shortHarness.nextHeight()
+        XCTAssertEqual(shortHeight, 140, accuracy: 2)
+    }
+
+    @MainActor
+    private final class MeasureHarness: NSObject, WKScriptMessageHandler {
+        let view: WKWebView
+        let asked: Double
+        var reports: [Double] = []
+        private var reported: Double?
+        private var continuation: CheckedContinuation<Double, Error>?
+
+        init(width: Double, asked: Double, html: String) {
+            self.asked = asked
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = .nonPersistent()
+            let world = WKContentWorld.world(name: "NookPageMeasureTest")
+            view = WKWebView(frame: CGRect(x: 0, y: 0, width: width, height: asked), configuration: configuration)
+            super.init()
+            configuration.userContentController.add(self, contentWorld: world, name: RenderedPage.Measure.handler)
+            configuration.userContentController.addUserScript(
+                WKUserScript(source: RenderedPage.Measure.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: world)
+            )
+            view.loadHTMLString(RenderedPage.hostPage(html), baseURL: nil)
+        }
+
+        func nextHeight() async throws -> Double {
+            if let first = reports.first { return first }
+            return try await withCheckedThrowingContinuation { continuation = $0 }
+        }
+
+        func expandToFullSize() {
+            let target = RenderedPage.shownHeight(asked: asked, measured: reported, fullSize: true)
+            view.frame = CGRect(x: 0, y: 0, width: view.frame.width, height: target)
+            view.layoutSubtreeIfNeeded()
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard !message.frameInfo.isMainFrame, let size = RenderedPage.Measure.Size(message.body) else { return }
+            let zoom = RenderedPage.Measure.zoom(current: Double(view.pageZoom), size)
+            if abs(zoom - Double(view.pageZoom)) > 0.01 {
+                view.pageZoom = CGFloat(zoom)
+                return
+            }
+            let height = size.height * Double(view.pageZoom)
+            guard reported.map({ abs($0 - height) > 1 }) ?? true else { return }
+            reported = height
+            reports.append(height)
+            if reports.count > 1 {
+                // If a feedback loop occurs, each new height would keep expanding the frame when fullSize is on.
+                let target = RenderedPage.shownHeight(asked: asked, measured: reported, fullSize: true)
+                view.frame = CGRect(x: 0, y: 0, width: view.frame.width, height: target)
+                view.layoutSubtreeIfNeeded()
+            }
+            if let continuation {
+                self.continuation = nil
+                continuation.resume(returning: height)
+            }
+        }
+    }
+    #endif
 }
