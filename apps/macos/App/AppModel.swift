@@ -358,7 +358,18 @@ final class AppModel: ObservableObject {
         ToolUpdates.shared.start()
         CompanionServer.shared.attach(app: self)
         CompanionNotifier.shared.attach(app: self)
+        // A macOS notification from before a restart still opens, answers or reads what it is about.
+        SystemNotifier.shared.orphan = { [weak self] target, response in self?.answerOrphanNotification(target, response) }
         SystemNotifier.shared.start()
+        // The session you open in Nook: its notification ("Claude Code is done") has been seen, so it goes.
+        viewModel.$selectedAgentID
+            .removeDuplicates()
+            .sink { session in
+                SystemNotifier.shared.withdraw(AgentStatusNotice.cardID(session: session))
+                // A session Nook runs: the question it asked is in its conversation, now in front of you.
+                if session.hasPrefix("run:") { SystemNotifier.shared.withdraw("wsquestion-" + session.dropFirst(4)) }
+            }
+            .store(in: &bag)
         // A bar above words you select anywhere in Nook asks Nook about them.
         SelectionAskController.shared.start(app: self)
         requestNotificationAccessIfNeeded()

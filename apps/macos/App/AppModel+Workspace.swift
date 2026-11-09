@@ -441,7 +441,8 @@ extension AppModel {
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
         deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, urgent: true, title: message,
-                      sound: .attention, kind: .warning, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
+                      sound: .attention, kind: .warning, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) },
+                      banner: NoticeBanner(target: .run(runID)))
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
