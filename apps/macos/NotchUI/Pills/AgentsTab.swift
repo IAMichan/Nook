@@ -517,6 +517,8 @@ struct AgentsTab: View {
             comparison: comparisons[run.id] ?? 0,
             forked: run.lineage?.kind == .fork,
             worktree: run.isolation == .worktree || run.worktreePath != nil,
+            linesAdded: run.changedLinesAdded ?? 0,
+            linesRemoved: run.changedLinesRemoved ?? 0,
             changedFiles: run.changedFiles
         )
     }
@@ -651,7 +653,8 @@ struct AgentListItem: Identifiable, Equatable {
     var forked = false
     /// Works in a linked git worktree rather than the repository's own folder: its branch shows a worktree mark.
     var worktree = false
-    /// The lines it added and removed (sessions the hooks report), or the files it changed (sessions Nook runs).
+    /// The lines it added and removed (counted by the hooks, or read from git for sessions Nook runs), and for sessions
+    /// Nook runs the files it changed: the row shows the lines, the file count only when git counted no lines (binary).
     var linesAdded = 0
     var linesRemoved = 0
     var changedFiles: Int? = nil
@@ -866,8 +869,8 @@ struct AgentListRow: View, Equatable {
     /// The changes of a session on this Mac open the list of changed files on hover; a remote one has no folder here.
     private var showsChangesCard: Bool { !item.path.isEmpty && item.machine == MachineName.local }
 
-    /// "+120 −8" for a session whose lines the hooks counted; the number of changed files for one Nook runs. On hover a
-    /// card lists the files with their lines.
+    /// "+120 −8" for every session with changed lines; the number of changed files only when no lines were counted
+    /// (binary files only). On hover a card lists the files with their lines.
     private var changes: some View {
         changeCount
             .detailCard(enabled: showsChangesCard, onDetail: $onDetail) {

@@ -134,11 +134,11 @@ struct AgentInboxList: View {
 
     /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier
     /// ones of the last three days (older ones keep the state they had).
-    private var pullRequestFolders: [(path: String, branch: String)] {
+    private var pullRequestFolders: [PullRequestSync.Folder] {
         let recent = past.filter { ($0.started ?? .distantPast) > now.addingTimeInterval(-3 * 24 * 3600) }
         return (items + recent).compactMap { item in
             guard runID(item) == nil, let branch = item.branch else { return nil }
-            return (path: item.path, branch: branch)
+            return PullRequestSync.Folder(path: item.path, branch: branch, busy: item.isBusy, quietSince: item.started)
         }
     }
 
