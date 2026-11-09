@@ -208,12 +208,14 @@ struct AgentSessionDetail: View {
             // An approval goes first: the agent is held up on it now, and a question can outlive the hook that asked it.
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
-                ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+                ApprovalView(approval: approval, inline: true, onDecide: { app.approvals.decide(approval, $0) },
+                             onSecret: { app.approvals.allow(approval, secret: $0) })
                     .sessionComposerBounds()
             } else if !app.demoMode, let request = bridgeRequest(for: session) {
                 // A command or pull request this agent asks for through Nook's workspace.
                 let approval = ApprovalCenter.make(request)
-                ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+                ApprovalView(approval: approval, inline: true, onDecide: { app.approvals.decide(approval, $0) },
+                             onSecret: { app.approvals.allow(approval, secret: $0) })
                     .sessionComposerBounds()
             } else if !app.demoMode, let question = app.hub.question(for: session.id) {
                 questionPanel(question).chatColumn().sessionComposerBounds()

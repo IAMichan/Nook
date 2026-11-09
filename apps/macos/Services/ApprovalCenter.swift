@@ -28,6 +28,8 @@ struct AgentApproval: Identifiable {
     let created: Date
     /// `command` is text for people (Markdown), not a command: drawn as prose.
     var prose = false
+    /// A secret Nook does not keep yet: the request shows a secure field for its value.
+    var secretName: String? = nil
 
     var id: String {
         switch origin {
@@ -93,7 +95,8 @@ final class ApprovalCenter {
             origin: .bridge(requestID: request.id), agentName: request.caller.agent,
             project: URL(fileURLWithPath: request.caller.directory).lastPathComponent, tool: request.tool.rawValue,
             title: request.title, command: request.detail, diff: [], note: request.note, danger: request.danger,
-            canAlways: false, canTerminal: false, created: request.created, prose: request.tool.approvalReadsAsProse
+            canAlways: false, canTerminal: false, created: request.created, prose: request.tool.approvalReadsAsProse,
+            secretName: request.secretName
         )
     }
 
@@ -105,6 +108,12 @@ final class ApprovalCenter {
         }
         all += bridge.pending.map(Self.make)
         return all.sorted { $0.created < $1.created }
+    }
+
+    /// Allows a secret request with the value typed on it.
+    func allow(_ approval: AgentApproval, secret: BridgeSecretAnswer) {
+        if case .bridge(let request) = approval.origin { bridge.give(request, secret) }
+        decide(approval, .allow)
     }
 
     func decide(_ approval: AgentApproval, _ decision: ApprovalDecision) {
