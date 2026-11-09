@@ -111,6 +111,24 @@ final class QuietModeTests: XCTestCase {
         XCTAssertFalse(QuietPolicy.isMeeting(signals))
     }
 
+    func testTheWindowListIsOnlyNeededWhileAnAppThatCanShareRuns() {
+        XCTAssertFalse(QuietPolicy.canShowSharingBar(runningApps: [("Finder", "com.apple.finder"), ("Xcode", "com.apple.dt.Xcode")]))
+        XCTAssertTrue(QuietPolicy.canShowSharingBar(runningApps: [("Finder", "com.apple.finder"), ("zoom.us", "us.zoom.xos")]))
+        XCTAssertTrue(QuietPolicy.canShowSharingBar(runningApps: [("Google Chrome", "com.google.Chrome")]))
+        XCTAssertTrue(QuietPolicy.canShowSharingBar(runningApps: [("screencaptureui", "com.apple.screencaptureui")]))
+        // Whatever a window of a running app would match, the app matches too.
+        let bar = QuietPolicy.Window(owner: "Microsoft Teams", bundleID: "com.microsoft.teams2", name: "Sharing control bar", height: 40)
+        XCTAssertTrue(QuietPolicy.isSharingWindow(bar))
+        XCTAssertTrue(QuietPolicy.canShowSharingBar(runningApps: [(bar.owner, bar.bundleID ?? "")]))
+    }
+
+    func testOnlyScreenSharingKeepsTheTwoSecondWatch() {
+        XCTAssertEqual(QuietPolicy.watchInterval(watchesSharing: true, settingsOpen: false, slowdown: 6), 2)
+        XCTAssertEqual(QuietPolicy.watchInterval(watchesSharing: false, settingsOpen: true, slowdown: 2), 4)
+        XCTAssertEqual(QuietPolicy.watchInterval(watchesSharing: false, settingsOpen: false, slowdown: 1), 10)
+        XCTAssertEqual(QuietPolicy.watchInterval(watchesSharing: false, settingsOpen: false, slowdown: 2), 20)
+    }
+
     func testRecordingACallIsAMeeting() {
         var signals = QuietPolicy.MeetingSignals(now: now)
         signals.recording = true

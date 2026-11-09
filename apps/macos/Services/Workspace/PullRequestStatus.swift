@@ -189,14 +189,10 @@ final class PullRequestStatusStore: ObservableObject {
         record(url: url, snapshot: snapshot, at: started)
     }
 
-    /// Keeps a shown pull request current until the task that runs it ends: every 30 seconds while it is open (as the
-    /// pull request page does), every 15 minutes once merged or closed: one read is several requests, and a session can
-    /// show a merged one all day. Places showing the same one share the reads.
-    static func follow(_ url: URL) async {
-        while !Task.isCancelled {
-            await shared.refresh(url)
-            let settled = shared.status(url).map { $0.glyph == .merged || $0.glyph == .closed } ?? false
-            try? await Task.sleep(for: .seconds(settled ? 900 : 30))
-        }
+    /// How often a shown pull request is read again (`follow`, in the app): every 30 seconds while it is open (as the
+    /// pull request page does), every 15 minutes once merged or closed (one read is several requests, and a session can
+    /// show a merged one all day), stretched by the energy plan.
+    nonisolated static func followInterval(settled: Bool, plan: EnergyPlan) -> TimeInterval {
+        (settled ? 900 : 30) * plan.slowdown
     }
 }

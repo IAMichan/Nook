@@ -207,6 +207,9 @@ private struct WhatsAppAccountRow: View {
                     .controlSize(.small)
             }
         }
+        // While this row shows, an unlinked gateway is asked every few seconds, so a scanned QR code links at once.
+        .onAppear { link.linkViewAppeared() }
+        .onDisappear { link.linkViewDisappeared() }
         if renaming {
             HStack(spacing: NookTheme.Spacing.md) {
                 TextField("", text: $name, prompt: Text(tr(isFirst ? "whatsapp.accounts.mainPrompt" : "whatsapp.accounts.namePrompt")))

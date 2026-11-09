@@ -49,6 +49,9 @@ final class ScreenContext: ObservableObject {
     @Published private(set) var shown = Shown()
 
     var enabled: () -> Bool = { true }
+    /// Whether anything reads the cache the timer keeps between questions (Think Along, Double Tap, the screen with every
+    /// question). When nothing does, the timer reads nothing and a question reads the screen on demand (`snapshot`).
+    var periodicReadsWanted: () -> Bool = { true }
 
     private var timer: Timer?
     private var busy = false
@@ -104,7 +107,7 @@ final class ScreenContext: ObservableObject {
             Task { @MainActor in await self?.tick() }
         }
         let center = NSWorkspace.shared.notificationCenter
-        // When switching apps, immediately observe the new frontmost window.
+        // When switching apps, read the new frontmost window once you stayed in it (`scheduleFrontRefresh`).
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.scheduleFrontRefresh() }
         })
@@ -137,18 +140,26 @@ final class ScreenContext: ObservableObject {
         lastFailure = nil
     }
 
+    /// How long you stay in an app you switched to before its window is read: flicking through apps with ⌘Tab reads
+    /// nothing, and a question reads the front window fresh anyway (`snapshot`).
+    private let frontRefreshDelay: TimeInterval = 2
+
     private func scheduleFrontRefresh() {
-        if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
         pendingFrontRefresh?.cancel()
-        pendingFrontRefresh = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled else { return }
-            await self?.refresh(frontOnly: true, accurateFront: false)
+        pendingFrontRefresh = nil
+        guard enabled(), periodicReadsWanted() else { return }
+        if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
+        pendingFrontRefresh = Task { [weak self, delay = frontRefreshDelay] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            // The same rule as the timer's read: not while the plan pauses (a hot or busy Mac, a locked screen, away).
+            guard EnergyMonitor.shared.plan.readsScreen, self.enabled() else { return }
+            await self.refresh(frontOnly: true, accurateFront: false)
         }
     }
 
     private func tick() async {
-        guard enabled(), hasPermission else { return }
+        guard enabled(), periodicReadsWanted(), hasPermission else { return }
         if let failure = lastFailure, Date().timeIntervalSince(failure) < failureCooldown { return }
         // Idle away from Mac: skip capture.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)

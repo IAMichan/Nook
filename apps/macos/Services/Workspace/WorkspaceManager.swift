@@ -2050,16 +2050,21 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Looks at each watched pull request at most every two minutes.
+    /// Looks at each watched pull request at most every two minutes, stretched by the energy plan. A watch that wakes its
+    /// agent keeps going while nobody is at the Mac (the agent answers a review or a failed check by itself), only slower;
+    /// one that only updates a badge waits until someone is back.
     func checkPullRequestWatches(force: Bool = false) {
         guard let fetch = pullRequestSnapshot else { return }
         let now = Date()
+        let energy = EnergyMonitor.shared
+        let gap = 120 * energy.plan.slowdown
         for run in runs {
             guard !run.archived else { continue }
             for watch in run.prWatches {
                 let key = run.id.uuidString + " " + watch.url
                 guard watch.state == "open", !watchesInFlight.contains(key),
-                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
+                      force || watch.wakeAgent || !energy.signals.idle,
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true,
                       let url = URL(string: watch.url) else { continue }
                 let id = run.id
                 watchesInFlight.insert(key)
