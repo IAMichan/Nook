@@ -651,3 +651,27 @@ enum GeminiStreamParser {
         }
     }
 }
+
+/// One line of an agent's output, parsed on the queue that read it. Every agent's stdout is read on a queue of its own
+/// (`AgentProcess`), so parsing there costs the main thread nothing however many agents stream at once; the main thread
+/// only applies the events. Codex's app-server and the ACP agents parse their messages on their own queues already.
+enum ParsedStreamLine: Sendable, Equatable {
+    case claude([ClaudeStreamEvent])
+    case codex([CodexStreamEvent])
+    case gemini([GeminiStreamEvent])
+    /// An agent whose output Nook does not read line by line here (the ACP agents read their own messages).
+    case none
+
+    static func parse(_ line: String, provider: RunProvider) -> ParsedStreamLine {
+        switch provider {
+        case .claude: return .claude(ClaudeStreamParser.parse(line))
+        case .codex: return .codex(CodexStreamParser.parse(line))
+        case .gemini: return .gemini(GeminiStreamParser.parse(line))
+        case .opencode, .cursor, .grok, .antigravity, .acp: return .none
+        }
+    }
+
+    static func parse(_ lines: [String], provider: RunProvider) -> [ParsedStreamLine] {
+        lines.map { parse($0, provider: provider) }
+    }
+}

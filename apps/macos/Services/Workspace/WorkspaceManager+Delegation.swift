@@ -33,7 +33,9 @@ extension WorkspaceManager {
             summary: DelegatedTask.summary(status: run.status, statusDetail: run.statusDetail, events: timeline(run.id)),
             hasPendingQuestion: question,
             model: run.resolvedModel ?? (run.model.isEmpty ? nil : run.model),
-            provider: run.provider.displayName
+            provider: run.provider.displayName,
+            worktree: run.isolation == .worktree ? run.worktreePath : nil,
+            branch: run.isolation == .worktree ? run.branch : nil
         )
     }
 

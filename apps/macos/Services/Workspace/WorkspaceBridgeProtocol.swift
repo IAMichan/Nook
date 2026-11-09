@@ -173,7 +173,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .orchestratorCapabilities:
             return "Lists the agents Nook can run as a delegated task (installed or not, their models and the rights they offer), your own mode and rights, and the limits on delegating. Call it before delegate_task when you want another agent or model."
         case .delegateTask:
-            return "Hands a task to a new agent session in Nook, visible to the user next to yours. The agent gets only the task text (and a role), not this conversation, so write a complete brief. It works in your folder with your mode and rights or narrower; it can never have more. Returns a task id. Without wait it returns at once and Nook tells you when the task has finished; with wait it waits for the result (at most timeout_seconds) and reports waitTimedOut if the task is still running. The user approves each delegation unless the session has full rights."
+            return "Hands a task to a new agent session in Nook, visible to the user next to yours. The agent gets only the task text (and a role), not this conversation, so write a complete brief. It works in your folder with your mode and rights or narrower; it can never have more. Tasks that change files at the same time get a git worktree each (see isolation), and the result names the branch to merge. Returns a task id. Without wait it returns at once and Nook tells you when the task has finished; with wait it waits for the result (at most timeout_seconds) and reports waitTimedOut if the task is still running. The user approves each delegation unless the session has full rights."
         case .taskStatus:
             return "Reads the state and result of a task you delegated: queued, running, waiting (for the user), completed, failed or cancelled, with the child's last message as summary."
         case .taskWait:
@@ -286,6 +286,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "plan": ["type": "boolean", "description": "Run the task in Plan mode (read-only). Defaults to your own mode; false only if you are not in Plan mode."],
                 "rights": ["type": "string", "enum": PermissionPolicy.allCases.map(\.rawValue),
                            "description": "What the task may do without asking: ask, acceptEdits or bypass. Never more than you have."],
+                "isolation": ["type": "string", "enum": ["shared", "worktree"],
+                              "description": "shared: the task works in your folder on the same files. worktree: in a git worktree of its own, on a branch from yours (only what you committed); you merge it afterwards. Default: shared, but a task that may change files gets a worktree when another such task of yours is already working in your folder."],
                 "wait": ["type": "boolean", "description": "Wait for the result instead of returning at once. Default false."],
                 "timeout_seconds": ["type": "integer", "description": "With wait: how long to wait (default 45, at most 840). The task keeps running after a timeout."],
                 "client_request_id": ["type": "string", "description": "Makes a retry of this call return the same task instead of starting a second one."]
@@ -575,8 +577,47 @@ enum BridgePolicy {
             case .safe: return .allow
             case .review: return caller.permission == .bypass ? .allow : .ask(.needsReview)
             }
-        default:
+        case .browserOpen:
+            // A page on this Mac is the agent's own dev server. Any other address leaves this Mac, and what an agent puts
+            // in it (a query, a path) is something it sends: you see it first, unless the session has every right.
+            return localPage || caller.permission == .bypass ? .allow : .ask(.outward)
+        case .terminalStop, .taskCancel:
+            // Only what the caller started itself (checked where the call is handled): stopping your own work.
             return .allow
+        case .deviceOpen, .deviceClose:
+            // A simulator or emulator on this Mac, shown in Nook's Simulator page.
+            return .allow
+        case .renderPage:
+            // A page written into the caller's own folder and shown in its own side panel.
+            return .allow
+        case .watchPullRequest:
+            // Reads a pull request's state now and then; what it finds goes back to the caller only.
+            return .allow
+        case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot, .browserSnapshot,
+             .browserWaitFor, .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList,
+             .sessionSearch, .deviceList, .deviceScreenshot, .listScheduledTasks, .getPullRequestStatus, .nookTools,
+             .nookChatList, .nookChatRead:
+            // Reads: allowed above. Listed so a new tool must be placed here, never allowed by default.
+            return .allow
+        }
+    }
+}
+
+extension BridgeTool {
+    /// The tool's handler asks for approval itself when the policy says `.ask`, with a title and detail written for that
+    /// tool. For every other tool the bridge asks centrally before the handler runs, so an `.ask` can never be skipped.
+    var asksInHandler: Bool {
+        switch self {
+        case .terminalRun, .browserOpen, .browserClick, .browserType, .pullRequestCreate, .delegateTask, .sessionSend,
+             .sessionStart, .sessionOrganize, .sessionQuestions, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow,
+             .requestSecret, .nookUse, .nookChatSend, .takeOverScreen:
+            return true
+        case .workspaceInfo, .terminalRead, .terminalList, .terminalStop, .browserRead, .browserScreenshot,
+             .browserSnapshot, .browserWaitFor, .orchestratorCapabilities, .taskStatus, .taskWait, .taskCancel,
+             .sessionRead, .sessionList, .sessionSearch, .renderPage, .deviceList, .deviceOpen, .deviceScreenshot,
+             .deviceClose, .listScheduledTasks, .watchPullRequest, .getPullRequestStatus, .nookTools, .nookChatList,
+             .nookChatRead:
+            return false
         }
     }
 }
@@ -657,6 +698,9 @@ struct BridgeLaunch: Equatable, Sendable {
     var script: String
     /// Set for a session on another machine: the agent's way back to Nook (see `RemoteBridge`).
     var remote: Remote? = nil
+    /// The secret that proves a call comes from this session's own server (`NOOK_BRIDGE_TOKEN`). Without it the bridge
+    /// treats a caller as an agent you started yourself, never as a session with the rights you gave it.
+    var token: String? = nil
 
     struct Remote: Equatable, Sendable {
         var socket: String
@@ -666,6 +710,7 @@ struct BridgeLaunch: Equatable, Sendable {
     /// What the server needs in its environment.
     func environment(runID: UUID) -> [String: String] {
         var variables = ["NOOK_RUN_ID": runID.uuidString]
+        if let token { variables["NOOK_BRIDGE_TOKEN"] = token }
         if let remote {
             variables["NOOK_BRIDGE_SOCK"] = remote.socket
             variables["NOOK_BRIDGE_TOKEN"] = remote.token
@@ -820,5 +865,99 @@ enum BridgeRPC {
         default:
             return failure(-32601, "Method not found: \(method)")
         }
+    }
+}
+
+/// Who is calling the bridge. A session's rights (its mode and permission) go only to a call that carries that session's
+/// token: the id alone is in the environment of everything the agent starts and in process listings, and a folder says
+/// nothing about who works in it.
+enum BridgeIdentity {
+    /// Compares a token without stopping at the first difference, so the time a check takes tells nothing about it.
+    static func matches(_ expected: String?, _ given: String) -> Bool {
+        guard let expected, !expected.isEmpty, !given.isEmpty else { return false }
+        let a = Array(expected.utf8), b = Array(given.utf8)
+        guard a.count == b.count else { return false }
+        var difference: UInt8 = 0
+        for index in a.indices { difference |= a[index] ^ b[index] }
+        return difference == 0
+    }
+
+    /// The session a call proves to be: its `NOOK_RUN_ID`, accepted only with the right `NOOK_BRIDGE_TOKEN`.
+    static func run(env: [String: Any], accepts: (UUID, String) -> Bool) -> UUID? {
+        guard let raw = env["NOOK_RUN_ID"] as? String, let id = UUID(uuidString: raw) else { return nil }
+        return accepts(id, (env["NOOK_BRIDGE_TOKEN"] as? String) ?? "") ? id : nil
+    }
+}
+
+/// What an agent can do with Nook, in groups the user switches per agent (Settings › Automation › Tools per agent).
+/// Every bridge tool belongs to one group, except `workspace_info`, which only describes the bridge.
+enum BridgeCapability: String, CaseIterable, Codable, Sendable, Identifiable {
+    case terminal, browser, pullRequests, delegation, sessions, devices, scheduling, secrets, nookApps, screen, pages
+
+    var id: String { rawValue }
+}
+
+extension BridgeTool {
+    /// The group the user switches this tool with; nil for a tool every agent always has.
+    var capability: BridgeCapability? {
+        switch self {
+        case .workspaceInfo: return nil
+        case .terminalRun, .terminalRead, .terminalList, .terminalStop: return .terminal
+        case .browserOpen, .browserRead, .browserScreenshot, .browserSnapshot, .browserClick, .browserType, .browserWaitFor:
+            return .browser
+        case .pullRequestCreate, .watchPullRequest, .getPullRequestStatus: return .pullRequests
+        case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel: return .delegation
+        case .sessionRead, .sessionList, .sessionSend, .sessionStart, .sessionSearch, .sessionOrganize, .sessionQuestions:
+            return .sessions
+        case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return .devices
+        case .scheduleTask, .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow: return .scheduling
+        case .requestSecret: return .secrets
+        case .nookTools, .nookUse, .nookChatList, .nookChatRead, .nookChatSend: return .nookApps
+        case .takeOverScreen: return .screen
+        case .renderPage: return .pages
+        }
+    }
+}
+
+/// Which groups of Nook's tools each agent may use. Stored as the groups switched off, per agent, so a new group is on
+/// for everyone until the user switches it off. The same for a session Nook runs and an agent linked in a terminal.
+struct BridgeAccess: Equatable, Sendable {
+    /// Agent key (`RunProvider.rawValue`) → groups switched off.
+    var disabled: [String: Set<BridgeCapability>] = [:]
+
+    func allows(_ tool: BridgeTool, agent: String) -> Bool {
+        guard let capability = tool.capability else { return true }
+        return !(disabled[agent]?.contains(capability) ?? false)
+    }
+
+    func isOn(_ capability: BridgeCapability, agent: String) -> Bool {
+        !(disabled[agent]?.contains(capability) ?? false)
+    }
+
+    mutating func set(_ capability: BridgeCapability, on: Bool, agent: String) {
+        var off = disabled[agent] ?? []
+        if on { off.remove(capability) } else { off.insert(capability) }
+        disabled[agent] = off.isEmpty ? nil : off
+    }
+
+    /// The agent key for the name an agent gives the bridge (`--agent claude-code`, `codex`, an ACP agent's provider).
+    static func agentKey(forClient id: String) -> String {
+        let lower = id.lowercased()
+        if lower == "claude-code" || lower == "claude" { return RunProvider.claude.rawValue }
+        return RunProvider(rawValue: lower)?.rawValue ?? lower
+    }
+
+    /// As stored in the defaults: agent → group names.
+    var stored: [String: [String]] { disabled.mapValues { $0.map(\.rawValue).sorted() } }
+
+    init(disabled: [String: Set<BridgeCapability>] = [:]) { self.disabled = disabled }
+
+    init(stored: [String: [String]]) {
+        disabled = stored.mapValues { Set($0.compactMap(BridgeCapability.init(rawValue:))) }.filter { !$0.value.isEmpty }
+    }
+
+    /// The answer an agent gets for a tool the user switched off for it.
+    static func refusal(_ tool: BridgeTool, agent: String) -> String {
+        "The user switched off Nook's \(tool.capability?.rawValue ?? tool.rawValue) tools for \(agent) (Settings › Automation › Tools per agent). Do this another way or ask the user."
     }
 }

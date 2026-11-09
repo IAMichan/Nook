@@ -264,7 +264,7 @@ final class WorkspaceManager: ObservableObject {
     /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
     var remoteHomes: [String: String] = [:]
     var remoteBridgeInstalling: Set<String> = []
-    var remoteBridgeTokens: [UUID: String] = [:]
+    var bridgeTokens: [UUID: String] = [:]
     var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
     var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
@@ -320,6 +320,9 @@ final class WorkspaceManager: ObservableObject {
     /// The week recap: sessions Nook runs itself count too, not only the ones in a terminal.
     var recap: RecapStore?
 
+    /// Turns waiting for a free place (`SessionCapacity`), with what they start with; `capacityOrder` keeps who came first.
+    var capacityWaiting: [UUID: (prompt: String, executable: String)] = [:]
+    var capacityOrder: [UUID] = []
     var processes: [UUID: AgentProcess] = [:]
     var turns: [UUID: TurnState] = [:]
     private var saveTask: Task<Void, Never>?
@@ -443,6 +446,7 @@ final class WorkspaceManager: ObservableObject {
         customAgentModels = AgentModelStore(url: Self.customModelStoreURL).loadRaw()
         agentEfforts = AgentModelStore(url: Self.effortStoreURL).loadRaw()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
+        ModelRates.use(modelManifest)
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
         Task.detached(priority: .userInitiated) { [weak self] in
             let loaded = store.loadRuns()
@@ -523,6 +527,16 @@ final class WorkspaceManager: ObservableObject {
 
     /// The session's timeline for Search everything: from memory when it is loaded, else read from disk off the main
     /// thread without keeping it, so a search does not hold every timeline in memory.
+    /// The sessions that may mention `query`, from the search index; nil when the index cannot answer. Timelines in
+    /// memory are always included: what they streamed since their last save is not in the index yet.
+    func sessionsMentioning(_ query: String) async -> [UUID]? {
+        let store = store
+        guard let indexed = await Task.detached(priority: .userInitiated, operation: { store.sessions(mentioning: query) }).value else {
+            return nil
+        }
+        return indexed + events.keys.filter { !indexed.contains($0) }
+    }
+
     func timelineForSearch(_ id: UUID) async -> [RunEvent] {
         if let loaded = events[id] { return loaded }
         let store = store
@@ -1405,6 +1419,7 @@ final class WorkspaceManager: ObservableObject {
     /// Stops the active turn. Claude Code receives a polite interrupt request first, followed by SIGINT.
     func stop(_ id: UUID) {
         stopDelegatedChildren(of: id)
+        if cancelWaitingTurn(id) { return }
         if let task = prepareTasks.removeValue(forKey: id) {
             task.cancel()
             awaitingCheckpoint[id] = nil
@@ -1455,6 +1470,7 @@ final class WorkspaceManager: ObservableObject {
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
         cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
+        if waitForCapacity(id, prompt: prompt, executable: executable, showPrompt: showPrompt) { return }
         // A new turn brings a chat you settled back, also when the Agents list is not on screen to see it work.
         if let run = run(id) { FinishedSessions.shared.reopen(FinishedSessions.key(run: run)) }
         // A new turn ends any wait for a usage limit (yours or the automatic one).
@@ -1493,7 +1509,7 @@ final class WorkspaceManager: ObservableObject {
             model: run.model,
             mode: run.mode,
             permission: run.permission,
-            instructions: run.instructions,
+            instructions: launchInstructions(run),
             workingDirectory: run.workingDirectory,
             resumeSessionID: rollback?.resumeSession ?? run.providerSessionID,
             forkSession: forkNext.contains(id) || rollback != nil,
@@ -1512,12 +1528,13 @@ final class WorkspaceManager: ObservableObject {
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
+        let provider = run.provider
         process.onLines = { [weak self] lines in
+            // Parsed here, on the process's own queue: the main thread only applies the events.
+            let parsed = ParsedStreamLine.parse(lines, provider: provider)
             Task { @MainActor in
                 guard let self else { return }
-                for line in lines {
-                    self.handle(line: line, for: id)
-                }
+                for line in parsed { self.handle(parsed: line, for: id) }
             }
         }
         process.onExit = { [weak self, weak process] status, stderr in
@@ -1558,7 +1575,7 @@ final class WorkspaceManager: ObservableObject {
             if !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
             var spec = placed(AgentCommand.spec(AgentCommand.Input(
                 provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
-                instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
+                instructions: launchInstructions(run), workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
@@ -1566,12 +1583,13 @@ final class WorkspaceManager: ObservableObject {
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
+                let parsed = ParsedStreamLine.parse(lines, provider: .claude)
                 Task { @MainActor in
                     // While it only waits, nothing it prints is a turn (a failed resume must not fail the session), apart
                     // from the answers to Nook's own requests (a connector's sign-in page).
                     guard let self, let process else { return }
                     guard self.processes[id] === process else { return self.handleClaudeReplies(lines, for: id) }
-                    for line in lines { self.handle(line: line, for: id) }
+                    for line in parsed { self.handle(parsed: line, for: id) }
                 }
             }
             process.onExit = { [weak self, weak process] status, stderr in
@@ -1593,20 +1611,18 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: Agent Output
 
-    private func handle(line: String, for id: UUID) {
-        guard let run = run(id) else { return }
-        switch run.provider {
-        case .claude:
-            let parsed = ClaudeStreamParser.parse(line)
-            if processes[id] == nil, claudeIdle[id] != nil, parsed.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
-            for event in parsed { handleClaude(event, id: id) }
-        case .codex:
-            let parsed = CodexStreamParser.parse(line)
-            for event in parsed { handleCodex(event, id: id) }
-        case .gemini:
-            let parsed = GeminiStreamParser.parse(line)
-            for event in parsed { handleGemini(event, id: id) }
-        case .opencode, .cursor, .grok, .antigravity, .acp:
+    /// Applies one parsed line of a session's output (parsed off the main thread, `ParsedStreamLine`).
+    private func handle(parsed: ParsedStreamLine, for id: UUID) {
+        guard run(id) != nil else { return }
+        switch parsed {
+        case .claude(let events):
+            if processes[id] == nil, claudeIdle[id] != nil, events.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
+            for event in events { handleClaude(event, id: id) }
+        case .codex(let events):
+            for event in events { handleCodex(event, id: id) }
+        case .gemini(let events):
+            for event in events { handleGemini(event, id: id) }
+        case .none:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
     }
@@ -1894,6 +1910,7 @@ final class WorkspaceManager: ObservableObject {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
             append(id, RunEvent(kind: .error, text: detail))
+            noteFailure(id, text: state.lastError ?? stderr)
             turnDidFinish(id)
         }
         scheduleGitRefresh(id, delay: 0.2)
@@ -2144,6 +2161,71 @@ final class WorkspaceManager: ObservableObject {
         }
         runs.removeAll { $0.id == id }
         SessionBrowsers.shared.discard(run: id)
+        forgetSessionState(id)
+        store.deleteEvents(id)
+        if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
+        scheduleSave()
+        if let leftWorktree {
+            cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
+        }
+    }
+
+    // MARK: Sessions working at once
+
+    /// Sessions working now, apart from `id` and from the turns that wait for a free place themselves.
+    private func othersWorking(than id: UUID) -> Int {
+        runs.filter { $0.id != id && $0.status.isActive && capacityWaiting[$0.id] == nil }.count
+    }
+
+    /// A new turn past the limit waits for a free place: your message shows at once and the session says why it waits.
+    /// True when it waits. A turn of a session that already works (a fallback to another transport) never waits.
+    private func waitForCapacity(_ id: UUID, prompt: String, executable: String, showPrompt: Bool) -> Bool {
+        let limit = settings.maxWorkingSessions
+        guard capacityWaiting[id] == nil, let run = run(id), !(run.status.isActive && run.status != .preparing),
+              SessionCapacity.mustWait(limit: limit, othersWorking: othersWorking(than: id)) else { return false }
+        loadTimeline(id)
+        if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
+        capacityWaiting[id] = (prompt, executable)
+        capacityOrder.append(id)
+        update(id) { $0.move(to: .preparing, detail: tr("ws.capacity.waiting", limit)) }
+        append(id, RunEvent(kind: .system, text: tr("ws.capacity.waiting", limit)))
+        return true
+    }
+
+    /// Starts the turns that waited, oldest first, as far as there is room now. Called when a turn ends, when a waiting
+    /// one is stopped, and when the limit changes.
+    func startWaitingTurns() {
+        capacityOrder.removeAll { capacityWaiting[$0] == nil || run($0) == nil }
+        let working = runs.filter { $0.status.isActive && capacityWaiting[$0.id] == nil }.count
+        let count = SessionCapacity.startable(limit: settings.maxWorkingSessions, working: working, waiting: capacityOrder.count)
+        for id in capacityOrder.prefix(count) {
+            guard let waiting = capacityWaiting.removeValue(forKey: id) else { continue }
+            capacityOrder.removeAll { $0 == id }
+            launchTurn(id, prompt: waiting.prompt, executable: waiting.executable, showPrompt: false)
+        }
+    }
+
+    /// Stop on a turn that still waits for a free place: it never starts.
+    func cancelWaitingTurn(_ id: UUID) -> Bool {
+        guard capacityWaiting.removeValue(forKey: id) != nil else { return false }
+        capacityOrder.removeAll { $0 == id }
+        update(id) { $0.move(to: .stopped) }
+        append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+        return true
+    }
+
+    /// What the agent is told at launch: the project's instructions for every agent, then the session's own. Read at every
+    /// launch, so a change in Settings reaches a session from its next process on.
+    func launchInstructions(_ run: WorkspaceRun) -> String {
+        let folder = run.projectPath.isEmpty ? run.workingDirectory : run.projectPath
+        return ProjectSettings.instructions(project: settings.sessionDefaults(for: folder).agentInstructions,
+                                            session: run.instructions)
+    }
+
+    /// Everything Nook keeps for one session while it runs, gone at once: its processes and connections closed, its
+    /// timers cancelled and every per-session entry removed. The one place for it, so a deleted session leaves nothing
+    /// behind; `SessionStateCleanupTests` fails when a per-session property is added without being forgotten here.
+    func forgetSessionState(_ id: UUID) {
         events[id] = nil
         timelineUse[id] = nil
         evictedTimelines.remove(id)
@@ -2187,12 +2269,32 @@ final class WorkspaceManager: ObservableObject {
         backgroundRoster[id] = nil
         claudeChangedDuringTurn.remove(id)
         git[id] = nil
-        store.deleteEvents(id)
-        if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
-        scheduleSave()
-        if let leftWorktree {
-            cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
-        }
+        // State that only lives during a turn or while the session is open.
+        turns[id] = nil
+        regeneratingTitles.remove(id)
+        checkpointing.remove(id)
+        acpCommands[id] = nil
+        queueLooks.remove(id)
+        reviewComments[id] = nil
+        idleCompactionTimers.removeValue(forKey: id)?.cancel()
+        idleCompacting.remove(id)
+        sizeCompacting.remove(id)
+        bridgeTokens[id] = nil
+        codexGoalStarting[id] = nil
+        codexGoalWaiting[id] = nil
+        antigravitySignIns.remove(id)
+        eventSaves.removeValue(forKey: id)?.cancel()
+        dirtyTimelines?.remove(id)
+        shownTimelines[id] = nil
+        prefetching.remove(id)
+        awaitedTimelines.remove(id)
+        forkNext.remove(id)
+        forkLaunched.remove(id)
+        displayPrompt[id] = nil
+        reopeningWorktrees.remove(id)
+        capacityWaiting[id] = nil
+        capacityOrder.removeAll { $0 == id }
+        runPositions = nil
     }
 
     private func applyAutoArchive() {
@@ -2578,9 +2680,14 @@ final class WorkspaceManager: ObservableObject {
         var run = runs[index]
         change(&run)
         guard run != runs[index] else { return }
+        let freedPlace = runs[index].status.isActive && !run.status.isActive
         run.updatedAt = max(run.updatedAt, runs[index].updatedAt)
         runs[index] = run
         if save { scheduleSave() }
+        // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.
+        if freedPlace, !capacityOrder.isEmpty {
+            Task { @MainActor [weak self] in self?.startWaitingTurns() }
+        }
     }
 
     func append(_ id: UUID, _ event: RunEvent) {

@@ -66,51 +66,37 @@ struct UsageCost: Equatable, Sendable {
 }
 
 /// Public list prices (USD per million tokens) of the models agents run, for an API-equivalent estimate. Not your
-/// subscription bill. Matched on the model id's start, longest first; a price you set yourself (`PriceTable`) wins.
+/// subscription bill. They come from the model manifest (`pricing`), so a price changes between releases like a model
+/// does. Matched on the model id's start, longest first; a price you set yourself (`PriceTable`) wins.
 enum ModelRates {
-    private static func rate(_ input: Double, _ output: Double, read: Double? = nil, write: Double? = nil) -> ModelPrice {
-        ModelPrice(input: input, output: output, cacheRead: read ?? input * 0.1, cacheWrite: write ?? input * 1.25)
+
+    /// The prices of the model manifest in use (`ModelManifest.pricing`), longest prefix first. Set when a manifest is
+    /// loaded or fetched, so a price can change between releases like a model can.
+    static var manifestList: [(prefix: String, price: ModelPrice)] {
+        get { manifestPrices.withLock { $0 } }
+        set { manifestPrices.withLock { $0 = newValue } }
+    }
+    private static let manifestPrices = LockedValue<[(prefix: String, price: ModelPrice)]>([])
+
+    /// Uses the prices of `manifest` from now on; one without prices keeps those of the manifest bundled with the app.
+    static func use(_ manifest: ModelManifest?) {
+        let prices = manifest?.pricing ?? ModelManifest.bundled()?.pricing ?? []
+        manifestList = prices.map { ($0.prefix.lowercased(), $0.modelPrice) }.sorted { $0.prefix.count > $1.prefix.count }
     }
 
-    /// Model id prefix → price. Anthropic's rates as published for its first-party API; OpenAI's and Google's list rates.
-    static let list: [(prefix: String, price: ModelPrice)] = [
-        ("claude-fable-5-1", rate(10, 50, read: 0.25)),
-        ("claude-mythos-5-1", rate(10, 50, read: 0.25)),
-        ("claude-fable-5", rate(10, 50)),
-        ("claude-opus-5-5", rate(4, 20, read: 0.20)),
-        ("claude-opus-5", rate(5, 25)),
-        ("claude-opus-4-8", rate(5, 25)),
-        ("claude-opus-4-7", rate(5, 25)),
-        ("claude-opus-4-6", rate(5, 25)),
-        ("claude-opus-4-5", rate(5, 25)),
-        ("claude-opus-4-1", rate(15, 75)),
-        ("claude-opus-4", rate(15, 75)),
-        ("claude-sonnet-5-5", rate(2, 10, read: 0.20)),
-        ("claude-sonnet-5", rate(2, 10)),
-        ("claude-sonnet-4", rate(3, 15)),
-        ("claude-3-7-sonnet", rate(3, 15)),
-        ("claude-haiku-5-5", rate(0.10, 0.50)),
-        ("claude-haiku-4-5", rate(1, 5)),
-        ("claude-3-5-haiku", rate(0.80, 4)),
-        ("gpt-5-mini", rate(0.25, 2, read: 0.025, write: 0.25)),
-        ("gpt-5-nano", rate(0.05, 0.40, read: 0.005, write: 0.05)),
-        ("gpt-5", rate(1.25, 10, read: 0.125, write: 1.25)),
-        ("gpt-5.1", rate(1.25, 10, read: 0.125, write: 1.25)),
-        ("gemini-2.5-pro", rate(1.25, 10, read: 0.31, write: 1.25)),
-        ("gemini-2.5-flash", rate(0.30, 2.50, read: 0.075, write: 0.30)),
-    ].sorted { $0.prefix.count > $1.prefix.count }
-
-    /// The price for a model: yours first, then the list. Ids are compared without a date suffix or a provider prefix
-    /// (`anthropic.claude-…`, `claude-sonnet-4-5-20250929`).
-    static func price(agent: String, model: String, custom: PriceTable = PriceTable()) -> ModelPrice? {
+    /// The price for a model: yours first, then the model manifest's (`ModelManifest.pricing`). Ids are compared without a date
+    /// suffix or a provider prefix (`anthropic.claude-…`, `claude-sonnet-4-5-20250929`).
+    static func price(agent: String, model: String, custom: PriceTable = PriceTable(),
+                      manifest: [(prefix: String, price: ModelPrice)]? = nil) -> ModelPrice? {
         if let own = custom.models[PriceTable.key(provider: agent, model: model)], own.isUsable { return own }
         let id = normalized(model)
         // A prefix ends where the id does or at a dash: `gpt-5` is not `gpt-5.2`, whose price may differ.
-        return list.first { entry in
-            guard id.hasPrefix(entry.prefix) else { return false }
-            let rest = id.dropFirst(entry.prefix.count)
+        func matches(_ prefix: String) -> Bool {
+            guard id.hasPrefix(prefix) else { return false }
+            let rest = id.dropFirst(prefix.count)
             return rest.isEmpty || rest.hasPrefix("-") || rest.hasPrefix("@") || rest.hasPrefix("[")
-        }?.price
+        }
+        return (manifest ?? manifestList).first { matches($0.prefix) }?.price
     }
 
     static func normalized(_ model: String) -> String {
@@ -531,5 +517,19 @@ enum UsagePrices {
 
     static func save(_ table: PriceTable, defaults: UserDefaults = .standard) {
         defaults.set(try? JSONEncoder().encode(table), forKey: defaultsKey)
+    }
+}
+
+/// A value several threads read and write, behind a lock.
+final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) { self.value = value }
+
+    func withLock<T>(_ body: (inout Value) -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
     }
 }

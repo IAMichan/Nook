@@ -29,7 +29,10 @@ extension WorkspaceManager {
                   let self, self.settings.onlineModelList,
                   let manifest = ModelManifest.accepting(fetched.0, over: self.modelManifest) else { return }
             ModelManifestStore(url: Self.manifestStoreURL).save(fetched.0)
-            if manifest != self.modelManifest { self.modelManifest = manifest }
+            if manifest != self.modelManifest {
+                self.modelManifest = manifest
+                ModelRates.use(manifest)
+            }
         }
     }
 

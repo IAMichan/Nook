@@ -211,4 +211,31 @@ final class ModelManifestTests: XCTestCase {
         let many = (0..<20).map { "m\($0)" }
         XCTAssertEqual(ModelPreferences.remembering("new", in: many).count, ModelPreferences.customLimit)
     }
+
+    // MARK: Prices
+
+    func testPricesComeFromTheManifestAndAreChecked() throws {
+        let price = ModelManifest.Price(prefix: "model-a", input: 2, output: 8)
+        XCTAssertNoThrow(try ModelManifest.validate([price, .init(prefix: "model-b", input: 0, output: 0)]), "a free model is zero")
+        XCTAssertThrowsError(try ModelManifest.validate([price, .init(prefix: "Model-A", input: 1, output: 1)]), "a prefix twice")
+        XCTAssertThrowsError(try ModelManifest.validate([.init(prefix: "-x", input: 1, output: 1)]), "not a model id")
+        XCTAssertThrowsError(try ModelManifest.validate([.init(prefix: "m", input: -1, output: 1)]))
+        XCTAssertThrowsError(try ModelManifest.validate([.init(prefix: "m", input: .infinity, output: 1)]))
+        XCTAssertEqual(price.modelPrice.cacheReadPerMillion, 0.2, "a tenth of the input rate unless set")
+        XCTAssertEqual(price.modelPrice.cacheWritePerMillion, 2.5)
+
+        let list = [("model-a-long", ModelPrice(input: 9, output: 9)), ("model-a", price.modelPrice)]
+        XCTAssertEqual(ModelRates.price(agent: "x", model: "model-a-long-2026", manifest: list)?.inputPerMillion, 9, "longest first")
+        XCTAssertEqual(ModelRates.price(agent: "x", model: "model-a", manifest: list)?.inputPerMillion, 2)
+        XCTAssertNil(ModelRates.price(agent: "x", model: "model-ab", manifest: list), "a prefix ends at a dash or the end")
+    }
+
+    func testTheBundledManifestPricesTheModelsItLists() throws {
+        let url = Self.root.appendingPathComponent("Services/Workspace/model-manifest.json")
+        let manifest = try ModelManifest.parse(Data(contentsOf: url))
+        let prices = try XCTUnwrap(manifest.pricing).map { ($0.prefix.lowercased(), $0.modelPrice) }.sorted { $0.0.count > $1.0.count }
+        for model in manifest.entry(for: .claude)?.models ?? [] where model.status == .current {
+            XCTAssertNotNil(ModelRates.price(agent: "claude", model: model.id, manifest: prices), "no price for \(model.id)")
+        }
+    }
 }

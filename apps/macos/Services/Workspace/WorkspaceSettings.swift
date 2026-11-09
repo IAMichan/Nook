@@ -129,6 +129,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
     }
+    /// Which groups of the bridge's tools each agent may use (`BridgeAccess`): Settings › Automation › Tools per agent.
+    @Published var bridgeAccess: BridgeAccess {
+        didSet { if bridgeAccess != oldValue { defaults.set(bridgeAccess.stored, forKey: "ws.bridgeDisabled") } }
+    }
     /// How commit messages and pull requests are written (`CommitStyle`).
     @Published var commitStyle: CommitStyle {
         didSet { defaults.set(commitStyle.rawValue, forKey: CommitStyle.defaultsKey) }
@@ -145,6 +149,14 @@ final class WorkspaceSettings: ObservableObject {
     /// set its own (`ProjectSettingKey.titleInstructions`).
     @Published var titleInstructions: String {
         didSet { defaults.set(titleInstructions, forKey: "ws.titleInstructions") }
+    }
+    /// At most this many sessions work at once; a turn past it waits for a free place (`SessionCapacity`). 0: no limit.
+    @Published var maxWorkingSessions: Int {
+        didSet { defaults.set(maxWorkingSessions, forKey: "ws.maxWorkingSessions") }
+    }
+    /// Instructions every agent gets in every project, unless a project sets its own (`ProjectSettingKey.agentInstructions`).
+    @Published var agentInstructions: String {
+        didSet { defaults.set(agentInstructions, forKey: "ws.agentInstructions") }
     }
     /// A session stopped by a usage limit goes on by itself once the limit resets.
     @Published var autoResumeLimited: Bool {
@@ -232,10 +244,13 @@ final class WorkspaceSettings: ObservableObject {
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
+        bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
+        agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
+        maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
@@ -356,7 +371,8 @@ final class WorkspaceSettings: ObservableObject {
     var globalDefaults: SessionDefaults {
         SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
                         isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix),
-                        titleInstructions: titleInstructions, browserSignIns: browserSignInPolicy)
+                        titleInstructions: titleInstructions, agentInstructions: agentInstructions,
+                        browserSignIns: browserSignInPolicy)
     }
 
     /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.

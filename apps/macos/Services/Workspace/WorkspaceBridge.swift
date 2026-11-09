@@ -49,6 +49,8 @@ final class WorkspaceBridge: ObservableObject {
     /// What ssh forwards sessions on other machines to: everything on it counts as coming from there (`RemoteBridge`).
     private let remoteServer = UnixSocketServer(path: NookPaths.remoteBridgeSocketURL.path)
     private var waiters: [String: CheckedContinuation<Bool, Never>] = [:]
+    /// Sites outside this Mac the user let a session open in Nook's browser, by caller: asked once per site per session.
+    private var allowedHosts: [String: Set<String>] = [:]
     /// Values typed on a secret request, until the call that asked picks them up.
     private var secretAnswers: [String: BridgeSecretAnswer] = [:]
     /// Simulators each session opened with device_open, most recent last.
@@ -106,6 +108,16 @@ final class WorkspaceBridge: ObservableObject {
         secretAnswers[id] = secret
     }
 
+    /// Nobody decided in time: the call is refused, and the action log says so.
+    private func expire(_ id: String) {
+        guard let request = pending.first(where: { $0.id == id }) else { return }
+        let entry = ApprovalAudit.expired(agent: request.caller.agent,
+                                                project: URL(fileURLWithPath: request.caller.directory).lastPathComponent,
+                                                tool: request.tool.rawValue, asked: request.detail)
+        app?.store.audit(tool: entry.tool, args: entry.args, result: entry.result)
+        finish(id, allowed: false)
+    }
+
     private func finish(_ id: String, allowed: Bool) {
         guard let waiter = waiters.removeValue(forKey: id) else { return }
         pending.removeAll { $0.id == id }
@@ -137,7 +149,7 @@ final class WorkspaceBridge: ObservableObject {
             onApproval?(request)
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: Self.approvalTimeout * 1_000_000_000)
-                self?.finish(id, allowed: false)
+                self?.expire(id)
             }
         }
     }
@@ -208,15 +220,16 @@ final class WorkspaceBridge: ObservableObject {
     /// or an agent you started in a terminal that linked the bridge itself.
     private func caller(_ context: Context) -> BridgeCaller? {
         guard let app else { return nil }
+        let workspace = app.workspace
         if context.remote {
-            guard let raw = context.env["NOOK_RUN_ID"] as? String, let id = UUID(uuidString: raw),
-                  app.workspace.acceptsRemoteBridge(id, token: (context.env["NOOK_BRIDGE_TOKEN"] as? String) ?? ""),
-                  let run = app.workspace.run(id) else { return nil }
+            guard let id = BridgeIdentity.run(env: context.env, accepts: workspace.acceptsRemoteBridge),
+                  let run = workspace.run(id) else { return nil }
             var caller = caller(run)
             caller.remote = true
             return caller
         }
-        if let raw = context.env["NOOK_RUN_ID"] as? String, let id = UUID(uuidString: raw), let run = app.workspace.run(id) {
+        // A session Nook runs proves itself with its token; an id without it gets no rights of that session.
+        if let id = BridgeIdentity.run(env: context.env, accepts: workspace.acceptsLocalBridge), let run = workspace.run(id) {
             return caller(run)
         }
         let folder = WorkspacePathPolicy.normalize(context.cwd)
@@ -225,9 +238,8 @@ final class WorkspaceBridge: ObservableObject {
             return BridgeCaller(kind: .external, agent: "Command line", title: "", directory: folder, mode: nil, permission: nil)
         }
         guard !folder.isEmpty else { return nil }
-        if let run = app.workspace.activeRuns.first(where: { WorkspacePathPolicy.normalize($0.workingDirectory) == folder }) {
-            return caller(run)
-        }
+        // An agent you started yourself is named after the session it is, but it never takes the rights of a session Nook
+        // runs in the same folder: it asks for what is not a read, as every agent outside Nook does.
         let session = app.hub.sessions.first { !$0.cwd.isEmpty && WorkspacePathPolicy.normalize($0.cwd) == folder }
         return BridgeCaller(kind: .external, agent: session?.name ?? Self.displayName(context.agentID),
                             title: session?.summary ?? "", directory: folder, mode: nil, permission: nil)
@@ -257,6 +269,18 @@ final class WorkspaceBridge: ObservableObject {
            !RemoteBridge.mayRead(arguments["session_id"] as? String, caller: own) {
             return .error(RemoteBridge.refusal)
         }
+        // A group of tools the user switched off for this agent: refused before anything else.
+        let agentKey: String
+        if case .run(let id) = caller.kind, let run = app?.workspace.run(id) {
+            agentKey = run.provider.rawValue
+        } else {
+            agentKey = BridgeAccess.agentKey(forClient: context.agentID)
+        }
+        guard WorkspaceSettings.shared.bridgeAccess.allows(tool, agent: agentKey) else {
+            audit(tool, caller, Self.summary(arguments), "geweigerd: tools off for this agent")
+            return .error(BridgeAccess.refusal(tool, agent: caller.agent))
+        }
+        if !tool.asksInHandler, let refused = await centralGate(tool, arguments, caller, context) { return refused }
         do {
             switch tool {
             case .workspaceInfo: return try await workspaceInfo(caller)
@@ -264,7 +288,7 @@ final class WorkspaceBridge: ObservableObject {
             case .terminalRead: return try terminalRead(arguments, caller)
             case .terminalList: return terminalList(caller)
             case .terminalStop: return try terminalStop(arguments, caller)
-            case .browserOpen: return try await browserOpen(arguments, caller)
+            case .browserOpen: return try await browserOpen(arguments, caller, connection: context.connection)
             case .browserRead: return try await browserRead(caller)
             case .browserScreenshot: return try await browserScreenshot(arguments, caller)
             case .pullRequestCreate: return try await pullRequestCreate(arguments, caller, context)
@@ -299,6 +323,36 @@ final class WorkspaceBridge: ObservableObject {
         } catch {
             return .error(error.localizedDescription)
         }
+    }
+
+    /// The policy for a tool whose handler does not ask itself: refused, asked here with the call's arguments, or let
+    /// through. Returns the error to send back, or nil when the call may go on.
+    private func centralGate(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller,
+                             _ context: Context) async -> BridgeRPC.ToolResult? {
+        switch verdict(tool, caller) {
+        case .allow:
+            return nil
+        case .refuse(let reason):
+            audit(tool, caller, Self.summary(arguments), "geweigerd: \(reason.rawValue)")
+            return .error(Self.refusal(reason))
+        case .ask(let reason):
+            let allowed = await ask(caller, tool: tool, title: tr("bridge.approval.generic", caller.agent, tool.label),
+                                    detail: Self.summary(arguments), note: AgentPathFormat.tilde(caller.directory),
+                                    danger: false, connection: context.connection)
+            guard allowed else {
+                audit(tool, caller, Self.summary(arguments), "niet toegestaan")
+                return .error(Self.refusal(reason))
+            }
+            return nil
+        }
+    }
+
+    /// A call's arguments as one short line for an approval card or the audit log.
+    static func summary(_ arguments: [String: Any]) -> String {
+        arguments.keys.sorted().map { key in
+            let value = arguments[key].map { String(describing: $0) } ?? ""
+            return "\(key): \(value.count > 200 ? String(value.prefix(200)) + "…" : value)"
+        }.joined(separator: "\n")
     }
 
     func verdict(_ tool: BridgeTool, _ caller: BridgeCaller, command: CommandAssessment.Level? = nil,
@@ -511,12 +565,28 @@ final class WorkspaceBridge: ObservableObject {
 
     // MARK: Browser
 
-    private func browserOpen(_ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
+    private func browserOpen(_ arguments: [String: Any], _ caller: BridgeCaller, connection: String) async throws -> BridgeRPC.ToolResult {
         let raw = (arguments["url"] as? String) ?? ""
         guard let url = BridgeURLPolicy.url(raw) else {
             return .error("Nook's browser opens https addresses, and http only on this Mac (localhost, 127.0.0.1). \"\(raw)\" is neither.")
         }
-        if case .refuse(let reason) = verdict(.browserOpen, caller) { return .error(Self.refusal(reason)) }
+        let host = (url.host ?? "").lowercased()
+        let local = BridgeURLPolicy.isLoopback(host) || allowedHosts[caller.key]?.contains(host) == true
+        switch verdict(.browserOpen, caller, localPage: local) {
+        case .refuse(let reason):
+            return .error(Self.refusal(reason))
+        case .ask(let reason):
+            let allowed = await ask(caller, tool: .browserOpen, title: tr("bridge.approval.browserOpen", caller.agent, host),
+                                    detail: url.absoluteString, note: tr("bridge.approval.browserOpenNote"), danger: false,
+                                    connection: connection)
+            guard allowed else {
+                audit(.browserOpen, caller, url.absoluteString, "niet toegestaan")
+                return .error(Self.refusal(reason))
+            }
+            allowedHosts[caller.key, default: []].insert(host)
+        case .allow:
+            break
+        }
         // The session's own browser, so a page another session has open stays where it is.
         let browser = SessionBrowsers.shared.ownStore(caller.browserSession)
         // Seen as it opens, in the caller's own chat only: small in its bottom right corner (SessionBrowserCorner).
@@ -904,14 +974,31 @@ final class WorkspaceBridge: ObservableObject {
         config.model = model.isEmpty ? (provider == parent.provider ? parent.model : "") : model
         config.mode = rights.mode
         config.permission = rights.permission
-        config.isolation = .folder
-        config.projectPath = parent.workingDirectory
+        // Two tasks changing the same files at once overwrite each other: a second writer gets a worktree of its own.
+        let writingSiblings = workspace.activeChildren(of: parent.id).filter {
+            $0.mode == .agent && $0.isolation == .folder
+                && WorkspacePathPolicy.normalize($0.workingDirectory) == WorkspacePathPolicy.normalize(parent.workingDirectory)
+        }.count
+        let inRepository = !(parent.repoRoot ?? "").isEmpty
+        switch DelegationPolicy.placement(requested: arguments["isolation"] as? String, mode: rights.mode,
+                                          writingSiblingsInFolder: writingSiblings, inRepository: inRepository) {
+        case .failure(let denial):
+            return .error(denial.message)
+        case .success(.shared):
+            config.isolation = .folder
+            config.projectPath = parent.workingDirectory
+        case .success(.worktree):
+            config.isolation = .worktree
+            config.projectPath = parent.repoRoot ?? parent.workingDirectory
+            // From the parent's branch, so the task starts from what the parent committed.
+            config.baseBranch = parent.branch ?? ""
+        }
         config.delegation = DelegationLink(parentID: parent.id, key: key.isEmpty ? UUID().uuidString : key, depth: depth + 1,
                                            role: role, wake: !wait)
         let childID: UUID
         do {
-            // The task works in the same folder as its parent.
-            childID = try await workspace.start(config, allowSharedFolder: true)
+            // A shared task works in the same folder as its parent; a worktree task in its own.
+            childID = try await workspace.start(config, allowSharedFolder: config.isolation == .folder)
         } catch {
             audit(.delegateTask, caller, task, "mislukt: \(error.localizedDescription)")
             return .error("Nook could not start the task: \(error.localizedDescription)")

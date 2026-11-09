@@ -29,6 +29,22 @@ final class CommandRiskTests: XCTestCase {
         }
     }
 
+    func testReadOnlyProgramsWithAnOptionThatWritesOrRunsAreReviewed() {
+        let writesOrRuns = [
+            "rg --pre ./x.sh TODO", "rg --pre=./x.sh TODO", "sort -o ~/.zshrc list.txt", "sort --output=out.txt in.txt",
+            "sort --compress-program=./x in.txt", "git diff --output=patch.txt", "git log --output /tmp/x -p",
+            "git diff --ext-diff", "git show --textconv HEAD:file", "tree -o tree.txt", "less '+!touch x' README.md",
+            "less --log-file=copy.txt README.md", "uniq in.txt out.txt", "file -C -m magic",
+        ]
+        for command in writesOrRuns {
+            XCTAssertNotEqual(level(command), .safe, command)
+        }
+        for command in ["rg -n TODO", "sort -n list.txt", "tree -L 2", "less README.md", "uniq -c list.txt", "file README.md",
+                        "git diff --stat", "git log -p --oneline"] {
+            XCTAssertEqual(level(command), .safe, command)
+        }
+    }
+
     func testOtherCommandsNeedReviewWithAReason() {
         let cases: [(String, String)] = [
             ("npm install", "Installs"),

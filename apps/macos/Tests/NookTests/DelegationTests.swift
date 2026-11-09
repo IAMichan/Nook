@@ -203,4 +203,35 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual(BridgeTool.named("mcp__nook__task_wait"), .taskWait)
         XCTAssertEqual(BridgeTool.taskWait.effect, .read)
     }
+
+    // MARK: Placement
+
+    func testASecondWriterGetsAWorktreeOfItsOwn() {
+        func place(_ requested: String?, _ mode: ExecutionMode = .agent, siblings: Int, repo: Bool = true)
+            -> Result<DelegationPolicy.Placement, DelegationPolicy.PlacementDenial> {
+            DelegationPolicy.placement(requested: requested, mode: mode, writingSiblingsInFolder: siblings, inRepository: repo)
+        }
+        XCTAssertEqual(place(nil, siblings: 0), .success(.shared), "the first task shares the folder, as before")
+        XCTAssertEqual(place(nil, siblings: 1), .success(.worktree), "a second writer would overwrite the first")
+        XCTAssertEqual(place(nil, .plan, siblings: 3), .success(.shared), "a task that only looks never needs one")
+        XCTAssertEqual(place(nil, siblings: 2, repo: false), .success(.shared), "outside git there is no worktree to make")
+        XCTAssertEqual(place("shared", siblings: 2), .success(.shared), "the parent's own choice counts")
+        XCTAssertEqual(place("worktree", siblings: 0), .success(.worktree))
+        XCTAssertEqual(place("Worktree", .plan, siblings: 0), .success(.shared))
+        XCTAssertEqual(place("worktree", siblings: 0, repo: false), .failure(.notARepository))
+        XCTAssertEqual(place("sandbox", siblings: 0), .failure(.unknown("sandbox")))
+    }
+
+    func testAWorktreeTaskTellsItsParentWhichBranchToMerge() throws {
+        var snapshot = DelegatedTask.Snapshot(taskID: "t1", title: "Fix", state: .completed, summary: "Done",
+                                              hasPendingQuestion: false, model: nil, provider: "Codex")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(DelegatedTask.render(snapshot).utf8)) as? [String: Any])
+        XCTAssertNil(object["branch"], "a shared task's changes are already in the parent's folder")
+        snapshot.worktree = "/Users/x/.nook/worktrees/app/fix"
+        snapshot.branch = "nook/fix"
+        object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(DelegatedTask.render(snapshot).utf8)) as? [String: Any])
+        XCTAssertEqual(object["branch"] as? String, "nook/fix")
+        XCTAssertEqual(object["worktree"] as? String, "/Users/x/.nook/worktrees/app/fix")
+        XCTAssertTrue((object["merge"] as? String)?.contains("git merge nook/fix") == true)
+    }
 }

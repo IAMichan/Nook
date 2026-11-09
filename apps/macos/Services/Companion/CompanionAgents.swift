@@ -39,7 +39,7 @@ enum CompanionAgents {
             return .unknownItem
         }
         if allow, !canAllow(approval) { return .notAllowedFromPhone }
-        app.approvals.decide(approval, allow ? .allow : .deny)
+        app.approvals.decide(approval, allow ? .allow : .deny, source: .phone)
         return nil
     }
 

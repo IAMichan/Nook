@@ -10,8 +10,11 @@ extension AppModel {
     /// Keeps the notice in the history and shows it the way Settings › Notifications says for agents. `open` is what
     /// View does (the session in the panel or the main window); `openApp` the second button, where the agent has one
     /// (its terminal). A notice that waits on you always reaches you (`NoticePacer`).
+    /// `reply`: a message typed on the macOS notification's own reply field goes to the agent, as from the session's
+    /// composer, for every agent alike.
     func deliverAgentNotice(_ notice: AgentStatusNotice, app: String, target: NoticeEntry.Target, watching: Bool = false,
-                            open: @escaping () -> Void, openApp: (title: String, action: () -> Void)? = nil) {
+                            open: @escaping () -> Void, openApp: (title: String, action: () -> Void)? = nil,
+                            reply: ((String) -> Void)? = nil) {
         logNotice(Self.noticeKind(notice.state), title: notice.headline, detail: notice.historyDetail,
                   context: notice.project, target: target, source: .agents, app: app)
         deliverNotice(.agents, app: app, id: notice.cardID, pace: notice.pace,
@@ -22,7 +25,7 @@ extension AppModel {
                       strip: { [weak self] in self?.showAgentStrip(notice, open: open) },
                       open: open,
                       // Its banner opens the session, or the terminal it runs in, as the card does.
-                      banner: NoticeBanner(target: target, app: openApp.map { ($0.title, $0.action) }))
+                      banner: NoticeBanner(target: target, reply: reply, app: openApp.map { ($0.title, $0.action) }))
     }
 
     /// The card: the agent's logo, who and where, its state and changed lines in the header; what the session is about
