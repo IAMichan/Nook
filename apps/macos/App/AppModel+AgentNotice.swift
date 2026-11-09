@@ -20,7 +20,9 @@ extension AppModel {
                       kind: Self.toastKind(notice.state),
                       card: { [weak self] in self?.showAgentNotice(notice, open: open, openApp: openApp) },
                       strip: { [weak self] in self?.showAgentStrip(notice, open: open) },
-                      open: open)
+                      open: open,
+                      // Its banner opens the session, or the terminal it runs in, as the card does.
+                      banner: NoticeBanner(target: target, app: openApp.map { ($0.title, $0.action) }))
     }
 
     /// The card: the agent's logo, who and where, its state and changed lines in the header; what the session is about

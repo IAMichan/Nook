@@ -57,7 +57,10 @@ struct AgentStatusNotice: Equatable, Sendable {
 
     /// The card's id: one per session whatever its state, so a newer notice from the same session (a failure too)
     /// redraws its card instead of counting as a new pop-up (`AppModel.deliverNotice`).
-    var cardID: String { "agentstatus-" + session }
+    var cardID: String { Self.cardID(session: session) }
+
+    /// The card, and the macOS notification, of an agent session's notice.
+    static func cardID(session: String) -> String { "agentstatus-" + session }
 
     /// The one line of the compact strip: the headline and which session, by what it is about (or its folder when it
     /// has no topic), so two sessions in one folder tell apart.
