@@ -39,7 +39,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
-                                        canRollbackConversation: true, canForkFromTurn: true, liveSettings: true)
+                                        canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
+                                        reportsPromptCacheLifetime: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
@@ -120,6 +121,10 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Code's control requests on stdin, ACP's `session/set_model` or `session/set_config_option`); otherwise it counts
     /// from the next message. Codex's app-server has no call that changes a running turn.
     var liveSettings = false
+    /// The agent says how long its prompt cache lives (Claude Code's `usage.cache_creation`), so Nook can summarize a long
+    /// idle session before the cache expires (`IdleCompaction`). Codex and the ACP agents report cached tokens but not
+    /// the cache's lifetime.
+    var reportsPromptCacheLifetime = false
 }
 
 enum PastSessionSource: Equatable, Sendable {
@@ -386,6 +391,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var prWatches: [PullRequestWatch] { (prWatch.map { [$0] } ?? []) + (extraPRWatches ?? []) }
     /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
     var remote: RemoteTarget? = nil
+    /// Claude Code: how long the prompt cache of the session's last request stays warm (see `IdleCompaction`).
+    var promptCache: PromptCacheWindow? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent

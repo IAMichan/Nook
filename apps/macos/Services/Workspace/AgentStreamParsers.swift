@@ -28,6 +28,8 @@ struct TokenCounts: Equatable, Sendable {
     var output = 0
     var cacheRead = 0
     var cacheWrite = 0
+    /// Claude: how long what this call wrote to the cache stays there (`PromptCache.claudeTTL`).
+    var cacheTTL: TimeInterval? = nil
 
     /// Tokens present in context during this call.
     var context: Int { input + cacheRead + cacheWrite }
@@ -55,6 +57,9 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case subagentStep(parent: String, SubagentStep)
     case toolResult(id: String, output: String, isError: Bool)
     case usage(messageID: String, tokens: TokenCounts, model: String?)
+    /// A request to the model started (`message_start`): its prompt cache lives from now, for this long when it wrote
+    /// to the cache (see `PromptCacheWindow`).
+    case requestStarted(cacheTTL: TimeInterval?)
     /// The agent requests permission (`--permission-prompt-tool stdio`).
     case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?)
     case result(ClaudeTurnResult)
@@ -180,6 +185,9 @@ enum ClaudeStreamParser {
                 }
             case "content_block_stop":
                 return [.blockStopped]
+            case "message_start":
+                let usage = ((event["message"] as? [String: Any])?["usage"] as? [String: Any]) ?? [:]
+                return [.requestStarted(cacheTTL: PromptCache.claudeTTL(usage))]
             default:
                 return []
             }
@@ -310,7 +318,8 @@ enum ClaudeStreamParser {
             input: Int(number(usage["input_tokens"]) ?? 0),
             output: Int(number(usage["output_tokens"]) ?? 0),
             cacheRead: Int(number(usage["cache_read_input_tokens"]) ?? 0),
-            cacheWrite: Int(number(usage["cache_creation_input_tokens"]) ?? 0)
+            cacheWrite: Int(number(usage["cache_creation_input_tokens"]) ?? 0),
+            cacheTTL: PromptCache.claudeTTL(usage)
         )
     }
 
