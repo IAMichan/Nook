@@ -494,6 +494,18 @@ struct BackgroundCommandInfo: Identifiable, Equatable, Sendable {
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
+
+    /// What the command printed, without the note an agent gets when it starts one in the background ("Command running
+    /// in background with ID: b3k9. Output is being written to: … Read on that file path"): that note says nothing about
+    /// how the command is doing. Nil when nothing else is left.
+    var printed: String? {
+        guard var text = output?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        if text.hasPrefix("Command running in background with ID:") {
+            guard let end = text.range(of: "Read on that file path") else { return nil }
+            text = String(text[end.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: ".").union(.whitespacesAndNewlines))
+        }
+        return text.isEmpty ? nil : text
+    }
 }
 
 /// Commands an agent leaves running after their call returned: Claude Code's Bash (or PowerShell) started with
@@ -537,6 +549,14 @@ enum BackgroundCommands {
         }
         guard let task = update.taskID, !task.isEmpty else { return nil }
         return events.last { isCommand($0) && $0.output?.contains("ID: " + task) == true }
+    }
+
+    /// The order to list them in: those still at work first, then the failed ones, then the rest; newest first within each.
+    static func ordered(_ commands: [BackgroundCommandInfo]) -> [BackgroundCommandInfo] {
+        let rank: (BackgroundCommandInfo) -> Int = { $0.isRunning ? 0 : ($0.failed ? 1 : 2) }
+        return commands.enumerated()
+            .sorted { rank($0.element) != rank($1.element) ? rank($0.element) < rank($1.element) : $0.offset > $1.offset }
+            .map(\.element)
     }
 
     /// Changes when the commands do: one starts or ends. For the dot on the Subagents tab.

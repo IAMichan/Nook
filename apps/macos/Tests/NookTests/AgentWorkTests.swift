@@ -806,6 +806,20 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertFalse(Subagents.backgroundRunning([command]), "A command in the background is not a subagent")
     }
 
+    func testBackgroundCommandOutputDropsTheStartNoteAndListsByState() {
+        let note = "Command running in background with ID: b3k9. Output is being written to: /tmp/x. You will be notified when it completes. To check interim output, use Read on that file path."
+        func info(_ title: String, _ state: RunEvent.State?, _ output: String? = nil) -> BackgroundCommandInfo {
+            BackgroundCommandInfo(id: UUID(), title: title, command: title, state: state, output: output, started: Date())
+        }
+        XCTAssertNil(info("a", .running, note).printed, "the start note says nothing about the command")
+        XCTAssertEqual(info("a", .done, note + "\nready on :3000").printed, "ready on :3000")
+        XCTAssertEqual(info("a", .done, "  built\n").printed, "built")
+        XCTAssertNil(info("a", .done, "  ").printed)
+        let ordered = BackgroundCommands.ordered([info("old done", .done), info("failed", .failed), info("run", .running),
+                                                  info("new done", .done)])
+        XCTAssertEqual(ordered.map(\.title), ["run", "failed", "new done", "old done"])
+    }
+
     func testBackgroundCommandOutlivesItsTurnAndShows() {
         let user = RunEvent(kind: .user, text: "start the site")
         let command = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash", callID: "toolu_9",
