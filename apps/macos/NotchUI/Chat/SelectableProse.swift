@@ -69,6 +69,8 @@ struct SelectableProse: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSTextView {
         let view = NSTextView(usingTextLayoutManager: false)
+        // Inline code draws as a rounded chip rather than the flat, line-high band of a background color.
+        view.textContainer?.replaceLayoutManager(InlineCodeLayoutManager())
         view.isEditable = false
         view.isSelectable = true
         view.isRichText = true
@@ -400,13 +402,20 @@ struct SelectableProse: NSViewRepresentable {
                                files: Bool) -> NSMutableAttributedString {
         let source = MarkdownBlock.inline(text, size: size, files: files)
         let result = NSMutableAttributedString()
+        var previousCode = false
         for run in source.runs {
             let intent = run.inlinePresentationIntent ?? []
+            let code = intent.contains(.code)
+            // Room for the chip's padding on either side of a code span, so it never touches the words around it.
+            if code != previousCode, result.length > 0 {
+                result.addAttribute(.kern, value: InlineCodeLayoutManager.padding, range: NSRange(location: result.length - 1, length: 1))
+            }
+            previousCode = code
             var attributes: [NSAttributedString.Key: Any] = [:]
             var font: NSFont
-            if intent.contains(.code) {
+            if code {
                 font = .monospacedSystemFont(ofSize: size * 0.85, weight: .regular)
-                attributes[.backgroundColor] = NSColor(NookTheme.graphite)
+                attributes[.inlineCode] = true
             } else {
                 // Semibold rather than bold: bold runs already take the full white, a heavier weight made answers loud.
                 font = .systemFont(ofSize: size, weight: intent.contains(.stronglyEmphasized) ? .semibold : weight)
@@ -421,5 +430,62 @@ struct SelectableProse: NSViewRepresentable {
         // A line break inside a paragraph stays a break within it, without the gap between paragraphs.
         result.mutableString.replaceOccurrences(of: "\n", with: "\u{2028}", options: [], range: NSRange(location: 0, length: result.length))
         return result
+    }
+}
+
+extension NSAttributedString.Key {
+    /// Marks an inline code span in an answer's text view; `InlineCodeLayoutManager` draws its chip.
+    static let inlineCode = NSAttributedString.Key("NookInlineCode")
+}
+
+/// Draws inline code as a rounded chip that hugs the code's glyphs: as tall as the monospaced font with a little room
+/// around it, split per line when a span wraps, and without the trailing space at a line's end.
+final class InlineCodeLayoutManager: NSLayoutManager {
+    /// Room between the chip's edge and its code, matched by the kerning around the span.
+    static let padding: CGFloat = 3
+    private static let fill = NSColor(NookTheme.graphite)
+    private static let stroke = NSColor(NookTheme.line2)
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        // Chips first, so a selection still draws over them.
+        drawCodeChips(forGlyphRange: glyphsToShow, at: origin)
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    private func drawCodeChips(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let storage = textStorage else { return }
+        let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let text = storage.string as NSString
+        storage.enumerateAttribute(.inlineCode, in: characters) { value, range, _ in
+            guard value != nil, let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
+            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
+                var part = NSIntersectionRange(glyphs, lineGlyphs)
+                // A span that wraps leaves its space at the end of the line: the chip stops at the last glyph.
+                while part.length > 0 {
+                    let index = self.characterIndexForGlyph(at: NSMaxRange(part) - 1)
+                    guard index < text.length, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(text.character(at: index)) ?? " ") else { break }
+                    part.length -= 1
+                }
+                guard part.length > 0 else { return }
+                let first = self.location(forGlyphAt: part.location)
+                let lastIndex = NSMaxRange(part) - 1
+                let last = self.location(forGlyphAt: lastIndex)
+                let lastWidth = font.advancement(forCGGlyph: self.cgGlyph(at: lastIndex)).width
+                let baseline = lineRect.minY + first.y
+                let left = max(lineRect.minX, lineRect.minX + first.x - Self.padding)
+                let right = lineRect.minX + last.x + lastWidth + Self.padding
+                let top = baseline - font.ascender - 1.5
+                let bottom = baseline - font.descender + 1.5
+                let chip = NSRect(x: left + origin.x, y: top + origin.y, width: right - left, height: bottom - top)
+                let radius = min(NookTheme.Radius.chip, chip.height / 3)
+                let path = NSBezierPath(roundedRect: chip.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
+                Self.fill.setFill()
+                path.fill()
+                Self.stroke.setStroke()
+                path.lineWidth = 1
+                path.stroke()
+            }
+        }
     }
 }
