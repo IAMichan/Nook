@@ -141,7 +141,31 @@ enum AgentTranscript {
     }
 
     private static let cacheLock = NSLock()
-    private static var cache: [String: CacheEntry] = [:]
+    /// The transcripts read last, up to `cacheBytes` of text: a few long ones weigh as much as dozens of short ones.
+    private static var cache: ByteBudgetCache<String, CacheEntry> = {
+        MemoryPressure.shared.register("agentTranscripts") { _ in
+            cacheLock.lock()
+            cache.removeAll()
+            cacheLock.unlock()
+        }
+        return ByteBudgetCache(budget: cacheBytes)
+    }()
+    private static let cacheBytes = 16 * 1024 * 1024
+
+    /// About what an entry keeps in memory: its texts, and the messages themselves. `parsed` shares its texts with
+    /// `messages` (Swift strings are shared when copied), so only the messages not among those count again.
+    private static func cost(_ entry: CacheEntry) -> Int {
+        let shown = entry.messages.reduce(0) { $0 + weight($1) }
+        let extra = entry.parsed.dropLast(entry.messages.count).reduce(0) { $0 + weight($1) }
+        return shown + extra + entry.parsed.count * 32
+    }
+
+    private static func weight(_ message: AgentChatMessage) -> Int {
+        message.text.utf8.count + 160 + message.steps.reduce(0) { total, step in
+            total + 200 + step.summary.utf8.count + (step.output?.utf8.count ?? 0) + (step.patch?.utf8.count ?? 0)
+                + (step.input?.utf8.count ?? 0) + (step.plan?.utf8.count ?? 0) + (step.command?.utf8.count ?? 0)
+        }
+    }
 
     /// `remember: false` reads without keeping the result (search reads every earlier session once, which would push the
     /// sessions on screen out of the cache).
@@ -155,7 +179,7 @@ enum AgentTranscript {
 
         if let attrSize, let attrMod {
             cacheLock.lock()
-            if let hit = cache[path], hit.size == attrSize, hit.modified == attrMod, hit.limit >= limit {
+            if let hit = cache.value(path), hit.size == attrSize, hit.modified == attrMod, hit.limit >= limit {
                 let result = Array(hit.messages.suffix(limit))
                 cacheLock.unlock()
                 return result
@@ -176,7 +200,7 @@ enum AgentTranscript {
             guard let end = try? handle.seekToEnd() else { return [] }
             size = end
             cacheLock.lock()
-            let previous = cache[path]
+            let previous = cache.peek(path)
             cacheLock.unlock()
             let base: (parsed: [AgentChatMessage], to: UInt64, lines: Int)
             var data: Data
@@ -224,8 +248,7 @@ enum AgentTranscript {
                 entry.lines = progress.lines
             }
             cacheLock.lock()
-            if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
-            cache[path] = entry
+            cache.set(entry, for: path, cost: cost(entry))
             cacheLock.unlock()
         }
         return result
