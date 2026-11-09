@@ -2145,6 +2145,19 @@ final class WorkspaceManager: ObservableObject {
         }
         runs.removeAll { $0.id == id }
         SessionBrowsers.shared.discard(run: id)
+        forgetSessionState(id)
+        store.deleteEvents(id)
+        if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
+        scheduleSave()
+        if let leftWorktree {
+            cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
+        }
+    }
+
+    /// Everything Nook keeps for one session while it runs, gone at once: its processes and connections closed, its
+    /// timers cancelled and every per-session entry removed. The one place for it, so a deleted session leaves nothing
+    /// behind; `SessionStateCleanupTests` fails when a per-session property is added without being forgotten here.
+    func forgetSessionState(_ id: UUID) {
         events[id] = nil
         timelineUse[id] = nil
         evictedTimelines.remove(id)
@@ -2188,12 +2201,30 @@ final class WorkspaceManager: ObservableObject {
         backgroundRoster[id] = nil
         claudeChangedDuringTurn.remove(id)
         git[id] = nil
-        store.deleteEvents(id)
-        if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
-        scheduleSave()
-        if let leftWorktree {
-            cleanUpWorktreeAfterDelete(repo: leftWorktree.repo, path: leftWorktree.path, branch: run.branch)
-        }
+        // State that only lives during a turn or while the session is open.
+        turns[id] = nil
+        regeneratingTitles.remove(id)
+        checkpointing.remove(id)
+        acpCommands[id] = nil
+        queueLooks.remove(id)
+        reviewComments[id] = nil
+        idleCompactionTimers.removeValue(forKey: id)?.cancel()
+        idleCompacting.remove(id)
+        sizeCompacting.remove(id)
+        bridgeTokens[id] = nil
+        codexGoalStarting[id] = nil
+        codexGoalWaiting[id] = nil
+        antigravitySignIns.remove(id)
+        eventSaves.removeValue(forKey: id)?.cancel()
+        dirtyTimelines?.remove(id)
+        shownTimelines[id] = nil
+        prefetching.remove(id)
+        awaitedTimelines.remove(id)
+        forkNext.remove(id)
+        forkLaunched.remove(id)
+        displayPrompt[id] = nil
+        reopeningWorktrees.remove(id)
+        runPositions = nil
     }
 
     private func applyAutoArchive() {
