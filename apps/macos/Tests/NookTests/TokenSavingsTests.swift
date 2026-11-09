@@ -166,4 +166,31 @@ final class TokenSavingsTests: XCTestCase {
         // send them with every request.
         XCTAssertLessThanOrEqual(tools.count, 36_000, "the tool list")
     }
+
+    private func size(_ setting: Int = 350_000, tokens: Int?, window: Int? = 1_000_000, can: Bool = true, completed: Bool = true,
+                      holds: Bool = false, remote: Bool = false, compacted: Bool = false) -> Bool {
+        SizeCompaction.shouldCompact(setting: setting, contextTokens: tokens, contextWindow: window, canCompact: can,
+                                     completed: completed, holdsForYou: holds, isRemote: remote, alreadyCompacted: compacted)
+    }
+
+    func testASessionPastYourLimitIsSummarizedWhenItsTurnEnds() {
+        XCTAssertTrue(size(tokens: 350_000))
+        XCTAssertFalse(size(tokens: 349_999))
+        XCTAssertFalse(size(0, tokens: 900_000), "off")
+        XCTAssertFalse(size(tokens: nil))
+    }
+
+    func testASmallWindowIsSummarizedBeforeItIsFull() {
+        XCTAssertEqual(SizeCompaction.limit(setting: 350_000, contextWindow: 200_000), 160_000)
+        XCTAssertEqual(SizeCompaction.limit(setting: 350_000, contextWindow: nil), 350_000)
+        XCTAssertTrue(size(tokens: 170_000, window: 200_000))
+    }
+
+    func testSizeCompactionLeavesWhatWaitsForYouAlone() {
+        XCTAssertFalse(size(tokens: 500_000, can: false))
+        XCTAssertFalse(size(tokens: 500_000, completed: false))
+        XCTAssertFalse(size(tokens: 500_000, holds: true))
+        XCTAssertFalse(size(tokens: 500_000, remote: true))
+        XCTAssertFalse(size(tokens: 500_000, compacted: true))
+    }
 }

@@ -155,6 +155,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var idleCompaction: Bool {
         didSet { defaults.set(idleCompaction, forKey: IdleCompaction.settingKey) }
     }
+    /// A session whose context grows past this many tokens is summarized (/compact) when its turn ends; 0 is off
+    /// (`SizeCompaction`).
+    @Published var autoCompactTokens: Int {
+        didSet { defaults.set(autoCompactTokens, forKey: SizeCompaction.settingKey) }
+    }
     /// A session that a restart of Nook cut off gets "Continue where you left off." once.
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
@@ -235,6 +240,7 @@ final class WorkspaceSettings: ObservableObject {
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         idleCompaction = defaults.object(forKey: IdleCompaction.settingKey) as? Bool ?? true
+        autoCompactTokens = defaults.object(forKey: SizeCompaction.settingKey) as? Int ?? SizeCompaction.defaultTokens
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
