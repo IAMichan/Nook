@@ -36,7 +36,7 @@ extension AppModel {
         }
         NookSound.play(.attention)
         SystemNotifier.shared.approval(
-            approval, context: context,
+            approval, context: context, target: noticeTarget(approval),
             decide: { [weak self] decision in self?.approvals.decide(approval, decision) },
             show: { [weak self] in self?.showApprovalCard(approval, context: context, open: open, waiting: waiting) },
             fallback: { [weak self] in
@@ -119,7 +119,9 @@ extension AppModel {
             NookSound.play(.attention)
             let show: () -> Void = { [weak self] in self?.presentQuestion(request, inNotch: true) }
             SystemNotifier.shared.notice(id: token, title: tr("noticeDelivery.question", request.agentName),
-                                         subtitle: request.project, body: item.question, open: show, fallback: show)
+                                         subtitle: request.project, body: item.question,
+                                         banner: NoticeBanner(target: .agent(request.sessionKey), level: .timeSensitive),
+                                         open: show, fallback: show)
             return
         }
         let choiceID = "\(token)#choice\(index)"
