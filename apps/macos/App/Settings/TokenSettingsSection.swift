@@ -85,7 +85,7 @@ private struct TuningAdviceRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            Text(item.provider.displayName + " · " + tr("tuning.kind.\(item.kind.rawValue)"))
+            AgentName(item.provider.kind, name: item.provider.displayName + " · " + tr("tuning.kind.\(item.kind.rawValue)"))
                 .font(NookTheme.TextStyle.strong)
             Text(detail)
                 .font(NookTheme.TextStyle.detail)

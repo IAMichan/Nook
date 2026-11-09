@@ -102,9 +102,6 @@ struct MCPServerCardRow: View {
     let config: MCPServerConfig
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = MCPServerStore.shared
-    @State private var confirmRemove = false
-    @State private var showDetails = false
-
     private var connector: MCPConnector? { app.connectors.source(id: config.sourceID) as? MCPConnector }
 
     private var status: ServiceStatus {
@@ -125,60 +122,26 @@ struct MCPServerCardRow: View {
         return summaryText
     }
 
+    /// The one connection row: the switch, Refresh and Sign in again in the "…" menu with Remove last, and once opened
+    /// the command it runs and its tools, as its sheet showed them.
     var body: some View {
-        ServiceRowLayout(
-            domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
-            symbol: "puzzlepiece.extension.fill", tint: MCPPreset.genericTint, title: config.name, detail: detail,
-            status: status, detailIsError: status == .unreachable,
-            source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
-        ) {
-            Toggle("", isOn: Binding(get: { config.enabled }, set: { store.setEnabled(config.id, $0) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .accessibilityLabel(config.name)
-            Menu {
-                Button {
-                    showDetails = true
-                } label: {
-                    Label(tr("mcp.details.view"), systemImage: "info.circle")
-                }
-                Button {
-                    if let connector { app.connectors.refresh(connector) }
-                } label: {
-                    Label(tr("button.refresh"), systemImage: "arrow.clockwise")
-                }
-                // A server you signed in to on its own page signs in again from here when that expired.
-                if config.signsIn {
-                    Button {
-                        MCPSignIn.shared.signIn(config, app: app)
-                    } label: {
-                        Label(tr("connect.reauthorize"), systemImage: "person.badge.key")
-                    }
-                }
-                Divider()
-                Button(role: .destructive) {
-                    confirmRemove = true
-                } label: {
-                    Label(tr("mcp.remove"), systemImage: "trash")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
+        ConnectionRow(title: config.name, status: status, detail: detail,
+                      isOn: Binding(get: { config.enabled }, set: { store.setEnabled(config.id, $0) }),
+                      removal: ConnectionRemoval(title: tr("mcp.remove"), question: tr("mcp.removeConfirm", config.name),
+                                                 detail: tr("connection.removeMCPDetail")) { store.remove(config.id) }) {
+            ServiceTile(domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
+                        fallback: "puzzlepiece.extension.fill", tint: MCPPreset.genericTint, size: 28,
+                        source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport))
+        } menu: {
+            Button(tr("button.refresh")) {
+                if let connector { app.connectors.refresh(connector) }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(tr("connect.manage", config.name))
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { showDetails = true }
-        .confirmationDialog(tr("mcp.removeConfirm", config.name), isPresented: $confirmRemove) {
-            Button(tr("mcp.remove"), role: .destructive) { store.remove(config.id) }
-        }
-        .sheet(isPresented: $showDetails) {
-            MCPServerDetailSheet(config: config, connector: connector) {
-                showDetails = false
+            // A server you signed in to on its own page signs in again from here when that expired.
+            if config.signsIn {
+                Button(tr("connect.reauthorize")) { MCPSignIn.shared.signIn(config, app: app) }
             }
+        } expanded: {
+            MCPServerDetailSheet(config: config, connector: connector) {}
         }
     }
 
@@ -217,19 +180,15 @@ private struct MCPServerDetailSheet: View {
                 source: SourceBrand.mcpAppSource(name: config.name, transport: config.transport)
             )
         } content: {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                Text(tr("mcp.details.commandTitle")).font(NookTheme.TextStyle.strong)
+            // The same parts as every sheet for something linked: how it runs, then what Nook can do with it.
+            SheetPart(tr("mcp.details.commandTitle")) {
                 Text(rawTransportString)
                     .font(NookTheme.TextStyle.code)
-                    .padding(NookTheme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
                     .textSelection(.enabled)
-
-                if let connector {
-                    Text(tr("mcp.details.toolsTitle", connector.tools.count)).font(NookTheme.TextStyle.strong)
-                        .padding(.top, NookTheme.Spacing.sm)
-
+            }
+            if let connector {
+                SheetPart(tr("mcp.details.toolsTitle", connector.tools.count)) {
                     if connector.tools.isEmpty {
                         Text(tr("mcp.details.noToolsFound"))
                             .font(NookTheme.TextStyle.body)
@@ -260,8 +219,6 @@ private struct MCPServerDetailSheet: View {
                                         .background(Capsule().fill(NookTheme.smoke))
                                         .foregroundStyle(NookTheme.textSecondary)
                                 }
-                                .padding(NookTheme.Spacing.md)
-                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.surface))
                             }
                         }
                     }
@@ -269,7 +226,7 @@ private struct MCPServerDetailSheet: View {
             }
         } footer: {
             Spacer()
-            Button(tr("button.close"), action: done)
+            Button(tr("settings2.done"), action: done)
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -397,8 +354,11 @@ struct AddMCPServerWizardSheet: View {
                 }
 
                 if preset != nil {
+                    // Nothing to fill in is still step 1, so every sheet that adds something reads as steps.
                     if preset?.requiredEnv.isEmpty == true {
-                        SettingNote(tr("mcp.wizard.ready"), tone: .success)
+                        SetupStep(number: 1, title: tr("mcp.wizard.stepReady"), done: true) {
+                            SettingNote(tr("mcp.wizard.ready"), tone: .success)
+                        }
                     }
                     DisclosureGroup(tr("mcp.nameAndCommand")) {
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { nameAndCommand }
@@ -413,9 +373,10 @@ struct AddMCPServerWizardSheet: View {
                 }
             }
         } footer: {
+            Spacer()
             Button(tr("button.cancel"), action: done)
                 .keyboardShortcut(.cancelAction)
-            Spacer()
+                .controlSize(.large)
             Button(tr("mcp.addButton"), action: add)
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)

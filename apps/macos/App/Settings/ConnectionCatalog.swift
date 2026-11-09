@@ -379,7 +379,11 @@ struct ConnectionDestinationView: View {
         case .mcp(let preset):
             AddMCPServerWizardSheet(preset: preset, done: done)
         case .iPhone:
-            IPhoneSheet()
+            // The iPhone has a page of its own: the catalog goes there instead of a second copy of it in a sheet.
+            Color.clear.onAppear {
+                app.openSettings(section: .iphone)
+                done()
+            }
         }
     }
 
@@ -403,6 +407,7 @@ struct ServiceSignInSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var signIn = MCPSignIn.shared
     @ObservedObject private var store = MCPServerStore.shared
+    @Environment(\.sheetEmbedded) private var embedded
     /// Whether this sheet started the sign-in, so only its own failure shows.
     @State private var started = false
     @State private var showKey = false
@@ -429,9 +434,36 @@ struct ServiceSignInSheet: View {
     }
 
     var body: some View {
-        SetupSheet(title: service.name, subtitle: tr("hub.signIn.subtitle", service.name)) {
+        SetupSheet(title: service.name, subtitle: tr("hub.signIn.subtitle", service.name),
+                   status: status == .connected ? .working : (status == .expired ? .needsYou : nil)) {
             ServiceTile(domain: service.domain, fallback: "link", tint: NookTheme.iris, size: 48)
         } content: {
+            // Opened in its row once linked: how it is doing and what Nook can do with it, not the steps again.
+            if embedded, status == .connected {
+                SheetPart(tr("sheet.part.status")) {
+                    Text(service.tagline).foregroundStyle(NookTheme.textSecondary)
+                }
+            } else {
+                signInSteps
+            }
+            if !capabilities.isEmpty {
+                SheetPart(tr("sheet.part.canDo")) { SettingNote(capabilities) }
+            }
+        } footer: {
+            footerButtons
+        }
+        .confirmationDialog(tr("connect.disconnectTitle", service.name), isPresented: $confirmDisconnect) {
+            disconnectButtons
+        } message: {
+            Text(tr("connect.disconnectDetail", service.name))
+        }
+        .sheet(isPresented: $showKey, onDismiss: { app.connectors.refreshAll() }) {
+            keySheet
+        }
+    }
+
+    @ViewBuilder
+    private var signInSteps: some View {
             SetupStep(number: 1, title: tr("hub.signIn.step", service.name), done: status == .connected) {
                 Text(service.tagline)
                     .font(NookTheme.TextStyle.body)
@@ -470,7 +502,7 @@ struct ServiceSignInSheet: View {
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.mint)
                 } else {
-                    Text(tr("settings2.step.checkWaiting"))
+                    Text(tr("settings2.step.checkAfterSignIn"))
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -486,23 +518,25 @@ struct ServiceSignInSheet: View {
                     .padding(.top, NookTheme.Spacing.xs)
                 }
             }
-            if !capabilities.isEmpty {
-                SettingNote(capabilities)
-            }
-        } footer: {
+    }
+
+    @ViewBuilder
+    private var footerButtons: some View {
             if config != nil, status != .connecting {
                 Button(tr("connect.disconnect"), role: .destructive) { confirmDisconnect = true }
             }
             Spacer()
-            Button(status == .connected ? tr("settings2.done") : tr("button.close")) {
+            Button(tr("settings2.done")) {
                 if status == .connecting { signIn.cancel() }
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-        }
-        .confirmationDialog(tr("connect.disconnectTitle", service.name), isPresented: $confirmDisconnect) {
+    }
+
+    @ViewBuilder
+    private var disconnectButtons: some View {
             Button(tr("connect.disconnect"), role: .destructive) {
                 guard let target = config else { return }
                 Task {
@@ -511,17 +545,16 @@ struct ServiceSignInSheet: View {
                 }
             }
             Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("connect.disconnectDetail", service.name))
-        }
-        .sheet(isPresented: $showKey, onDismiss: { app.connectors.refreshAll() }) {
+    }
+
+    @ViewBuilder
+    private var keySheet: some View {
             // GitLab's token has its own sheet (it also serves a self-hosted GitLab).
             if service.id == "gitlab" {
                 GitLabSetupSheet()
             } else if let keyAlternative {
                 CloudConnectorViews.setupSheet(keyAlternative, capabilities: capabilities) { app.connectors.refreshAll() }
             }
-        }
     }
 }
 

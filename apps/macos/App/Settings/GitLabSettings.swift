@@ -1,29 +1,38 @@
 import SwiftUI
 import AppKit
 
-/// GitLab in Settings › Accounts & connections, in the same shapes as every other service: a connected host is a row
-/// that opens its manage sheet, and the Add sheet opens the step-by-step setup (make a token, paste it, Nook checks it
-/// with GitLab).
+/// A GitLab host in the one connection row every service uses: its account on the line under the name, Check again in
+/// its "…" menu with Disconnect last, and once opened in place what the manage sheet used to show (the token, and
+/// retrying an unreachable host). Adding one is `GitLabSetupSheet` in its numbered steps.
 struct GitLabHostRow: View {
     let host: String
     var onChange: () -> Void = {}
     @State private var check: GitLabTokenCheck?
-    @State private var showManage = false
 
     var body: some View {
-        ServiceRowLayout(domain: "gitlab.com", symbol: "key.fill", tint: NookTheme.iris, title: "GitLab",
-                         detail: GitLabStatus.detail(host: host, check: check), status: GitLabStatus.health(check).status) {
-            Button(check == .rejected ? tr("settings2.fix") : tr("settings2.manage")) { showManage = true }
-                .controlSize(.small)
-                .help(tr("settings2.service.manageHelp", "GitLab"))
+        ConnectionRow(
+            title: "GitLab",
+            status: GitLabStatus.health(check).status,
+            statusText: GitLabStatus.rowState(check),
+            detail: GitLabStatus.rowDetail(host: host, check: check),
+            removal: ConnectionRemoval(title: tr("settings2.disconnect"), question: tr("connect.disconnectTitle", "GitLab"),
+                                       detail: tr("codeHost.removeDetail", host)) {
+                GitLabCredentials.remove(host: host)
+                ToastCenter.shared.success(tr("connection.removed", "GitLab"))
+                onChange()
+            }
+        ) {
+            ServiceTile(domain: "gitlab.com", fallback: "key.fill", tint: NookTheme.iris)
+        } menu: {
+            Button(tr("codeHost.checkAgain")) { Task { await refresh() } }
+                .disabled(check == nil)
+        } expanded: {
+            GitLabSetupSheet(managing: host) {
+                onChange()
+                Task { await refresh() }
+            }
         }
         .task(id: host) { await refresh() }
-        .sheet(isPresented: $showManage, onDismiss: {
-            onChange()
-            Task { await refresh() }
-        }) {
-            GitLabSetupSheet(managing: host)
-        }
     }
 
     private func refresh() async {
@@ -45,6 +54,21 @@ enum GitLabStatus {
         }
     }
 
+    /// The state word of the row's line, where the plain state says too little; nil keeps `ServiceStatus.label`.
+    static func rowState(_ check: GitLabTokenCheck?) -> String? {
+        switch check {
+        case nil: return tr("codeHost.checking")
+        case .rejected: return tr("codeHost.rejected")
+        case .valid, .unreachable: return nil
+        }
+    }
+
+    /// What follows the state on the row's line: the account at its host once GitLab said whose token it is.
+    static func rowDetail(host: String, check: GitLabTokenCheck?) -> String {
+        if case .valid(let username) = check { return username + "@" + host }
+        return host
+    }
+
     static func detail(host: String, check: GitLabTokenCheck?) -> String {
         switch check {
         case .valid(let username): return host + " · @" + username
@@ -56,9 +80,12 @@ enum GitLabStatus {
 }
 
 /// Not connected yet: three numbered steps (make a token, paste it, Nook checks it). Connected (`managing` a host): its
-/// state, replacing the token, and disconnecting, laid out like every other service's sheet.
+/// state and replacing the token, shown inside its opened `GitLabHostRow` (embedded, so without header and footer; the
+/// row's "…" menu disconnects), or in a window of its own with Disconnect in the footer.
 struct GitLabSetupSheet: View {
     var managing: String? = nil
+    /// After a token was stored, so whoever shows the sheet can check the host again.
+    var onSaved: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var keyCatcher = ClipboardKeyCatcher()
@@ -83,7 +110,8 @@ struct GitLabSetupSheet: View {
     var body: some View {
         SetupSheet(
             title: "GitLab",
-            subtitle: managing.map { GitLabStatus.detail(host: $0, check: checking ? nil : check) } ?? tr("gitlab.hint")
+            subtitle: managing.map { GitLabStatus.detail(host: $0, check: checking ? nil : check) } ?? tr("gitlab.hint"),
+            status: managing != nil ? health : nil
         ) {
             ServiceTile(domain: "gitlab.com", fallback: "key.fill", tint: NookTheme.iris, size: 48)
         } content: {
@@ -105,7 +133,7 @@ struct GitLabSetupSheet: View {
                 }
             }
             Spacer()
-            Button(saved || managing != nil ? tr("settings2.done") : tr("button.close")) { dismiss() }
+            Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -167,18 +195,17 @@ struct GitLabSetupSheet: View {
 
     @ViewBuilder
     private var manageContent: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            HealthPill(health: health)
-            Spacer()
-            if check == .unreachable, !checking, let managing, let stored = GitLabCredentials.token(host: managing) {
-                Button(tr("connector.retry")) { Task { await verify(stored) } }
+        // How it is doing is the pill beside the title; the parts are the same as every sheet for something linked.
+        if check == .unreachable, !checking, let managing, let stored = GitLabCredentials.token(host: managing) {
+            SheetPart(tr("sheet.part.status")) {
+                HStack {
+                    Text(GitLabStatus.detail(host: managing, check: check)).foregroundStyle(NookTheme.textSecondary)
+                    Spacer()
+                    Button(tr("connector.retry")) { Task { await verify(stored) } }
+                }
             }
         }
-
-        Divider()
-
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(tr("settings2.service.keyTitle")).font(NookTheme.TextStyle.strong)
+        SheetPart(tr("settings2.service.keyTitle")) {
             if replacing || check == .rejected {
                 tokenField
             } else {
@@ -269,8 +296,11 @@ struct GitLabSetupSheet: View {
             await verify(typed)
             guard check != .rejected, GitLabCredentials.save(host: target, token: typed) else { return }
             token = ""
+            // Announced once, when a new host was added; replacing a token is shown by the row's own line.
+            if managing == nil, !saved { ToastCenter.shared.success(tr("connection.added", "GitLab")) }
             saved = true
             replacing = false
+            onSaved()
         }
     }
 

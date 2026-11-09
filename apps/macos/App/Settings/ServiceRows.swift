@@ -131,7 +131,7 @@ struct ServiceRowLayout<Actions: View>: View {
 
     var body: some View {
         ServiceRowShape(title: title, detail: detail, status: status, detailIsError: detailIsError) {
-            ServiceTile(domain: domain, fallback: symbol, tint: tint, size: 30, source: source)
+            ServiceTile(domain: domain, fallback: symbol, tint: tint, size: 28, source: source)
         } actions: {
             actions()
         }
@@ -151,19 +151,26 @@ struct ServiceRowShape<Icon: View, Actions: View>: View {
     @ViewBuilder var icon: () -> Icon
     @ViewBuilder var actions: () -> Actions
 
+    /// Drawn as the closed `ConnectionRow`: the icon, the name, one line that starts with the state ("Connected · …"), a
+    /// dot only when something is wrong, and the actions on the right. A row that only shows a linked thing (an account
+    /// in a sheet) uses this; a row in a list you manage uses `ConnectionRow` itself.
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
+        HStack(spacing: NookTheme.Spacing.md) {
             icon()
-                .frame(width: 30, height: 30)
+                .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    Text(title)
-                    ServiceStatusLabel(status: status, text: statusText)
-                }
-                if !detail.isEmpty {
-                    Text(detail)
+                Text(title).font(NookTheme.TextStyle.strong).lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
+                    if status.needsAttention || detailIsError {
+                        Circle().fill(detailIsError ? NookTheme.coral : status.color).frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
+                    if status == .connecting {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text([statusText ?? status.label, detail].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(detailIsError ? NookTheme.coral : NookTheme.textSecondary)
+                        .foregroundStyle(detailIsError ? NookTheme.coral : (status.needsAttention ? status.color : NookTheme.textSecondary))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -361,45 +368,30 @@ private struct LinkedMCPServiceRow: View {
         }
     }
 
+    /// The one connection row: the switch (off keeps the sign-in), Sign in again and Check again in the "…" menu with
+    /// Disconnect last, and once opened the same parts as its sheet (signing in, what Nook can do with it).
     var body: some View {
-        ServiceRowLayout(domain: service.domain, symbol: "link", tint: NookTheme.iris, title: service.name, detail: detail,
-                         status: status, detailIsError: signIn.failure(for: config.id) != nil) {
-            switch status {
-            case .connecting where signIn.isConnecting(config.id):
-                Button(tr("button.cancel")) { signIn.cancel() }.controlSize(.small)
-            case .expired:
-                Button(tr("connect.reauthorize")) { signIn.signIn(config, app: app) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-            case .unreachable:
-                Button(tr("connector.retry")) { app.connectors.refresh(connector) }.controlSize(.small)
-            default:
-                EmptyView()
+        ConnectionRow(title: service.name, status: status, detail: detail,
+                      isOn: Binding(get: { config.enabled && ConnectorToggle.isOn(config.sourceID) },
+                                    set: { MCPServerStore.shared.setEnabled(config.id, $0) }),
+                      removal: ConnectionRemoval(title: tr("connect.disconnect"), question: tr("connect.disconnectTitle", service.name),
+                                                 detail: tr("connect.disconnectDetail", service.name)) {
+                          let target = config
+                          Task {
+                              await MCPSignIn.shared.signOut(target)
+                              MCPServerStore.shared.remove(target.id)
+                          }
+                      }) {
+            ServiceTile(domain: service.domain, fallback: "link", tint: NookTheme.iris, size: 28)
+        } menu: {
+            if status == .connecting, signIn.isConnecting(config.id) {
+                Button(tr("button.cancel")) { signIn.cancel() }
             }
-            Menu {
-                Button(tr("connect.reauthorize")) { signIn.signIn(config, app: app) }
-                Button(tr("connector.retry")) { app.connectors.refresh(connector) }
-                Divider()
-                Button(tr("connect.disconnect"), role: .destructive) { confirmDisconnect = true }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(tr("connect.manage", service.name))
-        }
-        .confirmationDialog(tr("connect.disconnectTitle", service.name), isPresented: $confirmDisconnect) {
-            Button(tr("connect.disconnect"), role: .destructive) {
-                let target = config
-                Task {
-                    await MCPSignIn.shared.signOut(target)
-                    MCPServerStore.shared.remove(target.id)
-                }
-            }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("connect.disconnectDetail", service.name))
+            Button(tr("connect.reauthorize")) { signIn.signIn(config, app: app) }
+            Button(tr("connector.retry")) { app.connectors.refresh(connector) }
+        } expanded: {
+            ServiceSignInSheet(service: service, capabilities: SourceCapabilities.line(service.id,
+                tools: app.knownTools.map { (name: $0.name, isAction: $0.kind == .action) }))
         }
     }
 }

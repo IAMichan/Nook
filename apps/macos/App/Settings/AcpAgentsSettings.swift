@@ -1,51 +1,55 @@
 import SwiftUI
 
-/// Settings › Agents › Accounts › ACP: the agents you added beyond the ones Nook knows by name. Pick one from the ACP registry, or enter its command yourself. Each becomes an account ("ACP · Kiro") you can
-/// start sessions with; removing it removes that account from Nook (its folder stays).
+/// Settings › Agents › Accounts › ACP: the agents you added beyond the ones Nook knows by name. Pick one from the ACP
+/// registry, or enter its command yourself, from "+ Add ACP agent" in the section's header. Each becomes an account
+/// ("ACP · Kiro") you can start sessions with, shown in the connection row every list in Settings uses; removing it
+/// (from its "…" menu, after asking) removes that account from Nook and deletes a copy Nook downloaded for it.
 struct AcpAgentsSection: View {
     @EnvironmentObject private var app: AppModel
     @State private var agents = CustomAgents.load()
     @State private var showRegistry = false
     @State private var showManual = false
+    /// The agent just added: its row opens by itself.
+    @State private var justAdded: String?
 
     var body: some View {
         Section {
             if agents.isEmpty {
-                Text(tr("acp.empty"))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
+                ConnectionListEmpty(title: tr("acp.empty.title"), detail: tr("acp.empty.detail"),
+                                    add: (tr("acp.fromRegistry"), { showRegistry = true }))
             }
             ForEach(agents) { agent in
-                HStack(spacing: NookTheme.Spacing.md) {
+                let commandLine = ([agent.command] + agent.arguments).joined(separator: " ")
+                ConnectionRow(title: agent.name, version: agent.version, status: .connected,
+                              statusText: tr(agent.installedAt == nil ? "acp.state.added" : "acp.state.installed"),
+                              detail: commandLine,
+                              removal: ConnectionRemoval(title: tr("acp.removeAgent"), question: tr("confirm.remove", agent.name),
+                                                         detail: tr("acp.remove.detail")) { remove(agent) },
+                              startsOpen: agent.id == justAdded) {
                     AgentLogo(agent: agent.name, size: 22)
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        Text(agent.name).font(NookTheme.TextStyle.strong)
-                        Text(([agent.command] + agent.arguments).joined(separator: " "))
+                } expanded: {
+                    // What runs, in full: the agent is a program from the internet, started through your login shell.
+                    LabeledContent(tr("acp.manual.command")) {
+                        Text(commandLine)
                             .font(NookTheme.mono(11))
                             .foregroundStyle(NookTheme.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .textSelection(.enabled)
                     }
-                    Spacer()
-                    if let version = agent.version {
-                        Text(version).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    if let folder = agent.installedAt {
+                        LabeledContent(tr("acp.folder")) {
+                            Text(AgentProfile.tildePath(folder))
+                                .font(NookTheme.mono(11))
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .textSelection(.enabled)
+                        }
                     }
-                    ConfirmedButton(symbol: "trash", title: tr("acp.remove"), question: tr("confirm.remove", agent.name)) {
-                        remove(agent)
-                    }
-                    .labelled(tr("acp.remove"))
-                    .buttonStyle(.borderless)
+                    SettingNote(tr("acp.footer"))
                 }
             }
-            HStack {
+        } header: {
+            ConnectionListMenuHeader(title: tr("acp.title"), info: tr("acp.footer"), add: tr("acp.addAgent")) {
                 Button { showRegistry = true } label: { Label(tr("acp.fromRegistry"), systemImage: "square.grid.2x2") }
                 Button { showManual = true } label: { Label(tr("acp.manual"), systemImage: "terminal") }
-            }
-        } header: {
-            HStack(spacing: NookTheme.Spacing.md) {
-                AgentLogo(.acp, size: 16)
-                SettingText("acp.title")
-                SettingsInfoButton(text: tr("acp.footer"))
             }
         }
         .sheet(isPresented: $showRegistry) {
@@ -72,7 +76,9 @@ struct AcpAgentsSection: View {
         }
         CustomAgents.upsert(agent)
         agents = CustomAgents.load()
+        justAdded = agent.id
         app.history.refresh(minimumInterval: 0)
+        ToastCenter.shared.success(tr("connection.added", agent.name))
     }
 
     private func remove(_ agent: CustomAgent) {
@@ -81,6 +87,7 @@ struct AcpAgentsSection: View {
         app.profiles.remove(agent.profileID)
         agents = CustomAgents.load()
         app.history.refresh(minimumInterval: 0)
+        ToastCenter.shared.success(tr("connection.removed", agent.name))
     }
 }
 
@@ -110,33 +117,40 @@ private struct AcpRegistrySheet: View {
         SetupSheet(title: tr("acp.registry.title"), subtitle: tr("acp.registry.subtitle")) {
             SettingsTile(.agents, size: 40)
         } content: {
-            NookSearchField(prompt: tr("acp.registry.search"), text: $query, style: .inline)
-            if loading {
-                PatientSpinner().frame(maxWidth: .infinity, minHeight: 200)
-            } else if let error {
-                SettingNote(error, tone: .warning)
-            } else {
-                VStack(spacing: NookTheme.Spacing.xxs) {
-                    ForEach(shown) { entry in
-                        SettingsPickRow(title: entry.name, detail: registryDetail(entry), selected: chosen?.id == entry.id) {
-                            chosen = entry
+            // Two steps, as every add sheet: pick the agent, then check what Nook will run or download for it.
+            SetupStep(number: 1, title: tr("acp.step.pick"), done: chosen != nil) {
+                NookSearchField(prompt: tr("acp.registry.search"), text: $query, style: .inline)
+                if loading {
+                    PatientSpinner().frame(maxWidth: .infinity, minHeight: 200)
+                } else if let error {
+                    SettingNote(error, tone: .warning)
+                } else {
+                    VStack(spacing: NookTheme.Spacing.xxs) {
+                        ForEach(shown) { entry in
+                            SettingsPickRow(title: entry.name, detail: registryDetail(entry), selected: chosen?.id == entry.id) {
+                                chosen = entry
+                            }
+                            .disabled(!entry.isSupported)
+                            .opacity(entry.isSupported ? 1 : 0.5)
                         }
-                        .disabled(!entry.isSupported)
-                        .opacity(entry.isSupported ? 1 : 0.5)
                     }
                 }
             }
-            if let chosen, let command = chosen.command {
-                // What will run, before you add it: the agent is a program from the internet.
-                Text(tr("acp.registry.runs", ([command] + chosen.arguments).joined(separator: " ")))
-                    .font(NookTheme.mono(11))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .textSelection(.enabled)
-            } else if let chosen, let binary = chosen.binary {
-                Text(tr("acp.registry.downloads", binary.archive.absoluteString, String(binary.sha256.prefix(12)) + "…"))
-                    .font(NookTheme.mono(11))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .textSelection(.enabled)
+            SetupStep(number: 2, title: tr("acp.step.check")) {
+                if let chosen, let command = chosen.command {
+                    // What will run, before you add it: the agent is a program from the internet.
+                    Text(tr("acp.registry.runs", ([command] + chosen.arguments).joined(separator: " ")))
+                        .font(NookTheme.mono(11))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .textSelection(.enabled)
+                } else if let chosen, let binary = chosen.binary {
+                    Text(tr("acp.registry.downloads", binary.archive.absoluteString, String(binary.sha256.prefix(12)) + "…"))
+                        .font(NookTheme.mono(11))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .textSelection(.enabled)
+                } else {
+                    SettingNote(tr("acp.step.checkHint"))
+                }
             }
             if let installError {
                 SettingNote(installError, tone: .warning)
@@ -217,19 +231,17 @@ private struct AcpManualSheet: View {
         SetupSheet(title: tr("acp.manual.title"), subtitle: tr("acp.manual.subtitle"), width: 460) {
             SettingsTile(.agents, size: 40)
         } content: {
-            // Each field with its name above it, as every form sheet in Settings has.
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                Text(tr("acp.manual.name")).font(NookTheme.TextStyle.strong)
+            // Two steps, as every add sheet: what to call it, then the command that starts its ACP server.
+            SetupStep(number: 1, title: tr("acp.manual.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 TextField("", text: $name, prompt: Text(tr("acp.manual.namePlaceholder"))).textFieldStyle(.roundedBorder)
             }
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                Text(tr("acp.manual.command")).font(NookTheme.TextStyle.strong)
+            SetupStep(number: 2, title: tr("acp.manual.command"), done: parsed != nil) {
                 TextField("", text: $command, prompt: Text("npx -y @vendor/agent-acp@1.0.0"))
                     .textFieldStyle(.roundedBorder)
                     .font(NookTheme.TextStyle.code)
-            }
-            if !command.isEmpty, parsed == nil {
-                SettingNote(tr("acp.manual.badCommand"), tone: .warning)
+                if !command.isEmpty, parsed == nil {
+                    SettingNote(tr("acp.manual.badCommand"), tone: .warning)
+                }
             }
         } footer: {
             Spacer()

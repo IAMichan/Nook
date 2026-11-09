@@ -12,6 +12,7 @@ struct ChatAppSheet: View {
     let app: String
     let setCollecting: (Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sheetEmbedded) private var embedded
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var linker = ChatLinker.shared
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
@@ -29,7 +30,7 @@ struct ChatAppSheet: View {
     private var isLinked: Bool { ChatAppStates.state(app)?.linked == true }
 
     var body: some View {
-        SetupSheet(title: name, subtitle: subtitle) {
+        SetupSheet(title: name, subtitle: subtitle, status: isLinked ? .working : nil) {
             ServiceTile(domain: site, fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 48, source: app)
         } content: {
             if isLinked { manageParts } else { linkSteps }
@@ -52,8 +53,9 @@ struct ChatAppSheet: View {
             Task { await linker.unlink(account, in: network) }
         }
         .task { await linker.refresh() }
-        // Escape closes the sheet the way Done does.
+        // Escape closes the sheet the way Done does; opened in a row there is no sheet to close.
         .onExitCommand {
+            guard !embedded else { return }
             Task { if isLinking { await linker.cancel() } }
             dismiss()
         }
@@ -75,10 +77,8 @@ struct ChatAppSheet: View {
                 }
             }
         }
-        NookDivider()
         SheetPart(tr("chats.manage.inNook")) { ChatAppNoticeRows(app: app, setCollecting: setCollecting) }
         if ChatOwnAdvanced.has(app) || (ownWay && linker.serviceRuns) {
-            NookDivider()
             DisclosureGroup(isExpanded: $showAdvanced) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     ChatOwnAdvanced(app: app, setCollecting: setCollecting)
@@ -102,6 +102,7 @@ struct ChatAppSheet: View {
     private var linkSteps: some View {
         if ownWay {
             ChatOwnLinkSteps(app: app, setCollecting: setCollecting)
+            checkStep(number: ChatOwnLinkSteps.stepCount(app) + 1)
         }
         if let network, !network.accounts.isEmpty {
             if ownWay { NookDivider() }
@@ -119,19 +120,59 @@ struct ChatAppSheet: View {
             } else {
                 serviceSteps
             }
-        } else if !ownWay, ChatHelper.apps.contains(app), !ChatHelper.isBuilt {
-            SettingNote(tr("chats.link.helperMissing", name))
         } else if !ownWay {
-            SettingNote(tr("chats.link.notYet", name, name))
+            // Not linkable in this Nook: still a step, in the same shape as every other app, that says so in plain
+            // words and points at the way its chats come in anyway. What a developer would do sits behind the hover.
+            SetupStep(number: 1, title: tr("chats.link.unavailableTitle", name)) {
+                SettingNote(tr("chats.link.notYet", name, name))
+                    .help(ChatHelper.apps.contains(app) && !ChatHelper.isBuilt ? tr("chats.link.helperMissing", name) : "")
+            }
         }
         // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.
         if capture.sources.apps.contains(where: { $0.id == app }) {
-            NookDivider()
-            SettingToggle(tr("chats.link.notifications"), detail: tr("chats.settings.collectDetail"),
-                          isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
-                              capture.setSource(app, on: on)
-                              if on, !capture.enabled { setCollecting(true) }
-                          }))
+            SheetPart(tr("chats.manage.inNook")) {
+                SettingToggle(tr("chats.link.notifications"), detail: tr("chats.settings.collectDetail"),
+                              isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
+                                  capture.setSource(app, on: on)
+                                  if on, !capture.enabled { setCollecting(true) }
+                              }))
+            }
+        }
+        // Then how Nook reads it and what is rarely needed, folded away last: the order of every connection sheet.
+        if ownWay {
+            // How Nook reads it, after the steps as on every connection sheet (only the apps that need saying).
+            if let howItReads {
+                SheetPart(tr("sheet.part.canDo")) { SettingNote(howItReads) }
+            }
+            // Rarely needed, folded away last, the same words as on the linked app.
+            if app == "whatsapp" {
+                DisclosureGroup(isExpanded: $showAdvanced) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
+                        .padding(.top, NookTheme.Spacing.sm)
+                } label: {
+                    SettingLabel(tr("chats.manage.advanced"), detail: tr("chats.manage.advancedDetail"))
+                }
+            }
+        }
+    }
+
+    /// The last step of every chat app, as "Check the connection" is for every service: Nook reads its chats once it is
+    /// linked, and says so here.
+    private func checkStep(number: Int) -> some View {
+        SetupStep(number: number, title: tr("chats.link.step.check"), done: isLinked) {
+            Text(isLinked ? tr("chats.link.step.checkDone", name) : tr("chats.link.step.checkWaiting", name))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(isLinked ? NookTheme.mint : NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// What an app's link reads, for the apps where that is not obvious from its name.
+    private var howItReads: String? {
+        switch app {
+        case "mail": return tr("chats.mail.howItReads")
+        case "snapchat": return tr("chats.snapchat.howItReads")
+        default: return nil
         }
     }
 
@@ -194,6 +235,7 @@ struct ChatAppSheet: View {
                 SettingNote(tr("chats.link.notOffered", name), tone: .info)
             }
         }
+        checkStep(number: ready ? 2 : 3)
     }
 }
 
@@ -336,6 +378,9 @@ struct ChatLinkSteps: View {
 
 /// Nook's own way of linking an app, in numbered steps; nothing but Nook is needed for it.
 struct ChatOwnLinkSteps: View {
+    /// How many numbered steps an app's own way has, so the step after them gets the next number.
+    static func stepCount(_ app: String) -> Int { app == "whatsapp" ? 2 : 1 }
+
     let app: String
     let setCollecting: (Bool) -> Void
     @ObservedObject private var capture = ChatCaptureService.shared
@@ -346,7 +391,6 @@ struct ChatOwnLinkSteps: View {
     @ObservedObject private var installer = WhatsAppGOWAInstaller.shared
     @ObservedObject private var snapchat = SnapchatWebSession.shared
     @ObservedObject private var mail = ChatCaptureService.shared.mailBridge
-    @State private var whatsAppOptions = false
 
     var body: some View {
         switch app {
@@ -397,13 +441,6 @@ struct ChatOwnLinkSteps: View {
     @ViewBuilder
     private var whatsAppSteps: some View {
         whatsAppLinkSteps
-        NookDivider()
-        DisclosureGroup(isExpanded: $whatsAppOptions) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
-                .padding(.top, NookTheme.Spacing.sm)
-        } label: {
-            SettingLabel(tr("chats.manage.advanced"), detail: tr("chats.manage.advancedDetail"))
-        }
     }
 
     @ViewBuilder
@@ -476,7 +513,6 @@ struct ChatOwnLinkSteps: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(snapchat.isSigningIn)
             }
-            SettingNote(tr("chats.snapchat.howItReads"))
         }
     }
 
@@ -494,7 +530,6 @@ struct ChatOwnLinkSteps: View {
                     capture.linkMail()
                 }
                 .buttonStyle(.borderedProminent)
-                SettingNote(tr("chats.mail.howItReads"))
             }
         }
     }
