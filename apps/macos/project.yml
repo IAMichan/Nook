@@ -296,6 +296,7 @@ targets:
       - path: Services/WhatsApp/WhatsAppSend.swift
       - path: Services/WhatsApp/WhatsAppExport.swift
       - path: NotchUI/Window/NotchResize.swift
+      - path: NotchUI/Window/ScreenPick.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift
       - path: Brain/Memory.swift
