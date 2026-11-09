@@ -1,0 +1,256 @@
+<!-- @head title="Writing · Nook" desc="Autocomplete in every app from a model on your own Mac, dictation that types where you are, and Nook writing at your cursor when you tap ⌘ twice." -->
+<!-- @sprite -->
+<!-- @nav -->
+<style>
+.steps.four{grid-template-columns:repeat(4,1fr)}
+.heroac{max-width:860px;margin:64px auto 0;position:relative;text-align:left}
+.heroac .mbody{min-height:200px;font-size:17px}
+.dict{border-radius:var(--r-pill);background:var(--canvas);box-shadow:0 0 0 1px rgba(255,255,255,.09),0 40px 100px -40px rgba(0,0,0,1);padding:22px 22px 18px;overflow:hidden}
+.dict .doc{font-size:15px;line-height:1.7;color:var(--strong);min-height:130px;padding:6px 4px 0}
+.dict .doc .new{color:var(--paper);background:rgba(240,147,106,.08);border-radius:4px}
+.pill{display:flex;align-items:center;gap:12px;margin:14px auto 0;width:fit-content;padding:8px 14px 8px 10px;border-radius:99px;background:var(--graphite);box-shadow:0 0 0 1px var(--sep),0 16px 30px rgba(0,0,0,.6);font-size:12.5px;color:var(--t2);transition:opacity .3s}
+.pill .rec{width:8px;height:8px;border-radius:50%;background:var(--coral)}
+.wave2{display:flex;align-items:center;gap:3px;height:22px}
+.wave2 i{width:3px;border-radius:2px;background:var(--strong);height:20%;transition:height .12s}
+.dt{border-radius:var(--r-pill);background:var(--canvas);box-shadow:0 0 0 1px rgba(255,255,255,.09),0 40px 100px -40px rgba(0,0,0,1);overflow:hidden}
+.dtbar{height:42px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--t3)}
+.dtbar .lights i{width:11px;height:11px}
+.form{padding:18px 20px 6px;display:grid;gap:10px}
+.form label{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:12px;font-size:13px;color:var(--t3)}
+.form .fin{height:34px;border-radius:var(--r-control);background:var(--field);box-shadow:inset 0 0 0 1px var(--fieldStroke);display:flex;align-items:center;padding:0 10px;font-size:13.5px;color:var(--paper);transition:background .4s,box-shadow .4s}
+.form .fin.filled{background:rgba(174,148,242,.07);box-shadow:inset 0 0 0 1px rgba(174,148,242,.35)}
+.form .fin.lock{color:var(--t3)}
+.form .fin.lock::before{content:"🔒";font-size:11px;margin-right:6px;opacity:.7}
+.dtcard{margin:12px 20px 18px;border-radius:var(--r-sheet);background:var(--surface);padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--strong);opacity:0;transform:translateY(6px);transition:opacity .4s,transform .5s var(--ease)}
+.dtcard.on{opacity:1;transform:none}
+.dtcard .acts{margin-left:auto}
+.dtask{display:flex;align-items:center;gap:10px;margin:16px 20px 0;padding:10px 12px;border-radius:14px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--fieldStroke);font-size:13.5px}
+.dtask .k{display:flex;gap:4px;margin-left:auto}
+.notes{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;margin-top:48px}
+.nbox{border-radius:var(--r-pill);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:22px}
+.nbox h5{font-size:13px;color:var(--t3);font-weight:500;margin-bottom:14px}
+.tline{display:grid;grid-template-columns:52px 70px 1fr;gap:10px;font-size:13.5px;line-height:1.5;padding:6px 0}
+.tline time{font:12px var(--mono);color:#5f5f5f;padding-top:2px}
+.tline b{font-weight:500}
+.tline span{color:var(--strong)}
+.todo{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--strong);padding:7px 0}
+.todo i{width:16px;height:16px;border-radius:5px;box-shadow:inset 0 0 0 1.5px var(--sep);flex:none;margin-top:2px}
+@media (max-width:1000px){.steps.four,.notes{grid-template-columns:1fr}.form label{grid-template-columns:1fr}}
+</style>
+
+<header class="page-hero" style="--tint:rgba(143,179,240,.12)">
+  <div class="wrap">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 7h10M4 12h16M4 17h7"/></svg>Writing</div>
+    <h1 class="rv d1">Finishes your sentences.<br><span>In every app.</span></h1>
+    <p class="lede rv d2">Autocomplete from a model on your own Mac, dictation that types where you are, and Nook writing at your cursor when you ask. No subscription, no word limits.</p>
+    <div class="ctas rv d3">
+      <a class="btn primary lg" href="download.html"><!-- @apple -->Download for Mac</a>
+      <a class="btn quiet lg" href="#dictation">Or just talk</a>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="heroac rv d2" id="autocomplete">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(143,179,240,.3),transparent)"></div>
+      <div class="mailwin">
+        <div class="tb"><div class="lights"><i></i><i></i><i></i></div><b>Re: New mocks</b><span style="margin-left:auto">Mail</span></div>
+        <div class="mf"><span>To:</span><span>Lotte de Vries</span></div>
+        <div class="mf"><span>Subject:</span><span>Re: New mocks</span></div>
+        <div class="mbody" id="acBody"></div>
+      </div>
+      <div class="keys" style="justify-content:center"><div><kbd id="kTab">Tab</kbd>next word</div><div><kbd id="kSTab">⇧ Tab</kbd>all of it</div><div><kbd>:</kbd>emoji</div><div><kbd>Esc</kbd>not now</div></div>
+    </div>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap center">
+    <div class="label rv">How it works</div>
+    <h2 class="rv d1">Grey text after your cursor. <span>That's all you see.</span></h2>
+  </div>
+  <div class="wrap">
+    <div class="steps four">
+      <div class="step rv"><b>You type</b><span>In Mail, Slack, Notes, a browser, anywhere with a text field. Password fields are always skipped.</span></div>
+      <div class="step rv d1"><b>Nook reads the field</b><span>The text around your cursor, the app and the site, and if you allow it, what's on screen and your clipboard.</span></div>
+      <div class="step rv d2"><b>A model on your Mac writes on</b><span>In your language and style, with your own instructions for this app or website.</span></div>
+      <div class="step rv d3"><b>Tab, or keep typing</b><span>Tab takes the next word, ⇧ Tab takes it all. Type something else and it simply steps aside.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="label rv">Made to disappear</div>
+    <h2 class="rv d1">Smart where it counts, <span>invisible everywhere else.</span></h2>
+    <div class="fgrid">
+      <div class="rv"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></svg><b>On your own Mac</b><span>Your built‑in MLX model or any GGUF model through llama.cpp, accelerated by Metal. Nothing you type leaves your Mac.</span></div>
+      <div class="rv d1"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 13h8M8 16h5"/></svg><b>Per app and per website</b><span>Formal in Mail, short in Slack, Dutch on one site. Turn it off where you don't want it.</span></div>
+      <div class="rv d2"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg><b>Learns how you write</b><span>Your words and the phrases you write again and again, learned locally and stored encrypted. Card numbers, keys and passwords are filtered out first.</span></div>
+      <div class="rv"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8M9 9.5h.01M15 9.5h.01"/></svg><b>Emoji, typos, other words</b><span>Type <kbd>:</kbd> for emoji, get a typo fixed inline, or pick another word by number.</span></div>
+      <div class="rv d1"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M6 10v4"/></svg><b>Easy on your battery</b><span>Pauses on battery by default, or runs lighter: only when you pause typing, shorter, or with a smaller model.</span></div>
+      <div class="rv d2"><svg viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/></svg><b>Also in your editor's chat</b><span>In the Claude Code or Copilot chat box of VS Code and Cursor, never in the code editor or the terminal.</span></div>
+    </div>
+    <p class="rv" style="margin-top:20px;font-size:14px;color:var(--t3)">Statistics show how many words you completed and the time you saved. Nook only counts; it never stores what you typed.</p>
+  </div>
+</section>
+
+<section id="dictation">
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Flow dictation</div>
+      <h2 class="rv d1">Hold a key. Speak. <span>Release, and it's typed.</span></h2>
+      <p class="sub rv d2">Anywhere on your Mac. Nook listens, cleans up what you said, and pastes it right where your cursor is.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.3 3.2 8 7.5 9 4.3-1 7.5-4.7 7.5-9V6Z"/></svg><div><b>Offline, in your languages</b><span>On‑device speech recognition across your languages at once, or Parakeet on the Neural Engine.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5Z"/></svg><div><b>Your words, your way</b><span>A dictionary for names, replacements, and snippets that expand when you say them.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M7 4v16M17 4v16"/></svg><div><b>Hands‑free when you want</b><span>Double‑tap the key to keep listening, <kbd>Esc</kbd> to cancel, <kbd>⌃</kbd><kbd>⌘</kbd><kbd>V</kbd> to paste the last one again.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(240,147,106,.28),transparent)"></div>
+      <div class="dict">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t3);padding:0 4px 10px;border-bottom:1px solid var(--hair)"><svg class="i" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/></svg>Notes · Saturday</div>
+        <div class="doc" id="dDoc"></div>
+        <div class="pill" id="dPill"><span class="rec"></span><div class="wave2" id="dWave"></div><span id="dLbl">Listening…</span><kbd style="margin-left:4px">fn</kbd></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="double-tap">
+  <div class="wrap split rev">
+    <div class="copy">
+      <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>Double tap</div>
+      <h2 class="rv d1">Tap ⌘ twice. <span>Say what to write.</span></h2>
+      <p class="sub rv d2">Tap the right <kbd>⌘</kbd> key twice and a small field asks what Nook should do. With your cursor in a text, Nook writes right there.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg><div><b>Write at your cursor</b><span>"Write a cover letter", "translate this into English", or "make the second paragraph shorter", in Word or any other app. ⌘Z takes it back.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg><div><b>Fill in the form</b><span>Nook fills the empty fields with what it knows about you, then shows what it filled with Undo. Nothing is sent by itself.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><div><b>Some fields stay yours</b><span>Password, payment and identity fields always stay empty, and buttons that pay or delete are never offered.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(174,148,242,.3),transparent)"></div>
+      <div class="dt">
+        <div class="dtbar"><div class="lights"><i></i><i></i><i></i></div><span style="margin-left:6px">Safari · Sign up for the run</span></div>
+        <div class="dtask"><span class="mascot" style="--s:20px"><i></i><i></i></span><span id="dtQ"></span><span class="caret"></span><span class="k"><kbd>⌘</kbd><kbd>⌘</kbd></span></div>
+        <div class="form" id="dtForm">
+          <label>Name<span class="fin" data-v="Alex Morgan"></span></label>
+          <label>Email<span class="fin" data-v="alex@example.com"></span></label>
+          <label>Date of birth<span class="fin" data-v="12 March 1994"></span></label>
+          <label>T‑shirt size<span class="fin" data-v="M"></span></label>
+          <label>Card number<span class="fin lock">Stays empty</span></label>
+        </div>
+        <div class="dtcard" id="dtCard"><svg class="i" viewBox="0 0 24 24" style="color:var(--mint)"><path d="M2 12.5 6.5 17 17 6.5"/></svg>Filled 4 fields · checked by you<span class="acts"><span class="a">Undo</span><span class="a y">Sign up</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="notes">
+  <div class="wrap">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 12h2l2-6 4 12 2-6h6"/></svg>Call notetaker</div>
+    <h2 class="rv d1">In a call? <span>Nook takes the notes.</span></h2>
+    <p class="sub rv d2">Zoom, Meet, Teams or the browser: Nook records your microphone and the call's sound on your Mac, tells the speakers apart, and gives you a transcript, a summary and the action items.</p>
+    <div class="notes">
+      <div class="nbox rv">
+        <h5>Transcript · Design review</h5>
+        <div class="tline"><time>00:02</time><b>Lotte</b><span>So the main change is the sidebar with the four tabs.</span></div>
+        <div class="tline"><time>00:09</time><b>You</b><span>Love it. Can the notch become optional in Settings?</span></div>
+        <div class="tline"><time>00:15</time><b>Lotte</b><span>Yes, off by default for new people. I'll update the mocks.</span></div>
+        <div class="tline"><time>00:24</time><b>You</b><span>Great, I'll write the copy for the website by Friday.</span></div>
+      </div>
+      <div class="nbox rv d1">
+        <h5>Action items</h5>
+        <div class="todo"><i></i><div>Lotte updates the mocks with the notch off by default</div></div>
+        <div class="todo"><i></i><div>You write the website copy <span style="color:var(--t3)">· Friday</span></div></div>
+        <h5 style="margin-top:18px">Summary</h5>
+        <div style="font-size:14px;line-height:1.6;color:var(--t2)">The new sidebar is approved. The notch becomes an optional extra; mocks and copy follow this week.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap center">
+    <div class="label rv">Questions</div>
+    <h2 class="rv d1">Good to know.</h2>
+    <div class="faq rv d2">
+      <details open><summary>Does what I type leave my Mac?</summary><p>No. Autocomplete runs on a model on your Mac, and password fields and Secure Input are never read. Statistics are counts only, never your text.</p></details>
+      <details><summary>Which apps does it work in?</summary><p>Almost every app with a text field, including browsers and Electron apps. Terminals, code editors and password managers are off by default, and you can switch any app on or off in Settings › Autocomplete.</p></details>
+      <details><summary>Will Tab still work normally?</summary><p>Yes. Nook only takes Tab while a suggestion is on screen. With nothing showing, Tab belongs to the app, and you can leave Tab to an app entirely.</p></details>
+      <details><summary>Can I try it before turning it on everywhere?</summary><p>Yes. Settings › Autocomplete has a Playground where you can type and see the suggestion, how long it took, and the exact prompt the model read.</p></details>
+      <details><summary>Does dictation need the internet?</summary><p>No. It runs on‑device, or offline with Parakeet on the Neural Engine.</p></details>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="band rv">
+    <span class="mascot" style="--s:64px;box-shadow:0 0 80px rgba(255,255,255,.2)"><i></i><i></i></span>
+    <h2 style="margin-top:28px">Write less. <span>Say more.</span></h2>
+    <p class="sub">Autocomplete, dictation and a buddy that writes at your cursor, all on your own Mac.</p>
+    <div class="ctas"><a class="btn primary lg" href="download.html"><!-- @apple -->Download for Mac</a><a class="btn quiet lg" href="chats.html">Explore Chats</a></div>
+  </div>
+</div>
+
+<!-- @footer -->
+<script>
+/* autocomplete demo */
+(function(){
+  const B=$('#acBody'),kT=$('#kTab'),kS=$('#kSTab');
+  const typed1='Hi Lotte,\n\nThanks for the mocks, they look great! I\'ll go through them before ';
+  const ghost1=['our','review','at','14:00','and','send','you','my','notes','after.'];
+  const typed2=' See you soon ';
+  let tm=[];const at=(ms,f)=>tm.push(setTimeout(f,ms));
+  const esc=x=>x.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const draw=(t,g='',extra='')=>B.innerHTML=esc(t)+'<span class="caret"></span>'+(g?'<span class="gh">'+esc(g)+'</span>':'')+extra;
+  const press=k=>{k.classList.add('press');setTimeout(()=>k.classList.remove('press'),160)};
+  function run(){tm.forEach(clearTimeout);tm=[];let t=500,txt='';draw('');
+    for(const ch of typed1){at(t+=28+Math.random()*45,()=>{txt+=ch;draw(txt)})}
+    at(t+=350,()=>draw(txt,ghost1.join(' ')));
+    let taken=0;
+    [0,1,2].forEach(()=>at(t+=650,()=>{press(kT);txt+=ghost1[taken++]+' ';draw(txt,ghost1.slice(taken).join(' '))}));
+    at(t+=800,()=>{press(kS);txt+=ghost1.slice(taken).join(' ');draw(txt)});
+    for(const ch of typed2){at(t+=45+Math.random()*40,()=>{txt+=ch;draw(txt)})}
+    const emo='<span class="emo"><span class="sel">😊 <small>1</small></span><span>👋 <small>2</small></span><span>🙌 <small>3</small></span></span>';
+    at(t+=200,()=>{txt+=':';draw(txt,'',emo)});
+    at(t+=500,()=>{txt+='sm';draw(txt,'',emo)});
+    at(t+=900,()=>{txt=txt.slice(0,-3)+'😊';draw(txt)});
+    at(t+=4500,run);
+  }
+  whenVisible($('#autocomplete'),run);
+})();
+
+
+
+/* dictation demo */
+(function(){
+  const doc=$('#dDoc'),wave=$('#dWave'),pill=$('#dPill'),lbl=$('#dLbl');
+  for(let i=0;i<18;i++)wave.appendChild(document.createElement('i'));
+  const bars=[...wave.children];
+  const before='Hike on Saturday\n\n';
+  const said="Leaving at nine from Noor's place. I'll drive and pick up Iris on the way. Bring water and something warm.";
+  let tm=[],talk=null;const at=(ms,f)=>tm.push(setTimeout(f,ms));
+  const esc=x=>x.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+  function run(){tm.forEach(clearTimeout);tm=[];clearInterval(talk);doc.innerHTML=esc(before)+'<span class="caret"></span>';pill.style.opacity=.35;lbl.textContent='Hold fn to talk';bars.forEach(b=>b.style.height='20%');
+    at(1200,()=>{pill.style.opacity=1;lbl.textContent='Listening…';talk=setInterval(()=>bars.forEach(b=>b.style.height=(15+Math.random()*85)+'%'),120)});
+    at(5200,()=>{clearInterval(talk);bars.forEach(b=>b.style.height='20%');lbl.textContent='Typing…'});
+    at(5700,()=>{doc.innerHTML=esc(before)+'<span class="new">'+esc(said)+'</span><span class="caret"></span>';pill.style.opacity=.35;lbl.textContent='Hold fn to talk'});
+    at(9500,run);}
+  whenVisible($('#dictation'),run);
+})();
+
+/* double tap demo */
+(function(){
+  const Q=$('#dtQ'),ins=$$('#dtForm .fin:not(.lock)'),card=$('#dtCard');const q='fill in the form';
+  let tm=[];const at=(ms,f)=>tm.push(setTimeout(f,ms));
+  function run(){tm.forEach(clearTimeout);tm=[];Q.textContent='';card.classList.remove('on');ins.forEach(i=>{i.textContent='';i.classList.remove('filled')});
+    let t=600;for(let n=1;n<=q.length;n++){const k=n;at(t+=60,()=>Q.textContent=q.slice(0,k))}
+    ins.forEach(i=>at(t+=550,()=>{i.textContent=i.dataset.v;i.classList.add('filled')}));
+    at(t+=500,()=>card.classList.add('on'));
+    at(t+=5000,run);}
+  whenVisible($('#double-tap'),run);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · Nook</title>
+<meta name="description" content="Nook runs on your own Mac by default, keeps what you choose on this Mac, and does nothing without your yes. Open source under the MIT license.">
+<link rel="stylesheet" href="assets/nook.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="claude" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4M7.5 3.8l9 16.4M16.5 3.8l-9 16.4"/></g></symbol>
+    <symbol id="codex" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c3 2.5 3 14.5 0 17M3.5 12c2.5-3 14.5-3 17 0"/></g></symbol>
+    <symbol id="gemini" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10 5.4-.6 9.4-4.6 10-10Z"/></symbol>
+    <symbol id="cursor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7Z"/><path d="M3.5 7 12 12l8.5-5M12 12v9.5"/></g></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2h9A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z"/></symbol>
+    <symbol id="branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7c0 5 6 4 6 10M18 7c0 5-6 4-6 10"/></g></symbol>
+    <symbol id="pr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V9a3 3 0 0 0-3-3h-4m2-2-2 2 2 2"/></g></symbol>
+  </defs>
+</svg>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="mascot" style="--s:26px"><i></i><i></i></span>Nook</a>
+    <div class="links"><a href="agents.html">Agents</a><a href="chats.html">Chats</a><a href="assistant.html">Assistant</a><a href="writing.html">Writing</a><a href="privacy.html">Privacy</a></div>
+    <div class="right">
+      <a class="btn quiet" href="https://github.com/IAMichan/nook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5Z"/></svg>GitHub</a>
+      <a class="btn primary" href="download.html">Download</a>
+      <button class="menu-btn" aria-label="Menu"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+  </div>
+</nav>
+<style>
+.brains{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:56px}
+.brain{border-radius:24px;padding:28px;background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);position:relative;overflow:hidden}
+.brain.local{box-shadow:inset 0 0 0 1px rgba(94,214,166,.28)}
+.brain .spot{position:absolute;width:360px;height:360px;border-radius:50%;filter:blur(90px);opacity:.12;pointer-events:none;right:-160px;top:-160px}
+.brain h3{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:14px 0 8px}
+.brain p{font-size:14.5px;color:var(--t3);line-height:1.55;max-width:440px}
+.brain ul{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin-top:22px}
+.brain li{font-size:13px;color:var(--strong);background:var(--surface);border-radius:99px;padding:6px 12px}
+.brain .facts{display:flex;flex-direction:column;gap:10px;margin-top:22px;padding-top:18px;border-top:1px solid var(--hair);font-size:13.5px;color:var(--t2)}
+.brain .facts div{display:flex;gap:10px;align-items:baseline}
+.brain .facts div::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--fc,var(--t3));flex:none;transform:translateY(-2px)}
+.srcrow{display:flex;align-items:center;gap:12px;padding:12px 6px;border-top:1px solid var(--hair);font-size:14px}
+.srcrow:first-child{border-top:0}
+.srcrow small{display:block;font-size:12.5px;color:var(--t3)}
+.tog{margin-left:auto;width:36px;height:22px;border-radius:99px;background:var(--smoke);position:relative;flex:none;transition:background .3s}
+.tog::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--t2);transition:transform .3s var(--ease),background .3s}
+.tog.on{background:var(--mint)}.tog.on::after{transform:translateX(14px);background:#fff}
+.lock{width:28px;height:28px;border-radius:var(--r-control);background:var(--surface);display:grid;place-items:center;color:var(--t2);flex:none}
+.levels{display:flex;gap:2px;padding:2px;border-radius:var(--r-card);background:var(--surface);margin-top:14px}
+.levels span{flex:1;text-align:center;font-size:13px;color:var(--t3);height:30px;display:grid;place-items:center;border-radius:var(--r-control)}
+.levels span.on{background:var(--smoke);color:var(--paper)}
+.redact{margin-top:12px;font:12.5px/1.8 var(--mono);color:var(--t2);background:var(--well);border-radius:var(--r-card);padding:10px 12px;box-shadow:inset 0 0 0 1px var(--hair)}
+.redact em{font-style:normal;color:var(--mint)}
+.energy{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:28px}
+.energy div{border-radius:var(--r-panel);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:16px}
+.energy div.on{box-shadow:inset 0 0 0 1px var(--sep);background:var(--surface)}
+.energy b{display:block;font-size:14px;font-weight:500}
+.energy span{font-size:13px;color:var(--t3);line-height:1.5;display:block;margin-top:4px}
+@media (max-width:1000px){.brains,.energy{grid-template-columns:1fr}}
+</style>
+
+<header class="page-hero" style="--tint:rgba(94,214,166,.1)">
+  <div class="wrap">
+    <div class="label rv"><span class="st done">Privacy</span></div>
+    <h1 class="rv d1">Nothing happens<br><span>without your yes.</span></h1>
+    <p class="lede rv d2">Nook sees a lot, so it is built to keep it. The assistant runs on your own Mac by default, what you mark stays on this Mac, and every message, command or pull request waits for your click.</p>
+    <div class="ctas rv d3"><a class="btn primary lg" href="download.html"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download for Mac</a><a class="btn quiet lg" href="https://github.com/IAMichan/nook">Read the source</a></div>
+  </div>
+</header>
+
+<!-- brains -->
+<section style="padding-top:100px">
+  <div class="wrap center">
+    <div class="label rv">Where your questions go</div>
+    <h2 class="rv d1">On your Mac by default. <span>The cloud only if you choose it.</span></h2>
+  </div>
+  <div class="wrap">
+    <div class="brains">
+      <div class="brain local rv">
+        <div class="spot" style="background:var(--mint)"></div>
+        <span class="st done">Default</span>
+        <h3>On your own Mac</h3>
+        <p>A model that runs on your computer, sized to your Mac's memory. Nothing leaves it, and a question costs nothing.</p>
+        <ul><li>Built‑in MLX models</li><li>Apple Foundation Models</li><li>Ollama</li><li>LM Studio</li></ul>
+        <div class="facts" style="--fc:var(--mint)"><div>No account and no API key needed</div><div>Works offline</div><div>Nothing is filtered, because nothing leaves</div></div>
+      </div>
+      <div class="brain rv d1">
+        <div class="spot" style="background:var(--blue)"></div>
+        <span class="st" style="color:var(--t2)">Optional</span>
+        <h3>In the cloud, if you want it</h3>
+        <p>Add a provider's key in Settings › Brain and switch per question with the model chip. Its answers are often stronger; the choice is yours.</p>
+        <ul><li>Claude</li><li>OpenAI</li><li>Google Gemini</li><li>Grok</li><li>Mistral</li><li>Groq</li><li>OpenRouter</li><li>DeepSeek</li><li>Qwen</li><li>Moonshot</li><li>Claude Code</li></ul>
+        <div class="facts"><div>Never sees what you keep on this Mac</div><div>Secrets are redacted before anything is sent</div><div>Your key, your account, your bill</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- only on this Mac -->
+<section>
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Only on this Mac</div>
+      <h2 class="rv d1">Lock a source. <span>No cloud model ever sees it.</span></h2>
+      <p class="sub rv d2">Mark your memory, your screen, your mail or any other source as Only on this Mac. With a cloud model active, those sources are left out completely: their context, their tools and their searches.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.3 3.2 8 7.5 9 4.3-1 7.5-4.7 7.5-9V6Z"/></svg><div><b>A privacy level for the rest</b><span>Balanced (the default) redacts passwords, API keys, tokens, card numbers and IBANs. Strict also hides email addresses and phone numbers and keeps the screen and clipboard here.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></svg><div><b>Apps Nook never reads</b><span>Password managers are skipped out of the box. Add any app, and screen reading, Think Along and autocomplete all leave it alone.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(94,214,166,.28),transparent)"></div>
+      <div class="panel">
+        <div class="ct-head">Settings<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>Privacy</b></div>
+        <div class="pad">
+          <div style="font-size:13px;color:var(--t3);padding:0 6px 6px">Only on this Mac</div>
+          <div class="srcrow"><span class="lock"><svg class="i" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.7.7.8 1.4.8 2.4h6c0-1 .1-1.7.8-2.4 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6ZM9 20h6"/></svg></span><div>Memory<small>What Nook remembers about you</small></div><span class="tog on"></span></div>
+          <div class="srcrow"><span class="lock"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg></span><div>Screen<small>Text of the windows you have open</small></div><span class="tog on" id="togScreen"></span></div>
+          <div class="srcrow"><span class="lock"><svg class="i" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="m4 7 8 6 8-6"/></svg></span><div>Mail<small>Every account in the Mail app</small></div><span class="tog" id="togMail"></span></div>
+          <div class="srcrow"><span class="lock"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><div>Calendar<small>Events and invitations</small></div><span class="tog"></span></div>
+          <div style="font-size:13px;color:var(--t3);padding:18px 6px 0">Privacy level</div>
+          <div class="levels"><span>Open</span><span class="on">Balanced</span><span>Strict</span></div>
+          <div class="redact">password: <em>[redacted]</em><br>card 4111 …: <em>[redacted]</em><br>NL91 ABNA …: <em>[redacted]</em></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- approvals -->
+<section>
+  <div class="wrap split rev">
+    <div class="copy">
+      <div class="label rv"><span class="st wait">Approvals</span></div>
+      <h2 class="rv d1">One card for every action. <span>One log you can read back.</span></h2>
+      <p class="sub rv d2">A reply to a friend, an event in your calendar, a command from a coding agent or a pull request: it all goes through the same approval card, shown in full, and lands in a local audit log.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg><div><b>Read‑only work runs</b><span>Looking things up and reading files happen right away.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4M12 16h.01"/></svg><div><b>Risky work waits for you</b><span>Anything that is not provably harmless gets a card with the whole command and a warning.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></svg><div><b>Destructive work never runs</b><span>Dangerous commands are refused, whatever the agent's own flags say. Plan mode is strictly read‑only.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(242,184,102,.35),transparent)"></div>
+      <div class="approve in" style="margin:0;padding:20px;border-radius:var(--r-pill)">
+        <div class="top"><svg class="logo" style="color:#dadada"><use href="#codex"/></svg>Fix the flaky relay reconnect<span class="st wait">Needs your yes</span></div>
+        <h6 style="font-size:18px">Run a command</h6>
+        <code>rm -rf node_modules && npm ci && npm test</code>
+        <div class="seg"><span class="y">✓ Allow</span><span>Always</span><span>Deny</span></div>
+      </div>
+      <div style="margin-top:14px;padding:4px 8px;font:12.5px/2 var(--mono);color:#6d6d6d">
+        <div>09:41 <span style="color:var(--mint)">allowed</span>  claude · npm test</div>
+        <div>09:38 <span style="color:var(--mint)">allowed</span>  nook · reply to Sam on WhatsApp</div>
+        <div>09:31 <span style="color:var(--coral)">refused</span>  codex · rm -rf ~/</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- never read -->
+<section>
+  <div class="wrap center">
+    <div class="label rv">What Nook leaves alone</div>
+    <h2 class="rv d1">Some things it never reads. <span>Some things it never keeps.</span></h2>
+  </div>
+  <div class="wrap">
+    <div class="fgrid rv d2">
+      <div><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><b>Password fields</b><span>Secure fields and Secure Input are skipped by screen reading, autocomplete and Nook taking over. Password, payment and identity fields always stay empty.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><b>Secrets in text</b><span>Card numbers, IBANs, ID numbers, API keys, tokens and private keys are filtered from screen text and the clipboard before a model sees them.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><b>What you typed</b><span>Autocomplete statistics are counts only: how many words, how often accepted. Never the words themselves.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.3 3.2 8 7.5 9 4.3-1 7.5-4.7 7.5-9V6Z"/><path d="m9 12 2 2 4-4"/></svg><b>Your writing samples</b><span>What autocomplete learns from your writing is encrypted on disk, with a key in Nook's Keychain vault.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg><b>Agents' reach</b><span>Agents get their own secrets only, never Nook's keys. They start tracked commands and cannot type into your shell. Nook's local socket answers only your own user.</span></div>
+      <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><b>The agents' browser</b><span>No file:// or custom links. Each project keeps its own sign‑ins, and Nook asks before it keeps one.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- energy -->
+<section>
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M6 10v4M10 10v4"/></svg>Energy</div>
+      <h2 class="rv d1">Quiet on your battery, <span>too.</span></h2>
+      <p class="sub rv d2">Nook works in the background so answers are ready at once. One policy slows that down on battery and pauses it when the battery runs low, your Mac is hot or busy, or you are away. What you ask for always runs at full speed.</p>
+    </div>
+    <div class="rv d2">
+      <div class="energy">
+        <div class="on"><b>Automatic</b><span>Adjusts to battery, heat and what you're doing.</span></div>
+        <div><b>Saver</b><span>Less background work, longer battery.</span></div>
+        <div><b>Full power</b><span>Everything ready, all the time.</span></div>
+      </div>
+      <div class="cbox" style="max-width:none;margin-top:12px"><div class="cin typed" style="font-size:13.5px;color:var(--t2)"><span class="st work" style="margin-right:10px">Now</span>On battery: reading the screen every few seconds, one window at a time.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- open source -->
+<section>
+  <div class="wrap center">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg>Open source</div>
+    <h2 class="rv d1">Don't take our word for it. <span>Read the code.</span></h2>
+    <p class="sub rv d2">Nook is MIT licensed and built in the open. Found a security issue? Report it privately through GitHub, and you'll hear back within seven days.</p>
+    <div class="ctas rv d3"><a class="btn primary lg" href="https://github.com/IAMichan/nook">View on GitHub</a><a class="btn quiet lg" href="https://github.com/IAMichan/nook/blob/main/SECURITY.md">Security policy</a></div>
+  </div>
+  <div class="wrap">
+    <div class="faq rv">
+      <details open><summary>Does Nook send my screen to the cloud?</summary><p>Not by default. The assistant runs on your Mac and reads your screen there. If you switch to a cloud model, you choose who reads the screen: that model, nobody, or a model on your Mac. Mark the screen as Only on this Mac and a cloud model never sees it.</p></details>
+      <details><summary>Do I need an account or an API key?</summary><p>No. Nook works out of the box with a model on your Mac. Cloud keys are optional and stored in your Mac's Keychain.</p></details>
+      <details><summary>Can a coding agent do something I didn't approve?</summary><p>Read‑only work runs on its own. Anything else waits for your Allow, unless you gave a session "Allow everything". Dangerous commands are refused either way, and every decision is written to the audit log.</p></details>
+      <details><summary>Where is my data stored?</summary><p>On your Mac: memories, chats with Nook and the audit log live in a local database you can inspect and delete in Settings. Keys and tokens are kept in the Keychain.</p></details>
+      <details><summary>Can Nook be tricked by text on a web page or in an email?</summary><p>That kind of prompt injection is exactly why every action needs your yes. Reports about it are especially welcome through the security policy.</p></details>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="band rv">
+    <span class="mascot" style="--s:72px;box-shadow:0 0 80px rgba(255,255,255,.2)"><i></i><i></i></span>
+    <h2 style="margin-top:32px">A buddy you can trust.<br><span>Because you can check.</span></h2>
+    <div class="ctas"><a class="btn primary lg" href="download.html"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.5 1.2 0 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.2ZM13.9 4.9c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z"/></svg>Download for Mac</a><a class="btn quiet lg" href="agents.html">How agents are kept in line</a></div>
+  </div>
+</div>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><a class="brand" href="index.html" style="font-size:16px"><span class="mascot" style="--s:22px"><i></i><i></i></span>Nook</a>
+      <p>The one calm place for everything that needs you: people, coding agents, music and your day.</p></div>
+    <div><h6>Product</h6><ul><li><a href="agents.html">Agents</a></li><li><a href="chats.html">Chats</a></li><li><a href="assistant.html">Assistant</a></li><li><a href="writing.html">Writing</a></li></ul></div>
+    <div><h6>Trust</h6><ul><li><a href="privacy.html">Privacy</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/SECURITY.md">Security</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/LICENSE">MIT License</a></li></ul></div>
+    <div><h6>Get Nook</h6><ul><li><a href="download.html">Download</a></li><li><a href="https://github.com/IAMichan/nook">GitHub</a></li><li><a href="https://github.com/IAMichan/nook/tree/main/docs">Documentation</a></li><li><a href="https://github.com/IAMichan/nook/blob/main/CHANGELOG.md">Changelog</a></li></ul></div>
+    <div class="base"><span>Free and open source</span><span>Made for people who like a calm screen</span></div>
+  </div>
+</footer>
+<script src="assets/nook.js"></script>
+<script>
+/* Flip the Mail lock on and off so the panel feels alive. */
+whenVisible($('#togMail'),()=>{let on=false;setInterval(()=>{on=!on;$('#togMail').classList.toggle('on',on)},2600)});
+</script>
+</body>
+</html>
