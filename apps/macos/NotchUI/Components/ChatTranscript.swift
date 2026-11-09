@@ -473,6 +473,8 @@ private struct ChatBubbleView: View, Equatable {
     private static let foldedLines = 12
     /// The widest a bubble gets: a long message wraps into lines that are easy to read, however wide the chat is.
     static let maxWidth: CGFloat = 560
+    /// The sender's face beside a group message.
+    static let faceSize: CGFloat = 28
 
     /// The actions only count by whether they are there: they do the same for the same bubble.
     static func == (a: ChatBubbleView, b: ChatBubbleView) -> Bool {
@@ -631,8 +633,12 @@ private struct ChatBubbleView: View, Equatable {
     }
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             if bubble.fromMe { Spacer(minLength: 70) }
+            // In a group, who wrote it shows beside each of their messages: their photo from Contacts, else their initials.
+            if !bubble.fromMe, !bubble.sender.isEmpty {
+                ChatSenderFace(name: bubble.sender, size: Self.faceSize)
+            }
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
@@ -653,9 +659,22 @@ private struct ChatBubbleView: View, Equatable {
                         .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
                             if let ticks = bubble.ticks { MessageInfoView(ticks: ticks, readers: bubble.readers) }
                         }
+                        // Over the bubble's bottom edge at its leading side, as the chat apps show them, clear of the
+                        // time at its trailing side.
+                        .overlay(alignment: .bottomLeading) {
+                            if !bubble.reactions.isEmpty {
+                                ReactionChips(reactions: bubble.reactions, onReact: onReact)
+                                    .padding(.leading, NookTheme.Spacing.md)
+                                    .alignmentGuide(.bottom) { $0[.top] + ReactionChips.overlap }
+                            }
+                        }
                     if !bubble.reactions.isEmpty {
-                        ReactionChips(reactions: bubble.reactions, onReact: onReact)
-                            .padding(.horizontal, NookTheme.Spacing.sm)
+                        // The room the pill takes under the bubble, so the next message does not run into it.
+                        ReactionChips(reactions: bubble.reactions, onReact: nil)
+                            .hidden()
+                            .frame(width: 0)
+                            .padding(.top, -ReactionChips.overlap)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -1113,51 +1132,63 @@ struct QuotedMessage: View {
     }
 }
 
-/// The emoji under a bubble, one chip each with how many put it there; yours is tinted, and a click on one puts that
-/// emoji there too, or takes yours back.
+/// The emoji on a message as one pill over the bubble's bottom edge, as WhatsApp and iMessage show them: the emoji, the
+/// most used first, and how many reacted in all. Tinted when one is yours; a click shows who put which emoji there.
 private struct ReactionChips: View {
     let reactions: [BubbleReaction]
     let onReact: ((String) -> Void)?
     /// Who reacted is open under the emoji.
     @State private var showingPeople = false
 
+    /// How far the pill reaches up over the bubble.
+    static let overlap: CGFloat = NookTheme.Spacing.sm
+    /// The most emoji the pill shows; the rest are in the count and in the list of who reacted.
+    private static let shown = 3
+
+    private var mine: Bool { reactions.contains(where: \.mine) }
+    private var total: Int { reactions.reduce(0) { $0 + max($1.count, 1) } }
+
     var body: some View {
         // A click shows who put which emoji there, as the chat apps do; there yours can be taken back or another added.
-        Button { showingPeople = true } label: {
-            // Many emoji wrap onto more rows under the bubble instead of squeezing each chip.
-            ChipFlow(spacing: NookTheme.Spacing.xs) {
-                ForEach(reactions) { reaction in chip(reaction) }
+        Button { showingPeople = true } label: { pill }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .help(Self.summary(reactions))
+            .accessibilityLabel(Self.summary(reactions))
+            .popover(isPresented: $showingPeople, arrowEdge: .bottom) {
+                ReactionPeopleView(reactions: reactions, onReact: onReact.map { react in
+                    { emoji in showingPeople = false; react(emoji) }
+                })
             }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .pointerStyle(.link)
-        .help(Self.summary(reactions))
-        .accessibilityLabel(Self.summary(reactions))
-        .popover(isPresented: $showingPeople, arrowEdge: .bottom) {
-            ReactionPeopleView(reactions: reactions, onReact: onReact.map { react in
-                { emoji in showingPeople = false; react(emoji) }
-            })
-        }
     }
 
-    private func chip(_ reaction: BubbleReaction) -> some View {
+    private var pill: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            Text(reaction.emoji).font(NookTheme.font(15))
-            if reaction.count > 1 {
-                Text("\(reaction.count)")
-                    .font(NookTheme.TextStyle.label)
+            HStack(spacing: 0) {
+                ForEach(reactions.prefix(Self.shown)) { reaction in
+                    Text(reaction.emoji).font(NookTheme.font(13))
+                }
+            }
+            if total > 1 {
+                Text("\(total)")
+                    .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
-                    .foregroundStyle(reaction.mine ? NookTheme.mint : NookTheme.textStrong)
+                    .foregroundStyle(mine ? NookTheme.mint : NookTheme.textSecondary)
             }
         }
         .lineLimit(1)
         .fixedSize()
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
-        // An edge of its own, so it reads on the chat beside any bubble; yours in mint.
-        .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.22) : NookTheme.smoke))
-        .overlay(Capsule().strokeBorder(reaction.mine ? NookTheme.mint.opacity(0.45) : NookTheme.separator, lineWidth: 1))
+        .background {
+            Capsule()
+                .fill(NookTheme.chatTheirs)
+                .overlay(Capsule().fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
+        }
+        // A ring in the chat's own black cuts the pill out of the bubble it sits on.
+        .padding(NookTheme.Spacing.xxs)
+        .background(Capsule().fill(NookTheme.canvas))
+        .contentShape(Capsule())
     }
 
     /// Who put each emoji there, in one line for the tooltip: "👍 Anna, You · ❤️ Jan".
