@@ -126,51 +126,63 @@ struct TimelineToEndPill: View {
 }
 
 /// The room under a reply that lets the message you sent stand near the top of the view (`TurnPin`). It follows the
-/// scroll view's size on its own, so a streaming reply redraws this spacer and not the conversation around it.
+/// rows on its own, so a streaming reply redraws this spacer and not the conversation around it.
 ///
-/// The lazy rows above only learn their real height while scrolling, so where the message ends up cannot be worked out
-/// ahead: `hold` brings it into view on an estimate, then `settle` measures it (`pinProbe`) a few times and the view
-/// scrolls to that exact offset. Measuring never scrolls by itself: that fed back into itself without end.
+/// The room comes from the distance between the message (`pinProbe`) and the end of its rows (`TurnPinSpacer`), both
+/// measured in the conversation's own coordinate space while they are laid out; the view then only scrolls to its end.
+/// It never scrolls to an offset worked out from the conversation's height: in a lazy stack that height is an estimate,
+/// and such a scroll could land where no row was drawn, leaving the conversation blank until you scrolled.
 @MainActor
 final class TurnPinRoom: ObservableObject {
-    /// The name of the scroll view's coordinate space, where `pinProbe` measures.
+    /// The name of the conversation's coordinate space (on its lazy stack), where `pinProbe` and `TurnPinSpacer` measure.
     static let space = "timeline"
 
     @Published private(set) var height = 0.0
     /// The row held, for `pinProbe`.
     private(set) var row: String?
-    /// Where that row stands in the view; not published, nothing draws it.
-    var rowY: Double?
-    private var pin: TurnPin?
+    /// Whether a row is held now; `row` stays after `release` (dropping the probe would rebuild that row).
+    private(set) var holding = false
+    /// Where the held row and the end of the conversation stand; not published, nothing draws them.
+    private var rowY: Double?
+    private var endY: Double?
+    private var container = 0.0
 
-    /// Starts holding `row`, which came in at the end of `frame`.
-    func hold(row: String, in frame: ScrollFrame) {
+    /// Starts holding `row`, which came in at the end; the room follows once it was laid out.
+    func hold(row: String) {
         self.row = row
+        holding = true
         rowY = nil
-        pin = TurnPin(messageTop: frame.content - height)
-        update(frame)
+        recompute()
     }
 
     func update(_ frame: ScrollFrame) {
-        guard let pin else { return }
-        let next = pin.room(in: frame, current: height).rounded()
-        if next != height { height = next }
+        guard container != frame.container else { return }
+        container = frame.container
+        recompute()
     }
 
-    /// The message is no longer held: the room goes, so the conversation ends at its last row again. `row` stays until
-    /// the next `hold`, as dropping the probe would rebuild that row.
+    /// The message is no longer held: the room goes, so the conversation ends at its last row again.
     func release() {
-        pin = nil
+        holding = false
         if height != 0 { height = 0 }
     }
 
-    /// Measures the row and makes room for it. The offset to scroll to; nil until it was laid out.
-    func settle(in frame: ScrollFrame) -> Double? {
-        guard let rowY else { return nil }
-        let measured = TurnPin(messageTop: frame.offset + rowY)
-        pin = measured
-        update(frame)
-        return measured.messageTop - measured.anchorOffset
+    /// The top of the held row, in `space`.
+    func measuredRow(_ y: Double) {
+        rowY = y
+        recompute()
+    }
+
+    /// Where the conversation's rows end (the top of the room), in `space`.
+    func measuredEnd(_ y: Double) {
+        endY = y
+        recompute()
+    }
+
+    private func recompute() {
+        guard holding, let rowY, let endY else { return }
+        let next = TurnPin(below: endY - rowY).room(container: container).rounded()
+        if next != height { height = next }
     }
 }
 
@@ -181,13 +193,26 @@ extension View {
     }
 }
 
+/// The room under a held message, at the end of the conversation's rows. It reports where those rows end (its own
+/// top, so its height does not feed back into it); in the conversation's own space that only changes when the rows do,
+/// not on every frame of a scroll.
+struct TurnPinSpacer: View {
+    @ObservedObject var room: TurnPinRoom
+
+    var body: some View {
+        Color.clear
+            .frame(height: room.height)
+            .onGeometryChange(for: Double.self) { $0.frame(in: .named(TurnPinRoom.space)).minY } action: { room.measuredEnd($0) }
+    }
+}
+
 private struct PinProbe: ViewModifier {
     let active: Bool
     let room: TurnPinRoom
 
     func body(content: Content) -> some View {
         if active {
-            content.onGeometryChange(for: Double.self) { $0.frame(in: .named(TurnPinRoom.space)).minY } action: { room.rowY = $0 }
+            content.onGeometryChange(for: Double.self) { $0.frame(in: .named(TurnPinRoom.space)).minY } action: { room.measuredRow($0) }
         } else {
             content
         }

@@ -86,24 +86,23 @@ struct ScrollModel: Equatable, Sendable {
 /// A message you just sent, held near the top of the view while the reply grows under it. The end of a conversation can
 /// only reach the top of the view with room under the reply; as the reply grows it takes that room over, so what you
 /// read stands still and no blank end stays behind.
+///
+/// `below` is measured between two rows that are both laid out (the message and the end of the conversation), never
+/// from an offset in the whole conversation: a long conversation's height is an estimate that changes as its rows are
+/// measured, and scrolling to an offset worked out from it landed in a stretch where the lazy rows drew nothing, which
+/// left the whole conversation blank.
 struct TurnPin: Equatable, Sendable {
-    /// How far down the content the message starts: measured once it is laid out, its height from before it came in
-    /// until then.
-    let messageTop: Double
+    /// From the top of the message to the end of the conversation, without the room under it.
+    let below: Double
     /// Distance between the top edge and the message.
     var anchorOffset = 24.0
 
-    /// The room under the reply that brings the message to `anchorOffset`, in `frame`, which holds `current` of it now.
-    /// The container has already given up the composer's height (a safe area inset), so that does not count again;
-    /// checked on a real scroll view, where counting it left the message that much lower.
-    ///
-    /// A long conversation's height is an estimate that drops as rows are measured, so `messageTop` can end up past the
-    /// end. That says nothing about how much room is needed: taken at face value it left a blank end many screens tall,
-    /// and "Scroll to end" landed in it.
-    func room(in frame: ScrollFrame, current: Double) -> Double {
-        let below = frame.content - current - messageTop
+    /// The room under the reply that brings the message to `anchorOffset` once the view is at its end, in a view
+    /// `container` tall. The container has already given up the composer's height (a safe area inset), so that does
+    /// not count again; checked on a real scroll view, where counting it left the message that much lower.
+    func room(container: Double) -> Double {
         guard below >= 0 else { return 0 }
-        return max(0, frame.container - anchorOffset - below)
+        return max(0, container - anchorOffset - below)
     }
 }
 
