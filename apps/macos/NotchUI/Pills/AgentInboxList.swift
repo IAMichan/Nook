@@ -177,56 +177,61 @@ struct AgentInboxList: View {
                     .foregroundStyle(NookTheme.amber)
                     .padding(.horizontal, NookTheme.Spacing.lg)
             }
-            if showsEmptyState(sections) {
-                // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
-                // session at all it sets up an agent, otherwise it starts a new session.
-                WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
-                             action: sections.isEmpty
-                                ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
-                                : (title: tr("agents.newSession"), run: { select("new") }))
-            } else {
-                ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    // Lazy: the list holds every running and earlier session, and only the ones in view are built.
-                    LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        if store.groupByProject {
-                            ForEach(sections.filter { $0.kind == .pinned }, id: \.kind) { section in
-                                sectionView(section, sections: sections, byID: byID, shown: shown)
+            // The list and its docked shelves, with the undo notice floating over their foot: it covers the last rows for
+            // a few seconds instead of pushing the whole list up and back down.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                if showsEmptyState(sections) {
+                    // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
+                    // session at all it sets up an agent, otherwise it starts a new session.
+                    WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
+                                 action: sections.isEmpty
+                                    ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
+                                    : (title: tr("agents.newSession"), run: { select("new") }))
+                } else {
+                    ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        // Lazy: the list holds every running and earlier session, and only the ones in view are built.
+                        LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            if store.groupByProject {
+                                ForEach(sections.filter { $0.kind == .pinned }, id: \.kind) { section in
+                                    sectionView(section, sections: sections, byID: byID, shown: shown)
+                                }
+                                ForEach(groups) { group in projectView(group, sections: sections, byID: byID, shown: shown) }
+                            } else {
+                                ForEach(sections.filter { !Self.isDocked($0.kind) }, id: \.kind) { section in
+                                    sectionView(section, sections: sections, byID: byID, shown: shown)
+                                }
                             }
-                            ForEach(groups) { group in projectView(group, sections: sections, byID: byID, shown: shown) }
-                        } else {
-                            ForEach(sections.filter { !Self.isDocked($0.kind) }, id: \.kind) { section in
-                                sectionView(section, sections: sections, byID: byID, shown: shown)
-                            }
+                            // Only the docked shelves left (or nothing): say so instead of an empty space.
+                            if sections.allSatisfy({ Self.isDocked($0.kind) }) { emptyState }
                         }
-                        // Only the docked shelves left (or nothing): say so instead of an empty space.
-                        if sections.allSatisfy({ Self.isDocked($0.kind) }) { emptyState }
                     }
+                    // A session opened from elsewhere (the keyboard, a card, search) is brought into view in the list; a click
+                    // on a row does not move the list.
+                    .onChange(of: current) { _, id in
+                        defer { clickedID = nil }
+                        guard id != clickedID, shown.contains(id) else { return }
+                        DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
+                    }
+                    // With the keyboard (F6): ↑/↓ move, Return opens, ←/→ fold and unfold the row's project or shelf.
+                    .focusable(interactions: .activate)
+                    .focused($listFocused)
+                    .focusEffectDisabled()
+                    .onKeyPress(.upArrow) { moveKeyRow(-1, shown: shown, proxy: proxy) }
+                    .onKeyPress(.downArrow) { moveKeyRow(1, shown: shown, proxy: proxy) }
+                    .onKeyPress(.return) { openKeyRow(shown: shown) }
+                    .onKeyPress(.leftArrow) { foldKeyRow(true, groups: groups, sections: sections) }
+                    .onKeyPress(.rightArrow) { foldKeyRow(false, groups: groups, sections: sections) }
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
-                // A session opened from elsewhere (the keyboard, a card, search) is brought into view in the list; a click
-                // on a row does not move the list.
-                .onChange(of: current) { _, id in
-                    defer { clickedID = nil }
-                    guard id != clickedID, shown.contains(id) else { return }
-                    DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
+                // What you snoozed and settled sits at the foot of the list, above the footer, each header above its rows.
+                ForEach(sections.filter { Self.isDocked($0.kind) }, id: \.kind) { section in
+                    dockedShelf(section, sections: sections, byID: byID, shown: shown)
                 }
-                // With the keyboard (F6): ↑/↓ move, Return opens, ←/→ fold and unfold the row's project or shelf.
-                .focusable(interactions: .activate)
-                .focused($listFocused)
-                .focusEffectDisabled()
-                .onKeyPress(.upArrow) { moveKeyRow(-1, shown: shown, proxy: proxy) }
-                .onKeyPress(.downArrow) { moveKeyRow(1, shown: shown, proxy: proxy) }
-                .onKeyPress(.return) { openKeyRow(shown: shown) }
-                .onKeyPress(.leftArrow) { foldKeyRow(true, groups: groups, sections: sections) }
-                .onKeyPress(.rightArrow) { foldKeyRow(false, groups: groups, sections: sections) }
-                }
-                .frame(maxHeight: .infinity, alignment: .top)
             }
-            // What you snoozed and settled sits at the foot of the list, above the footer, each header above its rows.
-            ForEach(sections.filter { Self.isDocked($0.kind) }, id: \.kind) { section in
-                dockedShelf(section, sections: sections, byID: byID, shown: shown)
-            }
-            undoNotice
+            .overlay(alignment: .bottom) { undoNotice }
+            .animation(NookTheme.reveal, value: store.canUndo)
             if selection.isActive {
                 selectionBar(rows: rows, byID: byID, shown: shown)
             }
@@ -824,7 +829,9 @@ struct AgentInboxList: View {
                 }
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .frame(height: 32)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.surface))
+                // Lifted a step above the sidebar it floats over, as a toast is, so the rows under it don't read through.
+                .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+                .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
                 .transition(.opacity)
             }
         }
