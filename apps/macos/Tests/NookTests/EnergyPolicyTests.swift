@@ -1,6 +1,6 @@
 import XCTest
 
-/// How much Nook does by himself (`EnergyPolicy`): what the Mac's signals and your choice in Settings › General › Energy
+/// How much Nook does by himself (`EnergyPolicy`): what the Mac's signals and your choice in Settings › Maintenance › Energy
 /// mean for the background work. All of it pure: the signals come from the test.
 final class EnergyPolicyTests: XCTestCase {
     func testAQuietMacOnTheChargerRunsAtFullSpeed() {

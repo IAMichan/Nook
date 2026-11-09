@@ -2,16 +2,20 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Settings › Privacy & access, in four tabs: the privacy level (what never leaves the Mac, forgetting what Nook just
+/// Settings › Privacy, in four pages: the privacy level (what never leaves the Mac, forgetting what Nook just
 /// saw), access (the Mac's permissions and the apps Nook never reads), the sources only a brain on this Mac may read,
 /// and the log. Whether Nook may look up lyrics online is with the music under Connections.
 extension SettingsView {
     // MARK: Privacy and Access
 
+    /// The four Privacy pages: how tightly Nook guards what leaves the Mac, what it may access, what stays on this Mac,
+    /// and the log of what it did.
+    enum PrivacyPart { case level, access, onDevice, log }
+
     @ViewBuilder
-    func privacySection(tab: Int) -> some View {
-        switch tab {
-        case 0:
+    func privacySection(_ part: PrivacyPart) -> some View {
+        switch part {
+        case .level:
             privacyLevelSection
             Section {
                 LabeledContent(tr("settings.privacy.screenText")) {
@@ -21,7 +25,7 @@ extension SettingsView {
                     }
                 }
             }
-        case 1:
+        case .access:
             Section {
                 ForEach(SystemPermission.allCases) { permission in
                     permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission)) {
@@ -29,19 +33,20 @@ extension SettingsView {
                     }
                 }
             } header: {
-                Text(tr("settings.privacy.permissions"))
+                SettingText("settings.privacy.permissions")
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
             neverReadAppsSection
-        case 2:
+        case .onDevice:
             privateSourcesSection
-        default:
+        case .log:
             AuditLogSection()
         }
     }
 
     /// How tightly Nook guards what an external brain sees: one choice, what it means, and whether it applies right now.
+    @ViewBuilder
     private var privacyLevelSection: some View {
         Section {
             Picker(selection: $settings.privacyLevel) {
@@ -57,15 +62,16 @@ extension SettingsView {
             if settings.isLocalBrain {
                 SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
             }
-            // What Nook promises whatever the level: four facts, folded under the choice they belong to.
-            DisclosureGroup(tr("settings.privacy.whatLeavesMac")) {
-                promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
-                promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
-                promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
-                promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
-            }
         } header: {
-            Text(tr("settings.privacy.levelTitle"))
+            SettingText("settings.privacy.levelTitle")
+        }
+        // What Nook promises whatever the level: four facts, a folded group of their own under the choice.
+        SettingsFold(tr("settings.privacy.whatLeavesMac"), summary: tr("settings.privacy.promisesSummary"),
+                     keys: ["settings.privacy.whatLeavesMac"]) {
+            promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
+            promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
+            promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
+            promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
         }
     }
 

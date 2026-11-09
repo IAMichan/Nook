@@ -80,7 +80,7 @@ Text emoticons offer their emoji too (**Emoji for emoticons**): after `:-)`, `;)
 In **Automatic** mode, Nook selects a model in this order:
 
 1. **An existing GGUF model already on your Mac.** `CompletionModelLocator` scans `~/Library/Application Support`, `~/Library/Caches`, LM Studio's models folder, and Hugging Face / `llama.cpp` caches (skipping vision projectors, embedding models, and files under 50 MB) without copying or modifying the file.
-2. **A GGUF model downloaded in Settings.** Under **Settings › Autocomplete › General › Download GGUF models**, you can download recommended base models or the Gemma 4 E2B/E4B instruct (chat) models with live progress, or paste any Hugging Face `.gguf` URL.
+2. **A GGUF model downloaded in Settings.** Under **Settings › Typing › Autocomplete › Download GGUF models**, you can download recommended base models or the Gemma 4 E2B/E4B instruct (chat) models with live progress, or paste any Hugging Face `.gguf` URL.
 3. **Your local Brain model.** Reuses Nook's built-in MLX model (`BrainCompleter`) with KV-cache checkpointing so no extra model download is needed. Whenever the chat brain is actively generating a reply, autocomplete yields automatically.
 
 ## Windows (Tauri)

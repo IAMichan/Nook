@@ -8,38 +8,35 @@ struct ConfigPreview: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(tr(change.install ? "settings.agents.linkTitle" : "settings.agents.unlinkTitle", change.target.title))
-                .font(NookTheme.TextStyle.strong)
-            Text(tr("settings.agents.changeNotice", change.target.displayPath))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if change.preview.isEmpty {
-                        Text(tr("settings.agents.noChange")).foregroundStyle(NookTheme.textSecondary)
-                    }
-                    ForEach(change.preview) { line in
-                        Text(line.text)
-                            .foregroundStyle(color(line.kind))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+        // The one sheet shape: what happens on top, the lines that change in the middle, Cancel and the step below.
+        SetupSheet(title: tr(change.install ? "settings.agents.linkTitle" : "settings.agents.unlinkTitle", change.target.title),
+                   subtitle: tr("settings.agents.changeNotice", change.target.displayPath), width: 620) {
+            SettingsTile(.agents, size: 40)
+        } content: {
+            VStack(alignment: .leading, spacing: 0) {
+                if change.preview.isEmpty {
+                    Text(tr("settings.agents.noChange")).foregroundStyle(NookTheme.textSecondary)
                 }
-                .font(NookTheme.mono(11))
-                .textSelection(.enabled)
-                .padding(NookTheme.Spacing.md)
+                ForEach(change.preview) { line in
+                    Text(line.text)
+                        .foregroundStyle(color(line.kind))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .font(NookTheme.mono(11))
+            .textSelection(.enabled)
+            .padding(NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
-            HStack {
-                Spacer()
-                Button(tr("button.cancel"), action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-                Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
-                    .keyboardShortcut(.defaultAction)
-            }
+        } footer: {
+            Spacer()
+            Button(tr("button.cancel"), action: onCancel)
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         }
-        .padding(NookTheme.Spacing.xxl)
-        .frame(width: 620, height: 520)
     }
 
     private func color(_ kind: DiffLine.Kind) -> Color {
@@ -52,41 +49,6 @@ struct ConfigPreview: View {
 }
 
 // MARK: Building Blocks
-
-/// Section header: Nook orb for overview, the section's colored tile elsewhere.
-struct SettingsHeader: View {
-    let section: SettingsSection
-    let mood: NookMood
-
-    var body: some View {
-        // Title and one line, as a sheet heads itself; only the start page shows Nook. No icon tile: the sidebar already
-        // shows where you are.
-        HStack(spacing: NookTheme.Spacing.lg) {
-            if section == .start {
-                NookOrb(mood: mood, size: 28, animated: false)
-                    .frame(width: 36, height: 36)
-            }
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Text(section.title).font(NookTheme.TextStyle.display).foregroundStyle(NookTheme.paper)
-                    if let info = section.info { SettingsInfoButton(text: info) }
-                }
-                Text(section.subtitle).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
-            }
-            Spacer(minLength: 0)
-            // The page's main step, always in sight however long the page (`SettingsPageAction`).
-            if let action = SettingsPageAction.button(for: section) {
-                Button {
-                    SettingsPageAction.shared.requested = section
-                } label: {
-                    Label(action.title, systemImage: action.symbol)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(.bottom, NookTheme.Spacing.md)
-    }
-}
 
 enum StatusState {
     case done, todo, warning, error
@@ -173,6 +135,7 @@ struct SettingToggle: View {
         Toggle(title, isOn: $isOn)
             .help(detail)
             .accessibilityHint(detail)
+            .settingsAnchor(title)
     }
 }
 
@@ -196,6 +159,10 @@ struct SettingLabel: View {
     }
 
     var body: some View {
+        label.settingsAnchor(title)
+    }
+
+    @ViewBuilder private var label: some View {
         if showsDetail {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(title)
@@ -229,6 +196,7 @@ struct SettingsSectionTitle: View {
             Text(title)
             if let info { SettingsInfoButton(text: info) }
         }
+        .settingsAnchor(title)
     }
 }
 
@@ -417,10 +385,21 @@ struct Keycap: View {
 /// each) and Settings › Automation (scheduled tasks and what agents may use of Nook). The machines sessions run on have
 /// a page of their own (`RemoteMachinesSection`).
 struct WorkspaceSettingsSection: View {
+    /// One page each, as t3code has them: never tabs.
     enum Part {
-        /// The Sessions page on one of its tabs (`SettingsSection.sessions.tabs`).
-        case sessions(Int)
+        /// How a new session starts for all projects, how sessions behave, and how the list tidies itself.
+        case sessions
+        /// What one project sets for itself (Settings › Code › Projects).
+        case projects
         case automation
+        /// Where new worktrees go and when Nook removes them (Settings › Code › Worktrees).
+        case worktrees
+        /// The editor and terminal a session's files open in.
+        case openIn
+        /// Nook's browser: what it searches with and where an agent's links open.
+        case browser
+        /// How commit messages and pull requests are written (Settings › Code › Pull requests).
+        case commits
     }
 
     let part: Part
@@ -429,28 +408,30 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
     @ObservedObject private var relay = WebhookRelayClient.shared
-    @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
     @AppStorage(AgentCredits.commitsKey) private var noAgentCredits = false
     @State private var showScheduled = false
-    /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
-    /// Kept by Settings, so it stays while you switch between the Sessions tabs (each tab is drawn anew).
+    /// The project folder Settings › Projects edits (see `ProjectSettings`); "" until one is chosen, which shows the first.
+    /// Kept by Settings, so it stays while you visit other pages.
     @Binding var scope: String
 
     var body: some View {
         switch part {
-        case .sessions(0): defaults
-        case .sessions(1):
-            openIn
-            commitStyle
-        case .sessions(2): behavior
-        case .sessions(4): TokenSettingsSection()
-        case .sessions: tidying
+        case .sessions:
+            defaults
+            behavior
+            sessionTidying
+        case .projects: projects
+        case .openIn: openIn
+        case .browser: browser
+        case .commits: commitStyle
         case .automation:
-            // What runs by itself, then what agents may use; the raw traffic log is folded away last.
+            // What runs by itself, then what agents may use. The raw traffic log is under Maintenance.
             scheduled
             bridge
-            advanced
+        case .worktrees:
+            worktreeCreation
+            worktreeCleanup
         }
     }
 
@@ -484,38 +465,18 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
+    /// How a new session starts in every project; a project changes only what it sets on Settings › Projects.
+    @ViewBuilder
     private var defaults: some View {
         Section {
-            scopePicker
-            if scope.isEmpty {
-                globalDefaults
-            } else {
-                projectDefaults(scope)
-            }
+            globalDefaults
         } header: {
-            SettingsSectionTitle(tr("settings.ws.newSession"), info: tr(scope.isEmpty ? "settings.ws.footer" : "settings.scope.footer"))
+            SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.ws.footer"))
         }
-    }
-
-    /// All projects, or one of the recent project folders: a folder sets only what it overrides and inherits the rest.
-    private var scopePicker: some View {
-        Picker(tr("settings.scope.title"), selection: $scope) {
-            Text(tr("settings.scope.global")).tag("")
-            ForEach(ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects, overrides: ws.projectOverrides), id: \.self) { path in
-                Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var globalDefaults: some View {
-        Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
-            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
-                Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
-            }
-        }
-        // One model per agent: folded away, so the page opens on the choices you make most.
-        DisclosureGroup(tr("settings.ws.modelsPerAgent")) {
+        // One model per agent, and which models "Auto" may pick: folded groups of their own, so the page opens on the
+        // choices you make most.
+        SettingsFold(tr("settings.ws.modelsPerAgent"),
+                     summary: app.modelName(ws.model(for: ws.defaultProvider), for: ws.defaultProvider)) {
             ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
                 Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
                     get: { ws.model(for: provider) },
@@ -530,6 +491,41 @@ struct WorkspaceSettingsSection: View {
             SettingToggle(tr("settings.ws.onlineModels"), detail: onlineModelsDetail, isOn: $ws.onlineModelList)
         }
         autoModelChoice
+    }
+
+    /// One project's own defaults: the project to show, then each row with what it inherits or sets itself.
+    @ViewBuilder
+    private var projects: some View {
+        let choices = ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects,
+                                                   overrides: ws.projectOverrides)
+        let shown = choices.contains(scope) ? scope : (choices.first ?? "")
+        Section {
+            if shown.isEmpty {
+                ListEmptyNote(tr("settings.projects.empty"))
+            } else {
+                Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
+                    ForEach(choices, id: \.self) { path in
+                        Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
+                    }
+                } label: {
+                    SettingText("settings.projects.project")
+                }
+                projectDefaults(shown)
+            }
+        } header: {
+            SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.scope.footer"))
+        }
+    }
+
+    @ViewBuilder
+    private var globalDefaults: some View {
+        Picker(selection: $ws.defaultProvider) {
+            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
+                Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
+            }
+        } label: {
+            SettingText("settings.ws.provider")
+        }
         Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
             ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
         }
@@ -538,29 +534,6 @@ struct WorkspaceSettingsSection: View {
         }
         Picker(tr("settings.ws.isolation"), selection: $ws.defaultIsolation) {
             ForEach(IsolationMode.allCases) { Text($0.label).tag($0) }
-        }
-        LabeledContent(tr("settings.ws.worktreeRoot")) {
-            HStack {
-                Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
-                Button(tr("ws.new.change")) {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.canCreateDirectories = true
-                    if panel.runModal() == .OK, let url = panel.url { ws.worktreeRoot = url.path }
-                }
-                .controlSize(.small)
-            }
-        }
-        LabeledContent(tr("settings.ws.branchPrefix")) {
-            HStack {
-                TextField(WorktreeNaming.defaultBranchPrefix, text: $ws.branchPrefix)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 160)
-                    .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
-                Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
-                    .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
-            }
         }
     }
 
@@ -571,11 +544,13 @@ struct WorkspaceSettingsSection: View {
         let resolved = ws.sessionDefaults(for: path)
         let provider = resolved.provider
         inheritable(.provider, path) {
-            Picker(tr("settings.ws.provider"), selection: Binding(
+            Picker(selection: Binding(
                 get: { provider }, set: { ws.setOverride(.provider, $0.rawValue, for: path) })) {
                 ForEach(RunProvider.allCases.filter { $0 != .acp }) { choice in
                     Label { Text(choice.displayName) } icon: { LogoImage.agent(choice.kind) }.tag(choice)
                 }
+            } label: {
+                SettingText("settings.ws.provider")
             }
         }
         inheritable(.model(provider), path) {
@@ -599,7 +574,7 @@ struct WorkspaceSettingsSection: View {
             }
         }
         inheritable(.branchPrefix, path) {
-            LabeledContent(tr("settings.ws.branchPrefix")) {
+            LabeledContent {
                 HStack {
                     TextField(resolved.branchPrefix, text: Binding(
                         get: { overrideText(.branchPrefix, path) ?? resolved.branchPrefix },
@@ -609,6 +584,8 @@ struct WorkspaceSettingsSection: View {
                     Text(tr("settings.ws.branchPrefix.example", resolved.branchPrefix))
                         .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
                 }
+            } label: {
+                SettingText("settings.ws.branchPrefix")
             }
         }
         inheritable(.worktreeCleanup, path) {
@@ -665,13 +642,23 @@ struct WorkspaceSettingsSection: View {
     /// Where a session's files, terminal and searches open.
     private var openIn: some View {
         Section(tr("settings.ws.openIn")) {
-            Picker(tr("settings.ws.editor"), selection: $ws.editorBundleID) {
+            Picker(selection: $ws.editorBundleID) {
                 Text(tr("settings.ws.finder")).tag("")
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.editorCandidates)) { Text($0.name).tag($0.bundleID) }
+            } label: {
+                SettingText("settings.ws.editor")
             }
-            Picker(tr("settings.ws.terminal"), selection: $ws.terminalBundleID) {
+            Picker(selection: $ws.terminalBundleID) {
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.terminalCandidates)) { Text($0.name).tag($0.bundleID) }
+            } label: {
+                SettingText("settings.ws.terminal")
             }
+        }
+    }
+
+    /// Nook's browser: the search engine of its address bar, and whether an agent's links open there or in your own.
+    private var browser: some View {
+        Section(tr("settings.browser.title")) {
             BrowserSearchPicker()
             AgentLinkTargetPicker()
         }
@@ -688,7 +675,7 @@ struct WorkspaceSettingsSection: View {
     /// Which models "Auto" may pick, per agent (see `AutoModel`): a menu of the agent's current models with a tick for
     /// each one allowed and its weight beside it. None ticked means all of them, also the ones that come later.
     private var autoModelChoice: some View {
-        DisclosureGroup(tr("settings.ws.autoModels")) {
+        SettingsFold(tr("settings.ws.autoModels"), summary: tr("settings.ws.autoModels.summary")) {
             SettingNote(tr("settings.ws.autoModelsDetail"))
             autoAccountChoice
             ForEach(app.connectedProviders.filter { $0 != .acp }) { provider in
@@ -757,8 +744,10 @@ struct WorkspaceSettingsSection: View {
     /// How Nook writes commit messages and pull requests.
     private var commitStyle: some View {
         Section {
-            Picker(tr("settings.ws.commitStyle"), selection: $ws.commitStyle) {
+            Picker(selection: $ws.commitStyle) {
                 ForEach(CommitStyle.allCases) { Text(tr("settings.ws.commitStyle." + $0.rawValue)).tag($0) }
+            } label: {
+                SettingText("settings.ws.commitStyle")
             }
             if ws.commitStyle == .custom {
                 TextField(tr("settings.ws.commitInstructions"), text: $ws.commitInstructions,
@@ -781,27 +770,57 @@ struct WorkspaceSettingsSection: View {
     @ViewBuilder
     private var behavior: some View {
         Section(tr("settings.ws.behavior")) {
-            Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
+            Toggle(isOn: $ws.autoTitles) { SettingText("settings.ws.autoTitles") }
             // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
             TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
                       prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
                 .lineLimit(1...4)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
-            // How the session list is laid out belongs with how sessions behave, not with tidying up.
-            Toggle(tr("settings.ws.inboxProjects"), isOn: $inbox.groupByProject)
-            Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
-                .disabled(inbox.groupByProject)
         }
-        Section(tr("ws.section.restart")) {
+        // How the session list is laid out and confirming quit are on General, as t3code has its sidebar and confirmations.
+        Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
-            Toggle(tr("settings.ws.confirmQuit"), isOn: $confirmQuit)
+        } header: {
+            SettingText("ws.section.restart")
         }
     }
 
-    /// The list and the worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
-    @ViewBuilder
-    private var tidying: some View {
+    /// Where a new worktree goes and what its branch is called, as t3code's Worktrees page starts.
+    private var worktreeCreation: some View {
+        Section(tr("settings.worktrees.creation")) {
+            LabeledContent {
+                HStack {
+                    Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
+                    Button(tr("ws.new.change")) {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.canCreateDirectories = true
+                        if panel.runModal() == .OK, let url = panel.url { ws.worktreeRoot = url.path }
+                    }
+                    .controlSize(.small)
+                }
+            } label: {
+                SettingText("settings.ws.worktreeRoot")
+            }
+            LabeledContent {
+                HStack {
+                    TextField(WorktreeNaming.defaultBranchPrefix, text: $ws.branchPrefix)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 160)
+                        .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
+                    Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
+                        .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
+                }
+            } label: {
+                SettingText("settings.ws.branchPrefix")
+            }
+        }
+    }
+
+    /// The session list keeps itself tidy: sessions settle and archive by themselves.
+    private var sessionTidying: some View {
         Section {
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
@@ -820,6 +839,11 @@ struct WorkspaceSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("ws.section.tidy"))
         }
+    }
+
+    /// The worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
+    @ViewBuilder
+    private var worktreeCleanup: some View {
         // Worktrees: every rule off until you switch it on, as in t3code; what the latest cleanup did is under them.
         Section {
             Toggle(tr("settings.ws.worktreeCleanupMerged"), isOn: $ws.worktreeCleanupOnMerge)
@@ -844,15 +868,6 @@ struct WorkspaceSettingsSection: View {
             Text(tr("settings.ws.days", 3)).tag(3)
             Text(tr("settings.ws.days", 7)).tag(7)
             Text(tr("settings.ws.days", 30)).tag(30)
-        }
-    }
-
-    /// Rarely needed: a raw log of what agents send and receive, for reproducing a bug as a replay fixture.
-    private var advanced: some View {
-        Section {
-            DisclosureGroup(tr("settings.display.advanced")) {
-                SettingToggle(tr("settings.ws.trafficLog"), detail: tr("settings.ws.trafficLog.footer"), isOn: $ws.providerTrafficLog)
-            }
         }
     }
 
@@ -970,8 +985,10 @@ private struct AgentLinkTargetPicker: View {
     @AppStorage(AgentLinkTarget.defaultsKey) private var target = AgentLinkTarget.app.rawValue
 
     var body: some View {
-        Picker(tr("settings.ws.linkTarget"), selection: $target) {
+        Picker(selection: $target) {
             ForEach(AgentLinkTarget.allCases) { Text($0.name).tag($0.rawValue) }
+        } label: {
+            SettingText("settings.ws.linkTarget")
         }
     }
 }
@@ -981,8 +998,10 @@ private struct BrowserSearchPicker: View {
     @AppStorage(BrowserSearchEngine.defaultsKey) private var engine = BrowserSearchEngine.duckDuckGo.rawValue
 
     var body: some View {
-        Picker(tr("settings.ws.browserSearch"), selection: $engine) {
+        Picker(selection: $engine) {
             ForEach(BrowserSearchEngine.allCases) { Text($0.name).tag($0.rawValue) }
+        } label: {
+            SettingText("settings.ws.browserSearch")
         }
     }
 }

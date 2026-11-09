@@ -426,7 +426,7 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(selectionAsk, forKey: "selectionAsk") }
     }
     /// How much Nook does by himself (reading the screen, thinking along, looking for agents) when the Mac is on battery,
-    /// hot or busy (Settings › General › Energy). What you ask for always runs at full speed.
+    /// hot or busy (Settings › Maintenance › Energy). What you ask for always runs at full speed.
     @Published var energyMode: EnergyMode {
         didSet { UserDefaults.standard.set(energyMode.rawValue, forKey: "energyMode") }
     }
