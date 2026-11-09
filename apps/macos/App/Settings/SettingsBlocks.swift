@@ -586,6 +586,7 @@ struct WorkspaceSettingsSection: View {
                         .textFieldStyle(.roundedBorder)
                         // The row already has its label: a titled field in a form would show the prefix a second time.
                         .labelsHidden()
+                        .accessibilityLabel(tr("settings.ws.branchPrefix"))
                         .frame(width: 160)
                     Text(tr("settings.ws.branchPrefix.example", resolved.branchPrefix))
                         .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
@@ -815,6 +816,7 @@ struct WorkspaceSettingsSection: View {
                     TextField("", text: $ws.branchPrefix, prompt: Text(WorktreeNaming.defaultBranchPrefix))
                         .textFieldStyle(.roundedBorder)
                         .labelsHidden()
+                        .accessibilityLabel(tr("settings.ws.branchPrefix"))
                         .frame(width: 160)
                         .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
                     Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
