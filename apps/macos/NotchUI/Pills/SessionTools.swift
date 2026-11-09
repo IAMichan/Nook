@@ -184,6 +184,8 @@ struct SessionOutputsReport: PreferenceKey, Equatable {
     /// Every subagent the agent started, for the Subagents tab; `subagentsFresh`: one started, ended or did something
     /// you have not seen.
     var subagents: [SubagentInfo] = []
+    /// The commands it left running in the background, shown in the same tab (`BackgroundCommands`).
+    var commands: [BackgroundCommandInfo] = []
     var subagentsFresh = false
     var turns: [TurnDiff] = []
     /// The last pull request the conversation links, for the session panel to look up at once (`sessionPullRequest`).
@@ -193,7 +195,7 @@ struct SessionOutputsReport: PreferenceKey, Equatable {
     static let defaultValue = SessionOutputsReport()
     static func reduce(value: inout SessionOutputsReport, nextValue: () -> SessionOutputsReport) {
         let next = nextValue()
-        if !next.outputs.isEmpty || !next.subagents.isEmpty || !next.turns.isEmpty || next.pullRequest != nil || next.fresh {
+        if !next.outputs.isEmpty || !next.subagents.isEmpty || !next.commands.isEmpty || !next.turns.isEmpty || next.pullRequest != nil || next.fresh {
             value = next
         }
     }
@@ -713,7 +715,7 @@ struct SessionWorkbench<Conversation: View>: View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, maximized: maximized, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
                          pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
-                         subagents: outputs.subagents, subagentsFresh: outputs.subagentsFresh,
+                         subagents: outputs.subagents, commands: outputs.commands, subagentsFresh: outputs.subagentsFresh,
                          turns: outputs.turns,
                          diffSelection: Binding(get: { diffSelection ?? TurnDiffSelection(turn: TurnDiffSelection.branch) },
                                                 set: { diffSelection = $0 }),
@@ -861,6 +863,7 @@ private struct SessionToolPanel: View {
     @Binding var outputSelection: String?
     let outputsFresh: Bool
     let subagents: [SubagentInfo]
+    let commands: [BackgroundCommandInfo]
     let subagentsFresh: Bool
     /// The agent's turns and what the Changes tab shows of them or of git.
     let turns: [TurnDiff]
@@ -917,7 +920,7 @@ private struct SessionToolPanel: View {
                         SessionTerminalsView(directory: directory).id(directory)
                     }
                 case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
-                case .subagents: SessionSubagentsPanel(agents: subagents)
+                case .subagents: SessionSubagentsPanel(agents: subagents, commands: commands)
                 case .changes:
                     // A session on another machine: git is there, and only its own review reads it (over ssh).
                     if let runID, workspace.run(runID)?.isRemote == true, diffSelection.source.isGit {

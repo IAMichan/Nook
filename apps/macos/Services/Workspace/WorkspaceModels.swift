@@ -727,6 +727,9 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// For a subagent's launch: what the subagent itself thought, wrote and did while it worked, in order
     /// (`SubagentStep`). Nil for every other event.
     var subagentSteps: [SubagentStep]? = nil
+    /// A command the agent left running in the background (`BackgroundCommands`): it outlives its turn and settles with
+    /// its own end. Nil for every other event.
+    var background: Bool? = nil
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
          output: String? = nil, state: State? = nil, date: Date = Date(), id: UUID = UUID()) {

@@ -77,7 +77,7 @@ struct AgentChatMessage: Identifiable, Equatable {
     var queued = false
     /// What a `.notice` message stands for.
     var notice: AgentNotice? = nil
-    /// Background work (a subagent started with `run_in_background`) that Claude Code said ended after this message:
+    /// Background work (a subagent or command started with `run_in_background`) that Claude Code said ended after this message:
     /// its `<task-notification>`, which is no message of its own.
     var finishedTasks: [BackgroundTaskUpdate] = []
 

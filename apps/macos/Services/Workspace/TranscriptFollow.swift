@@ -12,8 +12,8 @@ enum TranscriptFollow {
         case append(RunEvent)
         /// The event with this id becomes `event` (its id and date stay).
         case update(UUID, RunEvent)
-        /// A subagent started in the background, in a turn of the session or one taken over, ended
-        /// (`WorkspaceManager.noteBackgroundSubagent`).
+        /// A subagent or command started in the background, in a turn of the session or one taken over, ended
+        /// (`WorkspaceManager.noteBackgroundTask`).
         case backgroundTask(BackgroundTaskUpdate)
     }
 
@@ -52,8 +52,8 @@ enum TranscriptFollow {
         // the agent woke up for the result in a turn Nook only reads here. Only those still shown as running.
         for message in messages[anchor...] {
             for update in message.finishedTasks {
-                guard let launch = Subagents.event(for: update, in: events), launch.state == .running || launch.state == nil
-                else { continue }
+                guard let launch = Subagents.event(for: update, in: events) ?? BackgroundCommands.event(for: update, in: events),
+                      launch.state == .running || launch.state == nil else { continue }
                 changes.append(.backgroundTask(update))
             }
         }
