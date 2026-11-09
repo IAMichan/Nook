@@ -75,6 +75,33 @@ enum IdleCompaction {
     }
 }
 
+/// Summarizing a session once its context grows past a size, whether or not it goes idle. Every request rereads the
+/// whole context, so a session that keeps running at 700K tokens costs several times what one at 200K does.
+enum SizeCompaction {
+    static let settingKey = "ws.autoCompactTokens"
+    /// 0 turns it off. The default sits well above the point where an idle session is summarized.
+    static let defaultTokens = 350_000
+    static let choices = [0, 150_000, 250_000, 350_000, 500_000]
+    /// Never wait for more than this share of the agent's window, so a small window is summarized before it is full.
+    static let windowShare = 0.8
+
+    /// The size at which this session is summarized, or nil when it is not.
+    static func limit(setting: Int, contextWindow: Int?) -> Int? {
+        guard setting > 0 else { return nil }
+        guard let window = contextWindow, window > 0 else { return setting }
+        return min(setting, Int(Double(window) * windowShare))
+    }
+
+    /// Whether a turn that just ended leaves the session past its limit. Whatever waits for you (an approval, a question,
+    /// a handoff or rollback) is left alone.
+    static func shouldCompact(setting: Int, contextTokens: Int?, contextWindow: Int?, canCompact: Bool, completed: Bool,
+                              holdsForYou: Bool, isRemote: Bool, alreadyCompacted: Bool) -> Bool {
+        guard canCompact, completed, !holdsForYou, !isRemote, !alreadyCompacted,
+              let tokens = contextTokens, let limit = limit(setting: setting, contextWindow: contextWindow) else { return false }
+        return tokens >= limit
+    }
+}
+
 /// Claude Code's `ENABLE_TOOL_SEARCH`. With `auto` (its default) it sends every MCP tool schema in full while they fit in a
 /// share of the context window, which they do on 1M models: every request then carries them all, and t3code measured
 /// about ten times the cache writes per session. Nook turns tool search on, unless you set something else yourself.

@@ -66,6 +66,36 @@ extension WorkspaceManager {
                  sent ? "sent" : "not sent")
     }
 
+    // MARK: Size compaction
+
+    /// A turn ended with the context past your limit: the agent summarizes the conversation now, for every agent that
+    /// takes `/compact`. It waits a moment so the agent's process is parked first, then goes the way the idle summary
+    /// does: quiet (no notification), and what you queued meanwhile goes on after it.
+    func compactForSize(_ id: UUID) {
+        guard let run = run(id) else { return }
+        let holds = !(approvals[id] ?? []).isEmpty || !(questions[id] ?? []).isEmpty
+            || run.pendingHandoff != nil || run.pendingRollback != nil || awaitingCheckpoint[id] != nil
+        guard SizeCompaction.shouldCompact(
+            setting: settings.autoCompactTokens, contextTokens: run.usage.contextTokens, contextWindow: run.usage.contextWindow,
+            canCompact: AgentCommands.canCompact(run.provider, offered: acpCommands[id] ?? []),
+            completed: run.status == .completed, holdsForYou: holds, isRemote: run.isRemote,
+            alreadyCompacted: turns[id]?.compacted ?? false) else { return }
+        let tokens = run.usage.contextTokens ?? 0
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, let run = self.run(id), run.status == .completed, self.processes[id] == nil,
+                  !self.idleCompacting.contains(id) else { return }
+            self.idleCompacting.insert(id)
+            self.sizeCompacting.insert(id)
+            let sent = self.sendHidden(id, text: "/compact")
+            if !sent {
+                self.idleCompacting.remove(id)
+                self.sizeCompacting.remove(id)
+            }
+            self.onAudit?("size_compaction", "\(run.provider.displayName) · \(run.title) · \(tokens) tokens", sent ? "sent" : "not sent")
+        }
+    }
+
     /// The setting changed: plan every session again, or drop what was planned.
     func idleCompactionSettingChanged() {
         if settings.idleCompaction {
