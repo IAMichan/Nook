@@ -784,6 +784,18 @@ struct AgentRunPanel: View {
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now
             }
+            // Never a black conversation: at rest with none of its blocks in view, back to the one you last saw (or the end).
+            .recoversBlankRows(UUID.self, rows: blocks.count, idle: { scrollPhase.value == .idle }) { last in
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) {
+                    if let last, !scroll.shouldFollowEnd, !atEnd {
+                        proxy.scrollTo(last, anchor: .top)
+                    } else {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
             .overlay(alignment: .top) {
                 if finding {
                     TimelineFindBar(query: $findQuery, result: found, current: findIndex,
