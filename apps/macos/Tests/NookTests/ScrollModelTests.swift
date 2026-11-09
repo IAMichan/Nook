@@ -2,38 +2,28 @@ import XCTest
 
 final class ScrollModelTests: XCTestCase {
     func testPinLeavesRoomForTheMessageToReachTheTop() {
-        let pin = TurnPin(messageTop: 1000)
-        let frame = ScrollFrame(offset: 0, content: 1060, container: 580, insetBottom: 120)
-        XCTAssertEqual(pin.room(in: frame, current: 0), 496)
-        XCTAssertEqual(pin.messageTop - pin.anchorOffset, frame.content + 496 - frame.container)
+        // The message and what came after it are 60 tall; at the end, the room brings it to 24 from the top.
+        let pin = TurnPin(below: 60)
+        XCTAssertEqual(pin.room(container: 580), 496)
+        XCTAssertEqual(580 - (60 + pin.room(container: 580)), pin.anchorOffset)
     }
 
-    func testPinRoomShrinksAsTheReplyGrowsAndKeepsTheTotalHeight() {
-        let pin = TurnPin(messageTop: 1000)
-        let start = ScrollFrame(offset: 0, content: 1556, container: 580, insetBottom: 120)
-        let grown = ScrollFrame(offset: 0, content: 1756, container: 580, insetBottom: 120)
-        XCTAssertEqual(pin.room(in: start, current: 496), 496)
-        XCTAssertEqual(pin.room(in: grown, current: 496), 296)
+    func testPinRoomShrinksAsTheReplyGrows() {
+        XCTAssertEqual(TurnPin(below: 60).room(container: 580), 496)
+        XCTAssertEqual(TurnPin(below: 260).room(container: 580), 296)
     }
 
     func testPinRoomEndsOnceTheReplyFillsTheView() {
-        let pin = TurnPin(messageTop: 1000)
-        XCTAssertEqual(pin.room(in: ScrollFrame(offset: 0, content: 1900, container: 580, insetBottom: 120), current: 0), 0)
+        XCTAssertEqual(TurnPin(below: 900).room(container: 580), 0)
     }
 
-    func testNoPinRoomForAMessagePastTheEnd() {
-        // The height of a long conversation dropped as its rows were measured: the message seems far below the end.
-        let pin = TurnPin(messageTop: 134_000)
-        let shrunk = ScrollFrame(offset: 57_000, content: 72_000, container: 580)
-        XCTAssertEqual(pin.room(in: shrunk, current: 0), 0)
-        // The spacer itself is off screen and no longer counted in the height: this must not feed itself.
-        XCTAssertEqual(pin.room(in: shrunk, current: 30_000_000), 0)
+    func testNoPinRoomFromAStaleMeasurement() {
+        // The end was measured before the message moved below it: no room rather than a guess.
+        XCTAssertEqual(TurnPin(below: -40).room(container: 580), 0)
     }
 
     func testPinRoomNeverExceedsTheView() {
-        let pin = TurnPin(messageTop: 1000)
-        let frame = ScrollFrame(offset: 0, content: 1000, container: 580)
-        XCTAssertLessThanOrEqual(pin.room(in: frame, current: 0), frame.container)
+        XCTAssertLessThanOrEqual(TurnPin(below: 0).room(container: 580), 580)
     }
 
     func testNoToEndPillWhileAMessageIsPinned() {
