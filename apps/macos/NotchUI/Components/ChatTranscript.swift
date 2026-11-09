@@ -110,7 +110,8 @@ struct ChatTranscript: View, Equatable {
     }
 
     /// Draws the `page` messages before the oldest drawn one, keeping that one where it was. False when all are drawn.
-    private func drawOlder(_ proxy: ScrollViewProxy) -> Bool {
+    /// `toEnd`: the chat did not fill its room yet, so it stays at its newest message instead of on the old top one.
+    private func drawOlder(_ proxy: ScrollViewProxy, toEnd: Bool = false) -> Bool {
         let shown = drawn
         guard shown.count < bubbles.count, let top = shown.first?.id,
               let index = bubbles.firstIndex(where: { $0.id == top }) else { return false }
@@ -119,7 +120,9 @@ struct ChatTranscript: View, Equatable {
         DispatchQueue.main.async {
             var still = Transaction()
             still.disablesAnimations = true
-            withTransaction(still) { proxy.scrollTo(top, anchor: .top) }
+            withTransaction(still) {
+                if toEnd { proxy.scrollTo(Self.bottomID, anchor: .bottom) } else { proxy.scrollTo(top, anchor: .top) }
+            }
             drawingOlder = false
         }
         return true
@@ -156,6 +159,9 @@ struct ChatTranscript: View, Equatable {
             // chat's header above it.
             .clipped()
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // A chat shorter than its room sits at the bottom, over the field, as in a chat app: not at the top with
+            // empty space under it.
+            .defaultScrollAnchor(.bottom, for: .alignment)
             // At the newest message a chat that grows keeps its bottom where it is; reading back, a picture that
             // loads below (or a link's card) leaves what you read where it is.
             .defaultScrollAnchor(atBottom ? .bottom : nil, for: .sizeChanges)
@@ -197,6 +203,11 @@ struct ChatTranscript: View, Equatable {
                     userScrolled()
                 }
                 if new.nearTop, scrolledByUser { loadOlder(proxy, automatic: true) }
+                // Too few messages to scroll: there is no top to reach, so the older ones come in until the chat fills
+                // its room (or its start is there).
+                if fills, !scrolledByUser, new.container > 0, new.content < new.container - 1 {
+                    loadOlder(proxy, automatic: true, toEnd: true)
+                }
                 // Only you scroll away from the newest message: a message that came in and made the chat taller is
                 // not you reading back, so it does not stop the chat from following it down.
                 let moved = new.content == old.content && new.container == old.container
@@ -285,22 +296,29 @@ struct ChatTranscript: View, Equatable {
 
     /// Loads the older messages once at a time; the message that was on top stays where it was, with the older ones
     /// above it.
-    private func loadOlder(_ proxy: ScrollViewProxy, automatic: Bool = false) {
+    /// `toEnd`: loaded to fill a chat too short to scroll, which stays at its newest message.
+    private func loadOlder(_ proxy: ScrollViewProxy, automatic: Bool = false, toEnd: Bool = false) {
         guard !loadingOlder, !drawingOlder else { return }
         // What this Mac already has is drawn first; only then is the chat's app asked for more.
-        if drawOlder(proxy) { return }
+        if drawOlder(proxy, toEnd: toEnd) { return }
         guard let onLoadOlder, !(automatic && reachedStart) else { return }
         loadingOlder = true
         let anchor = bubbles.first?.id
         // Drawn a page at a time from here, as the rest of the chat is: drawing every message at once made a long chat
         // slow to scroll after its first fetch. Set before asking, so the messages are drawn as soon as they are in.
-        if fills { olderAnchor = anchor }
+        if fills, !toEnd { olderAnchor = anchor }
         Task { @MainActor in
             let loaded = await onLoadOlder()
             if loaded {
                 // A host that draws every message (a card) draws these too.
                 if !fills || anchor == nil { drawsAll = true }
-                if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                if toEnd {
+                    // Every message: all were drawn and short, and drawn from the old top the fetched ones stayed out.
+                    drawnFrom = bubbles.first?.id
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                } else if let anchor {
+                    proxy.scrollTo(anchor, anchor: .top)
+                }
             } else {
                 olderAnchor = nil
             }
