@@ -52,6 +52,17 @@ enum RenderedPage {
 
     static func height(of event: RunEvent) -> Double { clamp(event.output.flatMap(Double.init)) }
 
+    /// The tallest a page is shown at its full size in the conversation: a very long page reads better in the side panel.
+    static let maxFullHeight = 4000.0
+
+    /// How tall a page's frame is: the height the agent asked for, or less when the page turned out shorter (no empty
+    /// room under it); at full size the whole page, up to `maxFullHeight`. Until it was measured, the agent's height.
+    static func shownHeight(asked: Double, measured: Double?, fullSize: Bool) -> Double {
+        guard let measured, measured.isFinite, measured > 0 else { return asked }
+        let page = max(minHeight, measured.rounded(.up))
+        return fullSize ? min(maxFullHeight, max(asked, page)) : min(asked, page)
+    }
+
     /// A page file in the folder Nook keeps pages in under `base`, never a path elsewhere: an event read back from disk is
     /// not trusted to point anywhere else.
     static func isOwnFile(_ path: String, base: URL) -> Bool {

@@ -21,6 +21,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.noAgentCredits.detail": "Agents die Nook start (Claude Code, Codex, Gemini, Cursor, OpenCode…) zetten geen Co-Authored-By-regel van zichzelf of een andere AI en geen ‘Generated with’-regel in commits en pull requests, zodat elke commit alleen van jou is. Geldt vanaf het volgende bericht van een sessie.",
         "ws.page.help": "Een pagina van de agent, afgeschermd: geen internet en geen toegang tot Nook of je bestanden. Klik om in of uit te klappen.",
         "ws.page.gone": "Deze pagina is er niet meer.",
+        "ws.page.fullSize": "Toon de hele pagina",
+        "ws.page.fit": "Terug naar de hoogte van de agent",
+        "ws.page.openSide": "Open in het zijpaneel",
+        "ws.page.closeSide": "Sluit in het zijpaneel",
     ],
     .en: [
         "ws.question.attach": "Attach a file or folder",
@@ -40,6 +44,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.noAgentCredits.detail": "Agents Nook starts (Claude Code, Codex, Gemini, Cursor, OpenCode…) add no Co-Authored-By line for themselves or any other AI and no “Generated with” line to commits and pull requests, so every commit is yours alone. Applies from a session’s next message.",
         "ws.page.help": "A page from the agent, sandboxed: no internet and no access to Nook or your files. Click to fold or unfold.",
         "ws.page.gone": "This page is no longer there.",
+        "ws.page.fullSize": "Show the whole page",
+        "ws.page.fit": "Back to the agent’s height",
+        "ws.page.openSide": "Open in the side panel",
+        "ws.page.closeSide": "Close in the side panel",
     ],
     .de: [
         "ws.question.attach": "Datei oder Ordner anhängen",
@@ -59,6 +67,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.noAgentCredits.detail": "Agenten, die Nook startet (Claude Code, Codex, Gemini, Cursor, OpenCode…), fügen Commits und Pull Requests keine Co-Authored-By-Zeile für sich oder eine andere KI und keine „Generated with“-Zeile hinzu, sodass jeder Commit allein dir gehört. Gilt ab der nächsten Nachricht einer Sitzung.",
         "ws.page.help": "Eine Seite vom Agenten, abgeschirmt: kein Internet und kein Zugriff auf Nook oder deine Dateien. Klicken zum Ein- oder Ausklappen.",
         "ws.page.gone": "Diese Seite gibt es nicht mehr.",
+        "ws.page.fullSize": "Ganze Seite zeigen",
+        "ws.page.fit": "Zurück zur Höhe des Agenten",
+        "ws.page.openSide": "In der Seitenleiste öffnen",
+        "ws.page.closeSide": "In der Seitenleiste schließen",
     ],
     .fr: [
         "ws.question.attach": "Joindre un fichier ou un dossier",
@@ -78,6 +90,10 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.noAgentCredits.detail": "Les agents que Nook lance (Claude Code, Codex, Gemini, Cursor, OpenCode…) n’ajoutent aucune ligne Co-Authored-By pour eux-mêmes ou une autre IA, ni de ligne « Generated with », aux commits et pull requests : chaque commit est à vous seul. S’applique dès le prochain message d’une session.",
         "ws.page.help": "Une page de l’agent, isolée : pas d’internet ni d’accès à Nook ou à vos fichiers. Cliquez pour replier ou déplier.",
         "ws.page.gone": "Cette page n’existe plus.",
+        "ws.page.fullSize": "Afficher toute la page",
+        "ws.page.fit": "Revenir à la hauteur de l’agent",
+        "ws.page.openSide": "Ouvrir dans le panneau latéral",
+        "ws.page.closeSide": "Fermer dans le panneau latéral",
     ],
     .es: [
         "ws.question.attach": "Adjuntar un archivo o una carpeta",
@@ -97,5 +113,9 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.noAgentCredits.detail": "Los agentes que Nook inicia (Claude Code, Codex, Gemini, Cursor, OpenCode…) no añaden ninguna línea Co-Authored-By propia ni de otra IA, ni líneas “Generated with”, a los commits y pull requests, así que cada commit es solo tuyo. Se aplica desde el siguiente mensaje de una sesión.",
         "ws.page.help": "Una página del agente, aislada: sin internet ni acceso a Nook o a tus archivos. Haz clic para plegar o desplegar.",
         "ws.page.gone": "Esta página ya no está.",
+        "ws.page.fullSize": "Mostrar la página entera",
+        "ws.page.fit": "Volver a la altura del agente",
+        "ws.page.openSide": "Abrir en el panel lateral",
+        "ws.page.closeSide": "Cerrar en el panel lateral",
     ],
 ]
