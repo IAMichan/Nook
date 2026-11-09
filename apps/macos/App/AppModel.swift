@@ -518,6 +518,11 @@ final class AppModel: ObservableObject {
 
         // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
+        // What reads the cache between questions: Think Along, Double Tap's screen text and the screen with every question.
+        screenContext.periodicReadsWanted = { [weak self] in
+            guard let self else { return false }
+            return self.settings.autoWatch || self.settings.screenWithEveryQuestion || DoubleTap.shared.enabled
+        }
         settings.$liveScreen
             .removeDuplicates()
             .receive(on: RunLoop.main)
