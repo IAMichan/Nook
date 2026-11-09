@@ -1137,9 +1137,12 @@ struct AgentRunPanel: View {
             do {
                 try await workspace.editFromHere(runID, before: target.date, revertingFiles: revertingFiles)
                 editTarget = nil
-                // The message goes back into the composer: its words, and the pictures that went as paths in it.
-                let parts = ImageAttachment.splittingPaths(from: target.text)
-                draft = parts.text
+                // The message goes back into the composer: its words, and the pictures, files and folders that went as
+                // paths in it.
+                let parts = ImageAttachment.splittingAttachments(from: target.text)
+                draft = parts.files.reduce(parts.text) { text, url in
+                    ComposerAttachments.appending(ContextRef(kind: .file, id: url.path, label: url.lastPathComponent), to: text)
+                }
                 images = parts.images.compactMap(ImageAttachment.init(url:))
                 focused = true
             } catch {

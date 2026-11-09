@@ -248,17 +248,34 @@ struct ImageAttachment: Identifiable, Equatable {
     /// The reverse of `appendingPaths`: the picture paths at the end of a sent message, split off its text, so the chat
     /// shows the pictures instead of their paths.
     static func splittingPaths(from text: String) -> (text: String, images: [URL]) {
+        let parts = splittingAttachments(from: text, exists: { _ in false })
+        return (parts.text, parts.images)
+    }
+
+    /// The pictures, files and folders at the end of a sent message, each path on a line of its own, split off its text
+    /// (`ContextRefs.timeline` writes them so). A path that is not a picture only counts when it is there on disk.
+    static func splittingAttachments(from text: String,
+                                     exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) })
+        -> (text: String, images: [URL], files: [URL]) {
         var lines = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
         var images: [URL] = []
+        var files: [URL] = []
         while let last = lines.last {
             let line = last.trimmingCharacters(in: .whitespaces)
             let path = line.count > 1 && line.hasPrefix("\"") && line.hasSuffix("\"") ? String(line.dropFirst().dropLast()) : line
-            guard path.hasPrefix("/"), isPicture(URL(fileURLWithPath: path)) else { break }
-            images.insert(URL(fileURLWithPath: path), at: 0)
+            guard path.hasPrefix("/"), path.count > 1 else { break }
+            let url = URL(fileURLWithPath: path)
+            if isPicture(url) {
+                images.insert(url, at: 0)
+            } else if exists(path) {
+                files.insert(url, at: 0)
+            } else {
+                break
+            }
             lines.removeLast()
         }
-        guard !images.isEmpty else { return (text, []) }
-        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), images)
+        guard !images.isEmpty || !files.isEmpty else { return (text, [], []) }
+        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), images, files)
     }
 }
 
@@ -270,6 +287,20 @@ struct MessagePictures: View {
         ChipFlow(spacing: NookTheme.Spacing.sm) {
             ForEach(urls, id: \.self) { url in
                 MessagePicture(url: url)
+            }
+        }
+    }
+}
+
+/// The files and folders sent with a message to an agent, above its bubble as the pictures are: the same tiles the
+/// composer showed while they waited to go.
+struct MessageFiles: View {
+    let urls: [URL]
+
+    var body: some View {
+        ChipFlow(spacing: NookTheme.Spacing.sm) {
+            ForEach(urls, id: \.self) { url in
+                ComposerFileTile(label: url.lastPathComponent, url: url)
             }
         }
     }
@@ -426,7 +457,7 @@ struct ImageAttachmentStrip: View {
                     }
                     ForEach(Array(files.enumerated()), id: \.offset) { index, file in
                         ZStack(alignment: .topTrailing) {
-                            ComposerFileTile(file: file, url: url(of: file))
+                            ComposerFileTile(label: file.label, paste: file.kind == .paste, url: url(of: file))
                             removeButton { removeFile(index) }
                         }
                     }
@@ -481,22 +512,24 @@ struct ImageAttachmentStrip: View {
 
 /// A file or folder going out with a message: its preview (a picture, a document's first page, else the Finder icon),
 /// dimmed, with its type ("PDF", "JPG", "FOLDER") across it like a watermark.
-private struct ComposerFileTile: View {
-    let file: ContextRefs.Found
+struct ComposerFileTile: View {
+    let label: String
+    /// Text you pasted, kept out of the box: a "TXT" tile without a file behind it.
+    var paste = false
     let url: URL?
     @State private var preview: NSImage?
     @State private var isFolder = false
 
     private var type: String {
         if isFolder { return tr("compose.folder.type") }
-        let ext = URL(fileURLWithPath: file.label).pathExtension
-        if file.kind == .paste || ext.isEmpty { return file.kind == .paste ? "TXT" : tr("compose.file.type") }
+        let ext = URL(fileURLWithPath: label).pathExtension
+        if paste || ext.isEmpty { return paste ? "TXT" : tr("compose.file.type") }
         return String(ext.uppercased().prefix(5))
     }
 
     var body: some View {
         if let url, ImageAttachment.isPicture(url) {
-            ImageModalButton(name: file.label, preview: preview, file: { url }) { tile }
+            ImageModalButton(name: label, preview: preview, file: { url }) { tile }
         } else {
             tile
         }
@@ -507,7 +540,7 @@ private struct ComposerFileTile: View {
             if let preview {
                 Image(nsImage: preview).resizable().scaledToFill()
             } else {
-                Image(systemName: file.kind == .paste ? "doc.plaintext" : "doc")
+                Image(systemName: paste ? "doc.plaintext" : "doc")
                     .font(NookTheme.font(22, .regular))
                     .foregroundStyle(NookTheme.textTertiary)
             }
@@ -522,9 +555,9 @@ private struct ComposerFileTile: View {
         .frame(width: 56, height: 56)
         .background(NookTheme.smoke)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-        .help(file.label)
+        .help(label)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(file.label)
+        .accessibilityLabel(label)
         .task(id: url) {
             guard let url else { return }
             let kind = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
