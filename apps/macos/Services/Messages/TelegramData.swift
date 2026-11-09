@@ -182,6 +182,23 @@ enum TelegramData {
         return (chat, order, order != 0 && position["is_pinned"] as? Bool == true)
     }
 
+    /// The group behind a chat, as one key for basic groups and supergroups ("b12", "s34"); nil for a person's chat.
+    static func groupKey(_ chat: Chat) -> String? {
+        chat.basicGroup.map { "b\($0)" } ?? chat.supergroup.map { "s\($0)" }
+    }
+
+    /// Whether you are (still) in a group, from an `updateBasicGroup` or `updateSupergroup`: a group you left, were
+    /// removed or banned from, or that was upgraded away (`is_active` false) is no longer yours. Its key as `groupKey`.
+    static func membership(_ update: [String: Any]) -> (group: String, member: Bool)? {
+        let basic = update["basic_group"] as? [String: Any]
+        guard let group = basic ?? update["supergroup"] as? [String: Any], let id = int64(group["id"]) else { return nil }
+        let status = type(group["status"] as? [String: Any] ?? [:])
+        let out = ["chatMemberStatusLeft", "chatMemberStatusBanned"].contains(status)
+            || (status == "chatMemberStatusRestricted" && (group["status"] as? [String: Any])?["is_member"] as? Bool == false)
+            || (basic != nil && group["is_active"] as? Bool == false)
+        return ((basic != nil ? "b" : "s") + String(id), !out)
+    }
+
     /// The messages Telegram deleted from a chat for good, from an `updateDeleteMessages`; nil when they only left
     /// TDLib's cache (`is_permanent` false) and are still in the chat.
     static func deletedMessages(_ update: [String: Any]) -> (chat: Int64, messages: [Int64])? {

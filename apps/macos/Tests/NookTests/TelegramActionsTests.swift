@@ -63,6 +63,34 @@ final class TelegramActionsTests: XCTestCase {
         ]), "a place in the archive leaves the main list as it is")
     }
 
+    func testGroupMembership() {
+        let left = TelegramData.membership(["@type": "updateBasicGroup", "basic_group": [
+            "@type": "basicGroup", "id": 7, "status": ["@type": "chatMemberStatusLeft"], "is_active": true,
+        ] as [String: Any]])
+        XCTAssertEqual(left?.group, "b7")
+        XCTAssertEqual(left?.member, false)
+
+        let banned = TelegramData.membership(["@type": "updateSupergroup", "supergroup": [
+            "@type": "supergroup", "id": 9, "status": ["@type": "chatMemberStatusBanned", "banned_until_date": 0],
+        ] as [String: Any]])
+        XCTAssertEqual(banned?.group, "s9")
+        XCTAssertEqual(banned?.member, false, "removed from a group is out of it")
+
+        let member = TelegramData.membership(["@type": "updateSupergroup", "supergroup": [
+            "@type": "supergroup", "id": 9, "status": ["@type": "chatMemberStatusMember"],
+        ] as [String: Any]])
+        XCTAssertEqual(member?.member, true)
+
+        let upgraded = TelegramData.membership(["@type": "updateBasicGroup", "basic_group": [
+            "@type": "basicGroup", "id": 7, "status": ["@type": "chatMemberStatusCreator"], "is_active": false,
+        ] as [String: Any]])
+        XCTAssertEqual(upgraded?.member, false, "a basic group upgraded to a supergroup is no chat of its own any more")
+
+        let chat = TelegramData.Chat(id: -7, title: "Club", isGroup: true, unread: 0, order: 1, basicGroup: 7)
+        XCTAssertEqual(TelegramData.groupKey(chat), "b7")
+        XCTAssertNil(TelegramData.groupKey(TelegramData.Chat(id: 5, title: "Anna", isGroup: false, unread: 0, order: 1)))
+    }
+
     func testDeletedMessagesOnlyWhenPermanent() {
         let gone = TelegramData.deletedMessages(["@type": "updateDeleteMessages", "chat_id": -5, "message_ids": [10, 11],
                                                  "is_permanent": true, "from_cache": false])
