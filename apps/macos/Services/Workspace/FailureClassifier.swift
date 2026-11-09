@@ -66,13 +66,25 @@ enum FailureClassifier {
             return .usageLimit(resetAt: seconds > 0 ? e.now.addingTimeInterval(seconds) : nil)
         }
         let lower = text.lowercased()
-        if lower.contains("[429]") || lower.contains("rate_limit_error") { return .usageLimit(resetAt: latestStreamedReset(e)) }
+        if lower.contains("[429]") || lower.contains("rate_limit_error") || saysUsageLimit(lower) {
+            return .usageLimit(resetAt: latestStreamedReset(e))
+        }
         if lower.contains("authentication_failed") || lower.contains("invalid api key") || lower.contains("/login")
             || lower.contains("api error: 401") { return .authentication }
         if lower.contains("api error: 403") { return .forbidden }
         if ["econnreset", "enotfound", "etimedout", "econnrefused", "fetch failed", "socket hang up",
             "network error", "network connection", "offline"].contains(where: lower.contains) { return .network }
         return .generic
+    }
+
+    /// How the other agents say a limit stopped them: Gemini's `RESOURCE_EXHAUSTED` and quota errors, Codex's "usage
+    /// limit", an HTTP 429 in any wording. Lowercased text; a bare number only as a status ("429 Too Many Requests",
+    /// "status 429"), never inside another number.
+    static func saysUsageLimit(_ lower: String) -> Bool {
+        let phrases = ["resource_exhausted", "resource exhausted", "quota exceeded", "exceeded your current quota",
+                       "usage limit", "rate limit exceeded", "rate limited", "too many requests", "hit your limit"]
+        if phrases.contains(where: lower.contains) { return true }
+        return lower.range(of: #"(^|[^0-9.])429([^0-9]|$)"#, options: .regularExpression) != nil
     }
 
     /// Whether the turn failed. An interrupt is a stop, not a failure; a limit during `/compact` is one even though

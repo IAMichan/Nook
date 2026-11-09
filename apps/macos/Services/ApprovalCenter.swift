@@ -49,17 +49,30 @@ struct AgentApproval: Identifiable {
     }
 }
 
-/// The one place approvals are collected and decided.
+/// The one place approvals are collected and decided. Every decision goes to the action log (`audit` in
+/// `nook.sqlite`): who asked, for what, what was decided and where.
 @MainActor
 final class ApprovalCenter {
     private unowned let hub: AgentHub
     private unowned let workspace: WorkspaceManager
     private unowned let bridge: WorkspaceBridge
+    /// Writes one entry to the action log (tool, arguments, result).
+    private let audit: (String, String, String) -> Void
 
-    init(hub: AgentHub, workspace: WorkspaceManager, bridge: WorkspaceBridge) {
+    init(hub: AgentHub, workspace: WorkspaceManager, bridge: WorkspaceBridge,
+         audit: @escaping (String, String, String) -> Void = { _, _, _ in }) {
         self.hub = hub
         self.workspace = workspace
         self.bridge = bridge
+        self.audit = audit
+    }
+
+    /// The action log's line for a decision: the agent, its session, the tool and what it asked for.
+    static func auditEntry(_ approval: AgentApproval, _ decision: ApprovalDecision,
+                           source: ApprovalSource) -> (tool: String, args: String, result: String) {
+        ApprovalAudit.entry(agent: approval.agentName, project: approval.project, tool: approval.tool,
+                            asked: approval.command.isEmpty ? approval.title : approval.command, decision: decision.auditName,
+                            source: source, danger: approval.danger)
     }
 
     static func make(_ request: ApprovalRequest) -> AgentApproval {
@@ -116,7 +129,17 @@ final class ApprovalCenter {
         decide(approval, .allow)
     }
 
-    func decide(_ approval: AgentApproval, _ decision: ApprovalDecision) {
+    /// Decides a request of a session Nook runs by its ids (the timeline's own buttons, the phone).
+    func decide(run runID: UUID, requestID: String, _ decision: ApprovalDecision, source: ApprovalSource = .app) {
+        guard let run = workspace.run(runID), let request = workspace.approvals[runID]?.first(where: { $0.id == requestID }) else {
+            return
+        }
+        decide(Self.make(request, run: run), decision, source: source)
+    }
+
+    func decide(_ approval: AgentApproval, _ decision: ApprovalDecision, source: ApprovalSource = .app) {
+        let entry = Self.auditEntry(approval, decision, source: source)
+        audit(entry.tool, entry.args, entry.result)
         switch approval.origin {
         case .hook(let request):
             hub.decide(request, decision)
@@ -128,6 +151,27 @@ final class ApprovalCenter {
             }
         case .bridge(let request):
             bridge.decide(request, allow: decision == .allow || decision == .always)
+        }
+    }
+}
+
+extension ApprovalDecision {
+    /// The decision as the action log writes it.
+    var auditName: String {
+        switch self {
+        case .allow: return "allow"
+        case .always: return "always"
+        case .deny: return "deny"
+        case .terminal: return "terminal"
+        }
+    }
+
+    /// The same for a session Nook runs, whose own prompt has no terminal.
+    init(_ decision: WorkspaceManager.Decision) {
+        switch decision {
+        case .allow: self = .allow
+        case .always: self = .always
+        case .deny: self = .deny
         }
     }
 }

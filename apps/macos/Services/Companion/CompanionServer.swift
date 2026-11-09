@@ -531,7 +531,6 @@ final class CompanionServer: ObservableObject {
                 if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow) {
                     return .failure(request.id, error)
                 }
-                audit(allow ? "allow" : "deny", session)
                 return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
             }
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
@@ -542,8 +541,7 @@ final class CompanionServer: ObservableObject {
             }
             let allow = request.allow == true
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
-            workspace.decide(runID, requestID: pending.id, allow ? .allow : .deny)
-            audit(allow ? "allow" : "deny", "\(workspace.run(runID)?.title ?? "") · \(pending.tool)")
+            app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone)
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {

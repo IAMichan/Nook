@@ -36,7 +36,7 @@ extension WorkspaceManager {
     func connectAcp(_ id: UUID, executable: String, prompt: String?) {
         guard let run = run(id) else { return }
         var input = AgentCommand.Input(provider: run.provider, executable: executable, prompt: prompt ?? "", model: run.model, mode: run.mode,
-                                       permission: run.permission, instructions: run.instructions, workingDirectory: run.workingDirectory,
+                                       permission: run.permission, instructions: launchInstructions(run), workingDirectory: run.workingDirectory,
                                        resumeSessionID: run.providerSessionID, accountEnvironment: accountEnvironment(run.profileID), runID: id)
         // An ACP agent you added runs its own command line; without it (removed in Settings) there is nothing to start.
         if run.provider == .acp {
@@ -300,7 +300,7 @@ extension WorkspaceManager {
         var text = prompt
         // Your instructions, and how to use Nook's tools when the bridge is attached (as Claude Code and Codex get them), go
         // with the first prompt of a newly created session; the plan line with every prompt in Plan mode.
-        let instructions = AgentCredits.launchInstructions(run.instructions, bridgeNote: bridge(for: id)?.note)
+        let instructions = AgentCredits.launchInstructions(launchInstructions(run), bridgeNote: bridge(for: id)?.note)
         if client.freshSession, !instructions.isEmpty { text = instructions + "\n\n" + text }
         client.freshSession = false
         if run.mode == .plan { text = "Create a plan only; do not make any changes.\n\n" + text }
@@ -662,6 +662,7 @@ extension WorkspaceManager {
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))
+        noteFailure(id, text: message)
         turnDidFinish(id)
     }
 }

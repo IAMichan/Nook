@@ -8,6 +8,14 @@ final class UsageLedgerTests: XCTestCase {
     }()
     private let now = Date(timeIntervalSince1970: 1_800_000_000) // a fixed moment
 
+    /// The list prices come from the bundled model manifest, as in the app.
+    override func setUpWithError() throws {
+        let root = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"].map { URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let manifest = try ModelManifest.parse(Data(contentsOf: root.appendingPathComponent("Services/Workspace/model-manifest.json")))
+        ModelRates.use(manifest)
+    }
+
     private func tokens(_ input: Int, _ output: Int, read: Int = 0, write: Int = 0) -> UsageTokens {
         UsageTokens(input: input, output: output, cacheRead: read, cacheWrite: write)
     }

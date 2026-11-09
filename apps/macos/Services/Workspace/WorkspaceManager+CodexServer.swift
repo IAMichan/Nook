@@ -57,7 +57,7 @@ extension WorkspaceManager {
         codexServers[id] = client
         if prompt != nil { append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch")) }
 
-        let instructions = AgentCredits.launchInstructions(run.instructions, bridgeNote: bridge(for: id)?.note)
+        let instructions = AgentCredits.launchInstructions(launchInstructions(run), bridgeNote: bridge(for: id)?.note)
         let thread = CodexRPC.threadParams(cwd: run.workingDirectory, model: run.model,
                                            mcpServers: bridge(for: id)?.codexMCPServers(runID: id),
                                            resumeID: run.providerSessionID, instructions: instructions.isEmpty ? nil : instructions)
@@ -468,7 +468,10 @@ extension WorkspaceManager {
             run.usage.add(usage)
             if stopped { run.move(to: .stopped) } else if failed { run.move(to: .failed, detail: error) } else { run.move(to: .completed) }
         }
-        if failed { append(id, RunEvent(kind: .error, text: error ?? tr("ws.event.failed", status))) }
+        if failed {
+            append(id, RunEvent(kind: .error, text: error ?? tr("ws.event.failed", status)))
+            noteFailure(id, text: error)
+        }
         if stopped { append(id, RunEvent(kind: .system, text: tr("ws.event.stopped"))) }
         append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
         expireApprovals(id)

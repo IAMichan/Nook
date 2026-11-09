@@ -76,6 +76,13 @@ extension WorkspaceBridge {
             candidates = workspace.runs.filter { $0.id == id }
             guard !candidates.isEmpty else { return .error("No such session. Use an id from session_list.") }
         }
+        // The search index names the sessions that mention it, however many there are; the title is checked here, since
+        // no event holds it. Without the index (or for a query under three characters) the newest sessions are read.
+        if search.sessionID == nil, let indexed = await workspace.sessionsMentioning(search.query) {
+            let hits = Set(indexed)
+            let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+            candidates = candidates.filter { hits.contains($0.id) || $0.title.range(of: search.query, options: options) != nil }
+        }
         var found: [String] = []
         var scanned = 0
         for run in candidates.prefix(Self.searchScanLimit) {

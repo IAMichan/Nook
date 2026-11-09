@@ -472,7 +472,12 @@ extension AppModel {
                                  state: failed ? .failed : .done,
                                  session: "run:" + runID.uuidString)
         deliverAgentNotice(notice, app: run.provider.rawValue, target: .run(runID),
-                           open: { [weak self] in self?.openWorkspace(run: runID) })
+                           open: { [weak self] in self?.openWorkspace(run: runID) },
+                           reply: { [weak self] text in
+                               let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                               guard !message.isEmpty else { return }
+                               self?.workspace.submit(runID, text: message)
+                           })
     }
 
     // MARK: - Accounts
