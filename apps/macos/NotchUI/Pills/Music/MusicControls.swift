@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import SwiftUI
 
 // Building blocks the Music tab's bar and full player share: artwork, transport, scrubbing, volume.
@@ -15,7 +16,43 @@ final class MusicArtworkStore: @unchecked Sendable {
         return cache
     }()
 
+    private let tints = NSCache<NSURL, NSArray>()
+
     func cached(_ url: URL) -> NSImage? { cache.object(forKey: url as NSURL) }
+
+    /// The cover's two colours for its glow: the average of its upper-left and of its lower-right half, a little
+    /// brighter and more saturated so they read as light on the dark canvas.
+    func colors(for url: URL) async -> (NSColor, NSColor)? {
+        if let known = tints.object(forKey: url as NSURL) as? [NSColor], known.count == 2 { return (known[0], known[1]) }
+        guard let image = await image(for: url), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let found = await Task.detached(priority: .utility) { Self.averages(of: cg) }.value
+        guard let found else { return nil }
+        tints.setObject([found.0, found.1] as NSArray, forKey: url as NSURL)
+        return found
+    }
+
+    private nonisolated static func averages(of image: CGImage) -> (NSColor, NSColor)? {
+        let input = CIImage(cgImage: image)
+        let extent = input.extent
+        let context = CIContext(options: [.workingColorSpace: NSNull()])
+        func average(_ rect: CGRect) -> NSColor? {
+            guard let filter = CIFilter(name: "CIAreaAverage",
+                                        parameters: [kCIInputImageKey: input, kCIInputExtentKey: CIVector(cgRect: rect)]),
+                  let output = filter.outputImage else { return nil }
+            var pixel = [UInt8](repeating: 0, count: 4)
+            context.render(output, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                           format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            let color = NSColor(srgbRed: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255, blue: CGFloat(pixel[2]) / 255, alpha: 1)
+            var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+            color.usingColorSpace(.sRGB)?.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+            return NSColor(hue: hue, saturation: min(1, saturation * 1.25), brightness: max(0.45, min(1, brightness * 1.15)), alpha: 1)
+        }
+        // Core Image's origin is the bottom left: the upper-left half is the top of the extent.
+        let half = CGSize(width: extent.width / 2, height: extent.height / 2)
+        guard let first = average(CGRect(origin: CGPoint(x: extent.minX, y: extent.midY), size: half)),
+              let second = average(CGRect(origin: CGPoint(x: extent.midX, y: extent.minY), size: half)) else { return nil }
+        return (first, second)
+    }
 
     func image(for url: URL) async -> NSImage? {
         if let image = cached(url) { return image }
@@ -74,6 +111,41 @@ struct MusicArtwork: View {
     }
 }
 
+/// The playing cover's colours as soft light: two radial washes in the cover's own colours (its upper-left and lower-right
+/// halves, averaged once per cover), fading out from `center`. A card, the bar or the Now Playing page takes on the
+/// track's colours without any edge, and without a blur to redraw.
+struct MusicArtworkGlow: View {
+    let url: URL?
+    let seed: String
+    var opacity = 0.4
+    var center: UnitPoint = .center
+    /// How far the light reaches, as a share of the larger side.
+    var reach: CGFloat = 0.9
+    @State private var colors: (Color, Color)?
+
+    var body: some View {
+        let pair = colors ?? MusicCoverPlaceholder.colors(for: seed)
+        GeometryReader { geo in
+            let side = max(geo.size.width, geo.size.height)
+            ZStack {
+                RadialGradient(colors: [pair.0, pair.0.opacity(0.35), .clear], center: center, startRadius: 0, endRadius: side * reach)
+                RadialGradient(colors: [pair.1.opacity(0.8), .clear],
+                               center: UnitPoint(x: min(1, center.x + 0.35), y: min(1, center.y + 0.45)),
+                               startRadius: 0, endRadius: side * reach * 0.7)
+            }
+            .opacity(opacity)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: url) {
+            guard let url else { colors = nil; return }
+            if let found = await MusicArtworkStore.shared.colors(for: url) {
+                withAnimation(NookTheme.reveal) { colors = (Color(nsColor: found.0), Color(nsColor: found.1)) }
+            }
+        }
+    }
+}
+
 /// Over a cover in a row: the play symbol under the pointer, the bars while the track plays, nothing otherwise.
 struct MusicArtworkState: View {
     let hovering: Bool
@@ -106,6 +178,12 @@ struct MusicCoverPlaceholder: View {
         (0xFF8A5B, 0x4A1606), (0x7FD3C0, 0x0F3A33), (0xF5D27A, 0x5A3F0E), (0x8FB4FF, 0x1A2A5C),
         (0xFF9FC4, 0x4D1530), (0xC7A6F0, 0x2B1B45), (0xB9E27A, 0x2B4A0C),
     ]
+
+    /// The two colours a cover without artwork is drawn in, for its glow.
+    static func colors(for seed: String) -> (Color, Color) {
+        let pair = palette[MusicCoverPalette.index(for: seed, count: palette.count)]
+        return (Color(hex: pair.0), Color(hex: pair.1))
+    }
 
     var body: some View {
         let pair = Self.palette[MusicCoverPalette.index(for: seed, count: Self.palette.count)]

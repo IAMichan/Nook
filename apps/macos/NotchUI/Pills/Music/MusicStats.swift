@@ -58,21 +58,30 @@ struct MusicStatsView: View {
 
     @ViewBuilder
     private func content(_ stats: MusicStats) -> some View {
+        MusicRecapCard(stats: stats, periodTitle: Self.title(of: stats.period), change: changeText(stats),
+                       listener: stats.listenerType.map { listener($0).0 })
         // Four across on a page, two in a narrow tab: never a row with a hole in it.
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 196), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
-            NookStatTile(title: tr("music.stats.time"), value: musicListeningTime(stats.seconds), detail: changeText(stats), symbol: "headphones")
             NookStatTile(title: tr("music.stats.plays"), value: stats.plays.formatted(),
                          detail: tr("music.stats.uniqueTracks", stats.uniqueTracks), symbol: "play.circle")
             NookStatTile(title: tr("music.stats.artists"), value: stats.uniqueArtists.formatted(),
-                         detail: stats.topArtists.first?.name ?? "", symbol: "music.mic")
+                         detail: stats.newArtists.flatMap { $0 > 0 ? tr("music.stats.newArtists", $0) : nil } ?? stats.topArtists.first?.name ?? "",
+                         symbol: "music.mic")
             NookStatTile(title: tr("music.stats.streak"), value: tr("music.stats.days", stats.streak),
                          detail: stats.streak > 1 ? tr("music.stats.streakDetail") : tr("music.stats.streakStart"), symbol: "flame")
+            if let day = stats.bestDay {
+                NookStatTile(title: tr("music.stats.bestDayTitle"), value: musicListeningTime(day.seconds),
+                             detail: Self.fullLabel(day.start, byDay: true), symbol: "calendar")
+            }
         }
         MusicStatsCard(title: tr("music.stats.overTime")) {
             MusicBars(bars: stats.buckets.map { bucket in
                 .init(id: Self.label(bucket.start, byDay: stats.period.byDay, count: stats.buckets.count),
                       detail: Self.fullLabel(bucket.start, byDay: stats.period.byDay), seconds: bucket.seconds)
             })
+        }
+        MusicStatsCard(title: tr("music.stats.whenTitle")) {
+            MusicHeatmap(weekHours: stats.weekHours)
         }
         MusicStatsPairs {
             MusicStatsCard(title: tr("music.stats.topArtists")) {
@@ -95,15 +104,9 @@ struct MusicStatsView: View {
                     }
                 }
             }
-        } second: {
-            MusicStatsCard(title: tr("music.stats.whenTitle")) {
-                MusicBars(bars: stats.hours.indices.map { hour in
-                    .init(id: String(format: "%02d", hour), detail: String(format: "%02d:00", hour), seconds: stats.hours[hour])
-                }, height: 150, labelEvery: 6)
-            }
-            MusicStatsCard(title: tr("music.stats.factsTitle")) {
-                facts(stats)
-            }
+        }
+        MusicStatsCard(title: tr("music.stats.factsTitle")) {
+            facts(stats)
         }
     }
 
@@ -113,21 +116,35 @@ struct MusicStatsView: View {
         return change > 0 ? tr("music.stats.up", change) : tr("music.stats.down", abs(change))
     }
 
-    @ViewBuilder
+    /// The fun part, as tiles two by two.
     private func facts(_ stats: MusicStats) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: NookTheme.Spacing.lg, alignment: .top)],
+                  alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if let type = stats.listenerType {
-                fact("sparkles", title: listener(type).0, detail: listener(type).1)
+                MusicFactRow(symbol: listenerSymbol(type), title: listener(type).0, detail: listener(type).1)
             }
             if let hour = stats.peakHour {
-                fact("clock", title: tr("music.stats.peakHour", String(format: "%02d:00", hour)), detail: tr("music.stats.peakHourDetail"))
-            }
-            if let day = stats.bestDay {
-                fact("calendar", title: Self.fullLabel(day.start, byDay: true), detail: tr("music.stats.bestDay", musicListeningTime(day.seconds)))
+                MusicFactRow(symbol: "clock", title: tr("music.stats.peakHour", String(format: "%02d:00", hour)), detail: tr("music.stats.peakHourDetail"))
             }
             if let track = stats.topTracks.first, track.plays > 1 {
-                fact("repeat", title: track.track.title, detail: tr("music.stats.onRepeat", track.plays))
+                MusicFactRow(symbol: "repeat", title: track.track.title, detail: tr("music.stats.onRepeat", track.plays))
             }
+            if let fresh = stats.newArtists, fresh > 0 {
+                MusicFactRow(symbol: "safari", title: tr("music.stats.explorer"), detail: tr("music.stats.explorerDetail", fresh))
+            }
+            if let artist = stats.topArtists.first, stats.uniqueArtists > 1 {
+                MusicFactRow(symbol: "heart", title: tr("music.stats.fan", artist.name),
+                             detail: tr("music.stats.fanDetail", Int((Double(artist.seconds) / Double(max(1, stats.seconds)) * 100).rounded())))
+            }
+        }
+    }
+
+    private func listenerSymbol(_ type: MusicListenerType) -> String {
+        switch type {
+        case .morning: return "sunrise"
+        case .afternoon: return "sun.max"
+        case .evening: return "sunset"
+        case .night: return "moon.stars"
         }
     }
 
@@ -137,20 +154,6 @@ struct MusicStatsView: View {
         case .afternoon: return (tr("music.stats.afternoon"), tr("music.stats.afternoonDetail"))
         case .evening: return (tr("music.stats.evening"), tr("music.stats.eveningDetail"))
         case .night: return (tr("music.stats.night"), tr("music.stats.nightDetail"))
-        }
-    }
-
-    private func fact(_ symbol: String, title: String, detail: String) -> some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
-            Image(systemName: symbol)
-                .font(NookTheme.font(13, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
-                Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(2)
-            }
         }
     }
 
@@ -217,7 +220,7 @@ struct MusicStatsView: View {
         return NookDates.formatter(format, locale: NookDates.appLocale).string(from: date)
     }
 
-    private static func fullLabel(_ date: Date, byDay: Bool) -> String {
+    static func fullLabel(_ date: Date, byDay: Bool) -> String {
         NookDates.formatter(byDay ? "EEEE d MMMM" : "MMMM yyyy", locale: NookDates.appLocale).string(from: date)
     }
 }
@@ -377,5 +380,155 @@ private struct MusicBars: View {
             .accessibilityElement()
             .accessibilityLabel(bars.filter { $0.seconds > 0 }.map { "\($0.detail): \(musicListeningTime($0.seconds))" }.joined(separator: ", "))
         }
+    }
+}
+
+/// The top of the statistics: the time you listened in large type, how it compares and what kind of listener you are,
+/// with your top artist beside it.
+private struct MusicRecapCard: View {
+    let stats: MusicStats
+    let periodTitle: String
+    let change: String
+    let listener: String?
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+        HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Text(tr("music.stats.recapTitle", periodTitle))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textStrong)
+                Text(musicListeningTime(stats.seconds))
+                    .font(NookTheme.rounded(42, .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text([change, listener].compactMap { $0 }.joined(separator: " · "))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let artist = stats.topArtists.first {
+                VStack(spacing: NookTheme.Spacing.sm) {
+                    MusicArtwork(url: artist.artworkURL, seed: artist.name, symbol: "music.mic", cornerRadius: 0)
+                        .frame(width: 96, height: 96)
+                        .clipShape(Circle())
+                        .overlay(Circle().strokeBorder(NookTheme.music.opacity(0.5), lineWidth: 3))
+                        .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+                    Text(tr("music.stats.topArtist"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Text(artist.name)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .frame(maxWidth: 140)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(NookTheme.Spacing.xxl)
+        .background {
+            shape
+                .fill(NookTheme.surface)
+                .overlay(LinearGradient(colors: [NookTheme.music.opacity(0.22), NookTheme.violet.opacity(0.12), .clear],
+                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay {
+                    if let artist = stats.topArtists.first {
+                        MusicArtworkGlow(url: artist.artworkURL, seed: artist.name, opacity: 0.35, center: .trailing, reach: 0.5)
+                    }
+                }
+                .clipShape(shape)
+                .overlay(shape.strokeBorder(NookTheme.paper.opacity(0.06), lineWidth: 1))
+        }
+    }
+}
+
+/// When you listen: a square for every hour of every day of the week, the brighter the more you listened. The square
+/// under the pointer says its day, hour and time above the grid.
+private struct MusicHeatmap: View {
+    let weekHours: [[Int]]
+    @State private var hovered: (day: Int, hour: Int)?
+
+    private var most: Int { max(1, weekHours.flatMap { $0 }.max() ?? 1) }
+
+    /// The days' names from the calendar's first weekday, in the app's language.
+    private var dayNames: (short: [String], full: [String]) {
+        var calendar = Calendar.current
+        calendar.locale = Locale(identifier: NookDates.appLocale)
+        let first = calendar.firstWeekday - 1
+        let rotate: ([String]) -> [String] = { Array($0[first...] + $0[..<first]) }
+        return (rotate(calendar.shortStandaloneWeekdaySymbols),
+                rotate(calendar.standaloneWeekdaySymbols))
+    }
+
+    var body: some View {
+        let names = dayNames
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Group {
+                if let hovered, weekHours[hovered.day][hovered.hour] > 0 {
+                    Text("\(names.full[hovered.day]) \(String(format: "%02d:00", hovered.hour)) · \(musicListeningTime(weekHours[hovered.day][hovered.hour]))")
+                } else {
+                    Text(tr("music.stats.heatmapHint"))
+                }
+            }
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
+            .lineLimit(1)
+            Grid(horizontalSpacing: 3, verticalSpacing: 3) {
+                ForEach(0..<7, id: \.self) { day in
+                    GridRow {
+                        Text(names.short[day])
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .frame(width: 28, alignment: .leading)
+                        ForEach(0..<24, id: \.self) { hour in
+                            cell(day: day, hour: hour)
+                        }
+                    }
+                }
+                GridRow {
+                    Color.clear.frame(width: 28, height: 1)
+                    ForEach(0..<24, id: \.self) { hour in
+                        Text(hour % 6 == 0 ? String(format: "%02d", hour) : "")
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .fixedSize()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityText(names.full))
+    }
+
+    private func cell(day: Int, hour: Int) -> some View {
+        let seconds = weekHours[day][hour]
+        let share = Double(seconds) / Double(most)
+        let lit = hovered.map { $0.day == day && $0.hour == hour } ?? false
+        return RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+            .fill(seconds == 0 ? NookTheme.smoke.opacity(0.6) : NookTheme.music.opacity(0.18 + 0.82 * share))
+            .overlay {
+                if lit {
+                    RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous).strokeBorder(NookTheme.paper, lineWidth: 1)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 14)
+            .onHover { inside in
+                if inside { hovered = (day, hour) } else if lit { hovered = nil }
+            }
+    }
+
+    private func accessibilityText(_ days: [String]) -> String {
+        weekHours.indices.compactMap { day -> String? in
+            let total = weekHours[day].reduce(0, +)
+            guard total > 0 else { return nil }
+            let peak = weekHours[day].indices.max { weekHours[day][$0] < weekHours[day][$1] } ?? 0
+            return "\(days[day]): \(musicListeningTime(total)), \(String(format: "%02d:00", peak))"
+        }.joined(separator: ", ")
     }
 }
