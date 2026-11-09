@@ -4,6 +4,8 @@ import Foundation
 
 let agentToolsTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "settings.ws.watchNewPullRequests": "Nieuwe pull requests standaard volgen",
+        "settings.ws.watchNewPullRequests.detail": "Een pull request die een sessie opent (met de git-knop of door de agent zelf) wordt meteen gevolgd: CI, reviews en opmerkingen verschijnen in de tijdlijn en wekken de agent. Uit: je volgt er een zelf met het oog boven het invoerveld.",
         "ws.question.attach": "Bestand of map toevoegen",
         "ws.question.attachHelp": "Voeg bestanden of afbeeldingen toe aan je antwoord (of plak of sleep ze hierheen); de agent krijgt hun paden",
         "ws.question.answeredBy": "Beantwoord door %@",
@@ -27,6 +29,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.closeSide": "Sluit in het zijpaneel",
     ],
     .en: [
+        "settings.ws.watchNewPullRequests": "Watch new pull requests by default",
+        "settings.ws.watchNewPullRequests.detail": "A pull request a session opens (with the git button or by the agent itself) is watched right away: CI, reviews and comments show up in the timeline and wake the agent. Off: you watch one yourself with the eye above the composer.",
         "ws.question.attach": "Attach a file or folder",
         "ws.question.attachHelp": "Attach files or pictures to your answer (or paste or drop them here); the agent gets their paths",
         "ws.question.answeredBy": "Answered by %@",
@@ -50,6 +54,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.closeSide": "Close in the side panel",
     ],
     .de: [
+        "settings.ws.watchNewPullRequests": "Neue Pull Requests standardmäßig beobachten",
+        "settings.ws.watchNewPullRequests.detail": "Ein Pull Request, den eine Sitzung öffnet (mit der Git-Taste oder vom Agenten selbst), wird sofort beobachtet: CI, Reviews und Kommentare erscheinen im Verlauf und wecken den Agenten. Aus: Du beobachtest einen selbst mit dem Auge über dem Eingabefeld.",
         "ws.question.attach": "Datei oder Ordner anhängen",
         "ws.question.attachHelp": "Dateien oder Bilder an deine Antwort anhängen (oder hier einfügen oder ablegen); der Agent bekommt ihre Pfade",
         "ws.question.answeredBy": "Beantwortet von %@",
@@ -73,6 +79,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.closeSide": "In der Seitenleiste schließen",
     ],
     .fr: [
+        "settings.ws.watchNewPullRequests": "Suivre les nouvelles pull requests par défaut",
+        "settings.ws.watchNewPullRequests.detail": "Une pull request ouverte par une session (avec le bouton git ou par l’agent lui-même) est suivie aussitôt : la CI, les revues et les commentaires apparaissent dans la chronologie et réveillent l’agent. Désactivé : vous en suivez une vous-même avec l’œil au-dessus du champ de saisie.",
         "ws.question.attach": "Joindre un fichier ou un dossier",
         "ws.question.attachHelp": "Joignez des fichiers ou des images à votre réponse (ou collez-les ou déposez-les ici) ; l’agent reçoit leurs chemins",
         "ws.question.answeredBy": "Répondu par %@",
@@ -96,6 +104,8 @@ let agentToolsTranslations: [AppLanguage: [String: String]] = [
         "ws.page.closeSide": "Fermer dans le panneau latéral",
     ],
     .es: [
+        "settings.ws.watchNewPullRequests": "Seguir las nuevas pull requests por defecto",
+        "settings.ws.watchNewPullRequests.detail": "Una pull request que abre una sesión (con el botón de git o el propio agente) se sigue de inmediato: la CI, las revisiones y los comentarios aparecen en la cronología y despiertan al agente. Desactivado: sigues una tú mismo con el ojo encima del campo de texto.",
         "ws.question.attach": "Adjuntar un archivo o una carpeta",
         "ws.question.attachHelp": "Adjunta archivos o imágenes a tu respuesta (o pégalos o suéltalos aquí); el agente recibe sus rutas",
         "ws.question.answeredBy": "Respondida por %@",
