@@ -202,11 +202,15 @@ struct SessionOutputsReport: PreferenceKey, Equatable {
 /// From the workbench to the conversation inside it: whether the outputs tab is in view (what it shows counts as seen),
 /// and how to open it on a new output; false when it stayed closed because you have another tool open. The same for the
 /// Subagents tab.
-struct SessionOutputsLink {
+struct SessionOutputsLink: Equatable {
     var shown = false
     var open: (String) -> Bool = { _ in false }
     var subagentsShown = false
     var openSubagents: () -> Bool = { false }
+
+    /// By what it says, not its actions: the workbench makes new closures on every redraw (which reach the same state), and
+    /// an environment value that is never equal redrew every view of the conversation that reads it on each streamed token.
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.shown == rhs.shown && lhs.subagentsShown == rhs.subagentsShown }
 }
 
 extension EnvironmentValues {
@@ -907,7 +911,7 @@ private struct SessionToolPanel: View {
                     SessionToolPicker(directory: directory) { launch($0) }
                 case .terminal:
                     if let console {
-                        LiveCommandConsole(timelines: workspace.timelines, workspace: workspace, console: console,
+                        LiveCommandConsole(timelines: workspace.timelineChanges(for: console.run), workspace: workspace, console: console,
                                            show: showConsole, close: closeConsole)
                     } else {
                         SessionTerminalsView(directory: directory).id(directory)
