@@ -295,7 +295,7 @@ struct NewSessionComposer: View {
         return ModelPickerDropdown {
             ComposerPill(symbol: auto ? AutoModel.symbol : nil,
                          agent: auto ? nil : config.provider.displayName,
-                         account: auto ? nil : profile.map { AccountKind.of($0, app: app) },
+                         account: auto ? nil : profile.map { AccountTag.of($0, app: app) },
                          text: auto ? tr("auto.model") : comparing.isEmpty
                             ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
                                 + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider, profileID: config.profileID))

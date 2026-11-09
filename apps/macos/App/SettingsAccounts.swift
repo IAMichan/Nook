@@ -76,6 +76,7 @@ private struct AgentAccountCardRow: View {
         // is, and one button. A click anywhere on the row opens its sheet too.
         ServiceRowShape(title: title, detail: detail, status: health.status, statusText: healthText) {
             AgentTile(profile.kind)
+                .accountBadge(profile.accent == nil ? nil : AccountTag.of(profile, app: app), size: 20, ring: NookTheme.rowRest)
         } actions: {
             Button(account == nil || antigravitySignedOut ? tr("button.login") : tr("settings2.manage")) {
                 // Antigravity signs in right here, in your browser.
@@ -128,13 +129,15 @@ private struct ManageAccountSheet: View {
 
     private var account: AgentAccount? { app.history.profileAccounts[profile.id] }
     private var several: Bool { app.profiles.profiles(for: profile.kind).count > 1 }
+    /// The account as stored now: the sheet opened with a copy, and a color picked here changes the stored one.
+    private var current: AgentProfile { app.profiles.profile(id: profile.id) ?? profile }
 
     var body: some View {
         SetupSheet(
             title: profile.kind.name,
             subtitle: subtitle
         ) {
-            AgentLogo(profile.kind, size: 44)
+            AgentMark(agent: profile.kind.name, account: current.accent == nil ? nil : AccountTag.of(current, app: app), size: 44)
         } content: {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
                 // Name
@@ -147,6 +150,14 @@ private struct ManageAccountSheet: View {
                         Button(tr("button.save"), action: saveName)
                             .disabled(!nameChanged)
                     }
+                }
+
+                // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(tr("accounts.color")).font(NookTheme.TextStyle.strong)
+                    AccountColorPicker(accent: Binding(get: { current.accent },
+                                                       set: { app.profiles.setAccent(profile.id, $0) }))
+                    SettingNote(tr("accounts.color.help"))
                 }
 
                 if profile.kind != .gemini && profile.kind != .antigravity {
@@ -333,6 +344,49 @@ private struct ManageAccountSheet: View {
             }
             saving = false
         }
+    }
+}
+
+/// The colors an account can have: none (the badge keeps its personal/work/key look), a swatch, or one of your own.
+private struct AccountColorPicker: View {
+    @Binding var accent: UInt32?
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            swatch(nil, name: "accounts.color.none")
+            ForEach(AccountTag.swatches, id: \.hex) { swatch($0.hex, name: $0.name) }
+            Spacer(minLength: NookTheme.Spacing.md)
+            ColorPicker(tr("accounts.color.custom"), selection: Binding(
+                get: { AccountTag.color(accent ?? AccountTag.swatches[0].hex) },
+                set: { accent = NSColor($0).nookHex }
+            ), supportsOpacity: false)
+            .labelsHidden()
+            .help(tr("accounts.color.custom"))
+        }
+    }
+
+    private func swatch(_ hex: UInt32?, name: String) -> some View {
+        let selected = accent == hex
+        return Button { accent = hex } label: {
+            Group {
+                if let hex {
+                    Circle().fill(AccountTag.color(hex))
+                } else {
+                    // No color: an empty ring with a slash.
+                    Circle().stroke(NookTheme.line2, lineWidth: 1.5)
+                        .overlay(Image(systemName: "slash.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary))
+                }
+            }
+            .frame(width: 20, height: 20)
+            .padding(NookTheme.Spacing.xs)
+            .overlay(Circle().stroke(selected ? NookTheme.paper : Color.clear, lineWidth: 1.5))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(tr(name))
+        .accessibilityLabel(tr(name))
+        .accessibilityHint(tr("accounts.color"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
