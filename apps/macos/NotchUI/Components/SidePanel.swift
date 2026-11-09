@@ -313,6 +313,14 @@ struct SessionSideLink {
     var toggleConsole: (UUID) -> Void = { _ in }
 }
 
+extension SessionSideLink: Equatable {
+    /// By what it says, not its actions: the workbench makes new closures on every redraw (they reach the same state), and an
+    /// environment value that is never equal redrew every answer and row that reads it on each streamed token.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.shownFile == rhs.shownFile && lhs.panelOpen == rhs.panelOpen && lhs.hasPanel == rhs.hasPanel
+    }
+}
+
 extension EnvironmentValues {
     @Entry var sessionSide = SessionSideLink()
     /// How far a conversation's header starts in: past the traffic lights and the list's toggle while the list is away.
