@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Subscription limits, drawn as t3code draws them but counted as Nook's composer counts them: how full a limit is ("38%
-// used", a bar that fills), a line on the bar marks where even spending would be by now, color only once it gets full, and the details (reset
+// Subscription limits, drawn as t3code draws them but counted as Nook's composer counts them: how much of a limit is left
+// ("62% left", a bar that is full when nothing is used and empties as it is spent), a line on the bar marks where even
+// spending would leave it by now, color only once it runs low, and the details (reset
 // time, pace) one hover or click away instead of in a footnote. Two shapes share these rules: `UsageLimitRows`, one line
 // per window for one account (the composer's popover, Settings › Coding agents), and `UsageLimitsModal`, the modal with
 // every agent's accounts as one pool per window.
@@ -87,9 +88,9 @@ struct UsageLimitRows: View {
         Int(max(0, min(100, limit.percent)).rounded())
     }
 
-    /// "5 hours: 38% used", "Resets in 2h 14m · 17:30", "Ahead of pace".
+    /// "5 hours: 62% left", "Resets in 2h 14m · 17:30", "Ahead of pace".
     private func help(_ limit: QuotaLimit, used: Int) -> String {
-        var lines = [tr("limits.rowUsed", limit.label, used)]
+        var lines = [tr("limits.rowLeft", limit.label, 100 - used)]
         if let note = limit.note {
             lines.append(note)
         } else if let reset = limit.resetsAt, reset > now {
@@ -105,7 +106,7 @@ struct UsageLimitRows: View {
     }
 }
 
-/// One card of `UsageLimitRows`, a small `LimitWindowCard`: name and percentage used above, the bar under them.
+/// One card of `UsageLimitRows`, a small `LimitWindowCard`: name and percentage left above, the bar under them.
 private struct UsageLimitRow: View {
     let label: String
     /// The window; nil for the "Unavailable" card, which has no bar.
@@ -127,10 +128,10 @@ private struct UsageLimitRow: View {
                     let used = UsageLimitRows.used(limit)
                     if let pace = LimitPool.pace(limit.poolLimit, now: now) { LimitPaceIcon(pace: pace) }
                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                        Text("\(used)%")
+                        Text("\(100 - used)%")
                             .font(NookTheme.TextStyle.strong.monospacedDigit())
                             .foregroundStyle(UsageTone.text(used: used))
-                        Text(tr("limits.usedWord"))
+                        Text(tr("limits.leftWord"))
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                     }
@@ -153,7 +154,7 @@ private struct UsageLimitRow: View {
         .accessibilityLabel(help.isEmpty ? "\(label): \(tr("limits.unavailable"))" : help)
     }
 
-    /// As a segment of the modal's pool bar: what was used fills it, the even-pace line sits in a slot cut from it and
+    /// As a segment of the modal's pool bar: what is left fills it, the even-pace line sits in a slot cut from it and
     /// the time to the reset is inside it on the right.
     private func bar(_ limit: QuotaLimit) -> some View {
         let used = UsageLimitRows.used(limit)
@@ -161,12 +162,12 @@ private struct UsageLimitRow: View {
         return ZStack(alignment: .trailing) {
             GeometryReader { proxy in
                 let width = proxy.size.width
-                let at = elapsed.map { LimitSegmentPosition.at($0, width: width) }
+                let at = elapsed.map { LimitSegmentPosition.left(elapsed: $0, width: width) }
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Color.white.opacity(0.05))
                     Rectangle()
                         .fill(UsageTone.fill(used: used).opacity(0.35))
-                        .frame(width: width * CGFloat(used) / 100)
+                        .frame(width: width * CGFloat(100 - used) / 100)
                 }
                 .mask(PaceSlot(at: at))
                 if let at, width >= 6 {
@@ -193,6 +194,11 @@ private struct UsageLimitRow: View {
 enum LimitSegmentPosition {
     static func at(_ percent: Int, width: CGFloat) -> CGFloat {
         min(max(3, width * CGFloat(percent) / 100), max(3, width - 3))
+    }
+
+    /// The even-pace line on a bar that shows what is left: where the fill would end had the window been spent evenly.
+    static func left(elapsed: Int, width: CGFloat) -> CGFloat {
+        at(100 - elapsed, width: width)
     }
 }
 
@@ -600,7 +606,7 @@ private struct UsageBlockRows: View {
     }
 }
 
-/// One window of the pool: its name, how much is used in large type with the pace, and what the next reset frees when the pool has
+/// One window of the pool: its name, how much is left in large type with the pace, and what the next reset frees when the pool has
 /// several accounts, beside the bar.
 private struct LimitWindowCard: View {
     let window: LimitPool.Window
@@ -615,18 +621,18 @@ private struct LimitWindowCard: View {
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(2)
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Text("\(window.used)%")
+                    Text("\(100 - window.used)%")
                         .font(NookTheme.font(30, .semibold).monospacedDigit())
                         .foregroundStyle(NookTheme.paper)
                     HStack(spacing: NookTheme.Spacing.md) {
-                        Text(tr("limits.usedWord"))
+                        Text(tr("limits.leftWord"))
                             .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.textSecondary)
                         if let pace = window.pace { LimitPaceIcon(pace: pace) }
                     }
                 }
                 if window.columns.count > 1, let refill = window.nextRefill {
-                    Text("↻ −\(refill.restores)%")
+                    Text("↻ +\(refill.restores)%")
                         .font(NookTheme.TextStyle.label.monospacedDigit())
                         .foregroundStyle(NookTheme.paper)
                 }
@@ -675,8 +681,9 @@ private struct LimitPoolBar: View {
     }
 }
 
-/// One account's part of the pool bar. What was used fills it in the agent's color, hatched where the account's next
-/// reset frees only part of it, and the even-pace line sits in a slot cut from the bar. Click for the account's details.
+/// One account's part of the pool bar. What is left fills it in the agent's color from the left, so an unused account is
+/// a full bar; where the account's next reset gives back only part of what was used, that part is hatched right after
+/// the fill. The even-pace line sits in a slot cut from the bar. Click for the account's details.
 private struct LimitSegment: View {
     let member: LimitPool.Member
     let window: LimitPool.Window
@@ -708,23 +715,24 @@ private struct LimitSegment: View {
                             let freed = reset != nil ? min(limit.used, member.refill) : 0
                             let partial = freed > 0 && limit.used - freed >= 0.5
                             let hatched = partial ? min(freed, Double(used)) : 0
+                            let left = Double(100 - used)
                             Rectangle()
                                 .fill(color.opacity(0.35))
-                                .frame(width: width * CGFloat(Double(used) - hatched) / 100)
+                                .frame(width: width * CGFloat(left) / 100)
                             if partial {
                                 LimitHatch(color: color)
                                     .opacity(0.45)
                                     .frame(width: width * CGFloat(hatched) / 100)
-                                    .offset(x: width * CGFloat(Double(used) - hatched) / 100)
+                                    .offset(x: width * CGFloat(left) / 100)
                             }
                         }
-                        .mask(PaceSlot(at: elapsed.map { LimitSegmentPosition.at($0, width: width) }))
+                        .mask(PaceSlot(at: elapsed.map { LimitSegmentPosition.left(elapsed: $0, width: width) }))
                         if let elapsed, width >= 6 {
                             Capsule()
                                 .fill(NookTheme.paper)
                                 .frame(width: 2)
                                 .padding(.vertical, NookTheme.Spacing.xxs)
-                                .offset(x: LimitSegmentPosition.at(elapsed, width: width) - 1)
+                                .offset(x: LimitSegmentPosition.left(elapsed: elapsed, width: width) - 1)
                         }
                     }
                     if wide {
@@ -735,7 +743,7 @@ private struct LimitSegment: View {
                                     .foregroundStyle(NookTheme.paper)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                Text("\(used)%")
+                                Text("\(100 - used)%")
                                     .font(NookTheme.TextStyle.detail.weight(.semibold).monospacedDigit())
                                     .foregroundStyle(NookTheme.paper)
                                     .fixedSize()
@@ -775,7 +783,7 @@ private struct LimitSegment: View {
     }
 
     private func summary(used: Int, elapsed: Int?, resetsIn: String?, credits: Int) -> String {
-        var parts = [tr("limits.segment", member.name, used)]
+        var parts = [tr("limits.segmentLeft", member.name, 100 - used)]
         if let resetsIn { parts.append(resetsIn) }
         if let elapsed { parts.append(tr("limits.windowElapsed", elapsed)) }
         if credits > 0 { parts.append(tr("agents.reset.credits", credits)) }
@@ -812,7 +820,7 @@ private struct LimitResetChip: View {
     }
 }
 
-/// A narrow bar's legend: a row per account with its number, name, how much it used and its reset. Click for its details.
+/// A narrow bar's legend: a row per account with its number, name, how much it has left and its reset. Click for its details.
 private struct LimitLegendRow: View {
     let member: LimitPool.Member
     let window: LimitPool.Window
@@ -835,7 +843,7 @@ private struct LimitLegendRow: View {
                     .font(NookTheme.TextStyle.detail.weight(.medium))
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                Text("\(member.used ?? 0)%")
+                Text("\(100 - (member.used ?? 0))%")
                     .font(NookTheme.TextStyle.detail.weight(.semibold).monospacedDigit())
                     .foregroundStyle(NookTheme.paper)
                 Spacer(minLength: NookTheme.Spacing.sm)
@@ -870,7 +878,7 @@ private struct LimitLegendRow: View {
     }
 }
 
-/// An account's details in one window: who it is, its plan, how much it used, when it resets, where even spending would
+/// An account's details in one window: who it is, its plan, how much it has left, when it resets, where even spending would
 /// be and what the reset frees in the pool.
 private struct LimitSegmentDetails: View {
     let member: LimitPool.Member
@@ -894,14 +902,14 @@ private struct LimitSegmentDetails: View {
                 group { row(tr("limits.row.plan"), plan) }
             }
             group {
-                row(tr("limits.row.used"), "\(member.used ?? 0)%")
+                row(tr("limits.row.left"), "\(100 - (member.used ?? 0))%")
                 if let at = member.limit?.resetsAt {
                     row(tr("limits.row.resets"), at > now
                         ? "\(AgentFormat.upcoming(at, now: now)) · \(tr("limits.in", AgentFormat.compactDuration(at.timeIntervalSince(now))))"
                         : tr("limits.resetsNow"))
                 }
                 if let limit = member.limit, let elapsed = LimitPool.timeElapsed(limit, now: now) {
-                    row(tr("limits.row.evenPace"), tr("limits.row.evenPaceValue", elapsed))
+                    row(tr("limits.row.evenPace"), tr("limits.row.evenPaceLeft", 100 - elapsed))
                 }
                 if let reset, reset.restores > 0, window.columns.count > 1 {
                     row(tr("limits.row.restores"), tr("limits.row.restoresValue", reset.restores))
