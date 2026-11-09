@@ -51,6 +51,45 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(replaced.reviews.map(\.number), [])
     }
 
+    func testOpenWatchedRowsAreReadAgainByNodeID() throws {
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.nodesBody(["PR_1", "PR_2"])) as? [String: Any])
+        let query = try XCTUnwrap(body["query"] as? String)
+        XCTAssertTrue(query.contains("nodes(ids: $ids) { ...row }"), "no search, the rows by id")
+        XCTAssertTrue(query.contains("fragment row on PullRequest") && query.contains("statusCheckRollup { state }"))
+        XCTAssertEqual((body["variables"] as? [String: Any])?["ids"] as? [String], ["PR_1", "PR_2"])
+
+        let answer = #"""
+        {"data":{"nodes":[{"id":"PR_1","number":5,"title":"Fix","state":"OPEN","isDraft":false,"mergeable":"MERGEABLE",
+          "author":{"login":"anna"},"repository":{"nameWithOwner":"a/b"},
+          "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}},null]}}
+        """#
+        let rows = try PullRequestGraphQL.parseNodes(Data(answer.utf8))
+        XCTAssertEqual(rows.map(\.id), ["a/b#5"], "a node GitHub could not read is left out")
+        XCTAssertEqual(rows.first?.ci, .failing)
+
+        func item(_ number: Int, _ ci: PullRequestItem.CI) -> PullRequestItem {
+            PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "", ci: ci)
+        }
+        var account = AccountPullRequests(id: "github", name: "", login: "", mine: [], reviews: [], error: nil)
+        account.watched = [item(4, .passing), item(5, .pending)]
+        XCTAssertEqual(account.replacingWatched(rows).watched.map(\.ci), [.passing, .failing],
+                       "the row read again takes its place; the others stay")
+    }
+
+    func testAListReadDoesNotPutBackWhatANewerPageReadReplaced() {
+        func item(_ number: Int, _ ci: PullRequestItem.CI, _ review: PullRequestItem.Review = .none) -> PullRequestItem {
+            PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "", ci: ci, review: review)
+        }
+        // The page of #1 read failing CI while the list read (begun before) still saw it pending.
+        let shown = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1, .failing), item(2, .pending)], reviews: [], error: nil)
+        let read = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1, .pending, .approved), item(2, .passing)],
+                                       reviews: [], error: nil)
+        let kept = AccountPullRequests.keepingNewer([read], from: [shown], newer: ["a/b#1"])[0]
+        XCTAssertEqual(kept.mine.map(\.ci), [.failing, .passing], "#1 keeps the newer page read, #2 takes the list's")
+        XCTAssertEqual(kept.mine.first?.review, .approved, "the review decision only the list knows still comes in")
+        XCTAssertEqual(AccountPullRequests.keepingNewer([read], from: [shown], newer: []), [read])
+    }
+
     func testAnUnknownMergeabilityKeepsTheConflictItKnew() throws {
         func node(_ number: Int, _ mergeable: String) -> String {
             #"{"number":\#(number),"title":"","state":"OPEN","isDraft":false,"mergeable":"\#(mergeable)","author":{"login":"a"},"repository":{"nameWithOwner":"a/b"}}"#
