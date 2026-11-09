@@ -63,6 +63,12 @@ struct AgentRunPanel: View {
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
+    /// A background command is one thing in two places: its call in the conversation and its row in the bar above the
+    /// composer. `barFocus` opens its row in the bar (from the conversation), `conversationFocus` scrolls to its call (from
+    /// the bar), and `flashed` lights the call up for a moment once there.
+    @State private var barFocus: UUID?
+    @State private var conversationFocus: UUID?
+    @State private var flashed: UUID?
     /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
     /// list does not redraw this whole panel.
     @State private var composerModel = ComposerModel()
@@ -675,7 +681,7 @@ struct AgentRunPanel: View {
         let blocks = memo.blocks
         let cards = memo.cards
         let found = finding ? memo.search(findQuery) : .idle
-        let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
+        let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil } ?? flashed
         // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
         // that runs now only in the live line at the end, not also in the list above it.
         let active = run.status.isActive
@@ -828,6 +834,18 @@ struct AgentRunPanel: View {
                 }
             }
             .keyCommand("chat.find") { openFind() }
+            // From a background command's row in the bar: to its call in the conversation, lit up for a moment.
+            .onChange(of: conversationFocus) { _, id in
+                guard let id else { return }
+                conversationFocus = nil
+                scroll.userScrolled()
+                for key in TimelineContainers.keys(blocks)[id] ?? [] { openBlocks.insert(key) }
+                flashed = id
+                DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                    if flashed == id { withAnimation(NookTheme.reveal) { flashed = nil } }
+                }
+            }
             .onChange(of: findQuery) { _, _ in
                 findIndex = nil
                 let fresh = TimelineSearch.search(events, query: findQuery)
@@ -1207,7 +1225,11 @@ struct AgentRunPanel: View {
             // A session on another machine has its files there, not on this Mac.
             directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
             shownFile: sideLink.shownFile,
-            onEdit: onEdit
+            onEdit: onEdit,
+            // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
+            showBackground: {
+                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.openSubagents() }
+            }
         )
         // Undone by going back to before an earlier message: the agent no longer remembers it.
         .opacity(event.rolledBack == true ? 0.45 : 1)
@@ -1355,7 +1377,8 @@ struct AgentRunPanel: View {
             // The commands it left running in the background (a dev server, a watcher): the session is not done yet.
             let commands = derived.commands
             if !commands.isEmpty {
-                BackgroundCommandBar(commands: commands) { outputsLink.openSubagents() }
+                BackgroundCommandBar(commands: commands, focus: $barFocus,
+                                     reveal: { conversationFocus = $0 }) { outputsLink.openSubagents() }
             }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {

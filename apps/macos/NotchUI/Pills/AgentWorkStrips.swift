@@ -729,17 +729,26 @@ struct PullRequestPendingRow: View {
 
 
 /// "In the background  npm run dev  1 running" with a row per command the agent left running in the background (a dev
-/// server, a watcher, a long build): whether it still runs, the command and how long it has been at it; a row opens to
-/// the end of what it printed. It stays while any of them runs, also after the turn that started them, so the session
-/// does not look done while it is not. The arrow shows them in the side panel (`openPanel`).
+/// server, a watcher, a long build). The header counts what runs and what failed; a row names the command by what the
+/// agent said it is for, those still at work first, then the failed ones. A row opens to the command itself and the end
+/// of what it printed, in a box of its own so the output of one command never runs into the next row. It stays while any
+/// of them runs, also after the turn that started them, so the session does not look done while it is not. The sidebar
+/// button shows them in the side panel (`openPanel`).
+///
+/// Each command is also a call in the conversation (with a `BackgroundCommandLink` under it): `focus` set from there opens
+/// its row here and lights it up, and a row's `reveal` goes back to its call.
 struct BackgroundCommandBar: View {
     let commands: [BackgroundCommandInfo]
+    var focus: Binding<UUID?> = .constant(nil)
+    var reveal: ((UUID) -> Void)? = nil
     var openPanel: (() -> Bool)? = nil
     @State private var open = false
     @State private var shown: UUID?
+    @State private var flashed: UUID?
 
     var body: some View {
         let running = commands.filter(\.isRunning).count
+        let failed = commands.filter(\.failed).count
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.md) {
                 Button {
@@ -752,18 +761,27 @@ struct BackgroundCommandBar: View {
                             Image(systemName: "terminal").font(NookTheme.font(11, .semibold))
                         }
                         Text(tr("ws.background.title")).foregroundStyle(NookTheme.textTertiary)
-                        Text(commands.first(where: \.isRunning)?.title ?? commands.last?.title ?? "")
+                        Text(commands.last(where: \.isRunning)?.title ?? commands.last?.title ?? "")
                             .foregroundStyle(NookTheme.paper.opacity(0.85))
                             .lineLimit(1)
+                            .truncationMode(.tail)
                         Spacer(minLength: 6)
                         if running > 0 {
                             Text(tr("ws.subagents.running", running))
                                 .font(NookTheme.TextStyle.caption)
                                 .foregroundStyle(NookTheme.iris)
+                                .fixedSize()
+                        }
+                        if failed > 0 {
+                            Text(tr("ws.background.failedCount", failed))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.coralSoft)
+                                .fixedSize()
                         }
                         Text(tr("ws.subagents.progress", commands.count - running, commands.count))
                             .font(NookTheme.mono(11, .medium))
                             .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize()
                         Image(systemName: "chevron.up")
                             .font(NookTheme.font(8.5, .bold))
                             .rotationEffect(.degrees(open ? 180 : 0))
@@ -774,7 +792,8 @@ struct BackgroundCommandBar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(tr("ws.background.title") + ", " + tr("ws.subagents.running", running))
+                .accessibilityLabel(tr("ws.background.title") + ", " + tr("ws.subagents.running", running)
+                                    + (failed > 0 ? ", " + tr("ws.background.failedCount", failed) : ""))
                 if let openPanel {
                     ToolbarIconButton("sidebar.right", tr("ws.background.openPanel"), height: 20, width: 20) {
                         if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
@@ -783,43 +802,143 @@ struct BackgroundCommandBar: View {
                 }
             }
             if open {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    ForEach(commands) { command in row(command) }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    ForEach(BackgroundCommands.ordered(commands)) { command in row(command) }
                 }
             }
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .onChange(of: focus.wrappedValue) { _, id in
+            guard let id else { return }
+            focus.wrappedValue = nil
+            withAnimation(NookTheme.reveal) {
+                open = true
+                shown = id
+                flashed = id
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                if flashed == id { withAnimation(NookTheme.reveal) { flashed = nil } }
+            }
+        }
     }
 
     private func row(_ command: BackgroundCommandInfo) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+        let expanded = shown == command.id
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             Button {
-                shown = shown == command.id ? nil : command.id
+                withAnimation(NookTheme.reveal) { shown = expanded ? nil : command.id }
             } label: {
                 HStack(spacing: NookTheme.Spacing.md) {
                     SubagentStatusMark(command: command)
-                    Text(ToolSummary.oneLine(command.command, 160))
-                        .font(NookTheme.mono(10.5, .medium))
+                        .frame(width: 12)
+                    Text(command.title)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(command.isRunning ? NookTheme.paper.opacity(0.85)
+                                         : (command.failed ? NookTheme.textSecondary : NookTheme.textTertiary))
                         .lineLimit(1)
-                    Spacer(minLength: 0)
+                        .truncationMode(.tail)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    if command.printed != nil && !expanded {
+                        Image(systemName: "text.alignleft")
+                            .font(NookTheme.font(9, .semibold))
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .help(tr("ws.background.hasOutput"))
+                    }
                     SubagentElapsed(command: command)
+                    Image(systemName: "chevron.right")
+                        .font(NookTheme.font(8, .bold))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .foregroundStyle(NookTheme.textTertiary)
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+                .frame(minHeight: 22)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if shown == command.id, let output = command.output, !output.isEmpty {
-                Text(BackgroundCommandList.tail(output))
+            .help(command.command)
+            if expanded { detail(command) }
+        }
+        // Lit up for a moment when its call in the conversation sent you here.
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+            .fill(NookTheme.iris.opacity(flashed == command.id ? 0.16 : 0))
+            .padding(.horizontal, -NookTheme.Spacing.sm))
+    }
+
+    /// The command and the end of what it printed, in an inset box under its row.
+    private func detail(_ command: BackgroundCommandInfo) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+                Text(command.command)
+                    .font(NookTheme.mono(10.5, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(4)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let reveal {
+                    ToolbarIconButton("arrow.up.to.line", tr("ws.background.showInConversation"), height: 18, width: 18) {
+                        reveal(command.id)
+                    }
+                    .help(tr("ws.background.showInConversation"))
+                }
+            }
+            if let printed = command.printed {
+                NookDivider()
+                Text(BackgroundCommandList.tail(printed))
                     .font(NookTheme.mono(10.5))
-                    .foregroundStyle(NookTheme.textTertiary)
+                    .foregroundStyle(command.failed ? NookTheme.coralSoft : NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .padding(.leading, 20)
+            } else {
+                Text(tr(command.isRunning ? "ws.console.waiting" : "ws.console.noOutput"))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(NookTheme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+        .padding(.leading, 20)
+        .padding(.bottom, NookTheme.Spacing.xs)
+    }
+}
+
+/// The line under a background command's call in the conversation: "In the background · Running 1:23 ↓". It says the
+/// command goes on in the bar above the composer, with the same state mark as its row there, and a click opens that row.
+struct BackgroundCommandLink: View {
+    let event: RunEvent
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let command = BackgroundCommands.list([event]).first
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if let command { SubagentStatusMark(command: command, size: 9).frame(width: 10) }
+                Text(tr("ws.background.title"))
+                    .foregroundStyle(NookTheme.textTertiary)
+                Text("·").foregroundStyle(NookTheme.textTertiary)
+                Text(tr(command?.isRunning != false ? "ws.background.runningShort"
+                        : (command?.failed == true ? "ws.background.failed" : "ws.background.done")))
+                    .foregroundStyle(command?.failed == true ? NookTheme.coralSoft
+                                     : (command?.isRunning != false ? NookTheme.iris : NookTheme.textTertiary))
+                if let command { SubagentElapsed(command: command) }
+                Image(systemName: "arrow.down")
+                    .font(NookTheme.font(8.5, .bold))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
+            }
+            .font(NookTheme.TextStyle.caption)
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .background(Capsule().fill(hovering ? NookTheme.rowHover : NookTheme.field))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.leading, TranscriptStyle.workIndent)
+        .help(tr("ws.background.showInBar"))
+        .accessibilityLabel(tr("ws.background.showInBar"))
     }
 }
 
@@ -847,8 +966,8 @@ struct BackgroundCommandList: View {
                         .foregroundStyle(NookTheme.iris)
                 }
             }
-            // Those still at work first, then the rest, newest first.
-            ForEach(commands.filter(\.isRunning) + commands.filter { !$0.isRunning }.reversed()) { command in
+            // Those still at work first, then the failed ones, then the rest, newest first.
+            ForEach(BackgroundCommands.ordered(commands)) { command in
                 card(command)
             }
         }
@@ -882,8 +1001,8 @@ struct BackgroundCommandList: View {
                     .textSelection(.enabled)
                     .padding(.leading, 20)
             }
-            if let output = command.output, !output.isEmpty {
-                Text(Self.tail(output))
+            if let printed = command.printed {
+                Text(Self.tail(printed))
                     .font(NookTheme.mono(10.5))
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
