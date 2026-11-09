@@ -1512,12 +1512,13 @@ final class WorkspaceManager: ObservableObject {
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
+        let provider = run.provider
         process.onLines = { [weak self] lines in
+            // Parsed here, on the process's own queue: the main thread only applies the events.
+            let parsed = ParsedStreamLine.parse(lines, provider: provider)
             Task { @MainActor in
                 guard let self else { return }
-                for line in lines {
-                    self.handle(line: line, for: id)
-                }
+                for line in parsed { self.handle(parsed: line, for: id) }
             }
         }
         process.onExit = { [weak self, weak process] status, stderr in
@@ -1566,12 +1567,13 @@ final class WorkspaceManager: ObservableObject {
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
+                let parsed = ParsedStreamLine.parse(lines, provider: .claude)
                 Task { @MainActor in
                     // While it only waits, nothing it prints is a turn (a failed resume must not fail the session), apart
                     // from the answers to Nook's own requests (a connector's sign-in page).
                     guard let self, let process else { return }
                     guard self.processes[id] === process else { return self.handleClaudeReplies(lines, for: id) }
-                    for line in lines { self.handle(line: line, for: id) }
+                    for line in parsed { self.handle(parsed: line, for: id) }
                 }
             }
             process.onExit = { [weak self, weak process] status, stderr in
@@ -1593,20 +1595,18 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: Agent Output
 
-    private func handle(line: String, for id: UUID) {
-        guard let run = run(id) else { return }
-        switch run.provider {
-        case .claude:
-            let parsed = ClaudeStreamParser.parse(line)
-            if processes[id] == nil, claudeIdle[id] != nil, parsed.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
-            for event in parsed { handleClaude(event, id: id) }
-        case .codex:
-            let parsed = CodexStreamParser.parse(line)
-            for event in parsed { handleCodex(event, id: id) }
-        case .gemini:
-            let parsed = GeminiStreamParser.parse(line)
-            for event in parsed { handleGemini(event, id: id) }
-        case .opencode, .cursor, .grok, .antigravity, .acp:
+    /// Applies one parsed line of a session's output (parsed off the main thread, `ParsedStreamLine`).
+    private func handle(parsed: ParsedStreamLine, for id: UUID) {
+        guard run(id) != nil else { return }
+        switch parsed {
+        case .claude(let events):
+            if processes[id] == nil, claudeIdle[id] != nil, events.contains(where: ClaudeStreamEvent.isWork) { wakeParkedClaude(id) }
+            for event in events { handleClaude(event, id: id) }
+        case .codex(let events):
+            for event in events { handleCodex(event, id: id) }
+        case .gemini(let events):
+            for event in events { handleGemini(event, id: id) }
+        case .none:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
     }
