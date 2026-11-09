@@ -1,0 +1,320 @@
+<!-- @head title="Agents · Nook" desc="Nook is a harness for all your coding agents: Claude Code, Codex, Cursor, Gemini CLI and more, side by side in their own worktrees, with a real terminal, browser and devices, and you as the gatekeeper." -->
+<!-- @sprite -->
+<!-- @nav -->
+<style>
+.sess{display:grid;grid-template-columns:290px 1fr;height:640px;text-align:left}
+.sess .lst{border-right:1px solid var(--border);padding:10px 8px;overflow:hidden}
+.sess .lst .row{padding:9px 10px}
+.sess .lst .row+.row{box-shadow:0 -1px 0 0 var(--hair)}
+.sess .lst .row.sel+.row,.sess .lst .row.sel{box-shadow:none}
+.sess .body{position:relative;overflow:hidden;display:flex;flex-direction:column}
+.sess .col{padding:24px 28px 0;max-width:640px;width:100%;margin:0 auto}
+.sess .tool,.sess .reply,.sess .files,.sess .worked,.sess .msg-me{opacity:0;transform:translateY(6px);transition:opacity .45s var(--ease),transform .55s var(--ease)}
+.sess .in{opacity:1!important;transform:none!important}
+.sess .tool .tick{color:var(--mint);margin-left:auto;font-family:var(--sans);font-size:12px;opacity:0;transition:opacity .3s}
+.sess .tool.ok .tick{opacity:1}
+.sess .tool .spin{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--smoke);border-top-color:var(--blue);animation:sp 0.8s linear infinite;margin-left:auto}
+.sess .tool.ok .spin{display:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.agent-ic{width:22px;height:22px;display:grid;place-items:center;font:600 11px var(--sans);color:var(--t2);border-radius:6px;background:var(--surface)}
+.tile2:hover .agent-ic{color:var(--paper)}
+.quota-card{background:var(--rowRest);border-radius:var(--r-pill);box-shadow:inset 0 0 0 1px var(--hair);padding:22px}
+.q{margin-top:16px}
+.q .top{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--strong)}
+.q .top span:last-child{margin-left:auto;color:var(--t3);font-size:12.5px}
+.q .bar{height:6px;border-radius:6px;background:var(--surface);margin-top:9px;overflow:hidden}
+.q .bar i{display:block;height:100%;border-radius:6px;width:0;transition:width 1.6s var(--ease)}
+.acct{display:flex;align-items:center;gap:10px;padding:10px 0;font-size:13.5px;color:var(--strong);border-top:1px solid var(--hair)}
+.acct small{color:var(--t3);font-size:12px;display:block}
+.acct .st{margin-left:auto}
+.prv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.prv div{background:var(--surface);border-radius:var(--r-card);padding:10px 12px;font-size:12.5px;color:var(--t2)}
+.prv div b{display:block;color:var(--paper);font-weight:500;font-size:13.5px;margin-bottom:2px}
+.timeline{margin-top:12px;display:flex;flex-direction:column}
+.timeline div{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2);padding:8px 0;border-top:1px solid var(--hair)}
+.timeline div:first-child{border-top:0}
+.timeline .st{margin-left:auto}
+.hosts{display:flex;flex-wrap:wrap;gap:6px;margin-top:26px}
+.hosts span{font-size:12.5px;color:var(--t2);padding:5px 11px;border-radius:99px;background:var(--surface)}
+.policy{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.policy div{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r-card);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);font-size:13.5px;color:var(--strong)}
+.policy code{font:12.5px var(--mono);color:var(--t2)}
+.policy .st{flex:none;width:92px}
+.page-hero h1{font-size:clamp(40px,5.8vw,74px)}
+.codeblock.pre{white-space:pre;padding-right:84px}
+@media (max-width:1000px){.sess{grid-template-columns:1fr}.sess .lst{display:none}.prv{grid-template-columns:1fr}}
+</style>
+
+<header class="page-hero" style="--tint:rgba(174,148,242,.14)">
+  <div class="wrap">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/></svg>Agents</div>
+    <h1 class="rv d1">A harness for all your coding agents.<br><span>You stay in charge.</span></h1>
+    <p class="lede rv d2">Claude Code, Codex, Cursor, Gemini and the rest work side by side in one list. Each gets the same workspace and the same rules: a real terminal, a browser, devices and Git, with every risky step waiting for your yes.</p>
+    <div class="ctas rv d3">
+      <a class="btn primary lg" href="download.html"><!-- @apple -->Download for Mac</a>
+      <a class="btn quiet lg" href="#connect">Connect an agent you already use</a>
+    </div>
+  </div>
+</header>
+
+<!-- supported agents -->
+<section style="padding-top:90px">
+  <div class="wrap">
+    <div class="tiles2">
+      <div class="tile2 rv"><svg class="logo" style="--c:var(--coral)"><use href="#claude"/></svg><div>Claude Code<small>Approvals and questions</small></div></div>
+      <div class="tile2 rv d1"><svg class="logo" style="--c:var(--paper)"><use href="#codex"/></svg><div>Codex<small>Approvals and steering</small></div></div>
+      <div class="tile2 rv d1"><svg class="logo" style="--c:var(--paper)"><use href="#cursor"/></svg><div>Cursor<small>Progress</small></div></div>
+      <div class="tile2 rv d2"><svg class="logo" style="--c:var(--blue)"><use href="#gemini"/></svg><div>Gemini CLI<small>Progress</small></div></div>
+      <div class="tile2 rv d2"><span class="agent-ic">A</span><div>Antigravity<small>Progress</small></div></div>
+      <div class="tile2 rv"><span class="agent-ic">Co</span><div>Copilot CLI<small>Approvals</small></div></div>
+      <div class="tile2 rv d1"><span class="agent-ic">Oc</span><div>OpenCode<small>Approvals</small></div></div>
+      <div class="tile2 rv d1"><span class="agent-ic">Am</span><div>Amp<small>Progress</small></div></div>
+      <div class="tile2 rv d2"><span class="agent-ic">G</span><div>Grok<small>Sessions in Nook</small></div></div>
+      <div class="tile2 rv d2"><span class="agent-ic">+</span><div>Any ACP agent<small>Or your own, via a hook</small></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- live session -->
+<section id="session" style="padding-top:130px">
+  <div class="wrap center">
+    <div class="label rv"><span class="st work">Live</span></div>
+    <h2 class="rv d1">Every session in one list. <span>Every step in plain sight.</span></h2>
+    <p class="sub rv d2">See who's working, who's stuck and who needs you. Open a session to follow its work, read what it changed, and answer right where it asks.</p>
+  </div>
+  <div class="wrap">
+    <div class="stage rv d2" style="margin-top:56px">
+      <div class="panel">
+        <div class="ct-head">Agents<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>website<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>Dark mode toggle</b>
+          <span class="right"><span class="chip"><svg class="logo" style="width:12px;height:12px"><use href="#branch"/></svg>feature/dark-mode</span><span class="chip"><span class="plus">+82</span><span class="minus">−12</span></span></span></div>
+        <div class="sess">
+          <div class="lst">
+            <div class="sec" style="padding-top:4px">Working (3)</div>
+            <div class="row sel"><div class="grow"><div class="ln1"><svg class="logo" style="width:13px;height:13px"><use href="#folder"/></svg>website<span class="st work" id="selState" style="margin-left:auto">Working</span></div><div class="ttl">Dark mode toggle</div><div class="ln3"><svg class="logo" style="width:12px;height:12px"><use href="#branch"/></svg>feature/dark-mode<span class="plus">+82</span><span class="minus">−12</span><svg class="logo" style="--c:var(--coral);margin-left:auto"><use href="#claude"/></svg></div></div></div>
+            <div class="row"><div class="grow"><div class="ln1"><svg class="logo" style="width:13px;height:13px"><use href="#folder"/></svg>nook<span class="st work" style="margin-left:auto">Working</span></div><div class="ttl">Fix the flaky relay reconnect</div><div class="ln3"><svg class="logo" style="width:12px;height:12px"><use href="#branch"/></svg>fix/relay<span class="plus">+31</span><span class="minus">−8</span><svg class="logo" style="--c:#dadada;margin-left:auto"><use href="#codex"/></svg></div></div></div>
+            <div class="row"><div class="grow"><div class="ln1"><svg class="logo" style="width:13px;height:13px"><use href="#folder"/></svg>website<span class="st work" style="margin-left:auto">Working</span></div><div class="ttl">Tests for the toggle</div><div class="ln3"><svg class="logo" style="width:12px;height:12px"><use href="#branch"/></svg>Asked by Claude Code<svg class="logo" style="--c:#dadada;margin-left:auto"><use href="#codex"/></svg></div></div></div>
+            <div class="sec">Waiting on you</div>
+            <div class="row"><div class="grow"><div class="ln1"><svg class="logo" style="width:13px;height:13px"><use href="#folder"/></svg>api<span class="st wait" style="margin-left:auto">Question</span></div><div class="ttl">Migrate invoices</div><div class="ln3"><svg class="logo" style="width:12px;height:12px"><use href="#branch"/></svg>db/invoices<svg class="logo" style="--c:var(--blue);margin-left:auto"><use href="#gemini"/></svg></div></div></div>
+            <div class="sec">Recent</div>
+            <div class="row"><div class="grow"><div class="ln1"><svg class="logo" style="width:13px;height:13px"><use href="#folder"/></svg>nook<span class="st merged" style="margin-left:auto">Merged</span></div><div class="ttl">Group avatars on reactions</div><div class="ln3"><svg class="logo" style="width:12px;height:12px"><use href="#pr"/></svg>#1227<svg class="logo" style="--c:var(--coral);margin-left:auto"><use href="#claude"/></svg></div></div></div>
+            <div class="row"><div class="grow"><div class="ln1"><svg class="logo" style="width:13px;height:13px"><use href="#folder"/></svg>docs<span class="st done" style="margin-left:auto">Done</span></div><div class="ttl">Write the release notes</div></div><svg class="logo" style="--c:#dadada"><use href="#cursor"/></svg></div>
+          </div>
+          <div class="body">
+            <div class="col" id="sessCol">
+              <div class="msg-me">Add a dark mode toggle to Settings and check it in the browser. Ask Codex for the tests, and open a PR when it works.</div>
+              <div class="worked"><svg class="i" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span id="workedFor">Working…</span></div>
+              <div class="tool"><b>Read</b> src/settings/Appearance.tsx, theme.ts<span class="spin"></span><span class="tick">✓</span></div>
+              <div class="tool"><b>Ran</b> npm run dev <span style="color:var(--t3)">· in Nook's terminal, :5173</span><span class="spin"></span><span class="tick">✓</span></div>
+              <div class="tool"><b>Opened</b> localhost:5173/settings <span style="color:var(--t3)">· no console errors</span><span class="spin"></span><span class="tick">✓</span></div>
+              <div class="tool"><b>Asked Codex</b> to write the tests <span style="color:var(--t3)">· 6 passed</span><span class="spin"></span><span class="tick">✓</span></div>
+              <div class="reply">The toggle is in <b>Settings › Appearance</b> and follows the system by default. I checked both themes in the browser and Codex added six tests. Ready to push <b>feature/dark-mode</b> and open a pull request.</div>
+              <div class="files"><div><span>src/settings/Appearance.tsx</span><span><span class="plus">+64</span> <span class="minus">−3</span></span></div><div><span>src/theme.ts</span><span><span class="plus">+18</span> <span class="minus">−9</span></span></div></div>
+              <div class="approve" id="sessApprove">
+                <div class="top"><svg class="logo" style="color:var(--coral)"><use href="#claude"/></svg>Dark mode toggle · website<span class="st wait">Needs your yes</span></div>
+                <h6>Push and open a pull request</h6>
+                <code>git push origin feature/dark-mode && gh pr create</code>
+                <div class="seg"><span class="y">✓ Allow</span><span>Always</span><span>Deny</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- real hands -->
+<section id="tools">
+  <div class="wrap">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="m5 8 4 4-4 4M12 17h7"/></svg>Real hands</div>
+    <h2 class="rv d1">Not just words. <span>A workspace to actually do the work.</span></h2>
+    <p class="sub rv d2">Every agent Nook runs, and every agent you link, gets Nook's workspace through a small local MCP server. Whatever it starts or opens shows up beside its session.</p>
+    <div class="fgrid rv d2">
+      <div><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m7 9 3 3-3 3M12 15h5"/></svg><b>A visible terminal</b><span>Dev servers and watchers run in a Nook terminal you can see and take over, badged with the agent that started it.</span></div>
+      <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><b>Its own browser</b><span>Open a page, read its text and console errors, take a screenshot, click and type. Each session has its own, so agents never swap pages.</span></div>
+      <div><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><b>Simulators and devices</b><span>The iOS Simulator and Android devices, with screenshots the agent can check its work against.</span></div>
+      <div><svg viewBox="0 0 24 24"><use href="#pr"/></svg><b>Pull requests</b><span>Push and open a pull request after your Allow, then watch it: failed checks, conflicts and reviews wake the agent.</span></div>
+      <div><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M12 7.2v4.3M12 11.5 6 17M12 11.5l6 5.5"/></svg><b>Agents that delegate</b><span>Hand a subtask to another agent: two levels deep at most, four at a time, never with more rights. Stop the parent and its children stop too.</span></div>
+      <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><b>Scheduled tasks</b><span>Every morning, every hour, on chosen days: a task runs in a new session, proposed by the agent and started only after you approve it.</span></div>
+      <div><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><b>Secrets, on request</b><span>An agent asks for a key by name and says why. On your Allow it gets the value from Nook's keychain, never shown in the timeline.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg><b>The rest of Nook</b><span>Agents can use Nook's own tools too: send a chat message, add an event, play music. Each action waits on the same card.</span></div>
+      <div><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><b>Another machine</b><span>Run a session on a server over SSH, with Nook's browser and its own timeline, and nothing that acts on your Mac.</span></div>
+    </div>
+    <div class="tools rv d3" style="margin-top:22px"><span>terminal_run</span><span>browser_open</span><span>browser_read</span><span>browser_screenshot</span><span>device_screenshot</span><span>pull_request_create</span><span>watch_pull_request</span><span>delegate_task</span><span>schedule_task</span><span>request_secret</span><span>nook_use</span></div>
+  </div>
+</section>
+
+<!-- review and ship -->
+<section id="review">
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><use href="#pr"/></svg>Review and ship</div>
+      <h2 class="rv d1">From diff to merge, <span>without leaving Nook.</span></h2>
+      <p class="sub rv d2">Changed files, branches and worktrees sit beside every session. Commit, push and open a pull request with one click each, always your click.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><div><b>The whole pull request</b><span>Description, checks, a timeline of reviews, comments and commits, and every file's diff. Tick files as viewed.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg><div><b>A review guide</b><span>Let Claude Code or Codex lay out the changes in reading order, what to look at closely, and the questions only you can answer.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.5 6c5 0 7.5 1.5 7.5 3.5"/></svg><div><b>Merge your way</b><span>Merge, squash or rebase after you confirm. Commit messages in the style you pick.</span></div></div>
+      </div>
+      <div class="hosts rv d3"><span>GitHub</span><span>GitLab</span><span>Gitea</span><span>Forgejo</span><span>Bitbucket</span></div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(174,148,242,.35),transparent)"></div>
+      <div class="panel">
+        <div class="ct-head">Pull requests<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>#1228</b><span class="right"><span class="a y" style="height:28px">Merge</span></span></div>
+        <div class="pad">
+          <div style="font-size:18px;font-weight:600;letter-spacing:-.015em">Rebuild the pull request side panel</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;font-size:12.5px;color:var(--t3)"><span style="font-family:var(--mono)">main ← nook/pr-panel</span><span>· 3 files</span><span class="plus">+412</span><span class="minus">−87</span></div>
+          <div class="prv">
+            <div><b>Checks</b><span class="st done">9 of 9 passed</span></div>
+            <div><b>Reviews</b><span class="st done">Approved</span></div>
+            <div><b>Conflicts</b><span style="color:var(--t3)">None</span></div>
+          </div>
+          <div class="timeline">
+            <div><svg class="logo" style="width:14px;height:14px;color:var(--coral)"><use href="#claude"/></svg>Claude Code wrote a review guide<span style="margin-left:auto;font-size:12px;color:var(--t3)">2 min</span></div>
+            <div><svg class="i" viewBox="0 0 24 24" style="color:var(--t3)"><circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6"/></svg>3 commits pushed<span style="margin-left:auto;font-size:12px;color:var(--t3)">8 min</span></div>
+            <div><svg class="i" viewBox="0 0 24 24" style="color:var(--t3)"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg>Ada approved these changes<span style="margin-left:auto;font-size:12px;color:var(--t3)">20 min</span></div>
+          </div>
+          <div class="files" style="margin-top:14px">
+            <div><span>✓ PanelSidebar.swift</span><span><span class="plus">+210</span> <span class="minus">−40</span></span></div>
+            <div><span>✓ PullRequestView.swift</span><span><span class="plus">+188</span> <span class="minus">−47</span></span></div>
+            <div><span style="color:var(--strong)">PullRequestTests.swift</span><span><span class="plus">+14</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- gatekeeper -->
+<section id="gate">
+  <div class="wrap split rev">
+    <div class="copy">
+      <div class="label rv"><span class="st done">Nook is the gatekeeper</span></div>
+      <h2 class="rv d1">An agent's own flags <span>never get around you.</span></h2>
+      <p class="sub rv d2">Whatever an agent asks of Nook goes through one policy. The card shows the whole command or pull request, and every decision lands in a local audit log.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v6c0 4.3 3.2 8 7.5 9 4.3-1 7.5-4.7 7.5-9V6Z"/><path d="m9 12 2 2 4-4"/></svg><div><b>Plan mode is read-only</b><span>A session in Plan can look around but not change a thing, and cannot start an agent that can.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><div><b>Only your user</b><span>Agents talk to Nook over a local socket only your account can open. If Nook is not running, the agent just carries on.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(242,184,102,.3),transparent)"></div>
+      <div class="policy">
+        <div><span class="st done">Runs</span><span>Reading files, a safe dev command</span><code style="margin-left:auto">npm run dev</code></div>
+        <div><span class="st wait">Asks you</span><span>Anything not provably harmless</span><code style="margin-left:auto">git push</code></div>
+        <div><span class="st err">Refused</span><span>Destructive commands, always</span><code style="margin-left:auto">rm -rf ~/</code></div>
+      </div>
+      <div class="approve in" style="margin-top:14px;padding:20px;border-radius:var(--r-pill)">
+        <div class="top"><svg class="logo" style="color:#dadada"><use href="#codex"/></svg>Fix the flaky relay reconnect<span class="st wait">Needs your yes</span></div>
+        <h6 style="font-size:17px">Run a command</h6>
+        <code>rm -rf node_modules && npm ci && npm test</code>
+        <div class="seg"><span class="y">✓ Allow</span><span>Always</span><span>Deny</span></div>
+      </div>
+      <div style="margin-top:14px;padding:4px 8px;font:12.5px/2 var(--mono);color:#6d6d6d">
+        <div>09:41 <span style="color:var(--mint)">allowed</span>  claude · npm test</div>
+        <div>09:39 <span style="color:var(--mint)">allowed</span>  codex · pull request #412</div>
+        <div>09:31 <span style="color:var(--coral)">refused</span>  codex · rm -rf ~/</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- accounts and limits -->
+<section id="limits">
+  <div class="wrap split">
+    <div class="copy">
+      <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>Accounts and limits</div>
+      <h2 class="rv d1">Know where you stand <span>before you hit a wall.</span></h2>
+      <p class="sub rv d2">Keep a personal and a work account for each agent, each in its own folder. Nook shows the live 5-hour and weekly limits of Claude and Codex, plus tokens and costs, and sums it up every Monday.</p>
+      <div class="points rv d2">
+        <div class="pt"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><div><b>Approve from your phone</b><span>Nook Companion on iPhone and Android shows what needs you: approve, answer, send a prompt or stop an agent, end-to-end encrypted.</span></div></div>
+        <div class="pt"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><div><b>Picks up where it left off</b><span>Stop, resume and retry sessions, also after Nook restarts.</span></div></div>
+      </div>
+    </div>
+    <div class="rv d2" style="position:relative">
+      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(94,214,166,.25),transparent)"></div>
+      <div class="quota-card" id="quota">
+        <div style="font-size:15px;font-weight:500">Usage and costs</div>
+        <div style="font-size:13px;color:var(--t3);margin-top:3px">Resets in 2 h 14 min</div>
+        <div class="q"><div class="top"><svg class="logo" style="width:15px;height:15px;color:var(--coral)"><use href="#claude"/></svg>Claude · this 5-hour window<span>62%</span></div><div class="bar"><i data-w="62" style="background:var(--strong)"></i></div></div>
+        <div class="q"><div class="top"><svg class="logo" style="width:15px;height:15px;color:var(--coral)"><use href="#claude"/></svg>Claude · this week<span>41%</span></div><div class="bar"><i data-w="41" style="background:var(--strong)"></i></div></div>
+        <div class="q"><div class="top"><svg class="logo" style="width:15px;height:15px;color:#dadada"><use href="#codex"/></svg>Codex · this week<span>88%</span></div><div class="bar"><i data-w="88" style="background:var(--amber)"></i></div></div>
+        <div style="margin-top:22px">
+          <div class="acct"><svg class="logo" style="color:var(--coral)"><use href="#claude"/></svg><div>Claude · Personal<small>Max plan</small></div><span class="st done">Connected</span></div>
+          <div class="acct"><svg class="logo" style="color:var(--coral)"><use href="#claude"/></svg><div>Claude · Work<small>Team plan</small></div><span class="st done">Connected</span></div>
+          <div class="acct"><svg class="logo" style="color:#dadada"><use href="#codex"/></svg><div>Codex<small>Plus plan</small></div><span class="st wait">Nearly at its limit</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- connect -->
+<section id="connect">
+  <div class="wrap center">
+    <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Connect</div>
+    <h2 class="rv d1">Already running agents in your terminal? <span>Keep them there.</span></h2>
+    <p class="sub rv d2">In Settings › Agents, Nook connects them with one click: it shows the exact change first, keeps a backup, and writes only after you confirm. To give them Nook's workspace too, click Connect in Settings › Automation, or run:</p>
+  </div>
+  <div class="wrap" style="max-width:860px">
+    <div class="codeblock pre rv d2"><button class="copybtn" data-copy="claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code&#10;codex mcp add nook -- ~/.nook/nook-mcp --agent codex">Copy</button><span class="p">$ </span>claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
+<span class="p">$ </span>codex mcp add nook -- ~/.nook/nook-mcp --agent codex</div>
+    <div class="steps">
+      <div class="step rv"><b>Connect</b><span>One click per agent in Settings › Agents, or the commands above for the workspace tools.</span></div>
+      <div class="step rv d1"><b>Restart the agent</b><span>Its sessions appear in Nook's list right away, with what they do and what they ask.</span></div>
+      <div class="step rv d2"><b>Answer where you are</b><span>In Nook's window, on your phone, or in the notch if you turned it on. The terminal still works too.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- faq -->
+<section id="faq">
+  <div class="wrap center">
+    <div class="label rv">Questions</div>
+    <h2 class="rv d1">Good to know.</h2>
+    <div class="faq rv d2">
+      <details open><summary>Do my agents still work without Nook?</summary><p>Yes. Agents talk to Nook over a local socket; when Nook is not running, the hook and the MCP server simply step aside and the agent carries on and asks you in its own way.</p></details>
+      <details><summary>Which agents can I approve from Nook?</summary><p>Claude Code, Codex, Copilot CLI, Muse Code, OpenCode and Hermes send their approvals to Nook. Gemini CLI, Antigravity, Cursor and Amp give a hook no way to allow a call, so they ask in their own window. In sessions Nook runs itself, every agent asks in Nook.</p></details>
+      <details><summary>Can two agents work on the same repository?</summary><p>Yes. Start each session in its own Git worktree on its own branch, so they never overwrite each other's work, and each gets its own browser.</p></details>
+      <details><summary>Does Nook send my code anywhere?</summary><p>Nook itself doesn't. Your agents talk to their own providers as they always do; Nook watches them locally and keeps its audit log on your Mac.</p></details>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="band rv">
+    <span class="mascot" style="--s:72px;box-shadow:0 0 80px rgba(255,255,255,.2)"><i></i><i></i></span>
+    <h2 style="margin-top:32px">Run a team of agents.<br><span>Stay the one who decides.</span></h2>
+    <p class="sub">Free and open source. Bring the agents you already use.</p>
+    <div class="ctas"><a class="btn primary lg" href="download.html"><!-- @apple -->Download for Mac</a><a class="btn quiet lg" href="https://github.com/IAMichan/nook/blob/main/docs/WORKSPACE-AGENTS.md">Read the workspace docs</a></div>
+  </div>
+</div>
+
+<!-- @footer -->
+<script>
+/* live session: steps arrive one by one, then the approval card */
+(function(){
+  const col=$('#sessCol');if(!col)return;
+  const parts=[...col.querySelectorAll('.msg-me,.worked,.tool,.reply,.files')],ap=$('#sessApprove'),st=$('#selState'),wf=$('#workedFor');
+  let tm=[];const at=(ms,f)=>tm.push(setTimeout(f,ms));
+  function run(){tm.forEach(clearTimeout);tm=[];
+    parts.forEach(p=>p.classList.remove('in','ok'));ap.classList.remove('in');
+    st.className='st work';st.textContent='Working';wf.textContent='Working…';
+    let t=300;
+    parts.forEach(p=>{
+      at(t+=p.classList.contains('tool')?700:500,()=>p.classList.add('in'));
+      if(p.classList.contains('tool'))at(t+900,()=>p.classList.add('ok'));
+    });
+    at(t+=1100,()=>{wf.textContent='Worked for 2m 14s'});
+    at(t+=500,()=>{ap.classList.add('in');st.className='st wait';st.textContent='Needs your yes'});
+    at(t+=7000,run);
+  }
+  whenVisible($('#session .panel'),run,.25);
+})();
+
+/* quota bars fill in */
+whenVisible($('#quota'),()=>$$('#quota .bar i').forEach(i=>i.style.width=i.dataset.w+'%'));
+</script>
+</body>
+</html>

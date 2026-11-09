@@ -4,6 +4,11 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
 
 ## Key Reminders for Claude
 
+0. **What Nook is (see "What Nook Is" in [AGENTS.md](AGENTS.md)):**
+   - Nook is the user's buddy: the one calm place for everything that needs their attention (people, coding agents, music, the calendar, and more), so they keep the overview and steer instead of chase.
+   - The main window is Nook's home; the notch is an optional extra (`showNotch`) that does not have to be on. Every feature must work fully with the notch off.
+   - Design features around attention ("what does the user need to know or decide, and when?") and build them in the shared panel so every surface gets them.
+   - Describe Nook this way in copy, docs, release notes, and the website.
 1. **Always use English for Git & Code (even when prompted in Dutch):**
    - **Commit messages** (subject and body) must always be in **English**.
    - **Pull request titles and descriptions** must always be in **English** (using [`.github/pull_request_template.md`](.github/pull_request_template.md)).
