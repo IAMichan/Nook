@@ -630,7 +630,8 @@ struct AgentRunPanel: View {
         } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
             // A command or pull request the agent asks for through Nook's workspace.
             let approval = ApprovalCenter.make(request)
-            ApprovalView(approval: approval, inline: true) { app.approvals.decide(approval, $0) }
+            ApprovalView(approval: approval, inline: true, onDecide: { app.approvals.decide(approval, $0) },
+                         onSecret: { app.approvals.allow(approval, secret: $0) })
                 .chatColumn()
                 .sessionComposerBounds()
         } else if let question = workspace.questions[runID]?.first {
@@ -1194,7 +1195,8 @@ struct AgentRunPanel: View {
 
     private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
         let request = ApprovalCenter.make(pending, run: run)
-        return ApprovalView(approval: request, more: more, inline: true) { app.approvals.decide(request, $0) }
+        return ApprovalView(approval: request, more: more, inline: true, onDecide: { app.approvals.decide(request, $0) },
+                            onSecret: { app.approvals.allow(request, secret: $0) })
     }
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.
