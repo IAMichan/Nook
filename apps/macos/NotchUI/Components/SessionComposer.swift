@@ -738,7 +738,12 @@ private struct ComposerDensityFit<Content: View>: View {
             row.environment(\.composerDensity, .full)
             row.environment(\.composerDensity, .short)
             row.environment(\.composerDensity, .marks)
+            // The last step takes whatever width it is given: when even the icons do not fit (a very narrow chat beside
+            // an open side panel), `ViewThatFits` would otherwise lay this row out at its full width and push the box,
+            // and the tray on it, past the column's edge. The icons that do not fit are cut off at the end instead.
             row.environment(\.composerDensity, .icons)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .clipped()
         }
     }
 
