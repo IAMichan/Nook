@@ -818,6 +818,13 @@ struct WorkspaceSettingsSection: View {
                 .lineLimit(2...8)
                 .help(tr("settings.ws.agentInstructions.help"))
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+            Picker(tr("settings.ws.maxWorking"), selection: $ws.maxWorkingSessions) {
+                ForEach(SessionCapacity.choices, id: \.self) { count in
+                    Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)
+                }
+            }
+            .help(tr("settings.ws.maxWorking.help"))
+            .onChange(of: ws.maxWorkingSessions) { _, _ in app.workspace.startWaitingTurns() }
         }
         // How the session list is laid out and confirming quit are on General, as t3code has its sidebar and confirmations.
         Section {

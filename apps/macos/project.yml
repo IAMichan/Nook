@@ -252,6 +252,7 @@ targets:
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift
       - path: Services/ApprovalAudit.swift
+      - path: Services/Workspace/SessionCapacity.swift
       - path: Brain/UIControl.swift
       - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift
