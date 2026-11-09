@@ -188,7 +188,9 @@ final class PullRequestSync: ObservableObject {
         let key = Self.folderKey(path: path, branch: branch)
         expected[key] = now.addingTimeInterval(Self.expectFor)
         folderChecked[key] = nil
-        if !folders.contains(where: { $0.path == path && $0.branch == branch }) { folders.append((path, branch)) }
+        if !folders.contains(where: { $0.path == path && $0.branch == branch }) {
+            folders.append(Folder(path: path, branch: branch, busy: true, quietSince: now))
+        }
         refresh(now: now)
     }
 
@@ -222,12 +224,23 @@ final class PullRequestSync: ObservableObject {
     private static let perRound = 8
     private static let tick: Duration = .seconds(15)
     private weak var workspace: WorkspaceManager?
-    private var folders: [(path: String, branch: String)] = []
+    private var folders: [Folder] = []
+
+    /// Another agent's folder and branch, with how lively its session is: a busy one is asked first and every minute
+    /// while it has no pull request, so the one it opens shows at once; one quiet for a day is asked far less often,
+    /// so the hundreds of old sessions never keep a new pull request waiting behind them.
+    struct Folder: Equatable {
+        var path: String
+        var branch: String
+        var busy = false
+        /// The session's last activity; nil when not known (asked as a lively one).
+        var quietSince: Date? = nil
+    }
     private var loop: Task<Void, Never>?
 
     /// Keeps the badges current from now on, also while the list is off screen: a merged pull request shows as merged
     /// without opening anything. `folders` are the other agents' folders and branches, replaced on every call.
-    func follow(workspace: WorkspaceManager, folders: [(path: String, branch: String)], now: Date = Date()) {
+    func follow(workspace: WorkspaceManager, folders: [Folder], now: Date = Date()) {
         self.workspace = workspace
         self.folders = folders
         if !nobodyHere { refresh(now: now) }
@@ -295,10 +308,12 @@ final class PullRequestSync: ObservableObject {
             let key = Self.folderKey(path: folder.path, branch: folder.branch)
             guard seen.insert(key).inserted else { continue }
             let known = folderLinks[key] ?? []
+            let quietSince = folder.busy ? now : folder.quietSince
             guard PullRequestSettlement.needsSync(lastChecked: folderChecked[key], now: now,
-                                                  interval: interval(key, known, now: now)) else { continue }
+                                                  interval: interval(key, known, now: now, quietSince: quietSince)) else { continue }
             due.append(Due(lane: lane(folder.path), job: .folder(key: key, path: folder.path, branch: folder.branch),
-                           open: PullRequestSettlement.anyOpen(links: known), last: folderChecked[key] ?? .distantPast))
+                           open: folder.busy || PullRequestSettlement.anyOpen(links: known),
+                           last: folderChecked[key] ?? .distantPast))
         }
         for (lane, jobs) in PullRequestRound.plan(due, busy: busyLanes, perRound: Self.perRound) {
             busyLanes.insert(lane)

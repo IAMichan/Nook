@@ -2350,7 +2350,13 @@ final class WorkspaceManager: ObservableObject {
                 if quiet, let previous, previous.sameContent(as: next) { next.updated = previous.updated }
                 if next != previous { self.git[id] = next }
                 if let status = result.status {
-                    self.update(id, save: false) { $0.changedFiles = status.files.count }
+                    let added = status.files.reduce(0) { $0 + ($1.added ?? 0) }
+                    let removed = status.files.reduce(0) { $0 + ($1.removed ?? 0) }
+                    self.update(id, save: false) {
+                        $0.changedFiles = status.files.count
+                        $0.changedLinesAdded = added
+                        $0.changedLinesRemoved = removed
+                    }
                     // A branch the agent (or you) switched to becomes the session's own.
                     if !status.detached, let branch = status.branch { self.followBranch(id, to: branch) }
                 }
