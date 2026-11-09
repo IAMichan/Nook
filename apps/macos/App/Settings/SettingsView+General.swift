@@ -104,7 +104,7 @@ extension SettingsView {
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
-            Section(tr("settings.start.glance")) {
+            Section {
                 glanceRow(.brain, detail: settings.brainReady ? settings.activeModelName : tr("settings.checklist.brain.notReady"),
                           state: settings.brainReady ? .done : .todo)
                 let connections = connectionsGlance(broken: problems)
@@ -113,17 +113,19 @@ extension SettingsView {
                 let granted = SystemPermission.allCases.filter { permissions.isGranted($0) }.count
                 // Only the recommended permissions make this a to-do; the optional ones (contacts, the microphone…) never do.
                 let recommendedGranted = SystemPermission.allCases.allSatisfy { !$0.isRecommended || permissions.isGranted($0) }
-                glanceRow(.privacy, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),
-                          state: recommendedGranted ? .done : .todo, tab: 1)
+                glanceRow(.permissions, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),
+                          state: recommendedGranted ? .done : .todo)
+            } header: {
+                SettingText("settings.start.glance")
             }
         }
     }
 
     /// One line per part of Nook: its tile, how it is doing, and a way to go there. What works stays quiet; only what
     /// still needs you shows a symbol.
-    func glanceRow(_ section: SettingsSection, detail: String, state: StatusState, tab: Int? = nil) -> some View {
+    func glanceRow(_ section: SettingsSection, detail: String, state: StatusState) -> some View {
         SettingsLinkRow(title: section.title, detail: detail, section: section, state: state) {
-            app.openSettings(section: section, tab: tab)
+            app.openSettings(section: section)
         }
     }
 

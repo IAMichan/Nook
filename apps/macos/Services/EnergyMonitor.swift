@@ -5,7 +5,7 @@ import IOKit.ps
 
 /// Keeps the one answer to "how much may Nook do by himself right now" (`EnergyPlan`) for every background worker, so
 /// none of them reads the battery, the thermal state or the load average on its own. The plan follows your choice in
-/// Settings › General › Energy and the Mac's signals: it is read again every ten seconds and the moment macOS announces
+/// Settings › Maintenance › Energy and the Mac's signals: it is read again every ten seconds and the moment macOS announces
 /// a change (the charger, the battery's charge, Low Power Mode, the thermal state, the displays going to sleep or waking up).
 ///
 /// Only a changed plan is published: the status line in Settings redraws for it, nothing else does for a tick that

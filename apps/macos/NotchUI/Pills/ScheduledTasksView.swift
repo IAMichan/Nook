@@ -20,42 +20,49 @@ struct ScheduledTasksView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-            header
+        // The one sheet shape of Settings: what this is on top, the tasks in the middle, New task and Done below.
+        SetupSheet(title: tr("sched.title"), subtitle: tr("sched.subtitle"), width: 620) {
+            SettingsTile(.automation, size: 40)
+        } content: {
             if !settings.scheduledTasksEnabled { banner(tr("sched.disabledGlobal"), color: NookTheme.amber) }
             if case .failed(let message) = listener.state { banner(tr("sched.webhook.failed", message), color: NookTheme.coralSoft) }
             if store.tasks.isEmpty {
-                // No task yet: the panel says so and offers the first one, as the empty Agents and Nook lists do.
+                // No task yet: the sheet says so and offers the first one, as the empty Agents and Nook lists do.
                 WSEmptyState(symbol: "calendar.badge.clock", title: tr("sched.empty"), message: tr("sched.empty.detail"),
                              action: (tr("sched.new"), { editing = EditorTarget(existing: nil) }))
             } else {
-                ScrollView {
-                    LazyVStack(spacing: NookTheme.Spacing.md) {
-                        ForEach(store.tasks) { task in
-                            TaskRow(task: task,
-                                    running: store.isRunning(task.id),
-                                    canRun: settings.scheduledTasksEnabled,
-                                    toggle: { store.setEnabled(task.id, $0) },
-                                    runNow: { run(task) },
-                                    edit: { editing = EditorTarget(existing: task) },
-                                    delete: { deleting = task })
-                                .contextMenu {
-                                    Button(tr("sched.runNow")) { run(task) }
-                                        .disabled(!settings.scheduledTasksEnabled || store.isRunning(task.id))
-                                    Button(tr("sched.edit")) { editing = EditorTarget(existing: task) }
-                                    Divider()
-                                    Button(tr("sched.delete"), role: .destructive) { deleting = task }
-                                }
-                        }
+                LazyVStack(spacing: NookTheme.Spacing.md) {
+                    ForEach(store.tasks) { task in
+                        TaskRow(task: task,
+                                running: store.isRunning(task.id),
+                                canRun: settings.scheduledTasksEnabled,
+                                toggle: { store.setEnabled(task.id, $0) },
+                                runNow: { run(task) },
+                                edit: { editing = EditorTarget(existing: task) },
+                                delete: { deleting = task })
+                            .contextMenu {
+                                Button(tr("sched.runNow")) { run(task) }
+                                    .disabled(!settings.scheduledTasksEnabled || store.isRunning(task.id))
+                                Button(tr("sched.edit")) { editing = EditorTarget(existing: task) }
+                                Divider()
+                                Button(tr("sched.delete"), role: .destructive) { deleting = task }
+                            }
                     }
-                    // A task added or removed glides into place instead of the list jumping.
-                    .animation(NookTheme.reveal, value: store.tasks.map(\.id))
                 }
+                // A task added or removed glides into place instead of the list jumping.
+                .animation(NookTheme.reveal, value: store.tasks.map(\.id))
             }
+        } footer: {
+            if !store.tasks.isEmpty {
+                Button(tr("sched.new")) { editing = EditorTarget(existing: nil) }
+                    .controlSize(.large)
+            }
+            Spacer()
+            Button(tr("settings2.done"), action: onClose)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         }
-        .padding(NookTheme.Spacing.xxl)
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 420, idealHeight: 520)
-        .background(NookTheme.canvas)
         .sheet(item: $editing) { target in
             ScheduledTaskEditor(existing: target.existing) { editing = nil }
                 .environmentObject(app)
@@ -68,18 +75,6 @@ struct ScheduledTasksView: View {
                 deleting = nil
             }
             Button(tr("button.cancel"), role: .cancel) { deleting = nil }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Text(tr("sched.title"))
-                .font(NookTheme.TextStyle.heading)
-                .foregroundStyle(NookTheme.paper)
-            Spacer()
-            SmallGhostButton(title: tr("sched.new")) { editing = EditorTarget(existing: nil) }
-            NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 28, action: onClose)
-                .keyboardShortcut(.cancelAction)
         }
     }
 

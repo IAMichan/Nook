@@ -33,6 +33,67 @@ extension SettingsSection {
         case .pullRequests: return "arrow.triangle.branch"
         case .usage: return "chart.bar.fill"
         case .privacy: return "hand.raised.fill"
+        case .worktrees: return "folder.fill"
+        case .maintenance: return "wrench.and.screwdriver.fill"
+        case .about: return "info.circle.fill"
+        case .notificationApps: return "app.badge.fill"
+        case .autocompleteApps: return "square.grid.2x2.fill"
+        case .autocompleteStyle: return "textformat"
+        case .autocompletePlayground: return "character.cursor.ibeam"
+        case .autocompleteStats: return "chart.line.uptrend.xyaxis"
+        case .tokens: return "gauge.with.dots.needle.33percent"
+        case .archive: return "archivebox.fill"
+        case .projects: return "folder.badge.gearshape"
+        case .openIn: return "arrow.up.forward.app.fill"
+        case .browser: return "globe"
+        case .permissions: return "checkmark.shield.fill"
+        case .onDevice: return "lock.laptopcomputer"
+        case .activityLog: return "list.bullet.rectangle.fill"
+        }
+    }
+
+    /// The line symbol in front of the page's name in the sidebar: one quiet stroke icon per page
+    /// has, so the column reads as a list of words rather than a row of tiles.
+    var sidebarSymbol: String {
+        switch self {
+        case .start: return "house"
+        case .general: return "gearshape"
+        case .notch: return "macbook"
+        case .appearance: return "paintpalette"
+        case .shortcuts: return "keyboard"
+        case .notifications: return "bell"
+        case .sound: return "speaker.wave.2"
+        case .dictation: return "mic"
+        case .brain: return "brain"
+        case .assistant: return "sparkles"
+        case .memory: return "books.vertical"
+        case .autocomplete: return "text.cursor"
+        case .agents: return "terminal"
+        case .sessions: return "bubble.left.and.text.bubble.right"
+        case .automation: return "calendar.badge.clock"
+        case .usage: return "chart.bar"
+        case .worktrees: return "folder"
+        case .pullRequests: return "arrow.triangle.branch"
+        case .chats: return "bubble.left.and.bubble.right"
+        case .connections: return "person.crop.circle.badge.checkmark"
+        case .iphone: return "iphone"
+        case .machines: return "server.rack"
+        case .privacy: return "hand.raised"
+        case .maintenance: return "wrench.and.screwdriver"
+        case .about: return "info.circle"
+        case .notificationApps: return "app.badge"
+        case .autocompleteApps: return "square.grid.2x2"
+        case .autocompleteStyle: return "textformat"
+        case .autocompletePlayground: return "character.cursor.ibeam"
+        case .autocompleteStats: return "chart.line.uptrend.xyaxis"
+        case .tokens: return "gauge.with.dots.needle.33percent"
+        case .archive: return "archivebox"
+        case .projects: return "folder.badge.gearshape"
+        case .openIn: return "arrow.up.forward.app"
+        case .browser: return "globe"
+        case .permissions: return "checkmark.shield"
+        case .onDevice: return "lock.laptopcomputer"
+        case .activityLog: return "list.bullet.rectangle"
         }
     }
 
@@ -261,6 +322,8 @@ struct SheetPart<Content: View>: View {
 struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
     let title: String
     let subtitle: String
+    /// Wider for a sheet that shows a file or a diff; every other sheet keeps the one width.
+    var width: CGFloat = 520
     @ViewBuilder var icon: () -> Icon
     @ViewBuilder var content: () -> Content
     @ViewBuilder var footer: () -> Footer
@@ -293,8 +356,8 @@ struct SetupSheet<Icon: View, Content: View, Footer: View>: View {
             }
             .padding(NookTheme.Spacing.xl)
         }
-        .frame(width: 520)
-        .frame(minHeight: 360, idealHeight: 520, maxHeight: 680)
+        .frame(width: width)
+        .frame(minHeight: 280, idealHeight: 520, maxHeight: 680)
         // Escape closes the sheet.
         .onExitCommand { dismiss() }
     }

@@ -4,8 +4,8 @@ import Foundation
 struct SettingsSearchHit: Identifiable {
     let key: String
     let section: SettingsSection
-    /// The tab of `section` it is on, for a page with tabs.
-    var tab: Int? = nil
+    /// A page itself, not a setting on it: opening it lights nothing.
+    var isSection = false
 
     var id: String { key }
     var title: String { tr(key) }
@@ -18,13 +18,9 @@ enum SettingsSearch {
     struct Entry {
         let key: String
         let section: SettingsSection
-        /// The tab of `section` it is on, for a page with tabs (`SettingsSection.tabs`).
-        let tab: Int?
-
-        init(_ key: String, _ section: SettingsSection, tab: Int? = nil) {
+        init(_ key: String, _ section: SettingsSection) {
             self.key = key
             self.section = section
-            self.tab = tab
         }
     }
 
@@ -47,10 +43,10 @@ enum SettingsSearch {
         .init("settings.notch.hideWhenIdle", .notch),
         .init("settings.notch.openOnHover", .notch),
         .init("settings.window.openAtLaunch", .notch),
-        .init("update.settings.title", .general),
-        .init("settings.notch.demoData", .general),
-        .init("settings.energy.title", .general),
-        .init("settings.energy.mode", .general),
+        .init("update.settings.title", .maintenance),
+        .init("settings.notch.demoData", .maintenance),
+        .init("settings.energy.title", .maintenance),
+        .init("settings.energy.mode", .maintenance),
         .init("settings.overview.talkNook", .shortcuts),
         .init("settings.overview.askTyping", .shortcuts),
         .init("settings.overview.lookScreen", .shortcuts),
@@ -58,11 +54,11 @@ enum SettingsSearch {
         .init("autocomplete.section.keys", .autocomplete),
         .init("keys.title", .shortcuts),
         .init("keys.file.title", .shortcuts),
-        .init("notices.settings.how", .notifications, tab: 0),
-        .init("notices.settings.agents", .notifications, tab: 1),
-        .init("notices.settings.chats", .notifications, tab: 1),
-        .init("notices.settings.suggestions", .notifications, tab: 1),
-        .init("agentNotice.watching", .notifications, tab: 0),
+        .init("notices.settings.how", .notifications),
+        .init("notices.settings.agents", .notificationApps),
+        .init("notices.settings.chats", .notificationApps),
+        .init("notices.settings.suggestions", .notificationApps),
+        .init("agentNotice.watching", .notifications),
         .init("settings.voice.agentSound", .sound),
         .init("settings.voice.customSounds", .sound),
         .init("quiet.title", .notch),
@@ -92,9 +88,20 @@ enum SettingsSearch {
         .init("autocomplete.enable", .autocomplete),
         .init("autocomplete.section.model", .autocomplete),
         .init("autocomplete.section.battery", .autocomplete),
-        .init("autocomplete.section.apps", .autocomplete),
-        .init("autocomplete.section.personal", .autocomplete),
-        .init("autocomplete.emoji", .autocomplete),
+        .init("autocomplete.section.apps", .autocompleteApps),
+        .init("autocomplete.section.personal", .autocompleteStyle),
+        .init("autocomplete.emoji", .autocompleteStyle),
+        .init("autocomplete.section.extras", .autocompleteStyle),
+        .init("privacy.log.search", .activityLog),
+        .init("settings.ws.browserSearch", .browser),
+        .init("settings.ws.linkTarget", .browser),
+        .init("settings.ws.inboxProjects", .general),
+        .init("settings.ws.confirmQuit", .general),
+        .init("settings.general.sessionList", .general),
+        .init("settings.general.confirmations", .general),
+        .init("settings.archive.sessions", .archive),
+        .init("settings.archive.conversations", .archive),
+        .init("settings.projects.project", .projects),
         .init("flow.settings.enable", .dictation),
         .init("flow.settings.dictionary", .dictation),
         .init("parakeet.title", .sound),
@@ -120,29 +127,35 @@ enum SettingsSearch {
         .init("settings.agents.subscriptions", .usage),
         .init("ws.usage.byModel", .usage),
         .init("settings.agents.weekRecap", .usage),
-        .init("settings.ws.provider", .sessions, tab: 0),
-        .init("settings.ws.worktreeRoot", .sessions, tab: 0),
-        .init("settings.ws.editor", .sessions, tab: 1),
-        .init("settings.ws.terminal", .sessions, tab: 1),
+        .init("settings.ws.provider", .sessions),
+        .init("settings.ws.worktreeRoot", .worktrees),
+        .init("settings.ws.branchPrefix", .worktrees),
+        .init("ws.worktrees.title", .worktrees),
+        .init("settings.ws.editor", .openIn),
+        .init("settings.ws.terminal", .openIn),
         .init("sched.title", .automation),
         .init("settings.bridge.title", .automation),
         .init("settings.devices.iphone", .iphone),
         .init("companion.enable", .iphone),
         .init("remote.title", .machines),
-        .init("settings.privacy.levelTitle", .privacy, tab: 0),
-        .init("settings.privacy.permissions", .privacy, tab: 1),
-        .init("settings.privacy.neverRead.title", .privacy, tab: 1),
-        .init("settings.private.title", .privacy, tab: 2),
-        .init("settings.privacy.whatLeavesMac", .privacy, tab: 0),
-        .init("settings.privacy.forgetScreenText", .privacy, tab: 0),
+        .init("settings.privacy.levelTitle", .privacy),
+        .init("settings.privacy.permissions", .permissions),
+        .init("settings.privacy.neverRead.title", .permissions),
+        .init("settings.private.title", .onDevice),
+        .init("settings.privacy.whatLeavesMac", .privacy),
+        .init("settings.privacy.forgetScreenText", .privacy),
         .init("settings.pulls.title", .pullRequests),
-        .init("settings.ws.commitStyle", .sessions, tab: 1),
-        .init("settings.ws.autoTitles", .sessions, tab: 2),
-        .init("ws.section.restart", .sessions, tab: 2),
-        .init("ws.section.tidy", .sessions, tab: 3),
+        .init("settings.ws.commitStyle", .pullRequests),
+        .init("settings.ws.autoTitles", .sessions),
+        .init("ws.section.restart", .sessions),
+        .init("ws.section.tidy", .sessions),
         .init("settings.ws.showCost", .usage),
         .init("settings.ws.codexAppServer", .agents),
-        .init("settings.ws.trafficLog", .automation),
+        .init("settings.ws.trafficLog", .maintenance),
+        .init("settings.maintenance.diagnostics", .maintenance),
+        .init("settings.about.version", .about),
+        .init("settings.about.license", .about),
+        .init("settings.about.report", .about),
         .init("settings.privacy.onlineLyrics", .connections),
     ]
 
@@ -153,10 +166,10 @@ enum SettingsSearch {
         func matches(_ value: String) -> Bool { value.localizedCaseInsensitiveContains(text) }
         let sections = SettingsSection.allCases
             .filter { matches($0.title) || matches($0.subtitle) }
-            .map { SettingsSearchHit(key: "settings.section.\($0.rawValue)", section: $0) }
+            .map { SettingsSearchHit(key: "settings.section.\($0.rawValue)", section: $0, isSection: true) }
         let settings = index
             .filter { matches(tr($0.key)) }
-            .map { SettingsSearchHit(key: $0.key, section: $0.section, tab: $0.tab) }
+            .map { SettingsSearchHit(key: $0.key, section: $0.section) }
         return sections + settings
     }
 }

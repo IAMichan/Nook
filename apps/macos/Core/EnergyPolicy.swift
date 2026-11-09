@@ -1,6 +1,6 @@
 import Foundation
 
-/// How much of its optional background work Nook does (Settings › General › Energy). Work you ask for (a question,
+/// How much of its optional background work Nook does (Settings › Maintenance › Energy). Work you ask for (a question,
 /// dictation, a look at the screen) always runs at full speed; this is about what Nook does by himself: reading the
 /// screen on a timer, thinking along, looking for agents, checking for meetings.
 enum EnergyMode: String, CaseIterable, Identifiable, Codable {

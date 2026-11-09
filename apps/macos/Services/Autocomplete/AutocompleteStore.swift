@@ -20,8 +20,6 @@ final class AutocompleteStore: ObservableObject {
     @Published private(set) var appPausedUntil: [String: Date] = [:]
     /// Off in this app until another app comes to the front (Escape setting).
     var offUntilSwitch: String?
-    /// The tab Settings › Autocomplete opens on (the notch's "words today" opens Statistics).
-    @Published var settingsTab: AutocompleteSettingsTab = .general
 
     private let defaults = UserDefaults.standard
     private static let prefsKey = "autocompletePreferences"
@@ -237,6 +235,7 @@ final class AutocompleteStore: ObservableObject {
 }
 
 /// The tabs of Settings › Autocomplete.
+/// The pages of Settings › Typing › Autocomplete (`SettingsSection.autocomplete…`).
 enum AutocompleteSettingsTab: String, CaseIterable, Identifiable {
     case general, apps, style, playground, stats
 

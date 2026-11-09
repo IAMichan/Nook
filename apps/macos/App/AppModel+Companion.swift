@@ -225,9 +225,14 @@ extension AppModel {
                          logo: .symbol("text.cursor"))
     }
 
-    func openAutocompleteSettings(_ tab: AutocompleteSettingsTab) {
-        AutocompleteStore.shared.settingsTab = tab
-        openSettings(section: .autocomplete)
+    func openAutocompleteSettings(_ page: AutocompleteSettingsTab) {
+        switch page {
+        case .general: openSettings(section: .autocomplete)
+        case .apps: openSettings(section: .autocompleteApps)
+        case .style: openSettings(section: .autocompleteStyle)
+        case .playground: openSettings(section: .autocompletePlayground)
+        case .stats: openSettings(section: .autocompleteStats)
+        }
     }
 }
 

@@ -151,7 +151,7 @@ struct ConnectionsPage: View {
             if chats.isEmpty { IntroCard(title: tr("hub.empty.title"), text: tr("settings.chats.empty")) }
             ForEach(chats) { chatRow($0, options) }
         } header: {
-            Text(tr("hub.chats"))
+            SettingText("hub.chats")
         }
     }
 
@@ -168,7 +168,7 @@ struct ConnectionsPage: View {
                 GitLabHostRow(host: host) { refreshTick += 1 }
             }
         } header: {
-            Text(tr("hub.services"))
+            SettingText("hub.services")
         }
     }
 
@@ -195,7 +195,7 @@ struct ConnectionsPage: View {
                     localRow(local[index])
                 }
             } header: {
-                Text(tr("settings.connections.onYourMac"))
+                SettingText("settings.connections.onYourMac")
             }
         }
     }
@@ -211,7 +211,7 @@ struct ConnectionsPage: View {
                     .padding(.vertical, NookTheme.Spacing.xs)
             }
         } header: {
-            Text(tr("hub.add"))
+            SettingText("hub.add")
         }
     }
 

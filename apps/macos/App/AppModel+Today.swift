@@ -137,22 +137,10 @@ extension AppModel {
     }
 
 
-    /// The tab `section` shows: the one chosen last, else its first.
-    func settingsTab(_ section: SettingsSection) -> Int {
-        min(settingsTabs[section] ?? 0, max(section.tabs.count - 1, 0))
-    }
-
-    func setSettingsTab(_ tab: Int, for section: SettingsSection) {
-        guard settingsTabs[section] != tab else { return }
-        settingsTabs[section] = tab
-    }
-
     /// Custom window: standard Settings scene does not open reliably in an accessory app.
-    func openSettings(section: SettingsSection? = nil, tab: Int? = nil) {
-        if let section {
-            settingsSection = section
-            if let tab { setSettingsTab(tab, for: section) }
-        }
+    func openSettings(section: SettingsSection? = nil, highlight key: String? = nil) {
+        if let section { settingsSection = section }
+        SettingsHighlight.shared.key = key
         // Floating notch panel overlays all windows; dismiss it so clicks reach Settings.
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
