@@ -171,7 +171,7 @@ private struct ManageAccountSheet: View {
                             Button(tr("accounts.signInInstead")) { app.useCLILogin(profile) }
                         } else {
                             cliAuthView
-                            DisclosureGroup(tr("settings.display.advanced")) {
+                            DisclosureGroup(tr("settings.fold.keyInstead")) {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     SettingNote(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
                                     Button(tr("accounts.useKeyInstead")) { app.profiles.setAuth(profile.id, .apiKey) }
@@ -466,9 +466,10 @@ private struct AddAccountSheet: View {
             }
             .onAppear { found = app.profiles.discover().filter { $0.kind == kind } }
         } footer: {
+            Spacer()
             Button(tr("button.cancel")) { dismiss() }
                 .keyboardShortcut(.cancelAction)
-            Spacer()
+                .controlSize(.large)
             if saving {
                 ProgressView().controlSize(.small)
             } else {

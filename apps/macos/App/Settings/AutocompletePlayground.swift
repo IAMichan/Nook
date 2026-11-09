@@ -4,6 +4,7 @@ import SwiftUI
 /// Settings › Autocomplete › Playground: a text box to try autocomplete in, with the same model, keys and settings as in other
 /// apps, and what the model read and answered. Nothing typed here is saved or counted in the statistics.
 struct AutocompletePlaygroundSection: View {
+    @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = AutocompleteStore.shared
     @ObservedObject private var autocomplete = AutocompleteController.shared
     @StateObject private var playground = CompletionPlayground()
@@ -14,7 +15,7 @@ struct AutocompletePlaygroundSection: View {
             Section {
                 if !store.prefs.enabled || autocomplete.activeModel == nil {
                     StatusRow(title: tr("autocomplete.playground.unavailable"), detail: tr("autocomplete.playground.unavailableDetail"), state: .warning) {
-                        Button(tr("autocomplete.tab.general")) { store.settingsTab = .general }
+                        Button(tr("autocomplete.tab.general")) { app.settingsSection = .autocomplete }
                     }
                 }
                 PlaygroundEditor(playground: playground, handle: editor)

@@ -2,8 +2,11 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Autocomplete: suggestions as you type in any app, with a GGUF model on this Mac or the brain's own model.
+/// Settings › Typing › Autocomplete and its pages: suggestions as you type in any app, with a GGUF model on this Mac or
+/// the brain's own model. One page per part (general, apps, style, playground, statistics), never tabs.
 struct AutocompleteSettingsSection: View {
+    /// The page this shows.
+    let page: AutocompleteSettingsTab
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = AutocompleteStore.shared
     @ObservedObject private var autocomplete = AutocompleteController.shared
@@ -37,38 +40,11 @@ struct AutocompleteSettingsSection: View {
 
     var body: some View {
         Group {
-            // The switch and how it is doing come first; what completing is sits behind the ⓘ.
-            Section {
-                SettingToggle(tr("autocomplete.enable"), detail: tr("autocomplete.enableDetail", store.prefs.acceptWord.label, store.prefs.acceptAll.label),
-                              isOn: $store.prefs.enabled)
-                    .onChange(of: store.prefs.enabled) { _, on in
-                        if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
-                        autocomplete.refresh()
-                    }
-                if store.prefs.enabled {
-                    status
-                    obstacles
-                    SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
-                }
-            } header: {
-                SettingsSectionTitle(tr("autocomplete.hero.title"), info: tr("autocomplete.hero.detail"))
+            if page == .general {
+                enableSection
             }
-            // Picks up Accessibility the moment it is switched on in System Settings.
-            .onAppear { PermissionMonitor.shared.watch() }
-            .onDisappear { PermissionMonitor.shared.unwatch() }
-
-            // Everything else only matters while completing is on: its parts as tabs.
             if store.prefs.enabled {
-                Section {
-                    // Segments while they fit, a menu in a narrow window.
-                    ViewThatFits(in: .horizontal) {
-                        settingsTabPicker.pickerStyle(.segmented)
-                        settingsTabPicker.pickerStyle(.menu)
-                    }
-                }
-                .listRowBackground(Color.clear)
-
-                switch store.settingsTab {
+                switch page {
                 case .general:
                     modelSection
                     downloadSection
@@ -87,8 +63,38 @@ struct AutocompleteSettingsSection: View {
                 case .stats:
                     statsSection
                 }
+            } else if page != .general {
+                // The other pages only matter while completing is on: one line that says so and the way to turn it on.
+                Section {
+                    StatusRow(title: tr("autocomplete.offTitle"), detail: tr("autocomplete.offDetail"), state: .todo) {
+                        Button(tr("autocomplete.turnOn")) { store.prefs.enabled = true; autocomplete.refresh() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
             }
         }
+    }
+
+    /// The switch and how it is doing; what completing is sits behind the ⓘ.
+    private var enableSection: some View {
+        Section {
+            SettingToggle(tr("autocomplete.enable"), detail: tr("autocomplete.enableDetail", store.prefs.acceptWord.label, store.prefs.acceptAll.label),
+                          isOn: $store.prefs.enabled)
+                .onChange(of: store.prefs.enabled) { _, on in
+                    if on, !autocomplete.trusted { autocomplete.askForAccessibility() }
+                    autocomplete.refresh()
+                }
+            if store.prefs.enabled {
+                status
+                obstacles
+                SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
+            }
+        } header: {
+            SettingsSectionTitle(tr("autocomplete.hero.title"), info: tr("autocomplete.hero.detail"))
+        }
+        // Picks up Accessibility the moment it is switched on in System Settings.
+        .onAppear { PermissionMonitor.shared.watch() }
+        .onDisappear { PermissionMonitor.shared.unwatch() }
     }
 
     // MARK: Status
@@ -170,13 +176,6 @@ struct AutocompleteSettingsSection: View {
         Button(tr("autocomplete.choose")) { chooseFile() }
         Button(tr("autocomplete.rescan")) { autocomplete.refresh() }
         Button(tr("button.openFolder")) { NSWorkspace.shared.open(AutocompleteStore.modelsFolder) }
-    }
-
-    private var settingsTabPicker: some View {
-        Picker("", selection: $store.settingsTab) {
-            ForEach(AutocompleteSettingsTab.allCases) { Text($0.title).tag($0) }
-        }
-        .labelsHidden()
     }
 
     private var modelSection: some View {
@@ -432,7 +431,7 @@ struct AutocompleteSettingsSection: View {
     // MARK: Personal
 
     private var personalSection: some View {
-        Section(tr("autocomplete.section.personal")) {
+        Section {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("autocomplete.instructions"))
                 TextEditor(text: $instructions)
@@ -467,6 +466,8 @@ struct AutocompleteSettingsSection: View {
                     }
                 }
             }
+        } header: {
+            SettingText("autocomplete.section.personal")
         }
     }
 
@@ -526,7 +527,7 @@ struct AutocompleteSettingsSection: View {
                 AppIcon(url: InstalledApp.url(of: app.id))
             } content: {
                 Section {
-                    Toggle(tr("autocomplete.enable"), isOn: enabledBinding(app.id))
+                    Toggle(isOn: enabledBinding(app.id)) { SettingText("autocomplete.enable") }
                 }
                 Section { appRule(app.id) }
             }
@@ -695,7 +696,7 @@ struct AutocompleteSettingsSection: View {
     /// What autocomplete leaves out on battery and in Low Power Mode (see `CompletionPower`).
     private var batterySection: some View {
         let saving = energy.signals.onBattery || energy.signals.lowPowerMode
-        return Section(tr("autocomplete.section.battery")) {
+        return Section {
             SettingNote(tr(saving ? "autocomplete.battery.now" : "autocomplete.battery.plugged"), tone: saving ? .success : .info)
             Toggle(tr("autocomplete.battery.pause"), isOn: $store.prefs.pauseOnBattery)
             // Paused, none of the rest applies.
@@ -711,13 +712,15 @@ struct AutocompleteSettingsSection: View {
                     if store.prefs.suggestNow == nil { SettingNote(tr("autocomplete.battery.onDemandNoKey"), tone: .warning) }
                 }
             }
+        } header: {
+            SettingText("autocomplete.section.battery")
         }
     }
 
     // MARK: Emoji, typos, labs
 
     private var extrasSection: some View {
-        Section(tr("autocomplete.section.extras")) {
+        Section {
             SettingToggle(tr("autocomplete.emoji"), detail: tr("autocomplete.emojiDetail"), isOn: $store.prefs.emoji)
             if store.prefs.emoji {
                 Picker(tr("autocomplete.skinTone"), selection: $store.prefs.skinTone) {
@@ -746,6 +749,8 @@ struct AutocompleteSettingsSection: View {
                 Toggle(tr("autocomplete.alternativesAuto"), isOn: $store.prefs.autoAlternatives)
                 CompletionKeyRecorder(title: tr("autocomplete.key.alternatives"), shortcut: $store.prefs.alternatives, fallback: nil, allowsOff: true)
             }
+        } header: {
+            SettingText("autocomplete.section.extras")
         }
     }
 
@@ -964,7 +969,7 @@ struct AutocompleteKeysSection: View {
     @ObservedObject private var store = AutocompleteStore.shared
 
     var body: some View {
-        Section(tr("autocomplete.section.keys")) {
+        Section {
             CompletionKeyRecorder(title: tr("autocomplete.key.word"), shortcut: Binding(get: { store.prefs.acceptWord }, set: { if let key = $0 { store.prefs.acceptWord = key } }),
                                   fallback: .tab, allowsOff: false)
             CompletionKeyRecorder(title: tr("autocomplete.key.all"), shortcut: Binding(get: { store.prefs.acceptAll }, set: { if let key = $0 { store.prefs.acceptAll = key } }),
@@ -977,6 +982,8 @@ struct AutocompleteKeysSection: View {
                 ForEach(CompletionEscape.allCases) { Text(tr("autocomplete.escape.\($0.rawValue)")).tag($0) }
             }
             Stepper(tr("autocomplete.pauseMinutes", store.prefs.pauseMinutes), value: $store.prefs.pauseMinutes, in: 1...240)
+        } header: {
+            SettingText("autocomplete.section.keys")
         }
     }
 }

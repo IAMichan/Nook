@@ -312,7 +312,7 @@ extension AppModel {
             let key: String? = value.hasPrefix("section.") ? nil : value
             let entry = SettingsSearch.index.first { $0.key == key }
             let section = SettingsSection(rawValue: String(value.dropFirst("section.".count))) ?? entry?.section
-            openSettings(section: section, tab: entry?.tab)
+            openSettings(section: section, highlight: key)
             return nil
         case .conversation:
             guard let uuid = UUID(uuidString: value), chat.conversation(uuid) != nil else { return .chat }

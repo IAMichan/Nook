@@ -23,10 +23,12 @@ struct FlowSettingsSection: View {
                         flow.refresh()
                     }
                 if store.enabled {
-                    Picker(tr("flow.settings.key"), selection: $store.key) {
+                    Picker(selection: $store.key) {
                         ForEach(FlowKey.allCases) { key in
                             Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
                         }
+                    } label: {
+                        SettingText("flow.settings.key")
                     }
                     .onChange(of: store.key) { _, _ in flow.refresh(); DoubleTap.shared.refresh() }
                     if !flow.trusted {
@@ -44,13 +46,15 @@ struct FlowSettingsSection: View {
                 Section {
                     SettingToggle(tr("flow.settings.cleanup"), detail: tr("flow.settings.cleanupDetail"), isOn: $store.cleanup)
                     SettingToggle(tr("flow.settings.prompt"), detail: tr("flow.settings.promptDetail"), isOn: $store.promptMode)
-                    Picker(tr("flow.settings.translate"), selection: $store.translateTo) {
+                    Picker(selection: $store.translateTo) {
                         Text(tr("flow.settings.asSpoken")).tag("")
                         // The stored choice is the language's own name, as `AppLanguage.displayName` writes it.
                         ForEach(AppLanguage.allCases) { lang in Text(lang.displayName).tag(lang.displayName) }
+                    } label: {
+                        SettingText("flow.settings.translate")
                     }
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        Text(tr("flow.settings.dictionary"))
+                        SettingText("flow.settings.dictionary")
                         TextEditor(text: $dictionary)
                             .font(NookTheme.TextStyle.code)
                             .frame(minHeight: 90)

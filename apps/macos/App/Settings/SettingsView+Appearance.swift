@@ -57,40 +57,32 @@ extension SettingsView {
             }
 
             // The style above sets the face and the finish; changing them one by one is folded away.
-            Section {
-                DisclosureGroup(tr("settings.appearance.fineTune")) {
-                    Picker(tr("settings.display.eyes"), selection: $settings.nookLook.eyes) {
-                        ForEach(NookEyeStyle.allCases) { style in
-                            Text(Self.title(for: style)).tag(style)
-                        }
+            SettingsFold(tr("settings.appearance.fineTune"), summary: tr("settings.appearance.fineTuneSummary"),
+                         keys: ["settings.display.eyes", "settings.display.mouth", "settings.display.glow"]) {
+                Picker(selection: $settings.nookLook.eyes) {
+                    ForEach(NookEyeStyle.allCases) { style in
+                        Text(Self.title(for: style)).tag(style)
                     }
-                    .pickerStyle(.segmented)
-                    Picker(tr("settings.display.mouth"), selection: $settings.nookLook.mouth) {
-                        ForEach(NookMouthStyle.allCases) { style in
-                            Text(Self.title(for: style)).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    if settings.nookLook.mouth == .expressive {
-                        SettingNote(tr("settings.display.mouthHint"))
-                    }
-                    Toggle(tr("settings.display.gloss"), isOn: $settings.nookLook.gloss)
-                    Toggle(tr("settings.display.glow"), isOn: $settings.nookLook.glow)
-                    Toggle(tr("settings.display.cheeks"), isOn: $settings.nookLook.cheeks)
+                } label: {
+                    SettingText("settings.display.eyes")
                 }
-            }
-
-            Section {
-                HStack {
-                    Spacer()
-                    Button(tr("settings.appearance.reset")) {
-                        settings.nookLook = .classic
-                        settings.accentHex = NookTheme.defaultAccentHex
+                .pickerStyle(.segmented)
+                Picker(selection: $settings.nookLook.mouth) {
+                    ForEach(NookMouthStyle.allCases) { style in
+                        Text(Self.title(for: style)).tag(style)
                     }
-                    .disabled(settings.nookLook == .classic && settings.accentHex == NookTheme.defaultAccentHex)
+                } label: {
+                    SettingText("settings.display.mouth")
                 }
+                .pickerStyle(.segmented)
+                if settings.nookLook.mouth == .expressive {
+                    SettingNote(tr("settings.display.mouthHint"))
+                }
+                Toggle(tr("settings.display.gloss"), isOn: $settings.nookLook.gloss)
+                Toggle(isOn: $settings.nookLook.glow) { SettingText("settings.display.glow") }
+                Toggle(tr("settings.display.cheeks"), isOn: $settings.nookLook.cheeks)
             }
-            .listRowBackground(Color.clear)
+            // Putting the look back is "Restore defaults" in the bar over the page, as on General.
 
             buddySection
         }

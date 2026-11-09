@@ -29,19 +29,21 @@ struct KeybindingsSettingsSection: View {
             }
             .onAppear { center.reload() }
             .onDisappear { stopRecording() }
-            // Editing the file by hand is rarely needed: folded away, unless it has something to say.
-            Section {
-                DisclosureGroup(tr("keys.file.title")) {
-                    LabeledContent(tr("keys.file")) {
-                        // Side by side while they fit; under each other in a narrow window or a longer language.
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: NookTheme.Spacing.sm) { fileButtons }
-                            VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { fileButtons }
-                        }
+            // Editing the file by hand is rarely needed: folded away; what the file has to say shows outside the fold.
+            SettingsFold(tr("keys.file.title"), summary: Self.displayPath, keys: ["keys.file.title"]) {
+                LabeledContent(tr("keys.file")) {
+                    // Side by side while they fit; under each other in a narrow window or a longer language.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: NookTheme.Spacing.sm) { fileButtons }
+                        VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) { fileButtons }
                     }
-                    SettingNote(tr("keys.file.detail", Self.displayPath))
                 }
-                ForEach(notes.indices, id: \.self) { index in SettingNote(notes[index].text, tone: notes[index].tone) }
+                SettingNote(tr("keys.file.detail", Self.displayPath))
+            }
+            if !notes.isEmpty {
+                Section {
+                    ForEach(notes.indices, id: \.self) { index in SettingNote(notes[index].text, tone: notes[index].tone) }
+                }
             }
         }
     }

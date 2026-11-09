@@ -477,7 +477,7 @@ struct ServiceSignInSheet: View {
             }
             // Signing in is the way; a key or token is only for whoever needs one, folded away.
             if hasKeyWay, status == .notLinked {
-                DisclosureGroup(tr("settings.display.advanced")) {
+                DisclosureGroup(tr("settings.fold.keyInstead")) {
                     HStack(spacing: NookTheme.Spacing.md) {
                         SettingNote(tr(service.id == "gitlab" ? "hub.signIn.gitlabToken" : "hub.signIn.keyInstead"))
                         Spacer(minLength: 0)

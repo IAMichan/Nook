@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for Settings › Automation › the provider traffic log (see ProviderTrafficLog).
+// Texts for Settings › Maintenance › the provider traffic log (see ProviderTrafficLog).
 
 let providerTrafficTranslations: [AppLanguage: [String: String]] = [
     .nl: [
