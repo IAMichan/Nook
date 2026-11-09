@@ -133,12 +133,17 @@ private struct TabWindowView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var viewModel = AppModel.shared.viewModel
     @StateObject private var mediaStage = ChatMediaStage()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// ⌘K in this window: the search over everything, as in the main window, kept to what this tab shows.
+    @State private var searching = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 SidePanelTitle(symbol: PanelSplitChoice.symbol(tab), title: tab.title)
                 Spacer(minLength: 0)
+                ToolbarIconButton("magnifyingglass", tr("search.button")) { searching.toggle() }
+                    .disabled(app.demoMode)
                 ToolbarIconButton("rectangle.split.2x1", tr("split.dock")) {
                     TabWindowController.shared.dock(tab, app: app)
                 }
@@ -161,9 +166,57 @@ private struct TabWindowView: View {
                 .ignoresSafeArea(edges: .top)
         }
         .background(NookTheme.notch.ignoresSafeArea())
+        .overlay(alignment: .top) {
+            if searching {
+                ZStack(alignment: .top) {
+                    // A click beside the search closes it, as Escape does.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { searching = false }
+                        .accessibilityHidden(true)
+                    SearchPanel(kind: Self.searchKind(tab), select: show) { searching = false }
+                        .padding(.top, PanelSidebarMetrics.titleBand + NookTheme.Spacing.md)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
+                }
+                .ignoresSafeArea(.container, edges: .top)
+            }
+        }
+        .animation(NookTheme.reveal, value: searching)
+        .background {
+            // Native shortcuts for ⌘K and ⇧⌘F, as in the main window.
+            Button("") { searching.toggle() }.keyboardShortcut("k", modifiers: [.command])
+                .disabled(app.demoMode)
+                .opacity(0).accessibilityHidden(true)
+            Button("") { searching.toggle() }.keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(app.demoMode)
+                .opacity(0).accessibilityHidden(true)
+        }
+        // ⌘K (a rule, see `Keybindings`): only for this window, whose views register with it.
+        .keyCommand("search.toggle", enabled: !app.demoMode) { searching.toggle() }
         .chatMediaStage(mediaStage)
         .nookToastHost()
         .tint(NookTheme.iris)
         .id(app.settings.accentHex)
+    }
+
+    /// What the search keeps to in this tab's window: Chats searches the chats of every connected app, the other
+    /// tabs search everything.
+    static func searchKind(_ tab: PanelTab) -> SearchKind? {
+        switch tab {
+        case .inbox: return .chat
+        case .nook, .chat, .connect, .shelf, .agents, .music: return nil
+        }
+    }
+
+    /// Shows what a search hit opened: in this window when it is this tab, in that tab's own window when it has one,
+    /// in the main window otherwise.
+    private func show(_ target: PanelTab) {
+        let landing = TabWindowController.key(target)
+        if landing == TabWindowController.key(tab) { return }
+        if TabWindowController.shared.isOpen(landing) {
+            TabWindowController.shared.open(landing, app: app)
+        } else {
+            app.openWindow(continuing: landing)
+        }
     }
 }
