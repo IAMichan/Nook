@@ -90,7 +90,9 @@ final class AppModel: ObservableObject {
     /// Keeps the notices Nook gives by himself apart, so a busy hour does not become a stream of pop-ups.
     var noticePacer = NoticePacer()
     /// Every permission request from an agent, whether it arrives through hooks or from a session Nook runs.
-    private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared)
+    private(set) lazy var approvals = ApprovalCenter(hub: hub, workspace: workspace, bridge: .shared) { [weak self] tool, args, result in
+        self?.store.audit(tool: tool, args: args, result: result)
+    }
     /// The subscription limits of every agent account.
     var quota: QuotaService { QuotaService(hub: hub, codex: codex, antigravity: antigravityUsage) }
     /// Currently selected settings section.

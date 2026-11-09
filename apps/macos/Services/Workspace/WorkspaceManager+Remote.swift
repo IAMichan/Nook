@@ -13,29 +13,40 @@ extension WorkspaceManager {
     /// Nook's tools for the agent. On another machine they wait until the server is there (`prepareRemoteBridge`): a session
     /// runs without them until then.
     func bridge(for id: UUID) -> BridgeLaunch? {
-        guard let launch = bridgeLaunch(), let run = run(id) else { return nil }
-        guard let remote = run.remote else { return launch }
+        guard var launch = bridgeLaunch(), let run = run(id) else { return nil }
+        guard let remote = run.remote else {
+            launch.token = bridgeToken(id)
+            return launch
+        }
         guard let home = remoteHomes[remote.machineID] else {
             Task { await prepareRemoteBridge(remote) }
             return nil
         }
         return BridgeLaunch(script: RemoteBridge.scriptPath(home: home),
-                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: remoteBridgeToken(id)))
+                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: bridgeToken(id)))
     }
 
-    /// The token that proves the agent is this session's, for this run of Nook.
-    func remoteBridgeToken(_ id: UUID) -> String {
-        if let token = remoteBridgeTokens[id] { return token }
+    /// The token that proves the agent is this session's, for this run of Nook. Kept in memory only: after a restart of
+    /// Nook every agent is started again and gets a new one.
+    func bridgeToken(_ id: UUID) -> String {
+        if let token = bridgeTokens[id] { return token }
         let token = UUID().uuidString + UUID().uuidString
-        remoteBridgeTokens[id] = token
+        bridgeTokens[id] = token
         return token
     }
 
     /// Whether `token` is the one made for the remote session `id`.
     func acceptsRemoteBridge(_ id: UUID, token: String) -> Bool {
         // Only while its agent works: a stopped session's token opens nothing.
-        guard let run = run(id), run.isRemote, run.status.isActive, let expected = remoteBridgeTokens[id] else { return false }
-        return Data(expected.utf8) == Data(token.utf8)
+        guard let run = run(id), run.isRemote, run.status.isActive else { return false }
+        return BridgeIdentity.matches(bridgeTokens[id], token)
+    }
+
+    /// Whether `token` is the one made for the session `id` on this Mac. A call that names a session without its token
+    /// gets no rights of that session.
+    func acceptsLocalBridge(_ id: UUID, token: String) -> Bool {
+        guard let run = run(id), !run.isRemote else { return false }
+        return BridgeIdentity.matches(bridgeTokens[id], token)
     }
 
     /// Puts Nook's MCP server on the machine, once per run of Nook.

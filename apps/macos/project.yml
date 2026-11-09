@@ -251,6 +251,7 @@ targets:
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift
+      - path: Services/ApprovalAudit.swift
       - path: Brain/UIControl.swift
       - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift

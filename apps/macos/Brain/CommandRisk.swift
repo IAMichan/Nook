@@ -187,11 +187,48 @@ enum CommandRisk {
         return nil
     }
 
+    /// A program that only reads can still write a file or run another program through one of its options:
+    /// `rg --pre <cmd>`, `sort -o file`, `git diff --output=file`, `tree -o file`, `less +!cmd`, `uniq in out`.
+    /// Such a call is not read-only, so it is reviewed rather than run directly.
+    static func writesOrRuns(_ program: String, _ arguments: [String], _ lower: [String]) -> Bool {
+        func has(_ names: [String]) -> Bool {
+            lower.contains { argument in names.contains { argument == $0 || argument.hasPrefix($0 + "=") } }
+        }
+        func hasShort(_ letter: Character) -> Bool {
+            arguments.contains { $0.hasPrefix("-") && !$0.hasPrefix("--") && $0.dropFirst().contains(letter) }
+        }
+        switch program {
+        case "rg":
+            // `--pre` runs a program on every file it searches.
+            return has(["--pre"])
+        case "sort":
+            return hasShort("o") || has(["--output", "--compress-program"])
+        case "tree":
+            return hasShort("o")
+        case "less", "more":
+            // `+cmd` runs a less command at start, and `!` in one runs a shell; `-o`/`--log-file` writes a file.
+            return arguments.contains { $0.hasPrefix("+") } || hasShort("o") || hasShort("O")
+                || has(["--log-file", "--log-file-overwrite", "--lesskey-file"])
+        case "file":
+            // `-C` compiles a magic file and writes it.
+            return arguments.contains { $0.hasPrefix("-") && !$0.hasPrefix("--") && $0.contains("C") } || has(["--compile"])
+        case "uniq":
+            // `uniq input output`: a second name is a file it writes.
+            return arguments.filter { !$0.hasPrefix("-") }.count > 1
+        case "git":
+            // `--output` writes the diff to a file; an external diff or text conversion runs a program from git's config.
+            return has(["--output", "--ext-diff", "--textconv"]) || lower.contains { $0.hasPrefix("--output") }
+        default:
+            return false
+        }
+    }
+
     private static func isSimpleReadOnly(_ segment: Segment) -> Bool {
         guard segment.redirectTarget == nil else { return false }
         let words = programWords(segment.words)
         guard let first = words.first.map(baseName) else { return false }
         let lower = words.dropFirst().map { $0.lowercased() }
+        if writesOrRuns(first, Array(words.dropFirst()), Array(lower)) { return false }
         if first == "git" {
             guard let sub = lower.first else { return false }
             if safeGit.contains(sub) { return true }

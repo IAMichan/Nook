@@ -1180,7 +1180,7 @@ struct AgentRunPanel: View {
                 }
             },
             decide: { decision in
-                if let request = event.callID { workspace.decide(runID, requestID: request, decision) }
+                if let request = event.callID { app.approvals.decide(run: runID, requestID: request, ApprovalDecision(decision)) }
             },
             showFile: sideLink.showFile,
             // A session on another machine has its files there, not on this Mac.

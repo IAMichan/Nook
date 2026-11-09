@@ -85,7 +85,7 @@ what comes through. `localhost` in the browser is the Mac. Without Perl the sess
 | `terminal_read` | Reads recent output lines from a terminal in the same project directory, including running state and exit code. | Immediate |
 | `terminal_list` | Lists terminals in the same project directory and which session started them. | Immediate |
 | `terminal_stop` | Sends `Ctrl-C` (and optionally closes) a terminal started by the same agent. | Immediate |
-| `browser_open` | Opens a URL in the browser of the agent's own session and waits for load completion. Every session has its own browser, so two agents never replace each other's page; `browser_read`, `browser_screenshot` and the tools that drive the page act on that browser too, or on Nook's own browser (Agents › Browser) while the session has no page open. Allows `https://` and local `http://` (`localhost`, `127.0.0.1`, `*.localhost`). | Immediate |
+| `browser_open` | Opens a URL in the browser of the agent's own session and waits for load completion. Every session has its own browser, so two agents never replace each other's page; `browser_read`, `browser_screenshot` and the tools that drive the page act on that browser too, or on Nook's own browser (Agents › Browser) while the session has no page open. Allows `https://` and local `http://` (`localhost`, `127.0.0.1`, `*.localhost`). | Local pages: immediate · Any other site: requires approval once per site per session (unless the session has full access), because whatever the agent puts in an address leaves this Mac |
 | `browser_read` | Returns page title, URL, visible text, and console errors/warnings since page load. | Immediate |
 | `browser_screenshot` | Captures a JPEG screenshot of the page for layout verification. | Immediate |
 | `pull_request_create` | Pushes the branch and opens a pull request via your connected GitHub account (or opens the GitHub compare URL). | Requires approval, unless the session runs with **Allow everything** |
@@ -138,10 +138,15 @@ Delegation rules are implemented in `Delegation.swift` (pure Foundation, tested 
 - **Scoped context:** The child session receives only the explicit task prompt and role—never the parent's full conversation history.
 - **Bounded depth:** Maximum delegation depth of 2 levels and at most 4 concurrent child tasks per session.
 - **Cascading stop:** Stopping a parent session automatically stops all of its active child tasks.
+- **No two writers in one folder:** A child in Plan mode always shares the parent's folder. A child that may change files shares it too, unless another such child of the same parent is already working there: then it gets a git worktree of its own, on a branch from the parent's branch (`DelegationPolicy.placement`). The parent can choose with `isolation` (`shared` or `worktree`). The result of a worktree task names its `worktree` and `branch` and tells the parent to merge that branch.
 
 ## Security Guarantees
 
 - The socket directory is `0700` and `bridge.sock` is `0600`, with peer UID verification on every connection (`UnixSocketServer`).
+- **A session proves who it is.** Every session Nook runs gets a token of its own in its MCP server's environment (`NOOK_BRIDGE_TOKEN`, made per run of Nook and kept in memory only). A call gets the session's mode and rights only with that token (`BridgeIdentity`); a `NOOK_RUN_ID` without it, or an agent that merely works in the same folder as a session, counts as an agent you started yourself and asks for everything that is not a read.
+- **Nothing is allowed by default.** `BridgePolicy` lists every tool by name (an exhaustive `switch`), so a new tool cannot be allowed by accident. A tool whose handler does not ask for approval itself (`BridgeTool.asksInHandler`) is asked for centrally before it runs, so an `.ask` verdict can never be skipped.
+- **Every decision is logged.** Allow, Always, Deny and In Terminal on any agent's request (hook, session in Nook or bridge), from the notch, the session view, a macOS notification or the iPhone, go to the action log as `agent_approval` with the agent, session, tool, request and where it was decided (`ApprovalAudit`). A bridge request nobody answered is logged as `expired`.
+- `CommandRisk` treats a read-only program as read-only only without an option that writes a file or runs a program (`rg --pre`, `sort -o`, `git diff --output`/`--ext-diff`, `tree -o`, `less +cmd`, `uniq in out`); such a call is reviewed.
 - Approval cards display the **entire** command or pull request details (repository, head → base branch, title, body) along with `CommandRisk` warnings.
 - Agents cannot send arbitrary keystrokes to an existing interactive shell; they can only start tracked commands via `terminal_run` and read output from terminals in their own project directory.
 - A session on another machine reaches only the tools `RemoteBridge.allows` lists, on a socket of its own, with a token per run.
