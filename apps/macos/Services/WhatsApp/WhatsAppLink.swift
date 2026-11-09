@@ -255,6 +255,9 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var knownChats: [WAChatInfo] = [] {
         didSet { knownIndex = Dictionary(knownChats.indices.map { (knownChats[$0].jid, $0) }, uniquingKeysWith: { first, _ in first }) }
     }
+    /// Groups the phone still has but you are no longer in (you left them, or were removed), by key, when the gateway
+    /// lists the groups you are in (`WhatsAppProvider.joinedGroups`): they leave Nook (`BridgedChat.gone`).
+    @Published private(set) var leftGroups: Set<String> = []
     /// Where each chat sits in `knownChats`: the Chats tab asks about every chat on each redraw, so a scan per chat
     /// made the list quadratic and stalled the main thread.
     private var knownIndex: [String: Int] = [:]
@@ -482,6 +485,7 @@ final class WhatsAppLink: ObservableObject {
             carriedUnread = [:]
             inbox.clear()
             knownChats = []
+            leftGroups = []
             pinnedChats = []
             mutedChats = []
             onForget?()
@@ -726,6 +730,12 @@ final class WhatsAppLink: ObservableObject {
         knownChats = chats.map {
             WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
         }
+        // A group you left stays on the phone's list (until you delete it there), but is no chat of yours any more.
+        if let joined = await provider.joinedGroups(), gen == generation {
+            let next = WhatsAppLeftGroups.left(known: knownChats.map(\.jid) + Array(inbox.conversations.keys), joined: joined)
+            if let next, next != leftGroups { leftGroups = next }
+        }
+        guard gen == generation else { return }
         // OpenWA sends no word when you read a chat on the phone: its count going to nothing says it.
         if gatewayCountsUnread {
             let read = inbox.readInGateway(knownChats) { key in

@@ -49,6 +49,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     private var changed: Set<Int64> = []
     /// The chats Nook shows: the newest of the main list, plus every chat a new message arrives in.
     private var shown: Set<Int64> = []
+    /// Chats that are no longer yours since the last `read()`: a group you left or were removed from, or a chat that left
+    /// Telegram's main list (deleted, or archived, on any device). They leave Nook (`BridgedChat.gone`).
+    private var leftChats: Set<Int64> = []
+    /// The groups you are no longer in, by `TelegramData.groupKey`: TDLib may say so before it sends the chat itself.
+    private var leftGroups: Set<String> = []
     /// Files asked of TDLib to show in a chat (a photo, a sticker, a voice message…), by their id: which message has it.
     private var downloads: [Int64: (chat: Int64, message: String)] = [:]
     /// Those of `downloads` moved to the front of TDLib's queue, because you look at their chat.
@@ -173,6 +178,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         deleted = [:]
         notificationSettings = [:]
         shown = []
+        leftChats = []
+        leftGroups = []
         changed = []
         meID = nil
         members = [:]
@@ -184,12 +191,18 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
 
     func read() async throws -> [BridgedChat] {
         guard isReady else { return [] }
+        // A chat you left goes under the name Nook showed it by; then it is no longer shown.
+        let left = leftChats.compactMap { id in
+            chats[id].flatMap { $0.title.isEmpty ? nil : BridgedChat(app: app, name: shownName($0), messages: [], unread: nil, gone: true) }
+        }
+        shown.subtract(leftChats)
         let ids = changed.intersection(shown)
         let gone = deleted
         if !ids.isEmpty { nameChats() }
         changed = []
         deleted = [:]
-        return ids.compactMap { id in
+        leftChats = []
+        return left + ids.compactMap { id in
             guard let chat = chats[id], !chat.title.isEmpty else { return nil }
             let people = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
             return BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
@@ -299,6 +312,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateNewChat":
             if let raw = object["chat"] as? [String: Any], let chat = TelegramData.chat(raw) {
                 chats[chat.id] = chat
+                if let group = TelegramData.groupKey(chat), leftGroups.contains(group) { leftChats.insert(chat.id) }
                 notificationSettings[chat.id] = raw["notification_settings"] as? [String: Any]
                 fetchPicture(of: chat.id)
             }
@@ -313,8 +327,19 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateChatPosition":
             // Pinned or unpinned (on any device), or moved in the main list.
             if let position = TelegramData.mainPosition(object) {
+                // Out of the main list (deleted, left, or archived, here or on another device): out of Nook too.
+                if position.order == 0, let before = chats[position.chat]?.order, before != 0 { leftChats.insert(position.chat) }
+                if position.order != 0 { leftChats.remove(position.chat) }
                 chats[position.chat]?.order = position.order
                 chats[position.chat]?.isPinned = position.pinned
+            }
+        case "updateBasicGroup", "updateSupergroup":
+            // You left the group, or were removed from it (here or on another device): it leaves Nook.
+            if let status = TelegramData.membership(object) {
+                if status.member { leftGroups.remove(status.group) } else { leftGroups.insert(status.group) }
+                for chat in chats.values where TelegramData.groupKey(chat) == status.group {
+                    if status.member { leftChats.remove(chat.id) } else { leftChats.insert(chat.id) }
+                }
             }
         case "updateChatNotificationSettings":
             if let id = TelegramData.int64(object["chat_id"]), let settings = object["notification_settings"] as? [String: Any] {
