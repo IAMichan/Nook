@@ -41,7 +41,11 @@ struct AgentRunPanel: View {
     /// The agent's skills for `$`, read from its skill folders.
     @State private var skills: [Skill] = []
     @State private var scroll = ScrollModel()
-    @StateObject private var pinRoom = TurnPinRoom()
+    /// Quote and Ask about this, for every answer's text view: the same two closures on every redraw, so a streamed token
+    /// does not hand each answer a new environment.
+    @State private var selectionActions = StableSelectionActions()
+    /// Held, not observed: its height changes as streamed rows are laid out, and only `TurnPinSpacer` draws it.
+    @State private var pinRoom = TurnPinRoom()
     @State private var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
@@ -115,8 +119,8 @@ struct AgentRunPanel: View {
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
             // message, or Ask about this, which also puts the keyboard in the box; the same with ⇧⌘L and ⌘L).
-            .environment(\.quoteSelection, { addQuote($0, ask: false) })
-            .environment(\.askAboutSelection, { addQuote($0, ask: true) })
+            .environment(\.quoteSelection, selectionActions.bind { addQuote($0, ask: $1) }.quote)
+            .environment(\.askAboutSelection, selectionActions.ask)
             .keyCommands(["selection.quote": { quoteSelected(ask: false) }, "selection.ask": { quoteSelected(ask: true) }])
             // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
@@ -644,8 +648,15 @@ struct AgentRunPanel: View {
             .chatColumn()
             .sessionComposerBounds()
         } else {
-            // Redrawn on its own with every keystroke, without the conversation above it.
-            Observing(composerState) { composer(run) }.chatColumn()
+            // Redrawn on its own with every keystroke, without the conversation above it; and not for every streamed
+            // token, which redraws the conversation (`timelines`) but changes nothing the composer shows.
+            RunComposerHost(state: composerState, workspace: workspace, app: app, pullRequests: pullRequestSync,
+                            key: RunComposerHost.Key(run: run, subagents: derived.subagents, skills: skills,
+                                                     repository: repository, shownSubagents: outputsLink.subagentsShown)) {
+                composer(run)
+            }
+            .equatable()
+            .chatColumn()
         }
     }
 
@@ -1564,6 +1575,59 @@ struct Observing<Object: ObservableObject, Content: View>: View {
     init(_ object: Object, @ViewBuilder content: @escaping () -> Content) {
         self.object = object
         self.content = content
+    }
+
+    var body: some View { content() }
+}
+
+/// Two closures made once and kept, for `quoteSelection` and `askAboutSelection`: a closure written in `body` is a new
+/// value on every redraw, and an environment value that changes redraws every view that reads it, past `.equatable()`.
+@MainActor
+final class StableSelectionActions {
+    private var handler: ((String, Bool) -> Void)?
+    private(set) lazy var quote: (String) -> Void = { [weak self] in self?.handler?($0, false) }
+    private(set) lazy var ask: (String) -> Void = { [weak self] in self?.handler?($0, true) }
+
+    /// Points both closures at `handler` (text, and whether to ask) and returns itself.
+    func bind(_ handler: @escaping (String, Bool) -> Void) -> StableSelectionActions {
+        self.handler = handler
+        return self
+    }
+}
+
+/// The session composer of `AgentRunPanel`. The panel redraws for every streamed token (it observes the timeline), and a
+/// fresh composer closure is never equal to the last, so the composer, its five menus and their popovers were built again
+/// up to 20 times a second while nothing in them changed. As an `Equatable` view it is built again only when what it shows
+/// from the panel changes (`key`), or when one of the objects it reads publishes (it observes them itself).
+struct RunComposerHost<Content: View>: View, Equatable {
+    struct Key: Equatable {
+        var run: WorkspaceRun
+        var subagents: [SubagentInfo]
+        var skills: [Skill]
+        var repository: String?
+        var shownSubagents: Bool
+
+        init(run: WorkspaceRun, subagents: [SubagentInfo], skills: [Skill], repository: String?, shownSubagents: Bool) {
+            // A streaming turn moves `updatedAt` every two seconds; the composer does not show it.
+            var run = run
+            run.updatedAt = .distantPast
+            self.run = run
+            self.subagents = subagents
+            self.skills = skills
+            self.repository = repository
+            self.shownSubagents = shownSubagents
+        }
+    }
+
+    @ObservedObject var state: RunComposerState
+    @ObservedObject var workspace: WorkspaceManager
+    @ObservedObject var app: AppModel
+    @ObservedObject var pullRequests: PullRequestSync
+    let key: Key
+    @ViewBuilder let content: () -> Content
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.key == rhs.key && lhs.state === rhs.state && lhs.workspace === rhs.workspace
     }
 
     var body: some View { content() }

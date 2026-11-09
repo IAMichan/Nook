@@ -1006,27 +1006,30 @@ private final class HistoryScanner: @unchecked Sendable {
         return CacheKey(modified: modified, size: values.fileSize ?? 0)
     }
 
+    /// The files in `directory` whose name passes `include`, with their date and size. The attributes come with the listing
+    /// (`getattrlistbulk`, one call per directory) instead of one `getattrlist` per file: a scan sees some 1,500 transcripts.
+    private func files(in directory: URL, where include: (String) -> Bool) -> [(url: URL, key: CacheKey)] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return [] }
+        return urls.compactMap { url in include(url.lastPathComponent) ? attributes(url).map { (url, $0) } : nil }
+    }
+
     /// ~/.claude/projects/<dir>/<session>.jsonl
     private func claudeFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("projects", isDirectory: true)
-        guard let projects = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        guard let projects = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) else { return [] }
         var result: [(url: URL, key: CacheKey)] = []
         for project in projects {
             // A directory that hasn't been modified recently does not need to be searched.
             if let modified = attributes(project)?.modified, modified < since { continue }
-            guard let names = try? fm.contentsOfDirectory(atPath: project.path) else { continue }
-            for name in names where name.hasSuffix(".jsonl") {
-                let url = project.appendingPathComponent(name)
-                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
-            }
+            result += files(in: project) { $0.hasSuffix(".jsonl") }.filter { $0.key.modified >= since }
         }
         return result
     }
 
     /// ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl, only directories from recent days.
     private func codexFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
-        let fm = FileManager.default
         let root = home.appendingPathComponent("sessions", isDirectory: true)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
@@ -1039,11 +1042,7 @@ private final class HistoryScanner: @unchecked Sendable {
             let path = String(format: "%04d/%02d/%02d", y, m, d)
             guard seen.insert(path).inserted else { continue }
             let dir = root.appendingPathComponent(path, isDirectory: true)
-            guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { continue }
-            for name in names where name.hasPrefix("rollout-") && name.hasSuffix(".jsonl") {
-                let url = dir.appendingPathComponent(name)
-                if let key = attributes(url) { result.append((url, key)) }
-            }
+            result += files(in: dir) { $0.hasPrefix("rollout-") && $0.hasSuffix(".jsonl") }
         }
         return result
     }
@@ -1058,12 +1057,8 @@ private final class HistoryScanner: @unchecked Sendable {
         var result: [(url: URL, key: CacheKey)] = []
         for project in projects {
             let chats = root.appendingPathComponent(project, isDirectory: true).appendingPathComponent("chats", isDirectory: true)
-            guard let names = try? fm.contentsOfDirectory(atPath: chats.path) else { continue }
             // One JSON file per chat, or from Gemini CLI 0.33 on a JSONL log of it.
-            for name in names where name.hasSuffix(".json") || name.hasSuffix(".jsonl") {
-                let url = chats.appendingPathComponent(name)
-                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
-            }
+            result += files(in: chats) { $0.hasSuffix(".json") || $0.hasSuffix(".jsonl") }.filter { $0.key.modified >= since }
         }
         return result
     }
