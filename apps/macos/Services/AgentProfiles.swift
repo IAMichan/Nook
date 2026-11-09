@@ -17,6 +17,9 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     /// The color you gave this account (0xRRGGBB), shown on its badge everywhere the agent's logo appears, so two accounts
     /// of the same agent are told apart at a glance. Nil: the badge keeps its personal/work/key color.
     var accent: UInt32? = nil
+    /// The icon you gave this account (an SF Symbol name from `AccountTag.symbols`), drawn centered on its badge instead
+    /// of the first letter of its name. Nil: the letter, or the personal/work/key symbol.
+    var icon: String? = nil
     /// True once you switched this account off (as enable switch): Nook then leaves it out of every list, menu and
     /// "Auto" pick, but keeps its folder, login and settings. Nil: on.
     var disabled: Bool? = nil
@@ -30,6 +33,9 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     var customModels: [String]? = nil
 
     var isEnabled: Bool { disabled != true }
+
+    /// True when you gave this account a color or an icon, so its badge shows on the agent's logo everywhere.
+    var hasOwnBadge: Bool { accent != nil || icon != nil }
 
     /// The variables that are set, in the order you gave them.
     var activeVariables: [AccountVariable] { variables ?? [] }
@@ -317,6 +323,12 @@ final class AgentProfileStore: ObservableObject {
         guard all[index].accent != value else { return }
         all[index].accent = value
         save()
+    }
+
+    /// Gives an account its own icon on its badge, or takes it away with nil. Writes only when it changed.
+    func setIcon(_ id: String, _ symbol: String?) {
+        let clean = symbol?.trimmingCharacters(in: .whitespaces)
+        update(id) { $0.icon = (clean?.isEmpty ?? true) ? nil : clean }
     }
 
     /// Switches an account on or off. The primary account of an agent can be switched off too: it only leaves the lists.
