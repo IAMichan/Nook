@@ -77,22 +77,49 @@ private struct ArchGlyph: Shape {
     }
 }
 
-/// Whether an account is someone's own or their employer's, or a bare API key (paid per question).
-enum AccountKind {
-    case personal, work, apiKey
+/// An account's badge: whether it is someone's own or their employer's, or a bare API key (paid per question), and the
+/// color and name you gave it, so several accounts of one agent are told apart at a glance.
+struct AccountTag: Hashable {
+    enum Role: Hashable { case personal, work, apiKey }
+
+    var role: Role
+    /// The account's own color (0xRRGGBB, `AgentProfile.accent`); nil keeps the role's color and symbol.
+    var accent: UInt32? = nil
+    /// The account's name ("Work", "Acme"), for the letter on a colored badge and its tooltip.
+    var name: String = ""
+
+    static let personal = AccountTag(role: .personal)
+    static let work = AccountTag(role: .work)
+    static let apiKey = AccountTag(role: .apiKey)
 
     fileprivate static let workWords = ["werk", "work", "zakelijk", "business", "bedrijf", "company", "team", "kantoor", "office", "arbeit", "firma"]
 
+    /// The colors offered for an account in Settings › Agents, each with the name VoiceOver reads.
+    static let swatches: [(hex: UInt32, name: String)] = [
+        (0x8B7BFF, "settings.accent.violet"), (0x5AA9FF, "settings.accent.blue"), (0x5ED6A6, "settings.accent.mint"),
+        (0xF2B866, "settings.accent.amber"), (0xEF7B73, "settings.accent.coral"), (0xFF7EB6, "settings.accent.pink"),
+    ]
+
+    /// An account color as SwiftUI draws it; the one place a stored account color becomes a `Color`.
+    static func color(_ hex: UInt32) -> Color { Color(hex: hex) }
+
     var label: String {
-        switch self {
+        if !name.isEmpty { return name }
+        switch role {
         case .personal: return sharedText("agents.account.personal", "Personal account")
         case .work: return sharedText("agents.account.work", "Work account")
         case .apiKey: return sharedText("accounts.method.apiKey", "API key")
         }
     }
 
+    /// The first letter of the account's name, shown on a colored badge instead of the role's symbol.
+    fileprivate var initial: String? {
+        guard accent != nil, let letter = name.first(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        return String(letter).uppercased()
+    }
+
     fileprivate var symbol: String {
-        switch self {
+        switch role {
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
         case .apiKey: return "key.fill"
@@ -100,17 +127,25 @@ enum AccountKind {
     }
 
     fileprivate var fill: Color {
-        switch self {
+        if let accent { return Color(hex: accent) }
+        switch role {
         case .personal: return Color(hex: 0x3A3A42)
         case .work: return Color(hex: 0x3D58D6)
         case .apiKey: return Color(hex: 0x9A6F1C)
         }
     }
+
+    /// Black or white, whichever reads better on the badge's color.
+    fileprivate var glyph: Color {
+        if let accent, NookTheme.relativeLuminance(accent) > 0.45 { return NookTheme.ink.opacity(0.9) }
+        return Color.white.opacity(0.92)
+    }
 }
 
-/// A small round badge: a person for a personal account, a briefcase for a work account, a key for an API key.
+/// A small round badge: a person for a personal account, a briefcase for a work account, a key for an API key; an account
+/// you gave a color shows that color with the first letter of its name.
 struct AccountBadge: View {
-    let kind: AccountKind
+    let kind: AccountTag
     var size: CGFloat = 10
     /// The color behind the badge, drawn as a thin ring so it stands free of the logo.
     var ring: Color = NookTheme.rowRest
@@ -118,11 +153,18 @@ struct AccountBadge: View {
     var body: some View {
         Circle()
             .fill(kind.fill)
-            .overlay(
-                Image(systemName: kind.symbol)
-                    .font(NookTheme.font(size * 0.52, .bold))
-                    .foregroundStyle(Color.white.opacity(0.92))
-            )
+            .overlay {
+                if let initial = kind.initial {
+                    Text(initial)
+                        .font(NookTheme.rounded(size * 0.62, .bold))
+                        .foregroundStyle(kind.glyph)
+                        .minimumScaleFactor(0.5)
+                } else {
+                    Image(systemName: kind.symbol)
+                        .font(NookTheme.font(size * 0.52, .bold))
+                        .foregroundStyle(kind.glyph)
+                }
+            }
             .frame(width: size, height: size)
             .overlay(Circle().stroke(ring, lineWidth: 1.5))
             .help(kind.label)
@@ -133,7 +175,7 @@ struct AccountBadge: View {
 /// An agent's logo with the badge of the account it runs under.
 struct AgentMark: View {
     let agent: String
-    var account: AccountKind?
+    var account: AccountTag?
     var size: CGFloat = 16
     var dimmed = false
     var ring: Color = NookTheme.rowRest
@@ -152,7 +194,7 @@ struct AgentMark: View {
 
 extension View {
     /// Pins the account badge to the bottom-right corner of a logo of the given size.
-    func accountBadge(_ account: AccountKind?, size: CGFloat, ring: Color) -> some View {
+    func accountBadge(_ account: AccountTag?, size: CGFloat, ring: Color) -> some View {
         overlay(alignment: .bottomTrailing) {
             if let account {
                 AccountBadge(kind: account, size: max(8, size * 0.56), ring: ring)
@@ -169,15 +211,18 @@ extension AgentLogo {
     }
 }
 
-extension AccountKind {
+extension AccountTag {
     /// Work when the account belongs to an organization, or when you named it that way ("Werk", "Business");
-    /// otherwise personal.
+    /// otherwise personal. Carries the color and name you gave the account (Settings › Agents).
     @MainActor
-    static func of(_ profile: AgentProfile, app: AppModel) -> AccountKind {
-        if let organization = app.history.profileAccounts[profile.id]?.organization, !organization.isEmpty { return .work }
+    static func of(_ profile: AgentProfile, app: AppModel) -> AccountTag {
+        let organization = app.history.profileAccounts[profile.id]?.organization ?? ""
         let label = profile.label.lowercased()
-        if workWords.contains(where: { label.contains($0) }) { return .work }
-        return .personal
+        let role: Role = !organization.isEmpty || workWords.contains(where: { label.contains($0) }) ? .work : .personal
+        // Only a colored badge shows the name; one without keeps "Work account" / "Personal account" as its tooltip.
+        guard profile.accent != nil else { return AccountTag(role: role) }
+        let name = !profile.label.isEmpty ? profile.label : (!organization.isEmpty ? organization : tr("agents.personal"))
+        return AccountTag(role: role, accent: profile.accent, name: name)
     }
 }
 #endif
