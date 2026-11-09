@@ -20,7 +20,7 @@ final class ConnectionsRoute: ObservableObject {
 /// - Chat apps: every linked chat app with what stopped working first, the apps Nook only knows from their
 ///   notifications, and how chats are read.
 /// - Connections: online services and your own servers (searchable, as the list grows), the Mac's own apps, music.
-/// - The header button adds one (`SettingsPageAction`): pick it, follow its steps.
+/// - The "+" in a list's header adds one: pick it, follow its steps.
 ///
 /// The iPhone, the coding agents and the watched pull requests have pages of their own in the sidebar.
 struct ConnectionsPage: View {
@@ -36,7 +36,6 @@ struct ConnectionsPage: View {
     @ObservedObject private var beeper = BeeperImporter.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var route = ConnectionsRoute.shared
-    @ObservedObject private var pageAction = SettingsPageAction.shared
     @ObservedObject private var spotify = SpotifySignIn.shared
     @State private var query = ""
     @State private var sheet: Sheet?
@@ -65,12 +64,8 @@ struct ConnectionsPage: View {
             .task { await linker.refresh() }
             // The helper started or stopped: what can be linked is listed again.
             .onChange(of: serviceBridge.isWorking) { _, _ in Task { await linker.refresh() } }
-            .onAppear {
-                follow(route.pending)
-                act(pageAction.requested)
-            }
+            .onAppear { follow(route.pending) }
             .onChange(of: route.pending) { _, target in follow(target) }
-            .onChange(of: pageAction.requested) { _, section in act(section) }
         switch part {
         case .chats:
             if beeper.isOffered {
@@ -78,9 +73,10 @@ struct ConnectionsPage: View {
             }
             ChatOptionsSection()
         case .services:
-            if nothingLinked { popular(options) }
             Group {
-                if !services.isEmpty || query.isEmpty { servicesSection(services) }
+                if !services.isEmpty || query.isEmpty {
+                    servicesSection(services, popular: nothingLinked ? featured(ConnectionCatalog.featuredServices, in: options) : [])
+                }
                 if !own.isEmpty { ownSection(own) }
                 if matches("Spotify " + tr("music.connect.title")) { musicSection }
             }
@@ -114,13 +110,6 @@ struct ConnectionsPage: View {
         }
     }
 
-    /// The header's button: link a chat app on Chat apps, add any connection on Connections.
-    private func act(_ section: SettingsSection?) {
-        guard let section, section == (part == .chats ? .chats : .connections) else { return }
-        pageAction.requested = nil
-        sheet = Sheet(category: part == .chats ? .chats : nil)
-    }
-
     /// The online services that are linked, each kind in its own row view.
     private struct Services {
         var cloud: [ContextSource]
@@ -131,24 +120,15 @@ struct ConnectionsPage: View {
 
     // MARK: Sections
 
-    /// Nothing linked yet: what the page is for, and the links most people make first.
-    private func popular(_ options: [ConnectionOption]) -> some View {
-        Section {
-            IntroCard(title: tr("hub.empty.title"), text: tr("hub.empty.text"))
-            ConnectionOptionGrid(options: ConnectionCatalog.featured.compactMap { id in options.first { $0.id == id } }) {
-                sheet = Sheet(option: $0)
-            }
-            .padding(.vertical, NookTheme.Spacing.xs)
-        } header: {
-            Text(tr("hub.popular"))
-        }
-    }
-
     private func chatsSection(_ chats: [ChatAppState], _ options: [ConnectionOption]) -> some View {
         Section {
             // Nothing linked yet: what the page is for, and the header's button links the first one.
             if chats.isEmpty {
                 ConnectionListEmpty(title: tr("hub.empty.title"), detail: tr("connection.emptyChats"))
+                ConnectionOptionGrid(options: featured(ConnectionCatalog.featuredChats, in: options)) {
+                    sheet = Sheet(option: $0)
+                }
+                .padding(.vertical, NookTheme.Spacing.xs)
             }
             ForEach(chats) { chatRow($0, options) }
         } header: {
@@ -156,9 +136,20 @@ struct ConnectionsPage: View {
         }
     }
 
-    private func servicesSection(_ services: Services) -> some View {
+    /// The featured options that exist on this Mac, in the catalog's order.
+    private func featured(_ ids: [String], in options: [ConnectionOption]) -> [ConnectionOption] {
+        ids.compactMap { id in options.first { $0.id == id } }
+    }
+
+    /// With nothing linked at all, `popular` holds the services most people link first: what the page is for, and those
+    /// one click away, under the header's "+ Add a connection".
+    private func servicesSection(_ services: Services, popular: [ConnectionOption]) -> some View {
         Section {
-            if services.isEmpty {
+            if services.isEmpty && !popular.isEmpty {
+                IntroCard(title: tr("hub.empty.title"), text: tr("hub.empty.text"))
+                ConnectionOptionGrid(options: popular) { sheet = Sheet(option: $0) }
+                    .padding(.vertical, NookTheme.Spacing.xs)
+            } else if services.isEmpty {
                 ConnectionListEmpty(title: tr("connection.emptyServices.title"), detail: tr("connection.emptyServices"))
             }
             ForEach(services.cloud.indices, id: \.self) { index in

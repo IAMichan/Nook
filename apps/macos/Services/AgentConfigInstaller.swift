@@ -12,7 +12,7 @@ enum AgentConfigInstaller {
         var title: String {
             switch self {
             case .claudeHooks: return "Claude Code"
-            case .claudeStatusLine: return "Claude subscription in the notch"
+            case .claudeStatusLine: return tr("agents.target.claudeStatusLine")
             case .codex: return "Codex"
             case .gemini: return "Gemini CLI"
             case .antigravity: return "Antigravity"
@@ -27,16 +27,13 @@ enum AgentConfigInstaller {
 
         var detail: String {
             switch self {
-            case .claudeHooks: return "Progress, permissions, and prompts in the notch"
-            case .claudeStatusLine: return "Your 5-hour and weekly limits (Pro/Max), via the status line"
-            case .codex, .copilot, .muse: return "Progress and permissions in the notch"
-            case .gemini, .antigravity, .cursor: return "Progress in the notch"
-            case .openCode: return "Progress and permissions in the notch, via a small plugin"
-            case .amp: return "Progress in the notch, via a small plugin"
-            case .hermes:
-                return "Progress and approvals in the notch, via a plugin. Enable it afterwards with: hermes plugins enable nook. "
-                    + "To answer Hermes' approvals in Nook, also set security.approval.transport: nook and "
-                    + "security.approval.transport_fallback: builtin in ~/.hermes/config.yaml"
+            case .claudeHooks: return tr("agents.target.detail.hooks")
+            case .claudeStatusLine: return tr("agents.target.detail.statusLine")
+            case .codex, .copilot, .muse: return tr("agents.target.detail.permissions")
+            case .gemini, .antigravity, .cursor: return tr("agents.target.detail.progress")
+            case .openCode: return tr("agents.target.detail.openCode")
+            case .amp: return tr("agents.target.detail.amp")
+            case .hermes: return tr("agents.target.detail.hermes")
             }
         }
 

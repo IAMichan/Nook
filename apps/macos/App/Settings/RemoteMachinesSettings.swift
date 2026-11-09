@@ -11,7 +11,6 @@ struct RemoteMachinesSection: View {
     @State private var adding: Adding?
     /// Machines from ~/.ssh/config, ~/.ssh/known_hosts and your tailnet, offered while none is added yet.
     @State private var found: [RemoteHostDiscovery.Suggestion] = []
-    @ObservedObject private var pageAction = SettingsPageAction.shared
 
     private struct Adding: Identifiable {
         let id = UUID()
@@ -40,9 +39,6 @@ struct RemoteMachinesSection: View {
                 test(machine)
             }
         }
-        // The header's "Add machine" button.
-        .onAppear { act(pageAction.requested) }
-        .onChange(of: pageAction.requested) { _, section in act(section) }
         // Again once the last machine is removed: the explanation then offers what Nook found.
         .task(id: machines.isEmpty) {
             guard machines.isEmpty else { return }
@@ -112,12 +108,6 @@ struct RemoteMachinesSection: View {
             ConnectionListHeader(title: tr("remote.title"), info: tr("remote.footer"),
                                  add: (tr("remote.add"), { adding = .blank }))
         }
-    }
-
-    private func act(_ section: SettingsSection?) {
-        guard section == .machines else { return }
-        pageAction.requested = nil
-        adding = .blank
     }
 
     /// No machine yet: what one is for, and the ones Nook found on this Mac, each one click from the form filled in.

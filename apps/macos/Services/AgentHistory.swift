@@ -57,7 +57,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return Color(hex: 0x6FCFB3)
         case .gemini: return Color(hex: 0x8AB4F8)
         case .antigravity: return Color(hex: 0xEA4335)
-        case .opencode: return Color(hex: 0xF5A742)
+        // Yellow, not orange: next to Claude in a chart legend the two read as one.
+        case .opencode: return Color(hex: 0xE8D44D)
         case .cursor: return Color(hex: 0x9AA4B2)
         case .grok: return Color(hex: 0xD9D9DE)
         case .acp: return Color(hex: 0xB59CF5)

@@ -9,8 +9,7 @@ struct AuditLogSection: View {
 
     var body: some View {
         Section {
-            TextField(tr("privacy.log.search"), text: $query)
-                .onSubmit(load)
+            NookSearchField(prompt: tr("privacy.log.search"), text: $query, style: .inline, onSubmit: load)
                 // Once you pause typing: the search reads up to 90 days of the log, and ran with every key.
                 .task(id: query) {
                     try? await Task.sleep(for: .milliseconds(200))
