@@ -79,7 +79,26 @@ final class PullRequestStatusTests: XCTestCase {
         XCTAssertEqual(status("clean", glyph: .conflict), .conflict)
         XCTAssertEqual(status("clean", glyph: .draft), .draft)
         XCTAssertEqual(status("clean", checks: "failure", glyph: .merged), .merged)
-        XCTAssertEqual(PullRequestMergeStatus(glyph: .open, checks: "failure", merge: nil), .open)
+        XCTAssertEqual(PullRequestMergeStatus(glyph: .open, checks: "failure", merge: nil), .checksFailing,
+                       "failing checks show before a read has said how merging stands")
+        XCTAssertEqual(PullRequestMergeStatus(glyph: .open, checks: "pending", merge: nil), .checksRunning)
+        XCTAssertEqual(PullRequestMergeStatus(glyph: .open, checks: "success", merge: nil), .open)
+        XCTAssertEqual(PullRequestMergeStatus(glyph: .open, checks: nil, merge: nil), .open)
+    }
+
+    /// The branch sync says only the state. It must not keep the checks from being read, or the tray above the composer
+    /// never shows CI.
+    func testTheBranchSyncDoesNotHoldBackTheChecksRead() async {
+        let store = PullRequestStatusStore()
+        let url = URL(string: "https://github.com/a/b/pull/6")!
+        store.record([PullRequestLink(host: .github, repository: "a/b", number: 6, url: url.absoluteString)], at: Date())
+        store.fetch = { _ in PullRequestSnapshot(state: "open", checks: "failure", failedChecks: ["ci"], reviews: [], comments: [], conflicted: false) }
+        await store.refresh(url, maxAge: 20)
+        XCTAssertEqual(store.status(url)?.checks, "failure")
+        // A read that knew the checks does count: the next one within `maxAge` waits.
+        store.fetch = { _ in PullRequestSnapshot(state: "open", checks: "success", failedChecks: [], reviews: [], comments: [], conflicted: false) }
+        await store.refresh(url, maxAge: 20)
+        XCTAssertEqual(store.status(url)?.checks, "failure")
     }
 
     func testAReadWithoutMergeFactsKeepsTheLastOnes() {

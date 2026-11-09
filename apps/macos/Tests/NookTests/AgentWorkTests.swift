@@ -241,6 +241,13 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertFalse(PullRequestNews.needsAgent(old: seen, new: conflicted))
         XCTAssertEqual(PullRequestNews.firstLook(conflicted).map(\.text), [])
 
+        // CI that already fails when the watch starts is still there to fix: the first look says so, and wakes the agent.
+        let failing = PullRequestSnapshot(state: "open", checks: "failure", failedChecks: ["build"], reviews: [], comments: [], conflicted: false)
+        XCTAssertEqual(PullRequestNews.firstLook(failing).map(\.text), ["CI failed: build."])
+        XCTAssertEqual(PullRequestNews.firstLook(failing).map(\.subject), [.failedChecks])
+        let merged = PullRequestSnapshot(state: "merged", checks: "failure", failedChecks: [], reviews: [], comments: [], conflicted: false)
+        XCTAssertEqual(PullRequestNews.firstLook(merged).map(\.text), [], "a merged pull request has nothing left to fix")
+
         XCTAssertTrue(PullRequestMergeability.githubKnown(["mergeable": false]))
         XCTAssertFalse(PullRequestMergeability.githubKnown(["mergeable": NSNull(), "mergeable_state": "unknown"]))
         XCTAssertFalse(PullRequestMergeability.gitlabKnown(["has_conflicts": false, "detailed_merge_status": "checking"]))

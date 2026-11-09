@@ -29,7 +29,12 @@ enum PullRequestMergeStatus: Equatable, Sendable {
     /// reason worth naming then.
     init(glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts?) {
         self.init(glyph)
-        guard self == .open, let merge else { return }
+        guard self == .open else { return }
+        // The checks speak even before a read has said how merging stands: the branch sync knows only the state.
+        guard let merge else {
+            if checks == "failure" { self = .checksFailing } else if checks == "pending" { self = .checksRunning }
+            return
+        }
         if merge.autoMerge {
             self = .autoMerge
         } else if checks == "failure" || (merge.state == "unstable" && checks != "pending") {
@@ -95,6 +100,10 @@ final class PullRequestStatusStore: ObservableObject {
 
     @Published private(set) var statuses: [String: PullRequestStatus] = [:]
     private var readAt: [String: Date] = [:]
+    /// When a read last said how the checks stand. The branch sync says only the state, so it orders the reads
+    /// (`readAt`) but does not count for `refresh`: otherwise a sync every few seconds keeps the checks from ever
+    /// being read, and the tray above the composer shows no CI at all.
+    private var checksReadAt: [String: Date] = [:]
     private var inFlight = Set<String>()
     /// Reads a pull request or merge request; set by the app (GitHub or GitLab, with the connected accounts).
     var fetch: ((URL) async -> PullRequestSnapshot?)?
@@ -136,6 +145,7 @@ final class PullRequestStatusStore: ObservableObject {
     func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts? = nil, at date: Date = Date()) {
         guard let key, glyph != .stack, date >= readAt[key] ?? .distantPast else { return }
         readAt[key] = date
+        if checks != nil { checksReadAt[key] = date }
         let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks, merge: merge ?? statuses[key]?.merge)
         if statuses[key] != next { statuses[key] = next }
     }
@@ -178,10 +188,11 @@ final class PullRequestStatusStore: ObservableObject {
 
     // MARK: Reading
 
-    /// Reads the pull request when the last read is older than `maxAge`; one read at a time per request.
+    /// Reads the pull request when the last read that knew its checks is older than `maxAge`; one read at a time per
+    /// request.
     func refresh(_ url: URL, maxAge: TimeInterval = 20) async {
         guard let key = Self.key(url), let fetch, !inFlight.contains(key),
-              Date().timeIntervalSince(readAt[key] ?? .distantPast) >= maxAge else { return }
+              Date().timeIntervalSince(checksReadAt[key] ?? .distantPast) >= maxAge else { return }
         inFlight.insert(key)
         defer { inFlight.remove(key) }
         let started = Date()
