@@ -368,7 +368,8 @@ struct AgentModelPicker: View {
     let provider: RunProvider
     let profileID: String?
     let model: String
-    var showsAccounts = false
+    /// Accounts get a logo of their own (a running session keeps its account).
+    var showsAccounts = true
     /// A new session can send its prompt to more models than the chosen one (`ModelComparison`): these are the others.
     /// Nil hides the choice (a running session).
     var comparing: Binding<[ComparisonTarget]>? = nil
@@ -390,20 +391,17 @@ struct AgentModelPicker: View {
         var id: String { [provider.rawValue, profileID].compactMap { $0 }.joined(separator: "/") }
     }
 
-    /// Accounts get a logo of their own for a new session (a running session keeps its account).
-    private var splitsAccounts: Bool { providers.count > 1 || showsAccounts }
-
     private var places: [Place] {
         providers.flatMap { current -> [Place] in
             let accounts = app.connectedProfiles(for: current)
-            guard splitsAccounts, accounts.count > 1 else { return [Place(provider: current, profileID: nil)] }
+            guard showsAccounts, accounts.count > 1 else { return [Place(provider: current, profileID: nil)] }
             return accounts.map { Place(provider: current, profileID: $0.id) }
         }
     }
 
     private var chosenPlace: Place {
         let accounts = app.connectedProfiles(for: provider)
-        guard splitsAccounts, accounts.count > 1 else { return Place(provider: provider, profileID: nil) }
+        guard showsAccounts, accounts.count > 1 else { return Place(provider: provider, profileID: nil) }
         return Place(provider: provider, profileID: profileID ?? accounts.first?.id)
     }
 

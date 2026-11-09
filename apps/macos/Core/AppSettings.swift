@@ -487,7 +487,9 @@ final class AppSettings: ObservableObject {
             let stored = newValue.storedValues
             if stored.provider != provider { provider = stored.provider }
             if useLocal != stored.useLocal { useLocal = stored.useLocal }
-            if newValue.runtime == .mlx { if localModel != newValue.model { localModel = newValue.model } } else if !newValue.model.isEmpty {
+            if newValue.runtime == .mlx {
+                if localModel != newValue.model { localModel = newValue.model }
+            } else if !newValue.model.isEmpty || stored.provider.isSubscription {
                 setProviderModel(newValue.model)
             }
         }
