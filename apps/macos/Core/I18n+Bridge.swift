@@ -5,6 +5,9 @@ import Foundation
 
 let bridgeTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "bridge.approval.browserOpen": "%@ wants to open %@",
+        "bridge.approval.browserOpenNote": "This address is not on your Mac: what is in it goes to that site. Allowed once, this site opens without asking for the rest of the session.",
+        "bridge.approval.generic": "%@ wants to use %@",
         "bridge.approval.schedule": "%@ wants to schedule a task",
         "bridge.approval.scheduleChange": "%@ wants to change a scheduled task",
         "bridge.approval.scheduleRun": "%@ wants to run a scheduled task now",
@@ -42,6 +45,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ is using your screen"
     ],
     .nl: [
+        "bridge.approval.browserOpen": "%@ wil %@ openen",
+        "bridge.approval.browserOpenNote": "Dit adres staat niet op je Mac: wat erin staat gaat naar die site. Eenmaal toegestaan opent deze site de rest van de sessie zonder te vragen.",
+        "bridge.approval.generic": "%@ wil %@ gebruiken",
         "bridge.approval.schedule": "%@ wil een taak inplannen",
         "bridge.approval.scheduleChange": "%@ wil een geplande taak wijzigen",
         "bridge.approval.scheduleRun": "%@ wil een geplande taak nu uitvoeren",
@@ -79,6 +85,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ gebruikt je scherm"
     ],
     .de: [
+        "bridge.approval.browserOpen": "%@ möchte %@ öffnen",
+        "bridge.approval.browserOpenNote": "Diese Adresse ist nicht auf deinem Mac: Was darin steht, geht an diese Website. Einmal erlaubt, öffnet sich diese Website für den Rest der Sitzung ohne Nachfrage.",
+        "bridge.approval.generic": "%@ möchte %@ verwenden",
         "bridge.approval.schedule": "%@ möchte eine Aufgabe planen",
         "bridge.approval.scheduleChange": "%@ möchte eine geplante Aufgabe ändern",
         "bridge.approval.scheduleRun": "%@ möchte eine geplante Aufgabe jetzt ausführen",
@@ -116,6 +125,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ benutzt deinen Bildschirm"
     ],
     .fr: [
+        "bridge.approval.browserOpen": "%@ veut ouvrir %@",
+        "bridge.approval.browserOpenNote": "Cette adresse n’est pas sur votre Mac : ce qu’elle contient part vers ce site. Une fois autorisé, ce site s’ouvre sans demander pour le reste de la session.",
+        "bridge.approval.generic": "%@ veut utiliser %@",
         "bridge.approval.schedule": "%@ veut planifier une tâche",
         "bridge.approval.scheduleChange": "%@ veut modifier une tâche planifiée",
         "bridge.approval.scheduleRun": "%@ veut lancer une tâche planifiée maintenant",
@@ -153,6 +165,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ utilise votre écran"
     ],
     .es: [
+        "bridge.approval.browserOpen": "%@ quiere abrir %@",
+        "bridge.approval.browserOpenNote": "Esta dirección no está en tu Mac: lo que contiene va a ese sitio. Una vez permitido, este sitio se abre sin preguntar durante el resto de la sesión.",
+        "bridge.approval.generic": "%@ quiere usar %@",
         "bridge.approval.schedule": "%@ quiere programar una tarea",
         "bridge.approval.scheduleChange": "%@ quiere cambiar una tarea programada",
         "bridge.approval.scheduleRun": "%@ quiere ejecutar ahora una tarea programada",

@@ -107,6 +107,46 @@ enum DelegationPolicy {
         return nil
     }
 
+    /// Where a child works when the parent asks for `isolation` (`shared`, `worktree`) or leaves it to Nook.
+    enum Placement: Equatable, Sendable {
+        /// In the parent's folder, seeing (and changing) the same files.
+        case shared
+        /// In a worktree of its own, on a branch from the parent's branch: the parent merges it when it is done.
+        case worktree
+    }
+
+    enum PlacementDenial: Error, Equatable, Sendable {
+        case notARepository
+        case unknown(String)
+
+        var message: String {
+            switch self {
+            case .notARepository: return "A task gets a worktree of its own only in a git repository; this folder is not one. Use isolation: shared."
+            case .unknown(let value): return "isolation must be shared or worktree, not \"\(value)\"."
+            }
+        }
+    }
+
+    /// Two agents that change the same files at once overwrite each other's work. A task that only looks (Plan mode)
+    /// always shares the folder. One that may change files gets a worktree of its own when another such task of the same
+    /// parent is already working in that folder, unless the parent chose; outside a git repository it can only share.
+    static func placement(requested: String?, mode: ExecutionMode, writingSiblingsInFolder: Int,
+                          inRepository: Bool) -> Result<Placement, PlacementDenial> {
+        let choice = (requested ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch choice {
+        case "shared":
+            return .success(.shared)
+        case "worktree":
+            guard inRepository else { return .failure(.notARepository) }
+            return .success(mode == .plan ? .shared : .worktree)
+        case "":
+            guard mode == .agent, inRepository, writingSiblingsInFolder > 0 else { return .success(.shared) }
+            return .success(.worktree)
+        default:
+            return .failure(.unknown(choice))
+        }
+    }
+
     /// What the child is told: the task and its role, nothing from the parent's conversation.
     static func prompt(task: String, role: DelegationRole) -> String {
         let clean = task.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -131,6 +171,9 @@ enum DelegatedTask {
         var hasPendingQuestion: Bool
         var model: String?
         var provider: String
+        /// For a task in a worktree of its own: where it works and on which branch, so the parent can merge it.
+        var worktree: String? = nil
+        var branch: String? = nil
     }
 
     static let summaryLimit = 4_000
@@ -169,6 +212,13 @@ enum DelegatedTask {
             "waitTimedOut": waitTimedOut
         ]
         if let model = snapshot.model, !model.isEmpty { object["model"] = model }
+        if let worktree = snapshot.worktree, !worktree.isEmpty {
+            object["worktree"] = worktree
+            if let branch = snapshot.branch, !branch.isEmpty {
+                object["branch"] = branch
+                object["merge"] = "Its changes are on branch \(branch), not in your folder: review them, then merge that branch (git merge \(branch)) once it has committed."
+            }
+        }
         object["summary"] = snapshot.summary ?? NSNull()
         let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return data.map { String(decoding: $0, as: UTF8.self) } ?? snapshot.state.rawValue

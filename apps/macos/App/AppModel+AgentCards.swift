@@ -37,7 +37,7 @@ extension AppModel {
         NookSound.play(.attention)
         SystemNotifier.shared.approval(
             approval, context: context, target: noticeTarget(approval),
-            decide: { [weak self] decision in self?.approvals.decide(approval, decision) },
+            decide: { [weak self] decision in self?.approvals.decide(approval, decision, source: .notification) },
             show: { [weak self] in self?.showApprovalCard(approval, context: context, open: open, waiting: waiting) },
             fallback: { [weak self] in
                 self?.showApprovalCard(approval, context: context, open: open, waiting: waiting, sound: false)

@@ -55,8 +55,54 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run(.agent, .bypass)), .allow,
                        "Allow everything: the pull request opens without asking")
         XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: external), .ask(.outward))
-        XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: external), .allow)
         XCTAssertEqual(BridgePolicy.verdict(tool: .terminalStop, caller: run()), .allow)
+    }
+
+    func testBrowserOpensLocalPagesDirectlyAndAsksForOtherSites() {
+        XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: external, localPage: true), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: run(), localPage: true), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: external), .ask(.outward),
+                       "an address outside this Mac carries what the agent put in it")
+        XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: run()), .ask(.outward))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: run(.agent, .bypass)), .allow)
+    }
+
+    func testASessionsRightsNeedItsToken() {
+        let id = UUID()
+        let accepts: (UUID, String) -> Bool = { $0 == id && BridgeIdentity.matches("secret-token", $1) }
+        XCTAssertEqual(BridgeIdentity.run(env: ["NOOK_RUN_ID": id.uuidString, "NOOK_BRIDGE_TOKEN": "secret-token"], accepts: accepts), id)
+        XCTAssertNil(BridgeIdentity.run(env: ["NOOK_RUN_ID": id.uuidString], accepts: accepts), "the id alone proves nothing")
+        XCTAssertNil(BridgeIdentity.run(env: ["NOOK_RUN_ID": id.uuidString, "NOOK_BRIDGE_TOKEN": "secret-tokeN"], accepts: accepts))
+        XCTAssertNil(BridgeIdentity.run(env: ["NOOK_RUN_ID": "not-a-uuid", "NOOK_BRIDGE_TOKEN": "secret-token"], accepts: accepts))
+        XCTAssertFalse(BridgeIdentity.matches(nil, ""))
+        XCTAssertFalse(BridgeIdentity.matches("", ""), "an empty token never matches")
+        XCTAssertFalse(BridgeIdentity.matches("abc", "abcd"))
+    }
+
+    func testLocalSessionsGetTheirTokenInTheServersEnvironment() {
+        let id = UUID()
+        var launch = BridgeLaunch(script: "/x")
+        XCTAssertNil(launch.environment(runID: id)["NOOK_BRIDGE_TOKEN"])
+        launch.token = "t1"
+        XCTAssertEqual(launch.environment(runID: id)["NOOK_BRIDGE_TOKEN"], "t1")
+        XCTAssertEqual(launch.environment(runID: id)["NOOK_RUN_ID"], id.uuidString)
+        XCTAssertNil(launch.environment(runID: id)["NOOK_BRIDGE_SOCK"])
+    }
+
+    func testEveryToolThatMayAskIsAskedForSomewhere() {
+        // A tool whose handler does not ask is asked for centrally; nothing that can return `.ask` is left unguarded.
+        let callers = [run(), run(.agent, .ask), external]
+        for tool in BridgeTool.allCases where !tool.asksInHandler {
+            for caller in callers {
+                if case .ask = BridgePolicy.verdict(tool: tool, caller: caller) {
+                    // Allowed: the central gate in WorkspaceBridge asks. Make sure the table is consistent.
+                    XCTAssertFalse(tool.asksInHandler, tool.rawValue)
+                }
+            }
+        }
+        for tool in BridgeTool.allCases where tool.effect == .read {
+            XCTAssertFalse(tool.asksInHandler || tool == .sessionQuestions, "reads never ask: \(tool.rawValue)")
+        }
     }
 
     func testNookToolsReadDirectlyAndActOnlyAfterApproval() {
