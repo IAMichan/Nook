@@ -19,6 +19,26 @@ struct ModelManifest: Codable, Equatable, Sendable {
     var updatedAt: Date
     /// Keyed by `RunProvider.rawValue`. A key this build does not know is kept but not used.
     var agents: [String: Agent]
+    /// Public list prices (USD per million tokens) by model id prefix, for the usage page's API-equivalent estimate
+    /// (`ModelRates`). Optional: without it the prices built into Nook are used.
+    var pricing: [Price]?
+
+    struct Price: Codable, Equatable, Sendable {
+        /// The start of a model id ("claude-opus-5-5"); the longest matching prefix wins.
+        var prefix: String
+        var input: Double
+        var output: Double
+        /// Nil: a tenth of `input`.
+        var cacheRead: Double?
+        /// Nil: 1.25 × `input`.
+        var cacheWrite: Double?
+
+        var modelPrice: ModelPrice {
+            ModelPrice(input: input, output: output, cacheRead: cacheRead ?? input * 0.1, cacheWrite: cacheWrite ?? input * 1.25)
+        }
+    }
+
+    static let maxPrices = 400
 
     struct Agent: Codable, Equatable, Sendable {
         /// The model the agent runs when Nook passes none, when the manifest knows it.
@@ -102,6 +122,23 @@ struct ModelManifest: Codable, Equatable, Sendable {
             }
             if let fallback = agent.defaultModel, !agent.models.contains(where: { $0.id == fallback }) {
                 throw ModelManifestError.invalid("\(key): default \(fallback) is not listed")
+            }
+        }
+        try Self.validate(pricing ?? [])
+    }
+
+    /// Every price names a model id prefix once, with finite rates of zero or more (a free model is zero).
+    static func validate(_ prices: [Price]) throws {
+        guard prices.count <= maxPrices else { throw ModelManifestError.invalid("\(prices.count) prices") }
+        var prefixes = Set<String>()
+        for price in prices {
+            guard isValidID(price.prefix) else { throw ModelManifestError.invalid("price prefix \"\(price.prefix)\"") }
+            guard prefixes.insert(price.prefix.lowercased()).inserted else {
+                throw ModelManifestError.invalid("price for \(price.prefix) is listed twice")
+            }
+            let rates = [price.input, price.output] + [price.cacheRead, price.cacheWrite].compactMap { $0 }
+            guard rates.allSatisfy({ $0.isFinite && $0 >= 0 && $0 < 10_000 }) else {
+                throw ModelManifestError.invalid("price of \(price.prefix)")
             }
         }
     }
