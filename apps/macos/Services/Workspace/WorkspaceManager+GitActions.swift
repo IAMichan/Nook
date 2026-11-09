@@ -73,8 +73,7 @@ extension WorkspaceManager {
                           guard let self else { return }
                           self.openPullRequests[id] = link
                           self.pullRequestCreated?(id, link)
-                          // A GitHub pull request Nook opened for the session is watched from the start.
-                          if self.run(id)?.prWatch == nil, PullRequestWatch.canWatch(link) { self.watchPullRequest(id, url: link) }
+                          self.watchCreatedPullRequest(id, url: link)
                       },
                       openedRequestPage: { [weak self] page, _ in
                           guard let self, let run = self.run(id) else { return }

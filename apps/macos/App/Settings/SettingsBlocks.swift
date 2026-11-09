@@ -797,6 +797,9 @@ struct WorkspaceSettingsSection: View {
             // Only the merge commit Nook asks GitHub for: the branch's commits and your own authorship stay as they are.
             SettingToggle(tr("settings.ws.stripAgentCredits"), detail: tr("settings.ws.stripAgentCredits.detail"),
                           isOn: $stripAgentCredits)
+            // Every session, whichever agent opened the pull request: the eye in the tray above the composer follows one by hand.
+            SettingToggle(tr("settings.ws.watchNewPullRequests"), detail: tr("settings.ws.watchNewPullRequests.detail"),
+                          isOn: $ws.watchNewPullRequests)
         } header: {
             SettingsSectionTitle(tr("settings.ws.commitStyle"), info: tr("settings.ws.commitStyle.footer"))
         }

@@ -2721,6 +2721,14 @@ final class WorkspaceManager: ObservableObject {
         guard let made = RunPullRequestLinks.last(in: Array(all[start...])),
               made != RunPullRequestLinks.last(in: Array(all[..<start])) else { return }
         pullRequestCreated?(id, made)
+        watchCreatedPullRequest(id, url: made)
+    }
+
+    /// A pull request the session just opened is watched from the start, unless Settings says you follow them yourself
+    /// (`WorkspaceSettings.watchNewPullRequests`). Covers the git button's and the agent's own (pull_request_create, `gh`).
+    func watchCreatedPullRequest(_ id: UUID, url: URL) {
+        guard settings.watchNewPullRequests, PullRequestWatch.canWatch(url), !isWatching(id, url: url) else { return }
+        watchPullRequest(id, url: url)
     }
 
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
