@@ -64,7 +64,17 @@ struct CardView: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             header
 
-            if card.input, card.title.count > 140 {
+            if case .answer(let answer) = card.detail {
+                // Nook's answer as the chat shows it, scrolled when it is longer than the card.
+                ScrollView(showsIndicators: false) {
+                    NookAnswerView(answer: answer, onAsk: onReply)
+                        .padding(.bottom, NookTheme.Spacing.xs)
+                }
+                .padding(.top, NookTheme.Spacing.md)
+                if !answer.offers.isEmpty {
+                    AnswerOfferChips(offers: answer.offers, onAsk: onReply).padding(.top, NookTheme.Spacing.md)
+                }
+            } else if card.input, card.title.count > 140 {
                 // Long answers scroll and can be selected; they are never truncated.
                 ScrollView(showsIndicators: false) {
                     titleText.frame(maxWidth: .infinity, alignment: .leading)
@@ -184,7 +194,7 @@ struct CardView: View {
     private var offerChips: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             ForEach(card.offers, id: \.self) { offer in
-                OfferChip(title: offer) { onReply(offer) }
+                AnswerOfferChip(text: offer) { onReply(offer) }
             }
             Spacer(minLength: 0)
         }
@@ -292,6 +302,9 @@ struct CardView: View {
             NoteDetail(text: text, label: label)
         case .summary(let text):
             SummaryDetail(text: text)
+        case .answer:
+            // Drawn in the title's place (`fullCard`).
+            EmptyView()
         case .chat(let bubbles):
             // A message card's chat can be answered: each message can be quoted in the field, or get an emoji.
             ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen,
@@ -374,35 +387,6 @@ private struct CardAppIcon: View {
         }
         .frame(width: 16, height: 16)
         .accessibilityHidden(true)
-    }
-}
-
-/// An offer from Nook as a button, preceded by a sparkle.
-private struct OfferChip: View {
-    let title: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "sparkles")
-                    .font(NookTheme.font(10.5, .semibold))
-                    .foregroundStyle(NookTheme.iris)
-                Text(title)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .frame(height: 30)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
-            .contentShape(Capsule())
-            .hoverLift(hovering)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel("Nook: \(title)")
     }
 }
 

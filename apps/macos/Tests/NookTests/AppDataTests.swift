@@ -130,6 +130,10 @@ final class AppDataTests: XCTestCase {
         let order = Research.hits(in: text, tool: "whatsapp_open_chats").map(\.title)
         XCTAssertEqual(order, ["Voetbal", "Tom", "Jan de Vries"], "unread first; a group where someone else wrote last is not waiting for you; Lisa got the last word")
         XCTAssertFalse(text.contains("Buren"))
+        // Each chat is a source that opens on itself in the Chats tab.
+        let references = ReferenceParser.parse(text).references
+        XCTAssertEqual(references.compactMap { SourceReference.chat($0.url)?.name }, ["Voetbal", "Tom", "Jan de Vries"])
+        XCTAssertTrue(references.allSatisfy { SourceReference.isOpenable($0.url) })
     }
 
     func testNoOpenChatsIsSaidPlainly() {

@@ -363,6 +363,20 @@ enum DoubleTapLogic {
         """
     }
 
+    /// How an answer to a question asked from the notch (Double Tap, a notice's field) should read: it lands in a small
+    /// card while the user is busy elsewhere, so it leads with the answer, keeps to what needs them, and lists one thing
+    /// per line with its name first. The card draws Markdown (`NookAnswerView`), so a list really is a list.
+    static let notchAnswerNote = """
+    The answer shows in a small card in the notch while the user works in another app, so make it quick to scan: \
+    start with the answer itself in one short sentence (yes or no, the number, the time), with no introduction. When \
+    there are several items, follow with a Markdown list, one line per item, most important or most urgent first, each \
+    starting with its name in **bold**, then only what matters for deciding what to do (how many, from whom, when). \
+    Leave out what needs nothing from the user unless they asked for everything (such as a chat where they sent the \
+    last message, a channel, a newsletter or an automatic update); say in one line at the end how many you left out. \
+    Put a citation at the end of the line it backs, never a row of citations in the opening sentence. No closing \
+    remarks or offers in the text.
+    """
+
     // MARK: Prompt
 
     static let system = """

@@ -205,7 +205,7 @@ enum AppData {
             }
             if chat.count > perChat { lines.append("(\(chat.count - perChat) more matching messages in this conversation)") }
             blocks.append(lines.joined(separator: "\n"))
-            refs.append(ReferenceParser.line(title: "\(app): \(first.chatName)", url: nil, detail: stamp(first.date, time: false)))
+            refs.append(ReferenceParser.line(title: "\(app): \(first.chatName)", url: SourceReference.chatLink(app: app, name: first.chatName), detail: stamp(first.date, time: false)))
         }
         return (blocks + refs).joined(separator: "\n\n")
     }
@@ -230,7 +230,7 @@ enum AppData {
             previous = index
         }
         lines.append(freshness(newest: last.date, other: other, now: now))
-        lines.append(ReferenceParser.line(title: "\(app): \(last.chatName)", url: nil, detail: stamp(last.date, time: false)))
+        lines.append(ReferenceParser.line(title: "\(app): \(last.chatName)", url: SourceReference.chatLink(app: app, name: last.chatName), detail: stamp(last.date, time: false)))
         return lines.joined(separator: "\n")
     }
 
@@ -285,7 +285,7 @@ enum AppData {
             if chat.unread > 0 { state = "\(chat.unread) unread" } else if chat.unread < 0 { state = "marked unread" } else { state = "waiting for your reply" }
             lines.append("### \(chat.name)\(chat.group ? " (group)" : "") | \(stamp(chat.date, time: false)) [chat: \(chat.chat)]")
             lines.append("- \(state) · newest message \(stamp(chat.date)) from \(chat.lastSender): \(String(chat.text.prefix(200)))")
-            refs.append(ReferenceParser.line(title: "\(app): \(chat.name)", url: nil, detail: "\(state) · \(stamp(chat.date, time: false))"))
+            refs.append(ReferenceParser.line(title: "\(app): \(chat.name)", url: SourceReference.chatLink(app: app, name: chat.name), detail: "\(state) · \(stamp(chat.date, time: false))"))
         }
         let more = unread.count + waiting.count - keep
         if more > 0 { lines.append("(\(more) more open chats not shown)") }

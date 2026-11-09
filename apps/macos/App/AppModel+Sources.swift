@@ -39,6 +39,12 @@ extension AppModel {
     /// Opens a cited source safely (https URL, local file inside user home, or mail URL).
     func openReference(_ reference: SourceReference) {
         guard SourceReference.isOpenable(reference.url), let raw = reference.url, let url = URL(string: raw) else { return }
+        // A chat opens on itself in the Chats tab, the same for every chat app; a chat Nook no longer shows is searched.
+        if let chat = SourceReference.chat(raw) {
+            let entry = chatsEntryID(named: chat.name)
+            showChats(ChatsFocus(chat: entry, query: entry == nil ? chat.name : ""))
+            return
+        }
         if url.isFileURL {
             guard FileText.isAllowed(url) else { return }
             // Opening an app, script or installer would run it: show those in Finder instead.

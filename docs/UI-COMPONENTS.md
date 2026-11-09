@@ -68,6 +68,12 @@ and a selected row stands a full step above a hovered one. In practice:
   one row with the round send button, 8 pt from the corner. Only a notch card keeps its choices in a tray under the box. Your own message is a soft
   `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
+- **One answer from Nook.** Nook's answer reads the same in the Nook chat and in the notch's card for a question asked
+  with Double Tap or from a notice (`NotchUI/Components/NookAnswer.swift`): `NookAnswerView` draws its Markdown, the
+  card's `CardDetail.answer` shows it in the title's place, and `.answerReferences(_:)` turns its `[2]` into a small grey
+  raised number that opens source 2 (a chat opens in the Chats tab) and names it on hover. The cited sources are
+  `AnswerSourceChips`, and what Nook can do next is `AnswerOfferChips` in both places. Never draw an answer's text as a
+  plain `Text` or build another offer chip.
 - **One message component.** Every conversation (the Nook chat, a session Nook runs, an agent's own transcript, and
   the iPhone's chat and transcripts) draws its messages with `TranscriptUserMessage` and `TranscriptReply`: the same
   14 pt text, the same `TranscriptStyle.turnGap` above each of your messages, and the same footer (time and copy, plus
