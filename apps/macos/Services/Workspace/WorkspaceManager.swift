@@ -523,6 +523,16 @@ final class WorkspaceManager: ObservableObject {
 
     /// The session's timeline for Search everything: from memory when it is loaded, else read from disk off the main
     /// thread without keeping it, so a search does not hold every timeline in memory.
+    /// The sessions that may mention `query`, from the search index; nil when the index cannot answer. Timelines in
+    /// memory are always included: what they streamed since their last save is not in the index yet.
+    func sessionsMentioning(_ query: String) async -> [UUID]? {
+        let store = store
+        guard let indexed = await Task.detached(priority: .userInitiated, operation: { store.sessions(mentioning: query) }).value else {
+            return nil
+        }
+        return indexed + events.keys.filter { !indexed.contains($0) }
+    }
+
     func timelineForSearch(_ id: UUID) async -> [RunEvent] {
         if let loaded = events[id] { return loaded }
         let store = store

@@ -71,6 +71,88 @@ final class RunEventLog {
             sqlite3_close(db)
             return nil
         }
+        // The search index is extra: a SQLite without FTS5 or its trigram tokenizer only means search scans instead.
+        searchAvailable = exec(Self.searchSchema)
+    }
+
+    // MARK: Search index
+
+    /// Text of every event, for finding the sessions that mention a word without reading every timeline. One row per
+    /// event, folded (`TimelineSearchText.fold`) and cut into trigrams, so a match is any piece of text of three or more
+    /// characters, as "Find in session" matches. A prefilter: `TimelineSearch` still finds the exact matches.
+    private static let searchSchema = """
+        CREATE VIRTUAL TABLE IF NOT EXISTS run_text USING fts5(run_id UNINDEXED, event_id UNINDEXED, body, tokenize = 'trigram');
+        """
+
+    /// The index can be used (FTS5 with the trigram tokenizer is there).
+    private(set) var searchAvailable = false
+
+    /// Indexes events of a session: each replaces what was indexed for that event.
+    @discardableResult
+    func index(_ runID: UUID, _ entries: [(event: UUID, text: String)]) -> Bool {
+        guard searchAvailable else { return false }
+        for entry in entries {
+            guard run("DELETE FROM run_text WHERE run_id = ? AND event_id = ?", [runID.uuidString, entry.event.uuidString]) else { return false }
+            if entry.text.isEmpty { continue }
+            guard run("INSERT INTO run_text (run_id, event_id, body) VALUES (?, ?, ?)",
+                      [runID.uuidString, entry.event.uuidString, entry.text]) else { return false }
+        }
+        return true
+    }
+
+    /// Indexes a whole timeline: what was indexed for the session before goes.
+    @discardableResult
+    func reindex(_ runID: UUID, _ entries: [(event: UUID, text: String)]) -> Bool {
+        guard searchAvailable, removeIndex(runID) else { return false }
+        return index(runID, entries)
+    }
+
+    @discardableResult
+    func removeIndex(_ runID: UUID) -> Bool {
+        guard searchAvailable else { return false }
+        return run("DELETE FROM run_text WHERE run_id = ?", [runID.uuidString])
+    }
+
+    /// The sessions whose events contain `query` (folded), newest match first. Nil when the index cannot answer: it is
+    /// not there, or the query is shorter than a trigram; then the caller reads the timelines itself.
+    func sessions(mentioning query: String, limit: Int = 2_000) -> [UUID]? {
+        let folded = TimelineSearchText.fold(query)
+        guard searchAvailable, folded.count >= 3 else { return nil }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "SELECT run_id, MAX(rowid) AS last FROM run_text WHERE body MATCH ? GROUP BY run_id ORDER BY last DESC LIMIT ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        // One phrase: the literal text, quotes doubled, never FTS syntax.
+        sqlite3_bind_text(stmt, 1, "\"" + folded.replacingOccurrences(of: "\"", with: "\"\"") + "\"", -1, transient)
+        sqlite3_bind_int(stmt, 2, Int32(limit))
+        var result: [UUID] = []
+        var step = sqlite3_step(stmt)
+        while step == SQLITE_ROW {
+            if let text = sqlite3_column_text(stmt, 0), let id = UUID(uuidString: String(cString: text)) { result.append(id) }
+            step = sqlite3_step(stmt)
+        }
+        return step == SQLITE_DONE ? result : nil
+    }
+
+    /// Runs one statement with text arguments.
+    private func run(_ sql: String, _ arguments: [String]) -> Bool {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        for (index, argument) in arguments.enumerated() { sqlite3_bind_text(stmt, Int32(index + 1), argument, -1, transient) }
+        return sqlite3_step(stmt) == SQLITE_DONE
+    }
+
+    /// Every session that has rows, for building the index once.
+    func runIDs() -> [UUID] {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT DISTINCT run_id FROM run_events", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var result: [UUID] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let text = sqlite3_column_text(stmt, 0), let id = UUID(uuidString: String(cString: text)) { result.append(id) }
+        }
+        return result
     }
 
     deinit { sqlite3_close(db) }
@@ -243,5 +325,22 @@ enum RunEventFold {
             }
         }
         return Result(events: events, supersededRows: max(0, rows.count - unreadable - events.count), unreadableRows: unreadable)
+    }
+}
+
+/// What the search index keeps of an event: the same fields "Find in session" searches (not thinking), folded the way
+/// it compares (case and diacritics ignored).
+enum TimelineSearchText {
+    static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    static func body(_ event: RunEvent) -> String {
+        guard event.kind != .thinking else { return "" }
+        return fold([event.text, event.detail ?? "", event.output ?? ""].filter { !$0.isEmpty }.joined(separator: "\n"))
+    }
+
+    static func entries(_ events: [RunEvent]) -> [(event: UUID, text: String)] {
+        events.map { ($0.id, body($0)) }
     }
 }
