@@ -341,65 +341,6 @@ enum InboxLayout {
     }
 }
 
-/// What dropping a row on a section does (docs/user/thread-sidebar.md).
-enum InboxDrop {
-    enum Reason: String, Equatable, Sendable {
-        /// Snoozing needs a wake time, so a drop cannot do it.
-        case needsTime
-        /// The Working shelf is derived from what the agent is doing.
-        case automatic
-        case notReorderable
-    }
-
-    enum DropResult: Equatable, Sendable {
-        case pin, unpin, settle, unsettle, wake
-        /// Same section, Pinned or Active: only the order changes.
-        case reorder
-        case rejected(Reason)
-
-        /// Drag-ghost label (i18n key); nil when the drop shows no badge.
-        var labelKey: String? {
-            switch self {
-            case .pin: return "inbox.drop.pin"
-            case .unpin: return "inbox.drop.unpin"
-            case .settle: return "inbox.drop.settle"
-            case .unsettle: return "inbox.drop.unsettle"
-            case .wake: return "inbox.drop.wake"
-            case .reorder: return nil
-            case .rejected(let reason): return "inbox.drop.\(reason.rawValue)"
-            }
-        }
-    }
-
-    static func decide(row: InboxRow, from: InboxSection.Kind, to: InboxSection.Kind) -> DropResult {
-        if from == to {
-            return from == .pinned || from == .active ? .reorder : .rejected(from == .snoozed ? .needsTime : .notReorderable)
-        }
-        switch to {
-        case .snoozed: return .rejected(.needsTime)
-        case .working: return .rejected(.automatic)
-        case .pinned: return row.pinned && from != .pinned ? .reorder : .pin
-        case .settled: return .settle
-        case .active:
-            switch from {
-            case .pinned: return .unpin
-            case .settled: return .unsettle
-            case .snoozed: return .wake
-            case .working: return .rejected(.automatic)
-            case .active: return .reorder
-            }
-        }
-    }
-
-    /// Insertion gap (0...count, before the dragged row is taken out) to the final index; nil when nothing moves.
-    static func reorderTarget(ids: [String], dragged: String, gap: Int) -> Int? {
-        guard let from = ids.firstIndex(of: dragged) else { return nil }
-        let clamped = min(max(gap, 0), ids.count)
-        let to = clamped > from ? clamped - 1 : clamped
-        return to == from ? nil : to
-    }
-}
-
 enum InboxSearch {
     /// Message search starts at this many characters; titles match from the first.
     static let minimumMessageQueryLength = 2

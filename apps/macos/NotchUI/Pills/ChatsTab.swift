@@ -1523,7 +1523,6 @@ struct ChatsRow: View, Equatable {
             }
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
-            .selectionMark(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

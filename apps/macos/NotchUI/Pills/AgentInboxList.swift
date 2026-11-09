@@ -1,10 +1,9 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The Agents list as an inbox: pinned sessions first, then what is active, a shelf for sessions that work and need
 /// nothing, one for snoozed sessions and one for what you settled. Rows that need you stay loud, the rest recede; you pin,
-/// settle and snooze from the row or by dragging it, and the last such action can be undone for five seconds (⌘Z).
-/// The decisions are in `InboxLayout`, `InboxDrop`, `UndoLog` and `AutoSettlePolicy`.
+/// settle and snooze from the row, and the last such action can be undone for five seconds (⌘Z).
+/// The decisions are in `InboxLayout`, `UndoLog` and `AutoSettlePolicy`.
 struct AgentInboxList: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = InboxStore.shared
@@ -24,12 +23,6 @@ struct AgentInboxList: View {
 
     @Environment(\.inPanelSidebar) private var inSidebar
     @State private var settledLimit = InboxLayout.settledPage
-    @State private var dragging: String?
-    @State private var targeted: InboxSection.Kind?
-    /// The row (or section header) the dragged row is over: moving onto the next row of a section says "entered" there
-    /// before the last row says "left", which must not take the section's mark away.
-    @State private var targetedSpot: String?
-    @State private var hint: String?
     /// The project header under the pointer: it shows its "+".
     @State private var hoveredProject: String?
     @State private var selection = ListSelection<String>()
@@ -171,12 +164,6 @@ struct AgentInboxList: View {
                 }
                 headerActions
             }
-            if let hint {
-                Text(hint)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.amber)
-                    .padding(.horizontal, NookTheme.Spacing.lg)
-            }
             if showsEmptyState(sections) {
                 // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
                 // session at all it sets up an agent, otherwise it starts a new session.
@@ -309,16 +296,14 @@ struct AgentInboxList: View {
                 ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
             }
             .padding(.bottom, section.kind == .pinned ? NookTheme.Spacing.md : 0)
-            .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
         case .working, .snoozed, .settled:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                shelfHeader(section, sections: sections, byID: byID)
+                shelfHeader(section)
                 ForEach(rows(of: section)) { entry in
                     entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
                 }
             }
             .padding(.top, NookTheme.Spacing.md)
-            .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
         }
     }
 
@@ -338,8 +323,7 @@ struct AgentInboxList: View {
         return group.rows.filter { $0.entry.id == current }
     }
 
-    /// One project as a dropdown: its header folds it, its rows act as the section they come from. Dropping a session on
-    /// it works as a drop on Active (unpin, reopen, wake).
+    /// One project as a dropdown: its header folds it, its rows act as the section they come from.
     private func projectView(_ group: InboxProjectGroup, sections: [InboxSection], byID: [String: AgentListItem],
                              shown: [String]) -> some View {
         let home = Dictionary(sections.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
@@ -352,7 +336,6 @@ struct AgentInboxList: View {
             }
         }
         .padding(.top, NookTheme.Spacing.md)
-        .modifier(DropTarget(kind: .active, section: active, list: self, sections: sections, byID: byID, row: nil))
     }
 
     /// The folder a new session for this project starts in: the main checkout behind a session on this Mac (an agent's
@@ -478,7 +461,7 @@ struct AgentInboxList: View {
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            shelfHeader(section, sections: sections, byID: byID)
+            shelfHeader(section)
             if !rows(of: section).isEmpty {
                 ViewThatFits(in: .vertical) {
                     list
@@ -487,40 +470,16 @@ struct AgentInboxList: View {
                 .frame(maxHeight: 280)
             }
         }
-        .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
     }
 
-    private func shelfHeader(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem]) -> some View {
+    private func shelfHeader(_ section: InboxSection) -> some View {
         let open = !collapsed.contains(section.kind)
         let count = section.rows.count + section.hiddenCount
-        let ghost = ghostLabel(for: section.kind, sections: sections)
         return NookShelfHeader(title: tr("inbox.section." + section.kind.rawValue), count: count, open: open) {
             withAnimation(NookTheme.reveal) {
                 store.setShelf(section.kind, collapsed: open)
             }
-        } accessory: {
-            if let ghost {
-                Text(ghost)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.iris)
-                    .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
-            }
         }
-    }
-
-    /// What dropping the dragged row on this section would do, named before you let go.
-    private func ghostLabel(for kind: InboxSection.Kind, sections: [InboxSection]) -> String? {
-        guard targeted == kind, let dragging, let (section, entry) = locate(dragging, in: sections) else { return nil }
-        let result = InboxDrop.decide(row: entry.row, from: section.kind, to: kind)
-        return result.labelKey.map { tr($0) }
-    }
-
-    private func locate(_ id: String, in sections: [InboxSection]) -> (InboxSection, InboxEntry)? {
-        for section in sections {
-            if let entry = section.rows.first(where: { $0.id == id }) { return (section, entry) }
-        }
-        return nil
     }
 
     // MARK: A row
@@ -578,11 +537,6 @@ struct AgentInboxList: View {
                     }
                 }
             }
-            .onDrag {
-                dragging = item.id
-                return NSItemProvider(object: item.id as NSString)
-            }
-            .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: entry.id))
         }
     }
 
@@ -627,7 +581,7 @@ struct AgentInboxList: View {
         Button(entry.row.pinned ? tr("inbox.unpin") : tr("inbox.pin")) {
             withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) }
         }
-        // Pinned sessions keep the order you give them: one step up or down, as dragging does.
+        // Pinned sessions keep the order you give them: one step up or down.
         if section.kind == .pinned, let index = section.rows.firstIndex(where: { $0.id == entry.id }) {
             Button(tr("inbox.moveUp")) {
                 withAnimation(NookTheme.reveal) { store.reorder(item.id, toIndex: index - 1, within: section) }
@@ -726,54 +680,6 @@ struct AgentInboxList: View {
                             actions: actions,
                             toggleAll: { selection.toggleAll(shown) },
                             done: { withAnimation(NookTheme.reveal) { selection.clear() } })
-    }
-
-    // MARK: Drops
-
-    /// Applies a drop: onto a row of the same section it reorders, onto a section it changes the session's state.
-    fileprivate func drop(on kind: InboxSection.Kind, row targetRow: String?, section: InboxSection, sections: [InboxSection],
-                          byID: [String: AgentListItem]) -> Bool {
-        defer { dragging = nil; targeted = nil; targetedSpot = nil }
-        guard let dragged = dragging, let (from, entry) = locate(dragged, in: sections), let item = byID[dragged] else { return false }
-        if from.kind == kind, let targetRow {
-            let ids = section.rows.map(\.id)
-            guard let gap = ids.firstIndex(of: targetRow),
-                  let target = InboxDrop.reorderTarget(ids: ids, dragged: dragged, gap: gap) else { return true }
-            store.reorder(dragged, toIndex: target, within: section)
-            return true
-        }
-        switch InboxDrop.decide(row: entry.row, from: from.kind, to: kind) {
-        case .pin: pinAndUnsettle(item, entry)
-        case .unpin: store.unpin(item.id)
-        case .settle: store.settle([item])
-        case .unsettle: store.unsettle([item])
-        case .wake: wake(item)
-        case .reorder: break
-        case .rejected(let reason):
-            show(tr("inbox.drop." + reason.rawValue))
-        }
-        return true
-    }
-
-    fileprivate func setTargeted(_ kind: InboxSection.Kind, row: String?, _ on: Bool) {
-        let spot = kind.rawValue + "/" + (row ?? "")
-        withAnimation(NookTheme.hover) {
-            if on {
-                if targeted != kind { targeted = kind }
-                targetedSpot = spot
-            } else if targetedSpot == spot {
-                targeted = nil
-                targetedSpot = nil
-            }
-        }
-    }
-
-    private func show(_ text: String) {
-        hint = text
-        Task {
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            if hint == text { hint = nil }
-        }
     }
 
     // MARK: Auto-settle
@@ -901,7 +807,6 @@ extension AgentInboxList {
     }
 }
 
-/// A section or a row as a place to drop a dragged session.
 /// The field that renames a session in the list, over its row: it starts with the name selected, Return keeps the new
 /// name (`done` with it) and Escape or leaving the field keeps the old one (`done` with nil).
 private struct InboxRenameField: View {
@@ -928,24 +833,6 @@ private struct InboxRenameField: View {
             }
             .onExitCommand { done(nil) }
             .onChange(of: focused) { _, now in if !now { done(nil) } }
-    }
-}
-
-private struct DropTarget: ViewModifier {
-    let kind: InboxSection.Kind
-    let section: InboxSection
-    let list: AgentInboxList
-    let sections: [InboxSection]
-    let byID: [String: AgentListItem]
-    let row: String?
-
-    func body(content: Content) -> some View {
-        content.onDrop(of: [.plainText], isTargeted: Binding(get: { false }, set: { list.setTargeted(kind, row: row, $0) })) { _ in
-            // The row glides to where it was dropped, as the others make room, instead of jumping there.
-            withAnimation(NookTheme.reveal) {
-                list.drop(on: kind, row: row, section: section, sections: sections, byID: byID)
-            }
-        }
     }
 }
 
