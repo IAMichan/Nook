@@ -9,7 +9,8 @@ import Foundation
 ///
 /// This stays within Anthropic's rules for the subscription login: the unmodified Claude Code binary signs in with the
 /// user's own account, Nook never reads, stores or forwards credentials, and it asks no more often than someone typing
-/// `/usage` now and then: only for signed-in accounts, in the background every ten minutes at most, and not while Claude
+/// `/usage` now and then: only for signed-in accounts, in the background once an hour at most (`UsageBackgroundRead`),
+/// never while nobody is at the Mac, and not while Claude
 /// Code itself just reported the numbers (status line, sessions in Nook). It reads sooner when the numbers matter: when
 /// you open a usage view (and every two minutes while it stays open, `AppModel.watchQuotas`) and after a Claude turn in
 /// Nook, at most once a minute per account.
@@ -24,9 +25,9 @@ final class ClaudeUsage {
     private var busy = Set<String>()
 
     /// Per account this often, multiplied by the energy plan's slowdown. Each reading starts a whole `claude` process (a few
-    /// hundred MB of Node) for a second, and a turn or a limit event already reads again (`refreshNow`): the timer covers the
-    /// quiet hours, often enough that the limits shown in the notch are never far behind what was used elsewhere.
-    private static let interval: TimeInterval = 10 * 60
+    /// hundred MB of Node) for a second, and a usage view, a turn or a limit event already reads again (`refreshNow`): the
+    /// timer only covers what was used elsewhere.
+    private static let interval = UsageBackgroundRead.interval
     /// `refreshNow` asks again at most this often per account: it is called when a usage view opens, after a turn, on every
     /// rate limit event and while logging in.
     private static let minimumInterval: TimeInterval = 60
@@ -42,7 +43,10 @@ final class ClaudeUsage {
     func start() {
         timer?.invalidate()
         timer = Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
-            Task { @MainActor in self?.refresh(after: ClaudeUsage.interval * EnergyMonitor.shared.plan.slowdown) }
+            Task { @MainActor in
+                guard UsageBackgroundRead.allowed else { return }
+                self?.refresh(after: ClaudeUsage.interval * EnergyMonitor.shared.plan.slowdown)
+            }
         }
         refreshNow()
     }

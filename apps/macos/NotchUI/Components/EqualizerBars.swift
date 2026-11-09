@@ -21,7 +21,7 @@ struct EqualizerBars: View {
         // Set straight on layers (`LayerLevelBars`), a few times a second: no SwiftUI update, and no layout of the notch or the
         // window around it, per frame, for as long as music plays.
         LayerLevelBars(count: AudioLevelMonitor.bandCount, barWidth: 3, spacing: 3, color: color,
-                  fps: isPlaying ? energy.plan.frameRate(frameRate, attended: attended) : 0) { [isPlaying, height] in
+                  fps: isPlaying && !energy.plan.nobodyLooks ? energy.plan.frameRate(frameRate, attended: attended) : 0) { [isPlaying, height] in
             let realBands = isPlaying ? AudioLevelMonitor.shared.snapshot() : []
             return (0..<AudioLevelMonitor.bandCount).map { i in
                 (4 + (height - 4) * CGFloat(Self.level(i, realBands: realBands, isPlaying: isPlaying))) / height

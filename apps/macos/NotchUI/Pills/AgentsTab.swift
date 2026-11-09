@@ -111,7 +111,7 @@ struct AgentsTab: View {
                             let run = app.workspace.run(id)
                             SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
                                          dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
-                                AgentRunPanel(workspace: app.workspace, timelines: app.workspace.timelines, runID: id, headerAccessory: tools)
+                                AgentRunPanel(workspace: app.workspace, timelines: app.workspace.timelineChanges(for: id), runID: id, headerAccessory: tools)
                             }
                             // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
                             .id("run:" + id.uuidString)
@@ -750,7 +750,9 @@ struct AgentListRow: View, Equatable {
         ZStack(alignment: .topTrailing) {
             Button(action: action) { content }
                 .buttonStyle(.plain)
-            if let actions {
+            // Built only under the pointer: a menu and two or three buttons in every row of a long list were AppKit views,
+            // hover regions and accessibility nodes that each redraw and hit test walked, for buttons nobody saw.
+            if let actions, hovering {
                 hoverActions(actions)
                     // Only the buttons themselves hold the card back: with the backdrop's fade and the padding counted, a
                     // one-line row in a narrow list was "on the buttons" nearly everywhere and never showed its card.
@@ -759,11 +761,12 @@ struct AgentListRow: View, Equatable {
                     // Level with the first line, where the status they replace sits.
                     .padding(.top, compact ? (Self.lineHeight - 22) / 2 : NookTheme.Spacing.md)
                     .padding(.trailing, NookTheme.Spacing.md)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
+                    .transition(.opacity)
             }
         }
         .onHover { hovering = $0 }
+        // The buttons go with the pointer, and may not get to say it left them.
+        .onChange(of: hovering) { _, now in if !now { onActions = false } }
         .animation(NookTheme.hover, value: hovering)
         // Closed over the buttons, so their first click is not spent closing the card.
         .hoverCard(suppressed: onActions || onDetail) { AgentHoverCard(item: item) }

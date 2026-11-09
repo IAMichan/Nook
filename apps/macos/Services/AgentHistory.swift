@@ -436,10 +436,7 @@ final class AgentHistory: ObservableObject {
             }
             apiKeysRead = (profiles.map(\.id), Date(), keys)
         }
-        let homes = profiles.map { profile in
-            ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
-                        apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
-        }
+        let homes = profileHomes
         // Accounts first: the full scan below can take seconds, but who is logged in is known almost instantly.
         // Asked for by someone, it hurries; the background refresh stays out of the way of what you are doing.
         let qos: DispatchQoS.QoSClass = showsProgress ? .userInitiated : .utility
@@ -466,6 +463,25 @@ final class AgentHistory: ObservableObject {
                 if self.executables != result.executables { self.executables = result.executables }
             }
         }
+    }
+
+    /// The accounts as the scanner reads them, with whether an API-key account has its key as last read.
+    private var profileHomes: [ProfileHome] {
+        profiles.map { profile in
+            ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
+                        apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
+        }
+    }
+
+    /// Reads only who is signed in (`HistoryScanner.quickScan`: the login files and the executables at known places), not
+    /// a single transcript: for the loops that wait for a login or logout in a terminal to land. A full `refresh` reads
+    /// every transcript of every agent, which is far too much to repeat every few seconds.
+    func refreshAccounts() async {
+        let homes = profileHomes
+        let scanner = scanner
+        let quick = await Task.detached(priority: .utility) { scanner.quickScan(homes) }.value
+        if profileAccounts != quick.accounts { profileAccounts = quick.accounts }
+        for (kind, path) in quick.executables where executables[kind] == nil { executables[kind] = path }
     }
 
     func sessions(for agent: AgentKind) -> [PastSession] {
@@ -503,11 +519,20 @@ private final class HistoryScanner: @unchecked Sendable {
 
     /// A single token entry, with a key to deduplicate entries across transcripts.
     struct UsageEntry: Codable {
-        var key: String
+        /// A 64-bit hash of the entry's id (`UsageKey`): the same reply copied into a resumed transcript has the same key.
+        /// Tens of thousands of entries are kept for 90 days, and the ids as strings took more memory than the rest.
+        var key: Int64
         var date: Date
         var tokens: TokenTally
         /// The model that answered, for the Usage page's per-model figures and prices.
         var model = ""
+
+        init(key: String, date: Date, tokens: TokenTally, model: String = "") {
+            self.key = UsageKey.hash(key)
+            self.date = date
+            self.tokens = tokens
+            self.model = model
+        }
     }
 
     struct Parsed: Codable {
@@ -539,7 +564,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let diskSaveInterval: TimeInterval = 10 * 60
     private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
     /// Raise when the parsing changes within a build number.
-    private static let diskFormat = 3
+    private static let diskFormat = 4
     private static var diskBuild: String {
         "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
     }
@@ -549,7 +574,23 @@ private final class HistoryScanner: @unchecked Sendable {
         diskLoaded = true
         guard cache.isEmpty, let data = try? Data(contentsOf: Self.diskURL),
               let stored = try? PropertyListDecoder().decode(DiskCache.self, from: data), stored.build == Self.diskBuild else { return }
-        cache = stored.entries.mapValues { (key: $0.key, parsed: $0.parsed) }
+        cache = stored.entries.mapValues { (key: $0.key, parsed: interned($0.parsed)) }
+    }
+
+    /// The model names of every entry, one string each: decoded or parsed, each entry had its own copy.
+    private var modelNames: [String: String] = [:]
+
+    private func interned(_ parsed: Parsed) -> Parsed {
+        var parsed = parsed
+        for index in parsed.entries.indices {
+            let model = parsed.entries[index].model
+            if let known = modelNames[model] {
+                parsed.entries[index].model = known
+            } else {
+                modelNames[model] = model
+            }
+        }
+        return parsed
     }
 
     private func saveDiskCache() {
@@ -671,6 +712,7 @@ private final class HistoryScanner: @unchecked Sendable {
                         parsed = parseCursor(file.url, chats: chats)
                     case .opencode, .grok, .acp: parsed = Parsed(session: nil, entries: [])
                     }
+                    parsed = interned(parsed)
                 }
                 parsed.session?.profileID = file.profile
                 parsed.session?.path = file.url.path
@@ -704,7 +746,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 for id in [conversation.sessionID] + conversation.earlierIDs { conversationOf[conversation.agent.rawValue + "|" + id] = conversation }
             }
             var chatsByTranscript: [String: UsageLedger.Chat] = [:]
-            var counted = Set<String>()
+            var counted: [AgentKind: Set<Int64>] = [:]
             for entry in parsedAll {
                 var chat: UsageLedger.Chat?
                 if let session = entry.parsed.session {
@@ -721,7 +763,7 @@ private final class HistoryScanner: @unchecked Sendable {
                         chatsByTranscript[transcript] = chat
                     }
                 }
-                for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
+                for usage in entry.parsed.entries where counted[entry.agent, default: []].insert(usage.key).inserted {
                     let tokens = UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
                                              cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite)
                     ledger.add(agent: entry.agent.rawValue, model: usage.model, date: usage.date, tokens: tokens)
@@ -969,7 +1011,7 @@ private final class HistoryScanner: @unchecked Sendable {
         let weekStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
         var summary = AgentUsageSummary()
         var byDay: [Date: Int] = [:]
-        var seen = Set<String>()
+        var seen = Set<Int64>()
 
         for file in parsed {
             for entry in file.entries where entry.date >= weekStart {
@@ -1006,27 +1048,30 @@ private final class HistoryScanner: @unchecked Sendable {
         return CacheKey(modified: modified, size: values.fileSize ?? 0)
     }
 
+    /// The files in `directory` whose name passes `include`, with their date and size. The attributes come with the listing
+    /// (`getattrlistbulk`, one call per directory) instead of one `getattrlist` per file: a scan sees some 1,500 transcripts.
+    private func files(in directory: URL, where include: (String) -> Bool) -> [(url: URL, key: CacheKey)] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return [] }
+        return urls.compactMap { url in include(url.lastPathComponent) ? attributes(url).map { (url, $0) } : nil }
+    }
+
     /// ~/.claude/projects/<dir>/<session>.jsonl
     private func claudeFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("projects", isDirectory: true)
-        guard let projects = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        guard let projects = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) else { return [] }
         var result: [(url: URL, key: CacheKey)] = []
         for project in projects {
             // A directory that hasn't been modified recently does not need to be searched.
             if let modified = attributes(project)?.modified, modified < since { continue }
-            guard let names = try? fm.contentsOfDirectory(atPath: project.path) else { continue }
-            for name in names where name.hasSuffix(".jsonl") {
-                let url = project.appendingPathComponent(name)
-                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
-            }
+            result += files(in: project) { $0.hasSuffix(".jsonl") }.filter { $0.key.modified >= since }
         }
         return result
     }
 
     /// ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl, only directories from recent days.
     private func codexFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
-        let fm = FileManager.default
         let root = home.appendingPathComponent("sessions", isDirectory: true)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
@@ -1039,11 +1084,7 @@ private final class HistoryScanner: @unchecked Sendable {
             let path = String(format: "%04d/%02d/%02d", y, m, d)
             guard seen.insert(path).inserted else { continue }
             let dir = root.appendingPathComponent(path, isDirectory: true)
-            guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { continue }
-            for name in names where name.hasPrefix("rollout-") && name.hasSuffix(".jsonl") {
-                let url = dir.appendingPathComponent(name)
-                if let key = attributes(url) { result.append((url, key)) }
-            }
+            result += files(in: dir) { $0.hasPrefix("rollout-") && $0.hasSuffix(".jsonl") }
         }
         return result
     }
@@ -1058,12 +1099,8 @@ private final class HistoryScanner: @unchecked Sendable {
         var result: [(url: URL, key: CacheKey)] = []
         for project in projects {
             let chats = root.appendingPathComponent(project, isDirectory: true).appendingPathComponent("chats", isDirectory: true)
-            guard let names = try? fm.contentsOfDirectory(atPath: chats.path) else { continue }
             // One JSON file per chat, or from Gemini CLI 0.33 on a JSONL log of it.
-            for name in names where name.hasSuffix(".json") || name.hasSuffix(".jsonl") {
-                let url = chats.appendingPathComponent(name)
-                if let key = attributes(url), key.modified >= since { result.append((url, key)) }
-            }
+            result += files(in: chats) { $0.hasSuffix(".json") || $0.hasSuffix(".jsonl") }.filter { $0.key.modified >= since }
         }
         return result
     }
@@ -1364,7 +1401,7 @@ private final class HistoryScanner: @unchecked Sendable {
         /// The title Claude gave the session itself (the Claude app names every session; `/rename` changes it): the latest wins.
         var customTitle = ""
         var entries: [UsageEntry] = []
-        var seenUsage = Set<String>()
+        var seenUsage = Set<Int64>()
         /// For `ResumedConversations`: the session ids the lines were written under, and the first and last message.
         var sessionIDs = Set<String>()
         var firstMessage = ""
@@ -1500,7 +1537,7 @@ private final class HistoryScanner: @unchecked Sendable {
             if let raw = message["usage"] as? [String: Any] {
                 let id = "\((message["id"] as? String) ?? ""):\((object["requestId"] as? String) ?? "")"
                 // Claude Code writes a line per block for each reply, each containing identical usage.
-                guard id == ":" || progress.seenUsage.insert(id).inserted else { return }
+                guard id == ":" || progress.seenUsage.insert(UsageKey.hash(id)).inserted else { return }
                 let tokens = TokenTally(
                     input: Self.int(raw["input_tokens"]),
                     output: Self.int(raw["output_tokens"]),
@@ -1746,5 +1783,19 @@ private final class HistoryScanner: @unchecked Sendable {
             .replacingOccurrences(of: "claude_", with: "")
             .split(whereSeparator: { $0 == "_" || $0 == "-" })
         return words.map { word in word.prefix(1).uppercased() + word.dropFirst() }.joined(separator: " ")
+    }
+}
+
+/// The 64-bit keys usage entries are deduplicated by (FNV-1a over the id's UTF-8): the same on every launch, unlike
+/// `Hasher`, because they are kept on disk. With 64 bits two of a million ids share a key with a chance of about 3 in 10^8,
+/// which would only leave one reply out of the token counts.
+enum UsageKey {
+    static func hash(_ id: String) -> Int64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in id.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x0000_0100_0000_01b3
+        }
+        return Int64(bitPattern: hash)
     }
 }

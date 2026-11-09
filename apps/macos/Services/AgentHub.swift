@@ -205,11 +205,14 @@ final class AgentHub: ObservableObject {
 
     private var lastScan: Date = .distantPast
 
-    /// The timer's scan: every ten seconds while you work, less often while you are away or the Mac saves power. An agent
-    /// that reports through its hooks shows up at once either way; this only finds the ones started without Nook.
+    /// The timer's scan: every ten seconds while you work, less often while you are away or the Mac saves power, and only
+    /// every few minutes while the screen is locked or asleep (nobody sees the list; a session that ended is still
+    /// settled). An agent that reports through its hooks shows up at once either way; this only finds the ones started
+    /// without Nook.
     private func scanTick() {
-        let slowdown = EnergyMonitor.shared.plan.slowdown
-        guard Date().timeIntervalSince(lastScan) >= 10 * slowdown - 2.5 else { return }
+        let plan = EnergyMonitor.shared.plan
+        let base: TimeInterval = plan.unseen ? 60 : 10
+        guard Date().timeIntervalSince(lastScan) >= base * plan.slowdown - 2.5 else { return }
         lastScan = Date()
         refreshDetected()
     }
@@ -1058,12 +1061,15 @@ final class AgentHub: ObservableObject {
 
     private func prune() {
         let now = Date()
-        records = records.filter { key, record in
+        let kept = records.filter { key, record in
             if pendingApprovals.values.contains(where: { $0.request.sessionKey == key }) { return true }
             let settled = Self.isSettled(key: key, agent: record.agent, sessionID: record.sessionID, cwd: record.cwd,
                                          lastActive: record.updated)
             return !SessionLiveness.isExpired(done: record.status == .done || record.status == .failed, settled: settled, age: now.timeIntervalSince(record.updated))
         }
+        // Only when something expired: every assignment runs `records`' didSet, which rewrites agent-sessions.json.
+        guard kept.count != records.count else { return }
+        records = kept
         rebuild()
     }
 

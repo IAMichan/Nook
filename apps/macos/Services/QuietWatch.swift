@@ -9,13 +9,16 @@ import CoreGraphics
 enum QuietWatch {
     /// What is going on right now.
     /// - Parameter microphoneInterval: how old the list of apps with the microphone open may be (see `recentMicrophoneApps`).
+    /// - Parameter sharingPossible: whether an app that can show a sharing bar runs (`QuietPolicy.canShowSharingBar`). When
+    ///   none does and no browser has the microphone open (the only meeting the window names tell), the window list is
+    ///   not read at all.
     static func situation(events: [CalEvent], useCalendar: Bool, recording: Bool, countScreenshots: Bool = true,
-                          microphoneInterval: TimeInterval = 0, now: Date = Date()) -> QuietSituation {
-        let windows = onScreenWindows()
+                          microphoneInterval: TimeInterval = 0, sharingPossible: Bool = true, now: Date = Date()) -> QuietSituation {
         var meeting = QuietPolicy.MeetingSignals(now: now)
         meeting.events = events.map { QuietPolicy.Event(start: $0.start, end: $0.end) }
         meeting.useCalendar = useCalendar
         meeting.microphoneApps = recentMicrophoneApps(within: microphoneInterval, now: now)
+        let windows = sharingPossible || meeting.microphoneApps.contains(where: QuietPolicy.isBrowser) ? onScreenWindows() : []
         meeting.windowNames = windows.map(\.name).filter { !$0.isEmpty }
         meeting.recording = recording
         return QuietSituation(sharing: QuietPolicy.isSharing(windows, countSystemCapture: countScreenshots), meeting: QuietPolicy.isMeeting(meeting))

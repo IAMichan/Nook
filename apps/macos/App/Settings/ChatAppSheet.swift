@@ -484,6 +484,9 @@ struct ChatOwnLinkSteps: View {
                 }
             }
         }
+        // While this step shows, an unlinked gateway is asked every few seconds, so a scanned QR code links at once.
+        .onAppear { whatsApp.linkViewAppeared() }
+        .onDisappear { whatsApp.linkViewDisappeared() }
     }
 
     private var installLine: String {

@@ -11,7 +11,8 @@ extension MarkdownBlock {
         let key = "\(size)|\(files)|\(text)" as NSString
         if let hit = InlineCache.shared.object(forKey: key) { return hit.value }
         let value = renderInline(text, size: size, files: files)
-        InlineCache.shared.setObject(InlineCache.Entry(value), forKey: key)
+        // The key holds the text in UTF-16, the value the text again with its runs.
+        InlineCache.shared.setObject(InlineCache.Entry(value), forKey: key, cost: key.length * 6 + 64)
         return value
     }
 
@@ -82,6 +83,8 @@ private enum InlineCache {
     static let shared: NSCache<NSString, Entry> = {
         let cache = NSCache<NSString, Entry>()
         cache.countLimit = 3_000
+        cache.totalCostLimit = 8 * 1024 * 1024
+        MemoryPressure.shared.register("markdownInline") { [cache] _ in cache.removeAllObjects() }
         return cache
     }()
 }
@@ -133,8 +136,11 @@ private final class ParsedMarkdown {
 
 enum MarkdownCache {
     private static let cache: NSCache<NSString, ParsedMarkdown> = {
+        // Keyed by whole answers: by their length too, so a few long ones do not hold tens of megabytes.
         let cache = NSCache<NSString, ParsedMarkdown>()
         cache.countLimit = 400
+        cache.totalCostLimit = 16 * 1024 * 1024
+        MemoryPressure.shared.register("markdownBlocks") { [cache] _ in cache.removeAllObjects() }
         return cache
     }()
 
@@ -159,7 +165,8 @@ enum MarkdownCache {
         recent.append(parse)
         if recent.count > recentLimit { recent.removeFirst() }
         lock.unlock()
-        cache.setObject(ParsedMarkdown(blocks), forKey: key)
+        // The answer as the key (UTF-16) and its blocks, which hold the text again.
+        cache.setObject(ParsedMarkdown(blocks), forKey: key, cost: key.length * 4 + 64)
         return blocks
     }
 }

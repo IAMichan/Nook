@@ -63,6 +63,12 @@ enum SystemLoad {
         CGDisplayIsAsleep(CGMainDisplayID()) != 0
     }
 
+    /// The login session's screen is locked (the lock screen or the screen saver with a password is up).
+    static var isScreenLocked: Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return (session["CGSSessionScreenIsLocked"] as? Bool) ?? false
+    }
+
     /// Every reading at once, for `EnergyPolicy`. `wasLowBattery` is the last reading's, so a low battery has to charge a
     /// little before it counts as fine again (`EnergySignals.isLowBattery`).
     static func signals(wasLowBattery: Bool = false) -> EnergySignals {
@@ -70,6 +76,7 @@ enum SystemLoad {
         return EnergySignals(lowPowerMode: isLowPowerMode, hot: isHot, busy: isBusy, onBattery: power.onBattery,
                              lowBattery: EnergySignals.isLowBattery(level: power.level, onBattery: power.onBattery,
                                                                     wasLow: wasLowBattery),
-                             away: idleSeconds >= EnergySignals.awayAfter, displayAsleep: isDisplayAsleep)
+                             away: idleSeconds >= EnergySignals.awayAfter, displayAsleep: isDisplayAsleep,
+                             screenLocked: isScreenLocked)
     }
 }

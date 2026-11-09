@@ -81,6 +81,7 @@ final class GitHubAvatarStore: @unchecked Sendable {
     private let cache: NSCache<NSURL, NSImage> = {
         let cache = NSCache<NSURL, NSImage>()
         cache.countLimit = 400
+        MemoryPressure.shared.register("gitHubAvatars") { [cache] _ in cache.removeAllObjects() }
         return cache
     }()
     private let lock = NSLock()
@@ -112,9 +113,9 @@ final class GitHubAvatarStore: @unchecked Sendable {
     private func read(_ url: URL) async {
         let answer = try? await URLSession.shared.data(from: url)
         let found = answer.map { ($0.1 as? HTTPURLResponse)?.statusCode ?? 200 } == 200
-        if found, let data = answer?.0, let image = NSImage(data: data) {
-            // Decoded here, so the first draw on the main thread does not have to.
-            _ = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        // Decoded here at the size asked for (`s=`), so the first draw on the main thread does not have to, and the
+        // downloaded bytes are not kept with it.
+        if found, let data = answer?.0, let image = DecodedImage.image(data, maxPixel: 256) {
             cache.setObject(image, forKey: url as NSURL)
         }
         lock.lock()

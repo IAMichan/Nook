@@ -632,8 +632,12 @@ struct PanelOrb: View {
         } label: {
             // Every frame redraws the whole window he is in (the open panel, the main window with a long chat): the full rate
             // only while you point at him or his ring, as in the closed notch; otherwise the calm rate he thinks along at.
-            NookOrb(mood: mood, size: size, glow: glow,
-                    frameRate: pointerOn || ringPointer.hovered != nil ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
+            // At rest and not pointed at he holds still here (dozing still nods, slowly): his breathing at 15 frames a
+            // second redrew the whole main window around him all day, and made up half its redraws while an agent streamed.
+            // At work, above a panel, the calm unattended rate is enough.
+            let pointed = pointerOn || ringPointer.hovered != nil
+            NookOrb(mood: mood, size: size, animated: pointed || !(mood == .rest || mood == .seen), glow: glow,
+                    frameRate: pointed ? energy.plan.interactiveFrameRate : energy.plan.unattendedFrameRate,
                     motion: motion)
         }
         .buttonStyle(.plain)

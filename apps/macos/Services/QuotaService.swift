@@ -46,6 +46,20 @@ struct QuotaLimit: Identifiable, Equatable {
     }
 }
 
+/// How often the limits of every agent account (`ClaudeUsage`, `CodexUsage`, `AntigravityUsage`) are read while nothing
+/// shows them. They are read at once when a usage view opens and every two minutes while one stays open
+/// (`AppModel.watchQuotas`), after a turn, and on a limit event; the timer only covers what was used elsewhere, and a
+/// reading can start a whole Node process (`claude`, `codex app-server`). Nothing is read on the timer while nobody is
+/// at the Mac or the screen is locked or asleep; the first tick back catches up.
+enum UsageBackgroundRead {
+    /// Between two readings on the timer at full speed; the energy plan stretches it.
+    static let interval: TimeInterval = 3600
+    /// An account that gave no limits (installed but not signed in, offline) is tried again this often.
+    static let retryInterval: TimeInterval = 1800
+
+    @MainActor static var allowed: Bool { !EnergyMonitor.shared.signals.idle }
+}
+
 /// The subscription limits of every agent account, from one place. The Agents list, the account details, Settings › Coding agents
 /// and Nook's own context all read them here, so they can no longer disagree.
 ///

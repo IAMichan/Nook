@@ -109,12 +109,26 @@ final class WorkspaceManager: ObservableObject {
     /// here, and the views that draw a timeline hear about it through `timelines`, at most every `eventsPublishInterval`
     /// (see `eventsDidChange`).
     var events: [UUID: [RunEvent]] = [:] {
-        didSet { eventsDidChange() }
+        didSet { eventsDidChange(changingTimeline) }
     }
+    /// The session whose timeline `append` or `mutateEvent` is changing, so only views of that session hear about it.
+    /// Any other change to `events` (a load, a rollback, a fork) is announced to every session.
+    private var changingTimeline: UUID?
     /// Announces a changed timeline. Apart from this manager's own change: a streaming answer changes a timeline up to 20
     /// times a second, and announcing that on the manager redrew every view that observes it (the session's frame, its
     /// side panels, git buttons, usage badges), which only read the sessions and not what they say.
     let timelines = TimelineChanges()
+    /// The same per session: a view that draws one session's timeline observes only its own (`timelineChanges(for:)`), so
+    /// five agents streaming elsewhere do not redraw the session you are reading twenty times a second each.
+    private var sessionTimelines: [UUID: TimelineChanges] = [:]
+
+    /// What tells the views of session `id` that its timeline changed.
+    func timelineChanges(for id: UUID) -> TimelineChanges {
+        if let known = sessionTimelines[id] { return known }
+        let made = TimelineChanges()
+        sessionTimelines[id] = made
+        return made
+    }
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
@@ -303,6 +317,8 @@ final class WorkspaceManager: ObservableObject {
     /// A change to `events` was announced less than `eventsPublishInterval` ago; `eventsDirty` says another one followed.
     private var eventsThrottled = false
     private var eventsDirty = false
+    /// The sessions whose timeline changed since the last announcement; nil when it could be any of them.
+    private var dirtyTimelines: Set<UUID>? = []
     /// At most this often a view redraws for a changing timeline: about 20 times a second, smooth for streaming text.
     private static let eventsPublishInterval: UInt64 = 50_000_000
     /// When each timeline in memory was last used. Every timeline ever opened used to stay in memory until Nook quit;
@@ -2034,16 +2050,21 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    /// Looks at each watched pull request at most every two minutes.
+    /// Looks at each watched pull request at most every two minutes, stretched by the energy plan. A watch that wakes its
+    /// agent keeps going while nobody is at the Mac (the agent answers a review or a failed check by itself), only slower;
+    /// one that only updates a badge waits until someone is back.
     func checkPullRequestWatches(force: Bool = false) {
         guard let fetch = pullRequestSnapshot else { return }
         let now = Date()
+        let energy = EnergyMonitor.shared
+        let gap = 120 * energy.plan.slowdown
         for run in runs {
             guard !run.archived else { continue }
             for watch in run.prWatches {
                 let key = run.id.uuidString + " " + watch.url
                 guard watch.state == "open", !watchesInFlight.contains(key),
-                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true,
+                      force || watch.wakeAgent || !energy.signals.idle,
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true,
                       let url = URL(string: watch.url) else { continue }
                 let id = run.id
                 watchesInFlight.insert(key)
@@ -2110,6 +2131,7 @@ final class WorkspaceManager: ObservableObject {
         evictedAnswers[id] = nil
         // Per-session state that would otherwise stay for every session ever made, until Nook quits.
         gitRefreshes.removeValue(forKey: id)?.cancel()
+        sessionTimelines[id] = nil
         gitReading.remove(id)
         gitAgain[id] = nil
         codexTotals[id] = nil
@@ -2543,6 +2565,8 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func append(_ id: UUID, _ event: RunEvent) {
+        changingTimeline = id
+        defer { changingTimeline = nil }
         timelineUse[id] = Date()
         if events[id] == nil {
             evictedTimelines.remove(id)
@@ -2576,18 +2600,32 @@ final class WorkspaceManager: ObservableObject {
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
         // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
         guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else { return }
+        changingTimeline = id
         change(&events[id]![index])
+        changingTimeline = nil
         scheduleEventSave(id)
     }
 
     /// Announces a changed timeline: the first change at once, later ones within the same short window together.
-    private func eventsDidChange() {
+    /// `id` is the session that changed, nil when it could be any.
+    private func eventsDidChange(_ id: UUID? = nil) {
         guard !quietEvents else { return }
+        if let id { dirtyTimelines?.insert(id) } else { dirtyTimelines = nil }
         if eventsThrottled {
             eventsDirty = true
             return
         }
+        publishTimelineChanges()
+    }
+
+    private func publishTimelineChanges() {
         timelines.objectWillChange.send()
+        if let dirty = dirtyTimelines {
+            for id in dirty { sessionTimelines[id]?.objectWillChange.send() }
+        } else {
+            for changes in sessionTimelines.values { changes.objectWillChange.send() }
+        }
+        dirtyTimelines = []
         eventsThrottled = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.eventsPublishInterval)
@@ -2595,7 +2633,7 @@ final class WorkspaceManager: ObservableObject {
             self.eventsThrottled = false
             if self.eventsDirty {
                 self.eventsDirty = false
-                self.eventsDidChange()
+                self.publishTimelineChanges()
             }
         }
     }
