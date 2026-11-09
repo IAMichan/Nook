@@ -48,6 +48,12 @@ struct TokenSettingsSection: View {
             Toggle(tr("settings.ws.idleCompaction"), isOn: $ws.idleCompaction)
                 .help(tr("settings.ws.idleCompaction.help"))
                 .onChange(of: ws.idleCompaction) { _, _ in app.workspace.idleCompactionSettingChanged() }
+            Picker(tr("settings.ws.autoCompact"), selection: $ws.autoCompactTokens) {
+                ForEach(SizeCompaction.choices, id: \.self) { tokens in
+                    Text(tokens == 0 ? tr("settings.ws.autoCompact.off") : "\(tokens / 1000)K tokens").tag(tokens)
+                }
+            }
+            .help(tr("settings.ws.autoCompact.help"))
             SettingNote(tr("tuning.nookDoes"))
         } header: {
             SettingsSectionTitle(tr("tuning.nook.title"))
