@@ -170,11 +170,11 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
-    /// Sessions whose turn ended while their subagents still work in the background: the list keeps showing them as
-    /// working. Published, unlike the timelines it comes from: a list row has to change when the last subagent ends.
+    /// Sessions whose turn ended while their subagents or commands still work in the background: the list keeps showing
+    /// them as working. Published, unlike the timelines it comes from: a list row has to change when the last one ends.
     @Published var subagentsWorking: Set<UUID> = []
-    /// The subagent whose end the next wake of a parked Claude Code is for, so its line can name it.
-    var wakeSubagent: [UUID: String] = [:]
+    /// The line the next wake of a parked Claude Code shows, naming the subagent or command whose end it is for.
+    var wakeLine: [UUID: String] = [:]
     /// What MCP apps want the agent to know on its next turn, per session and app (see McpApp).
     var mcpAppContexts: [UUID: [String: String]] = [:]
     /// Control requests sent to Claude Code that wait for its answer, by request id.
@@ -1167,6 +1167,13 @@ final class WorkspaceManager: ObservableObject {
         }
         displayPrompt[id] = nil
         stopCoordinators[id] = nil
+        // A command Codex's app-server still runs when its turn completed goes on in the background: its
+        // `commandFinished` settles it later (and wakes Codex), so it is not marked done here.
+        if run.status == .completed, codexServers[id] != nil {
+            for event in timeline(id) where event.kind == .tool && event.tool == "shell" && event.state == .running {
+                mutateEvent(id, event.id) { $0.background = true }
+            }
+        }
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
         noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
@@ -1704,11 +1711,17 @@ final class WorkspaceManager: ObservableObject {
             if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
         case .toolResult(let callID, let output, let isError):
             // A subagent started in the background answers at once that it started: it runs on until its notification.
-            let background = !isError && Subagents.isLaunchNote(output)
-                && timeline(id).last(where: { $0.callID == callID }).map(Subagents.isBackground) == true
-            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : (background ? .running : .done)))
+            let call = timeline(id).last(where: { $0.callID == callID && $0.kind == .tool })
+            let background = !isError && Subagents.isLaunchNote(output) && call.map(Subagents.isBackground) == true
+            // So does a command started in the background (or one Claude Code already said it moved there), unless its
+            // end came in first.
+            let command = !isError && call.map { BackgroundCommands.asksBackground($0) || $0.background == true } == true
+            let ended = call.map { $0.background == true && $0.state != .running } == true
+            let state: RunEvent.State = isError ? .failed : (background || command ? .running : .done)
+            feed(id, .toolUpdated(id: callID, output: output, state: ended ? (call?.state ?? .done) : state))
+            if command, let call, call.background != true { mutateEvent(id, call.id) { $0.background = true } }
         case .backgroundTask(let update):
-            noteBackgroundSubagent(id, update)
+            noteBackgroundTask(id, update)
         case .goal(let update):
             noteGoal(id, update)
         case .subagentStep(let parent, let step):
@@ -2253,7 +2266,7 @@ final class WorkspaceManager: ObservableObject {
         limitedTurns[id] = nil
         backgroundWork.remove(id)
         subagentsWorking.remove(id)
-        wakeSubagent[id] = nil
+        wakeLine[id] = nil
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
         // The pages the agent showed (render_page) go with the session.

@@ -799,6 +799,40 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertFalse(Subagents.backgroundRunning([command]), "A command in the background is not a subagent")
     }
 
+    func testBackgroundCommandOutlivesItsTurnAndShows() {
+        let user = RunEvent(kind: .user, text: "start the site")
+        let command = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash", callID: "toolu_9",
+                               detail: #"{"command":"npm run dev","description":"Start the dev server","run_in_background":true}"#,
+                               output: "Command running in background with ID: b3k9. Output is being written to: /tmp/x",
+                               state: .running)
+        XCTAssertTrue(BackgroundCommands.asksBackground(command))
+        XCTAssertTrue(BackgroundCommands.running([user, command]))
+        // The end of its turn does not settle it; the process ending does.
+        XCTAssertTrue(OpenWork.settle(events: [user, command], reason: .completed).isEmpty)
+        XCTAssertEqual(OpenWork.settle(events: [user, command], reason: .processExited).first?.state, .failed)
+        XCTAssertTrue(BackgroundWork.pending(after: [user, command], before: false))
+        let shown = BackgroundCommands.current([user, command, RunEvent(kind: .user, text: "next")])
+        XCTAssertEqual(shown.map(\.title), ["Start the dev server"], "still running from before your message")
+        XCTAssertEqual(shown.first?.command, "npm run dev")
+        // Found by its call, or by the task id its output names.
+        let byCall = BackgroundTaskUpdate(taskID: nil, toolUseID: "toolu_9", status: .completed)
+        XCTAssertEqual(BackgroundCommands.event(for: byCall, in: [user, command])?.id, command.id)
+        let byTask = BackgroundTaskUpdate(taskID: "b3k9", toolUseID: nil, status: .completed)
+        XCTAssertEqual(BackgroundCommands.event(for: byTask, in: [user, command])?.id, command.id)
+        // A subagent is no command, and a Codex command still running at the end of its turn is one once marked.
+        let agent = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: #"{"run_in_background":true}"#, state: .running)
+        XCTAssertFalse(BackgroundCommands.isCommand(agent))
+        var shell = RunEvent(kind: .tool, text: "shell · npm run watch", tool: "shell", detail: "npm run watch", state: .running)
+        XCTAssertFalse(BackgroundCommands.running([shell]))
+        shell.background = true
+        XCTAssertTrue(BackgroundCommands.running([shell]))
+        XCTAssertEqual(BackgroundCommands.list([shell]).first?.command, "npm run watch")
+        var done = command
+        done.state = .done
+        XCTAssertFalse(BackgroundCommands.running([done]))
+        XCTAssertTrue(BackgroundCommands.current([user, done, RunEvent(kind: .user, text: "next")]).isEmpty)
+    }
+
     func testBackgroundWorkPendingAndMessage() {
         let user = RunEvent(kind: .user, text: "run the server")
         let background = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash",

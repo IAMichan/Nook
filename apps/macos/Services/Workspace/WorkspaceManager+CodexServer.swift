@@ -238,6 +238,7 @@ extension WorkspaceManager {
         codexIdleClose[id]?.cancel()
         codexIdleClose[id] = nil
         codexServers.removeValue(forKey: id)?.stop()
+        settleBackgroundCommands(id)
     }
 
     // MARK: Decisions
@@ -315,6 +316,7 @@ extension WorkspaceManager {
                 // A command left running in the background finished after the turn: its result goes to Codex as a new
                 // turn, so Codex can act on it.
                 handleCodex(event, id: id)
+                noteSubagentsWorking(id)
                 append(id, RunEvent(kind: .system, text: tr("ws.wake.command", ToolSummary.oneLine(command, 80)), tool: "wake"))
                 let message = BackgroundWork.codexMessage(command: command, exitCode: exitCode, output: output)
                 if let run = run(id), run.canContinue, processes[id] == nil, !run.status.isActive {
@@ -538,6 +540,7 @@ extension WorkspaceManager {
         codexIdleClose[id]?.cancel()
         codexIdleClose[id] = nil
         warmPrompts[id] = nil
+        settleBackgroundCommands(id)
         guard let state = turns[id], !state.finished else { return }
         if client.threadID == nil, CodexAppServerError.exited(stderr).meansUnsupported {
             fallBackToExec(id, prompt: prompt, executable: executable)
