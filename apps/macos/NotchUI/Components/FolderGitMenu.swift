@@ -116,7 +116,7 @@ final class FolderGitModel: ObservableObject {
     func follow(agentWorking: Bool) async {
         while !Task.isCancelled {
             let monitor = EnergyMonitor.shared
-            if !monitor.signals.away, !monitor.signals.displayAsleep { await refresh() }
+            if !monitor.signals.idle { await refresh() }
             let seconds = FolderGitPace.interval(agentWorking: agentWorking, isRepository: isRepository,
                                                  slowdown: monitor.plan.slowdown)
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))

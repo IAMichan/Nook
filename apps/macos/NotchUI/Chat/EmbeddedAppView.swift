@@ -21,7 +21,6 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     private static let maxViews = 2
     private static let hiddenSeconds: UInt64 = 10 * 60
     private var releaseTask: Task<Void, Never>?
-    private var pressure: DispatchSourceMemoryPressure?
 
     var webView: WKWebView? { current.flatMap { views[$0.id] } }
     /// Per app, a page it made that shows in a side panel beside it (a Claude artifact). It shares the app's sign-in.
@@ -161,11 +160,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     private func watchMemoryPressure() {
-        guard pressure == nil else { return }
-        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.releaseHidden() } }
-        source.resume()
-        pressure = source
+        MemoryPressure.shared.register("embeddedApps") { [weak self] _ in MainActor.assumeIsolated { self?.releaseHidden() } }
     }
 
     func reload() {

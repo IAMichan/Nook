@@ -25,6 +25,9 @@ final class AudioLevelMonitor: @unchecked Sendable {
     private var wantedBundle: String?
     /// How many equalizers are on screen. The tap only runs while one is: nobody sees the levels otherwise.
     private var viewers = 0
+    /// Nobody looks (the display sleeps, the screen is locked, or you are away): the tap stops even with an equalizer on
+    /// screen, and starts again when someone looks.
+    private var suspended = false
     private static let weights: [Float] = [2.8, 1.8, 1.2, 0.8]
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
@@ -91,9 +94,18 @@ final class AudioLevelMonitor: @unchecked Sendable {
         }
     }
 
-    /// Runs the tap for the playing player while an equalizer shows it, and tears it down otherwise.
+    /// Stops the tap while nobody looks (`EnergyPlan.nobodyLooks`), and lets it run again after.
+    func setSuspended(_ suspended: Bool) {
+        Self.queue.async { [self] in
+            guard self.suspended != suspended else { return }
+            self.suspended = suspended
+            update()
+        }
+    }
+
+    /// Runs the tap for the playing player while an equalizer shows it and someone looks, and tears it down otherwise.
     private func update() {
-        guard let bundleID = wantedBundle, viewers > 0 else {
+        guard let bundleID = wantedBundle, viewers > 0, !suspended else {
             if tapID != kAudioObjectUnknown || bundlePrefix != nil { teardown() }
             bundlePrefix = nil
             return

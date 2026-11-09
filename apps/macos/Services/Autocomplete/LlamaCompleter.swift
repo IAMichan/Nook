@@ -70,32 +70,9 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private var favored: [String: Double] = [:]
     private var strength: Float = 0
     private var bias: [llama_token: Float] = [:]
-    /// Every token's bytes, read once per model when first needed: a word the model did not see coming is spelled from the
-    /// whole vocabulary (see `healed`).
-    private lazy var pieces: [[UInt8]] = (0..<self.vocabSize).map { self.piece(llama_token($0)) }
-    /// The tokens by the first byte (`tokensByFirstByte`) or the first two bytes (`tokensByFirstTwoBytes`) of their piece. A
-    /// token fits a word still to be spelled only if it starts with the word's first byte, so `healed` searches these instead
-    /// of the whole vocabulary. Two bytes where the word has them: half of the vocabulary starts with a space.
-    private lazy var tokensByFirstByte: [[Int]] = {
-        var buckets = [[Int]](repeating: [], count: 256)
-        for (index, bytes) in pieces.enumerated() { if let first = bytes.first { buckets[Int(first)].append(index) } }
-        return buckets
-    }()
-    private lazy var tokensByFirstTwoBytes: [UInt16: [Int]] = {
-        var buckets: [UInt16: [Int]] = [:]
-        for (index, bytes) in pieces.enumerated() where bytes.count >= 2 {
-            buckets[UInt16(bytes[0]) << 8 | UInt16(bytes[1]), default: []].append(index)
-        }
-        return buckets
-    }()
-
-    /// The tokens that could fit `required` (see `CompletionHealing.fits`), a superset to test.
-    private func candidates(for required: [UInt8]) -> [Int] {
-        guard required.count >= 2 else { return tokensByFirstByte[Int(required.first ?? 0)] }
-        // A one-byte piece fits when it is the word's first byte; longer ones need the first two bytes to match.
-        let single = tokensByFirstByte[Int(required[0])].filter { pieces[$0].count == 1 }
-        return single + (tokensByFirstTwoBytes[UInt16(required[0]) << 8 | UInt16(required[1])] ?? [])
-    }
+    /// Every token's bytes, by their first bytes, read once per model: a word the model did not see coming is spelled from
+    /// the whole vocabulary (see `healed`), searching only the tokens that start with the word's first bytes.
+    private lazy var spelling = TokenPieces(count: self.vocabSize) { self.piece(llama_token($0)) }
 
     /// The longest prompt, in tokens.
     static let contextLength: UInt32 = 4_096
@@ -185,7 +162,14 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 let threads = Int32(max(2, min(4, ProcessInfo.processInfo.activeProcessorCount - 2)))
                 params.n_threads = threads
                 params.n_threads_batch = threads
-                guard let context = llama_init_from_model(model, params) else {
+                // The cache in 8-bit instead of 16: half the memory (a few hundred MB for a full 8 192-token cache) for a
+                // difference in the predictions too small to measure. A quantized cache needs flash attention; where a
+                // context with both does not start, the model runs with the default 16-bit cache instead.
+                var compact = params
+                compact.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED
+                compact.type_k = GGML_TYPE_Q8_0
+                compact.type_v = GGML_TYPE_Q8_0
+                guard let context = llama_init_from_model(model, compact) ?? llama_init_from_model(model, params) else {
                     llama_model_free(model)
                     return continuation.resume(throwing: NookError(tr("autocomplete.error.memory")))
                 }
@@ -210,8 +194,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// milliseconds with a 262 000-token vocabulary (Gemma). A request that comes meanwhile waits for them, as it would anyway.
     private func prepareSpelling() {
         queue.async {
-            _ = self.tokensByFirstByte
-            _ = self.tokensByFirstTwoBytes
+            _ = self.spelling
         }
     }
 
@@ -595,7 +578,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // A name or a rare word: none of the likely tokens spells it. Look through the whole vocabulary rather than give up, or
         // a word would only be finished once it was common enough.
         if fitting.isEmpty {
-            for index in candidates(for: required) where CompletionHealing.fits(pieces[index], required) {
+            let spelling = spelling
+            for index in spelling.candidates(for: required) where CompletionHealing.fits(spelling[index], required) {
                 let token = llama_token(index)
                 guard !llama_vocab_is_control(vocab, token), !llama_vocab_is_eog(vocab, token) else { continue }
                 fitting.append((token, logits[index]))

@@ -13,7 +13,11 @@ final class ConditionalCache: @unchecked Sendable {
         var used: UInt64
     }
 
-    static let shared = ConditionalCache()
+    static let shared: ConditionalCache = {
+        let cache = ConditionalCache()
+        MemoryPressure.shared.register("conditionalCache") { [cache] _ in cache.removeAll() }
+        return cache
+    }()
 
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
@@ -25,7 +29,9 @@ final class ConditionalCache: @unchecked Sendable {
     /// - Parameters:
     ///   - byteLimit: what the kept answers may hold together; the longest unused go first.
     ///   - bodyLimit: a larger answer is not kept.
-    init(byteLimit: Int = 16 * 1024 * 1024, bodyLimit: Int = 1024 * 1024) {
+    ///   4 MB holds a few hundred pull request pages and badges, which is what polls; a page not asked for a while is
+    ///   simply read in full again.
+    init(byteLimit: Int = 4 * 1024 * 1024, bodyLimit: Int = 1024 * 1024) {
         self.byteLimit = byteLimit
         self.bodyLimit = bodyLimit
     }
@@ -58,9 +64,26 @@ final class ConditionalCache: @unchecked Sendable {
         remove(key)
         guard body.count <= bodyLimit else { return }
         clock += 1
+        // A copy of just the body: what URLSession hands over can be a view into larger network buffers, kept alive with it.
+        let body = body.withUnsafeBytes { Data($0) }
         entries[key] = Entry(etag: etag, body: body, used: clock)
         bytes += body.count
         while bytes > byteLimit, let oldest = entries.min(by: { $0.value.used < $1.value.used })?.key { remove(oldest) }
+    }
+
+    /// The bytes the kept answers hold.
+    var size: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return bytes
+    }
+
+    /// Lets every kept answer go (memory pressure): the next read of each is a full one.
+    func removeAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        entries.removeAll()
+        bytes = 0
     }
 
     func forget(_ key: String) {

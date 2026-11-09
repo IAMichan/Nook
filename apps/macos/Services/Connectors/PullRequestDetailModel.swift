@@ -298,7 +298,7 @@ extension PullRequestDetailModel {
             for pick in picks {
                 if Task.isCancelled { break }
                 let signals = EnergyMonitor.shared.signals
-                if signals.away || signals.displayAsleep { break }
+                if signals.idle { break }
                 prefetch(accountID: pick.accountID, item: pick.item, priority: .utility)
                 await prefetching[key(pick.accountID, pick.item.id)]?.done.value
             }

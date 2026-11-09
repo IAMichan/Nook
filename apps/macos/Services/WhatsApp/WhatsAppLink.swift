@@ -328,6 +328,9 @@ final class WhatsAppLink: ObservableObject {
     private let listener = WhatsAppWebhook()
     private var timer: Timer?
     private var tick = 0
+    /// How many views show this link's QR code or status (Settings, the chat app sheet): only then is an unlinked gateway
+    /// asked every few seconds.
+    private var linkViewers = 0
     private var refreshing = false
     private var polling = false
     private var backfilled = false
@@ -506,11 +509,30 @@ final class WhatsAppLink: ObservableObject {
     /// The webhook keeps bringing ticks and typing while that happens, so it seeming alive says nothing about messages.
     static let safetyPollGap = 12
 
+    /// A view that shows the QR code or the link's status appeared: an unlinked gateway is asked at once and every few
+    /// seconds while it shows.
+    func linkViewAppeared() {
+        linkViewers += 1
+        if linkViewers == 1, link != .connected, provider != nil { refresh() }
+    }
+
+    func linkViewDisappeared() {
+        linkViewers = max(0, linkViewers - 1)
+    }
+
+    /// Ticks (of 5 s) between two status checks of a gateway that is not linked while nothing shows its QR code or
+    /// status: once a minute at full speed, stretched by the energy plan (six minutes while nobody is at the Mac).
+    nonisolated static func unlinkedGap(slowdown: Double) -> Int { max(1, Int((12 * slowdown).rounded())) }
+
     private func onTick() {
         tick += 1
         if link != .connected {
-            // Every 5 s while linking; every 30 s once the gateway has been down for a minute.
-            if failures > 12 && tick % 6 != 0 { return }
+            if linkViewers > 0 {
+                // Every 5 s while linking with the QR code on screen; every 30 s once the gateway has been down for a minute.
+                if failures > 12 && tick % 6 != 0 { return }
+            } else if tick % Self.unlinkedGap(slowdown: EnergyMonitor.shared.plan.slowdown) != 0 {
+                return
+            }
             refresh()
         } else {
             if tick % 12 == 0 { refresh() }

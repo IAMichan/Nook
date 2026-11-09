@@ -197,8 +197,9 @@ private struct ChatRemotePicture: View {
 }
 
 /// What Nook knows of the links in chats: each page's title and picture, and the pictures links point at, fetched once
-/// and kept for as long as Nook runs (the pictures in its caches folder). Only addresses that are in a message you see
-/// are asked, one time each.
+/// (the pictures in its caches folder). Only addresses that are in a message you see are asked. The previews stay in
+/// memory up to `previewBytes` of pictures, decoded at the card's size, and go when macOS runs low on memory; a card
+/// whose preview went fetches it again when it comes into view.
 @MainActor
 final class ChatLinkPreviews {
     static let shared = ChatLinkPreviews()
@@ -208,7 +209,21 @@ final class ChatLinkPreviews {
         var image: NSImage?
     }
 
-    private var previews: [URL: Preview] = [:]
+    private final class Box {
+        let preview: Preview
+        init(_ preview: Preview) { self.preview = preview }
+    }
+
+    /// The pictures of the cards, at most this many bytes decoded.
+    private static let previewBytes = 24 * 1024 * 1024
+    /// A card's picture in pixels on its longest side: twice the card's width, for a Retina screen.
+    nonisolated private static let previewPixels: CGFloat = 560
+
+    private let previews: NSCache<NSURL, Box> = {
+        let cache = NSCache<NSURL, Box>()
+        cache.totalCostLimit = previewBytes
+        return cache
+    }()
     private var loading: [URL: Task<Preview, Never>] = [:]
     private var files: [URL: URL] = [:]
     private var fetching: [URL: Task<URL?, Never>] = [:]
@@ -216,8 +231,12 @@ final class ChatLinkPreviews {
     /// The largest picture a link may bring in.
     nonisolated private static let maxBytes = 12_000_000
 
+    private init() {
+        MemoryPressure.shared.register("chatLinkPreviews") { [previews] _ in previews.removeAllObjects() }
+    }
+
     func preview(_ url: URL) async -> Preview {
-        if let known = previews[url] { return known }
+        if let known = previews.object(forKey: url as NSURL) { return known.preview }
         if let running = loading[url] { return await running.value }
         let task = Task<Preview, Never> {
             let provider = LPMetadataProvider()
@@ -233,7 +252,7 @@ final class ChatLinkPreviews {
         loading[url] = task
         let preview = await task.value
         loading[url] = nil
-        previews[url] = preview
+        previews.setObject(Box(preview), forKey: url as NSURL, cost: preview.image.map(DecodedImage.cost) ?? 0)
         return preview
     }
 
@@ -261,7 +280,7 @@ final class ChatLinkPreviews {
     private static func image(from provider: NSItemProvider) async -> NSImage? {
         await withCheckedContinuation { continuation in
             provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                continuation.resume(returning: data.flatMap(NSImage.init(data:)))
+                continuation.resume(returning: data.flatMap { DecodedImage.image($0, maxPixel: previewPixels) })
             }
         }
     }
@@ -280,16 +299,27 @@ enum ChatVideoStills {
     /// How long a video that gave no frame is left alone before it is tried again.
     private static let retry: TimeInterval = 30
 
-    private static var stills: [URL: Still] = [:]
+    private final class Box {
+        let still: Still
+        init(_ still: Still) { self.still = still }
+    }
+
+    /// The stills made, up to 32 MB of pictures (a 640-pixel still is about 1.6 MB); one that went is read back from disk.
+    private static let stills: NSCache<NSURL, Box> = {
+        let cache = NSCache<NSURL, Box>()
+        cache.totalCostLimit = 32 * 1024 * 1024
+        MemoryPressure.shared.register("chatVideoStills") { [cache] _ in cache.removeAllObjects() }
+        return cache
+    }()
     private static var failed: [URL: Date] = [:]
     /// The stills being made, by video: the bubble and the warm-up of its chat (`ChatMediaWarmup`) share one.
     private static var making: [URL: Task<Still, Never>] = [:]
 
     /// The still when it was made before, without making it: a bubble shows it in its first frame.
-    static func cached(_ url: URL) -> Still? { stills[url] }
+    static func cached(_ url: URL) -> Still? { stills.object(forKey: url as NSURL)?.still }
 
     static func still(_ url: URL) async -> Still {
-        if let known = stills[url] { return known }
+        if let known = cached(url) { return known }
         if let running = making[url] { return await running.value }
         if let at = failed[url], Date().timeIntervalSince(at) < retry { return Still() }
         let task = Task { await make(url) }
@@ -299,7 +329,7 @@ enum ChatVideoStills {
         if still.image == nil {
             if !Task.isCancelled { failed[url] = Date() }
         } else {
-            stills[url] = still
+            stills.setObject(Box(still), forKey: url as NSURL, cost: still.image.map(DecodedImage.cost) ?? 0)
             failed[url] = nil
         }
         return still

@@ -293,7 +293,7 @@ final class ChatCaptureService: ObservableObject {
     /// the Mac, every second, all night. Back at full speed it follows at once, since the plan is announced.
     private func armTimer() {
         let plan = EnergyMonitor.shared.plan
-        let interval = plan.reasons.contains(.displayAsleep) ? Self.asleepInterval : Self.interval * plan.slowdown
+        let interval = plan.unseen ? Self.asleepInterval : Self.interval * plan.slowdown
         guard timer?.timeInterval != interval else { return }
         timer?.invalidate()
         timer = Timer.scheduledCoalesced(withTimeInterval: interval) { [weak self] _ in
@@ -308,7 +308,7 @@ final class ChatCaptureService: ObservableObject {
     /// Evaluates energy policy and display sleep state before polling databases.
     private func pollTick() async {
         let plan = EnergyMonitor.shared.plan
-        if plan.reasons.contains(.displayAsleep) {
+        if plan.unseen {
             guard Date().timeIntervalSince(lastPollTime) >= Self.asleepInterval - 0.25 else { return }
         } else {
             let interval = Self.interval * plan.slowdown

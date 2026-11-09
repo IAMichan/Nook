@@ -33,7 +33,7 @@ enum ChatFormat {
         let key = text as NSString
         if let kept = blocksCache.object(forKey: key) { return kept.value }
         let made = parse(text)
-        blocksCache.setObject(Kept(made), forKey: key)
+        blocksCache.setObject(Kept(made), forKey: key, cost: textCost(key))
         return made
     }
 
@@ -75,7 +75,7 @@ enum ChatFormat {
                 }
             }
         }
-        addressCache.setObject(Kept(found), forKey: key)
+        addressCache.setObject(Kept(found), forKey: key, cost: textCost(key))
         return found
     }
 
@@ -96,11 +96,22 @@ enum ChatFormat {
 
     private static let addressDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
-    private static let addressCache: NSCache<NSString, Kept<[Address]>> = {
-        let cache = NSCache<NSString, Kept<[Address]>>()
+    private static let addressCache: NSCache<NSString, Kept<[Address]>> = textCache("chatFormat.addresses")
+
+    /// A cache of what was worked out per message text: at most 2 000 texts and `textCacheBytes`, so a few very long
+    /// messages cannot hold megabytes, and emptied when macOS runs low on memory.
+    private static func textCache<Value: AnyObject>(_ name: String) -> NSCache<NSString, Value> {
+        let cache = NSCache<NSString, Value>()
         cache.countLimit = 2_000
+        cache.totalCostLimit = textCacheBytes
+        MemoryPressure.shared.register(name) { [cache] _ in cache.removeAllObjects() }
         return cache
-    }()
+    }
+
+    private static let textCacheBytes = 4 * 1024 * 1024
+
+    /// About what an entry holds: the text as its key (UTF-16) and what was made from it, of about the same size.
+    private static func textCost(_ key: NSString) -> Int { key.length * 4 + 64 }
 
     /// A value an `NSCache` can hold.
     final class Kept<Value>: @unchecked Sendable {
@@ -108,11 +119,7 @@ enum ChatFormat {
         init(_ value: Value) { self.value = value }
     }
 
-    private static let blocksCache: NSCache<NSString, Kept<[Block]>> = {
-        let cache = NSCache<NSString, Kept<[Block]>>()
-        cache.countLimit = 2_000
-        return cache
-    }()
+    private static let blocksCache: NSCache<NSString, Kept<[Block]>> = textCache("chatFormat.blocks")
 
     private static func parse(_ text: String) -> [Block] {
         var blocks: [Block] = []
@@ -177,15 +184,11 @@ enum ChatFormat {
         let key = text as NSString
         if let kept = plainCache.object(forKey: key) { return kept as String }
         let made = unstyled(text)
-        plainCache.setObject(made as NSString, forKey: key)
+        plainCache.setObject(made as NSString, forKey: key, cost: textCost(key))
         return made
     }
 
-    private static let plainCache: NSCache<NSString, NSString> = {
-        let cache = NSCache<NSString, NSString>()
-        cache.countLimit = 2_000
-        return cache
-    }()
+    private static let plainCache: NSCache<NSString, NSString> = textCache("chatFormat.plain")
 
     private static func unstyled(_ text: String) -> String {
         blocks(text).map { block in
@@ -272,15 +275,11 @@ enum ChatFormat {
         let key = text as NSString
         if let kept = linkCache.object(forKey: key) { return kept.value }
         let found = findLink(text)
-        linkCache.setObject(Kept(found), forKey: key)
+        linkCache.setObject(Kept(found), forKey: key, cost: textCost(key))
         return found
     }
 
-    private static let linkCache: NSCache<NSString, Kept<URL?>> = {
-        let cache = NSCache<NSString, Kept<URL?>>()
-        cache.countLimit = 2_000
-        return cache
-    }()
+    private static let linkCache: NSCache<NSString, Kept<URL?>> = textCache("chatFormat.links")
 
     private static func findLink(_ text: String) -> URL? {
         for block in blocks(text) {

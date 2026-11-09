@@ -28,16 +28,29 @@ final class AntigravityUsage: ObservableObject {
     private var again = false
     private var lastFetch = Date.distantPast
     private static let minimumInterval: TimeInterval = 30
-    /// The timer's pace at full speed.
-    private static let interval: TimeInterval = 180
+    /// The timer's pace at full speed (`UsageBackgroundRead`): a usage view, a turn and signing in read sooner.
+    private static let interval = UsageBackgroundRead.interval
+    /// How often the timer looks again for a sign-in while there is none (signing in in Nook reads at once).
+    private static let retryInterval = UsageBackgroundRead.retryInterval
+    /// When the timer last tried while there was no sign-in.
+    private var lastRetry = Date.distantPast
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: 300) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, UsageBackgroundRead.allowed else { return }
+                let slowdown = EnergyMonitor.shared.plan.slowdown
+                // Not signed in (or not installed): a failed read leaves `lastFetch` in the past, so look again only now
+                // and then instead of on every tick.
+                if self.noLogin || self.limits.isEmpty {
+                    guard Date().timeIntervalSince(self.lastRetry) >= Self.retryInterval * slowdown - 10 else { return }
+                    self.lastRetry = Date()
+                    self.refreshNow()
+                    return
+                }
                 // On battery or away, less often (`EnergyPlan.slowdown`); signing in still reads at once (`force`).
-                let wait = Self.interval * EnergyMonitor.shared.plan.slowdown - 10
+                let wait = Self.interval * slowdown - 10
                 guard Date().timeIntervalSince(self.lastFetch) >= wait else { return }
                 self.refreshNow()
             }

@@ -117,7 +117,13 @@ extension ChatBubble {
 final class ChatFileThumbnails: @unchecked Sendable {
     static let shared = ChatFileThumbnails()
 
-    private let cache = NSCache<NSString, NSImage>()
+    /// Up to 32 MB of pictures (a 960-pixel frame is about 3.7 MB); one that went is read back from disk.
+    private let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.totalCostLimit = 32 * 1024 * 1024
+        MemoryPressure.shared.register("chatFileThumbnails") { [cache] _ in cache.removeAllObjects() }
+        return cache
+    }()
     private let lock = NSLock()
     /// The files whose picture could not be made, and when: they are tried again a while later (a video may still
     /// have been coming in).
@@ -138,14 +144,14 @@ final class ChatFileThumbnails: @unchecked Sendable {
         // Made before, also on an earlier launch: read back from disk, which is far quicker than making it again.
         if let stored = ChatPictureDisk.key(url, variant: kind == .video ? "frame-960" : "page", always: true),
            let image = await Task.detached(priority: .userInitiated, operation: { ChatPictureDisk.image(stored) }).value {
-            cache.setObject(image, forKey: url.path as NSString)
+            cache.setObject(image, forKey: url.path as NSString, cost: DecodedImage.cost(image))
             return image
         }
         guard let image = await Self.make(url, kind: kind) else {
             lock.withLock { failed[url.path] = Date() }
             return nil
         }
-        cache.setObject(image, forKey: url.path as NSString)
+        cache.setObject(image, forKey: url.path as NSString, cost: DecodedImage.cost(image))
         // Filed under the file as it is now: a video may have grown while it was waited for.
         if let settled = ChatPictureDisk.key(url, variant: kind == .video ? "frame-960" : "page", always: true) {
             ChatPictureDisk.store(image, key: settled)
@@ -175,7 +181,13 @@ final class ChatFileThumbnails: @unchecked Sendable {
 
 /// Pictures of files on this Mac, decoded once at a size a bubble needs, so a redraw of a chat costs nothing.
 enum ChatMediaImages {
-    private static let cache = NSCache<NSString, NSImage>()
+    /// Up to 64 MB of decoded pictures (a 480-pixel photo is about 0.9 MB); one that went is read back from disk.
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.totalCostLimit = 64 * 1024 * 1024
+        MemoryPressure.shared.register("chatMediaImages") { [cache] _ in cache.removeAllObjects() }
+        return cache
+    }()
 
     private static func key(_ url: URL, side: CGFloat) -> NSString { "\(url.path)#\(Int(side))" as NSString }
 
@@ -191,7 +203,7 @@ enum ChatMediaImages {
         if let cached = cache.object(forKey: key) { return cached }
         let stored = ChatPictureDisk.key(url, variant: "photo-\(Int(side))")
         if let stored, let image = ChatPictureDisk.image(stored) {
-            cache.setObject(image, forKey: key)
+            cache.setObject(image, forKey: key, cost: DecodedImage.cost(image))
             return image
         }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
@@ -203,7 +215,7 @@ enum ChatMediaImages {
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        cache.setObject(image, forKey: key)
+        cache.setObject(image, forKey: key, cost: cg.bytesPerRow * cg.height)
         if let stored { ChatPictureDisk.store(image, key: stored) }
         return image
     }
@@ -332,6 +344,8 @@ final class ChatAvatarImages: ObservableObject {
             // Gone from the media cache already (memory pressure): the next redraw asks again.
             guard let image = ChatMediaImages.cached(URL(fileURLWithPath: path, isDirectory: false), side: side) else { return }
             if images.count >= Self.limit { images.removeAll(keepingCapacity: true) }
+            // The last picture per chat holds as many as there are chats ever listed: bounded the same way.
+            if shown.count >= Self.limit { shown.removeAll(keepingCapacity: true) }
             images[path] = image
             announce()
         }
