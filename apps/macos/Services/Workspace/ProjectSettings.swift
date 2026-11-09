@@ -14,6 +14,8 @@ enum ProjectSettingKey: Hashable, Sendable {
     case branchPrefix
     /// The user's own rules for written session titles.
     case titleInstructions
+    /// Instructions every agent gets in this project, whichever agent it is (`ProjectSettings.instructions`).
+    case agentInstructions
     /// Whether Nook's worktree cleanup rules apply to the project ("on") or not ("off").
     case worktreeCleanup
     /// Whether the project's browsers keep their sign-ins between launches ("on"), forget them ("off") or ask at the first
@@ -28,6 +30,7 @@ enum ProjectSettingKey: Hashable, Sendable {
         case .isolation: return "isolation"
         case .branchPrefix: return "branchPrefix"
         case .titleInstructions: return "titleInstructions"
+        case .agentInstructions: return "agentInstructions"
         case .worktreeCleanup: return "worktreeCleanup"
         case .browserSignIns: return "browserSignIns"
         }
@@ -44,6 +47,8 @@ struct SessionDefaults: Equatable, Sendable {
     var branchPrefix: String
     /// Added to the prompt that writes a session's title; empty: Nook's own rules only.
     var titleInstructions: String = ""
+    /// Given to every agent at the start of each of its processes, before the session's own instructions; empty: none.
+    var agentInstructions: String = ""
     /// The cleanup rules from Settings › Workspace apply to this project's worktrees; off: they stay until you remove them.
     var worktreeCleanup = true
     /// Whether the project's browsers remember sign-ins after Nook quits. Ask (the default): the first sign-in asks.
@@ -245,6 +250,7 @@ enum ProjectSettings {
         layers.set(ProjectSettingKey.isolation.raw, .string(global.isolation.rawValue), in: .environment)
         layers.set(ProjectSettingKey.branchPrefix.raw, .string(global.branchPrefix), in: .environment)
         layers.set(ProjectSettingKey.titleInstructions.raw, .string(global.titleInstructions), in: .environment)
+        layers.set(ProjectSettingKey.agentInstructions.raw, .string(global.agentInstructions), in: .environment)
         layers.set(ProjectSettingKey.worktreeCleanup.raw, .string(global.worktreeCleanup ? "on" : "off"), in: .environment)
         for (key, value) in overrides { layers.set(key, value, in: .project) }
         return layers
@@ -268,9 +274,20 @@ enum ProjectSettings {
         result.isolation = string(.isolation).flatMap(IsolationMode.init(rawValue:)) ?? global.isolation
         result.branchPrefix = string(.branchPrefix).map(WorktreeNaming.normalizedBranchPrefix) ?? global.branchPrefix
         result.titleInstructions = string(.titleInstructions) ?? global.titleInstructions
+        result.agentInstructions = string(.agentInstructions) ?? global.agentInstructions
         result.worktreeCleanup = string(.worktreeCleanup).map { $0 != "off" } ?? global.worktreeCleanup
         result.browserSignIns = string(.browserSignIns).flatMap(BrowserSignInPolicy.init(stored:)) ?? global.browserSignIns
         return result
+    }
+
+    /// What an agent is told at launch: the project's instructions for every agent (Settings › Projects, else the ones for
+    /// all projects), then the session's own. The same for every agent, also one that reads no CLAUDE.md or AGENTS.md.
+    static func instructions(project: String, session: String) -> String {
+        let shared = project.trimmingCharacters(in: .whitespacesAndNewlines)
+        let own = session.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !shared.isEmpty else { return own }
+        let block = "Instructions for this project (set by the user in Nook, for every agent):\n" + shared
+        return own.isEmpty ? block : block + "\n\n" + own
     }
 
     /// How a row reads in the editor of `scope`: inherited from the global value, or set for this project.

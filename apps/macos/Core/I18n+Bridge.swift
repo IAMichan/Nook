@@ -5,6 +5,9 @@ import Foundation
 
 let bridgeTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "settings.ws.agentInstructions": "Instructions for every agent",
+        "settings.ws.agentInstructions.placeholder": "Rules every agent follows here, e.g. “Run the tests before you commit.”",
+        "settings.ws.agentInstructions.help": "Nook gives these to every coding agent at launch, before the session's own instructions, also to agents that read no CLAUDE.md or AGENTS.md. A change counts from an agent's next start.",
         "settings.bridge.perAgent": "Tools per agent",
         "settings.bridge.perAgent.info": "Switch off a group of Nook's tools for one agent. It counts for the sessions Nook runs and for agents you linked in a terminal; the agent is told the tools are off.",
         "settings.bridge.access.all": "All tools",
@@ -60,6 +63,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ is using your screen"
     ],
     .nl: [
+        "settings.ws.agentInstructions": "Instructies voor elke agent",
+        "settings.ws.agentInstructions.placeholder": "Regels die elke agent hier volgt, bijv. “Draai de tests voor je commit.”",
+        "settings.ws.agentInstructions.help": "Nook geeft ze bij de start aan elke coding agent, voor de eigen instructies van de sessie, ook aan agents die geen CLAUDE.md of AGENTS.md lezen. Een wijziging telt vanaf de volgende start van een agent.",
         "settings.bridge.perAgent": "Tools per agent",
         "settings.bridge.perAgent.info": "Zet een groep tools van Nook uit voor één agent. Dat geldt voor sessies die Nook draait en voor agents die je in een terminal koppelde; de agent hoort dat de tools uit staan.",
         "settings.bridge.access.all": "Alle tools",
@@ -115,6 +121,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ gebruikt je scherm"
     ],
     .de: [
+        "settings.ws.agentInstructions": "Anweisungen für jeden Agenten",
+        "settings.ws.agentInstructions.placeholder": "Regeln, die hier jeder Agent befolgt, z. B. „Führe vor dem Commit die Tests aus.“",
+        "settings.ws.agentInstructions.help": "Nook gibt sie jedem Coding-Agenten beim Start, vor den eigenen Anweisungen der Sitzung, auch Agenten, die keine CLAUDE.md oder AGENTS.md lesen. Eine Änderung gilt ab dem nächsten Start eines Agenten.",
         "settings.bridge.perAgent": "Werkzeuge pro Agent",
         "settings.bridge.perAgent.info": "Schalte eine Gruppe von Nooks Werkzeugen für einen Agenten aus. Das gilt für Sitzungen, die Nook ausführt, und für Agenten, die du in einem Terminal verbunden hast; der Agent erfährt, dass die Werkzeuge aus sind.",
         "settings.bridge.access.all": "Alle Werkzeuge",
@@ -170,6 +179,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ benutzt deinen Bildschirm"
     ],
     .fr: [
+        "settings.ws.agentInstructions": "Instructions pour chaque agent",
+        "settings.ws.agentInstructions.placeholder": "Règles que chaque agent suit ici, p. ex. « Lance les tests avant de committer. »",
+        "settings.ws.agentInstructions.help": "Nook les donne à chaque agent de code au démarrage, avant les instructions de la session, même aux agents qui ne lisent ni CLAUDE.md ni AGENTS.md. Un changement compte dès le prochain démarrage d’un agent.",
         "settings.bridge.perAgent": "Outils par agent",
         "settings.bridge.perAgent.info": "Désactivez un groupe d’outils de Nook pour un agent. Cela vaut pour les sessions que Nook exécute et pour les agents reliés dans un terminal ; l’agent apprend que ces outils sont désactivés.",
         "settings.bridge.access.all": "Tous les outils",
@@ -225,6 +237,9 @@ let bridgeTranslations: [AppLanguage: [String: String]] = [
         "bridge.screen.working": "%@ utilise votre écran"
     ],
     .es: [
+        "settings.ws.agentInstructions": "Instrucciones para cada agente",
+        "settings.ws.agentInstructions.placeholder": "Reglas que cada agente sigue aquí, p. ej. “Ejecuta las pruebas antes de hacer commit.”",
+        "settings.ws.agentInstructions.help": "Nook se las da a cada agente de código al iniciar, antes de las instrucciones propias de la sesión, también a agentes que no leen CLAUDE.md ni AGENTS.md. Un cambio cuenta desde el próximo inicio de un agente.",
         "settings.bridge.perAgent": "Herramientas por agente",
         "settings.bridge.perAgent.info": "Desactiva un grupo de herramientas de Nook para un agente. Vale para las sesiones que ejecuta Nook y para los agentes que conectaste en un terminal; el agente sabe que esas herramientas están desactivadas.",
         "settings.bridge.access.all": "Todas las herramientas",
