@@ -532,9 +532,8 @@ struct ComposerContextRing: View {
     }
 }
 
-/// How much of its subscription the session's account has left, among the choices of the composer, right after the effort: a
-/// small ring filled to what is left of the window that runs out first, with that percentage beside it, amber from 75 % used
-/// and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
+/// How much of its subscription the session's account has used, among the choices of the composer, right after the effort: a
+/// small ring filled to the window that runs out first, with its percentage beside it, amber from 75 % and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
 /// the usage limits modal with every account (`UsageModal`). Every agent that reports limits gets it.
 ///
 /// Equatable, and without the app model of its own: composers redraw for every change of the workspace, and this one only
@@ -568,9 +567,9 @@ struct ComposerUsageRing: View, Equatable {
         100 - LimitPool.left(UsageLimits.effectiveHighestPercent(limits.map(\.percent)))
     }
 
-    /// "Limits of Work: 5 hours: 62% left · Week: 88% left".
+    /// "Limits of Work: 5 hours: 38% used · Week: 12% used".
     private var help: String {
-        tr("compose.limits.help", account, limits.map { tr("limits.rowLeft", $0.label, 100 - UsageLimitRows.used($0)) }.joined(separator: " · "))
+        tr("compose.limits.help", account, limits.map { tr("limits.rowUsed", $0.label, UsageLimitRows.used($0)) }.joined(separator: " · "))
     }
 
     /// The fullest windows when there are many (an agent with a quota per model), in the agent's order.
@@ -585,7 +584,7 @@ struct ComposerUsageRing: View, Equatable {
         Button { open.toggle() } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
                 ring(tint: tint)
-                Text("\(100 - used)%")
+                Text("\(used)%")
                     .font(NookTheme.TextStyle.label.monospacedDigit())
                     .foregroundStyle(UsageTone.level(used: used) == .calm ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(used: used))
             }
@@ -606,7 +605,7 @@ struct ComposerUsageRing: View, Equatable {
     private func ring(tint: Color) -> some View {
         ZStack {
             Circle().stroke(NookTheme.line2, lineWidth: 2)
-            Circle().trim(from: 0, to: CGFloat(100 - used) / 100)
+            Circle().trim(from: 0, to: CGFloat(used) / 100)
                 .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
