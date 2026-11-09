@@ -16,7 +16,8 @@ enum ProjectSettingKey: Hashable, Sendable {
     case titleInstructions
     /// Whether Nook's worktree cleanup rules apply to the project ("on") or not ("off").
     case worktreeCleanup
-    /// Whether the project's browsers keep their sign-ins between launches ("on"), in a store of the project's own.
+    /// Whether the project's browsers keep their sign-ins between launches ("on"), forget them ("off") or ask at the first
+    /// sign-in ("ask"); see `BrowserSignInPolicy`.
     case browserSignIns
 
     var raw: String {
@@ -45,14 +46,39 @@ struct SessionDefaults: Equatable, Sendable {
     var titleInstructions: String = ""
     /// The cleanup rules from Settings › Workspace apply to this project's worktrees; off: they stay until you remove them.
     var worktreeCleanup = true
-    /// The project's browsers remember sign-ins; off (the default): nothing of a browser stays after Nook quits.
-    var browserSignIns = false
+    /// Whether the project's browsers remember sign-ins after Nook quits. Ask (the default): the first sign-in asks.
+    var browserSignIns: BrowserSignInPolicy = .ask
 
     func model(for provider: RunProvider) -> String { models[provider.rawValue] ?? "" }
 
     /// The access level for this agent: the chosen one when the agent supports it, else a safe one it does.
     func permission(for provider: RunProvider) -> PermissionPolicy {
         provider.capabilities.policies.contains(permission) ? permission : .acceptEdits
+    }
+}
+
+/// What Nook does with what a browser signed in to: keep it after Nook quits, forget it, or ask at the first sign-in.
+/// Stored as "on", "off" and "ask" (a project's override has used "on" and "off" from the start).
+enum BrowserSignInPolicy: String, CaseIterable, Identifiable, Sendable {
+    case ask, keep, forget
+
+    var id: String { rawValue }
+
+    init?(stored: String) {
+        switch stored {
+        case "on": self = .keep
+        case "off": self = .forget
+        case "ask": self = .ask
+        default: return nil
+        }
+    }
+
+    var stored: String {
+        switch self {
+        case .keep: return "on"
+        case .forget: return "off"
+        case .ask: return "ask"
+        }
     }
 }
 
@@ -243,7 +269,7 @@ enum ProjectSettings {
         result.branchPrefix = string(.branchPrefix).map(WorktreeNaming.normalizedBranchPrefix) ?? global.branchPrefix
         result.titleInstructions = string(.titleInstructions) ?? global.titleInstructions
         result.worktreeCleanup = string(.worktreeCleanup).map { $0 != "off" } ?? global.worktreeCleanup
-        result.browserSignIns = string(.browserSignIns).map { $0 == "on" } ?? global.browserSignIns
+        result.browserSignIns = string(.browserSignIns).flatMap(BrowserSignInPolicy.init(stored:)) ?? global.browserSignIns
         return result
     }
 
