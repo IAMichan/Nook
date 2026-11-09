@@ -157,6 +157,43 @@ extension AccountPullRequests {
         return account
     }
 
+    /// The watched rows read again by node id (see `PullRequestGraphQL.nodesBody`) put in where they stand; a row that
+    /// was not read again stays as it was.
+    func replacingWatched(_ fresh: [PullRequestItem]) -> AccountPullRequests {
+        guard !fresh.isEmpty else { return self }
+        let byID = Dictionary(fresh.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var account = self
+        account.watched = watched.map { byID[$0.id] ?? $0 }
+        return account
+    }
+
+    /// Rows whose page was read after this list read began (`newer`) keep what `old` showed for them: that read is the
+    /// newer one, and the list must not put an older state back. Only the review decision, which a page read does not
+    /// bring, is taken from the list.
+    static func keepingNewer(_ accounts: [AccountPullRequests], from old: [AccountPullRequests],
+                             newer: Set<String>) -> [AccountPullRequests] {
+        guard !newer.isEmpty else { return accounts }
+        var shown: [String: PullRequestItem] = [:]
+        for account in old {
+            for item in account.mine + account.reviews + account.watched where newer.contains(item.id) { shown[item.id] = item }
+        }
+        guard !shown.isEmpty else { return accounts }
+        func kept(_ items: [PullRequestItem]) -> [PullRequestItem] {
+            items.map { item in
+                guard var row = shown[item.id] else { return item }
+                row.review = item.review
+                return row
+            }
+        }
+        return accounts.map { account in
+            var account = account
+            account.mine = kept(account.mine)
+            account.reviews = kept(account.reviews)
+            account.watched = kept(account.watched)
+            return account
+        }
+    }
+
     /// The accounts with the watched rows just found put in (an account missing from `watched` keeps the ones it has),
     /// each pull request once: yours and your reviews stay where they are, and a watched one only shows under the first
     /// account where nothing lists it yet.
@@ -366,6 +403,29 @@ enum PullRequestGraphQL {
         var seen = Set<String>()
         let items = (open.sorted(by: newest) + closed.sorted(by: newest)).filter { seen.insert($0.id).inserted }
         return (items, unreadable)
+    }
+
+    /// GitHub reads at most this many nodes in one request.
+    static let nodesLimit = 100
+
+    /// Pull requests read again by their node ids (`PullRequestItem.nodeID`): no search, so it is as quick as the list's
+    /// own refresh. The watched rows that are open take it with every quick refresh, so their checks, conflict and state
+    /// keep up with your own rows instead of waiting for the slow watched search.
+    static func nodesBody(_ ids: [String]) -> Data {
+        let fragment = query[query.range(of: "fragment row")!.lowerBound...]
+        let text = "query NookPullRequestNodes($ids: [ID!]!) {\n  nodes(ids: $ids) { ...row }\n}\n\(fragment)"
+        return (try? JSONSerialization.data(withJSONObject: ["query": text, "variables": ["ids": ids]])) ?? Data()
+    }
+
+    /// The pull requests in that answer. A node GitHub could not read (deleted, no access) comes back null and is left
+    /// out; throws when the request failed as a whole.
+    static func parseNodes(_ data: Data) throws -> [PullRequestItem] {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw NookError("GitHub returned an unexpected response.")
+        }
+        guard let payload = root["data"] as? [String: Any] else { throw failure(root) }
+        let nodes = ((payload["nodes"] as? [Any]) ?? []).compactMap { $0 as? [String: Any] }
+        return rows(["nodes": nodes])
     }
 
     /// The organizations you belong to, as two requests: your memberships, which need the `read:org` scope, and the

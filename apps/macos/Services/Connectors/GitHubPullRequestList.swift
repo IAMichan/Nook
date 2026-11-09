@@ -58,6 +58,31 @@ enum GitHubPullRequestList {
         }
     }
 
+    /// Pull requests read again by node id, per account id (see `PullRequestGraphQL.nodesBody`): the open watched rows,
+    /// with every quick refresh. An account whose read failed is left out, so its rows stay as they were.
+    @MainActor
+    static func loadNodes(ids: [String: [String]]) async -> [String: [PullRequestItem]] {
+        guard ConnectorToggle.isOn("github") else { return [:] }
+        let targets = self.targets.filter { !(ids[$0.id] ?? []).isEmpty }
+        return await withTaskGroup(of: (String, [PullRequestItem]?).self) { group in
+            for target in targets {
+                let all = ids[target.id] ?? []
+                for start in stride(from: 0, to: all.count, by: PullRequestGraphQL.nodesLimit) {
+                    let part = Array(all[start..<min(start + PullRequestGraphQL.nodesLimit, all.count)])
+                    group.addTask {
+                        (target.id, try? PullRequestGraphQL.parseNodes(try await post(PullRequestGraphQL.nodesBody(part), token: target.token)))
+                    }
+                }
+            }
+            var result: [String: [PullRequestItem]] = [:]
+            for await (id, items) in group {
+                guard let items else { continue }
+                result[id, default: []] += items
+            }
+            return result
+        }
+    }
+
     /// The pull requests in the watched organizations and repositories, the repositories each account owns itself, and
     /// (unless turned off) the organizations each account belongs to, for the accounts given by id with their login. An
     /// account whose search could not get through is left out, so its last watched rows can stay (see
@@ -303,6 +328,9 @@ final class PullRequestStore: ObservableObject {
     /// ten minutes at most) the list shows them merged anyway, instead of open again after the next refresh.
     private var mergedHere: [String: Date] = [:]
     private static let mergeGrace: TimeInterval = 600
+    /// When each pull request's page was last read (see `update(with:)`). A list read that began before then must not put
+    /// back what it saw: the page read is newer, and the row would show a state the page no longer does.
+    private var pageReadAt: [String: Date] = [:]
     private let file = NookPaths.supportDirectory.appendingPathComponent("pull-requests.json")
 
     private init() {
@@ -356,8 +384,16 @@ final class PullRequestStore: ObservableObject {
         }
         loading = true
         showsProgress = !quiet && (force || accounts.allSatisfy(\.isEmpty))
+        let started = Date()
+        // The open watched rows are read again by id alongside, so their checks keep up with your own rows rather than
+        // waiting minutes for the slow watched search.
+        let watchedOpen = Dictionary(accounts.filter { $0.error == nil }.map { account in
+            (account.id, account.watched.filter { $0.state == .open && !$0.nodeID.isEmpty }.map(\.nodeID))
+        }, uniquingKeysWith: { first, _ in first })
         // Not tied to the view that asked: closing the panel halfway must not end the refresh as a failed one.
-        let fresh = await Task { await GitHubPullRequestList.loadOwn() }.value
+        async let own = Task { await GitHubPullRequestList.loadOwn() }.value
+        async let nodes = Task { await GitHubPullRequestList.loadNodes(ids: watchedOpen) }.value
+        let (fresh, watchedRows) = await (own, nodes)
         loading = false
         if quiet && !fresh.isEmpty && fresh.allSatisfy({ $0.error != nil }) {
             // Offline or asleep: the rows stay, and the panel tries again (and says why) when it opens.
@@ -374,7 +410,11 @@ final class PullRequestStore: ObservableObject {
         mergedHere = mergedHere.filter { $0.value > cutoff }
         // Yours and your reviews show as soon as they are in; the closed ones and the watched rows from last time stay
         // until the background pass has read them again.
-        let updated = AccountPullRequests.keepingConflicts(AccountPullRequests.attaching([:], to: fresh.map(merge)), from: accounts)
+        let read = AccountPullRequests.attaching([:], to: fresh.map(merge)).map { account in
+            account.replacingWatched(watchedRows[account.id] ?? [])
+        }
+        let updated = AccountPullRequests.keepingNewer(AccountPullRequests.keepingConflicts(read, from: accounts),
+                                                       from: accounts, newer: pageReads(since: started))
             .map(settled)
         // Most answers repeat what is shown: only a change redraws the list and is written to disk.
         let changed = updated != accounts
@@ -402,6 +442,7 @@ final class PullRequestStore: ObservableObject {
         // Each account with its login, which the search of its own repositories needs.
         let readable = Dictionary(accounts.filter { $0.error == nil }.map { ($0.id, $0.login) }, uniquingKeysWith: { first, _ in first })
         guard !readable.isEmpty else { return }
+        let started = Date()
         background = Task { [weak self] in
             async let closed = GitHubPullRequestList.loadClosed(accounts: Array(readable.keys))
             async let watched = GitHubPullRequestList.loadWatched(accounts: readable)
@@ -412,7 +453,9 @@ final class PullRequestStore: ObservableObject {
                 guard let rows = closedRows[account.id] else { return account }
                 return account.replacingClosed(mine: rows.mine, reviews: rows.reviews)
             }
-            let next = AccountPullRequests.keepingConflicts(AccountPullRequests.attaching(watchedRows, to: updated), from: self.accounts)
+            let next = AccountPullRequests.keepingNewer(
+                AccountPullRequests.keepingConflicts(AccountPullRequests.attaching(watchedRows, to: updated), from: self.accounts),
+                from: self.accounts, newer: self.pageReads(since: started))
                 .map(self.settled)
             self.background = nil
             if next != self.accounts {
@@ -424,6 +467,13 @@ final class PullRequestStore: ObservableObject {
                 self.refreshInBackground(force: true)
             }
         }
+    }
+
+    /// The pull requests whose page was read after `start`; forgets reads too old to matter to any list read.
+    private func pageReads(since start: Date) -> Set<String> {
+        let cutoff = Date().addingTimeInterval(-Self.mergeGrace)
+        pageReadAt = pageReadAt.filter { $0.value > cutoff }
+        return Set(pageReadAt.filter { $0.value > start }.keys)
     }
 
     private func save() {
@@ -469,6 +519,7 @@ final class PullRequestStore: ObservableObject {
     /// gave just now, so the list never lags behind the page.
     func update(with detail: PullRequestDetail) {
         let state: PullRequestItem.State = detail.state == .merged ? .merged : detail.state == .closed ? .closed : .open
+        pageReadAt[detail.id] = Date()
         func refreshed(_ items: [PullRequestItem]) -> [PullRequestItem] {
             items.map { item in
                 guard item.id == detail.id else { return item }
