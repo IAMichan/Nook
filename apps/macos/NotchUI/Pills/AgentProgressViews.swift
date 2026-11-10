@@ -25,6 +25,7 @@ enum AgentActivityText {
         case .writing: return tr("ws.activity.writing")
         case .reviewing: return tr("ws.activity.reviewing")
         case .recovering: return tr("ws.activity.recovering")
+        case .compacting: return tr("ws.activity.compacting")
         }
     }
 
@@ -45,6 +46,7 @@ enum AgentActivityText {
         case .writing: return "text.cursor"
         case .reviewing: return "doc.text.magnifyingglass"
         case .recovering: return "arrow.triangle.2.circlepath"
+        case .compacting: return "arrow.down.right.and.arrow.up.left"
         }
     }
 

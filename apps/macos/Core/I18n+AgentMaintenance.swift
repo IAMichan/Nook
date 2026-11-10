@@ -5,7 +5,6 @@ import Foundation
 
 let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
     .en: [
-        "pi.event.compacting": "Compacting the conversation…",
         "pi.event.retrying": "Retrying after an error…",
         "agentUpdate.title": "Updates",
         "agentUpdate.info": "Each agent's program, its version and the newest one. Update runs the installer that put it there (Homebrew, npm, pnpm, Bun, Volta, mise, or the agent's own updater) after you confirm. Running sessions keep the version they started with.",
@@ -35,7 +34,6 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.pickerDetail": "Unlocks the models that need %@ or newer",
     ],
     .nl: [
-        "pi.event.compacting": "Gesprek wordt samengevat…",
         "pi.event.retrying": "Opnieuw proberen na een fout…",
         "agentUpdate.title": "Updates",
         "agentUpdate.info": "Het programma van elke agent, de versie en de nieuwste. Bijwerken draait het installatieprogramma dat het neerzette (Homebrew, npm, pnpm, Bun, Volta, mise of de eigen updater van de agent), nadat je het bevestigt. Lopende sessies houden de versie waarmee ze begonnen.",
@@ -65,7 +63,6 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.pickerDetail": "Ontgrendelt de modellen die %@ of nieuwer nodig hebben",
     ],
     .de: [
-        "pi.event.compacting": "Unterhaltung wird zusammengefasst …",
         "pi.event.retrying": "Neuer Versuch nach einem Fehler …",
         "agentUpdate.title": "Updates",
         "agentUpdate.info": "Das Programm jedes Agenten, seine Version und die neueste. Aktualisieren führt nach deiner Bestätigung das Installationsprogramm aus, das es installiert hat (Homebrew, npm, pnpm, Bun, Volta, mise oder den eigenen Updater des Agenten). Laufende Sitzungen behalten die Version, mit der sie begonnen haben.",
@@ -95,7 +92,6 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.pickerDetail": "Schaltet die Modelle frei, die %@ oder neuer brauchen",
     ],
     .fr: [
-        "pi.event.compacting": "Résumé de la conversation…",
         "pi.event.retrying": "Nouvelle tentative après une erreur…",
         "agentUpdate.title": "Mises à jour",
         "agentUpdate.info": "Le programme de chaque agent, sa version et la plus récente. Mettre à jour lance, après ta confirmation, l'installateur qui l'a mis en place (Homebrew, npm, pnpm, Bun, Volta, mise ou le propre outil de mise à jour de l'agent). Les sessions en cours gardent la version avec laquelle elles ont démarré.",
@@ -125,7 +121,6 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.pickerDetail": "Débloque les modèles qui demandent %@ ou plus récent",
     ],
     .es: [
-        "pi.event.compacting": "Resumiendo la conversación…",
         "pi.event.retrying": "Reintentando tras un error…",
         "agentUpdate.title": "Actualizaciones",
         "agentUpdate.info": "El programa de cada agente, su versión y la más reciente. Actualizar ejecuta, tras tu confirmación, el instalador que lo puso ahí (Homebrew, npm, pnpm, Bun, Volta, mise o el actualizador propio del agente). Las sesiones en curso mantienen la versión con la que empezaron.",

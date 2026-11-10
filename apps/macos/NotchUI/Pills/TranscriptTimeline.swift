@@ -56,6 +56,9 @@ struct TranscriptConversation: View {
         guard finding, let findIndex, found.matches.indices.contains(findIndex) else { return nil }
         return found.matches[findIndex]
     }
+    /// The first turn drawn (`HistoryWindow`): a long conversation opens with its latest turns, "Show earlier messages"
+    /// and a mark on the rail widen it. Nil until the conversation has landed.
+    @State private var historyStart: Int?
 
     /// The conversation as read from the transcript; before this view's first read, as it was read last time, so a
     /// conversation you switch back to shows from the first frame instead of after the read is under way.
@@ -82,7 +85,12 @@ struct TranscriptConversation: View {
     var body: some View {
         // Only a conversation read from the transcript is kept for the next visit, not the fallback shown before it.
         let _ = derived.update(shown, working: working, directory: directory, path: transcriptMessages.isEmpty ? "" : path)
-        let rows = derived.rows
+        let allRows = derived.rows
+        // Only the latest turns of a long conversation are drawn, from the turn the window starts at.
+        let perTurn = TranscriptPresentation.rowsPerTurn(allRows)
+        let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: perTurn), turnCount: perTurn.count)
+        let firstRow = min(allRows.count, HistoryWindow.firstRow(rowsPerTurn: perTurn, start: start))
+        let rows = firstRow > 0 ? Array(allRows[firstRow...]) : allRows
         let outputs = derived.outputs
         let turns = derived.turns
         let beforeNew = newSince.flatMap { id in rows.firstIndex { $0.id == id } }.flatMap { $0 > 0 ? rows[$0 - 1].id : nil }
@@ -100,6 +108,15 @@ struct TranscriptConversation: View {
                             } else {
                                 // Most transcripts are read in a moment: nothing shows unless it takes longer.
                                 PatientSpinner().frame(height: 160)
+                            }
+                        }
+                        if firstRow > 0 {
+                            TimelineEarlierRow {
+                                // What you looked at stays where it is: the earlier turns go above it.
+                                let anchor = rows.first?.id
+                                scroll.userScrolled()
+                                historyStart = HistoryWindow.earlier(from: start)
+                                if let anchor { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } }
                             }
                         }
                         ForEach(rows) { row in
@@ -171,7 +188,14 @@ struct TranscriptConversation: View {
                     if overflows, !finding, !derived.marks.isEmpty {
                         TranscriptPromptRail(marks: derived.marks) { mark in
                             scroll.userScrolled()
-                            withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                            // A message the window leaves out widens it first.
+                            let turn = TranscriptPresentation.turn(ofRow: mark.row, in: derived.rows)
+                            if let turn, turn < start {
+                                historyStart = HistoryWindow.revealing(turn, from: start)
+                                DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) } }
+                            } else {
+                                withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                            }
                         }
                         .padding(.vertical, NookTheme.Spacing.md)
                         .transition(.opacity)
@@ -225,12 +249,13 @@ struct TranscriptConversation: View {
                 }
                 .keyCommand("chat.find") { openFind() }
                 .onChange(of: findQuery) { _, query in
-                    found = TranscriptSearch.search(rows, query: query)
+                    found = TranscriptSearch.search(allRows, query: query)
                     findIndex = found.next(after: nil)
                     if let findIndex { reveal(findIndex, proxy) }
                 }
                 // A working agent writes on: its new words count too, and the chosen match stays where it was.
-                .onChange(of: rows) { _, rows in
+                // Over every row, also the turns the window leaves out: a match there widens it.
+                .onChange(of: allRows) { _, rows in
                     guard finding, !findQuery.isEmpty else { return }
                     let chosen = foundMatch?.rowID
                     found = TranscriptSearch.search(rows, query: findQuery)
@@ -250,6 +275,7 @@ struct TranscriptConversation: View {
             // session's), and the read below brings it up to date.
             if readPath != path {
                 readPath = path
+                historyStart = nil
                 messages = TranscriptCache.messages(path) ?? []
                 loaded = !messages.isEmpty
             }
@@ -317,6 +343,12 @@ struct TranscriptConversation: View {
         guard found.matches.indices.contains(index) else { return }
         let match = found.matches[index]
         scroll.userScrolled()
+        // A match in a turn the window leaves out widens it first (its top-level row: the outermost fold, or itself).
+        let perTurn = TranscriptPresentation.rowsPerTurn(derived.rows)
+        let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: perTurn), turnCount: perTurn.count)
+        if let turn = TranscriptPresentation.turn(ofRow: match.containers.first ?? match.rowID, in: derived.rows), turn < start {
+            historyStart = HistoryWindow.revealing(turn, from: start)
+        }
         if !match.containers.allSatisfy(open.contains) {
             withAnimation(NookTheme.reveal) { open.formUnion(match.containers) }
         }
@@ -372,6 +404,11 @@ struct TranscriptConversation: View {
     /// again while the layout settles: the lazy rows only learn their real height once laid out, so a single scroll from
     /// far up lands short of the end. Stops when you scroll away in the meantime.
     private func land(_ proxy: ScrollViewProxy) {
+        // The window opens on the latest turns and stays there as new ones come in.
+        if historyStart == nil {
+            let perTurn = TranscriptPresentation.rowsPerTurn(derived.rows)
+            if !perTurn.isEmpty { historyStart = HistoryWindow.initialStart(rowsPerTurn: perTurn) }
+        }
         newSince = visit.flatMap { TimelineLanding.firstNew(visitRows, since: $0.lastViewedAt) }
         scroll.jumpedToEnd()
         scrollToEnd(proxy)
