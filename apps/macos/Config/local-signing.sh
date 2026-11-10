@@ -25,12 +25,15 @@ fi
 command -v security >/dev/null 2>&1 || exit 0
 
 TEAM_ID="${DEVELOPMENT_TEAM:-$(security find-certificate -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p' | head -n 1)}"
+write_if_changed() {
+  if [ -f "$LOCAL" ] && [ "$(cat "$LOCAL")" = "$1" ]; then return 0; fi
+  printf "%s\n" "$1" > "$LOCAL"
+}
+
 if [ -n "$TEAM_ID" ]; then
-  {
-    echo "$MARKER"
-    echo "CODE_SIGN_IDENTITY = Apple Development"
-    echo "DEVELOPMENT_TEAM = $TEAM_ID"
-  } > "$LOCAL"
+  write_if_changed "$MARKER
+CODE_SIGN_IDENTITY = Apple Development
+DEVELOPMENT_TEAM = $TEAM_ID"
   echo "local-signing: signing with Apple Development (team $TEAM_ID)."
   exit 0
 fi
@@ -86,10 +89,8 @@ if [ -z "$IDENTITY" ]; then
   exit 0
 fi
 
-{
-  echo "$MARKER"
-  echo "// Xcode signs ad hoc; the scheme's post-build action re-signs with this stable identity (Config/resign-local.sh)."
-  echo "NOOK_LOCAL_SIGNING_IDENTITY = $IDENTITY"
-} > "$LOCAL"
+write_if_changed "$MARKER
+// Xcode signs ad hoc; the scheme's post-build action re-signs with this stable identity (Config/resign-local.sh).
+NOOK_LOCAL_SIGNING_IDENTITY = $IDENTITY"
 echo "local-signing: signing with \"$LOCAL_NAME\" ($IDENTITY)."
 exit 0
