@@ -45,6 +45,17 @@ struct TranscriptConversation: View {
     /// The transcript was read fresh for this view (not only taken from the cache): what is new since shows then.
     @State private var freshRead = false
     @State private var derived = TranscriptDerived()
+    /// "Find in conversation" (⌘F): the bar is open, what it looks for, its matches and the one chosen.
+    @State private var finding = false
+    @State private var findQuery = ""
+    @State private var found = TranscriptSearch.Result.idle
+    @State private var findIndex: Int?
+
+    /// The chosen match while the find bar is open.
+    private var foundMatch: TranscriptSearch.Match? {
+        guard finding, let findIndex, found.matches.indices.contains(findIndex) else { return nil }
+        return found.matches[findIndex]
+    }
 
     /// The conversation as read from the transcript; before this view's first read, as it was read last time, so a
     /// conversation you switch back to shows from the first frame instead of after the read is under way.
@@ -157,7 +168,7 @@ struct TranscriptConversation: View {
                     }
                 }
                 .overlay(alignment: .leading) {
-                    if overflows, !derived.marks.isEmpty {
+                    if overflows, !finding, !derived.marks.isEmpty {
                         TranscriptPromptRail(marks: derived.marks) { mark in
                             scroll.userScrolled()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
@@ -177,7 +188,7 @@ struct TranscriptConversation: View {
                 // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
                 .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
                     (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
-                        .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty) {
+                        .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty && !finding) {
                             scroll.jumpedToEnd()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                         }
@@ -202,6 +213,29 @@ struct TranscriptConversation: View {
                     DispatchQueue.main.async { scrollToEnd(proxy) }
                 }
                 .onDisappear { rememberVisit() }
+                .overlay(alignment: .top) {
+                    if finding {
+                        TimelineFindBar(query: $findQuery, state: found.state, count: found.matches.count, current: findIndex,
+                                        previous: { stepFind(proxy, forward: false) },
+                                        next: { stepFind(proxy, forward: true) },
+                                        close: closeFind)
+                            .padding(.horizontal, NookTheme.Spacing.xs)
+                            .padding(.top, NookTheme.Spacing.xs)
+                    }
+                }
+                .keyCommand("chat.find") { openFind() }
+                .onChange(of: findQuery) { _, query in
+                    found = TranscriptSearch.search(rows, query: query)
+                    findIndex = found.next(after: nil)
+                    if let findIndex { reveal(findIndex, proxy) }
+                }
+                // A working agent writes on: its new words count too, and the chosen match stays where it was.
+                .onChange(of: rows) { _, rows in
+                    guard finding, !findQuery.isEmpty else { return }
+                    let chosen = foundMatch?.rowID
+                    found = TranscriptSearch.search(rows, query: findQuery)
+                    findIndex = chosen.flatMap { id in found.matches.firstIndex { $0.rowID == id } } ?? found.next(after: nil)
+                }
             }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
@@ -249,9 +283,44 @@ struct TranscriptConversation: View {
         TranscriptRowView(row: row, answers: row.id == derived.answerable, cards: derived.rowCards[row.id] ?? [:],
                           checks: derived.foldChecks[row.id] ?? [],
                           open: open.isEmpty ? [] : open.intersection(derived.rowOpenKeys[row.id] ?? []), ruled: ruled, directory: directory,
-                          side: sideLink, live: row.id == "live" ? shown : [], onReply: onReply,
+                          side: sideLink, live: row.id == "live" ? shown : [],
+                          // Only the row with the match, or the fold around it, draws again as the choice moves.
+                          found: foundMatch.flatMap { $0.rowID == row.id || $0.containers.contains(row.id) ? $0.rowID : nil },
+                          onReply: onReply,
                           toggle: { toggle($0) })
             .equatable()
+    }
+
+    // MARK: Find
+
+    private func openFind() {
+        finding = true
+        scroll.findStarted()
+    }
+
+    private func closeFind() {
+        finding = false
+        findQuery = ""
+        found = .idle
+        findIndex = nil
+        scroll.findEnded()
+    }
+
+    private func stepFind(_ proxy: ScrollViewProxy, forward: Bool) {
+        guard let target = forward ? found.next(after: findIndex) : found.previous(before: findIndex) else { return }
+        findIndex = target
+        reveal(target, proxy)
+    }
+
+    /// Opens the folds around the match, then scrolls to it.
+    private func reveal(_ index: Int, _ proxy: ScrollViewProxy) {
+        guard found.matches.indices.contains(index) else { return }
+        let match = found.matches[index]
+        scroll.userScrolled()
+        if !match.containers.allSatisfy(open.contains) {
+            withAnimation(NookTheme.reveal) { open.formUnion(match.containers) }
+        }
+        DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(match.rowID, anchor: .center) } }
     }
 
     private func toggle(_ key: String) {
@@ -336,6 +405,8 @@ private struct TranscriptRowView: View, Equatable {
     let side: SessionSideLink
     /// The whole conversation, for the live line only (what the agent does now and its task list); empty for other rows.
     let live: [AgentChatMessage]
+    /// The row of the find bar's chosen match, lit up (it can sit inside a fold this row holds).
+    let found: String?
     let onReply: ((String) -> Void)?
     let toggle: (String) -> Void
 
@@ -343,6 +414,7 @@ private struct TranscriptRowView: View, Equatable {
         lhs.row == rhs.row && lhs.answers == rhs.answers && lhs.ruled == rhs.ruled && lhs.directory == rhs.directory
             && lhs.side.shownFile == rhs.side.shownFile && (lhs.onReply == nil) == (rhs.onReply == nil)
             && lhs.open == rhs.open && lhs.cards == rhs.cards && lhs.checks == rhs.checks && lhs.live == rhs.live
+            && lhs.found == rhs.found
     }
 
     var body: some View {
@@ -376,6 +448,15 @@ private struct TranscriptRowView: View, Equatable {
     /// Every row but a fold (a fold holds only these).
     @ViewBuilder
     private func flatRow(_ row: TranscriptRow, answers: Bool) -> some View {
+        let lit = row.id == found
+        flatRowContent(row, answers: answers)
+            .padding(.horizontal, lit ? NookTheme.Spacing.xs : 0)
+            .padding(.vertical, lit ? NookTheme.Spacing.xxs : 0)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(lit ? 0.16 : 0)))
+    }
+
+    @ViewBuilder
+    private func flatRowContent(_ row: TranscriptRow, answers: Bool) -> some View {
         switch row {
         case .user(let message):
             // Space above your message: each turn starts as its own block, as in the Nook chat.
