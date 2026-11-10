@@ -65,7 +65,7 @@ enum AgentUpdates {
     /// version they were given at each start: neither has a program of its own to update here.
     static func updatable(_ provider: RunProvider) -> Bool {
         switch provider {
-        case .claude, .codex, .gemini, .opencode, .cursor, .grok: return true
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi: return true
         case .antigravity, .acp: return false
         }
     }
@@ -78,6 +78,7 @@ enum AgentUpdates {
         case .gemini: return "@google/gemini-cli"
         case .opencode: return "opencode-ai"
         case .grok: return "@xai-official/grok"
+        case .pi: return "@earendil-works/pi-coding-agent"
         // Cursor's CLI is not on npm; Antigravity and ACP agents are not updated here.
         case .cursor, .antigravity, .acp: return nil
         }
@@ -89,7 +90,7 @@ enum AgentUpdates {
         case .claude: return ["update"]
         case .opencode: return ["upgrade"]
         case .cursor: return ["update"]
-        case .codex, .gemini, .grok, .antigravity, .acp: return nil
+        case .codex, .gemini, .grok, .pi, .antigravity, .acp: return nil
         }
     }
 
@@ -99,7 +100,7 @@ enum AgentUpdates {
         case .claude: return resolved.hasPrefix(home + "/.local/share/claude/") || resolved.hasPrefix(home + "/.claude/local/")
         case .opencode: return resolved.hasPrefix(home + "/.opencode/")
         case .cursor: return resolved.contains("/cursor-agent/")
-        case .codex, .gemini, .grok, .antigravity, .acp: return false
+        case .codex, .gemini, .grok, .pi, .antigravity, .acp: return false
         }
     }
 

@@ -80,7 +80,7 @@ struct QuotaService {
                 window(usage.fiveHour.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.fiveHour"), duration: Self.fiveHours),
                 window(usage.sevenDay.map { ($0.effectivePercent, $0.resetsAt) }, label: tr("agents.week"), duration: Self.week)
             ]
-        case .gemini, .opencode, .cursor, .grok, .acp:
+        case .gemini, .opencode, .cursor, .grok, .pi, .acp:
             // No limits reported; ACP agents report context and cost per session instead.
             return []
         case .antigravity:
@@ -142,7 +142,7 @@ struct QuotaService {
             // Claude Code redeems its resets only in its own limit menu (no control request does it), and Nook never
             // touches Claude Code's login to call the API itself.
             return nil
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return nil
         }
     }
@@ -152,7 +152,7 @@ struct QuotaService {
         switch profile.kind {
         case .codex:
             return codex.redeeming.contains((profile.home.map { _ in profile.homeURL } ?? CodexUsage.codexHome).path)
-        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return false
         }
     }
@@ -162,7 +162,7 @@ struct QuotaService {
         switch profile.kind {
         case .codex:
             return await codex.useResetCredit(home: profile.home.map { _ in profile.homeURL })
-        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return .failed
         }
     }

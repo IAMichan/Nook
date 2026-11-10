@@ -78,6 +78,9 @@ extension WorkspaceManager {
             case .codex:
                 guard let executable = executable(provider) else { continue }
                 probeCodexModels(executable, environment: environment)
+            case .pi:
+                guard let executable = executable(provider) else { continue }
+                probePiModels(executable, environment: environment)
             case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
                 probeAcpModels(provider, profileID: profileID)
             }
@@ -93,6 +96,29 @@ extension WorkspaceManager {
             let models = AgentModelCatalog.claude(reply)
             await self?.learnModels(.claude, models)
         }
+    }
+
+    /// Pi's `get_available_models` from a short-lived RPC process: no session, no extensions, offline (so it renews no
+    /// sign-in), stopped as soon as it answers.
+    private func probePiModels(_ executable: String, environment: [String: String]) {
+        var extra = environment
+        extra["NOOK_INTERNAL"] = "1"
+        let spec = LaunchSpec(executable: executable, arguments: ["--mode", "rpc", "--no-session", "--no-extensions", "--offline"],
+                              extraEnvironment: extra, workingDirectory: NSHomeDirectory(),
+                              initialInput: [PiRPC.getAvailableModels(id: PiRPC.modelsRequestID)], keepsInputOpen: true)
+        let process = AgentProcess(spec: spec)
+        process.onLines = { [weak self, weak process] lines in
+            for line in lines {
+                guard let models = PiModel.reply(in: line) else { continue }
+                process?.closeInput()
+                process?.stop(grace: 1)
+                let found = models.map { AgentModel(id: $0.slug, name: $0.name) }
+                Task { @MainActor in self?.learnModels(.pi, found) }
+                return
+            }
+        }
+        guard (try? process.start()) != nil else { return }
+        closeProbe(after: 30) { [weak process] in process?.stop(grace: 1) }
     }
 
     private func probeCodexModels(_ executable: String, environment: [String: String]) {
@@ -187,7 +213,7 @@ extension WorkspaceManager {
         case .antigravity:
             guard let environment = prepareAntigravity(profileID: profileID, executable: executable) else { return nil }
             prepared = environment
-        case .claude, .codex, .gemini, .opencode, .cursor, .grok:
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi:
             break
         }
         var spec = AgentCommand.acpSpec(input)

@@ -430,6 +430,9 @@ final class WorkspaceManager: ObservableObject {
         /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
+        /// Pi: tokens and cost of the turn so far, and when its older end-of-run event came (see `handlePi`).
+        var piUsage = TurnUsage()
+        var piEndedAt: Date?
         /// ACP: the session's cost so far, as the agent reports it.
         var acpCost: Double?
         /// ACP: whether the agent wrote any text this turn, its tool calls, and how often Nook asked it to carry on.
@@ -1043,6 +1046,8 @@ final class WorkspaceManager: ObservableObject {
             prewarm(id)
         case .codex:
             break
+        case .pi:
+            break
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
             guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
@@ -1094,7 +1099,7 @@ final class WorkspaceManager: ObservableObject {
     func usesCodexServer(_ run: WorkspaceRun, _ executable: String) -> Bool {
         switch run.provider {
         case .codex: return settings.codexAppServer && !codexExecOnly.contains(executable)
-        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return false
         }
     }
 
@@ -1476,7 +1481,16 @@ final class WorkspaceManager: ObservableObject {
         // Pressing Stop again changes nothing: the first one is still on its way.
         if turns[id]?.stopping == true { return }
         turns[id]?.stopping = true
-        if run(id)?.provider == .claude {
+        if run(id)?.provider == .pi {
+            // Pi stops its run on `abort`; if it never answers, its input closes and then the process ends.
+            process.send(PiRPC.abort())
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard let self, self.processes[id] === process else { return }
+                process.closeInput()
+                process.stop()
+            }
+        } else if run(id)?.provider == .claude {
             process.send(ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8)))
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -1544,7 +1558,7 @@ final class WorkspaceManager: ObservableObject {
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
-            effort: run.provider == .claude ? run.effort : nil
+            effort: run.provider == .claude || run.provider == .pi ? run.effort : nil
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
         if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
@@ -1624,6 +1638,8 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
             connectCodexServer(id, executable: executable, prompt: nil)
+        case .pi:
+            return
         case .gemini, .opencode, .cursor, .grok, .acp:
             guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
             connectAcp(id, executable: executable, prompt: nil)
@@ -1646,6 +1662,8 @@ final class WorkspaceManager: ObservableObject {
             for event in events { handleCodex(event, id: id) }
         case .gemini(let events):
             for event in events { handleGemini(event, id: id) }
+        case .pi(let events):
+            for event in events { handlePi(event, id: id) }
         case .none:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
@@ -2004,6 +2022,16 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         let line: String
+        if run(runID)?.provider == .pi {
+            // Pi's `confirm` dialog has no "always"; Nook remembers nothing for it.
+            process.send(PiRPC.confirmResponse(requestID: requestID, confirmed: decision != .deny))
+            approvals[runID]?.removeAll { $0.id == requestID }
+            recap?.decision(allowed: decision != .deny)
+            mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
+            if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+            onApprovalGone?(requestID)
+            return
+        }
         switch decision {
         case .allow:
             line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input)

@@ -11,6 +11,7 @@ extension RunProvider {
         case .cursor: return .cursor
         case .grok: return .grok
         case .antigravity: return .antigravity
+        case .pi: return .pi
         case .acp: return .acp
         }
     }
@@ -26,6 +27,7 @@ extension RunProvider {
         case .cursor: self = .cursor
         case .grok: self = .grok
         case .antigravity: self = .antigravity
+        case .pi: self = .pi
         case .acp: self = .acp
         }
     }
@@ -458,7 +460,7 @@ extension AppModel {
         case .codex: codex.refreshNow()
         case .antigravity: antigravityUsage.refreshNow()
         // These agents report no subscription limits (see QuotaService).
-        case .gemini, .opencode, .cursor, .grok, .acp: break
+        case .gemini, .opencode, .cursor, .grok, .pi, .acp: break
         }
         let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
@@ -497,7 +499,7 @@ extension AppModel {
         case .antigravity:
             if agentConnect[profile.id]?.isBusy != true { connectAntigravity(profile, fresh: true) }
             return
-        case .opencode, .cursor, .grok: command = profile.kind.loginCommand
+        case .opencode, .cursor, .grok, .pi: command = profile.kind.loginCommand
         // ACP agents sign in themselves, in their first session.
         case .acp: return
         }
@@ -537,7 +539,7 @@ extension AppModel {
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /logout"
         case .codex: command = profile.environmentPrefixOnly + "codex logout"
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return
         }
         do {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
@@ -580,7 +582,7 @@ extension AppModel {
                 try Self.pipeKey(clean, to: executable, arguments: ["login", "--with-api-key"], environment: environment)
             }.value
             profiles.setAuth(profile.id, .apiKey)
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return
         }
         history.refresh(minimumInterval: 0)
