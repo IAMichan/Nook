@@ -40,3 +40,28 @@ struct ComposerTrayDivider: View {
         NookDivider().padding(.vertical, 2)
     }
 }
+
+/// Why the last thing you did at a composer failed (a file the chat could not read, an agent's action that did not go
+/// through), right next to that box instead of as a card in the notch. With `dismiss` it has a close button.
+struct ComposerErrorLine: View {
+    let message: String
+    var dismiss: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.coral)
+            Text(message)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.coralSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let dismiss {
+                ToolbarIconButton("xmark", tr("button.clear"), height: 18, width: 18, dismiss)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}

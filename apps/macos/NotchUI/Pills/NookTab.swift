@@ -555,6 +555,11 @@ struct NookChatView: View {
             if let name = app.attachmentName {
                 AttachmentChip(name: name, isImage: app.attachmentIsImage) { app.clearAttachment() }
             }
+            // A file that could not be read says so here, where you attached it, not as a card in the notch.
+            if let problem = app.attachmentError {
+                ComposerErrorLine(message: problem) { app.attachmentError = nil }
+                    .padding(.horizontal, NookTheme.Spacing.xxs)
+            }
             // Questions asked while Nook answers wait in a tray tucked above the box, as an agent's do.
             VStack(spacing: 0) {
                 queuedTray
@@ -632,6 +637,7 @@ struct NookChatView: View {
         let attached = images
         question = ""
         images = []
+        app.attachmentError = nil
         app.handleUserText(text, images: attached)
         inputFocused = true
     }
