@@ -473,6 +473,9 @@ enum CodexStreamEvent: Equatable, Sendable {
     case turnFinished(status: String, error: String?, durationSeconds: Double?)
     case approval(CodexApprovalRequest)
     case question(rpcID: RPCID, questions: [RunQuestion])
+    /// A question Codex asks while it goes on working (an `agentMessage` with `delivery: "async"`): nothing waits for
+    /// the answer, which goes to Codex as a message of yours.
+    case asyncQuestion(id: String, questions: [RunQuestion])
     /// A server request Nook does not handle: answered with an error so Codex does not wait forever.
     case unsupportedRequest(RPCID)
     case plan(String)

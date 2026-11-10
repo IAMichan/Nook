@@ -100,6 +100,9 @@ enum ContextMeter {
 
     static func tokensText(used: Int, window: Int) -> String { "\(compact(used))/\(compact(window))" }
 
+    /// "312k", "1.2m".
+    static func tokensText(_ tokens: Int) -> String { compact(tokens) }
+
     private static func compact(_ n: Int) -> String {
         if n >= 1_000_000 {
             let m = Double(n) / 1_000_000

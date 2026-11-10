@@ -153,3 +153,42 @@ final class CodexAppServerTests: XCTestCase {
         XCTAssertFalse(CodexAppServerError.server("Not logged in").meansUnsupported)
     }
 }
+
+/// Codex's generated pictures and the questions it asks while it works (t3code's CodexAdapterV2).
+final class CodexImagesAndAsyncQuestionsTests: XCTestCase {
+    private func events(_ line: String) -> [CodexStreamEvent] { CodexAppServerMapper.events(CodexRPC.parse(line)!) }
+
+    func testAGeneratedImageIsAFileItHandsYou() throws {
+        XCTAssertEqual(events(#"{"method":"item/started","params":{"item":{"type":"imageGeneration","id":"ig1","status":"inProgress","result":""}}}"#),
+                       [.toolCall(id: "ig1", name: "image_generation", detail: "", finished: false, failed: false)])
+        let done = events(#"{"method":"item/completed","params":{"item":{"type":"imageGeneration","id":"ig1","status":"completed","result":"","revisedPrompt":"A calm desk","savedPath":"/tmp/out/ig1.png"}}}"#)
+        guard case .toolCall(let id, let name, _, let finished, let failed, let input, _) = try XCTUnwrap(done.first) else {
+            return XCTFail("expected a tool call")
+        }
+        XCTAssertEqual([id, name], ["ig1", "image_generation"])
+        XCTAssertTrue(finished)
+        XCTAssertFalse(failed)
+        let object = try XCTUnwrap(input?.dictionary)
+        XCTAssertEqual(SharedFiles.paths(object), ["/tmp/out/ig1.png"])
+        XCTAssertEqual(SharedFiles.caption(object), "A calm desk")
+        XCTAssertTrue(SharedFiles.isTool("image_generation"))
+        let failedImage = events(#"{"method":"item/completed","params":{"item":{"type":"imageGeneration","id":"ig2","status":"failed","result":"","failure":{"message":"Blocked"}}}}"#)
+        guard case .toolCall(_, _, _, _, let didFail, let failedInput, let output) = try XCTUnwrap(failedImage.first) else {
+            return XCTFail("expected a tool call")
+        }
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(output, "Blocked")
+        XCTAssertTrue(SharedFiles.paths(failedInput?.dictionary ?? [:]).isEmpty)
+    }
+
+    func testAnAsyncMessageIsAQuestionThatDoesNotWait() {
+        let line = #"{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"m1","text":"","delivery":"async","questions":[{"title":"Which database?","options":["Postgres","SQLite"]},{"title":"  "}]}}}"#
+        XCTAssertEqual(events(line), [.asyncQuestion(id: "m1", questions: [
+            RunQuestion(id: "0", header: "", question: "Which database?",
+                        options: [RunQuestionOption(label: "Postgres", description: ""), RunQuestionOption(label: "SQLite", description: "")],
+                        multiSelect: false, allowsOther: true),
+        ])])
+        XCTAssertEqual(events(#"{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"m2","text":"Done."}}}"#),
+                       [.messageCompleted(id: "m2", text: "Done.")])
+    }
+}

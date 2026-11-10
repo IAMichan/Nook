@@ -197,3 +197,70 @@ final class TokenSavingsTests: XCTestCase {
         XCTAssertFalse(size(tokens: 500_000, compacted: true))
     }
 }
+
+/// "Compact first?" on returning to a cold session, the auto-compact mark, and Claude Code's Ultracode.
+final class ReturnCompactionTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func candidate(expired: Bool = true, tokens: Int = 312_000) -> ReturnCompaction.Candidate {
+        ReturnCompaction.Candidate(agentReportsCacheLifetime: true, canCompact: true, enabled: true, status: .completed,
+                                   contextTokens: tokens,
+                                   cache: PromptCacheWindow(expiresAt: now.addingTimeInterval(expired ? -60 : 600), ttl: 3600),
+                                   isRemote: false)
+    }
+
+    func testTheChipShowsOnlyForALongSessionWhoseCacheRanOut() {
+        XCTAssertTrue(ReturnCompaction.offers(candidate(), now: now))
+        XCTAssertFalse(ReturnCompaction.offers(candidate(expired: false), now: now), "still warm: the summary before expiry covers it")
+        XCTAssertFalse(ReturnCompaction.offers(candidate(tokens: 150_000), now: now), "a short session rereads cheaply")
+        var other = candidate()
+        other.agentReportsCacheLifetime = false
+        XCTAssertFalse(ReturnCompaction.offers(other, now: now), "an agent that does not say when its cache expires")
+        other = candidate()
+        other.enabled = false
+        XCTAssertFalse(ReturnCompaction.offers(other, now: now), "idle compaction switched off")
+        other = candidate()
+        other.cache?.afterCompaction = true
+        XCTAssertFalse(ReturnCompaction.offers(other, now: now), "already summarized")
+        other = candidate()
+        other.status = .running
+        XCTAssertFalse(ReturnCompaction.offers(other, now: now))
+        other = candidate()
+        other.isRemote = true
+        XCTAssertFalse(ReturnCompaction.offers(other, now: now))
+    }
+
+    func testAutoCompactMarkTakesTheFirstThreshold() throws {
+        XCTAssertEqual(AutoCompactMark.tokens(nookLimit: 350_000, agentThreshold: 117_000), 117_000)
+        XCTAssertEqual(AutoCompactMark.tokens(nookLimit: 160_000, agentThreshold: nil), 160_000)
+        XCTAssertNil(AutoCompactMark.tokens(nookLimit: nil, agentThreshold: nil))
+        XCTAssertEqual(AutoCompactMark.claudeThreshold(window: 150_000, contextWindow: 200_000), 117_000)
+        XCTAssertNil(AutoCompactMark.claudeThreshold(window: 200_000, contextWindow: 200_000), "the model's window caps it")
+        XCTAssertNil(AutoCompactMark.claudeThreshold(window: 50_000, contextWindow: nil), "out of Claude Code's range")
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let local = folder.appendingPathComponent("local.json")
+        let shared = folder.appendingPathComponent("shared.json")
+        try Data(#"{"modelSettings":{"claude-opus-5-5":{"autoCompactWindow":"auto"}}}"#.utf8).write(to: local)
+        try Data(#"{"autoCompactWindow":"400000"}"#.utf8).write(to: shared)
+        XCTAssertNil(AutoCompactMark.claudeWindow(in: [local, shared], model: "claude-opus-5-5[1m]"), "auto for this model")
+        XCTAssertEqual(AutoCompactMark.claudeWindow(in: [local, shared], model: "claude-sonnet-5-5"), 400_000)
+    }
+
+    func testUltracodeIsOfferedOnClaudesCatalogModelsOnly() {
+        for model in ["", "opus", "claude-opus-5-5", "claude-opus-5-5[1m]", "us.anthropic.claude-opus-4-8-20260101-v1:0", "sonnet-5-5"] {
+            XCTAssertTrue(Ultracode.offered(provider: .claude, model: model), model)
+        }
+        for model in ["claude-opus-4-7", "claude-sonnet-5", "claude-haiku-4-5"] {
+            XCTAssertFalse(Ultracode.offered(provider: .claude, model: model), model)
+        }
+        for provider in RunProvider.allCases where provider != .claude {
+            XCTAssertFalse(Ultracode.offered(provider: provider, model: ""), provider.rawValue)
+        }
+        XCTAssertEqual(Ultracode.claudeSettings(true) as? [String: Bool], ["ultracode": true])
+        XCTAssertEqual(Ultracode.claudeSettings(false) as? [String: Bool], ["ultracode": false])
+        XCTAssertTrue(Ultracode.claudeSettings(nil).isEmpty, "your own setting holds")
+    }
+}
