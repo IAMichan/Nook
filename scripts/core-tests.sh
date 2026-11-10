@@ -32,6 +32,7 @@ EXCLUDE_SOURCES=(
   "Services/AntigravityClient.swift"
   "Services/Workspace/Antigravity.swift"
   "Services/Workspace/TextGeneration.swift"
+  "Services/Workspace/TextGenerators.swift"
   "App/ChatRecovery.swift"
   "Brain/ChatImage.swift"
   "Services/Messages/ChatImageRender.swift"
@@ -54,7 +55,7 @@ fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
-  "TextGenerationTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
+  "TextGenerationTests" "TextGeneratorTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
   "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"
   "ChatImageRenderTests"
 )

@@ -261,17 +261,24 @@ enum TextGenerationRunner {
         let output = Output()
         process.onLines = { output.add($0) }
         let once = Once()
-        let end: End = await withCheckedContinuation { continuation in
-            process.onExit = { _, _ in if once.claim() { continuation.resume(returning: .exited) } }
-            do { try process.start() } catch {
-                if once.claim() { continuation.resume(returning: .failed) }
-                return
+        guard !Task.isCancelled else { return nil }
+        // Cancelled (a suggestion you started typing over): the process stops, and its exit ends the wait.
+        let end: End = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                process.onExit = { _, _ in if once.claim() { continuation.resume(returning: .exited) } }
+                do { try process.start() } catch {
+                    if once.claim() { continuation.resume(returning: .failed) }
+                    return
+                }
+                process.closeInput()
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                    if once.claim() { continuation.resume(returning: .timedOut) }
+                }
             }
-            process.closeInput()
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                if once.claim() { continuation.resume(returning: .timedOut) }
-            }
+        } onCancel: {
+            process.stop(grace: 1)
         }
+        guard !Task.isCancelled else { return nil }
         switch end {
         case .exited: break
         case .failed: return nil

@@ -38,6 +38,9 @@ struct SessionComposer<Controls: View>: View {
     private var extras: (model: ComposerModel, config: ComposerConfig)?
     /// The choices sit in a tray under the box, tucked behind it, and the box holds the text with send on its row.
     private var choicesBelow = false
+    /// The message you will likely send next (`NextPromptSuggestion`), shown in place of the placeholder while the box is
+    /// empty; Tab takes it, typing or Escape dismisses it.
+    private var suggestion: (text: String, accept: () -> Void, dismiss: () -> Void)?
     /// The composer's own color: the send button, the focus ring and a trace in the surface.
     private var tint: Color = NookTheme.iris
 
@@ -63,6 +66,14 @@ struct SessionComposer<Controls: View>: View {
         copy.flipAction = alternate
         copy.queueLabel = label
         copy.queueSymbol = symbol
+        return copy
+    }
+
+    /// The same composer with a suggested next message as ghost text: Tab puts it in the box (and calls `onAccept`),
+    /// typing anything else or Escape calls `onDismiss`. Nil shows the placeholder as before.
+    func suggesting(_ text: String?, onAccept: @escaping () -> Void, onDismiss: @escaping () -> Void) -> Self {
+        var copy = self
+        copy.suggestion = text.map { ($0, onAccept, onDismiss) }
         return copy
     }
 
@@ -228,6 +239,11 @@ struct SessionComposer<Controls: View>: View {
 
     private func textChanged(_ oldText: String, _ newText: String) {
         NookPresence.shared.typed(count: newText.count)
+        // Typing dismisses the suggestion; taking it with Tab has already called `accept`.
+        if let suggestion, oldText != newText {
+            let body = ComposerAttachments.split(newText).body
+            if !body.isEmpty, body != suggestion.text { suggestion.dismiss() }
+        }
         guard let extras else { return }
         // The list, list items and big pastes look at the words in the box, not at the files attached after them.
         let old = ComposerAttachments.split(oldText).body, new = ComposerAttachments.split(newText).body
@@ -340,12 +356,22 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private func tabKey() -> KeyPress.Result {
+        if let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
+            bodyBinding.wrappedValue = suggestion.text
+            suggestion.accept()
+            Self.placeCaretAtEnd()
+            return .handled
+        }
         guard let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) else { return .ignored }
         choose(extras.model.suggestions[extras.model.selection])
         return .handled
     }
 
     private func escapeKey() -> KeyPress.Result {
+        if let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
+            suggestion.dismiss()
+            return .handled
+        }
         guard let extras, extras.model.isOpen else { return .ignored }
         extras.model.close()
         return .handled
@@ -363,7 +389,18 @@ struct SessionComposer<Controls: View>: View {
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
             .background(alignment: .topLeading) {
-                if typedText.isEmpty {
+                if typedText.isEmpty, let suggestion {
+                    // The suggestion in the ghost text's quiet grey, with the key that takes it.
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                        Text(suggestion.text)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(lines.upperBound)
+                        NookKeyHint(text: tr("textgen.next.tab"))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                } else if typedText.isEmpty {
                     Text(prompt)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -374,6 +411,7 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             .accessibilityLabel(prompt)
+            .accessibilityHint(suggestion.map { tr("textgen.next.accessibility", $0.text) } ?? "")
             .focused(focused)
             .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
             .onSubmit(submit)
