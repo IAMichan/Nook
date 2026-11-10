@@ -144,13 +144,11 @@ final class FolderGitModel: ObservableObject {
             } else {
                 let local = (try? git.branches(root))?.local ?? []
                 let remotes = git.remotes(root)
-                let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-                let base = git.defaultBranch(root, remote: remote).map { git.comparisonBase(root, base: $0, remote: remote) }
-                // Against where the branch left its base (else its upstream), so committed and merged work still counts.
-                let comparedTo = status.flatMap { status in
-                    [base, status.upstream].compactMap { $0 }.lazy.compactMap { git.branchPoint(root, base: $0) }.first
-                }
-                refs = Refs(root: root, key: key, at: Date(), branches: local, remotes: remotes, base: base, comparedTo: comparedTo)
+                // Against where the branch left its base (else its upstream), so committed and merged work still counts;
+                // the session's row counts the same way (`WorkspaceManager.refreshGit`).
+                let comparison = status.map { git.branchComparison(root, status: $0, remotes: remotes) }
+                refs = Refs(root: root, key: key, at: Date(), branches: local, remotes: remotes, base: comparison?.base,
+                            comparedTo: comparison?.point)
             }
             let changes = refs.comparedTo.flatMap { ref in status.flatMap { try? git.changes(root, since: ref, status: $0) } }
             return (root, status, refs.branches, refs.remotes, refs.base, changes ?? status?.files ?? [], changes == nil ? nil : refs.comparedTo,
