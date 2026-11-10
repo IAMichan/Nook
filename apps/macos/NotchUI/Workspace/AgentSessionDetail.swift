@@ -382,7 +382,7 @@ struct AgentSessionDetail: View {
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
             .images($composerState.images)
-            .trailing { ComposerMic(text: $composerState.draft) }
+            .dictating()
         }
     }
 
@@ -668,7 +668,7 @@ struct AgentSessionDetail: View {
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
                     .images($composerState.images)
-                    .trailing { ComposerMic(text: $composerState.draft) }
+                    .dictating()
                 }
                 .zIndex(1)
             }

@@ -510,50 +510,6 @@ enum ComposerFilePicker {
     }
 }
 
-/// The microphone of the agents' composer: you speak, the words appear in the box, you send when you are ready. (The chat's
-/// microphone asks Nook straight away and speaks the answer back; both sit in the same place.)
-struct ComposerMic: View {
-    @EnvironmentObject private var app: AppModel
-    @Binding var text: String
-    @State private var listening = false
-
-    var body: some View {
-        NookIconButton(systemName: listening ? "mic.fill" : "mic", label: tr("button.talk"), size: 30) { toggle() }
-    }
-
-    private func join(_ base: String, _ spoken: String) -> String {
-        let clean = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
-        if base.isEmpty { return clean }
-        return clean.isEmpty ? base : base + " " + clean
-    }
-
-    private func toggle() {
-        if listening {
-            app.voice.finishNow()
-            return
-        }
-        Task { @MainActor in
-            guard await app.voice.requestPermissions() else { return }
-            app.wake.stop()
-            app.speech.stop()
-            let base = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            listening = true
-            do {
-                try app.voice.start(
-                    onPartial: { partial in text = join(base, partial) },
-                    onFinish: { final in
-                        text = join(base, final)
-                        listening = false
-                        app.updateWakeWord()
-                    }
-                )
-            } catch {
-                listening = false
-            }
-        }
-    }
-}
-
 /// How full the agent's context window is: a small ring that starts at the top, amber above 80 % and coral above 90 %.
 /// Hover says how much, and once it fills up suggests `/compact`; a button asks the agent to summarize when it can.
 struct ComposerContextRing: View {
