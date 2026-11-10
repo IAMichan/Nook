@@ -228,6 +228,7 @@ struct SessionComposer<Controls: View>: View {
 
     private func textChanged(_ oldText: String, _ newText: String) {
         NookPresence.shared.typed(count: newText.count)
+        styleMarkdown()
         guard let extras else { return }
         // The list, list items and big pastes look at the words in the box, not at the files attached after them.
         let old = ComposerAttachments.split(oldText).body, new = ComposerAttachments.split(newText).body
@@ -339,10 +340,35 @@ struct SessionComposer<Controls: View>: View {
         return true
     }
 
-    private func tabKey() -> KeyPress.Result {
-        guard let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) else { return .ignored }
-        choose(extras.model.suggestions[extras.model.selection])
-        return .handled
+    private func tabKey(_ press: KeyPress) -> KeyPress.Result {
+        let outdent = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        if !outdent, let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) {
+            choose(extras.model.suggestions[extras.model.selection])
+            return .handled
+        }
+        return nestListItem(outdent: outdent) ? .handled : .ignored
+    }
+
+    /// Tab and Shift+Tab on a list item move it in under the one above, or back out (`ComposerLists.nest`); the caret
+    /// moves along. False anywhere else, so Tab keeps its usual meaning.
+    private func nestListItem(outdent: Bool) -> Bool {
+        let body = typedText
+        guard let editor = ComposerFieldStyle.focusedEditor(expecting: body),
+              let nested = ComposerLists.nest(body, selection: editor.selectedRange(), outdent: outdent) else { return false }
+        guard nested.text != body else { return true }
+        bodyBinding.wrappedValue = nested.text
+        DispatchQueue.main.async {
+            guard let editor = ComposerFieldStyle.focusedEditor(expecting: nested.text) else { return }
+            editor.setSelectedRange(nested.selection)
+        }
+        return true
+    }
+
+    /// The draft's Markdown styled in the field (Settings › Appearance › Style Markdown as you type), right after the
+    /// field took the change.
+    private func styleMarkdown() {
+        guard AppSettings.shared.richComposer else { return }
+        DispatchQueue.main.async { [typedText] in ComposerFieldStyle.restyleFocusedEditor(expecting: typedText) }
     }
 
     private func escapeKey() -> KeyPress.Result {
@@ -375,7 +401,12 @@ struct SessionComposer<Controls: View>: View {
             }
             .accessibilityLabel(prompt)
             .focused(focused)
-            .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
+            .onChange(of: focused.wrappedValue) { _, now in
+                if now {
+                    Self.placeCaretAtEnd()
+                    styleMarkdown()
+                }
+            }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
             // In the non-activating notch and ask panels the binding can lag behind the field until Return commits it,
@@ -395,7 +426,7 @@ struct SessionComposer<Controls: View>: View {
         view
             .onKeyPress(.upArrow) { () -> KeyPress.Result in arrow(-1) }
             .onKeyPress(.downArrow) { () -> KeyPress.Result in arrow(1) }
-            .onKeyPress(.tab) { () -> KeyPress.Result in tabKey() }
+            .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { (press: KeyPress) -> KeyPress.Result in tabKey(press) }
             .onKeyPress(.escape) { () -> KeyPress.Result in escapeKey() }
             .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
             .keyCommands(keyHandlers, context: keyContext, enabled: focused)
