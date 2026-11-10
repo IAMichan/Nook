@@ -117,6 +117,11 @@ struct EventRow: View {
             // `/clear`: the agent starts a new conversation here and remembers nothing above the line.
             TimelineNewDivider(label: event.text)
 
+        case .system where event.tool == "origin":
+            // Another agent, a script or Nook Chat started this session (`NewRunConfig.startedBy`).
+            TranscriptWorkLine(symbol: "arrow.turn.right.down", label: event.text)
+                .help(event.text)
+
         case .system where event.tool == "wake":
             // The agent picks up what it left running in the background: a turn of its own starts here.
             TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)

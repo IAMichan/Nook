@@ -581,7 +581,9 @@ struct AgentRunPanel: View {
             case .plan: workspace.configure(runID, mode: .plan)
             case .fork:
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
-            case .clear: workspace.clearConversation(runID)
+            //: the next message starts the new conversation, also while a turn runs; the strip above the
+            // box takes it back.
+            case .clear: workspace.armFreshConversation(runID)
             case .insert, .compact, .new: break
             }
         }
@@ -1410,7 +1412,7 @@ struct AgentRunPanel: View {
             let message = quotes.message(outgoing.send)
             quotes.removeAll()
             // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them.
-            workspace.submit(runID, text: message)
+            workspace.submit(runID, text: message, fromYou: true)
             sentCount += 1
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
@@ -1430,6 +1432,8 @@ struct AgentRunPanel: View {
                 let message = quotes.message(outgoing.send)
                 quotes.removeAll()
                 sentCount += 1
+                // `/clear` and the message after it: a new conversation, after this turn (never steered into it).
+                if workspace.startsFreshConversation(runID, text: message) { workspace.submit(runID, text: message, fromYou: true); return }
                 // ⌘Return to steer means now: when the turn cannot take it in, it is interrupted and the message goes next.
                 if intent == .steer, now { workspace.sendNow(runID, text: message); return }
                 if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
@@ -1462,6 +1466,9 @@ struct AgentRunPanel: View {
             GuestStrip(id: runID, shares: GuestShares.shared)
             if let goal = run.goal {
                 GoalStrip(goal: goal, canPause: workspace.takesGoalOutsideTurns(runID)) { workspace.goalControl(runID, $0) }
+            }
+            if workspace.freshArmed.contains(runID) {
+                FreshConversationStrip { workspace.keepConversation(runID) }
             }
             // The subagents the agent started since your message (also those still at work in the background after its
             // turn), and its task list.
@@ -1533,7 +1540,16 @@ struct AgentRunPanel: View {
                 }
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
+            // ⌥⌘Return: this message goes (as Return sends it) and the box of a new session opens for the next task, while
+            // this one works on in the background ("Send and start new thread").
             .keyCommands(["queue.steerFirst": { steerFirstQueued() },
+                          "composer.startInBackground": {
+                              guard editingQueued == nil, composerModel.hasContent(draft.trimmingCharacters(in: .whitespacesAndNewlines))
+                              else { return false }
+                              if active { deliver(preferred)() } else { send() }
+                              app.viewModel.selectedAgentID = "new"
+                              return true
+                          },
                           "effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))

@@ -5,6 +5,149 @@ import Foundation
 // so every rule is tested here (`WorkspaceBridgeSessionsTests`); WorkspaceBridge+Sessions does the work.
 
 enum BridgeSessionArguments {
+    // MARK: Start
+
+    /// What `session_start` asks for: one or more sessions (`create_threads` and `thread_launch` in one tool),
+    /// all in the same place.
+    struct Start: Equatable, Sendable {
+        struct Session: Equatable, Sendable {
+            /// The first message; empty starts the session idle, waiting for yours (then `title` names it).
+            var task: String
+            var title: String
+            /// The agent's name or id; empty is the folder's own.
+            var agent: String
+            var model: String
+            var plan: Bool
+        }
+
+        enum Place: Equatable, Sendable {
+            /// The caller's own folder or worktree, beside it.
+            case yours(String)
+            /// A project folder; `worktree` nil is the folder's own choice.
+            case folder(String, worktree: Bool?)
+            /// A new git worktree of `folder`, from `base` (a branch or `origin/main`; nil: the branch the folder is on).
+            case worktree(String, base: String?)
+            /// A new folder of its own under ~/.nook/scratch, no project.
+            case scratch
+        }
+
+        var sessions: [Session]
+        var place: Place
+
+        /// The folder named or inherited; nil for a scratch folder, made per session.
+        var folderPath: String? {
+            switch place {
+            case .yours(let path), .folder(let path, _), .worktree(let path, _): return path
+            case .scratch: return nil
+            }
+        }
+    }
+
+    static let maxStart = 20
+    static let maxTaskLength = 120_000
+
+    /// `callerFolder`: where the calling agent works, the default place; empty for a script, which must name a folder.
+    static func start(_ arguments: [String: Any], callerFolder: String) -> Result<Start, BridgeArgumentError> {
+        // One session from the top-level fields, or several from `sessions`, which take those fields as their defaults.
+        let shared = session(arguments, defaults: nil)
+        var sessions: [Start.Session] = []
+        if let list = arguments["sessions"] {
+            guard let items = list as? [Any], !items.isEmpty else { return .failure(BridgeArgumentError("sessions must be a list of 1 to \(maxStart) sessions.")) }
+            guard items.count <= maxStart else { return .failure(BridgeArgumentError("Start at most \(maxStart) sessions in one call.")) }
+            for item in items {
+                guard let fields = item as? [String: Any] else { return .failure(BridgeArgumentError("Each item of sessions is an object with task and/or title.")) }
+                sessions.append(session(fields, defaults: shared))
+            }
+        } else {
+            sessions = [shared]
+        }
+        for (index, item) in sessions.enumerated() {
+            let which = sessions.count == 1 ? "" : " (session \(index + 1))"
+            guard !item.task.isEmpty || !item.title.isEmpty else {
+                return .failure(BridgeArgumentError("Give the first message in task, or a title to start it idle\(which)."))
+            }
+            guard item.task.count <= maxTaskLength else { return .failure(BridgeArgumentError("The task is too long\(which).")) }
+        }
+
+        let scratch = BridgeArgs.bool(arguments["scratch"]) ?? false
+        let folder = BridgeArgs.string(arguments["folder"])
+        var worktree = BridgeArgs.bool(arguments["worktree"])
+        let base = BridgeArgs.string(arguments["base"])
+        if let base {
+            guard isPlausibleRef(base) else { return .failure(BridgeArgumentError("base is not a branch name: \(base)")) }
+            guard worktree != false else { return .failure(BridgeArgumentError("base needs a worktree: leave worktree out or set it to true.")) }
+            worktree = true
+        }
+        if scratch {
+            guard folder == nil, worktree == nil else { return .failure(BridgeArgumentError("scratch starts in a new folder of its own: leave folder, worktree and base out.")) }
+            return .success(Start(sessions: sessions, place: .scratch))
+        }
+        let place: Start.Place
+        if let folder {
+            place = worktree == true ? .worktree(folder, base: base) : .folder(folder, worktree: worktree)
+        } else {
+            let yours = callerFolder.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !yours.isEmpty else { return .failure(BridgeArgumentError("Give the folder to work in (an absolute path), or scratch: true.")) }
+            place = worktree == true ? .worktree(yours, base: base) : .yours(yours)
+        }
+        return .success(Start(sessions: sessions, place: place))
+    }
+
+    private static func session(_ fields: [String: Any], defaults: Start.Session?) -> Start.Session {
+        Start.Session(task: BridgeArgs.string(fields["task"]) ?? "",
+                      title: BridgeArgs.string(fields["title"]) ?? "",
+                      agent: BridgeArgs.string(fields["agent"]) ?? defaults?.agent ?? "",
+                      model: BridgeArgs.string(fields["model"]) ?? defaults?.model ?? "",
+                      plan: BridgeArgs.bool(fields["plan"]) ?? defaults?.plan ?? false)
+    }
+
+    /// A git ref an agent may name as a base: `main`, `origin/main`, `release/1.2`. Never an option or a range.
+    static func isPlausibleRef(_ ref: String) -> Bool {
+        guard !ref.isEmpty, ref.count <= 200, !ref.hasPrefix("-"), !ref.hasPrefix("/"), !ref.hasSuffix("/"),
+              !ref.contains(".."), !ref.contains("@{"), !ref.hasSuffix(".lock") else { return false }
+        let forbidden = CharacterSet(charactersIn: " ~^:?*[\\").union(.whitespacesAndNewlines).union(.controlCharacters)
+        return ref.rangeOfCharacter(from: forbidden) == nil
+    }
+
+    // MARK: Send
+
+    /// How `session_send` delivers (`thread_send` modes).
+    enum SendMode: String, CaseIterable, Sendable {
+        /// Starts an idle session, steers a running turn when the agent can take it, otherwise waits in line.
+        case auto
+        /// Always after the current turn.
+        case queue
+        /// Into the running turn now; refused when the agent cannot take it.
+        case steer
+        /// Stops the running turn and starts again with this message.
+        case restart
+    }
+
+    static func sendMode(_ value: Any?) -> Result<SendMode, BridgeArgumentError> {
+        guard let raw = BridgeArgs.string(value) else { return .success(.queue) }
+        guard let mode = SendMode(rawValue: raw.lowercased()) else {
+            return .failure(BridgeArgumentError("mode is one of auto, queue, steer or restart."))
+        }
+        return .success(mode)
+    }
+
+    // MARK: Wait
+
+    static let maxWaitSessions = 8
+
+    static func waitSessions(_ value: Any?) -> Result<[UUID], BridgeArgumentError> {
+        let raw = ((value as? [Any]) ?? []).compactMap { BridgeArgs.string($0) }
+        guard !raw.isEmpty, raw.count <= maxWaitSessions else {
+            return .failure(BridgeArgumentError("Pass between 1 and \(maxWaitSessions) session ids in session_ids."))
+        }
+        var ids: [UUID] = []
+        for text in raw {
+            guard let id = UUID(uuidString: text) else { return .failure(BridgeArgumentError("\(text) is not a session id from session_list or session_start.")) }
+            if !ids.contains(id) { ids.append(id) }
+        }
+        return .success(ids)
+    }
+
     // MARK: Search
 
     struct Search: Equatable, Sendable {
