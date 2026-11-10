@@ -42,7 +42,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
                                         canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
-                                        reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true)
+                                        reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
+                                        ultracode: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
@@ -144,6 +145,9 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// A faster tier of the same model beside the effort (`SpeedTiers`): Codex's service tiers, Claude Code's fast mode.
     /// The ACP agents (Gemini CLI, Antigravity, OpenCode, Cursor, Grok, the ones you add) offer none over ACP.
     var speedTiers = false
+    /// Claude Code's Ultracode beside the effort (`Ultracode`). No other agent has the concept: Codex, Pi and the ACP
+    /// agents offer only their effort levels (see docs/INTEGRATIONS.md).
+    var ultracode = false
 }
 
 /// See `ProviderCapabilities.denyReason`.
@@ -400,6 +404,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lastContinuedAt: Date? = nil
     /// The restart cut it off while it waited for your approval: that approval is gone, so Nook does not go on by itself.
     var interruptedWhileWaiting: Bool? = nil
+    /// Nook quit after this session's turn ended while it waited on work in the background (a subagent): that work
+    /// stopped with it and will not report back (see `RestartContinuation`).
+    var cutBackgroundWork: CutBackgroundWork? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
@@ -417,6 +424,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var effort: String? = nil
     /// The speed tier for the next turns (`SpeedTiers`); nil is the agent's standard speed.
     var speedTier: String? = nil
+    /// Claude Code's Ultracode for the next turns (`Ultracode`); nil leaves your own Claude setting alone.
+    var ultracode: Bool? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
     /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
@@ -907,6 +916,8 @@ struct NewRunConfig: Equatable, Sendable {
     /// The speed tier for the session (`SpeedTiers`); nil is the agent's standard speed. Not remembered for the next
     /// session: a faster tier costs more.
     var speedTier: String? = nil
+    /// Claude Code's Ultracode for the session (`Ultracode`); nil leaves your own Claude setting alone.
+    var ultracode: Bool? = nil
     var isolation: IsolationMode = .folder
     var projectPath = ""
     var baseBranch = ""

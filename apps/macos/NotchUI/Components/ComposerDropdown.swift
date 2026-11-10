@@ -262,6 +262,17 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .fixedSize(horizontal: false, vertical: true)
+        // ⇧⌘↑ and ⇧⌘↓ show the place before or after the shown one (`ModelPickerKeys`); the panel is its own window, so
+        // it says itself that the picker is open.
+        .keyCommands([ModelPickerKeys.previousPlace: { step(-1) }, ModelPickerKeys.nextPlace: { step(1) }],
+                     context: ["modelPickerOpen": true])
+    }
+
+    private func step(_ offset: Int) -> Bool {
+        guard let place = ModelPickerKeys.step(from: current, by: offset, in: Array(filledGroups.joined())) else { return false }
+        shown = place
+        onShow(place)
+        return true
     }
 
     private var rail: some View {

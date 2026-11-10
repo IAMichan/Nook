@@ -115,6 +115,7 @@ extension WorkspaceManager {
         run.remote = target
         run.effort = config.effort
         run.speedTier = config.speedTier
+        run.ultracode = config.ultracode
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
             run.autoModel = true

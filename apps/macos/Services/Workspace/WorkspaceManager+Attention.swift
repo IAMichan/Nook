@@ -7,28 +7,37 @@ extension WorkspaceManager {
     /// agents' executables are known; with the setting off nothing happens.
     func continueInterruptedRuns(now: Date = Date()) {
         let enabled = settings.continueAfterRelaunch
-        for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: !(questions[run.id] ?? []).isEmpty,
+        for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: waitsOnQuestion(run.id),
                                                                  settled: FinishedSessions.shared.contains(FinishedSessions.key(run: run)),
                                                                  now: now) {
+            let message = RestartContinuation.message(for: run)
+            let waited = run.cutBackgroundWork != nil
             update(run.id) {
                 $0.continuations = RestartContinuation.chainLength($0, now: now) + 1
                 $0.lastContinuedAt = now
-                // No longer "interrupted": a second launch before this turn ends must not continue it again.
+                // No longer "interrupted" or waiting: a second launch before this turn ends must not continue it again.
                 $0.statusDetail = nil
+                $0.cutBackgroundWork = nil
             }
-            append(run.id, RunEvent(kind: .system, text: tr("ws.event.continueAfterRelaunch")))
-            send(run.id, text: RestartContinuation.message)
+            append(run.id, RunEvent(kind: .system, text: tr(waited ? "ws.event.continueAfterBackgroundStop" : "ws.event.continueAfterRelaunch")))
+            send(run.id, text: message)
         }
         // Summaries planned before Nook quit, for the sessions whose cache is still warm.
         scheduleIdleCompactions()
     }
 
+    /// A question holds the agent until you answer it; one it asked while it goes on (`answersAsMessage`) does not.
+    func waitsOnQuestion(_ id: UUID) -> Bool {
+        (questions[id] ?? []).contains { !$0.answersAsMessage }
+    }
+
     /// A turn that ended normally clears the chain of restart continuations.
     func clearContinuations(_ id: UUID) {
-        guard run(id)?.continuations != nil || run(id)?.lastContinuedAt != nil else { return }
+        guard run(id)?.continuations != nil || run(id)?.lastContinuedAt != nil || run(id)?.cutBackgroundWork != nil else { return }
         update(id) {
             $0.continuations = nil
             $0.lastContinuedAt = nil
+            $0.cutBackgroundWork = nil
         }
     }
 
@@ -84,6 +93,19 @@ extension WorkspaceManager {
         noteModelSwitch(id, from: before)
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if !run.status.isActive { refreshWarmSession(id) }
+    }
+
+    /// Ultracode as a launch passes it: what you chose, while the session's model offers it (`Ultracode`).
+    func ultracode(_ run: WorkspaceRun) -> Bool? {
+        Ultracode.offered(provider: run.provider, model: run.model) ? run.ultracode : nil
+    }
+
+    /// Ultracode for the next turns. Claude Code reads it as it starts, as fast mode: an idle session's waiting process
+    /// starts again with it, and a running turn keeps what it had.
+    func setUltracode(_ id: UUID, _ on: Bool) {
+        guard let run = run(id), run.ultracode != on else { return }
+        update(id) { $0.ultracode = on }
+        if run.status.isActive { claudeChangedDuringTurn.insert(id) } else { refreshWarmSession(id) }
     }
 
     /// The speed tiers the session's agent offers for its model (`SpeedTiers`).

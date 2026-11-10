@@ -66,6 +66,81 @@ extension WorkspaceManager {
                  sent ? "sent" : "not sent")
     }
 
+    // MARK: Compact on return
+
+    func returnCandidate(_ run: WorkspaceRun) -> ReturnCompaction.Candidate {
+        ReturnCompaction.Candidate(
+            agentReportsCacheLifetime: run.provider.capabilities.reportsPromptCacheLifetime,
+            canCompact: AgentCommands.canCompact(run.provider, offered: acpCommands[run.id] ?? []),
+            enabled: settings.idleCompaction, status: run.status, contextTokens: run.usage.contextTokens,
+            cache: run.promptCache, isRemote: run.isRemote)
+    }
+
+    /// The chip by the send button shows for this session (`ReturnCompaction`).
+    func offersCompactFirst(_ run: WorkspaceRun, now: Date = Date()) -> Bool {
+        ReturnCompaction.offers(returnCandidate(run), now: now)
+    }
+
+    /// The chip is on: the next message goes after a summary.
+    func compactsFirst(_ run: WorkspaceRun, now: Date = Date()) -> Bool {
+        offersCompactFirst(run, now: now) && !keepsHistory.contains(run.id)
+    }
+
+    /// The chip's click: Compact or Keep for your next message.
+    func toggleCompactFirst(_ id: UUID) {
+        if keepsHistory.contains(id) { keepsHistory.remove(id) } else { keepsHistory.insert(id) }
+    }
+
+    /// Your message, after a summary when the chip says Compact: the summary goes out quietly as the idle one does, and
+    /// your message waits in line behind it (`turnDidFinish` sends it). False when it went no special way, so it goes as
+    /// any message does.
+    func submitAfterCompacting(_ id: UUID, text: String) -> Bool {
+        defer { if keepsHistory.contains(id) { keepsHistory.remove(id) } }
+        guard let run = run(id), compactsFirst(run), processes[id] == nil, !checkpointing.contains(id),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !idleCompacting.contains(id) else { return false }
+        idleCompacting.insert(id)
+        guard sendHidden(id, text: "/compact") else {
+            idleCompacting.remove(id)
+            return false
+        }
+        enqueue(id, text: text)
+        onAudit?("return_compaction", "\(run.provider.displayName) · \(run.title) · \(run.usage.contextTokens ?? 0) tokens", "sent")
+        return true
+    }
+
+    // MARK: Auto-compact mark
+
+    /// Where this session's agent summarizes by itself (`AutoCompactMark`), or nil when it does not say and Nook's own
+    /// limit is off or does not apply.
+    func autoCompactAt(_ run: WorkspaceRun) -> Int? {
+        let nook = AgentCommands.canCompact(run.provider, offered: acpCommands[run.id] ?? [])
+            ? SizeCompaction.limit(setting: settings.autoCompactTokens, contextWindow: run.usage.contextWindow) : nil
+        return AutoCompactMark.tokens(nookLimit: nook, agentThreshold: agentCompactThreshold(run))
+    }
+
+    /// The agent's own threshold. Only Claude Code tells it (`autoCompactWindow` in its settings); Codex, Pi and the ACP
+    /// agents compact at a point they do not report (see docs/INTEGRATIONS.md).
+    private func agentCompactThreshold(_ run: WorkspaceRun) -> Int? {
+        switch run.provider {
+        case .claude:
+            guard !run.isRemote else { return nil }
+            let configDirectory = accountEnvironment(run.profileID)["CLAUDE_CONFIG_DIR"]
+            let model = run.resolvedModel ?? run.model
+            let key = run.workingDirectory + "|" + (configDirectory ?? "") + "|" + model
+            let window: Int?
+            if let cached = claudeCompactWindows[key], Date().timeIntervalSince(cached.read) < 60 {
+                window = cached.window
+            } else {
+                let files = ClaudeToolSearch.settingsFiles(workingDirectory: run.workingDirectory, configDirectory: configDirectory)
+                window = AutoCompactMark.claudeWindow(in: files, model: model)
+                claudeCompactWindows[key] = (window, Date())
+            }
+            return AutoCompactMark.claudeThreshold(window: window, contextWindow: run.usage.contextWindow)
+        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
+            return nil
+        }
+    }
+
     // MARK: Size compaction
 
     /// A turn ended with the context past your limit: the agent summarizes the conversation now, for every agent that

@@ -122,7 +122,8 @@ enum SessionOutputs {
 /// outputs panel keeps them.
 enum SharedFiles {
     /// The tools that hand files over, by name (an MCP tool by its own name).
-    static let tools: Set<String> = ["SendUserFile"]
+    /// Codex's generated pictures count too (`CodexAppServerMapper.imageTool`).
+    static let tools: Set<String> = ["SendUserFile", "image_generation"]
 
     static func isTool(_ tool: String) -> Bool {
         tools.contains(tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool)

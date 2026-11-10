@@ -213,6 +213,7 @@ targets:
       - path: Core/I18n+WhatsAppAccounts.swift
       - path: Core/I18n+Privacy.swift
       - path: Core/I18n+Toast.swift
+      - path: Core/I18n+WorkflowParity.swift
       - path: Core/I18n+Confirm.swift
       - path: Core/I18n+Buddy.swift
       - path: Core/I18n+Quiet.swift
@@ -494,6 +495,8 @@ targets:
       - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
+      - path: ../../packages/protocol/Sources/DictationContext.swift
+      - path: Services/Workspace/RowSweepRange.swift
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/UsageLedger.swift
       - path: Services/Workspace/LimitPool.swift

@@ -682,12 +682,17 @@ struct AgentRunPanel: View {
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
+            // Back at a long session whose prompt cache ran out: summarize before your message, or keep it all.
+            if workspace.offersCompactFirst(run), let tokens = run.usage.contextTokens {
+                CompactFirstChip(tokens: tokens, compacts: workspace.compactsFirst(run)) { workspace.toggleCompactFirst(runID) }
+            }
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0,
                ContextMeter.worthShowing(Double(used) / Double(window)) {
                 // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
                 let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
+                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") },
+                                    autoCompactAt: workspace.autoCompactAt(run))
             }
         }
     }
@@ -1457,8 +1462,11 @@ struct AgentRunPanel: View {
             images = []
             let message = quotes.message(outgoing.send)
             quotes.removeAll()
-            // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them.
-            workspace.submit(runID, text: message, fromYou: true)
+            // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them. Back
+            // at a long session whose cache ran out, the chip may say to summarize first.
+            if !workspace.submitAfterCompacting(runID, text: message) {
+                workspace.submit(runID, text: message, fromYou: true)
+            }
             sentCount += 1
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
@@ -1556,6 +1564,8 @@ struct AgentRunPanel: View {
                     ComposerSpeedTier(tiers: workspace.speedTiers(for: run), chosen: workspace.speedTier(run)) {
                         workspace.setSpeedTier(runID, $0)
                     }
+                    ComposerUltracodeToggle(offered: Ultracode.offered(provider: run.provider, model: run.model),
+                                            on: run.ultracode == true) { workspace.setUltracode(runID, $0) }
                     ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
