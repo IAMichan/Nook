@@ -1073,7 +1073,7 @@ private struct SessionToolPanel: View {
     /// The tool in view is faintly filled; one the session cannot use says why.
     private var addMenu: some View {
         ComposerDropdown(width: 220) {
-            Image(systemName: "plus")
+            Image(icon: "plus")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
@@ -1172,7 +1172,7 @@ struct DevServerStrip: View {
                 SidePanelToolbar {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: NookTheme.Spacing.sm) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
+                            Image(icon: "dot.radiowaves.left.and.right")
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .help(tr("agents.servers.help"))
@@ -1264,7 +1264,7 @@ struct DevServerStrip: View {
                 rescan += 1
             }
         } label: {
-            Image(systemName: "stop.fill")
+            Image(icon: "stop.fill")
                 .font(NookTheme.font(8, .semibold))
                 .foregroundStyle(server.startedByNook ? NookTheme.textSecondary : NookTheme.textTertiary)
                 .frame(width: 18, height: 22)

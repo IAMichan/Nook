@@ -41,7 +41,7 @@ struct McpAppBlock: View {
                 Group {
                     if session.mode == .fullscreen {
                         HStack(spacing: 8) {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.TextStyle.detail)
+                            Image(icon: "arrow.up.left.and.arrow.down.right").font(NookTheme.TextStyle.detail)
                             Text(tr("ws.mcpApp.isFullscreen")).font(NookTheme.TextStyle.detail)
                             Button(tr("ws.mcpApp.exitFullscreen")) { session.exitFullscreen() }.controlSize(.small)
                         }
@@ -70,7 +70,7 @@ struct McpAppBlock: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "square.on.square.dashed").font(NookTheme.font(10, .semibold))
+            Image(icon: "square.on.square.dashed").font(NookTheme.font(10, .semibold))
             Text(session.reference.server.map { "\($0) · \(session.reference.tool)" } ?? tr("ws.mcpApp.title"))
                 .font(NookTheme.TextStyle.label)
                 .lineLimit(1)
@@ -497,7 +497,7 @@ private struct McpAppFullscreenView: View {
             HStack {
                 Text(session.reference.server ?? session.reference.tool).font(NookTheme.TextStyle.body).lineLimit(1)
                 Spacer()
-                Button { session.exitFullscreen() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
+                Button { session.exitFullscreen() } label: { Image(icon: "arrow.down.right.and.arrow.up.left") }
                     .buttonStyle(.borderless)
                     .help(tr("ws.mcpApp.exitFullscreen"))
                     .keyboardShortcut(.cancelAction)

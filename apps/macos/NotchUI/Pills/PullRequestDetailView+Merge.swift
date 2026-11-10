@@ -176,7 +176,7 @@ extension PullRequestDetailView {
             .disabled(!detail.canMerge || merging)
             .help(armedMerge ? confirmMessage : tr(method.titleKey))
             ComposerDropdown(width: 240) {
-                Image(systemName: "chevron.down")
+                Image(icon: "chevron.down")
                     .font(NookTheme.font(9, .bold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 18, height: 28)

@@ -89,7 +89,7 @@ struct UpdatePanel: View {
     private func commitRange(from: String, to: String, update: AppUpdater.Available) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Text(verbatim: from).foregroundStyle(NookTheme.textSecondary)
-            Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(verbatim: to).foregroundStyle(NookTheme.paper)
             Spacer(minLength: 0)
             if let url = update.github?.compare(from, to) {
@@ -104,7 +104,7 @@ struct UpdatePanel: View {
         Button { NSWorkspace.shared.open(url) } label: {
             HStack(spacing: 3) {
                 Text(title)
-                Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold))
+                Image(icon: "arrow.up.right").font(NookTheme.font(9, .semibold))
             }
             .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textSecondary)
@@ -121,7 +121,7 @@ struct UpdatePanel: View {
                    detail: tr("update.release.subtitle", release.title), refreshable: true)
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(verbatim: updater.release.map { "\($0.version)" } ?? "").foregroundStyle(NookTheme.textSecondary)
-                Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
                 Text(verbatim: "\(release.version)").foregroundStyle(NookTheme.paper)
                 Spacer(minLength: 0)
                 if let page = release.page {
@@ -216,11 +216,11 @@ struct UpdatePanel: View {
         HStack(spacing: NookTheme.Spacing.md) {
             Group {
                 if order(step) < order(current) {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                    Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                 } else if step == current {
                     ProgressView().controlSize(.mini)
                 } else {
-                    Image(systemName: "circle").foregroundStyle(NookTheme.line2)
+                    Image(icon: "circle").foregroundStyle(NookTheme.line2)
                 }
             }
             .font(NookTheme.TextStyle.body)
@@ -352,7 +352,7 @@ struct UpdatePanel: View {
         HStack(alignment: .top, spacing: 10) {
             Group {
                 if let symbol {
-                    Image(systemName: symbol).font(NookTheme.font(20, .semibold)).foregroundStyle(tint)
+                    Image(icon: symbol).font(NookTheme.font(20, .semibold)).foregroundStyle(tint)
                 } else {
                     ProgressView().controlSize(.small).tint(tint)
                 }
@@ -380,7 +380,7 @@ struct UpdatePanel: View {
 
     private func note(_ text: String, symbol: String, tint: Color) -> some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol).font(NookTheme.font(12, .semibold)).foregroundStyle(tint).frame(width: 16)
+            Image(icon: symbol).font(NookTheme.font(12, .semibold)).foregroundStyle(tint).frame(width: 16)
             Text(text)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.paper)

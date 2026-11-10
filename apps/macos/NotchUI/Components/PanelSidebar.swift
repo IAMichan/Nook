@@ -226,7 +226,7 @@ private struct PanelSidebarTabButton: View {
         let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: PanelSplitChoice.symbol(tab))
+                Image(icon: PanelSplitChoice.symbol(tab))
                     .font(NookTheme.font(13, .medium))
                     .foregroundStyle(selected ? NookTheme.paper : hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
                     .frame(width: PanelSidebarMetrics.mark)

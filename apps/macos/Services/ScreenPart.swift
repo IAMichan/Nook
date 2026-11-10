@@ -173,7 +173,7 @@ struct CaptureAnnotationView: View {
         HStack(spacing: 10) {
             ForEach(Array(Tool.allCases.enumerated()), id: \.offset) { _, t in
                 Button { tool = t } label: {
-                    Image(systemName: t == .arrow ? "arrow.up.right" : (t == .box ? "rectangle" : "pencil.tip"))
+                    Image(icon: t == .arrow ? "arrow.up.right" : (t == .box ? "rectangle" : "pencil.tip"))
                         .font(.system(size: 13, weight: .semibold))
                         .frame(width: 30, height: 26)
                         .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(tool == t ? 0.16 : 0.05)))
@@ -192,7 +192,7 @@ struct CaptureAnnotationView: View {
             }
             Divider().frame(height: 18)
             Button { if !marks.isEmpty { marks.removeLast() } } label: {
-                Image(systemName: "arrow.uturn.backward")
+                Image(icon: "arrow.uturn.backward")
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 30, height: 26)
             }

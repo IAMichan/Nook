@@ -22,7 +22,7 @@ struct MarkdownDetailsBlock: View {
                 withAnimation(NookTheme.swap) { open.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(10, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))
@@ -70,7 +70,7 @@ struct MarkdownImageBlock: View {
         Group {
             if missing {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "photo.badge.exclamationmark")
+                    Image(icon: "photo.badge.exclamationmark")
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(name)
                         .font(NookTheme.TextStyle.detail)
@@ -178,7 +178,7 @@ struct TableCopyMenu: View {
             Button(tr("table.copyMarkdown")) { copy(TableText.markdown(header: header, rows: rows)) }
             Button(tr("table.copyCSV")) { copy(TableText.csv(header: header, rows: rows)) }
         } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+            Image(icon: copied ? "checkmark" : "doc.on.doc")
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)

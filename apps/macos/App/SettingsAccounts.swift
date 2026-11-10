@@ -398,7 +398,7 @@ private struct AccountColorPicker: View {
                 } else {
                     // No color: an empty ring with a slash.
                     Circle().stroke(NookTheme.line2, lineWidth: 1.5)
-                        .overlay(Image(systemName: "slash.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary))
+                        .overlay(Image(icon: "slash.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary))
                 }
             }
             .frame(width: 20, height: 20)
@@ -439,7 +439,7 @@ private struct AccountIconPicker: View {
                 if symbol == nil {
                     // No icon: an empty ring with a slash, as "no color".
                     Circle().stroke(NookTheme.line2, lineWidth: 1.5)
-                        .overlay(Image(systemName: "slash.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary))
+                        .overlay(Image(icon: "slash.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary))
                         .frame(width: 20, height: 20)
                 } else {
                     AccountBadge(kind: shown, size: 20, ring: .clear)

@@ -305,7 +305,7 @@ struct PullRequestDetailView: View {
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
                 Text("#\(item.number)").monospacedDigit()
-                Image(systemName: "arrow.up.right.square").font(NookTheme.font(9, .medium))
+                Image(icon: "arrow.up.right.square").font(NookTheme.font(9, .medium))
             }
             .foregroundStyle(PullRequestIcon.tint(glyph))
             .contentShape(Rectangle())
@@ -446,7 +446,7 @@ struct PullRequestDetailView: View {
                 NookDivider(vertical: true).frame(height: 12)
                 HStack(spacing: NookTheme.Spacing.xs) {
                     baseBranch(detail)
-                    Image(systemName: "arrow.left").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
+                    Image(icon: "arrow.left").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
                     Text(detail.headBranch).lineLimit(1).truncationMode(.middle)
                 }
                 .font(NookTheme.mono(10.5))
@@ -483,7 +483,7 @@ struct PullRequestDetailView: View {
             } label: {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     name
-                    Image(systemName: "exclamationmark.triangle").font(NookTheme.font(10, .medium))
+                    Image(icon: "exclamationmark.triangle").font(NookTheme.font(10, .medium))
                 }
                 .foregroundStyle(NookTheme.amber)
                 .contentShape(Rectangle())
@@ -536,7 +536,7 @@ struct PullRequestDetailView: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 baseBranch(detail)
-                Image(systemName: "arrow.left").font(NookTheme.font(10, .medium)).foregroundStyle(NookTheme.textMuted.opacity(0.6))
+                Image(icon: "arrow.left").font(NookTheme.font(10, .medium)).foregroundStyle(NookTheme.textMuted.opacity(0.6))
                 Button {
                     Pasteboard.copy(detail.headBranch)
                     ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
@@ -565,7 +565,7 @@ struct PullRequestDetailView: View {
         let files = max(detail.changedFiles, detail.files.count)
         return HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: "doc.text").font(NookTheme.font(compact ? 9.5 : 10.5))
+                Image(icon: "doc.text").font(NookTheme.font(compact ? 9.5 : 10.5))
                 Text(compact ? "\(files)" : tr("agents.pr.filesCount", files))
             }
             .foregroundStyle(NookTheme.textTertiary)
@@ -593,7 +593,7 @@ struct PullRequestDetailView: View {
             Button {
                 openWriter(detail, review: nil)
             } label: {
-                Image(systemName: "bubble.left")
+                Image(icon: "bubble.left")
                     .font(NookTheme.font(14, .medium))
                     .foregroundStyle(NookTheme.paper)
                     .frame(width: 40, height: 38)
@@ -604,7 +604,7 @@ struct PullRequestDetailView: View {
             .accessibilityLabel(tr("agents.pr.write.open"))
             Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
             ComposerDropdown(width: 220) {
-                Image(systemName: "chevron.up")
+                Image(icon: "chevron.up")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 30, height: 38)
@@ -728,7 +728,7 @@ struct PullRequestDetailView: View {
             newestFirst.wrappedValue.toggle()
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
-                Image(systemName: "arrow.up.arrow.down")
+                Image(icon: "arrow.up.arrow.down")
                 Text(tr(newestFirst.wrappedValue ? "agents.pr.timeline.newest" : "agents.pr.timeline.oldest"))
             }
             .font(NookTheme.TextStyle.caption)

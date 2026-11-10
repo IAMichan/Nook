@@ -100,7 +100,7 @@ struct SourcesDisclosure: View {
                                 .padding(.vertical, 2)
                                 .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
                         }
-                        Image(systemName: "chevron.down")
+                        Image(icon: "chevron.down")
                             .font(NookTheme.font(8, .bold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .rotationEffect(.degrees(expanded ? 180 : 0))
@@ -414,7 +414,7 @@ struct PrivateBriefDisclosure: View {
                 expanded.toggle()
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(icon: expanded ? "chevron.down" : "chevron.right")
                     Text(tr("screenBrain.briefTitle"))
                 }
                 .font(NookTheme.TextStyle.detail)
@@ -458,7 +458,7 @@ struct NoticeList: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(notices, id: \.self) { notice in
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.circle.fill")
+                    Image(icon: "exclamationmark.circle.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.amber)
                         .padding(.top, 1)
@@ -511,7 +511,7 @@ private struct ReferenceRow: View {
                 }
                 Spacer(minLength: 4)
                 if openable {
-                    Image(systemName: "arrow.up.right")
+                    Image(icon: "arrow.up.right")
                         .font(NookTheme.font(9.5, .semibold))
                         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                 }
@@ -636,7 +636,7 @@ struct ScopeMenu: View {
         let source = app.connectors.source(id: id)
         let text = title ?? source?.title ?? SourceCatalog.title(id)
         let image = SourceBrand.menuImage(for: id, domain: source?.iconDomain)
-            ?? NSImage(systemSymbolName: source?.symbol ?? SourcesDisclosure.symbol(id), accessibilityDescription: nil)
+            ?? NookIcon.nsImage(source?.symbol ?? SourcesDisclosure.symbol(id), accessibilityDescription: nil)
         return Label {
             Text(text)
         } icon: {
@@ -743,7 +743,7 @@ struct AttachmentChip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: isImage ? "photo" : "paperclip").font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary)
+            Image(icon: isImage ? "photo" : "paperclip").font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary)
             Text(name).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.paper).lineLimit(1)
             ToolbarIconButton("xmark", tr("button.clear"), height: 18, width: 18, remove)
         }

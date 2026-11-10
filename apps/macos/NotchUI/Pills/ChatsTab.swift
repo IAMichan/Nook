@@ -550,7 +550,7 @@ struct ChatsTab: View {
                             } else {
                                 // No chat open (none picked yet, closed with Escape, or not in what the list shows).
                                 VStack(spacing: NookTheme.Spacing.sm) {
-                                    Image(systemName: "bubble.left.and.bubble.right")
+                                    Image(icon: "bubble.left.and.bubble.right")
                                         .font(NookTheme.font(26, .light))
                                         .foregroundStyle(NookTheme.textMuted)
                                         .accessibilityHidden(true)
@@ -1223,7 +1223,7 @@ struct ChatsTab: View {
 
     private var empty: some View {
         VStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "tray.full")
+            Image(icon: "tray.full")
                 .font(NookTheme.font(30))
                 .foregroundStyle(NookTheme.textTertiary)
             Text(capture.enabled ? tr("chats.waiting.title") : tr("chats.empty.title"))
@@ -1367,7 +1367,7 @@ struct ChatsGroupHeader: View {
                 Text(title)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(8, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .foregroundStyle(NookTheme.textTertiary)
@@ -2257,7 +2257,7 @@ private struct ChatsDetail: View, Equatable {
                 removing = thread
             }
         } label: {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)

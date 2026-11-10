@@ -135,22 +135,22 @@ struct PlanReview: View {
     private func marker(_ index: Int, _ step: PlanStep) -> some View {
         switch state(index) {
         case .done:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
+            Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
         case .verified:
-            Image(systemName: "checkmark.seal.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
+            Image(icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint).frame(width: 18)
                 .help(tr("chat.plan.verified"))
         case .approved:
-            Image(systemName: "clock").foregroundStyle(NookTheme.textSecondary).frame(width: 18)
+            Image(icon: "clock").foregroundStyle(NookTheme.textSecondary).frame(width: 18)
         case .failed:
-            Image(systemName: "xmark.circle.fill").foregroundStyle(NookTheme.coral).frame(width: 18)
+            Image(icon: "xmark.circle.fill").foregroundStyle(NookTheme.coral).frame(width: 18)
         case .running:
             ProgressView().controlSize(.mini).frame(width: 18)
         case .duplicate:
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(NookTheme.amber).frame(width: 18)
+            Image(icon: "exclamationmark.circle.fill").foregroundStyle(NookTheme.amber).frame(width: 18)
         default:
             if open {
                 Button { app.setActionIncluded(message.id, index: index, !included(index)) } label: {
-                    Image(systemName: included(index) ? "checkmark.square.fill" : "square")
+                    Image(icon: included(index) ? "checkmark.square.fill" : "square")
                         .foregroundStyle(included(index) ? color(step.tone) : NookTheme.textTertiary)
                         .frame(width: 18)
                 }
@@ -263,7 +263,7 @@ struct PlanReview: View {
                 ProgressView().controlSize(.small)
                 Text(tr("chat.plan.running")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             case .done(let result):
-                Image(systemName: "checkmark").font(NookTheme.font(11, .bold)).foregroundStyle(NookTheme.mint)
+                Image(icon: "checkmark").font(NookTheme.font(11, .bold)).foregroundStyle(NookTheme.mint)
                 Text(result).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.mint)
                     .fixedSize(horizontal: false, vertical: true)
             case .cancelled:
@@ -333,7 +333,7 @@ private struct StepFailure: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             ForEach(lines) { line in
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: line.symbol ?? "circle")
+                    Image(icon: line.symbol ?? "circle")
                         .font(NookTheme.font(10.5, .semibold))
                         .foregroundStyle(line.color)
                         .frame(width: 14)

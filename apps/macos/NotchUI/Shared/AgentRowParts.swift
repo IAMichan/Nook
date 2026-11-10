@@ -22,7 +22,7 @@ struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: "folder").font(NookTheme.textFont(9.5, .semibold))
+                Image(icon: "folder").font(NookTheme.textFont(9.5, .semibold))
                 Text(folder)
                     .lineLimit(1)
                     .help(folderHelp)
@@ -77,7 +77,7 @@ struct AgentRowBranch: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             if worktree {
-                Image(systemName: "arrow.triangle.branch.square")
+                Image(icon: "arrow.triangle.branch.square")
                     .font(NookTheme.textFont(9.5, .semibold))
                     .help(sharedText("agents.row.worktree", "Works in its own worktree"))
             }

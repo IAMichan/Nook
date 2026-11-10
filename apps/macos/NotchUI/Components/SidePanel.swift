@@ -274,7 +274,7 @@ struct SidePanelToggle: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol ?? edge.panelSymbol)
+            Image(icon: symbol ?? edge.panelSymbol)
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)

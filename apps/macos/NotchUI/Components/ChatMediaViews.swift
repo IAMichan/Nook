@@ -437,7 +437,7 @@ struct ChatStickerView: View {
                 ChatMediaStandIn(clear: true)
                     .aspectRatio(ChatMediaImages.pixelSize(url) ?? CGSize(width: 1, height: 1), contentMode: .fit)
             } else {
-                Image(systemName: "face.smiling")
+                Image(icon: "face.smiling")
                     .font(NookTheme.font(40))
                     .foregroundStyle(NookTheme.textSecondary)
             }
@@ -582,7 +582,7 @@ struct ChatAudioView: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Button { toggle() } label: {
-                Image(systemName: player.failed ? "arrow.up.forward.app" : (player.playing ? "pause.fill" : "play.fill"))
+                Image(icon: player.failed ? "arrow.up.forward.app" : (player.playing ? "pause.fill" : "play.fill"))
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.onPaper)
                     .frame(width: 30, height: 30)
@@ -732,7 +732,7 @@ struct ChatVideoControls: View {
         ZStack {
             if !playback.playing {
                 Button(action: playback.toggle) {
-                    Image(systemName: "play.fill")
+                    Image(icon: "play.fill")
                         .font(NookTheme.font(18, .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
@@ -756,7 +756,7 @@ struct ChatVideoControls: View {
     private var bar: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Button(action: playback.toggle) {
-                Image(systemName: playback.playing ? "pause.fill" : "play.fill")
+                Image(icon: playback.playing ? "pause.fill" : "play.fill")
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 18, height: 18)
@@ -826,7 +826,7 @@ struct ChatCallRow: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)

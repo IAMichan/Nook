@@ -1017,7 +1017,7 @@ private struct MessageMenuButton: View {
         Menu {
             items
         } label: {
-            Image(systemName: "chevron.down")
+            Image(icon: "chevron.down")
                 .font(NookTheme.font(9, .bold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                 .frame(width: 18, height: 18)
@@ -1056,7 +1056,7 @@ private struct ChatJumpButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "chevron.down")
+            Image(icon: "chevron.down")
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                 .frame(width: 32, height: 32)
@@ -1299,7 +1299,7 @@ private struct BubbleActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
@@ -1348,7 +1348,7 @@ private struct MoreEmojiButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
+            Image(icon: "plus")
                 .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 36, height: 36)
@@ -1467,7 +1467,7 @@ struct VideoTile: View {
                                 .interpolation(.high)
                                 .aspectRatio(contentMode: .fit)
                         }
-                        Image(systemName: "play.fill")
+                        Image(icon: "play.fill")
                             .font(NookTheme.font(18, .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
@@ -1483,7 +1483,7 @@ struct VideoTile: View {
         .overlay(alignment: .topTrailing) {
             if showEnlarge {
                 Button { enlarge() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Image(icon: "arrow.up.left.and.arrow.down.right")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
@@ -1797,7 +1797,7 @@ struct ChatPhotoPlaceholder: View {
             .fill(NookTheme.ink.opacity(0.3))
             .fittedMedia(shown)
             .overlay {
-                Image(systemName: "photo")
+                Image(icon: "photo")
                     .font(NookTheme.font(22))
                     .foregroundStyle(NookTheme.textTertiary)
             }

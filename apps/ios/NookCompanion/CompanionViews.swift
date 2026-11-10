@@ -580,7 +580,7 @@ struct ConnectionLine: View {
             // shows, so a short drop while the phone wakes or changes networks passes unseen.
             Button { diagnosing = true } label: {
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-                    Image(systemName: "wifi.slash")
+                    Image(icon: "wifi.slash")
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text(reason.isEmpty ? String(localized: "Looking for your Mac…") : reason)
                         if let updated = client.lastUpdated {
@@ -590,7 +590,7 @@ struct ConnectionLine: View {
                         if let hint = client.awayHint { Text(hint).foregroundStyle(Theme.textTertiary) }
                     }
                     Spacer(minLength: Theme.Spacing.md)
-                    Image(systemName: "info.circle").foregroundStyle(Theme.textTertiary)
+                    Image(icon: "info.circle").foregroundStyle(Theme.textTertiary)
                 }
                 .font(Theme.TextStyle.detail)
                 .foregroundStyle(Theme.textSecondary)
@@ -637,7 +637,7 @@ struct WaitingRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
-            Image(systemName: symbol).foregroundStyle(Theme.textSecondary)
+            Image(icon: symbol).foregroundStyle(Theme.textSecondary)
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 Text(title).font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).lineLimit(2)
                 Label(detail, systemImage: "clock").font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)

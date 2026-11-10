@@ -62,7 +62,7 @@ struct ImageModal: View {
 
     private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)

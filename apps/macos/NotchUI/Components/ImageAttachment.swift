@@ -354,7 +354,7 @@ struct ChatMessagePicture: View {
                         .aspectRatio(contentMode: .fit)
                         .fittedMedia(Self.size(for: image.size))
                 } else {
-                    Image(systemName: missing ? "photo.badge.exclamationmark" : "photo")
+                    Image(icon: missing ? "photo.badge.exclamationmark" : "photo")
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 96, height: 96)
                         .background(NookTheme.smoke)
@@ -370,7 +370,7 @@ struct ChatPictureSizeBadge: View {
     let enlarged: Bool
 
     var body: some View {
-        Image(systemName: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+        Image(icon: enlarged ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             .font(NookTheme.font(10, .semibold))
             .foregroundStyle(NookTheme.paper)
             .frame(width: 24, height: 24)
@@ -418,7 +418,7 @@ struct ComposerDropSlot: View {
     }
 
     var body: some View {
-        Image(systemName: "plus")
+        Image(icon: "plus")
             .font(NookTheme.font(16, .medium))
             .foregroundStyle(tint)
             .frame(width: side, height: side)
@@ -483,7 +483,7 @@ struct ImageAttachmentStrip: View {
 
     private func removeButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "xmark")
+            Image(icon: "xmark")
                 .font(NookTheme.font(8, .bold))
                 .foregroundStyle(NookTheme.paper)
                 .frame(width: 16, height: 16)
@@ -500,7 +500,7 @@ struct ImageAttachmentStrip: View {
                 if let thumbnail = image.thumbnail {
                     Image(nsImage: thumbnail).resizable().scaledToFill()
                 } else {
-                    Image(systemName: "photo").foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "photo").foregroundStyle(NookTheme.textTertiary)
                 }
             }
             .frame(width: 56, height: 56)
@@ -540,7 +540,7 @@ struct ComposerFileTile: View {
             if let preview {
                 Image(nsImage: preview).resizable().scaledToFill()
             } else {
-                Image(systemName: paste ? "doc.plaintext" : "doc")
+                Image(icon: paste ? "doc.plaintext" : "doc")
                     .font(NookTheme.font(22, .regular))
                     .foregroundStyle(NookTheme.textTertiary)
             }
