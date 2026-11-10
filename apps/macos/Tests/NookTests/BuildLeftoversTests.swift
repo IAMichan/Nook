@@ -79,6 +79,23 @@ final class BuildLeftoversTests: XCTestCase {
         XCTAssertEqual(found.first { $0.url.lastPathComponent == "coretests2" }?.kind, .testPackage)
     }
 
+    /// `scripts/xcode.sh` builds into `<worktree>/.build/xcode`; a worktree that stays for weeks kept 3–5 GB there.
+    func testFindsAStaleXcodeBuildInAWorktreeBuildFolder() throws {
+        let stale = base.appendingPathComponent("worktrees/idle")
+        let busy = base.appendingPathComponent("worktrees/busy")
+        roots.worktrees = [stale, busy]
+        try make(stale.appendingPathComponent(".build/xcode"), workspace: stale.path + "/apps/macos/Nook.xcodeproj", age: old)
+        try make(stale.appendingPathComponent(".build/notes"), age: old)
+        try make(busy.appendingPathComponent(".build/xcode"), workspace: busy.path + "/apps/macos/Nook.xcodeproj", age: 60)
+
+        let found = BuildLeftovers.find(in: roots, now: now)
+
+        // The temporary folder is under /var, a symlink to /private/var: compare resolved paths.
+        XCTAssertEqual(found.map { $0.url.resolvingSymlinksInPath().path },
+                       [stale.appendingPathComponent(".build/xcode").resolvingSymlinksInPath().path])
+        XCTAssertEqual(found.map(\.kind), [.xcodeBuild])
+    }
+
     func testFindsDerivedDataOfRemovedWorktreesOnly() throws {
         let gone = base.appendingPathComponent("worktrees/feature/apps/macos/Nook.xcodeproj").path
         let kept = base.appendingPathComponent("worktrees/live/apps/macos/Nook.xcodeproj").path
