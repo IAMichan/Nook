@@ -48,6 +48,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | The chat above or below on Chats; the repository tab on the left or right on the Actions page |
 | ⌘D | `diff.toggle` | `!terminalFocus` | The Changes tab on the latest turn (or the branch), and again to close it |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Opens the model picker of the composer on screen (↑ ↓ move over the models, Return picks, Escape closes) |
+| ⌥⌘5 | window capture (Settings › Shortcuts) | | Captures the front window: its picture and its text (Accessibility, else read from the picture) go to the composer of the session you work in, or to the Nook chat (Settings › Shortcuts chooses). Needs Screen Recording |
 | ⇧⌘S | `session.settle` | `!terminalFocus` | Settles the open session, or brings a settled one back |
 | ⇧⌘P | `session.pin` | `!terminalFocus` | Pins the open session, or unpins it |
 | — | `session.interrupt` | | Unbound on purpose: stops the open session's turn (a session Nook runs); also in the command palette |
