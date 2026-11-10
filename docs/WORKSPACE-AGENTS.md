@@ -76,6 +76,66 @@ That socket is separate from `bridge.sock`: a call on it needs a token made for 
 (terminals, pull requests, devices, delegation, connectors, secrets) and every other session is refused, because whoever controls that machine controls
 what comes through. `localhost` in the browser is the Mac. Without Perl the session simply runs without these tools.
 
+### Project scripts (`nook.json`)
+
+A project lists its commands in `nook.json` at the repository root (or in a folder below it); the session panel and the
+terminal bar run them, and **Add script** writes new ones there (`ProjectScripts`).
+
+```json
+{"scripts": [
+  {"id": "dev", "name": "Dev server", "command": "pnpm dev", "previewUrl": "http://localhost:5173",
+   "autoOpenPreview": true, "runOnWorktreeCreate": false, "stopOnSettle": true},
+  {"id": "clean", "name": "Clean", "command": "rm -rf node_modules .next", "runOnSettle": true}
+]}
+```
+
+| Key | Meaning |
+|-----|---------|
+| `id`, `name`, `command` | The script; `command` is required, the others are derived from it when missing. |
+| `previewUrl`, `autoOpenPreview` | The page the script serves; opened in Nook's browser a moment after it starts. |
+| `runOnWorktreeCreate` | Runs in a terminal next to the session when Nook makes a worktree for it (setup). |
+| `stopOnSettle` | When the session settles, the terminal running this script stops, together with every process it started (each process group under the shell, except Nook's own and an agent's). |
+| `runOnSettle` | When a session in a worktree of its own settles, this runs once in a new terminal in that worktree (cleanup). The terminal closes when the command succeeds and stays open with the error when it fails. It never runs for a session in the project's own checkout, which other work shares. |
+
+Settling a session (by hand, from the selection bar, or by auto-settle) also closes its terminals that sit idle at a shell
+prompt; a terminal that still runs something you started by hand stays. When another session that has not settled works in
+the same folder (or a folder around it), nothing is touched, since those terminals are its too. Remote sessions are left
+alone. The plan is pure and tested (`SettleActions`, `SettleActionsTests`); `AppModel.applySettleActions` carries it out.
+
+### Dev servers
+
+The bar of servers above a session (`DevServerStrip`) lists what listens on a port from the session's folder. A server
+Nook started (below one of its terminal shells, or in the process group of an agent it runs, `DevServerOwnership`) has a
+**Stop** button: it stops the server's process group, or only the server and what it started when that group is Nook's,
+an agent's or a terminal shell's. A server you started in another terminal app gets no stop; a click on its greyed button
+says why. Ownership is decided by pid and process group only (never by name) and checked again right before the signal.
+
+### Scheduled tasks
+
+A task (Settings › Automation › Scheduled tasks, or `schedule_task`) runs every N minutes, at a time on chosen weekdays,
+**once** at a date and time (a run the Mac slept through runs when it wakes; afterwards the task shows as done and
+editing it does not run it again unless its moment changes), or when its webhook is called.
+
+**Where runs go:** a new session in a project each run, or one session. A one-session task either **continues the
+conversation** or starts a **fresh conversation each run** (`WorkspaceManager.startFreshConversation`: the agent's
+process ends and its next turn starts without the earlier conversation, for every agent; the timeline keeps every run).
+The editor can change the target, which moves the task to another session; `update_scheduled_task` takes `target`
+(`new_session`, `this_session`, `session` with `session_id`) and `conversation` (`continue`, `fresh`).
+
+**Webhook tasks** (`WebhookRules`, applied in `ScheduledTaskStore.acceptWebhook` after the signature, delivery id and
+rate checks):
+
+| Rule | Behavior |
+|------|----------|
+| Placeholders | `{{body.path}}` (JSON or form fields, list items by index: `{{body.items.0.id}}`), `{{body}}`, `{{headers.name}}` in the prompt. Each value reaches the agent inside an `<untrusted-webhook-value field="…">` tag (a value cannot close its tag) with a note that it is outside data, not an instruction. Without placeholders the whole body is quoted as before. |
+| Filters | `equals`, `is one of` (comma-separated) and `exists` on a value named like a placeholder. Every filter must pass; otherwise the sender gets `202 filtered`, nothing runs, and the Deliveries log names the first filter that failed. Objects and lists only pass `exists`. |
+| Duplicate key | A template such as `{{headers.x-github-delivery}}`; a key seen in the past week (500 keys at most per task) is skipped (`202 duplicate key`). A key whose placeholders are missing skips the check. |
+| Coalesce window | 10–3600 seconds: the first delivery opens the window, later ones in it do not extend it, and one run gets the latest delivery with the count. |
+| Deliveries log | The latest 50 verified deliveries per task with time, outcome (accepted, filtered, duplicate, combined, skipped) and why, in the task's editor. Stored with the tasks. |
+
+Open coalesce windows live in memory: a restart of Nook within a window drops that run (the sender's delivery was
+already answered).
+
 ## Available MCP Tools
 
 | Tool | Description | Policy |
@@ -105,8 +165,8 @@ what comes through. `localhost` in the browser is the Mac. Without Perl the sess
 | `browser_type` | Types into one field (replace or append, optionally submit its form), firing `input`/`change` so frameworks notice. The typed text is never written to the audit log. | Same as `browser_click` |
 | `browser_wait_for` | Waits until text or a selector appears (or is gone), at most 30 seconds. | Immediate |
 | `list_scheduled_tasks` | Lists scheduled tasks for the caller's folder or session (`all: true` for every task) with schedule, target, rights, next and last run. | Immediate |
-| `schedule_task` | Proposes a scheduled task: every N minutes or at a time on chosen weekdays, in a new session in a folder or as a message to this session. Rights are `ask` or `acceptEdits`, never `bypass` and never more than the caller. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
-| `update_scheduled_task` | Proposes a change to a task's title, prompt, schedule, rights or on/off state; the card shows the task after the change and before it. | Always requires approval; disabled in Plan mode |
+| `schedule_task` | Proposes a scheduled task: every N minutes, at a time on chosen weekdays or once (`once_at`), in a new session in a folder or as a message to this or another session (`target`, `session_id`), continuing its conversation or fresh each run (`conversation`). Rights are `ask` or `acceptEdits`, never `bypass` and never more than the caller. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
+| `update_scheduled_task` | Proposes a change to a task's title, prompt, schedule, rights, target (moving it to a new session in a folder, this session or another session), conversation mode or on/off state; the card shows the task after the change and before it. | Always requires approval; disabled in Plan mode |
 | `run_scheduled_task_now` | Runs a task once with its own prompt; returns `started`, `busy` or `not available`. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
 | `watch_pull_request` | Turns on the session's existing pull request watch (GitHub / GitLab, see `WorkspaceManager.watchPullRequest`): news goes to the timeline, and failed CI, a merge conflict with the base branch (also one already there when the watch starts), reviews and comments wake the agent with a message. While the agent works that message waits in the queue; failed checks or a conflict solved in the meantime, or a merge or close, take it out again (`PullRequestNews.stillNeeded`), also in a last look just before it goes out. Kept with the session across restarts; `stop: true` ends it. Sessions Nook started only. | Immediate (disabled in Plan mode) |
 | `get_pull_request_status` | Reads state, CI with failed checks, each reviewer's verdict, the comment count and whether an open one has merge conflicts, via the same snapshot as the watch. Review and comment texts are left out. | Immediate |

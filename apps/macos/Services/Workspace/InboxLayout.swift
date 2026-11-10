@@ -13,6 +13,8 @@ struct InboxRow: Identifiable, Equatable, Sendable {
     var settled = false
     var snoozedUntil: Date?
     var snoozedAt: Date?
+    /// A usage limit stopped it at this moment (a snooze made after it stays, see `SnoozePolicy`).
+    var limitedAt: Date? = nil
     /// The user already saw (and dismissed) the "woke up" marker.
     var wokeDismissed = false
     var lastActivity: Date
@@ -184,7 +186,7 @@ enum InboxLayout {
             let dismissed = row.wokeDismissed || state.dismissedWoke.contains(row.id)
             let attention = row.effectiveAttention
             let hidden = SnoozePolicy.isSnoozed(until: row.snoozedUntil, since: row.snoozedAt, attention: attention,
-                                                finishedAt: row.lastActivity, now: now)
+                                                finishedAt: row.lastActivity, limitedAt: row.limitedAt, now: now)
             let woke = row.snoozedUntil != nil && !hidden && !dismissed
 
             func entry(_ woke: Bool = false) -> InboxEntry {

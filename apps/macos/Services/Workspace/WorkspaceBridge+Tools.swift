@@ -49,7 +49,7 @@ extension WorkspaceBridge {
             if all { return true }
             switch task.target {
             case .newSession(let path, _, _): return !folder.isEmpty && WorkspacePathPolicy.normalize(path) == folder
-            case .existingSession(let id): return id == session
+            case .existingSession(let id, _): return id == session
             }
         }
         var lines = [store.isEnabled ? "Scheduled tasks are switched on."
@@ -71,26 +71,9 @@ extension WorkspaceBridge {
         case .success(let value): draft = value
         }
         let target: ScheduledTaskTarget
-        switch draft.target {
-        case .thisSession:
-            guard let id = runID(caller) else {
-                return .error("target this_session only works in a session Nook started; use new_session with project_path.")
-            }
-            target = .existingSession(id: id)
-        case .newSession(let path, let agent):
-            let folder = try resolveFolder(path ?? "", caller)
-            let own = runID(caller).flatMap { app?.workspace.run($0) }
-            let provider: RunProvider
-            if let agent {
-                guard let found = RunProvider.allCases.first(where: { $0.rawValue == agent || $0.displayName.lowercased() == agent }) else {
-                    return .error("Unknown agent \"\(agent)\". Use claude, codex, gemini, opencode, cursor, grok or antigravity.")
-                }
-                provider = found
-            } else {
-                provider = own?.provider ?? .claude
-            }
-            target = .newSession(projectPath: folder, provider: provider.rawValue,
-                                 profileID: own?.provider == provider ? own?.profileID : nil)
+        switch try scheduleTarget(draft.target, fresh: draft.fresh, caller) {
+        case .failure(let error): return .error(error.message)
+        case .success(let value): target = value
         }
         return try await once(.scheduleTask, arguments, caller) {
             let store = ScheduledTaskStore.shared
@@ -115,6 +98,38 @@ extension WorkspaceBridge {
         }
     }
 
+    /// Where a task's runs go, from what the agent asked: a new session in a folder, its own session, or another session
+    /// of the user's that Nook knows.
+    private func scheduleTarget(_ wanted: BridgeScheduleDraft.Target, fresh: Bool,
+                                _ caller: BridgeCaller) throws -> Result<ScheduledTaskTarget, BridgeArgumentError> {
+        switch wanted {
+        case .thisSession:
+            guard let id = runID(caller) else {
+                return .failure(BridgeArgumentError("target this_session only works in a session Nook started; use new_session with project_path."))
+            }
+            return .success(.existingSession(id: id, fresh: fresh))
+        case .session(let id):
+            guard let run = app?.workspace.run(id), !run.archived else {
+                return .failure(BridgeArgumentError("No such session in Nook. Use an id from session_list."))
+            }
+            return .success(.existingSession(id: id, fresh: fresh))
+        case .newSession(let path, let agent):
+            let folder = try resolveFolder(path ?? "", caller)
+            let own = runID(caller).flatMap { app?.workspace.run($0) }
+            let provider: RunProvider
+            if let agent {
+                guard let found = RunProvider.allCases.first(where: { $0.rawValue == agent || $0.displayName.lowercased() == agent }) else {
+                    return .failure(BridgeArgumentError("Unknown agent \"\(agent)\". Use claude, codex, gemini, opencode, cursor, grok or antigravity."))
+                }
+                provider = found
+            } else {
+                provider = own?.provider ?? .claude
+            }
+            return .success(.newSession(projectPath: folder, provider: provider.rawValue,
+                                        profileID: own?.provider == provider ? own?.profileID : nil))
+        }
+    }
+
     func updateScheduledTask(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
         if case .refuse(let reason) = verdict(.updateScheduledTask, caller) { return .error(Self.refusal(reason)) }
         let change: BridgeScheduleChange
@@ -127,7 +142,23 @@ extension WorkspaceBridge {
         if change.rule != nil, task.rule.isWebhook {
             return .error("This task runs on a webhook; its schedule can only be changed in Nook's settings.")
         }
-        let updated = change.applied(to: task)
+        var updated = change.applied(to: task)
+        if let wanted = change.target {
+            let fresh = change.fresh ?? (task.target.freshConversation)
+            do {
+                switch try scheduleTarget(wanted, fresh: fresh, caller) {
+                case .failure(let error): return .error(error.message)
+                case .success(let value): updated.target = value
+                }
+            } catch {
+                return .error(error.localizedDescription)
+            }
+        } else if let fresh = change.fresh {
+            guard case .existingSession(let id, _) = task.target else {
+                return .error("conversation only applies to a task that posts into a session.")
+            }
+            updated.target = .existingSession(id: id, fresh: fresh)
+        }
         let permission = change.permission ?? store.permission(for: task.id)
         let allowed = await ask(caller, tool: .updateScheduledTask, title: tr("bridge.approval.scheduleChange", caller.agent),
                                 detail: Self.scheduleDetail(updated, permission: permission),
@@ -182,8 +213,9 @@ extension WorkspaceBridge {
         switch task.target {
         case .newSession(let path, let provider, _):
             place = tr("bridge.schedule.newSession", RunProvider(rawValue: provider)?.displayName ?? provider, AgentPathFormat.tilde(path))
-        case .existingSession:
-            place = tr("bridge.schedule.thisSession")
+        case .existingSession(let id, let fresh):
+            place = tr("bridge.schedule.thisSession") + " (" + id.uuidString.prefix(8).lowercased() + ", "
+                + tr(fresh ? "automation.sched.fresh" : "automation.sched.continue") + ")"
         }
         return [scheduleText(task.rule), place, permission.rawValue, tr(task.enabled ? "bridge.schedule.on" : "bridge.schedule.off")]
             .joined(separator: " · ")
@@ -202,6 +234,8 @@ extension WorkspaceBridge {
                 : tr("bridge.schedule.days", time, days.joined(separator: ", "))
         case .webhook:
             return tr("bridge.schedule.webhook")
+        case .once(let at):
+            return tr("automation.sched.rule.once", ScheduledTaskText.date(at))
         }
     }
 
