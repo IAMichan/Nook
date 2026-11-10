@@ -18,19 +18,33 @@ enum RenderedPage {
 
     struct Request: Equatable, Sendable {
         var html: String
-        var title: String
+        /// Nil when the agent gave no title: a page from a file is then named after it.
+        var title: String?
         var height: Double
+        /// An HTML file in the session's working directory to show instead of `html` (see `RenderedPageFile`).
+        var path: String? = nil
+
+        var shownTitle: String { title ?? "Page" }
     }
 
     static func parse(_ arguments: [String: Any]) -> Result<Request, BridgeArgumentError> {
-        guard let html = arguments["html"] as? String, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .failure(BridgeArgumentError("Give the page as html: a complete HTML document or fragment."))
-        }
-        guard html.utf8.count <= maxHTMLBytes else {
-            return .failure(BridgeArgumentError("The page is too large (at most \(maxHTMLBytes / 1024) KB). Inline less data, or draw it with fewer elements."))
-        }
         let title = BridgeArgs.string(arguments["title"]).map { String($0.components(separatedBy: .newlines).joined(separator: " ").prefix(maxTitleLength)) }
-        return .success(Request(html: html, title: title ?? "Page", height: clamp(BridgeArgs.int(arguments["height"]).map(Double.init))))
+        let height = clamp(BridgeArgs.int(arguments["height"]).map(Double.init))
+        let html = (arguments["html"] as? String).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        let path = BridgeArgs.string(arguments["path"])
+        switch (html, path) {
+        case (_?, _?):
+            return .failure(BridgeArgumentError("Give either html or path, not both."))
+        case (nil, let path?):
+            return .success(Request(html: "", title: title, height: height, path: path))
+        case (nil, nil):
+            return .failure(BridgeArgumentError("Give the page as html (a complete HTML document or fragment) or as path (an HTML file in your working directory)."))
+        case (let html?, nil):
+            guard html.utf8.count <= maxHTMLBytes else {
+                return .failure(BridgeArgumentError("The page is too large (at most \(maxHTMLBytes / 1024) KB). Inline less data, or draw it with fewer elements."))
+            }
+            return .success(Request(html: html, title: title, height: height))
+        }
     }
 
     static func clamp(_ height: Double?) -> Double {
