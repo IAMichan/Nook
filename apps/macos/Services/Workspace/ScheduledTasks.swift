@@ -12,13 +12,16 @@ enum ScheduleRule: Equatable, Sendable, Codable {
     case fixedTime(hour: Int, minute: Int, weekdays: Set<Int>)
     /// Only when its URL receives a signed request.
     case webhook
+    /// One run at this moment, then done. A run the Mac slept through runs as soon as it is awake again.
+    case once(at: Date)
 
     /// One-minute minimum interval floor. Rows saved before the floor stay readable but do not keep their old rate.
     static let minimumIntervalSeconds = 60
 
     var isWebhook: Bool { if case .webhook = self { return true }; return false }
+    var isOnce: Bool { if case .once = self { return true }; return false }
 
-    private enum CodingKeys: String, CodingKey { case type, seconds, hour, minute, weekdays }
+    private enum CodingKeys: String, CodingKey { case type, seconds, hour, minute, weekdays, at }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -30,6 +33,9 @@ enum ScheduleRule: Equatable, Sendable, Codable {
             self = .fixedTime(hour: (try? c.decode(Int.self, forKey: .hour)) ?? 9,
                               minute: (try? c.decode(Int.self, forKey: .minute)) ?? 0,
                               weekdays: Set(days))
+        case "once":
+            // Without its moment it can never run: a webhook rule, which never fires on its own.
+            if let at = try? c.decode(Date.self, forKey: .at) { self = .once(at: at) } else { self = .webhook }
         default:
             self = .webhook
         }
@@ -48,6 +54,9 @@ enum ScheduleRule: Equatable, Sendable, Codable {
             try c.encode(weekdays.sorted(), forKey: .weekdays)
         case .webhook:
             try c.encode("webhook", forKey: .type)
+        case .once(let at):
+            try c.encode("once", forKey: .type)
+            try c.encode(at, forKey: .at)
         }
     }
 }
@@ -58,11 +67,13 @@ enum ScheduleTiming {
 
     /// The next run. Intervals count from when the previous run FINISHED, so a slow run drifts the schedule
     /// and runs never pile up. A fixed time is the next matching weekday and wall-clock time after `now`.
-    /// Webhooks have none. A result at or before `now` means "due".
+    /// Webhooks have none. Once is its moment until it ran, then none. A result at or before `now` means "due".
     static func nextRun(rule: ScheduleRule, lastFinished: Date?, now: Date, calendar: Calendar = .current) -> Date? {
         switch rule {
         case .webhook:
             return nil
+        case .once(let at):
+            return lastFinished == nil ? at : nil
         case .interval(let seconds):
             let step = TimeInterval(max(seconds, ScheduleRule.minimumIntervalSeconds))
             return (lastFinished ?? now).addingTimeInterval(step)
@@ -100,14 +111,19 @@ enum ScheduleTiming {
 
 enum ScheduledTaskTarget: Equatable, Sendable, Codable {
     case newSession(projectPath: String, provider: String, profileID: String?)
-    case existingSession(id: UUID)
+    /// Every run goes to this session. `fresh`: each run starts a new conversation there (the agent sees nothing of the
+    /// earlier runs, the timeline keeps them all); otherwise it continues the conversation.
+    case existingSession(id: UUID, fresh: Bool = false)
 
-    private enum CodingKeys: String, CodingKey { case type, projectPath, provider, profileID, id }
+    private enum CodingKeys: String, CodingKey { case type, projectPath, provider, profileID, id, fresh }
+
+    var sessionID: UUID? { if case .existingSession(let id, _) = self { return id }; return nil }
+    var freshConversation: Bool { if case .existingSession(_, let fresh) = self { return fresh }; return false }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let id = try? c.decode(UUID.self, forKey: .id), (try? c.decode(String.self, forKey: .type)) == "existingSession" {
-            self = .existingSession(id: id)
+            self = .existingSession(id: id, fresh: (try? c.decode(Bool.self, forKey: .fresh)) ?? false)
             return
         }
         self = .newSession(projectPath: (try? c.decode(String.self, forKey: .projectPath)) ?? "",
@@ -123,9 +139,10 @@ enum ScheduledTaskTarget: Equatable, Sendable, Codable {
             try c.encode(path, forKey: .projectPath)
             try c.encode(provider, forKey: .provider)
             try c.encodeIfPresent(profileID, forKey: .profileID)
-        case .existingSession(let id):
+        case .existingSession(let id, let fresh):
             try c.encode("existingSession", forKey: .type)
             try c.encode(id, forKey: .id)
+            if fresh { try c.encode(true, forKey: .fresh) }
         }
     }
 }
@@ -183,6 +200,17 @@ struct ScheduledTask: Codable, Equatable, Identifiable, Sendable {
         nextRun = try? c.decode(Date.self, forKey: .nextRun)
         createdAt = (try? c.decode(Date.self, forKey: .createdAt)) ?? Date(timeIntervalSince1970: 0)
     }
+
+    /// The next run when the task is (re)planned now: a once-task that already ran stays done, any other rule counts
+    /// from now. `keepsHistory` is false when the schedule itself changed, so a new moment for a once-task runs again.
+    func plannedRun(now: Date, keepsHistory: Bool = true, calendar: Calendar = .current) -> Date? {
+        guard enabled else { return nil }
+        let finished = rule.isOnce && keepsHistory ? lastRun : nil
+        return ScheduleTiming.nextRun(rule: rule, lastFinished: finished, now: now, calendar: calendar)
+    }
+
+    /// A once-task that has run: nothing more to do.
+    var isDone: Bool { rule.isOnce && lastRun != nil && lastStatus != .running }
 
     /// One key per task, due time and trigger: a retry of the same firing is recognised and does not start a second run.
     static func fireKey(taskID: UUID, scheduledFor: Date, trigger: ScheduleTrigger) -> String {

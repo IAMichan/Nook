@@ -6,14 +6,26 @@ import Security
 /// editor. A task that never stored one runs with "ask" (every edit and command prompts), see `effectivePermission`.
 struct ScheduledTaskOptions: Codable, Equatable, Sendable {
     var permission: PermissionPolicy = .ask
+    /// A webhook task's filters, duplicate key and coalesce window (`WebhookRules`).
+    var webhook = WebhookRules()
 
-    init(permission: PermissionPolicy = .ask) { self.permission = permission }
+    init(permission: PermissionPolicy = .ask, webhook: WebhookRules = WebhookRules()) {
+        self.permission = permission
+        self.webhook = webhook
+    }
 
-    private enum CodingKeys: String, CodingKey { case permission }
+    private enum CodingKeys: String, CodingKey { case permission, webhook }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         permission = (try? c.decode(PermissionPolicy.self, forKey: .permission)) ?? .ask
+        webhook = (try? c.decode(WebhookRules.self, forKey: .webhook)) ?? WebhookRules()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(permission, forKey: .permission)
+        if !webhook.isEmpty { try c.encode(webhook, forKey: .webhook) }
     }
 }
 
@@ -30,6 +42,11 @@ final class ScheduledTaskStore: ObservableObject {
 
     @Published private(set) var tasks: [ScheduledTask] = []
     @Published private(set) var options: [UUID: ScheduledTaskOptions] = [:]
+    /// Per webhook task, what happened to its latest deliveries (newest first, at most `WebhookDeliveryRecord.limit`).
+    @Published private(set) var deliveries: [UUID: [WebhookDeliveryRecord]] = [:]
+    /// Per webhook task, the duplicate keys of the last week.
+    private var dedupe: [UUID: WebhookDedupe] = [:]
+    private var coalescer = WebhookCoalescer<Delivery>()
 
     /// The seconds between two checks for due tasks.
     static let tickSeconds: TimeInterval = 30
@@ -49,14 +66,18 @@ final class ScheduledTaskStore: ObservableObject {
     private var running: [UUID: UUID] = [:]
     private var runningTrigger: [UUID: ScheduleTrigger] = [:]
 
-    private struct Delivery {
+    private struct Delivery: Sendable {
         var id: String
-        var payload: Data
+        var request: WebhookRequestData
         var receivedAt: Date
+        /// Deliveries a coalesce window folded into this one.
+        var combined = 1
     }
 
     enum WebhookAdmission: Equatable, Sendable {
         case accepted, queueFull, unknownTask
+        /// Verified, but a filter or the duplicate key said not to run: answered as received, logged, nothing runs.
+        case filtered, duplicate
     }
 
     enum RunNowResult: Equatable, Sendable {
@@ -69,12 +90,17 @@ final class ScheduledTaskStore: ObservableObject {
         var version = 1
         var tasks: LossyArray<ScheduledTask>
         var options: [String: ScheduledTaskOptions]
+        var deliveries: [String: [WebhookDeliveryRecord]] = [:]
+        var dedupe: [String: WebhookDedupe] = [:]
 
-        private enum CodingKeys: String, CodingKey { case version, tasks, options }
+        private enum CodingKeys: String, CodingKey { case version, tasks, options, deliveries, dedupe }
 
-        init(tasks: [ScheduledTask], options: [String: ScheduledTaskOptions]) {
+        init(tasks: [ScheduledTask], options: [String: ScheduledTaskOptions], deliveries: [String: [WebhookDeliveryRecord]],
+             dedupe: [String: WebhookDedupe]) {
             self.tasks = LossyArray(tasks)
             self.options = options
+            self.deliveries = deliveries
+            self.dedupe = dedupe
         }
 
         init(from decoder: Decoder) throws {
@@ -82,6 +108,8 @@ final class ScheduledTaskStore: ObservableObject {
             version = (try? c.decode(Int.self, forKey: .version)) ?? 1
             tasks = (try? c.decode(LossyArray<ScheduledTask>.self, forKey: .tasks)) ?? LossyArray([])
             options = (try? c.decode([String: ScheduledTaskOptions].self, forKey: .options)) ?? [:]
+            deliveries = (try? c.decode([String: [WebhookDeliveryRecord]].self, forKey: .deliveries)) ?? [:]
+            dedupe = (try? c.decode([String: WebhookDedupe].self, forKey: .dedupe)) ?? [:]
         }
     }
 
@@ -110,18 +138,26 @@ final class ScheduledTaskStore: ObservableObject {
         // A run a restart cut off becomes failed and is rescheduled; it must not block the task or count as success.
         var recovered = ScheduledTask.recoverInterrupted(tasks: loaded, now: now)
         for index in recovered.indices where recovered[index].enabled && recovered[index].nextRun == nil && !recovered[index].rule.isWebhook {
-            recovered[index].nextRun = ScheduleTiming.nextRun(rule: recovered[index].rule, lastFinished: nil, now: now)
+            recovered[index].nextRun = recovered[index].plannedRun(now: now)
         }
         for index in recovered.indices where !recovered[index].enabled { recovered[index].nextRun = nil }
         tasks = recovered
         var map: [UUID: ScheduledTaskOptions] = [:]
         for (key, value) in file?.options ?? [:] { if let id = UUID(uuidString: key) { map[id] = value } }
         options = map
+        func byTask<T>(_ stored: [String: T]?) -> [UUID: T] {
+            var out: [UUID: T] = [:]
+            for (key, value) in stored ?? [:] { if let id = UUID(uuidString: key) { out[id] = value } }
+            return out
+        }
+        deliveries = byTask(file?.deliveries)
+        dedupe = byTask(file?.dedupe)
         if recovered != loaded { save() }
     }
 
     private func save() {
-        let file = StoreFile(tasks: tasks, options: Dictionary(uniqueKeysWithValues: options.map { ($0.key.uuidString, $0.value) }))
+        func byKey<T>(_ map: [UUID: T]) -> [String: T] { Dictionary(uniqueKeysWithValues: map.map { ($0.key.uuidString, $0.value) }) }
+        let file = StoreFile(tasks: tasks, options: byKey(options), deliveries: byKey(deliveries), dedupe: byKey(dedupe))
         guard let data = try? Self.encoder.encode(file) else { return }
         try? data.write(to: fileURL, options: [.atomic])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
@@ -196,17 +232,23 @@ final class ScheduledTaskStore: ObservableObject {
     func task(_ id: UUID) -> ScheduledTask? { tasks.first { $0.id == id } }
 
     /// Adds a task, or replaces the one with the same id. A changed schedule counts from now, so editing never fires a
-    /// task at once because its old schedule was overdue.
-    func save(_ task: ScheduledTask, permission: PermissionPolicy, now: Date = Date()) {
+    /// task at once because its old schedule was overdue; a once-task that ran stays done until its moment changes.
+    /// `webhook` nil keeps the task's webhook rules as they are.
+    func save(_ task: ScheduledTask, permission: PermissionPolicy, webhook: WebhookRules? = nil, now: Date = Date()) {
         var row = task
-        if let old = self.task(task.id) {
+        let old = self.task(task.id)
+        if let old {
             row.lastRun = old.lastRun; row.lastStatus = old.lastStatus; row.lastError = old.lastError
-            if old.rule != row.rule && old.rule.isWebhook { SecretStore.remove(Self.secretAccount(task.id)) }
+            if old.rule != row.rule && old.rule.isWebhook {
+                SecretStore.remove(Self.secretAccount(task.id))
+                deliveries[task.id] = nil
+                dedupe[task.id] = nil
+            }
         }
-        row.nextRun = row.enabled ? ScheduleTiming.nextRun(rule: row.rule, lastFinished: nil, now: now) : nil
+        row.nextRun = row.plannedRun(now: now, keepsHistory: old?.rule == row.rule)
         if gate.isRunning(row.id) { row.lastStatus = .running; row.nextRun = nil }
         if let index = tasks.firstIndex(where: { $0.id == row.id }) { tasks[index] = row } else { tasks.append(row) }
-        options[row.id] = ScheduledTaskOptions(permission: permission)
+        options[row.id] = ScheduledTaskOptions(permission: permission, webhook: webhook ?? options[row.id]?.webhook ?? WebhookRules())
         if row.rule.isWebhook { _ = webhookSecret(for: row.id, create: true) }
         save()
     }
@@ -215,6 +257,9 @@ final class ScheduledTaskStore: ObservableObject {
         tasks.removeAll { $0.id == id }
         options[id] = nil
         pending[id] = nil
+        deliveries[id] = nil
+        dedupe[id] = nil
+        coalescer.forget(id)
         webhookQueue.forget(id)
         SecretStore.remove(Self.secretAccount(id))
         save()
@@ -224,15 +269,18 @@ final class ScheduledTaskStore: ObservableObject {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
         tasks[index].enabled = enabled
         if enabled {
-            if !gate.isRunning(id) { tasks[index].nextRun = ScheduleTiming.nextRun(rule: tasks[index].rule, lastFinished: nil, now: now) }
+            if !gate.isRunning(id) { tasks[index].nextRun = tasks[index].plannedRun(now: now) }
         } else {
             tasks[index].nextRun = nil
             // Deliveries that waited for a paused task are dropped, which the queue's counter has to know.
             for _ in pending[id] ?? [] { webhookQueue.release(id) }
             pending[id] = nil
+            if coalescer.windows[id] != nil { webhookQueue.release(id); coalescer.forget(id) }
         }
         save()
     }
+
+    func webhookRules(for id: UUID) -> WebhookRules { options[id]?.webhook ?? WebhookRules() }
 
     func permission(for id: UUID) -> PermissionPolicy { options[id]?.permission ?? .ask }
 
@@ -255,6 +303,7 @@ final class ScheduledTaskStore: ObservableObject {
         guard SecretStore.write(secret, account: Self.secretAccount(id)) == errSecSuccess else { return nil }
         for _ in pending[id] ?? [] { webhookQueue.release(id) }
         pending[id] = nil
+        if coalescer.windows[id] != nil { webhookQueue.release(id); coalescer.forget(id) }
         return secret
     }
 
@@ -297,14 +346,81 @@ final class ScheduledTaskStore: ObservableObject {
 
     // MARK: Webhooks
 
-    /// A verified delivery (the listener checked signature, replay and rate): it waits in the task's queue of 20 until the
-    /// task is free. The payload is data; it reaches the agent only inside `WebhookPrompt`.
-    func acceptWebhook(taskID: UUID, deliveryID: String, payload: Data, now: Date = Date()) -> WebhookAdmission {
+    /// A verified delivery (the listener checked signature, replay and rate). The task's rules go first: a failing filter
+    /// or a key seen before ends it here (logged, nothing runs); inside an open coalesce window it replaces the delivery
+    /// that waits there. Otherwise it waits in the task's queue of 20 until the task is free. The payload is data; it
+    /// reaches the agent only inside `WebhookPrompt`.
+    func acceptWebhook(taskID: UUID, deliveryID: String, payload: Data, headers: [String: String] = [:],
+                       now: Date = Date()) -> WebhookAdmission {
         guard isEnabled, let task = task(taskID), task.enabled, task.rule.isWebhook else { return .unknownTask }
-        guard webhookQueue.admit(taskID) == .accepted else { return .queueFull }
-        pending[taskID, default: []].append(Delivery(id: deliveryID, payload: payload, receivedAt: now))
+        let rules = webhookRules(for: taskID)
+        let request = WebhookRequestData(body: payload, headers: headers)
+        if let failed = rules.failingFilter(request) {
+            log(taskID, deliveryID, .filtered, failed.summary, now: now)
+            return .filtered
+        }
+        if let key = WebhookTemplate.renderKey(rules.duplicateKey, request: request) {
+            var seen = dedupe[taskID] ?? WebhookDedupe()
+            let first = seen.claim(key, now: now)
+            dedupe[taskID] = seen
+            guard first else {
+                log(taskID, deliveryID, .duplicate, key, now: now)
+                return .duplicate
+            }
+        }
+        let delivery = Delivery(id: deliveryID, request: request, receivedAt: now)
+        if let window = rules.coalesceWindow {
+            // A window that closed but was not flushed yet goes first, so it is not overwritten.
+            flushCoalesced(taskID, now: now)
+            if coalescer.windows[taskID].map({ $0.closesAt > now }) == true {
+                if case .merged(let count) = coalescer.add(delivery, task: taskID, seconds: window, now: now) {
+                    log(taskID, deliveryID, .coalesced, String(count), now: now)
+                }
+                return .accepted
+            }
+            guard webhookQueue.admit(taskID) == .accepted else {
+                log(taskID, deliveryID, .queueFull, nil, now: now)
+                return .queueFull
+            }
+            if case .opened(let closes) = coalescer.add(delivery, task: taskID, seconds: window, now: now) {
+                log(taskID, deliveryID, .accepted, String(Int(window)), now: now)
+                scheduleFlush(taskID, at: closes)
+            }
+            return .accepted
+        }
+        guard webhookQueue.admit(taskID) == .accepted else {
+            log(taskID, deliveryID, .queueFull, nil, now: now)
+            return .queueFull
+        }
+        log(taskID, deliveryID, .accepted, nil, now: now)
+        pending[taskID, default: []].append(delivery)
         drainWebhooks(taskID, now: now)
         return .accepted
+    }
+
+    /// When the window closes, its latest delivery joins the queue (its place was taken when the window opened).
+    private func scheduleFlush(_ taskID: UUID, at closes: Date) {
+        Task { [weak self] in
+            let wait = max(0, closes.timeIntervalSinceNow)
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000) + 50_000_000)
+            self?.flushCoalesced(taskID)
+        }
+    }
+
+    /// Public for tests: moves a closed window's delivery into the queue.
+    func flushCoalesced(_ taskID: UUID, now: Date = Date()) {
+        guard let window = coalescer.flush(taskID, now: now) else { return }
+        guard task(taskID)?.enabled == true else { webhookQueue.release(taskID); return }
+        var delivery = window.latest
+        delivery.combined = window.count
+        pending[taskID, default: []].append(delivery)
+        drainWebhooks(taskID, now: now)
+    }
+
+    private func log(_ taskID: UUID, _ deliveryID: String, _ outcome: WebhookDeliveryRecord.Outcome, _ detail: String?, now: Date) {
+        let record = WebhookDeliveryRecord(deliveryID: deliveryID, receivedAt: now, outcome: outcome, detail: detail)
+        deliveries[taskID] = WebhookDeliveryRecord.appending(record, to: deliveries[taskID] ?? [])
+        save()
     }
 
     private func drainWebhooks(_ taskID: UUID, now: Date = Date()) {
@@ -316,7 +432,8 @@ final class ScheduledTaskStore: ObservableObject {
         }
         let next = queue.removeFirst()
         pending[taskID] = queue.isEmpty ? nil : queue
-        let prompt = WebhookPrompt.build(taskPrompt: task.prompt, payload: next.payload, deliveryID: next.id, receivedAt: next.receivedAt)
+        let prompt = WebhookPrompt.build(taskPrompt: task.prompt, request: next.request, deliveryID: next.id,
+                                         receivedAt: next.receivedAt, combined: next.combined)
         if !fire(taskID, scheduledFor: next.receivedAt, trigger: .webhook, prompt: prompt, now: now) {
             // Could not start (duplicate key): the delivery is gone, free its place.
             webhookQueue.release(taskID)
@@ -384,7 +501,7 @@ final class ScheduledTaskStore: ObservableObject {
             } catch {
                 finish(task.id, status: .failed, error: error.localizedDescription)
             }
-        case .existingSession(let sessionID):
+        case .existingSession(let sessionID, let fresh):
             guard let run = app.workspace.run(sessionID) else { return finish(task.id, status: .failed, error: "sched.error.noSession") }
             // Never interrupts a session that is working: that is the overlap rule for sessions.
             guard run.canContinue else { return finish(task.id, status: .skipped, error: "sched.skip.overlap") }
@@ -392,6 +509,8 @@ final class ScheduledTaskStore: ObservableObject {
             guard trigger != .webhook || run.permission == .ask else {
                 return finish(task.id, status: .failed, error: "sched.error.webhookRights")
             }
+            // A fresh conversation each run: the agent starts over, the timeline keeps every earlier run.
+            if fresh { app.workspace.startFreshConversation(sessionID, reason: tr("automation.sched.freshEvent", task.title)) }
             app.workspace.send(sessionID, text: prompt)
             finish(task.id, status: .succeeded, error: nil)
         }
