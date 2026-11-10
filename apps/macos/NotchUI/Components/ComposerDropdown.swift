@@ -463,7 +463,17 @@ struct AgentModelPicker: View {
                 choose(current.provider, pickedProfile(current), custom)
             })
         }
-        return ModelPickerList(models: filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
+        let options = filtered(current, query: query)
+        // A model that needs a newer agent: the update that unlocks it is one click away (Settings asks first).
+        if AgentUpdates.updatable(current.provider),
+           let required = options.lazy.compactMap({ app.modelUpdateVersion($0, for: current.provider) }).first {
+            actions.append(ModelPickerItem(id: "update:" + current.provider.rawValue,
+                                           title: tr("agentUpdate.pickerTitle", current.provider.displayName),
+                                           symbol: "arrow.down.circle", detail: tr("agentUpdate.pickerDetail", required)) {
+                app.requestAgentUpdate([current.provider])
+            })
+        }
+        return ModelPickerList(models: options.map { modelRow($0, of: current) }, actions: actions)
     }
 
     // MARK: Auto

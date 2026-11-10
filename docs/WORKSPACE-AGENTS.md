@@ -44,6 +44,23 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Updating the agents
+
+**Settings › Agents › Updates** lists each agent program Nook found, with its installed version (`--version`) and the
+newest one. Which installer owns a program is read from its real path once symlinks are resolved (`AgentUpdates.owner`):
+a Homebrew cask or formula (`brew upgrade [--cask] <name>`), a global npm install (`npm install -g <package>@latest`,
+with the npm of the Node that holds it), pnpm, Bun, Volta, mise (`mise upgrade <tool>`), or the agent's own updater
+(`claude update`, `opencode upgrade`, `cursor-agent update`). A program inside an app bundle, or one Nook does not
+recognise, is left to you and its row says so. The newest version comes from Homebrew's own index (`brew info --json=v2`)
+or the npm registry (through `NetworkGuard`), looked up when the page opens and at most every half hour.
+
+**Update** and **Update all** (every agent with a newer version and a command) ask first: the confirmation lists the
+commands and the running sessions of those agents, which keep the version they started with. The updates run one after
+another with their last output line on the agent's row, each start and end goes to the audit log, and afterwards Nook
+reads the version again, asks the agent again for its models, and says how it went. In a model picker, a model that needs
+a newer agent comes with an **Update** row that opens this question. Antigravity's ACP server (Nook installs that release
+itself) and ACP registry agents (run with npx or uvx) are not listed.
+
 ### Android devices
 
 The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):

@@ -37,10 +37,11 @@ extension WorkspaceManager {
         }
     }
 
-    /// Reads `--version` of the agents the manifest covers: once, and again when the program moved or after half an hour.
-    func readAgentVersions(_ providers: [RunProvider]) {
+    /// Reads `--version` of the agents the manifest covers (`every`: of all of them, for Settings' update list): once,
+    /// and again when the program moved or after half an hour.
+    func readAgentVersions(_ providers: [RunProvider], every: Bool = false) {
         let now = Date()
-        for provider in providers where modelManifest?.entry(for: provider) != nil {
+        for provider in providers where every || modelManifest?.entry(for: provider) != nil {
             guard let path = executable(provider) else { continue }
             if let last = versionsRead[provider], last.path == path, now.timeIntervalSince(last.at) < Self.versionRereadSeconds { continue }
             versionsRead[provider] = (path, now)
@@ -49,6 +50,13 @@ extension WorkspaceManager {
                 await self?.setAgentVersion(version, for: provider)
             }
         }
+    }
+
+    /// After an update: the version is read again and the agent asked again for its models.
+    func agentWasUpdated(_ provider: RunProvider) {
+        versionsRead[provider] = nil
+        modelsRefreshed[Self.effortKey(provider, profileID: nil)] = nil
+        readAgentVersions([provider], every: true)
     }
 
     private func setAgentVersion(_ version: String?, for provider: RunProvider) {
