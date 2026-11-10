@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Agents list as an inbox: pinned sessions first, then what is active, a shelf for sessions that work and need
 /// nothing, one for snoozed sessions and one for what you settled. Rows that need you stay loud, the rest recede; you pin,
@@ -39,6 +40,10 @@ struct AgentInboxList: View {
     @State private var keyRow: String?
     /// The row being renamed from its menu, by its id.
     @State private var renaming: String?
+    /// The session "Custom…" snoozes, while its sheet is open.
+    @State private var customSnooze: AgentListItem?
+    /// The row files are dragged over, lit while they are.
+    @State private var dropTarget: String?
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -70,7 +75,7 @@ struct AgentInboxList: View {
         return InboxRow(
             id: item.id, title: item.title, project: item.folder, attention: attention(item),
             pinned: store.state.pinned.contains(item.id), settled: settled,
-            snoozedUntil: item.snoozedUntil, snoozedAt: item.snoozedAt,
+            snoozedUntil: item.snoozedUntil, snoozedAt: item.snoozedAt, limitedAt: item.limitedAt,
             lastActivity: item.started ?? .distantPast,
             hasOpenRequest: item.status == .waiting || item.status == .input,
             isActive: item.isBusy || item.status == .working,
@@ -227,6 +232,12 @@ struct AgentInboxList: View {
             shownOrder = current
             selection.keep(only: current)
         }
+        .sheet(item: $customSnooze) { item in
+            CustomSnoozeSheet(title: item.title, onSnooze: { end in
+                customSnooze = nil
+                withAnimation(NookTheme.reveal) { snooze(item, until: end) }
+            }, onCancel: { customSnooze = nil })
+        }
         // F6 lands in the list; ⌘1–⌘9 open its first nine rows, F2 renames the row the keyboard is on.
         .focusArea(.sidebar) { listFocused = true; return true }
         .keyCommands(jumpKeys(shown))
@@ -251,6 +262,7 @@ struct AgentInboxList: View {
             store.settleBusy = { ids in
                 for id in ids where !id.hasPrefix("run:") { app.hub.settleByUser(id) }
             }
+            store.settled = { items in app.applySettleActions(items) }
         }
         .onChange(of: now) { _, current in
             autoSettle(rows: rows, byID: byID, now: current)
@@ -507,7 +519,10 @@ struct AgentInboxList: View {
                     settled: entry.row.settled,
                     onSettle: { withAnimation(NookTheme.reveal) { entry.row.settled ? store.unsettle([item]) : store.settle([item]) } },
                     onSnooze: isRun ? { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } } : nil,
-                    onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil),
+                    onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil,
+                    limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: item.limitedAt, resetAt: item.limitResetAt, now: now),
+                    onSnoozeUntil: isRun ? { end in withAnimation(NookTheme.reveal) { snooze(item, until: end) } } : nil,
+                    onSnoozeCustom: isRun ? { customSnooze = item } : nil),
                 pullRequests: sessionPullRequests(item),
                 jumpHint: jumpNumber(item.id),
                 keyFocused: listFocused && keyRow == item.id,
@@ -533,6 +548,19 @@ struct AgentInboxList: View {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
             .contextMenu { contextMenu(item, entry, in: section) }
+            // Files dropped on a session Nook runs open it with them attached to its composer.
+            .onDrop(of: [.fileURL], isTargeted: Binding(
+                get: { dropTarget == item.id },
+                set: { dropTarget = $0 ? item.id : (dropTarget == item.id ? nil : dropTarget) })) { providers in
+                    dropFiles(providers, on: item)
+            }
+            .overlay {
+                if dropTarget == item.id, runID(item) != nil {
+                    RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                        .stroke(NookTheme.paper.opacity(0.5), lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
             // "Rename": a field over the row's title, Return keeps the name and Escape leaves it.
             .overlay {
                 if renaming == item.id, let id = runID(item) {
@@ -560,6 +588,31 @@ struct AgentInboxList: View {
         }
     }
 
+    /// Opens the session and hands the dropped files to its composer. False for a session Nook does not run (it has no
+    /// composer here), so the drop is refused.
+    private func dropFiles(_ providers: [NSItemProvider], on item: AgentListItem) -> Bool {
+        guard let id = runID(item) else { return false }
+        let fileProviders = providers.filter { $0.canLoadObject(ofClass: URL.self) }
+        guard !fileProviders.isEmpty else { return false }
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var urls: [URL] = []
+        for provider in fileProviders {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL { lock.lock(); urls.append(url); lock.unlock() }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            guard !urls.isEmpty else { return }
+            clickedID = item.id
+            select(item.id)
+            app.viewModel.filesToAttach = SessionFileDrop(session: id, urls: urls.sorted { $0.path < $1.path })
+        }
+        return true
+    }
+
     private func pinAndUnsettle(_ item: AgentListItem, _ entry: InboxEntry) {
         if entry.row.settled { store.unsettle([item], record: false) }
         store.pin(item.id)
@@ -570,6 +623,12 @@ struct AgentInboxList: View {
     private func snooze(_ item: AgentListItem, _ choice: SnoozePolicy.Choice) {
         guard let id = runID(item) else { return }
         app.workspace.snooze(id, choice)
+        store.note(.snoozed, ids: [item.id])
+    }
+
+    private func snooze(_ item: AgentListItem, until end: Date) {
+        guard let id = runID(item) else { return }
+        app.workspace.snooze(id, until: end)
         store.note(.snoozed, ids: [item.id])
     }
 
@@ -621,9 +680,11 @@ struct AgentInboxList: View {
                 Button(tr("agents.snooze.cancel")) { withAnimation(NookTheme.reveal) { wake(item) } }
             } else if !item.isBusy {
                 Menu(tr("agents.snooze.menu")) {
-                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
-                        Button(tr("agents.snooze." + choice.rawValue)) { withAnimation(NookTheme.reveal) { snooze(item, choice) } }
-                    }
+                    SnoozeMenuItems(
+                        limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt, now: now),
+                        onChoice: { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } },
+                        onUntil: { end in withAnimation(NookTheme.reveal) { snooze(item, until: end) } },
+                        onCustom: { customSnooze = item })
                 }
             }
             Divider()
@@ -683,6 +744,22 @@ struct AgentInboxList: View {
         actions.append(SelectionAction(symbol: "archivebox", label: tr("select.archive"), enabled: !archivable.isEmpty) {
             for item in archivable { if let id = runID(item) { app.workspace.setArchived(id, true) } }
             store.note(.archived, ids: archivable.map(\.id))
+        })
+        // Deleting is for work that is out of the way: settled or archived sessions Nook runs, never one that works. The
+        // same path as a single delete, so each session's own worktree goes by the cleanup rules.
+        let deletable = picked.filter { item in
+            guard !item.isBusy, let id = runID(item), let run = app.workspace.run(id) else { return false }
+            return run.archived || rowByID[item.id]?.settled == true
+        }
+        actions.append(SelectionAction(symbol: "trash", label: tr("automation.bulkDelete"), destructive: true,
+                                       enabled: !deletable.isEmpty,
+                                       confirm: tr("automation.bulkDelete.confirm", deletable.count)) {
+            let ids = deletable.compactMap { runID($0) }
+            withAnimation(NookTheme.reveal) {
+                for id in ids { app.workspace.delete(id) }
+                if deletable.contains(where: { $0.id == current }) { app.viewModel.selectedAgentID = "" }
+                selection.clear()
+            }
         })
         return SelectionBar(count: ids.count, allSelected: !shown.isEmpty && ids.count == shown.count,
                             actions: actions,

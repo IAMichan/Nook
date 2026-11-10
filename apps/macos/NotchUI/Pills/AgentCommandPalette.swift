@@ -103,6 +103,12 @@ struct AgentCommandPalette: View {
                     actions.snooze(choice); return false
                 })
             }
+            if let reset = actions.limitResetsAt {
+                out.append(Entry(id: "s:snooze:limitReset", group: .session, symbol: "clock",
+                                 title: tr("agents.snooze.menu") + ": " + SnoozeText.untilReset(reset)) {
+                    actions.snooze(until: reset); return false
+                })
+            }
         }
         if actions.canRename {
             out.append(Entry(id: "s:rename", group: .session, symbol: "pencil", title: tr("palette.rename"),
