@@ -314,11 +314,8 @@ struct SharedFileTile: View {
                 .frame(maxWidth: thumbnail == nil ? 220 : 140, alignment: .leading)
             }
             .background(NookTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .strokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke)
-            )
+            .roundedClip(NookTheme.Radius.card)
+            .roundedStrokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke, radius: NookTheme.Radius.card)
             .fixedSize()
             .contentShape(Rectangle())
         }
@@ -537,7 +534,7 @@ struct ApprovalRow: View {
         }
         .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .onTapGesture { toggle() }
     }
 

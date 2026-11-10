@@ -55,7 +55,7 @@ struct TranscriptUserBubble<Content: View>: View {
             Spacer(minLength: TranscriptStyle.bubbleInset)
             content()
                 .padding(NookTheme.Spacing.lg)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
+                .roundedBackground(NookTheme.bubble, radius: NookTheme.Radius.bubble)
         }
     }
 }

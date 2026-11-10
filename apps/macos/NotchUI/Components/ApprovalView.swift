@@ -91,7 +91,7 @@ struct ApprovalView: View {
         }
         .padding(NookTheme.Spacing.lg)
         .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
-                        radius: NookTheme.Radius.panel, style: .continuous)
+                        radius: NookTheme.Radius.panel)
     }
 
     private var titleBlock: some View {
@@ -154,7 +154,7 @@ struct ApprovalView: View {
                         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                         .frame(minWidth: 160)
                         .frame(height: 30)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                         .onSubmit(allow)
                 }
                 if approval.secretKeepable {
@@ -180,7 +180,7 @@ struct ApprovalView: View {
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .padding(.vertical, NookTheme.Spacing.xs + NookTheme.Spacing.xxs)
                     .frame(minWidth: 160, minHeight: 30)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                     .onSubmit(deny)
                     .onExitCommand {
                         writingReason = false
@@ -241,11 +241,8 @@ struct ApprovalView: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxHeight: effectiveMaxHeight)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
-            )
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+            .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
         } else if approval.diff.isEmpty {
             // The whole command: scrolled, never cut off.
             HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
@@ -264,11 +261,8 @@ struct ApprovalView: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxHeight: effectiveMaxHeight)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
-            )
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+            .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
         } else {
             ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -285,11 +279,8 @@ struct ApprovalView: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxHeight: effectiveMaxHeight)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
-            )
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+            .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
         }
     }
 
@@ -308,7 +299,7 @@ struct ApprovalView: View {
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3.5)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.field))
+                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.chip)
                 }
 
                 HStack(spacing: 5) {
@@ -327,7 +318,7 @@ struct ApprovalView: View {
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3.5)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.chip)
 
                 if pr.isDraft {
                     Text("Draft")
@@ -360,11 +351,8 @@ struct ApprovalView: View {
             }
         }
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
-        .overlay(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
-        )
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+        .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
     }
 }
 

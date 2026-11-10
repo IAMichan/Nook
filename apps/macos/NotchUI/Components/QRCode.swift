@@ -42,7 +42,7 @@ struct QRCodeView: View {
             .resizable()
             .frame(width: side, height: side)
             .padding(NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper))
+            .roundedBackground(NookTheme.paper, radius: NookTheme.Radius.card)
             .accessibilityLabel(label)
     }
 }

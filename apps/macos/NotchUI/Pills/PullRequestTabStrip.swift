@@ -86,8 +86,7 @@ private struct PullRequestTab: View {
         .padding(.trailing, NookTheme.Spacing.md)
         .frame(height: 24)
         .frame(maxWidth: 144)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+        .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }

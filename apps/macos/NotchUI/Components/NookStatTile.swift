@@ -15,6 +15,6 @@ struct NookStatTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 }

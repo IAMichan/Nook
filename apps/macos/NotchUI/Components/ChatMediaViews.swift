@@ -395,7 +395,7 @@ private struct ChatMediaStandIn: View {
     var clear = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.card)
             .fill(clear ? Color.clear : NookTheme.ink.opacity(0.3))
             .accessibilityHidden(true)
     }
@@ -493,7 +493,7 @@ struct ChatGIFView: View {
                 .frame(width: Self.maxWidth, height: Self.maxHeight)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        .roundedClip(NookTheme.Radius.card)
         .overlay(alignment: .bottomLeading) {
             Text(tr("chat.media.gif"))
                 .font(NookTheme.font(9.5, .bold))
@@ -865,7 +865,7 @@ struct ChatNoticeLine: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
+            .roundedBackground(NookTheme.chatTheirs, radius: NookTheme.Radius.control)
             .help(time)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, NookTheme.Spacing.xl)

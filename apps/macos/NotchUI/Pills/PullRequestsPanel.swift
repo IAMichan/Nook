@@ -389,7 +389,7 @@ struct PullRequestsPanel: View {
         }
         .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
+        .roundedBackground(NookTheme.coral.opacity(0.08), radius: NookTheme.Radius.panel)
     }
 
     private static func symbol(_ role: PullRequestRepoGroup.Role) -> String {

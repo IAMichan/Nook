@@ -111,7 +111,7 @@ struct MusicHomeContent: View {
             SmallGhostButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Groups
@@ -185,7 +185,7 @@ private struct MusicPlayingCard: View {
     private static let cover: CGFloat = 148
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.sheet)
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
                 coverButton
@@ -336,7 +336,7 @@ private struct MusicWeekCard: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.panel)
         Button(action: onOpen) {
             HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -366,7 +366,7 @@ private struct MusicWeekCard: View {
                         .foregroundStyle(NookTheme.paper)
                     HStack(spacing: NookTheme.Spacing.xs) {
                         ForEach(0..<7, id: \.self) { day in
-                            RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+                            NookTheme.shape(NookTheme.Radius.chip / 2)
                                 .fill(day < stats.streak ? NookTheme.music : NookTheme.smoke)
                                 .frame(width: 9, height: 9)
                         }
@@ -396,7 +396,7 @@ private struct MusicWeekCard: View {
                 let today = index == buckets.count - 1
                 VStack(spacing: NookTheme.Spacing.xs) {
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+                    NookTheme.shape(NookTheme.Radius.chip / 2)
                         .fill(NookTheme.music.opacity(today ? 1 : 0.7))
                         .frame(height: max(3, 34 * CGFloat(bucket.seconds) / CGFloat(most)))
                         .frame(maxWidth: 16)
@@ -421,7 +421,7 @@ private struct MusicSurpriseCard: View {
     @State private var picked: String?
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.panel)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("music.surprise.title"))
@@ -527,8 +527,8 @@ struct MusicTrackTile: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .padding(.vertical, filled ? MusicLayout.rowBleed : NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: filled ? NookTheme.surface : .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: filled ? NookTheme.surface : .clear),
+                               radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -357,6 +357,41 @@ extension View {
     }
 }
 
+extension NookTheme {
+    /// Nook's rounded shape: a continuous corner on a radius from `NookTheme.Radius`. Every rounded fill, stroke, clip
+    /// and hit area goes through the helpers below, so a view names only the radius instead of building the shape again.
+    static func shape(_ radius: CGFloat) -> RoundedRectangle {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+    }
+}
+
+extension View {
+    /// Fills the area behind the content with `fill` on a rounded shape (`NookTheme.Radius`).
+    func roundedBackground<Fill: ShapeStyle>(_ fill: Fill, radius: CGFloat) -> some View {
+        background(NookTheme.shape(radius).fill(fill))
+    }
+
+    /// Draws a centered line of `stroke` along a rounded edge over the content, as `Shape.stroke` does.
+    func roundedStroke<Stroke: ShapeStyle>(_ stroke: Stroke, radius: CGFloat, lineWidth: CGFloat = 1) -> some View {
+        overlay(NookTheme.shape(radius).stroke(stroke, lineWidth: lineWidth))
+    }
+
+    /// Draws a line of `stroke` just inside a rounded edge over the content, as `InsettableShape.strokeBorder` does.
+    func roundedStrokeBorder<Stroke: ShapeStyle>(_ stroke: Stroke, radius: CGFloat, lineWidth: CGFloat = 1) -> some View {
+        overlay(NookTheme.shape(radius).strokeBorder(stroke, lineWidth: lineWidth))
+    }
+
+    /// Clips the content to a rounded shape.
+    func roundedClip(_ radius: CGFloat) -> some View {
+        clipShape(NookTheme.shape(radius))
+    }
+
+    /// Makes the whole rounded shape respond to the pointer and clicks, including its transparent parts.
+    func roundedHitShape(_ radius: CGFloat) -> some View {
+        contentShape(NookTheme.shape(radius))
+    }
+}
+
 /// Notch content: appears slightly after the shape (snappy fade-in) and dismisses quickly.
 /// Opacity and scale only: both are composited as they are, where a blur renders the whole panel offscreen again on
 /// every frame of the opening, which is where it stuttered.
