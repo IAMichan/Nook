@@ -142,7 +142,7 @@ struct CICheckLogView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(step.running ? NookTheme.rowSelected : .clear))
+        .roundedBackground(step.running ? NookTheme.rowSelected : .clear, radius: NookTheme.Radius.chip)
     }
 
     private func stepColor(_ step: CILog.Step) -> Color {
@@ -163,7 +163,7 @@ struct CICheckLogView: View {
                     withAnimation(NookTheme.reveal) { showSteps.toggle() }
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        Image(systemName: "chevron.right")
+                        Image(icon: "chevron.right")
                             .font(NookTheme.font(9, .semibold))
                             .rotationEffect(.degrees(showSteps ? 90 : 0))
                         Text(tr("ws.ci.steps", log.steps.count))
@@ -211,7 +211,7 @@ struct CICheckLogView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
     }
 
     // MARK: Log
@@ -259,7 +259,7 @@ struct CICheckLogView: View {
                 .padding(NookTheme.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
             .onAppear { proxy.scrollTo("end", anchor: .bottomLeading) }
             .onChange(of: lines.count) { _, _ in proxy.scrollTo("end", anchor: .bottomLeading) }
         }
@@ -340,7 +340,7 @@ struct CICheckLogView: View {
                 .padding(NookTheme.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
             .frame(maxHeight: .infinity)
             .layoutPriority(1)
         }
@@ -352,7 +352,7 @@ struct CICheckLogView: View {
             NookSectionLabel(tr("ws.ci.report.annotations", items.count), inset: 0)
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: item.level == .error ? "xmark.octagon.fill"
+                    Image(icon: item.level == .error ? "xmark.octagon.fill"
                           : item.level == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(item.level == .error ? NookTheme.coralSoft : item.level == .warning ? NookTheme.amber : NookTheme.blue)

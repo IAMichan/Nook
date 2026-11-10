@@ -274,12 +274,11 @@ struct SidePanelToggle: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol ?? edge.panelSymbol)
+            Image(icon: symbol ?? edge.panelSymbol)
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(open ? NookTheme.smoke : Color.clear))
+                .roundedBackground(open ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                 .overlay(alignment: .topTrailing) {
                     if fresh {
                         Circle().fill(NookTheme.iris).frame(width: 5, height: 5).padding(NookTheme.Spacing.xs)

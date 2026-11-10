@@ -90,7 +90,7 @@ struct NoticeMark: View {
                 AgentLogo(agent: agent, size: 16)
                     .overlay(alignment: .bottomTrailing) {
                         if let symbol {
-                            Image(systemName: symbol)
+                            Image(icon: symbol)
                                 .font(NookTheme.font(6, .heavy))
                                 .foregroundStyle(NookTheme.onPaper)
                                 .frame(width: 10, height: 10)
@@ -100,7 +100,7 @@ struct NoticeMark: View {
                         }
                     }
             } else if let symbol {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(13, .bold))
                     .foregroundStyle(tone)
             }

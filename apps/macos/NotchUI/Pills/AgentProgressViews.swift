@@ -93,7 +93,7 @@ struct VerificationChips: View {
         HStack(spacing: NookTheme.Spacing.xs) {
             ForEach(checks, id: \.kind) { check in
                 HStack(spacing: 3) {
-                    Image(systemName: Self.symbol(check.outcome)).font(NookTheme.font(8.5, .bold))
+                    Image(icon: Self.symbol(check.outcome)).font(NookTheme.font(8.5, .bold))
                     if labelled { Text(Self.text(check)).lineLimit(1) }
                 }
                 .font(NookTheme.TextStyle.caption)
@@ -146,14 +146,14 @@ struct TaskChecklistCard: View {
         VStack(alignment: .leading, spacing: 7) {
             Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: "checklist").font(NookTheme.font(10.5, .semibold))
+                    Image(icon: "checklist").font(NookTheme.font(10.5, .semibold))
                     Text(tr("ws.tasks.title")).font(NookTheme.TextStyle.label)
                     Text(tr("ws.checklist.progress", progress.done, progress.total))
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .monospacedDigit()
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
+                    Image(icon: "chevron.down")
                         .font(NookTheme.font(10, .semibold))
                         .rotationEffect(.degrees(collapsed ? -90 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -194,13 +194,13 @@ struct TaskStepRow: View {
     private var mark: some View {
         switch step.status {
         case .done:
-            Image(systemName: "checkmark.circle.fill")
+            Image(icon: "checkmark.circle.fill")
                 .font(NookTheme.font(11.5, .semibold))
                 .foregroundStyle(NookTheme.mint)
         case .active:
             SpinningRing(color: NookTheme.paper)
         case .pending:
-            Image(systemName: "circle.dashed")
+            Image(icon: "circle.dashed")
                 .font(NookTheme.font(11.5))
                 .foregroundStyle(NookTheme.textTertiary)
         }

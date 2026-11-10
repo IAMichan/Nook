@@ -29,17 +29,26 @@ enum AgentAttention: Int, Comparable, Sendable {
         var pendingApprovals = 0
         var pendingQuestions = 0
         var limitedAt: Date?
-        /// Finished after you last opened it.
+        /// Finished after you last opened it (only read for a finished turn, or Nook's own summary).
         var unseen = false
         /// Marked finished by you, or snoozed.
         var settled = false
         /// The turn ended, but subagents it started still work in the background.
         var subagentsWorking = false
+        /// The running turn is a summary Nook sends on its own (idle or size compaction): it asks nothing of you.
+        var quietTurn = false
     }
 
     /// Approval beats question beats everything else. A pending request wins over `settled`: what waits for you is never
     /// hidden, and a snoozed session wakes when something needs you.
     static func resolve(_ input: Input) -> AgentAttention {
+        // Nook's own summary leaves the session as it was (idle): it does not jump up to the busy ones while it runs.
+        if input.quietTurn && input.status.isActive && input.status != .waitingApproval {
+            var input = input
+            input.status = .completed
+            input.quietTurn = false
+            return resolve(input)
+        }
         if input.pendingApprovals > 0 || input.status == .waitingApproval { return .approval }
         if input.pendingQuestions > 0 && input.status.isActive { return .input }
         if input.settled && !input.status.isActive { return .finished }

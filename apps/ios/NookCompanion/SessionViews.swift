@@ -257,7 +257,7 @@ struct SessionDetailView: View {
                 Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
             }
         } label: {
-            Image(systemName: "ellipsis").foregroundStyle(Theme.paper)
+            Image(icon: "ellipsis").foregroundStyle(Theme.paper)
         }
         .accessibilityLabel("More")
     }
@@ -312,7 +312,7 @@ private struct SessionHeader: View {
             }
         }
         .padding(Theme.Spacing.lg)
-        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        .roundedBackground(Theme.field, radius: Theme.Radius.panel)
         .padding(.top, Theme.Spacing.md)
     }
 }
@@ -324,7 +324,7 @@ private struct MetaChip: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Image(systemName: symbol).foregroundStyle(Theme.textTertiary)
+            Image(icon: symbol).foregroundStyle(Theme.textTertiary)
             Text(text).foregroundStyle(Theme.textSecondary)
         }
         .font(Theme.TextStyle.label)
@@ -344,7 +344,7 @@ private struct RejectedMessageCard: View {
             Label {
                 Text("Not sent").foregroundStyle(Theme.paper)
             } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.coral)
+                Image(icon: "exclamationmark.triangle.fill").foregroundStyle(Theme.coral)
             }
             .font(Theme.TextStyle.label)
             Text(verbatim: message.reason).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
@@ -400,7 +400,7 @@ struct ItemView: View {
             Label {
                 Text(heading).foregroundStyle(Theme.paper)
             } icon: {
-                Image(systemName: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
+                Image(icon: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
             }
             .font(Theme.TextStyle.label)
             Text(item.title).font(Theme.TextStyle.body).foregroundStyle(Theme.paper).textSelection(.enabled)
@@ -408,7 +408,7 @@ struct ItemView: View {
                 Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary)
                     .padding(Theme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                    .roundedBackground(Theme.well, radius: Theme.Radius.control)
             }
             switch item.kind {
             case _ where !client.allows(.approve):
@@ -565,8 +565,7 @@ struct NewSessionView: View {
                                 Button { withAnimation(Theme.reveal) { plan.toggle() } } label: {
                                     ComposerPill(symbol: "list.bullet.clipboard", text: String(localized: "Plan first"),
                                                  tint: plan ? Theme.paper : nil, showsChevron: false)
-                                        .background(plan ? Theme.smoke : Color.clear,
-                                                    in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                        .roundedBackground(plan ? Theme.smoke : Color.clear, radius: Theme.Radius.control)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(plan ? .isSelected : [])
@@ -739,7 +738,7 @@ struct QuestionOptionRow: View {
                     .font(Theme.textFont(11, .semibold, design: .monospaced))
                     .foregroundStyle(Theme.textSecondary)
                     .frame(minWidth: 22, minHeight: 22)
-                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                    .roundedBackground(Theme.well, radius: Theme.Radius.chip)
                 Text(title)
                     .font(Theme.textFont(13, .semibold))
                     .foregroundStyle(Theme.paper)
@@ -750,8 +749,8 @@ struct QuestionOptionRow: View {
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.vertical, Theme.Spacing.md + 1)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card, style: .continuous)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card)
+            .roundedHitShape(Theme.Radius.card)
         }
         .buttonStyle(PressFade())
     }

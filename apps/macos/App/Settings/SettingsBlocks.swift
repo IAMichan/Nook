@@ -26,7 +26,7 @@ struct ConfigPreview: View {
             .font(NookTheme.mono(11))
             .textSelection(.enabled)
             .padding(NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.chip)
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: onCancel)
@@ -86,7 +86,7 @@ struct StatusRow<Trailing: View>: View {
             if let agent {
                 AgentLogo(agent: agent, size: 22)
                     .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: state.symbol)
+                        Image(icon: state.symbol)
                             .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(state.color)
                             .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-1))
@@ -94,7 +94,7 @@ struct StatusRow<Trailing: View>: View {
                     }
                     .frame(width: 22)
             } else {
-                Image(systemName: state.symbol)
+                Image(icon: state.symbol)
                     .font(NookTheme.font(17))
                     .foregroundStyle(state.color)
                     .frame(width: 22)
@@ -207,7 +207,7 @@ struct SettingsInfoButton: View {
 
     var body: some View {
         Button { shown.toggle() } label: {
-            Image(systemName: "info.circle")
+            Image(icon: "info.circle")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .contentShape(Rectangle())
@@ -244,7 +244,7 @@ struct SettingNote: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
             if let symbol {
-                Image(systemName: symbol).accessibilityHidden(true)
+                Image(icon: symbol).accessibilityHidden(true)
             }
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
@@ -300,9 +300,9 @@ struct SettingsLinkRow: View {
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 if let state, state != .done {
-                    Image(systemName: state.symbol).foregroundStyle(state.color)
+                    Image(icon: state.symbol).foregroundStyle(state.color)
                 }
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
             }
@@ -370,9 +370,9 @@ struct Keycap: View {
             .padding(.horizontal, label.count > 1 ? 9 : 0)
             .frame(minWidth: 24, minHeight: 22)
             .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.chip)
                     .fill(NookTheme.smoke)
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(NookTheme.line2))
+                    .roundedStrokeBorder(NookTheme.line2, radius: NookTheme.Radius.chip)
                     .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
             )
     }
@@ -1082,7 +1082,7 @@ struct WatchedPullRequestsSection: View {
                         ToastCenter.shared.success(tr("connection.removed", entry))
                     }
                 ) {
-                    Image(systemName: repository ? "book.closed" : "building.2")
+                    Image(icon: repository ? "book.closed" : "building.2")
                         .font(NookTheme.font(16))
                         .foregroundStyle(NookTheme.textSecondary)
                 } menu: {

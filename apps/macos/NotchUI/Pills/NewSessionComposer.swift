@@ -230,7 +230,7 @@ struct NewSessionComposer: View {
                 .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 .onSubmit(clone)
             SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
@@ -252,7 +252,7 @@ struct NewSessionComposer: View {
     /// The folder on the remote machine, typed: there is no folder panel for another machine.
     private var remoteRow: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "server.rack").foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "server.rack").foregroundStyle(NookTheme.textTertiary)
             // A long machine name gives way, so the field keeps room to type a path.
             Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1).truncationMode(.middle)
@@ -262,7 +262,7 @@ struct NewSessionComposer: View {
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(minWidth: 140)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
         }
         .font(NookTheme.TextStyle.body)
@@ -484,7 +484,7 @@ struct NewSessionComposer: View {
                 isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
                 if config.isolation == .worktree {
-                    Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
                     TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)

@@ -84,8 +84,15 @@ final class UIConsistencyTests: XCTestCase {
 
     /// Corners sit on the radius scale: `NookTheme.Radius.chip … pill`, not a number that happens to look right.
     func testCornerRadiiComeFromTheScale() {
-        let found = offenders(#"cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)(?![.0-9])|cardBackground\(.*radius:\s*[0-9]"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        let found = offenders(#"(cornerRadius:\s*|(roundedClip|roundedHitShape|NookTheme\.shape)\(\s*)(6|7|8|9|10|12|13|14|16|20)(?![.0-9])|(cardBackground|roundedBackground|roundedStroke|roundedStrokeBorder)\(.*radius:\s*[0-9]"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
         XCTAssertEqual(found, [], "use NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20, composer 24)")
+    }
+
+    /// A rounded shape is Nook's: `NookTheme.shape(_:)` or a `.rounded…` helper (a continuous corner on a radius from the
+    /// scale), never a `RoundedRectangle(cornerRadius:)` built at the call site with a corner style of its own.
+    func testRoundedShapesComeFromTheTheme() {
+        let found = offenders(#"RoundedRectangle\(cornerRadius:"#) { $0 == "NotchUI/Theme/NookTheme.swift" }
+        XCTAssertEqual(found, [], "use NookTheme.shape(_:) or .roundedBackground / .roundedStroke / .roundedClip / .roundedHitShape")
     }
 
     /// Text sits on the type scale: SwiftUI's own styles (`.caption`, `.callout`, `.headline`, `.system(.body)`) have
@@ -117,10 +124,19 @@ final class UIConsistencyTests: XCTestCase {
     /// magnifying glass and a text field put together on the spot. The timeline's find bar, with its own next and
     /// previous, is the one exception.
     func testSearchFieldsAreTheSharedComponent() {
-        let found = offenders(#"Image\(systemName: "magnifyingglass"\)"#) {
+        let found = offenders(#"Image\((systemName|icon): "magnifyingglass"\)"#) {
             $0 == "NotchUI/Components/PanelBlocks.swift" || $0 == "NotchUI/Pills/TimelineFind.swift"
         }
         XCTAssertEqual(found, [], "use NookSearchField (NotchUI/Components/PanelBlocks.swift)")
+    }
+
+    /// Every icon is drawn through `Image(icon:)` or `NookIcon.nsImage`, so `NookIcon` turns it into Nook's Lucide icon
+    /// (t3code's set) and the app keeps one icon style; a raw SF Symbol would bypass that table.
+    func testIconsGoThroughNookIcon() {
+        let found = offenders(#"(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:"#) {
+            $0 == "NotchUI/Theme/NookIcon.swift"
+        }
+        XCTAssertEqual(found, [], "use Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift)")
     }
 
     /// A line between rows or regions is a `NookDivider`, so every divider has the same weight and color.

@@ -104,7 +104,7 @@ struct QuotaService {
         if let reported, reported.resetsAt.map({ $0 > Date() }) ?? true {
             return QuotaLimit(label: label, percent: reported.percent, resetsAt: reported.resetsAt, duration: duration)
         }
-        return QuotaLimit(label: label, percent: 0, resetsAt: nil, note: tr("agents.usage.startsOnMessage"))
+        return QuotaLimit(label: label, percent: 0, resetsAt: nil, note: tr("agents.usage.startsOnMessage"), duration: duration)
     }
 
     /// An Antigravity window read the way Claude's are: one that has reset since it was read, or that has not started yet

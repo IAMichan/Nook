@@ -13,7 +13,7 @@ struct UsageLimitBanner: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 AdaptiveActionRow {
                     HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                        Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
+                        Image(icon: auto ? "clock.arrow.circlepath" : "hourglass")
                             .font(NookTheme.font(12, .semibold))
                             .foregroundStyle(NookTheme.amber)
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -33,12 +33,11 @@ struct UsageLimitBanner: View {
                         }
                         .help(suggestion.sameAgent ? tr("ws.limit.switchHelpSame") : tr("ws.limit.switchHelp"))
                     }
-                    if run.limitResetAt != nil {
-                        SmallGhostButton(title: auto ? tr("ws.limit.cancelResume") : tr("ws.limit.resume")) {
-                            workspace.setAutoResume(run.id, !auto)
-                        }
-                        .help(tr("ws.limit.resumeHelp"))
+                    // Also without a known reset: Nook then tries again now and then until the limit lets it through.
+                    SmallGhostButton(title: auto ? tr("ws.limit.cancelResume") : tr("ws.limit.resume")) {
+                        workspace.setAutoResume(run.id, !auto)
                     }
+                    .help(tr("ws.limit.resumeHelp"))
                 }
                 // A banked reset credit of this account frees it now, instead of waiting for the reset.
                 if let profile = app.profiles.profile(id: run.profileID) {
@@ -47,7 +46,7 @@ struct UsageLimitBanner: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
         }
     }
 
@@ -75,7 +74,12 @@ struct UsageLimitBanner: View {
     }
 
     private func line(now: Date, auto: Bool) -> String {
-        guard let reset = run.limitResetAt else { return tr("ws.limit.unknown") }
+        guard let reset = run.limitResetAt else {
+            guard auto, let due = workspace.limitResumeDue(run) else { return tr("ws.limit.unknown") }
+            if due <= now { return tr("ws.limit.resumingSoon") }
+            let clock = due.formatted(date: Calendar.current.isDateInToday(due) ? .omitted : .abbreviated, time: .shortened)
+            return tr("ws.limit.retriesAt", clock, AgentPathFormat.duration(due.timeIntervalSince(now)))
+        }
         if reset <= now { return auto ? tr("ws.limit.resumingSoon") : tr("ws.limit.free") }
         let clock = reset.formatted(date: Calendar.current.isDateInToday(reset) ? .omitted : .abbreviated, time: .shortened)
         let wait = AgentPathFormat.duration(reset.timeIntervalSince(now))

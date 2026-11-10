@@ -65,8 +65,7 @@ struct PullRequestRow: View, Equatable {
                     .padding(.leading, CGFloat(min(depth, 3)) * NookTheme.Spacing.xl + NookTheme.Spacing.xxs)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-            .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+        .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         // Resting on a row reads it ahead, so the click opens it at once.
@@ -108,7 +107,7 @@ struct PullRequestRow: View, Equatable {
     /// The row's ⋯, under the pointer only: copy, open, watch, and take it off the list.
     private var moreMenu: some View {
         ComposerDropdown(width: 220) {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22, height: 18)
@@ -156,7 +155,7 @@ struct PullRequestRow: View, Equatable {
                         .help(item.title)
                     HStack(spacing: NookTheme.Spacing.xs) {
                         if linked?.watching == true, item.state == .open {
-                            Image(systemName: "eye")
+                            Image(icon: "eye")
                                 .font(NookTheme.font(10, .medium))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .help(tr("agents.pr.linked.watching"))

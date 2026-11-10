@@ -194,7 +194,7 @@ struct ChatReplyField: View {
             // stays a line above.
             if let notice, !drafting, outgoing == nil {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "info.circle")
+                    Image(icon: "info.circle")
                         .font(NookTheme.font(10.5))
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(notice)
@@ -336,7 +336,7 @@ struct ChatReplyField: View {
                 idleAccessory
             } else {
                 ChatSendButton(symbol: asksNook ? "sparkles" : sendSymbol, label: buttonLabel + " (↩)",
-                               tint: asksNook ? NookTheme.iris : NookTheme.paper, ready: !busy && !empty) { submit() }
+                               tint: NookTheme.primary, ready: !busy && !empty) { submit() }
             }
         }
         .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.lg : NookTheme.Spacing.sm)
@@ -344,11 +344,9 @@ struct ChatReplyField: View {
         .padding(.vertical, NookTheme.Spacing.sm)
         // A soft, round field that stands out a little from the panel, and a little more while you type in it; Nook's
         // draft gives it Nook's color, so it is clear whose words are about to go out.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
-            .fill(focus.wrappedValue ? NookTheme.surface : NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
-            .strokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45)
-                          : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke), lineWidth: 1))
+        .roundedBackground(focus.wrappedValue ? NookTheme.surface : NookTheme.field, radius: NookTheme.Radius.composer)
+        .roundedStrokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45) : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke),
+                             radius: NookTheme.Radius.composer)
         .animation(NookTheme.hover, value: focus.wrappedValue)
     }
 
@@ -701,8 +699,7 @@ private struct DraftPanel: View {
                 .transition(.opacity)
             }
         }
-        .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet,
-                        style: .continuous)
+        .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet)
         .help(writing ? "" : readyNotice)
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
@@ -808,7 +805,7 @@ private struct DraftPanel: View {
         }
         .padding(NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
         .transition(.opacity)
     }
 
@@ -833,7 +830,7 @@ private struct DraftPanel: View {
     /// Any other change, in your own words: Return lets Nook rewrite the draft with it.
     private var steerField: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "wand.and.stars")
+            Image(icon: "wand.and.stars")
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.iris)
                 .accessibilityHidden(true)
@@ -858,7 +855,7 @@ private struct DraftPanel: View {
         .padding(.trailing, NookTheme.Spacing.xxs)
         .frame(minHeight: 30)
         .cardBackground(NookTheme.field, stroke: steerFocused.wrappedValue ? NookTheme.iris.opacity(0.4) : NookTheme.fieldStroke,
-                        radius: NookTheme.Radius.control, style: .continuous)
+                        radius: NookTheme.Radius.control)
         .animation(NookTheme.hover, value: steer.isEmpty)
         .animation(NookTheme.hover, value: steerFocused.wrappedValue)
     }
@@ -905,9 +902,9 @@ private struct DraftActions: View {
         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
             Group {
                 if isDone {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                    Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                 } else {
-                    Image(systemName: action.symbol).foregroundStyle(NookTheme.iris)
+                    Image(icon: action.symbol).foregroundStyle(NookTheme.iris)
                 }
             }
             .font(NookTheme.font(11, .semibold))
@@ -929,7 +926,7 @@ private struct DraftActions: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
     }
 
     @ViewBuilder private var footer: some View {
@@ -1010,7 +1007,7 @@ private struct DraftLookupChip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: lookup.symbol)
+            Image(icon: lookup.symbol)
                 .font(NookTheme.font(9.5, .semibold))
                 .foregroundStyle(NookTheme.iris)
                 .accessibilityHidden(true)
@@ -1029,7 +1026,7 @@ private struct DraftLookupChip: View {
             }
             Group {
                 if lookup.done {
-                    Image(systemName: "checkmark")
+                    Image(icon: "checkmark")
                         .font(NookTheme.font(8.5, .bold))
                         .foregroundStyle(NookTheme.mint)
                         .transition(.scale.combined(with: .opacity))
@@ -1063,9 +1060,9 @@ private struct ChatSendButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(13, .bold))
-                .foregroundStyle(ready ? NookTheme.onPaper : NookTheme.textTertiary)
+                .foregroundStyle(ready ? NookTheme.onPrimary : NookTheme.textTertiary)
                 .frame(width: ChatReplyField.buttonSide, height: ChatReplyField.buttonSide)
                 .background(Circle().fill(ready ? tint : NookTheme.smoke))
                 .hoverLift(hovering && ready, scale: 1.05)
@@ -1094,7 +1091,7 @@ private struct DraftChip: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 if let symbol {
-                    Image(systemName: symbol)
+                    Image(icon: symbol)
                         .font(NookTheme.font(9.5, .semibold))
                         .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textStrong))
                         .accessibilityHidden(true)
@@ -1143,7 +1140,7 @@ private struct SendingPanel: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Group {
                 if sent {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(icon: "checkmark.circle.fill")
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.mint)
                         .transition(.scale.combined(with: .opacity))
@@ -1197,7 +1194,7 @@ private struct GlidingPlane: View {
             // Out to the top right while it fades, then in again from the bottom left.
             let travel = (phase - 0.35) * 14
             let fade = 1 - pow(abs(phase - 0.35) / 0.65, 2)
-            Image(systemName: "paperplane.fill")
+            Image(icon: "paperplane.fill")
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(NookTheme.mint)
                 .offset(x: travel, y: -travel * 0.6)
@@ -1259,7 +1256,7 @@ private struct ReplyingBar: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "arrowshape.turn.up.left.fill")
+            Image(icon: "arrowshape.turn.up.left.fill")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
@@ -1279,7 +1276,7 @@ private struct ReplyingBar: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
+        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.card)
         .accessibilityElement(children: .contain)
     }
 }

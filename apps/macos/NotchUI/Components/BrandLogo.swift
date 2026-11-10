@@ -138,7 +138,7 @@ enum LogoImage {
         if let cached = cache[key] { return Image(nsImage: cached) }
         let renderer = ImageRenderer(content: content())
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
-        guard let image = renderer.nsImage else { return Image(systemName: "circle.fill") }
+        guard let image = renderer.nsImage else { return Image(icon: "circle.fill") }
         image.isTemplate = template
         cache[key] = image
         return Image(nsImage: image)

@@ -22,7 +22,7 @@ struct SessionWorkspaceMenu: ViewModifier {
                                 Button { showsPulls = true } label: { Label("Pull requests", systemImage: "arrow.triangle.pull") }
                             }
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            Image(icon: "ellipsis.circle")
                         }
                         .accessibilityLabel("Files, terminals and pull requests")
                     }

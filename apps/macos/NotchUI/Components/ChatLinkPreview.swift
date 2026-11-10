@@ -59,9 +59,8 @@ private struct ChatLinkCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minWidth: 0, idealWidth: Self.width, maxWidth: Self.width)
         .background(NookTheme.ink.opacity(hovering ? 0.45 : 0.32))
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-            .strokeBorder(NookTheme.hairline, lineWidth: 1))
+        .roundedClip(NookTheme.Radius.card)
+        .roundedStrokeBorder(NookTheme.hairline, radius: NookTheme.Radius.card)
         .contentShape(Rectangle())
     }
 
@@ -85,7 +84,7 @@ private struct ChatLinkCard: View {
     }
 
     private var playMark: some View {
-        Image(systemName: "play.fill")
+        Image(icon: "play.fill")
             .font(NookTheme.font(16, .semibold))
             .foregroundStyle(NookTheme.paper)
             .frame(width: 42, height: 42)
@@ -158,7 +157,7 @@ private struct ChatRemotePicture: View {
                             .interpolation(.high)
                             .aspectRatio(contentMode: .fit)
                             .frame(maxWidth: size.width, maxHeight: size.height)
-                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+                            .roundedClip(NookTheme.Radius.card)
                         if hovering || enlarged {
                             ChatPictureSizeBadge(enlarged: enlarged)
                         }
@@ -182,7 +181,7 @@ private struct ChatRemotePicture: View {
             } else if failed {
                 ChatLinkCard(url: url)
             } else {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.card)
                     .fill(NookTheme.ink.opacity(0.3))
                     .fittedMedia(CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75))
                     .overlay(ProgressView().controlSize(.small))

@@ -549,7 +549,7 @@ struct ChatAttachMenu: View {
 
     var body: some View {
         ComposerDropdown(width: 224) {
-            Image(systemName: "plus")
+            Image(icon: "plus")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 26, height: 26)
@@ -828,7 +828,7 @@ private struct ChatAttachmentThumb: View {
     @State private var binReady = false
 
     private var bin: Bool { shown && hovering && binReady }
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous) }
+    private var shape: RoundedRectangle { NookTheme.shape(NookTheme.Radius.chip) }
 
     var body: some View {
         Button(action: bin ? remove : select) {
@@ -838,7 +838,7 @@ private struct ChatAttachmentThumb: View {
                     if bin {
                         ZStack {
                             NookTheme.ink.opacity(0.6)
-                            Image(systemName: "trash")
+                            Image(icon: "trash")
                                 .font(NookTheme.font(16, .medium))
                                 .foregroundStyle(NookTheme.paper)
                         }
@@ -872,7 +872,7 @@ private struct ChatAttachmentThumb: View {
                 .overlay(alignment: .bottomLeading) {
                     // A still of a video looks like a photo without this.
                     if file.kind == .video || file.kind == .gif {
-                        Image(systemName: ChatAttachmentThumbnail.symbol(file.kind))
+                        Image(icon: ChatAttachmentThumbnail.symbol(file.kind))
                             .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(NookTheme.paper)
                             .padding(NookTheme.Spacing.xxs)
@@ -881,7 +881,7 @@ private struct ChatAttachmentThumb: View {
                     }
                 }
         } else {
-            Image(systemName: ChatAttachmentThumbnail.symbol(file.kind))
+            Image(icon: ChatAttachmentThumbnail.symbol(file.kind))
                 .font(NookTheme.font(16, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -907,7 +907,7 @@ struct ChatAttachmentKindMenu: View {
             } label: {
                 HStack(spacing: NookTheme.Spacing.xxs) {
                     Text(Self.title(file.kind))
-                    Image(systemName: "chevron.down").font(NookTheme.font(8, .bold))
+                    Image(icon: "chevron.down").font(NookTheme.font(8, .bold))
                 }
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -979,7 +979,7 @@ private struct ChatComposePanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .accessibilityHidden(true)
@@ -1015,7 +1015,7 @@ private struct ChatPanelField: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .frame(minHeight: 28)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
     }
 
     private var field: some View {
@@ -1170,7 +1170,7 @@ private struct ChatPickRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(16))
                     .foregroundStyle(NookTheme.textSecondary)
                     .accessibilityHidden(true)
@@ -1185,15 +1185,14 @@ private struct ChatPickRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Image(systemName: "arrow.up.circle.fill")
+                Image(icon: "arrow.up.circle.fill")
                     .font(NookTheme.font(15))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                     .accessibilityHidden(true)
             }
             .padding(.vertical, NookTheme.Spacing.sm)
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1353,7 +1352,7 @@ private struct ChatGIFCell: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.card)
                     .fill(hovering ? NookTheme.smoke : NookTheme.graphite)
                 if let preview {
                     AnimatedPicture(url: preview)
@@ -1363,7 +1362,7 @@ private struct ChatGIFCell: View {
                 }
             }
             .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .roundedClip(NookTheme.Radius.card)
             .hoverLift(hovering, scale: 1.04)
             .contentShape(Rectangle())
         }
@@ -1388,14 +1387,13 @@ private struct ChatStickerCell: View {
                 if let image = ChatMediaImages.image(url, side: side * 2) {
                     Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                 } else {
-                    Image(systemName: "play.square.stack")
+                    Image(icon: "play.square.stack")
                         .font(NookTheme.font(18))
                         .foregroundStyle(NookTheme.textSecondary)
                 }
             }
             .frame(width: side, height: side)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+            .roundedBackground(hovering ? NookTheme.smoke : NookTheme.graphite, radius: NookTheme.Radius.card)
             .hoverLift(hovering, scale: 1.04)
             .contentShape(Rectangle())
         }

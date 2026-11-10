@@ -57,13 +57,13 @@ struct SimulatorView: View {
 
     private func setupNotice(_ text: String, button: String?, action: @escaping () -> Void) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "iphone.gen3").foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "iphone.gen3").foregroundStyle(NookTheme.textTertiary)
             Text(text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let button { Button(button, action: action).controlSize(.small) }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.paper.opacity(0.04)))
+        .roundedBackground(NookTheme.paper.opacity(0.04), radius: NookTheme.Radius.card)
     }
 
     // MARK: Live
@@ -124,7 +124,7 @@ struct SimulatorView: View {
                     chosen = nil
                     Task { await hub.shutdown(udid) }
                 }
-            } label: { Image(systemName: "ellipsis") }
+            } label: { Image(icon: "ellipsis") }
             .help(tr("a11y.more"))
             .accessibilityLabel(tr("a11y.more"))
             .menuStyle(.button)
@@ -135,7 +135,7 @@ struct SimulatorView: View {
     }
 
     private func iconButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(NookTheme.font(12)).frame(width: 26, height: 24) }
+        Button(action: action) { Image(icon: symbol).font(NookTheme.font(12)).frame(width: 26, height: 24) }
             .buttonStyle(.borderless)
             .help(label)
             .accessibilityLabel(label)

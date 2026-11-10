@@ -480,7 +480,7 @@ struct AgentsTab: View {
 
     private func item(_ run: WorkspaceRun, comparisons: [UUID: Int]) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
-        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
+        let attention = app.workspace.attention(run, unseen: unseen("run:" + run.id.uuidString, run.updatedAt),
                                                 includeSnooze: false)
         let status: AgentListItem.Status
         switch attention {
@@ -817,7 +817,7 @@ struct AgentListRow: View, Equatable {
         .padding(.trailing, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, minHeight: compact ? Self.lineHeight : nil, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(background))
+        .roundedBackground(background, radius: NookTheme.Radius.chip)
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .contentShape(Rectangle())
@@ -943,17 +943,17 @@ struct AgentListRow: View, Equatable {
     @ViewBuilder
     private var marks: some View {
         if pinned {
-            Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
         }
         if item.forked {
-            Image(systemName: "arrow.triangle.branch")
+            Image(icon: "arrow.triangle.branch")
                 .font(NookTheme.font(10))
                 .foregroundStyle(NookTheme.textTertiary)
                 .help(tr("lineage.forked"))
                 .accessibilityLabel(tr("lineage.forked"))
         }
         if item.comparison > 0 {
-            Image(systemName: "square.stack.3d.up")
+            Image(icon: "square.stack.3d.up")
                 .font(NookTheme.font(10))
                 .foregroundStyle(NookTheme.textTertiary)
                 .help(tr("compare.group", item.comparison + 1))
@@ -1024,7 +1024,7 @@ struct AgentListRow: View, Equatable {
     }
 
     private func rowIcon(_ symbol: String, _ label: String) -> some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.font(11, .medium))
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 22, height: 22)

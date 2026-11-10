@@ -216,7 +216,7 @@ struct PullRequestReviewIcon: View {
     var size: CGFloat = 12
 
     var body: some View {
-        Image(systemName: PullRequestIcon.symbol(review))
+        Image(icon: PullRequestIcon.symbol(review))
             .font(NookTheme.font(size, .medium))
             .foregroundStyle(PullRequestIcon.tint(review))
     }
@@ -234,7 +234,7 @@ struct CheckOutcomeGlyph: View {
         if running && outcome == .pending {
             LayerSymbol(name: "circle.dashed", size: size, weight: .semibold, color: NookTheme.paper, motion: .rotate)
         } else {
-            Image(systemName: PullRequestIcon.symbol(outcome))
+            Image(icon: PullRequestIcon.symbol(outcome))
                 .font(NookTheme.font(size, .medium))
                 .foregroundStyle(PullRequestIcon.tint(outcome))
         }

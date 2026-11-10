@@ -83,7 +83,7 @@ struct TurnChangesCard: View {
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
     }
 
     private func header(_ tree: ChangedFilesTree) -> some View {
@@ -94,7 +94,7 @@ struct TurnChangesCard: View {
                 withAnimation(NookTheme.reveal) { folded.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(9, .bold))
                         .rotationEffect(.degrees(folded ? 0 : 90))
                     Text(tr("agents.turn.changedFiles", turn.files.count))
@@ -113,7 +113,7 @@ struct TurnChangesCard: View {
             }
             Button { open(nil) } label: {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "plusminus")
+                    Image(icon: "plusminus")
                     Text(tr("agents.turn.openDiff"))
                 }
                 .foregroundStyle(NookTheme.textSecondary)
@@ -140,14 +140,14 @@ private struct TurnChangesRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if row.isDirectory {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(8, .bold))
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .frame(width: 10)
-                    Image(systemName: "folder").font(NookTheme.font(10.5))
+                    Image(icon: "folder").font(NookTheme.font(10.5))
                 } else {
                     Color.clear.frame(width: 10, height: 1)
-                    Image(systemName: row.kind == .added ? "doc.badge.plus" : "doc.text").font(NookTheme.font(10.5))
+                    Image(icon: row.kind == .added ? "doc.badge.plus" : "doc.text").font(NookTheme.font(10.5))
                 }
                 Text(row.name)
                     .font(NookTheme.mono(row.isDirectory ? 11 : 11.5))
@@ -163,8 +163,7 @@ private struct TurnChangesRow: View {
             .padding(.leading, NookTheme.Spacing.sm + CGFloat(row.depth) * 14)
             .padding(.trailing, NookTheme.Spacing.sm)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
+            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -301,13 +300,13 @@ struct TurnDiffPanel: View {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Text(title(of: selection, current: current))
                         .lineLimit(1)
-                    Image(systemName: "chevron.down").font(NookTheme.font(9, .bold)).opacity(0.7)
+                    Image(icon: "chevron.down").font(NookTheme.font(9, .bold)).opacity(0.7)
                 }
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
             } content: {
                 DropdownList(maxHeight: 420) {

@@ -29,7 +29,7 @@ struct PullRequestSummarySection<Content: View, Accessory: View>: View {
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         Text(title).font(NookTheme.TextStyle.label)
-                        Image(systemName: "chevron.right")
+                        Image(icon: "chevron.right")
                             .font(NookTheme.font(8.5, .bold))
                             .rotationEffect(.degrees(open ? 90 : 0))
                     }
@@ -128,7 +128,7 @@ struct PullRequestCommitEntry: View {
                     Button {
                         withAnimation(NookTheme.reveal) { expanded.toggle() }
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Image(icon: "ellipsis")
                             .font(NookTheme.font(9, .bold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .frame(width: 20, height: 14)
@@ -173,7 +173,7 @@ struct PullRequestDiffStatBar: View {
         let red = total == 0 ? 0 : 5 - green
         HStack(spacing: 1.5) {
             ForEach(0..<5, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                NookTheme.shape(1.5)
                     .fill(index < green ? NookTheme.mint : index < green + red ? NookTheme.coral : NookTheme.line2)
                     .frame(width: 6, height: 6)
             }
@@ -210,7 +210,7 @@ struct PullRequestGhostBar: View {
     var height: CGFloat = 10
 
     var body: some View {
-        RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.chip)
             .fill(NookTheme.rowHover)
             .frame(width: width, height: height)
             .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)

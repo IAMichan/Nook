@@ -42,8 +42,7 @@ struct HoverCardButton<Label: View>: View {
             label
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NookTheme.Spacing.xs)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+                .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -63,7 +62,7 @@ struct HoverCardRow: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 16)

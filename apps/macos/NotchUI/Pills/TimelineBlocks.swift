@@ -125,7 +125,7 @@ struct QueuedMessagesStrip: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "chevron.down")
+                    Image(icon: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(collapsed ? -90 : 0))
                     Text(tr("compose.queue.title", queue.count))
@@ -166,7 +166,7 @@ struct QueuedMessagesStrip: View {
             position(index, editing: isEditing)
             // After `/clear`: this one starts a new conversation once the turn ends.
             if message.fresh {
-                Image(systemName: "eraser")
+                Image(icon: "eraser")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .help(tr("ws.fresh.queued"))
@@ -193,7 +193,7 @@ struct QueuedMessagesStrip: View {
         .padding(.vertical, NookTheme.Spacing.xs)
         .contentShape(Rectangle())
         // The tray above the composer is the card; the row under the pointer and the one open in the box stand out of it.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(fill))
+        .roundedBackground(fill, radius: NookTheme.Radius.control)
         .onHover { inside in
             if inside { hovered = message.id } else if hovered == message.id { hovered = nil }
         }
@@ -206,7 +206,7 @@ struct QueuedMessagesStrip: View {
         ZStack {
             Circle().fill(editing ? NookTheme.graphite : NookTheme.smoke)
             if editing {
-                Image(systemName: "pencil").font(NookTheme.font(9, .bold))
+                Image(icon: "pencil").font(NookTheme.font(9, .bold))
             } else {
                 Text("\(index + 1)").font(NookTheme.rounded(10, .semibold)).monospacedDigit()
             }
@@ -248,14 +248,14 @@ private struct QueuedPictureThumbnail: View {
                 if let image {
                     Image(nsImage: image).resizable().scaledToFill()
                 } else {
-                    Image(systemName: "photo")
+                    Image(icon: "photo")
                         .font(NookTheme.font(10))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
             }
             .frame(width: 22, height: 22)
             .background(NookTheme.smoke)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedClip(NookTheme.Radius.control)
         }
         .task(id: url) {
             let url = url
@@ -308,7 +308,7 @@ struct PlanCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "list.bullet.clipboard")
+                Image(icon: "list.bullet.clipboard")
                     .font(NookTheme.font(13, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
                 Text(title).font(NookTheme.TextStyle.strong).lineLimit(1)

@@ -128,7 +128,7 @@ struct PullRequestMoreMenu: View {
                 if loading {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "ellipsis")
+                    Image(icon: "ellipsis")
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -323,7 +323,7 @@ struct PullRequestActionPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.rowHover))
+        .roundedBackground(NookTheme.rowHover, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Composer
@@ -352,7 +352,7 @@ struct PullRequestActionPanel: View {
                         }
                     } label: {
                         HStack(spacing: NookTheme.Spacing.xs) {
-                            Image(systemName: Self.verdictSymbol(state.verdict))
+                            Image(icon: Self.verdictSymbol(state.verdict))
                                 .foregroundStyle(Self.verdictColor(state.verdict))
                             Text(tr(Self.verdictKey(state.verdict)))
                         }
@@ -374,7 +374,7 @@ struct PullRequestActionPanel: View {
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .padding(NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
                 .onSubmit { review() }
             if state.candidates == nil {
                 ProgressView().controlSize(.small)
@@ -398,7 +398,7 @@ struct PullRequestActionPanel: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 GitHubAvatar(login: login, size: 16)
                 Text(login).font(NookTheme.TextStyle.label)
-                if chosen { Image(systemName: "checkmark").font(NookTheme.font(9, .bold)) }
+                if chosen { Image(icon: "checkmark").font(NookTheme.font(9, .bold)) }
             }
             .foregroundStyle(chosen ? NookTheme.onIris : NookTheme.textStrong)
             .padding(.leading, NookTheme.Spacing.xxs)
@@ -440,7 +440,7 @@ struct PullRequestActionPanel: View {
                         } label: {
                             HStack(spacing: NookTheme.Spacing.xs) {
                                 LabelChip(name: label.name, color: label.color)
-                                if on { Image(systemName: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.paper) }
+                                if on { Image(icon: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.paper) }
                             }
                         }
                         .buttonStyle(.plain)
@@ -472,7 +472,7 @@ struct PullRequestActionPanel: View {
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.strong)
                 .padding(NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
             field(placeholder: tr("agents.pr.edit.body"))
             HStack {
                 Spacer(minLength: 0)
@@ -505,7 +505,7 @@ struct PullRequestActionPanel: View {
         }
         .frame(height: 96)
         .padding(NookTheme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
     }
 
     private func send(title: String) -> some View {

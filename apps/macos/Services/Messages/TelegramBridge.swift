@@ -66,6 +66,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     private var meID: Int64?
     /// Each group's people by user id, asked once per chat.
     private var members: [Int64: [Int64]] = [:]
+    /// What Telegram says of each person (username, number…) by user id, of each group by chat (description, admins…),
+    /// and each person's bio by user id, as it comes.
+    private var people: [Int64: ChatProfile] = [:]
+    private var groupProfiles: [Int64: ChatProfile] = [:]
+    private var bios: [Int64: String] = [:]
     private var membersAsked: Set<Int64> = []
     /// Your messages in groups whose viewers were asked, and when: asked again once the chat says more of them was read.
     private var viewersAsked: [String: Int64] = [:]
@@ -204,10 +209,26 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         leftChats = []
         return left + ids.compactMap { id in
             guard let chat = chats[id], !chat.title.isEmpty else { return nil }
-            let people = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
-            return BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
-                               members: people.isEmpty ? nil : people, deleted: gone[id] ?? [])
+            let named = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
+            var bridged = BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread,
+                                      avatar: chat.avatar, members: named.isEmpty ? nil : named, deleted: gone[id] ?? [])
+            bridged.profile = profile(of: chat)
+            return bridged
         }
+    }
+
+    /// What Telegram said of a chat: a group's description, admins and settings, a person's username, number and bio.
+    private func profile(of chat: TelegramData.Chat) -> ChatProfile? {
+        var profile: ChatProfile
+        if chat.isGroup {
+            profile = groupProfiles[chat.id] ?? ChatProfile()
+            profile.adminsOnly = chat.adminsOnly ?? profile.adminsOnly
+        } else {
+            profile = chat.user.flatMap { people[$0] } ?? ChatProfile()
+            if let user = chat.user, let bio = bios[user] { profile.about = bio }
+        }
+        if let seconds = chat.disappearAfter { profile.disappearAfter = seconds }
+        return profile.isEmpty ? nil : profile
     }
 
     /// Two different chats you have with one name, told apart (`ChatNames`), by the chat's id; made at each read that
@@ -249,7 +270,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             }
             // TDLib answers with nothing once the chat's start is reached.
             guard let oldest = list.compactMap({ TelegramData.int64($0["id"]) }).min(), oldest < from else { return (nil, false) }
-            let found = list.compactMap { TelegramData.message($0, chat: chat, users: users) }
+            let found = list.compactMap { TelegramData.message($0, chat: chat, users: users, me: meID) }
                 .filter { (TelegramData.ids($0.id)?.message ?? .max) < from }
             from = oldest
             guard !found.isEmpty else { continue }
@@ -279,7 +300,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             }
             for object in list {
                 guard let id = TelegramData.int64(object["chat_id"]), let chat = chats[id], !chat.title.isEmpty,
-                      let message = TelegramData.message(object, chat: chat, users: users),
+                      let message = TelegramData.message(object, chat: chat, users: users, me: meID),
                       ChatHistorySearch.matches(message, [word]) else { continue }
                 found.append((BridgedChat(app: app, name: shownName(chat), messages: [], unread: nil, avatar: chat.avatar), [message]))
             }
@@ -377,6 +398,50 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "basicGroupFullInfo", "chatMembers":
             if let extra = object["@extra"] as? String, extra.hasPrefix("members:"), let id = Int64(extra.dropFirst("members:".count)) {
                 members[id] = TelegramData.members(object)
+                var profile = groupProfiles[id] ?? ChatProfile()
+                if TelegramData.type(object) == "basicGroupFullInfo" {
+                    profile = TelegramData.groupProfile(object, users: users, me: meID).merged(over: profile)
+                } else {
+                    profile.admins = TelegramData.admins(object).map { $0 == meID ? ChatMembership.me : users[$0] ?? "" }.filter { !$0.isEmpty }
+                }
+                groupProfiles[id] = profile
+                changed.insert(id)
+            }
+        case "updateChatPermissions":
+            if let id = TelegramData.int64(object["chat_id"]), chats[id]?.isGroup == true {
+                chats[id]?.adminsOnly = TelegramData.adminsOnly(object["permissions"])
+                changed.insert(id)
+            }
+        case "updateChatMessageAutoDeleteTime":
+            if let id = TelegramData.int64(object["chat_id"]) {
+                chats[id]?.disappearAfter = Double(TelegramData.int64(object["message_auto_delete_time"]) ?? 0)
+                changed.insert(id)
+            }
+        case "updateBasicGroupFullInfo", "updateSupergroupFullInfo":
+            // A group's description, link or people changed (here or elsewhere): its info follows.
+            let basic = TelegramData.int64(object["basic_group_id"])
+            let supergroup = TelegramData.int64(object["supergroup_id"])
+            let key = basic != nil ? "basic_group_full_info" : "supergroup_full_info"
+            if let info = object[key] as? [String: Any],
+               let chat = chats.values.first(where: { (basic != nil && $0.basicGroup == basic) || (supergroup != nil && $0.supergroup == supergroup) }) {
+                groupProfiles[chat.id] = TelegramData.groupProfile(info, users: users, me: meID).merged(over: groupProfiles[chat.id])
+                if info["members"] != nil { members[chat.id] = TelegramData.members(info) }
+                changed.insert(chat.id)
+            }
+        case "updateUserFullInfo":
+            if let user = TelegramData.int64(object["user_id"]), let info = object["user_full_info"] as? [String: Any] {
+                bios[user] = TelegramData.bio(info)
+                for chat in chats.values where chat.user == user { changed.insert(chat.id) }
+            }
+        case "supergroupFullInfo":
+            if let extra = object["@extra"] as? String, extra.hasPrefix("groupinfo:"), let id = Int64(extra.dropFirst("groupinfo:".count)) {
+                groupProfiles[id] = TelegramData.groupProfile(object, users: users, me: meID).merged(over: groupProfiles[id])
+                changed.insert(id)
+            }
+        case "userFullInfo":
+            if let extra = object["@extra"] as? String, extra.hasPrefix("person:"), let id = Int64(extra.dropFirst("person:".count)),
+               let user = chats[id]?.user {
+                bios[user] = TelegramData.bio(object)
                 changed.insert(id)
             }
         case "messageViewers", "users":
@@ -406,6 +471,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             if let user = object["user"] as? [String: Any], let id = TelegramData.int64(user["id"]),
                let name = TelegramData.userName(user) {
                 users[id] = name
+                people[id] = TelegramData.person(user)
             }
         case "updateMessageContent":
             // A poll's votes moved (or a message was edited): the chat shows the new content.
@@ -568,7 +634,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         var known = messages[id] ?? []
         var ids = Set(known.map(\.id))
         for object in list {
-            guard let message = TelegramData.message(object, chat: chat, users: users), ids.insert(message.id).inserted else { continue }
+            guard let message = TelegramData.message(object, chat: chat, users: users, me: meID), ids.insert(message.id).inserted else { continue }
             known.append(message)
             // Its file, when it is not on this Mac yet and not too large to fetch for a chat.
             if let file = TelegramData.file(object["content"] as? [String: Any] ?? [:]), file.media.path == nil,
@@ -597,14 +663,18 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         changed.insert(chat)
     }
 
-    /// Who is in a group, asked once: a basic group's full info, or a supergroup's first 200 members.
+    /// Who is in a group and what it says of itself, asked once: a basic group's full info, or a supergroup's first 200
+    /// members and its full info; a person's full info (their bio) for a private chat.
     private func askMembers(of chat: Int64) {
-        guard let group = chats[chat], group.isGroup, membersAsked.insert(chat).inserted else { return }
-        if let basic = group.basicGroup {
+        guard let group = chats[chat], membersAsked.insert(chat).inserted else { return }
+        if let user = group.user {
+            send(["@type": "getUserFullInfo", "user_id": user, "@extra": "person:\(chat)"])
+        } else if let basic = group.basicGroup {
             send(["@type": "getBasicGroupFullInfo", "basic_group_id": basic, "@extra": "members:\(chat)"])
         } else if let supergroup = group.supergroup {
             send(["@type": "getSupergroupMembers", "supergroup_id": supergroup, "offset": 0, "limit": 200,
                   "@extra": "members:\(chat)"])
+            send(["@type": "getSupergroupFullInfo", "supergroup_id": supergroup, "@extra": "groupinfo:\(chat)"])
         }
     }
 

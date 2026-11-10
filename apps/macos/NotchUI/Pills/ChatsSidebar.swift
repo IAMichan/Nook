@@ -57,7 +57,7 @@ struct ChatTicks: View {
     var body: some View {
         HStack(spacing: -NookTheme.Spacing.xs - 1) {
             ForEach(0..<count, id: \.self) { _ in
-                Image(systemName: "checkmark")
+                Image(icon: "checkmark")
             }
         }
         .font(NookTheme.font(9.5, .bold))
@@ -128,7 +128,7 @@ struct ChatsSidebar: View {
                     }
                     ChatsSidebarRow(title: tr("chats.addSource"), count: 0, countTint: NookTheme.textTertiary,
                                     selected: false, compact: compact, muted: true) {
-                        Image(systemName: "plus")
+                        Image(icon: "plus")
                             .font(NookTheme.font(11, .semibold))
                     } action: {
                         addSource()
@@ -159,7 +159,7 @@ struct ChatsSidebar: View {
                         .frame(width: 18, height: 18)
                         .clipShape(Circle())
                 } else {
-                    Image(systemName: "person.crop.circle")
+                    Image(icon: "person.crop.circle")
                         .font(NookTheme.font(11.5, .medium))
                 }
             } action: {
@@ -208,7 +208,7 @@ private struct ChatsViewGlyph: View {
     var body: some View {
         switch view {
         case .all:
-            Image(systemName: "tray.full")
+            Image(icon: "tray.full")
                 .font(NookTheme.font(11.5, .medium))
         case .unread:
             Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
@@ -272,8 +272,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
             }
             .padding(.horizontal, compact ? 0 : NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, minHeight: 30, alignment: compact ? .center : .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -472,7 +471,7 @@ struct ChatLimitsLine: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "eye")
+            Image(icon: "eye")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.amber)
                 .frame(minWidth: 16)
@@ -489,7 +488,7 @@ struct ChatLimitsLine: View {
                 SmallGhostButton(title: tr("chats.openApp", appName), action: openApp)
             }
             Button(action: dismiss) {
-                Image(systemName: "xmark")
+                Image(icon: "xmark")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(width: 20, height: 20)

@@ -26,6 +26,8 @@ struct ChatsEntry: Identifiable, Equatable {
     var ticks: BubbleTicks? = nil
     /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
     var members: [String]? = nil
+    /// What its app says about the chat itself: a group's description and admins, a person's bio (`ChatInfoButton`).
+    var profile: ChatProfile? = nil
     /// The phone number behind a private chat, to find its photo in Contacts, when its app gives one. Nil for a group
     /// and for a chat matched by name.
     var handle: String? = nil
@@ -123,7 +125,7 @@ extension ChatsEntry {
         return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
                           last: last, read: thread.readState,
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
-                          members: thread.members, handle: thread.handle, avatar: thread.avatar,
+                          members: thread.members, profile: thread.profile, handle: thread.handle, avatar: thread.avatar,
                           account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
                           chatID: thread.chatID, kind: thread.kind)
     }
@@ -550,7 +552,7 @@ struct ChatsTab: View {
                             } else {
                                 // No chat open (none picked yet, closed with Escape, or not in what the list shows).
                                 VStack(spacing: NookTheme.Spacing.sm) {
-                                    Image(systemName: "bubble.left.and.bubble.right")
+                                    Image(icon: "bubble.left.and.bubble.right")
                                         .font(NookTheme.font(26, .light))
                                         .foregroundStyle(NookTheme.textMuted)
                                         .accessibilityHidden(true)
@@ -1223,7 +1225,7 @@ struct ChatsTab: View {
 
     private var empty: some View {
         VStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "tray.full")
+            Image(icon: "tray.full")
                 .font(NookTheme.font(30))
                 .foregroundStyle(NookTheme.textTertiary)
             Text(capture.enabled ? tr("chats.waiting.title") : tr("chats.empty.title"))
@@ -1367,7 +1369,7 @@ struct ChatsGroupHeader: View {
                 Text(title)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(8, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .foregroundStyle(NookTheme.textTertiary)
@@ -1521,8 +1523,7 @@ struct ChatsRow: View, Equatable {
                 // Where it stands, the same mark for every app; your own newest message has its ticks in front.
                 if entry.showsReadMark { ChatReadMark(state: entry.read) }
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1560,6 +1561,9 @@ private struct ChatsHoverCard: View {
             HoverCardRow(symbol: "message", text: sourceLine)
             if let members = entry.members, !members.isEmpty {
                 HoverCardRow(symbol: "person.2", text: members.joined(separator: ", "))
+            }
+            if let about = ChatProfile.text(entry.profile?.about) {
+                HoverCardRow(symbol: "text.alignleft", text: about)
             }
             if !entry.preview.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
@@ -2219,10 +2223,12 @@ private struct ChatsDetail: View, Equatable {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .lineLimit(1)
-        // A group whose app lists its people: how many, and a click lists them.
-        if let members = entry.members, !members.isEmpty {
+        // A group's people, or what a person's app says of them: how many, and a click shows the chat's info.
+        if ChatInfoButton.shows(members: entry.members, profile: entry.profile) {
             headerDot
-            ChatMembersButton(members: members)
+            ChatInfoButton(name: entry.name, members: entry.members ?? [], profile: entry.profile,
+                           isGroup: entry.kind == .group || (entry.members?.count ?? 0) > 1 || entry.profile?.admins != nil,
+                           appName: appName)
         }
         // Read but not new: where it stands, small, instead of a strip above the answer field.
         if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
@@ -2257,7 +2263,7 @@ private struct ChatsDetail: View, Equatable {
                 removing = thread
             }
         } label: {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)

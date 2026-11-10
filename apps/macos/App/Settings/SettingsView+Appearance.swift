@@ -37,7 +37,8 @@ extension SettingsView {
                         let hex = swatch.hex
                         Button { settings.accentHex = hex } label: {
                             // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
-                            Circle().fill(Color(hex: hex)).frame(width: 22, height: 22)
+                            Circle().fill(hex == NookTheme.defaultAccentHex ? NookTheme.themeAccent : Color(hex: hex))
+                                .frame(width: 22, height: 22)
                                 .padding(NookTheme.Spacing.xs)
                                 .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
                                 .contentShape(Circle())
@@ -92,7 +93,8 @@ extension SettingsView {
         }
     }
 
-    /// The accent colors offered as swatches, each with the name VoiceOver reads.
+    /// The accent colors offered as swatches, each with the name VoiceOver reads. The first is the theme's own (white in
+    /// Nook's theme, near black in light), which follows the theme and the appearance.
     static let accentSwatches: [(hex: UInt32, name: String)] = [
         (NookTheme.defaultAccentHex, "settings.accent.white"), (0x8B7BFF, "settings.accent.violet"),
         (0x5AA9FF, "settings.accent.blue"), (0x5ED6A6, "settings.accent.mint"), (0xF2B866, "settings.accent.amber"),
@@ -126,7 +128,7 @@ extension SettingsView {
         .frame(maxWidth: .infinity)
         .padding(.vertical, NookTheme.Spacing.xl)
         .padding(.horizontal, NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.sheet)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("settings.appearance.preview"))
     }
@@ -165,10 +167,9 @@ extension SettingsView {
             .frame(maxWidth: .infinity)
             .padding(.vertical, NookTheme.Spacing.lg)
             .padding(.horizontal, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(selected ? NookTheme.smoke : NookTheme.graphite))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(selected ? NookTheme.smoke : NookTheme.graphite, radius: NookTheme.Radius.panel)
+            .roundedStrokeBorder(selected ? NookTheme.iris : Color.clear, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -274,7 +275,7 @@ extension SettingsView {
             }
         }
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.graphite))
+        .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.panel)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Self.title(for: theme))
     }
@@ -300,9 +301,8 @@ extension SettingsView {
             .frame(height: 44)
             .frame(maxWidth: .infinity)
             .background(Color(hex: palette.canvas))
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .strokeBorder(chosen ? NookTheme.iris : NookTheme.line2, lineWidth: chosen ? 2 : 1))
+            .roundedClip(NookTheme.Radius.chip)
+            .roundedStrokeBorder(chosen ? NookTheme.iris : NookTheme.line2, radius: NookTheme.Radius.chip, lineWidth: chosen ? 2 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

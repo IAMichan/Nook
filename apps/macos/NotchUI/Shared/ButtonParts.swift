@@ -1,10 +1,10 @@
 import SwiftUI
 
-// The buttons both apps draw (apps/ios/project.yml compiles this file too): the white main action, the quiet one beside
-// it, and the round symbol button. On the Mac they light under the pointer; on the phone they are a finger's height
+// The buttons both apps draw (apps/ios/project.yml compiles this file too), as t3code draws them: the filled accent main
+// action (`NookTheme.primary`), the quiet one beside it, and the symbol button, all on the control radius. On the Mac they light under the pointer; on the phone they are a finger's height
 // (`SharedMetrics.buttonHeight`) and dim while pressed.
 
-/// Primary white button for a card.
+/// The main action of a card: filled with the accent (t3code's blue by default).
 struct NookPrimaryButton: View {
     let title: String
     /// An SF Symbol before the title, or nil for text only.
@@ -16,15 +16,15 @@ struct NookPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                if let symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
+                if let symbol { Image(icon: symbol).font(NookTheme.font(12, .bold)) }
                 Text(title).font(NookTheme.textFont(14, .semibold))
             }
-            .foregroundStyle(NookTheme.onPaper)
+            .foregroundStyle(NookTheme.onPrimary)
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, symbol == nil ? 18 : 16)
+            .padding(.horizontal, symbol == nil ? 16 : 14)
             .frame(height: SharedMetrics.buttonHeight)
-            .background(Capsule().fill(hovering ? NookTheme.paperHover : NookTheme.paper))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -49,7 +49,7 @@ struct NookGhostButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let symbol { Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
+                if let symbol { Image(icon: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
                 Text(title).font(NookTheme.textFont(compact ? 13 : 14, .semibold))
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -57,6 +57,7 @@ struct NookGhostButton: View {
             .fixedSize()
             .padding(.horizontal, compact ? 8 : 12)
             .frame(height: height)
+            .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .hoverLift(hovering)
         }
@@ -66,7 +67,7 @@ struct NookGhostButton: View {
     }
 }
 
-/// Circular icon button (mic, close, play, etc.).
+/// Symbol button (mic, close, play, etc.): a ghost, or filled with the accent for the main one.
 struct NookIconButton: View {
     let systemName: String
     let label: String
@@ -77,13 +78,12 @@ struct NookIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            Image(icon: systemName)
                 .font(NookTheme.font(size * 0.42, .semibold))
-                .foregroundStyle(filled ? NookTheme.onPaper : (hovering ? NookTheme.paper : NookTheme.textSecondary))
+                .foregroundStyle(filled ? NookTheme.onPrimary : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: size, height: size)
-                .background(
-                    Circle().fill(filled ? NookTheme.paper : (hovering ? NookTheme.smoke : Color.clear))
-                )
+                .roundedBackground(filled ? (hovering ? NookTheme.primaryHover : NookTheme.primary) : (hovering ? NookTheme.graphite : Color.clear),
+                                   radius: NookTheme.Radius.control)
                 .hoverLift(hovering, scale: 1.03)
         }
         .buttonStyle(.plain)

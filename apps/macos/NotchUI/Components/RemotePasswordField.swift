@@ -15,14 +15,14 @@ struct RemotePasswordField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "key.fill").foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "key.fill").foregroundStyle(NookTheme.textTertiary)
                 SecureField(tr("remote.password.placeholder", machine.name), text: $password)
                     .textFieldStyle(.plain)
                     .font(NookTheme.TextStyle.body)
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .frame(minWidth: 160)
                     .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                     .onSubmit(unlock)
                     .disabled(checking)
                 if checking {

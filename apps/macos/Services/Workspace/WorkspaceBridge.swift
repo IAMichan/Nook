@@ -702,6 +702,12 @@ final class WorkspaceBridge: ObservableObject {
             return .error("Nook's browser opens https addresses, and http only on this Mac (localhost, 127.0.0.1). \"\(raw)\" is neither.")
         }
         let host = (url.host ?? "").lowercased()
+        // The session's own browser, so a page another session has open stays where it is.
+        let browser = SessionBrowsers.shared.ownStore(caller.browserSession)
+        guard !browser.agentsStopped else {
+            audit(.browserOpen, caller, url.absoluteString, "gestopt door gebruiker")
+            return .error(Self.stoppedByUser)
+        }
         let local = BridgeURLPolicy.isLoopback(host) || allowedHosts[caller.key]?.contains(host) == true
         switch verdict(.browserOpen, caller, localPage: local) {
         case .refuse(let reason):
@@ -718,11 +724,13 @@ final class WorkspaceBridge: ObservableObject {
         case .allow:
             break
         }
-        // The session's own browser, so a page another session has open stays where it is.
-        let browser = SessionBrowsers.shared.ownStore(caller.browserSession)
+        // Stopped while the approval waited: the page does not open.
+        guard browser.agentDrives(caller.agent) else { return .error(Self.stoppedByUser) }
         // Seen as it opens, in the caller's own chat only: small in its bottom right corner (SessionBrowserCorner).
         SessionBrowsers.shared.showInCorner(browser)
         let failure = await browser.load(url, by: caller.agent)
+        // A slow page took part of the glow's time: it runs on from here.
+        browser.agentLooks(caller.agent)
         markUnseen(caller.directory, SessionTool.browser.rawValue)
         audit(.browserOpen, caller, url.absoluteString, failure ?? "geladen")
         if let failure { return .error("Opened \(url.absoluteString) in Nook's browser, but it did not load: \(failure)") }

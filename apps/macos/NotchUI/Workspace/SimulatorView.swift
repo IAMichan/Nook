@@ -30,9 +30,9 @@ struct SimulatorSnapshotView: View {
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if png != nil {
                     // Only their marks, so the device keeps its name in a narrow tab.
-                    Button { copy() } label: { Image(systemName: "doc.on.doc") }
+                    Button { copy() } label: { Image(icon: "doc.on.doc") }
                         .controlSize(.small).help(tr("sim.copy")).accessibilityLabel(tr("sim.copy"))
-                    Button { save() } label: { Image(systemName: "square.and.arrow.down") }
+                    Button { save() } label: { Image(icon: "square.and.arrow.down") }
                         .controlSize(.small).help(tr("sim.save")).accessibilityLabel(tr("sim.save"))
                 }
                 if let simulatorApp {
@@ -48,7 +48,7 @@ struct SimulatorSnapshotView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if devices.isEmpty {
                     VStack(spacing: NookTheme.Spacing.md) {
-                        Image(systemName: "iphone").font(NookTheme.font(28)).foregroundStyle(NookTheme.textTertiary)
+                        Image(icon: "iphone").font(NookTheme.font(28)).foregroundStyle(NookTheme.textTertiary)
                         Text(looked ? tr("sim.none") : tr("sim.looking"))
                             .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)
                     }

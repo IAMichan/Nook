@@ -34,7 +34,7 @@ private struct SuggestionCard: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
-                Image(systemName: "arrow.up.right")
+                Image(icon: "arrow.up.right")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
@@ -42,8 +42,8 @@ private struct SuggestionCard: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.graphite : NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -68,7 +68,7 @@ private struct HomeLogo: View {
                 let source = app.connectors.source(id: id)
                 SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? "circle.grid.2x2", tint: tint, size: size * 0.62, source: id)
             case .symbol(let name):
-                Image(systemName: name)
+                Image(icon: name)
                     .font(NookTheme.font(size * 0.42, .medium))
                     .foregroundStyle(tint)
             case nil:
@@ -76,7 +76,7 @@ private struct HomeLogo: View {
             }
         }
         .frame(width: size, height: size)
-        .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(tileFill))
+        .roundedBackground(tileFill, radius: size * 0.28)
     }
 
     /// Symbols and dots sit on a tile tinted with their color; real icons get a neutral one.
@@ -129,7 +129,7 @@ struct TodayRow: View {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         Text(item.action)
                             .font(NookTheme.TextStyle.label)
-                        Image(systemName: "chevron.right")
+                        Image(icon: "chevron.right")
                             .font(NookTheme.font(9.5, .semibold))
                     }
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)

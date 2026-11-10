@@ -24,7 +24,7 @@ struct WorktreesView: View {
                         .fixedSize()
                 }
                 // Only the arrow, so the title keeps the room in a narrow tab.
-                Button { workspace.refreshWorktrees(force: true) } label: { Image(systemName: "arrow.clockwise") }
+                Button { workspace.refreshWorktrees(force: true) } label: { Image(icon: "arrow.clockwise") }
                     .help(tr("ws.git.refresh"))
                     .accessibilityLabel(tr("ws.git.refresh"))
                     .keyboardShortcut("r", modifiers: .command)
@@ -83,7 +83,8 @@ struct WorktreesView: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
             }
         }
-        .onAppear { workspace.refreshWorktrees() }
+        .onAppear { workspace.worktreesShown(true) }
+        .onDisappear { workspace.worktreesShown(false) }
         .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
                             presenting: confirm) { row in
             if (row.changedFiles ?? 0) > 0 {
@@ -127,12 +128,12 @@ struct WorktreesView: View {
     private func actions(_ row: WorktreeRow) -> some View {
         let active = row.runIDs.compactMap { workspace.run($0) }.contains { $0.status.isActive }
         return HStack(spacing: NookTheme.Spacing.xs) {
-            Button { workspace.openInEditor(row.worktree.path) } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }
+            Button { workspace.openInEditor(row.worktree.path) } label: { Image(icon: "chevron.left.forwardslash.chevron.right") }
                 .help(tr("ws.action.openEditor"))
-            Button { workspace.openTerminal(row.worktree.path) } label: { Image(systemName: "terminal") }
+            Button { workspace.openTerminal(row.worktree.path) } label: { Image(icon: "terminal") }
                 .help(tr("ws.action.openTerminal"))
             if !row.worktree.isMain {
-                Button(role: .destructive) { confirm = row } label: { Image(systemName: "trash") }
+                Button(role: .destructive) { confirm = row } label: { Image(icon: "trash") }
                     .help(active ? tr("ws.error.busy") : tr("ws.worktree.remove"))
                     .disabled(active || row.worktree.locked)
             }

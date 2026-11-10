@@ -395,6 +395,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil
+    /// Times in a row Nook went on by itself after a limit and the limit stopped the session again (nil: not resuming).
+    /// Keeps "Resume at reset" on for the next limit, and spaces out the tries when the reset time is unknown or stale.
+    var limitRetries: Int? = nil
     /// Times in a row Nook went on after a restart cut this session off; back to nil after a turn that ends normally.
     var continuations: Int? = nil
     /// When Nook last went on with it after a restart (see `RestartContinuation.loopWindow`).

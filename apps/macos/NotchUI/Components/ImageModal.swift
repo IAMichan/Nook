@@ -27,7 +27,7 @@ struct ImageModal: View {
             ZoomablePhoto(image: sharp ?? preview,
                           pixels: ChatMediaImages.pixelSize(url) ?? preview.size,
                           onClick: onClose)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+                .roundedClip(NookTheme.Radius.control)
                 .padding(fills ? NookTheme.Spacing.xxl : NookTheme.Spacing.sm)
                 .help(tr("chat.photo.zoomHint"))
                 .accessibilityElement()
@@ -44,7 +44,7 @@ struct ImageModal: View {
             }
             .padding(fills ? NookTheme.Spacing.md : 12)
         }
-        .clipShape(RoundedRectangle(cornerRadius: fills ? 0 : NookTheme.Radius.sheet, style: .continuous))
+        .roundedClip(fills ? 0 : NookTheme.Radius.sheet)
         // Before the focused field: a composer behind the modal would take Escape for itself and Return to send.
         .onWindowKeyDown { event in
             let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
@@ -62,7 +62,7 @@ struct ImageModal: View {
 
     private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)

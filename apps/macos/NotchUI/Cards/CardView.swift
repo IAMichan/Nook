@@ -332,7 +332,7 @@ private struct CardStatusPill: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: status.tone.symbol)
+            Image(icon: status.tone.symbol)
                 .font(NookTheme.font(9.5, .bold))
             Text(status.text)
                 .font(NookTheme.TextStyle.label)
@@ -380,7 +380,7 @@ private struct CardAppIcon: View {
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: "app.fill")
+                Image(icon: "app.fill")
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
             }
@@ -408,7 +408,7 @@ private struct EventDetail: View {
                     .foregroundStyle(NookTheme.paper)
             }
             .frame(width: 40, height: 40)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
+            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.card)
 
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(line)
@@ -446,7 +446,7 @@ private struct CommandDetail: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
 
             Text(note)
                 .font(NookTheme.TextStyle.detail)
@@ -470,7 +470,7 @@ private struct ProseDetail: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
 
             Text(note)
                 .font(NookTheme.TextStyle.detail)
@@ -617,7 +617,7 @@ private struct ChoiceRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
+                Image(icon: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(checked ? NookTheme.mint : (hovering ? NookTheme.paper : NookTheme.textTertiary))
                     .padding(.top, 1)
@@ -638,8 +638,7 @@ private struct ChoiceRow: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
+            .roundedBackground(hovering || checked ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -669,7 +668,7 @@ private struct DiffDetail: View {
             .frame(maxHeight: 150)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
 
             Text(note)
                 .font(NookTheme.TextStyle.detail)

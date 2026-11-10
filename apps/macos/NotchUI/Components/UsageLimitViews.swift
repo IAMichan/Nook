@@ -50,7 +50,7 @@ struct LimitPaceIcon: View {
     }
 
     var body: some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.font(11, .medium))
             .foregroundStyle(NookTheme.textSecondary)
             .help(tr("limits.pace.\(pace.rawValue)"))
@@ -145,7 +145,7 @@ private struct UsageLimitRow: View {
         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, NookTheme.Spacing.md)
         .cardBackground(hovering ? NookTheme.paper.opacity(0.04) : Color.clear, stroke: NookTheme.line2,
-                        radius: NookTheme.Radius.control, style: .continuous)
+                        radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(help)
@@ -184,7 +184,7 @@ private struct UsageLimitRow: View {
             }
         }
         .frame(height: 20)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+        .roundedClip(NookTheme.Radius.chip)
     }
 }
 
@@ -391,9 +391,8 @@ struct UsageModal: View {
                     .frame(width: min(720, max(0, proxy.size.width - 2 * NookTheme.Spacing.xxl)))
                     .frame(maxHeight: max(0, proxy.size.height - 2 * NookTheme.Spacing.xxl))
                     .fixedSize(horizontal: false, vertical: true)
-                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
-                        .stroke(NookTheme.line2, lineWidth: 1))
+                    .roundedClip(NookTheme.Radius.sheet)
+                    .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.sheet)
                     .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -443,7 +442,7 @@ struct UsageLimitPools: View {
             }
             if !notices.isEmpty {
                 HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "exclamationmark.triangle")
+                    Image(icon: "exclamationmark.triangle")
                         .font(NookTheme.font(12, .medium))
                         .foregroundStyle(NookTheme.amber)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -456,7 +455,7 @@ struct UsageLimitPools: View {
                     Spacer(minLength: 0)
                 }
                 .padding(NookTheme.Spacing.lg)
-                .cardBackground(NookTheme.amber.opacity(0.08), stroke: NookTheme.amber.opacity(0.3), radius: NookTheme.Radius.card, style: .continuous)
+                .cardBackground(NookTheme.amber.opacity(0.08), stroke: NookTheme.amber.opacity(0.3), radius: NookTheme.Radius.card)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -507,7 +506,7 @@ private struct UsageBlockRows: View {
                     row(block)
                 }
             }
-            .cardBackground(Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+            .cardBackground(Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
             if blocks.count > 4 {
                 Button(all ? tr("usage.chats.fewer") : tr("usage.chats.more", blocks.count - 4)) {
                     withAnimation(NookTheme.swap) { all.toggle() }
@@ -530,7 +529,7 @@ private struct UsageBlockRows: View {
                 withAnimation(NookTheme.swap) { if open { expanded.remove(block.id) } else { expanded.insert(block.id) } }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))
@@ -546,8 +545,7 @@ private struct UsageBlockRows: View {
                                     .foregroundStyle(NookTheme.paper)
                                     .padding(.horizontal, NookTheme.Spacing.sm)
                                     .padding(.vertical, NookTheme.Spacing.xxs)
-                                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
-                                        .fill(NookTheme.wash.opacity(0.08)))
+                                    .roundedBackground(NookTheme.wash.opacity(0.08), radius: NookTheme.Radius.chip / 2)
                             }
                         }
                         Text(detail(block))
@@ -635,7 +633,7 @@ private struct LimitWindowCard: View {
             LimitPoolBar(window: window, section: section, now: now)
         }
         .padding(NookTheme.Spacing.xl)
-        .cardBackground(Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .cardBackground(Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
     }
 }
 
@@ -756,9 +754,8 @@ private struct LimitSegment: View {
                     }
                 }
                 .frame(height: wide ? 32 : 20)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .stroke(open || hovering ? NookTheme.line2 : Color.clear, lineWidth: 1))
+                .roundedClip(NookTheme.Radius.chip)
+                .roundedStroke(open || hovering ? NookTheme.line2 : Color.clear, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -796,7 +793,7 @@ private struct LimitResetChip: View {
             }
             if credits > 0 {
                 HStack(spacing: NookTheme.Spacing.xxs) {
-                    Image(systemName: "ticket")
+                    Image(icon: "ticket")
                     Text("\(credits)")
                 }
                 .fontWeight(.semibold)
@@ -808,7 +805,7 @@ private struct LimitResetChip: View {
         .fixedSize()
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous).fill(NookTheme.canvas.opacity(0.85)))
+        .roundedBackground(NookTheme.canvas.opacity(0.85), radius: NookTheme.Radius.chip / 2)
     }
 }
 
@@ -830,7 +827,7 @@ private struct LimitLegendRow: View {
                     .font(NookTheme.TextStyle.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(NookTheme.textStrong)
                     .frame(width: 16, height: 16)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous).fill(section.kind.color.opacity(0.35)))
+                    .roundedBackground(section.kind.color.opacity(0.35), radius: NookTheme.Radius.chip / 2)
                 Text(member.name)
                     .font(NookTheme.TextStyle.detail.weight(.medium))
                     .foregroundStyle(NookTheme.paper)
@@ -845,7 +842,7 @@ private struct LimitLegendRow: View {
                     }
                     if credits > 0 {
                         HStack(spacing: NookTheme.Spacing.xxs) {
-                            Image(systemName: "ticket")
+                            Image(icon: "ticket")
                             Text("\(credits)")
                         }
                         .fontWeight(.semibold)
@@ -857,8 +854,7 @@ private struct LimitLegendRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(hovering || open ? NookTheme.wash.opacity(0.08) : Color.clear))
+            .roundedBackground(hovering || open ? NookTheme.wash.opacity(0.08) : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

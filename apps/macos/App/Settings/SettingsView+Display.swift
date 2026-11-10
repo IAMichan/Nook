@@ -93,7 +93,7 @@ extension SettingsView {
             SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: energySymbol)
+                    Image(icon: energySymbol)
                         .foregroundStyle(energy.plan.pace == .full ? NookTheme.mint : NookTheme.amber)
                     Text(energy.statusText).foregroundStyle(NookTheme.textSecondary)
                 }

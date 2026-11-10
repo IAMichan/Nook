@@ -169,7 +169,7 @@ struct SettingsSidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(13))
                     .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
                     .frame(width: 18)
@@ -190,8 +190,7 @@ struct SettingsSidebarRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(minHeight: detail == nil ? 30 : 40)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -244,7 +243,7 @@ struct SettingsPageBar: View {
     }
 
     private var crumbChevron: some View {
-        Image(systemName: "chevron.right")
+        Image(icon: "chevron.right")
             .font(NookTheme.font(9, .semibold))
             .foregroundStyle(NookTheme.textMuted)
             .accessibilityHidden(true)

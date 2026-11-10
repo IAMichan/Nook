@@ -14,7 +14,7 @@ extension View {
     func card(padding: CGFloat = Theme.Spacing.xl, tint: Color? = nil) -> some View {
         let content = self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
         if let tint {
-            content.cardBackground(Theme.surface, stroke: tint.opacity(0.35), radius: Theme.Radius.panel, style: .continuous)
+            content.cardBackground(Theme.surface, stroke: tint.opacity(0.35), radius: Theme.Radius.panel)
         } else {
             content.panelCard()
         }
@@ -79,7 +79,7 @@ struct StatusPill: View {
                 if attention == "working" {
                     PulseDot(color: color, size: 6)
                 } else {
-                    Image(systemName: Theme.symbol(attention))
+                    Image(icon: Theme.symbol(attention))
                 }
             }
             .foregroundStyle(color)
@@ -223,13 +223,13 @@ struct Banner: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
-            Image(systemName: symbol).foregroundStyle(color)
+            Image(icon: symbol).foregroundStyle(color)
             Text(text).foregroundStyle(Theme.textStrong).frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(Theme.TextStyle.detail)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
-        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.panel, style: .continuous)
+        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.panel)
     }
 }
 

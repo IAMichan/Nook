@@ -683,7 +683,7 @@ extension TaskRingItem {
         for run in app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace) {
             let id = "run:" + run.id.uuidString
             let key = FinishedSessions.key(run: run)
-            let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen(id, run.updatedAt))
+            let attention = app.workspace.attention(run, unseen: unseen(id, run.updatedAt))
             let kind: TaskRingItem.Kind
             let status: AgentStatus
             switch attention {
@@ -905,24 +905,24 @@ private struct TrackCover: View {
     var body: some View {
         let artworkURL = app.nowPlaying.current?.artworkURL
         ZStack {
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
                 AsyncImage(url: artworkURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    Image(systemName: "music.note")
+                    Image(icon: "music.note")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.music.opacity(0.6))
                 }
             } else {
-                Image(systemName: "music.note")
+                Image(icon: "music.note")
                     .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.music)
             }
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+        .roundedClip(NookTheme.Radius.chip)
     }
 }
 

@@ -112,11 +112,11 @@ struct PullRequestFilterMenu: View {
                     .foregroundStyle(isDefault(row) ? NookTheme.textTertiary : NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Image(systemName: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(row == kind ? DropdownStyle.chosen : .clear))
+            .roundedBackground(row == kind ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -392,7 +392,7 @@ struct PullRequestToolbarButton: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol).font(NookTheme.font(11, .semibold))
+            Image(icon: symbol).font(NookTheme.font(11, .semibold))
             Text(title).font(NookTheme.TextStyle.body)
             if badge > 0 {
                 Text("\(badge)")
@@ -407,7 +407,7 @@ struct PullRequestToolbarButton: View {
         .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -439,7 +439,7 @@ private struct FilterChoiceRow: View {
                 .buttonStyle(.plain)
             if let toggleHidden, hovering || hidden {
                 Button(action: toggleHidden) {
-                    Image(systemName: hidden ? "eye" : "eye.slash")
+                    Image(icon: hidden ? "eye" : "eye.slash")
                         .font(NookTheme.font(10.5, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: 18, height: 18)
@@ -452,8 +452,7 @@ private struct FilterChoiceRow: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear)))
+        .roundedBackground(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear), radius: NookTheme.Radius.chip)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
@@ -479,7 +478,7 @@ private struct FilterChoiceRow: View {
                 Text(trailing).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textTertiary)
             }
             if chosen {
-                Image(systemName: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
+                Image(icon: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
             }
         }
         .frame(maxHeight: .infinity)

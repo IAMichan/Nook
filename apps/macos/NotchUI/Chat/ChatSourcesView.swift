@@ -100,7 +100,7 @@ struct SourcesDisclosure: View {
                                 .padding(.vertical, 2)
                                 .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
                         }
-                        Image(systemName: "chevron.down")
+                        Image(icon: "chevron.down")
                             .font(NookTheme.font(8, .bold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .rotationEffect(.degrees(expanded ? 180 : 0))
@@ -182,10 +182,7 @@ struct SourcesDisclosure: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06))
-        )
+        .roundedBackground(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06), radius: NookTheme.Radius.card)
     }
 
     /// The status of a source as a small chip: green when it was used, red when it could not be read.
@@ -414,7 +411,7 @@ struct PrivateBriefDisclosure: View {
                 expanded.toggle()
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(icon: expanded ? "chevron.down" : "chevron.right")
                     Text(tr("screenBrain.briefTitle"))
                 }
                 .font(NookTheme.TextStyle.detail)
@@ -458,7 +455,7 @@ struct NoticeList: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(notices, id: \.self) { notice in
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.circle.fill")
+                    Image(icon: "exclamationmark.circle.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.amber)
                         .padding(.top, 1)
@@ -479,7 +476,7 @@ struct NoticeList: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
+        .roundedBackground(NookTheme.amber.opacity(0.07), radius: NookTheme.Radius.panel)
     }
 }
 
@@ -511,14 +508,14 @@ private struct ReferenceRow: View {
                 }
                 Spacer(minLength: 4)
                 if openable {
-                    Image(systemName: "arrow.up.right")
+                    Image(icon: "arrow.up.right")
                         .font(NookTheme.font(9.5, .semibold))
                         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                 }
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && openable ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering && openable ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -636,7 +633,7 @@ struct ScopeMenu: View {
         let source = app.connectors.source(id: id)
         let text = title ?? source?.title ?? SourceCatalog.title(id)
         let image = SourceBrand.menuImage(for: id, domain: source?.iconDomain)
-            ?? NSImage(systemSymbolName: source?.symbol ?? SourcesDisclosure.symbol(id), accessibilityDescription: nil)
+            ?? NookIcon.nsImage(source?.symbol ?? SourcesDisclosure.symbol(id), accessibilityDescription: nil)
         return Label {
             Text(text)
         } icon: {
@@ -743,7 +740,7 @@ struct AttachmentChip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: isImage ? "photo" : "paperclip").font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary)
+            Image(icon: isImage ? "photo" : "paperclip").font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary)
             Text(name).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.paper).lineLimit(1)
             ToolbarIconButton("xmark", tr("button.clear"), height: 18, width: 18, remove)
         }

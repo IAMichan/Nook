@@ -72,7 +72,7 @@ struct RunInspector: View {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Button(tr("ws.action.openEditor")) { workspace.openInEditor(run.workingDirectory) }
                 Button(tr("ws.action.openTerminal")) { workspace.openTerminal(run.workingDirectory) }
-                Button { workspace.revealInFinder(run.workingDirectory) } label: { Image(systemName: "folder") }
+                Button { workspace.revealInFinder(run.workingDirectory) } label: { Image(icon: "folder") }
                     .help(tr("ws.action.reveal"))
             }
             .controlSize(.small)
@@ -97,7 +97,7 @@ struct RunInspector: View {
                     Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
                 } else if snapshot == nil || (snapshot?.loading == true && snapshot?.status == nil) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 4).fill(WS.subtle).frame(height: 14)
+                        NookTheme.shape(4).fill(WS.subtle).frame(height: 14)
                     }
                 } else if files.isEmpty {
                     Text(tr("ws.inspector.clean")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
@@ -141,7 +141,7 @@ struct RunInspector: View {
                                 .disabled(run.status.isActive)
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(icon: "ellipsis.circle")
                     }
                     .menuStyle(.borderlessButton)
                     .help(tr("a11y.more"))

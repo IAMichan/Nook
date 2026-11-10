@@ -57,7 +57,7 @@ struct MailDraftView: View {
     /// A closed draft folds to one line, so the conversation stays readable and the draft can still come back.
     private var dismissedRow: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "envelope")
+            Image(icon: "envelope")
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
             Text(subject.isEmpty ? tr("chat.mail.concept") : subject)
@@ -73,13 +73,13 @@ struct MailDraftView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.xl)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
     }
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "envelope")
+                Image(icon: "envelope")
                     .font(NookTheme.font(12, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
                 Text(tr("chat.mail.concept"))
@@ -139,7 +139,7 @@ struct MailDraftView: View {
             }
         }
         .padding(NookTheme.Spacing.xl)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
     }
 
     @ViewBuilder
