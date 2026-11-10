@@ -1669,7 +1669,7 @@ struct AgentRunPanel: View {
         let allowed = app.connectedProviders(in: run.projectPath)
         let providers = idle ? (allowed.contains(run.provider) ? allowed : [run.provider] + allowed) : [run.provider]
         return ModelPickerDropdown {
-            ComposerPill(agent: run.provider.displayName, account: profile.map { AccountTag.of($0, app: app) },
+            ComposerPill(agent: run.provider.displayName, account: AccountTag.badge(profile, app: app),
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                          short: model ?? run.provider.displayName)
         } content: {

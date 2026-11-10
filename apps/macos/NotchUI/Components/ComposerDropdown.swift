@@ -128,7 +128,10 @@ struct DropdownRow: View {
                 if let agent {
                     AgentMark(agent: agent, account: account, size: 15, ring: DropdownStyle.panel)
                 } else if let brand {
+                    // A model of an account that needs telling apart carries its badge, as on the agent's logo in the rail.
                     BrandMark(logo: brand, size: 14)
+                        .accountBadge(account, size: 14, ring: DropdownStyle.panel)
+                        .padding(.trailing, account == nil ? 0 : 3)
                 } else if let projectIcon {
                     ProjectIconView(icon: projectIcon, size: 15)
                         .padding(.top, detail == nil ? 0 : 1)
@@ -444,7 +447,7 @@ struct AgentModelPicker: View {
     }
 
     private func account(of place: Place) -> AccountTag? {
-        profile(of: place).map { AccountTag.of($0, app: app) }
+        AccountTag.badge(profile(of: place), app: app)
     }
 
     /// The account whose models the list shows: an ACP agent you added has models of its own.
@@ -514,6 +517,7 @@ struct AgentModelPicker: View {
         return ModelPickerItem(id: option,
                                title: name,
                                brand: BrandLogo.forName(option) ?? BrandLogo.forName(name) ?? BrandLogo.forName(current.displayName),
+                               account: account(of: place),
                                detail: app.modelUpdateNote(option, for: current)
                                    ?? (family == nil && ModelSearch.idAddsToName(option, name) ? option : nil),
                                trailing: order.map { "\($0)" }

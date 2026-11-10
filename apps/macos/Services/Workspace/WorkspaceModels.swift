@@ -1293,7 +1293,8 @@ enum ToolSummary {
 
 /// A switch of the agent, model or effort a session runs, as the timeline marks it between two turns:
 /// "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5 (High)" when the agent changes, "Sonnet 5.5 → Opus 5.5 high"
-/// when only the model or effort does.
+/// when only the model or effort does. A switch to another account of the same agent names both sides with the
+/// account's badge on the logo.
 struct ModelSwitch: Codable, Equatable, Sendable {
     struct Endpoint: Codable, Equatable, Sendable {
         /// `RunProvider.rawValue`, for the agent's logo and color.
@@ -1304,17 +1305,53 @@ struct ModelSwitch: Codable, Equatable, Sendable {
         var model: String?
         /// The reasoning effort's id ("high"); nil for the default.
         var effort: String?
+        /// The account it runs under (`AgentProfile.id`), for the badge on the agent's logo; nil in switches recorded
+        /// before accounts were noted.
+        var profile: String? = nil
+        /// The account's name when the switch happened ("Work"), for the badge and the words when the account is gone.
+        var account: String? = nil
 
         func sameSetting(_ other: Endpoint) -> Bool { model == other.model && effort == other.effort }
     }
 
     var from: Endpoint
     var to: Endpoint
+    /// The other account had its own conversation, so the context was handed over even though the agent stayed.
+    /// Optional so switches saved before it still decode.
+    var accountHandoff: Bool? = nil
 
-    /// Another agent (or another account of it) takes over the conversation: the context is handed over.
-    var handoff: Bool { from.provider != to.provider || from.agent != to.agent }
+    /// The session went on under another account of the same agent.
+    var accountChanged: Bool {
+        guard let before = from.profile, let after = to.profile else { return false }
+        return from.provider == to.provider && before != after
+    }
+    /// Another agent (or another account of it with a conversation of its own) takes over: the context is handed over.
+    var handoff: Bool { from.provider != to.provider || from.agent != to.agent || (accountHandoff == true && accountChanged) }
     /// Nothing changed after all (you went back to what it was before sending).
-    var isNoChange: Bool { !handoff && from.sameSetting(to) }
+    var isNoChange: Bool { !handoff && !accountChanged && from.sameSetting(to) }
     var modelChanged: Bool { from.model != to.model }
     var effortChanged: Bool { from.effort != to.effort }
+}
+
+/// The words of a switch, for search, copy and the handoff summary (the divider draws its own).
+enum ModelSwitchText {
+    static func side(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> String {
+        [model ? endpoint.model ?? "default" : nil, effort ? endpoint.effort : nil].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// "Claude Code (Work)" when the account changed and has a name, else the agent alone.
+    static func agent(_ endpoint: ModelSwitch.Endpoint, accounts: Bool) -> String {
+        guard accounts, let account = endpoint.account, !account.isEmpty else { return endpoint.agent }
+        return endpoint.agent + " (" + account + ")"
+    }
+
+    static func plain(_ change: ModelSwitch) -> String {
+        if change.handoff || change.accountChanged {
+            let accounts = change.accountChanged
+            return agent(change.from, accounts: accounts) + " " + side(change.from, model: true, effort: change.from.effort != nil)
+                + " → " + agent(change.to, accounts: accounts) + " " + side(change.to, model: true, effort: change.to.effort != nil)
+        }
+        let model = change.modelChanged, effort = change.effortChanged
+        return side(change.from, model: model, effort: effort) + " → " + side(change.to, model: model, effort: effort)
+    }
 }

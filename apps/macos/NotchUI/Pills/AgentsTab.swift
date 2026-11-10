@@ -470,8 +470,7 @@ struct AgentsTab: View {
     }
 
     private func account(_ profile: AgentProfile?) -> AccountTag? {
-        guard !app.demoMode, let profile else { return nil }
-        return AccountTag.of(profile, app: app)
+        AccountTag.badge(profile, app: app)
     }
 
     private func accountName(_ profile: AgentProfile?) -> String {
