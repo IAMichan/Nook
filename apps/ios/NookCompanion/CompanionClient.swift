@@ -31,6 +31,8 @@ final class CompanionClient: ObservableObject {
     @Published var pendingPrompt: PromptLink?
     /// A quick action from the app's icon, for `RootView` to act on once (`AppShortcut`).
     @Published var pendingShortcut: AppShortcut?
+    /// The session whose snooze moment is being picked (`SnoozeSheet`, shown by `RootView`).
+    @Published var snoozing: SessionDigest?
     /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
     @Published private(set) var macPushReady: Bool?
     /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.

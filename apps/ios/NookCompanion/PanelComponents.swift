@@ -407,9 +407,10 @@ struct SessionComposer<Controls: View>: View {
 }
 
 extension SessionComposer where Controls == EmptyView {
-    init(text: Binding<String>, prompt: LocalizedStringKey, canSend: Bool = true, sending: Bool = false, busy: Bool = false,
+    init(text: Binding<String>, prompt: LocalizedStringKey, minHeight: CGFloat = 22, lines: ClosedRange<Int> = 1...6,
+         canSend: Bool = true, sending: Bool = false, busy: Bool = false,
          onStop: (() -> Void)? = nil, focus: FocusState<Bool>.Binding? = nil, onSend: @escaping () -> Void) {
-        self.init(text: text, prompt: prompt, canSend: canSend, sending: sending, busy: busy, onStop: onStop, focus: focus,
+        self.init(text: text, prompt: prompt, minHeight: minHeight, lines: lines, canSend: canSend, sending: sending, busy: busy, onStop: onStop, focus: focus,
                   onSend: onSend) { EmptyView() }
     }
 }
