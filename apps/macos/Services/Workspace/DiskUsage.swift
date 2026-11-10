@@ -9,10 +9,18 @@ enum DiskUsage {
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .isRegularFileKey]
         guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [],
                                                          errorHandler: { _, _ in true }) else { return nil }
+        let keySet = Set(keys)
         var total: Int64 = 0
-        for case let url as URL in items {
-            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
-            total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+        var done = false
+        // A worktree with its build holds hundreds of thousands of files; every URL is autoreleased, so drain in batches.
+        while !done {
+            autoreleasepool {
+                for _ in 0..<2_000 {
+                    guard let url = items.nextObject() as? URL else { done = true; return }
+                    guard let values = try? url.resourceValues(forKeys: keySet), values.isRegularFile == true else { continue }
+                    total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+                }
+            }
         }
         return total
     }
