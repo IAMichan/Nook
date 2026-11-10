@@ -193,7 +193,7 @@ struct QueuedMessagesStrip: View {
         .padding(.vertical, NookTheme.Spacing.xs)
         .contentShape(Rectangle())
         // The tray above the composer is the card; the row under the pointer and the one open in the box stand out of it.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(fill))
+        .roundedBackground(fill, radius: NookTheme.Radius.control)
         .onHover { inside in
             if inside { hovered = message.id } else if hovered == message.id { hovered = nil }
         }
@@ -255,7 +255,7 @@ private struct QueuedPictureThumbnail: View {
             }
             .frame(width: 22, height: 22)
             .background(NookTheme.smoke)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedClip(NookTheme.Radius.control)
         }
         .task(id: url) {
             let url = url

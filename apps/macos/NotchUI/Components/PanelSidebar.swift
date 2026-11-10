@@ -121,8 +121,7 @@ struct PanelSidebarTop: View {
                         .padding(NookTheme.Spacing.xxs)
                         .frame(maxWidth: .infinity, minHeight: PanelSidebarMetrics.tabBar,
                                maxHeight: PanelSidebarMetrics.tabBar)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                            .fill(NookTheme.surface))
+                        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
                 }
                 NookDivider()
                     .padding(.top, NookTheme.Spacing.md)
@@ -223,7 +222,7 @@ private struct PanelSidebarTabButton: View {
     private var named: Bool { selected && !compact }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.control)
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Image(icon: PanelSplitChoice.symbol(tab))

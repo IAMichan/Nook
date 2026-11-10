@@ -167,7 +167,7 @@ struct PullRequestInlineEditor: View {
                 .font(NookTheme.TextStyle.body)
                 .lineLimit(2...12)
                 .padding(NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
                 .onExitCommand(perform: close)
             HStack(spacing: NookTheme.Spacing.sm) {
                 Spacer(minLength: 0)

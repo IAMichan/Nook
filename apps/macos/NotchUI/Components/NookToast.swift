@@ -349,7 +349,7 @@ extension View {
             .padding(.trailing, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: maxWidth, alignment: .leading)
-            .cardBackground(NookTheme.graphite, stroke: tone.opacity(0.22), radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.graphite, stroke: tone.opacity(0.22), radius: NookTheme.Radius.panel)
             .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
     }
 }

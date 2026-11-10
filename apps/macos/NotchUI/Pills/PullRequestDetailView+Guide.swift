@@ -120,7 +120,7 @@ extension PullRequestDetailView {
                                      }
                                  } : nil)
                             .equatable()
-                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+                            .roundedClip(NookTheme.Radius.control)
                     }
                 }
             }

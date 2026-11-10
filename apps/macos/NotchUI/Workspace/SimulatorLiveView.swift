@@ -63,7 +63,7 @@ struct SimulatorView: View {
             if let button { Button(button, action: action).controlSize(.small) }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.paper.opacity(0.04)))
+        .roundedBackground(NookTheme.paper.opacity(0.04), radius: NookTheme.Radius.card)
     }
 
     // MARK: Live

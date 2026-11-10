@@ -65,8 +65,7 @@ struct PullRequestRow: View, Equatable {
                     .padding(.leading, CGFloat(min(depth, 3)) * NookTheme.Spacing.xl + NookTheme.Spacing.xxs)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-            .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+        .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         // Resting on a row reads it ahead, so the click opens it at once.

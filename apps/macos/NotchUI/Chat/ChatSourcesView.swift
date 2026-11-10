@@ -182,10 +182,7 @@ struct SourcesDisclosure: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06))
-        )
+        .roundedBackground(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06), radius: NookTheme.Radius.card)
     }
 
     /// The status of a source as a small chip: green when it was used, red when it could not be read.
@@ -479,7 +476,7 @@ struct NoticeList: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
+        .roundedBackground(NookTheme.amber.opacity(0.07), radius: NookTheme.Radius.panel)
     }
 }
 
@@ -518,7 +515,7 @@ private struct ReferenceRow: View {
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && openable ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering && openable ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
