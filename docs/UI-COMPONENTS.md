@@ -69,8 +69,7 @@ and a selected row stands a full step above a hovered one. In practice:
   usage limit) stands on `surface`; only its symbol carries the state color.
 - **One reading column.** A conversation and its composer are one centered column of at most 736 pt
   (`.chatColumn()`, `PanelLayout.chatColumn`), so lines stay readable in a wide window. Beside a session's panels it
-  stays centered in the whole row, so it keeps its place when a panel opens or closes; only a panel that would cover it
-  pushes it aside (`PanelSplit.columnStart`). `SessionComposer` keeps to
+  is centered in the room they leave, with the same margin on both sides (`PanelSplit.columnStart`). `SessionComposer` keeps to
   that column by itself, so every chat with an agent or with Nook gets the same composer: a `Radius.composer` box on
   `surface` with a hairline outline and a faint light on its top edge, the text 16 pt in, the choices inside the box on
   one row with the round send button, 8 pt from the corner. Only a notch card keeps its choices in a tray under the box. Your own message is a soft
