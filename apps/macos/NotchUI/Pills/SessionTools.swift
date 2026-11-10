@@ -285,8 +285,8 @@ struct SessionWorkbench<Conversation: View>: View {
     /// Whether the session panel was docked: it docks again only with some room to spare (`PanelLayout.dockHysteresis`),
     /// so dragging a panel near the edge of the room does not make the column come and go.
     @State private var wasDocked = true
-    /// How far the conversation's column still has to go after the session panel opened or closed (`chatColumnSlide`):
-    /// it only moves when the window is too narrow to keep it in its place beside that panel.
+    /// How far the conversation's column still has to go after the session panel opened or closed (`chatColumnSlide`), so
+    /// it glides to the middle of its new room instead of jumping there.
     @State private var chatSlide: CGFloat = 0
     /// Whether a panel's tool may take the keyboard: not while the session opens with a panel already open, so you type
     /// in the composer right away; once you open or switch a tool in a panel, it may (`sidePanelTakesFocus`).
@@ -356,7 +356,6 @@ struct SessionWorkbench<Conversation: View>: View {
                     // which ends at the same spot. So they stay where they are when that panel opens or closes.
                     conversation(docked ? AnyView(EmptyView()) : AnyView(tools))
                         .environment(\.chatColumnSlide, chatSlide)
-                        .environment(\.chatColumnRow, CGFloat(totalWidth))
                         // A pull request link in the conversation opens in the side panel.
                         .environment(\.pullRequestLinksBeside, true)
                         // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
@@ -589,8 +588,7 @@ struct SessionWorkbench<Conversation: View>: View {
 
     /// Opens or closes the session panel. It opens with the room it needs to stay, not the extra room to dock again:
     /// from the toggle's own width it would otherwise not open, and take its toggle with it.
-    /// The conversation takes its new width at once. Its column keeps its place; where the panel leaves too little room
-    /// for that, it glides aside instead of jumping.
+    /// The conversation takes its new width at once. Its column glides to the middle of that width instead of jumping.
     private func toggleSessionPanel() {
         let opening = sessionPanelClosed
         if opening { wasDocked = true }
@@ -600,7 +598,7 @@ struct SessionWorkbench<Conversation: View>: View {
         let openRoom = closedRoom - CGFloat(SidePanelRoom.of(Double(PanelLayout.sessionPanel)))
         let start = { (room: CGFloat) in
             let column = min(PanelLayout.chatColumn, room)
-            return PanelSplit.columnStart(column: column, room: room, row: CGFloat(totalWidth))
+            return PanelSplit.columnStart(column: column, room: room)
         }
         chatSlide = opening ? start(closedRoom) - start(openRoom) : start(openRoom) - start(closedRoom)
     }
