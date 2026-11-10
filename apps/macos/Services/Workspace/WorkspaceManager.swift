@@ -23,6 +23,10 @@ struct PendingQuestion: Identifiable, Equatable {
     enum Origin: Equatable {
         case codex(RPCID)
         case claude(requestID: String, input: JSONBox)
+        /// A Pi extension's dialog (select, input, editor): answered with `extension_ui_response`.
+        case pi(requestID: String)
+        /// A question the agent asked without waiting for it (Codex's async message): the answer goes as a message.
+        case message
     }
 
     let id: String
@@ -30,6 +34,9 @@ struct PendingQuestion: Identifiable, Equatable {
     let questions: [RunQuestion]
     let origin: Origin
     let created: Date
+
+    /// Nothing waits for this answer: the agent goes on, and the answer reaches it as a message of yours.
+    var answersAsMessage: Bool { origin == .message }
 }
 
 /// Latest Git snapshot observed by Nook for a session.
@@ -178,6 +185,9 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// Sessions whose latest wake turn ended while a monitor still runs: its completion waits for the monitor
+    /// (`WakeCompletion`), so you are told once instead of for every line the monitor printed.
+    var heldWakeCompletions: Set<UUID> = []
     /// Sessions whose turn ended while their subagents or commands still work in the background: the list keeps showing
     /// them as working. Published, unlike the timelines it comes from: a list row has to change when the last one ends.
     @Published var subagentsWorking: Set<UUID> = []
@@ -264,6 +274,11 @@ final class WorkspaceManager: ObservableObject {
     var idleCompactionTimers: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose running turn is such a summary: it ends quietly, without a notification or a snapshot.
     var idleCompacting: Set<UUID> = []
+    /// Sessions where you chose Keep on the "compact first" chip (`ReturnCompaction`): your next message goes with the
+    /// whole history. Cleared once it went out.
+    @Published var keepsHistory: Set<UUID> = []
+    /// Claude Code's `autoCompactWindow` per settings folder and model, read at most once a minute (`AutoCompactMark`).
+    var claudeCompactWindows: [String: (window: Int?, read: Date)] = [:]
     /// The part of `idleCompacting` that Nook started because the context grew past your limit (`SizeCompaction`).
     var sizeCompacting: Set<UUID> = []
     /// A message sent while the session was still warming up: it goes out as soon as the connection is open.
@@ -830,6 +845,7 @@ final class WorkspaceManager: ObservableObject {
         )
         run.effort = config.effort
         run.speedTier = config.speedTier
+        run.ultracode = config.ultracode
         run.lineage = config.lineage
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
@@ -1274,8 +1290,15 @@ final class WorkspaceManager: ObservableObject {
             recoverConversation(id, recovery)
             return
         }
-        onTurnFinished?(run)
-        deliverDelegatedResult(id)
+        // A wake for one line of a monitor that still runs: the alert (and a delegating session's result) waits for the
+        // turn after its last line, or for the monitor to end.
+        if run.status == .completed, WakeCompletion.holds(timeline(id)) {
+            heldWakeCompletions.insert(id)
+        } else {
+            heldWakeCompletions.remove(id)
+            onTurnFinished?(run)
+            deliverDelegatedResult(id)
+        }
         captureCheckpoint(id)
         scheduleIdleCompaction(id)
         compactForSize(id)
@@ -1694,7 +1717,8 @@ final class WorkspaceManager: ObservableObject {
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
             effort: run.provider == .claude || run.provider == .pi ? run.effort : nil,
-            speedTier: speedTier(run)
+            speedTier: speedTier(run),
+            ultracode: ultracode(run)
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
         if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
@@ -1759,7 +1783,7 @@ final class WorkspaceManager: ObservableObject {
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
-                effort: run.effort, speedTier: speedTier(run))), for: run)
+                effort: run.effort, speedTier: speedTier(run), ultracode: ultracode(run))), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -2177,7 +2201,7 @@ final class WorkspaceManager: ObservableObject {
             approvals[runID]?.removeAll { $0.id == requestID }
             recap?.decision(allowed: decision != .deny)
             mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-            if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+            if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
             onApprovalGone?(requestID)
             return
         }
@@ -2194,7 +2218,7 @@ final class WorkspaceManager: ObservableObject {
         approvals[runID]?.removeAll { $0.id == requestID }
         recap?.decision(allowed: decision != .deny)
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-        if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+        if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
         if !reason.isEmpty { append(runID, RunEvent(kind: .system, text: tr("ws.approval.deniedBecause", reason))) }
     }
@@ -2485,6 +2509,8 @@ final class WorkspaceManager: ObservableObject {
         backgroundWork.remove(id)
         subagentsWorking.remove(id)
         wakeLine[id] = nil
+        heldWakeCompletions.remove(id)
+        keepsHistory.remove(id)
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
         // The pages the agent showed (render_page) go with the session.
@@ -2932,6 +2958,17 @@ final class WorkspaceManager: ObservableObject {
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
         let kept = detachKeptRuns()
+        // Nothing is announced on the way out: a completion held for a monitor ends with Nook.
+        heldWakeCompletions.removeAll()
+        // A session whose turn ended while it waited on work in the background (a subagent) loses that work now: Nook
+        // remembers what it was, so after the restart it can tell the agent and go on (`RestartContinuation`).
+        let now = Date()
+        for index in runs.indices where runs[index].status == .completed && !kept.contains(runs[index].id) {
+            let id = runs[index].id
+            guard backgroundWork.contains(id) || subagentsWorking.contains(id) else { continue }
+            let labels = RestartContinuation.waitedOn(events[id] ?? [])
+            if !labels.isEmpty { runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now) }
+        }
         GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }

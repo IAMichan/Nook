@@ -142,6 +142,14 @@ enum SnoozePolicy {
     }
 }
 
+/// What a restart stopped while a session waited on it after its turn (`WorkspaceRun.cutBackgroundWork`).
+struct CutBackgroundWork: Codable, Equatable, Sendable {
+    /// What each piece of work was, as its row named it.
+    var labels: [String]
+    /// When Nook quit.
+    var at: Date
+}
+
 /// Goes on with a session that a restart cut off: one "Continue where you left off.",
 /// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {
@@ -156,15 +164,44 @@ enum RestartContinuation {
 
     /// Never a session you archived, settled or snoozed, one that waits on you (a question, an approval that the restart
     /// cut off), or one stopped by a usage limit, which has its own resume.
+    /// Also a session whose turn had ended while it waited on work in the background that the restart stopped
+    /// (`cutBackgroundWork`): it is woken with a note of what will not report back (as t3code does).
     static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, settled: Bool = false,
                                now: Date = Date()) -> Bool {
         guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
         if run.interruptedWhileWaiting == true, !run.provider.capabilities.pendingRequestsSurviveRestart { return false }
         if let until = run.snoozedUntil, until > now { return false }
-        guard now.timeIntervalSince(run.updatedAt) <= maxAge else { return false }
-        guard run.status == .stopped, run.statusDetail == "interrupted" else { return false }
+        let interrupted = run.status == .stopped && run.statusDetail == "interrupted"
+        let waiting = run.status == .completed && !(run.cutBackgroundWork?.labels.isEmpty ?? true)
+        guard interrupted || waiting else { return false }
+        // A turn that ended long ago can still have waited until Nook quit: then the quit is what counts.
+        let since = interrupted ? run.updatedAt : (run.cutBackgroundWork?.at ?? run.updatedAt)
+        guard now.timeIntervalSince(since) <= maxAge else { return false }
         guard run.limitedAt == nil else { return false }
         return chainLength(run, now: now) < limit
+    }
+
+    /// The subagents still at work when the session's turn ended (any agent that reports them): what it waits on.
+    /// Commands and monitors left running are not: most are a dev server or its watcher that nobody waits for.
+    static func waitedOn(_ events: [RunEvent]) -> [String] {
+        Subagents.list(events.filter { $0.state == .running && Subagents.isLaunch($0) }).map(\.title)
+    }
+
+    /// At most this many items in the note, so a long list does not fill the agent's context.
+    static let noteLimit = 10
+
+    /// What the agent reads after the restart: the note of the work that stopped (if any), then the usual message.
+    static func message(for run: WorkspaceRun) -> String {
+        guard let labels = run.cutBackgroundWork?.labels, !labels.isEmpty else { return message }
+        return note(labels) + "\n\n" + message
+    }
+
+    /// The agent's own language is English: this goes to the agent, not to you.
+    static func note(_ labels: [String]) -> String {
+        let shown = labels.prefix(noteLimit).map { "- subagent: " + $0 }
+        let more = labels.count > noteLimit ? ["- and \(labels.count - noteLimit) more"] : []
+        return (["Note: Nook restarted, and this background work was stopped before it finished. It will not report back on "
+                 + "its own, so start again what you still need and wait for its result:"] + shown + more).joined(separator: "\n")
     }
 
     /// Continuations in a row that still count: none once the last one is older than `loopWindow`.

@@ -304,8 +304,11 @@ enum CodexAppServerMapper {
         guard let item, let id = item["id"] as? String, let type = item["type"] as? String else { return [] }
         switch type {
         case "agentMessage":
+            if finished, let questions = asyncQuestions(item) { return [.asyncQuestion(id: id, questions: questions)] }
             guard finished, let text = item["text"] as? String, !text.isEmpty else { return [] }
             return [.messageCompleted(id: id, text: text)]
+        case "imageGeneration":
+            return [generatedImage(id, item, finished: finished)]
         case "reasoning":
             guard finished else { return [] }
             let parts = ((item["summary"] as? [String]) ?? []).isEmpty ? ((item["content"] as? [String]) ?? []) : ((item["summary"] as? [String]) ?? [])
@@ -374,6 +377,39 @@ enum CodexAppServerMapper {
         default:
             return []
         }
+    }
+
+    /// The questions of a message Codex sends without stopping (`delivery: "async"`, each `{title, options?}` with options
+    /// as plain labels). nil for an ordinary message. Your own answer is always possible: it goes as a message.
+    static func asyncQuestions(_ item: [String: Any]) -> [RunQuestion]? {
+        guard (item["delivery"] as? String) == "async", let raw = item["questions"] as? [[String: Any]] else { return nil }
+        let questions = raw.enumerated().compactMap { index, entry -> RunQuestion? in
+            guard let title = (entry["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return nil }
+            let options = ((entry["options"] as? [String]) ?? []).filter { !$0.isEmpty }
+                .map { RunQuestionOption(label: $0, description: "") }
+            return RunQuestion(id: String(index), header: "", question: title, options: options, multiSelect: false, allowsOther: true)
+        }
+        return questions.isEmpty ? nil : questions
+    }
+
+    /// The tool name a picture Codex generated (`imageGeneration`) gets in the timeline: it is one of the tools that hand
+    /// you files (`SharedFiles`), so the saved picture shows as one.
+    static let imageTool = "image_generation"
+
+    /// A picture Codex generates: running while it is made, then the file it saved (`savedPath`) with the prompt it used
+    /// as the caption, or failed with Codex's reason.
+    static func generatedImage(_ id: String, _ item: [String: Any], finished: Bool) -> CodexStreamEvent {
+        let prompt = ((item["revisedPrompt"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard finished else { return .toolCall(id: id, name: imageTool, detail: "", finished: false, failed: false) }
+        let failure = item["failure"].flatMap { $0 is NSNull ? nil : $0 }
+        let reason = (failure as? [String: Any])?["message"] as? String ?? failure as? String
+        let path = ((item["savedPath"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let failed = failure != nil || (item["status"] as? String) == "failed"
+        var input: [String: Any] = [:]
+        if !failed, !path.isEmpty { input["files"] = [path] }
+        if !prompt.isEmpty { input["caption"] = prompt }
+        return .toolCall(id: id, name: imageTool, detail: ToolSummary.oneLine(prompt, 80), finished: true, failed: failed,
+                         input: JSONBox(input), output: failed ? (reason ?? "") : nil)
     }
 
     private static func request(_ id: RPCID, _ method: String, _ params: [String: Any]) -> [CodexStreamEvent] {
