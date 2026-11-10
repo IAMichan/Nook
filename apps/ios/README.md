@@ -25,6 +25,7 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer
   InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
+  ChatPictures.swift     the chats' own pictures from the Mac, kept in the caches folder
   LiveActivities.swift   Live Activity tokens for the Mac, the switch, updates while the app is open
 NookActivity/    widget extension: the Live Activity on the Lock Screen and in the Dynamic Island
 Shared/          what the app and the extension share (ActivityKit attributes, how a phase looks)

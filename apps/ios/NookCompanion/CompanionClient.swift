@@ -45,6 +45,8 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var timelines: [String: [TimelineEntry]] = [:]
     /// The session on screen whose conversation follows live (`CompanionOp.watch`), kept across reconnects.
     private(set) var watchedSession: String?
+    /// The chat open in the Chats tab, followed live (`watchChat`); watched again after a reconnect.
+    private(set) var watchedChat: String?
     /// The changed files of a session (`CompanionOp.diff`).
     @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
     /// Messages your Mac refused, per session, to edit and send again or to drop, so a
@@ -587,7 +589,9 @@ final class CompanionClient: ObservableObject {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     if Task.isCancelled { return }
-                    await self?.refreshInbox()
+                    // A Mac that sends the inbox by itself (`liveChats`) needs no asking.
+                    let live = await self?.can(CompanionFeature.liveChats) ?? false
+                    if !live { await self?.refreshInbox() }
                     await self?.refreshOthers()
                 }
             }
@@ -617,6 +621,7 @@ final class CompanionClient: ObservableObject {
     private func afterConnecting() async {
         // A new connection has no session open on the Mac yet: the one on screen follows again.
         if let session = watchedSession { await watchSession(session) }
+        if let chat = watchedChat { await watchChat(chat) }
         await LiveActivities.shared.reconcile(sessions)
         takeShares()
         await drainOutbox()
@@ -1018,6 +1023,26 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .inboxChat, item: chatID), quiet: true)
     }
 
+    /// Opens a chat live (`CompanionOp.watchChat`): the Mac answers with its messages, then sends what changes by itself.
+    /// False when this Mac cannot, and the screen asks every few seconds instead.
+    @discardableResult
+    func watchChat(_ chatID: String) async -> Bool {
+        watchedChat = chatID
+        guard await supports(CompanionFeature.liveChats), phase == .connected else { return false }
+        return await perform(CompanionRequest(op: .watchChat, item: chatID), quiet: true)?.ok == true
+    }
+
+    /// The chat left the screen: the Mac stops sending its messages (unless another one opened meanwhile).
+    func unwatchChat(_ chatID: String) async {
+        guard watchedChat == chatID else { return }
+        watchedChat = nil
+        guard can(CompanionFeature.liveChats), phase == .connected else { return }
+        await perform(CompanionRequest(op: .watchChat), quiet: true)
+    }
+
+    /// Whether the Chats tab and Nook's conversations follow live right now, so their screens need not ask.
+    var chatsAreLive: Bool { can(CompanionFeature.liveChats) && phase == .connected && channel != nil }
+
     /// Your own words to a chat (a WhatsApp chat on the Mac), as an answer to `replyTo` when one is quoted. Through the
     /// outbox: it waits while the Mac cannot be reached, shown in the chat as waiting.
     func sendInbox(_ text: String, to chatID: String, replyTo: String? = nil) async -> Delivery {
@@ -1206,14 +1231,16 @@ final class CompanionClient: ObservableObject {
         }
         if let chats = response.inbox {
             if chats != inbox { inbox = chats }
+            // The chats' own pictures: the ones the phone does not have yet, or that changed (`CompanionFeature.avatars`).
+            if can(CompanionFeature.avatars) { ChatPictures.shared.update(chats, client: self) }
             if response.message != inboxStatus { inboxStatus = response.message }
         }
-        if let lines = response.inboxLines, let chat = req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
+        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
         takePulls(response, for: req)
         if let accounts = response.usage?.accounts ?? response.home?.accounts { keepUsage(accounts) }
         if response.sessions != nil || response.launch != nil || response.features != nil { writeShareTargets() }
         // A Mac that says nothing of typing leaves it empty, never standing from an earlier answer.
-        if response.inboxLines != nil, let chat = req.item {
+        if response.inboxLines != nil, let chat = response.inboxChat ?? req.item {
             let typing = response.inboxTyping ?? []
             if inboxTyping[chat] ?? [] != typing { inboxTyping[chat] = typing }
         }
