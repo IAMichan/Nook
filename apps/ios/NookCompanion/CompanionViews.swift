@@ -99,6 +99,7 @@ struct RootView: View {
             default: break
             }
         }
+        .sheet(item: $client.snoozing) { session in SnoozeSheet(session: session) }
         .alert("", isPresented: Binding(get: { client.notice != nil }, set: { if !$0 { client.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(client.notice ?? "") }
@@ -280,6 +281,8 @@ struct SessionListView: View {
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
     @State private var composing = false
+    /// The pull request list (`PullRequestListView`) is open.
+    @State private var showsPulls = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
     /// Words to find a session by (its title, folder, branch or agent).
@@ -316,7 +319,12 @@ struct SessionListView: View {
             Group {
                 PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
-                    NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
+                    HStack(spacing: Theme.Spacing.sm) {
+                        if client.can(CompanionFeature.pullRequests) {
+                            NookIconButton(systemName: "arrow.triangle.pull", label: String(localized: "Pull requests")) { showsPulls = true }
+                        }
+                        NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
+                    }
                 }
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -365,6 +373,7 @@ struct SessionListView: View {
         .refreshable { await client.refresh() }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
+        .navigationDestination(isPresented: $showsPulls) { PullRequestListView() }
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
@@ -531,6 +540,7 @@ struct SessionQuickActions: View {
                 Button("One hour") { run(.snoozeHour) }
                 Button("This evening") { run(.snoozeEvening) }
                 Button("Tomorrow morning") { run(.snoozeTomorrow) }
+                SnoozeCustomItems(session: session, actions: actions) { run($0) }
             } label: { Label("Snooze", systemImage: "clock") }
         }
         if actions.contains(.archive) {
@@ -602,7 +612,17 @@ struct ConnectionLine: View {
             Banner(text: String(localized: "Update the app: Nook on your Mac needs a newer Nook Companion."),
                    symbol: "arrow.down.circle.fill")
         case .ok:
-            EmptyView()
+            // Both work together, but one is a version behind the other: what is missing, and which one to update.
+            switch client.versionNotice {
+            case .macBehind:
+                Banner(text: String(localized: "Nook on your Mac is a version behind this app. Update it to use everything the app offers."),
+                       symbol: "arrow.down.circle")
+            case .phoneBehind:
+                Banner(text: String(localized: "This app is a version behind Nook on your Mac. Update it to use everything Nook offers."),
+                       symbol: "arrow.down.circle")
+            case nil:
+                EmptyView()
+            }
         }
     }
 }

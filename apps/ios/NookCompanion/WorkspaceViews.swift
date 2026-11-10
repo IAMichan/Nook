@@ -6,24 +6,31 @@ struct SessionWorkspaceMenu: ViewModifier {
     let sessionID: String
     @State private var showsFiles = false
     @State private var showsTerminals = false
+    @State private var showsPulls = false
 
     func body(content: Content) -> some View {
         content
             .toolbar {
-                if client.can(CompanionFeature.workspace) {
+                if client.can(CompanionFeature.workspace) || client.can(CompanionFeature.pullRequests) {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button { showsFiles = true } label: { Label("Files", systemImage: "folder") }
-                            Button { showsTerminals = true } label: { Label("Terminals", systemImage: "terminal") }
+                            if client.can(CompanionFeature.workspace) {
+                                Button { showsFiles = true } label: { Label("Files", systemImage: "folder") }
+                                Button { showsTerminals = true } label: { Label("Terminals", systemImage: "terminal") }
+                            }
+                            if client.can(CompanionFeature.pullRequests) {
+                                Button { showsPulls = true } label: { Label("Pull requests", systemImage: "arrow.triangle.pull") }
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                         }
-                        .accessibilityLabel("Files and terminals")
+                        .accessibilityLabel("Files, terminals and pull requests")
                     }
                 }
             }
             .navigationDestination(isPresented: $showsFiles) { SessionFilesView(sessionID: sessionID) }
             .navigationDestination(isPresented: $showsTerminals) { SessionTerminalsView(sessionID: sessionID) }
+            .navigationDestination(isPresented: $showsPulls) { PullRequestListView(session: sessionID) }
     }
 }
 
