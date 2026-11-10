@@ -198,6 +198,8 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
     @Published private(set) var worktreeRows: [WorktreeRow] = []
     @Published private(set) var worktreesLoading = false
+    /// Another refresh was asked for while one ran; it runs once that one is done (`refreshWorktrees`).
+    private var worktreesRefreshPending = false
     @Published private(set) var gitAvailable: Bool?
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
@@ -2617,8 +2619,11 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// All worktrees across repositories containing sessions, with linked sessions and change statuses.
+    /// One refresh at a time: it reads every worktree (Git and its size on disk), which takes minutes with a hundred of
+    /// them, and the list asks again each time it appears. A request during a refresh runs once after it, not alongside.
     func refreshWorktrees() {
         guard let git = gitService else { return }
+        guard !worktreesLoading else { worktreesRefreshPending = true; return }
         let repos = Array(Set(runs.compactMap { $0.repoRoot.flatMap { git.mainCheckout(of: $0) ?? $0 } })).sorted()
         let snapshot = runs
         worktreesLoading = true
@@ -2627,12 +2632,12 @@ final class WorkspaceManager: ObservableObject {
             var seenPaths = Set<String>()
             for repo in repos where FileManager.default.fileExists(atPath: repo) {
                 guard let list = try? git.worktrees(repo) else { continue }
-                for worktree in list {
+                for worktree in list { autoreleasepool {
                     let path = WorkspacePathPolicy.normalize(worktree.path)
-                    guard seenPaths.insert(path).inserted else { continue }
+                    guard seenPaths.insert(path).inserted else { return }
                     let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
                     // Only show root workspace if a session is actively using it.
-                    if worktree.isMain && linked.isEmpty { continue }
+                    if worktree.isMain && linked.isEmpty { return }
                     var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
                     if FileManager.default.fileExists(atPath: worktree.path) {
                         row.changedFiles = git.changedFileCount(worktree.path)
@@ -2645,11 +2650,16 @@ final class WorkspaceManager: ObservableObject {
                         }
                     }
                     rows.append(row)
-                }
+                } }
             }
             await MainActor.run { [weak self, rows] in
-                self?.worktreeRows = rows
-                self?.worktreesLoading = false
+                guard let self else { return }
+                self.worktreeRows = rows
+                self.worktreesLoading = false
+                if self.worktreesRefreshPending {
+                    self.worktreesRefreshPending = false
+                    self.refreshWorktrees()
+                }
             }
         }
     }

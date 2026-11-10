@@ -11,6 +11,15 @@ enum ProcessRunner {
 
     static func run(_ executable: String, _ arguments: [String], in directory: String? = nil,
                     environment: [String: String]? = nil, timeout: TimeInterval = 60) throws -> Output {
+        // Foundation autoreleases the pipes and their file handles. A caller that runs many commands in one long loop
+        // (the Worktrees list runs several per worktree) never reaches a drained pool, so without this pool every pipe
+        // stays open until the loop ends; on 2026-11-10 that piled up 4700 pipes and Nook ran out of file descriptors.
+        try autoreleasepool { try runInPool(executable, arguments, in: directory, environment: environment, timeout: timeout) }
+    }
+
+    /// Body of `run`, called inside its autorelease pool: starts the process, drains stdout and stderr, and waits.
+    private static func runInPool(_ executable: String, _ arguments: [String], in directory: String?,
+                                  environment: [String: String]?, timeout: TimeInterval) throws -> Output {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
