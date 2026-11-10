@@ -339,6 +339,17 @@ enum PullRequestMatch {
     }
 }
 
+/// Which session a prompt link's `pr=owner/name/123` opens: the first in `order` (newest first, archived left out) whose
+/// pull requests include that one. Nil when no session works on it.
+enum PromptLinkSessions {
+    static func linked(_ repository: String, _ number: Int, links: [UUID: [PullRequestLink]], order: [UUID]) -> UUID? {
+        let wanted = repository.lowercased()
+        return order.first { id in
+            (links[id] ?? []).contains { $0.number == number && $0.repository.lowercased() == wanted }
+        }
+    }
+}
+
 /// An unresolved PR holds the session open, and the newest merged/closed one decides.
 enum PullRequestSettlement {
     static func allMerged(links: [PullRequestLink]) -> Bool { !links.isEmpty && links.allSatisfy { $0.state == .merged } }
@@ -349,6 +360,21 @@ enum PullRequestSettlement {
         guard !links.isEmpty, !anyOpen(links: links) else { return false }
         let latest = links.max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }!
         return latest.state == .closed || (latest.state == .merged && settleOnMerge)
+    }
+
+    /// What a session's requests say to the auto-settle rules: open while any is open, else how the newest one ended,
+    /// but only when it landed at or after `since` (the session's start or your latest message to it): a request that
+    /// closed before you wrote again does not settle the session you are busy in. Without an update time it counts.
+    static func autoSettleState(links: [PullRequestLink], since: Date?) -> AutoSettlePolicy.PullRequestState {
+        guard !links.isEmpty else { return .none }
+        if anyOpen(links: links) { return .open }
+        let latest = links.max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }!
+        if let since, let landed = links.compactMap(\.updatedAt).max(), landed < since { return .none }
+        switch latest.state {
+        case .merged: return .merged
+        case .closed: return .closed
+        default: return .none
+        }
     }
 
     /// After this long a merged or closed request, or a session without any, has settled.

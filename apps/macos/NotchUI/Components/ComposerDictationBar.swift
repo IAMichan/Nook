@@ -17,9 +17,10 @@ final class ComposerDictator: ObservableObject {
 
     /// Starts listening on top of `body`, the words going in at `selection` (UTF-16 in `body`, nil: at the end). `apply`
     /// gets the box's words as they come in, and the caret after them.
-    func start(body: String, selection: Range<Int>? = nil, apply: @escaping (String, Int) -> Void) {
+    func start(body: String, selection: Range<Int>? = nil, folder: String? = nil, apply: @escaping (String, Int) -> Void) {
         guard !state.isActive else { return }
         let app = AppModel.shared
+        let context = Self.context(app: app, folder: folder)
         Task { @MainActor in
             guard await app.voice.requestPermissions(), !app.voice.isListening,
                   self.state.begin(body: body, selection: selection) else { return }
@@ -40,12 +41,12 @@ final class ComposerDictator: ObservableObject {
                 if landed.send, let send { DispatchQueue.main.async { send() } }
             }
             if app.settings.language == "auto" {
-                app.voice.startMultilingual(onPartial: partial, onFinish: finished)
+                app.voice.startMultilingual(contextualStrings: context, onPartial: partial, onFinish: finished)
             } else {
                 do {
                     try app.voice.start(
                         locale: VoiceService.locale(answerLanguage: app.settings.language, appLanguage: app.settings.appLanguage.rawValue),
-                        onPartial: partial, onFinish: finished)
+                        contextualStrings: context, onPartial: partial, onFinish: finished)
                 } catch {
                     _ = self.state.discard()
                     app.updateWakeWord()
@@ -54,6 +55,20 @@ final class ComposerDictator: ObservableObject {
             }
             self.watchVoice()
         }
+    }
+
+    /// The words the recognizer expects: your personal dictionary (Settings › Flow), then the composer's own project and
+    /// its branch, then your other projects and the branches of your sessions (`DictationContext`).
+    private static func context(app: AppModel, folder: String?) -> [String] {
+        let workspace = app.workspace
+        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }
+        let own = folder.map(WorkspacePathPolicy.normalize)
+        let ownRuns = runs.filter { own != nil && WorkspacePathPolicy.normalize($0.workingDirectory) == own }
+        let folders = [folder].compactMap { $0 } + workspace.settings.favoriteProjects + workspace.settings.recentProjects
+        let branches = (ownRuns + runs).compactMap(\.branch)
+        return DictationContext.strings(dictionary: FlowStore.shared.words,
+                                        projects: folders.map { URL(fileURLWithPath: $0).lastPathComponent },
+                                        branches: Array(branches.prefix(40)))
     }
 
     /// Stops listening and keeps the words.

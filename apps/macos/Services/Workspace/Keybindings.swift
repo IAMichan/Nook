@@ -373,8 +373,9 @@ enum Keybindings {
         "session.back", "session.forward", "session.rename", "session.openInEditor", "session.copyReference",
         "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle", "sessionPanel.toggle", "tab.close",
         "terminal.splitRight", "terminal.splitDown", "focus.next", "focus.previous",
-        "effortPicker.toggle", "permissionPicker.toggle", "effort.increase", "effort.decrease",
-    ] + (1...SessionJump.count).map(SessionJump.command)
+        "effortPicker.toggle", "permissionPicker.toggle", "effort.increase", "effort.decrease", "composer.pasteAsText",
+        ModelPickerKeys.previousPlace, ModelPickerKeys.nextPlace,
+    ] + (1...SessionJump.count).map(SessionJump.command) + (1...ModelPickerKeys.count).map(ModelPickerKeys.command)
 
     /// Default chat and workspace keybindings. `session.interrupt`, `effort.increase` and `effort.decrease` stay unbound on
     /// purpose. ⌘S also brings a stashed draft back into an empty composer, so the stash rule does not ask for
@@ -391,6 +392,8 @@ enum Keybindings {
         // The draft's own undo, so a deleted chip comes back whole (the list's undo below steps aside for it).
         KeybindingRule(key: "mod+z", command: "composer.undo", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+z", command: "composer.redo", when: "composerFocus"),
+        // ⌘V keeps a big paste aside as an attachment; ⇧⌘V keeps it as text you can edit (as t3code).
+        KeybindingRule(key: "mod+shift+v", command: "composer.pasteAsText", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+enter", command: "queue.steerFirst", when: "composerFocus && turnRunning"),
         KeybindingRule(key: "mod+f", command: "chat.find", when: "!terminalFocus"),
         KeybindingRule(key: "mod+k", command: "search.toggle", when: "!terminalFocus"),
@@ -426,5 +429,10 @@ enum Keybindings {
         KeybindingRule(key: "mod+shift+d", command: "terminal.splitDown", when: "terminalFocus"),
         KeybindingRule(key: "f6", command: "focus.next", when: nil),
         KeybindingRule(key: "shift+f6", command: "focus.previous", when: nil),
-    ] + (1...SessionJump.count).map { KeybindingRule(key: "mod+\($0)", command: SessionJump.command($0), when: nil) }
+        // In the open model picker ⇧⌘↑ and ⇧⌘↓ step through the places in its rail, and ⌘1–⌘9 pick a model (as t3code);
+        // the session jumps step aside meanwhile.
+        KeybindingRule(key: "mod+shift+up", command: ModelPickerKeys.previousPlace, when: "modelPickerOpen"),
+        KeybindingRule(key: "mod+shift+down", command: ModelPickerKeys.nextPlace, when: "modelPickerOpen"),
+    ] + (1...SessionJump.count).map { KeybindingRule(key: "mod+\($0)", command: SessionJump.command($0), when: "!modelPickerOpen") }
+      + (1...ModelPickerKeys.count).map { KeybindingRule(key: "mod+\($0)", command: ModelPickerKeys.command($0), when: "modelPickerOpen") }
 }
