@@ -236,6 +236,12 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         extras.model.history.stopWalking()
+        // A session link pasted or dropped into the text ("Copy session link", a dragged row) becomes its chip.
+        if let linked = SessionLink.replacingPasted(old: old, new: new) {
+            assign(ComposerAttachments.replacingBody(of: newText, with: linked))
+            extras.model.close()
+            return
+        }
         if imagesBinding != nil, let found = PastedPaths.attaching(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: found.body))
             extras.model.close()
@@ -463,7 +469,12 @@ struct SessionComposer<Controls: View>: View {
         }
         .animation(NookTheme.reveal, value: focused.wrappedValue)
         .animation(NookTheme.reveal, value: drop)
-        .composerDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], $drop) { providers in
+        .composerDrop(of: (imagesBinding == nil ? [] : [UTType.fileURL, UTType.image]) + (extras == nil ? [] : SessionLinkDrag.types),
+                      $drop) { providers in
+            // A session row from the Agents list: its chip, like picking it after `@`.
+            if extras != nil, SessionLinkDrag.receive(providers, add: { link in
+                assign(SessionLink.inserting(link, into: text))
+            }) { return true }
             guard let imagesBinding else { return false }
             return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in
                 dropFile(url)

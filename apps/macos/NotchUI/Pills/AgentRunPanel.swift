@@ -368,6 +368,13 @@ struct AgentRunPanel: View {
         }
         // A new written title from the first message and the latest ones, with your title rules.
         DropdownRow(symbol: "sparkles", title: tr("ws.title.regenerate")) { workspace.regenerateTitle(runID) }
+        // Pasted into another session's composer it becomes this session's chip (`SessionLink`).
+        if let link = SessionLink.build(id: runID.uuidString, title: run.title) {
+            DropdownRow(symbol: "link", title: tr("sessionLink.copy")) {
+                Pasteboard.copy(link.absoluteString)
+                ToastCenter.shared.success(tr("sessionLink.copied"))
+            }
+        }
         // A fork starts from this session; switching moves it to another agent with a summary of what happened.
         if workspace.canTransfer(runID) {
             DropdownRow(symbol: "arrow.triangle.branch", title: tr("agents.fork")) {

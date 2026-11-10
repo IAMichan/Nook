@@ -110,9 +110,19 @@ targets:
         # Nook's own relay for the iPhone companion away from home (apps/relay, deployed by relay-deploy.yml): set the
         # build setting NOOK_RELAY_URL; while it is empty, Settings offers only a relay on the user's own account.
         NookRelayURL: "$(NOOK_RELAY_URL)"
+        # nook:// is Nook's own and stays first. http/https and web pages only make Nook one of the browsers macOS offers:
+        # it becomes the default only when you choose it (Settings › Browser, IncomingLinkRoute).
         CFBundleURLTypes:
           - CFBundleURLName: app.nook.link
             CFBundleURLSchemes: [nook]
+          - CFBundleURLName: app.nook.web
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes: [http, https]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Web page
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.html, public.xhtml]
         LSMinimumSystemVersion: "15.0"
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
         NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.

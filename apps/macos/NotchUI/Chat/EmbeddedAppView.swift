@@ -113,7 +113,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     /// The session's artifact in the user's own browser.
     func openArtifactInDefaultBrowser() {
         guard let url = artifactView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-        NSWorkspace.shared.open(url)
+        DefaultBrowser.openOutside(url)
     }
 
     /// Puts the side panel away; the app stays open.
@@ -128,7 +128,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     /// The side panel's page in the user's own browser.
     func openSideInDefaultBrowser() {
         guard let url = side?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-        NSWorkspace.shared.open(url)
+        DefaultBrowser.openOutside(url)
     }
 
     /// Hides the app; it stays signed in and keeps running for `hiddenSeconds`, so opening it again soon is instant.

@@ -408,7 +408,13 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
         parked = nil
         openedBy = nil
         lastError = nil
-        webView.load(URLRequest(url: url))
+        // A web page opened from Finder (Nook as the default browser): WebKit only reads files it was allowed to, here the
+        // page's own folder for its pictures and styles.
+        if url.isFileURL {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            webView.load(URLRequest(url: url))
+        }
     }
 
     /// Opens a page for an agent and waits (up to `timeout`) until it has loaded. Returns the error when it failed.
@@ -536,7 +542,8 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
     /// The open page in the user's own browser, for what does not work inside an app (passkeys, some sign-ins).
     func openInDefaultBrowser() {
         guard let url = webView.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-        NSWorkspace.shared.open(url)
+        // While Nook is the default browser this is the browser you had before, so the page does not come back here.
+        DefaultBrowser.openOutside(url)
     }
 
     private func refresh(loading: Bool) {
@@ -732,7 +739,7 @@ struct BrowserView: View {
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .fill(addressHovering ? WS.subtle : .clear))
                 .onHover { addressHovering = $0 }
-                ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal"), enabled: store.webView.url != nil) {
+                ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }
                 if session != nil {
@@ -993,7 +1000,7 @@ private struct BrowserPopupView: View {
                 Spacer(minLength: 0)
                 if store.loading { ProgressView().controlSize(.small) }
                 Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
-                    .help(tr("browser.openExternal"))
+                    .help(DefaultBrowser.openOutsideTitle)
                     .disabled(store.webView.url == nil)
                 Button(action: expand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                     .help(tr("browser.popup.expand"))
@@ -1090,6 +1097,9 @@ final class SessionBrowsers: ObservableObject {
 
     /// The browser for a page you open now: that of the session on screen, otherwise Nook's own.
     var inView: BrowserStore { shown.last.map(store) ?? .shared }
+
+    /// Whether a session is on screen now (the notch or the main window).
+    var sessionOnScreen: Bool { !shown.isEmpty }
 
     /// The browser of the session on screen, when its panel shows it.
     var shownInPanel: BrowserStore? {
