@@ -24,7 +24,7 @@ struct NookPrimaryButton: View {
             .fixedSize()
             .padding(.horizontal, symbol == nil ? 16 : 14)
             .frame(height: SharedMetrics.buttonHeight)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -57,7 +57,7 @@ struct NookGhostButton: View {
             .fixedSize()
             .padding(.horizontal, compact ? 8 : 12)
             .frame(height: height)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.graphite : Color.clear))
+            .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .hoverLift(hovering)
         }
@@ -82,11 +82,8 @@ struct NookIconButton: View {
                 .font(NookTheme.font(size * 0.42, .semibold))
                 .foregroundStyle(filled ? NookTheme.onPrimary : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: size, height: size)
-                .background(
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                        .fill(filled ? (hovering ? NookTheme.primaryHover : NookTheme.primary)
-                              : (hovering ? NookTheme.graphite : Color.clear))
-                )
+                .roundedBackground(filled ? (hovering ? NookTheme.primaryHover : NookTheme.primary) : (hovering ? NookTheme.graphite : Color.clear),
+                                   radius: NookTheme.Radius.control)
                 .hoverLift(hovering, scale: 1.03)
         }
         .buttonStyle(.plain)

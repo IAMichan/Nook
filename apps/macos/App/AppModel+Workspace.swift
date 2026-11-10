@@ -278,6 +278,11 @@ extension AppModel {
         }
         // A turn ran into a limit: the limits shown are read again now (at most once a minute), so they say so.
         workspace.onLimitReached = { [weak self] in self?.refreshQuotas(maxAge: 60) }
+        // A turn stopped on a limit without saying when it resets: the account's own full windows say it.
+        workspace.limitResetHint = { [weak self] run in
+            guard let self, let profile = self.profiles.profile(id: run.profileID) else { return nil }
+            return UsageLimits.fullWindowsReset(self.quota.limits(for: profile).map { ($0.percent, $0.resetsAt) })
+        }
         // Claude Code reports how full its subscription windows are while it works: show them right away.
         workspace.onPlanWindow = { [weak self] reading, profileID in
             guard let self, let profile = self.profiles.profile(id: profileID), profile.kind == .claude else { return }
@@ -313,7 +318,10 @@ extension AppModel {
         workspace.pullRequestCreated = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         PullRequestSync.shared.found = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
-        workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
+        workspace.runScript = { folder, command, title in
+            let terminal = TerminalStore.shared.open(in: folder, command: command, title: title)
+            return { [weak terminal] in terminal?.running ?? false }
+        }
         workspace.openTerminalFolders = { TerminalStore.shared.sessions.map(\.directory) }
         workspace.onLowDiskSpace = { [weak self] free, freed, worktrees in self?.warnLowDiskSpace(free: free, freed: freed, worktrees: worktrees) }
         BrowserProfiles.project = { [weak self] key in

@@ -84,7 +84,7 @@ struct TimelineFindBar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .onAppear { focused = true }
         .onKeyPress(.escape) { close(); return .handled }
     }

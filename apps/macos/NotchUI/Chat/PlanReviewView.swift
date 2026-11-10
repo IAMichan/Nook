@@ -91,7 +91,7 @@ struct PlanReview: View {
             }
         }
         .padding(NookTheme.Spacing.xl)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
     }
 
     // MARK: Single step
@@ -210,7 +210,7 @@ struct PlanReview: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(field.multiline ? 2...12 : 1...3)
                         .padding(NookTheme.Spacing.md)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.graphite))
+                        .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.control)
                     } else {
                         Text(field.value)
                             .font(NookTheme.TextStyle.body)
@@ -349,6 +349,6 @@ private struct StepFailure: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
+        .roundedBackground(NookTheme.coral.opacity(0.08), radius: NookTheme.Radius.control)
     }
 }

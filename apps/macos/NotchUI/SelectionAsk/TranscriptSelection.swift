@@ -147,7 +147,7 @@ struct TranscriptPickMark: View {
     let id: String
 
     var body: some View {
-        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.card)
             .fill(selection.picked.contains(id) ? NookTheme.rowSelected : Color.clear)
             .padding(.horizontal, -NookTheme.Spacing.xs)
             .padding(.vertical, -NookTheme.Spacing.xxs)

@@ -130,7 +130,7 @@ struct MusicNowPlayingView: View {
     // MARK: Card
 
     private var card: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.sheet)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.md) {
                 NookTabBar(items: MusicNowPlayingTab.allCases.map { .init(value: $0, title: $0.title) },
@@ -227,7 +227,7 @@ private struct MusicTrackAbout: View {
             .lineLimit(1)
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(NookTheme.separator, lineWidth: 1))
+            .background(NookTheme.shape(NookTheme.Radius.chip).strokeBorder(NookTheme.separator, lineWidth: 1))
     }
 
     private func fact(_ symbol: String, title: String, detail: String) -> some View {
@@ -266,7 +266,7 @@ struct MusicFactRow: View {
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.music)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.music.opacity(0.14)))
+                .roundedBackground(NookTheme.music.opacity(0.14), radius: NookTheme.Radius.control)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)

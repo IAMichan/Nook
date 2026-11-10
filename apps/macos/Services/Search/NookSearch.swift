@@ -377,27 +377,22 @@ enum SearchText {
         return words
     }
 
-    /// Whether folded text contains a folded needle, compared as bytes: folded text is whole words and single spaces, so
-    /// this equals `String.contains` there, without its cost per character.
+    /// Whether folded text contains a folded needle, compared as bytes (`memmem`): folded text is whole words and single
+    /// spaces, so this equals `String.contains` there, without its cost per character.
     static func contains(_ haystack: String, _ needle: String) -> Bool {
         var haystack = haystack, needle = needle
         return haystack.withUTF8 { text in
             needle.withUTF8 { wanted in
-                guard let first = wanted.first else { return true }
-                guard wanted.count <= text.count else { return false }
-                var index = 0
-                let last = text.count - wanted.count
-                while index <= last {
-                    if text[index] == first {
-                        var offset = 1
-                        while offset < wanted.count, text[index + offset] == wanted[offset] { offset += 1 }
-                        if offset == wanted.count { return true }
-                    }
-                    index += 1
-                }
-                return false
+                guard !wanted.isEmpty else { return true }
+                guard wanted.count <= text.count, let base = text.baseAddress else { return false }
+                return memmem(base, text.count, wanted.baseAddress, wanted.count) != nil
             }
         }
+    }
+
+    /// The words of text that is folded already (single spaces between words), without folding it again.
+    static func split(_ folded: String) -> [String] {
+        folded.utf8.split(separator: 0x20).map { String(Substring($0)) }
     }
 }
 
@@ -405,6 +400,10 @@ enum SearchText {
 
 /// The documents, tokenized once into an inverted index (every word → where it is), so a search only visits the places
 /// its words are, however much history there is.
+///
+/// Building it is the costly part, so it is spread over every core: the documents are folded in parallel, and the
+/// postings are kept in shards (by the word's hash) that fill in parallel too. A rebuild (`reusing:`) takes the folded
+/// text of every document whose text did not change from the index before it, which is most of them.
 struct SearchIndex: Sendable {
     /// One place a word is: a document, a field in it, and how often.
     struct Posting: Sendable {
@@ -426,6 +425,8 @@ struct SearchIndex: Sendable {
         let passages: [String]
         let foldedFacets: [String: String]
         let foldedAuthors: [String]
+        /// The text the folded fields came from, hashed: a rebuild reuses them while it stays the same.
+        let signature: Int
 
         func folded(_ field: Int32) -> String {
             switch field {
@@ -440,61 +441,154 @@ struct SearchIndex: Sendable {
     static let passageLimit = 4_000
     /// Most passages indexed per document (the newest are kept).
     static let passagesPerDocument = 600
+    /// Shards of the postings, filled at the same time.
+    private static let shardCount = 16
 
     let entries: [Entry]
-    let postings: [String: [Posting]]
-    /// Every word, sorted, for word starts, parts and typos.
-    let vocabulary: [String]
-    /// In how many documents each word is.
-    let frequency: [String: Int]
+    /// Every word → where it is, in shards by the word's hash.
+    private let shards: [[String: [Posting]]]
+    /// In how many documents each word is, sharded as `shards`.
+    private let frequencies: [[String: Int]]
+    /// Every word, for word starts, parts and typos.
+    let vocabulary: SearchVocabulary
     /// Each document's entry by its id.
     private let positions: [String: Int]
+    /// What each query word expanded to, kept while this index lives: typing a second word does not look up the first again.
+    private let expansionCache = SearchExpansionCache()
 
-    init(_ documents: [SearchDocument]) {
-        var postings: [String: [Posting]] = [:]
-        var frequency: [String: Int] = [:]
+    init(_ documents: [SearchDocument], reusing previous: SearchIndex? = nil) {
+        let shardCount = Self.shardCount
         var entries: [Entry] = []
         entries.reserveCapacity(documents.count)
-        for (number, original) in documents.enumerated() {
-            var document = original
-            if document.passages.count > SearchIndex.passagesPerDocument {
-                document.passages = Array(document.passages.suffix(SearchIndex.passagesPerDocument))
-            }
-            for index in document.passages.indices where document.passages[index].text.utf16.count > SearchIndex.passageLimit {
-                document.passages[index].text = String(document.passages[index].text.prefix(SearchIndex.passageLimit))
-            }
-            let entry = Int32(number)
-            var seen = Set<String>()
-            func add(_ text: String, field: Int32) -> String {
-                let words = SearchText.words(text)
-                var counts: [String: Int32] = [:]
-                for word in words { counts[word, default: 0] += 1 }
-                for (word, count) in counts {
-                    postings[word, default: []].append(Posting(entry: entry, field: field, count: count))
-                    if seen.insert(word).inserted { frequency[word, default: 0] += 1 }
+        let builders = (0..<shardCount).map { _ in ShardBuilder() }
+        // A chunk at a time: the folded words of every document at once would hold the whole text twice.
+        let chunkSize = 256
+        for chunkStart in stride(from: 0, to: documents.count, by: chunkSize) {
+            let chunk = chunkStart..<min(chunkStart + chunkSize, documents.count)
+            var prepared = [Prepared?](repeating: nil, count: chunk.count)
+            prepared.withUnsafeMutableBufferPointer { buffer in
+                DispatchQueue.concurrentPerform(iterations: chunk.count) { offset in
+                    buffer[offset] = Self.prepare(documents[chunk.lowerBound + offset], previous: previous, shards: shardCount)
                 }
-                return " " + words.joined(separator: " ") + " "
             }
-            let title = add(document.title, field: SearchIndex.title)
-            let facets = document.facets.keys.sorted().compactMap { document.facets[$0] }
-            let meta = add(([document.subtitle] + facets).joined(separator: " "), field: SearchIndex.meta)
-            let passages = document.passages.enumerated().map { add($0.element.text, field: Int32($0.offset)) }
-            entries.append(Entry(document: document, title: title, meta: meta, passages: passages,
-                                 foldedFacets: document.facets.mapValues(SearchText.fold),
-                                 foldedAuthors: document.passages.map { SearchText.fold($0.author) }))
+            let ready = prepared.map { $0! }
+            DispatchQueue.concurrentPerform(iterations: shardCount) { shard in
+                let builder = builders[shard]
+                for (offset, document) in ready.enumerated() {
+                    let entry = Int32(chunk.lowerBound + offset)
+                    for token in document.tokens[shard] {
+                        builder.postings[token.word, default: []].append(Posting(entry: entry, field: token.field, count: token.count))
+                        if token.first { builder.frequency[token.word, default: 0] += 1 }
+                    }
+                }
+            }
+            entries += ready.map(\.entry)
         }
         self.entries = entries
-        self.postings = postings
-        self.frequency = frequency
-        vocabulary = frequency.keys.sorted()
+        shards = builders.map(\.postings)
+        frequencies = builders.map(\.frequency)
+        vocabulary = SearchVocabulary(builders.flatMap(\.frequency.keys))
         positions = Dictionary(entries.enumerated().map { ($0.element.document.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// One shard's postings while the index is built; each is filled by one thread only.
+    private final class ShardBuilder: @unchecked Sendable {
+        var postings: [String: [Posting]] = [:]
+        var frequency: [String: Int] = [:]
+    }
+
+    /// A word of a document's field, counted, in the shard it goes to. `first` marks its first field in the document.
+    private struct Token {
+        let word: String
+        let field: Int32
+        let count: Int32
+        let first: Bool
+    }
+
+    private struct Prepared {
+        let entry: Entry
+        let tokens: [[Token]]
+    }
+
+    private static func shard(_ word: String, of count: Int) -> Int {
+        Int(UInt(bitPattern: word.hashValue) % UInt(count))
+    }
+
+    /// One document as the index holds it, with its words per shard. Its folded text comes from `previous` when the
+    /// text there is the same.
+    private static func prepare(_ original: SearchDocument, previous: SearchIndex?, shards: Int) -> Prepared {
+        var document = original
+        if document.passages.count > passagesPerDocument {
+            document.passages = Array(document.passages.suffix(passagesPerDocument))
+        }
+        for index in document.passages.indices where document.passages[index].text.utf16.count > passageLimit {
+            document.passages[index].text = String(document.passages[index].text.prefix(passageLimit))
+        }
+        let facets = document.facets.keys.sorted().compactMap { document.facets[$0] }
+        let metaText = ([document.subtitle] + facets).joined(separator: " ")
+        var hasher = Hasher()
+        hasher.combine(document.title)
+        hasher.combine(metaText)
+        for passage in document.passages {
+            hasher.combine(passage.text)
+            hasher.combine(passage.author)
+        }
+        let signature = hasher.finalize()
+
+        var tokens = [[Token]](repeating: [], count: shards)
+        var seen = Set<String>()
+        func add(_ words: [String], field: Int32) {
+            var counts: [String: Int32] = [:]
+            for word in words { counts[word, default: 0] += 1 }
+            for (word, count) in counts {
+                tokens[shard(word, of: shards)].append(Token(word: word, field: field, count: count, first: seen.insert(word).inserted))
+            }
+        }
+
+        if let previous, let known = previous.entry(document.id), known.signature == signature {
+            // The same text: its folded fields split again on their spaces, much quicker than folding it anew.
+            add(SearchText.split(known.title), field: title)
+            add(SearchText.split(known.meta), field: meta)
+            for (offset, passage) in known.passages.enumerated() { add(SearchText.split(passage), field: Int32(offset)) }
+            let entry = Entry(document: document, title: known.title, meta: known.meta, passages: known.passages,
+                              foldedFacets: document.facets.mapValues(SearchText.fold), foldedAuthors: known.foldedAuthors,
+                              signature: signature)
+            return Prepared(entry: entry, tokens: tokens)
+        }
+
+        func folded(_ text: String, field: Int32) -> String {
+            let words = SearchText.words(text)
+            add(words, field: field)
+            return " " + words.joined(separator: " ") + " "
+        }
+        let titleText = folded(document.title, field: title)
+        let metaFolded = folded(metaText, field: meta)
+        let passages = document.passages.enumerated().map { folded($0.element.text, field: Int32($0.offset)) }
+        let entry = Entry(document: document, title: titleText, meta: metaFolded, passages: passages,
+                          foldedFacets: document.facets.mapValues(SearchText.fold),
+                          foldedAuthors: document.passages.map { SearchText.fold($0.author) }, signature: signature)
+        return Prepared(entry: entry, tokens: tokens)
     }
 
     var isEmpty: Bool { entries.isEmpty }
 
     /// The document with this id, as it was indexed.
     func document(_ id: String) -> SearchDocument? {
-        positions[id].map { entries[$0].document }
+        entry(id)?.document
+    }
+
+    private func entry(_ id: String) -> Entry? {
+        positions[id].map { entries[$0] }
+    }
+
+    /// Where a word is.
+    func postings(_ word: String) -> [Posting]? {
+        shards[Self.shard(word, of: Self.shardCount)][word]
+    }
+
+    /// In how many documents a word is.
+    func frequency(_ word: String) -> Int {
+        frequencies[Self.shard(word, of: Self.shardCount)][word] ?? 0
     }
 
     // MARK: Words
@@ -502,39 +596,10 @@ struct SearchIndex: Sendable {
     /// Which indexed words a query word stands for, and how much each counts: itself 1, a word it starts 0.75, one with a
     /// typo 0.5 (two in a long word 0.3), one it is part of 0.4.
     func expansions(_ word: String) -> [String: Double] {
-        var out: [String: Double] = [word: 1]
-        let length = word.count
-        // Word starts: a binary search to the first word ≥ `word`, then on while they start with it.
-        if length >= 2 {
-            var low = 0, high = vocabulary.count
-            while low < high {
-                let middle = (low + high) / 2
-                if vocabulary[middle] < word { low = middle + 1 } else { high = middle }
-            }
-            var index = low
-            var taken = 0
-            while index < vocabulary.count, vocabulary[index].hasPrefix(word), taken < 150 {
-                if vocabulary[index] != word { out[vocabulary[index]] = 0.75 }
-                index += 1
-                taken += 1
-            }
-        }
-        guard length >= 3 else { return out }
-        let allowed = length >= 7 ? 2 : 1
-        let wanted = Array(word.unicodeScalars)
-        var parts = 0
-        for candidate in vocabulary where out[candidate] == nil {
-            let scalars = candidate.unicodeScalars
-            let size = scalars.count
-            if size > length, parts < 60, candidate.contains(word) {
-                out[candidate] = 0.4
-                parts += 1
-            } else if length >= 4, abs(size - length) <= allowed {
-                let distance = Self.distance(wanted, Array(scalars), limit: allowed)
-                if distance <= allowed { out[candidate] = distance == 1 ? 0.5 : 0.3 }
-            }
-        }
-        return out
+        if let known = expansionCache.value(word) { return known }
+        let found = vocabulary.expansions(word)
+        expansionCache.store(found, for: word)
+        return found
     }
 
     /// Levenshtein distance, giving up (returning `limit + 1`) once it cannot stay within `limit`.
@@ -542,17 +607,18 @@ struct SearchIndex: Sendable {
         distance(Array(a.unicodeScalars), Array(b.unicodeScalars), limit: limit)
     }
 
-    static func distance(_ x: [Unicode.Scalar], _ y: [Unicode.Scalar], limit: Int) -> Int {
+    static func distance<C: RandomAccessCollection>(_ x: C, _ y: C, limit: Int) -> Int where C.Element: Equatable, C.Index == Int {
         if abs(x.count - y.count) > limit { return limit + 1 }
         if x.isEmpty { return y.count }
         if y.isEmpty { return x.count }
         var previous = Array(0...y.count)
         var current = [Int](repeating: 0, count: y.count + 1)
+        let xs = x.startIndex, ys = y.startIndex
         for i in 1...x.count {
             current[0] = i
             var best = current[0]
             for j in 1...y.count {
-                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (x[i - 1] == y[j - 1] ? 0 : 1))
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (x[xs + i - 1] == y[ys + j - 1] ? 0 : 1))
                 best = min(best, current[j])
             }
             if best > limit { return limit + 1 }
@@ -564,7 +630,7 @@ struct SearchIndex: Sendable {
     /// Rare words weigh more (BM25's inverse document frequency).
     func weight(_ word: String) -> Double {
         let count = Double(entries.count)
-        let found = Double(frequency[word] ?? 0)
+        let found = Double(frequency(word))
         return log(1 + (count - found + 0.5) / (found + 0.5))
     }
 
@@ -579,8 +645,8 @@ struct SearchIndex: Sendable {
         if term.phrase {
             // The phrase's rarest word says where to look; the folded field says whether the words are side by side.
             let words = term.words
-            guard let rarest = words.min(by: { (postings[$0]?.count ?? 0) < (postings[$1]?.count ?? 0) }),
-                  let candidates = postings[rarest] else { return [:] }
+            guard let rarest = words.min(by: { (postings($0)?.count ?? 0) < (postings($1)?.count ?? 0) }),
+                  let candidates = postings(rarest) else { return [:] }
             let score = 1.3 * max(words.map(weight).reduce(0, +), 0.5)
             // Its last word may be the start of a word, as while typing.
             let needle = " " + term.text
@@ -590,10 +656,15 @@ struct SearchIndex: Sendable {
             }
             return found
         }
+        // One or two letters are the start of a word you are typing: the words they start count in titles and names
+        // only, not in every message that has one (that was most of them, and slow).
+        let short = term.text.count <= 2
         for (word, factor) in expansions(term.text) {
-            guard let list = postings[word] else { continue }
+            guard let list = postings(word) else { continue }
+            let titlesOnly = short && factor < 1
             let base = factor * weight(word)
             for posting in list {
+                if titlesOnly, posting.field >= 0 { continue }
                 let count = Double(posting.count)
                 let value = base * count * 2.2 / (count + 1.2)
                 if let place = found[posting.entry]?[posting.field], place.score >= value { continue }
@@ -606,10 +677,10 @@ struct SearchIndex: Sendable {
     /// The documents that contain a term anywhere (for `-word`).
     private func containing(_ term: SearchQuery.Term) -> Set<Int32> {
         if term.phrase { return Set(matches(term).keys) }
-        return Set(postings[term.text]?.map(\.entry) ?? [])
+        return Set(postings(term.text)?.map(\.entry) ?? [])
     }
-
-    func search(_ query: SearchQuery, limit: Int = 80, now: Date = Date()) -> [SearchHit] {
+    /// The best hits for a query. `bonus` adds to a document's score by its id: what you opened from search before.
+    func search(_ query: SearchQuery, limit: Int = 80, now: Date = Date(), bonus: [String: Double] = [:]) -> [SearchHit] {
         guard !query.isEmpty else { return [] }
         // Each group: where any of its terms matched, the best score per field.
         let groups: [Matches] = query.groups.map { group in
@@ -758,12 +829,13 @@ struct SearchIndex: Sendable {
                 if entry.title == " " + typed + " " { total += 4 } else if entry.title.hasPrefix(" " + typed) { total += 2 }
             }
             if let plainWords {
-                let fields = (titleCounts ? [entry.title, entry.meta] : []) + passageScores.keys.map { entry.passages[$0] }
+                // Side by side only where every word is: the title, the names, or a passage every group matched in.
+                let fields = (titleCounts ? [entry.title, entry.meta] : []) + (together ?? []).map { entry.passages[$0] }
                 let needle = " " + plainWords
                 if fields.contains(where: { SearchText.contains($0, needle) }) { total += 1.5 }
             }
             if !query.hasText { total = 1 }
-            total += document.boost
+            total += document.boost + (bonus[document.id] ?? 0)
             // Recent things first among equals: up to a third more for today, fading over a couple of weeks.
             if let date = document.date {
                 let days = max(0, now.timeIntervalSince(date) / 86_400)
@@ -809,6 +881,160 @@ struct SearchIndex: Sendable {
         return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).prefix(50).compactMap { match in
             match.range.length > 0 ? match.range.location..<(match.range.location + match.range.length) : nil
         }
+    }
+}
+
+// MARK: - The vocabulary
+
+/// Every indexed word, sorted, laid out for what a query word needs: the words it starts by a binary search, the words it
+/// is part of by one byte search through all of them at once, and typos only among the words of about its length. Before,
+/// each keystroke walked every word as a `String`, which took most of a search's time in a large index.
+struct SearchVocabulary: Sendable {
+    let words: [String]
+    /// Every word's UTF-8, each followed by a 0 byte.
+    private let bytes: [UInt8]
+    /// Where each word starts in `bytes`, and one more at the end.
+    private let starts: [Int32]
+    /// Each length in characters → the words of that length (their positions in `words`).
+    private let byLength: [Int: [Int32]]
+
+    init<S: Sequence>(_ unsorted: S) where S.Element == String {
+        let words = unsorted.sorted()
+        var bytes: [UInt8] = []
+        var starts: [Int32] = []
+        var byLength: [Int: [Int32]] = [:]
+        starts.reserveCapacity(words.count + 1)
+        for (offset, word) in words.enumerated() {
+            starts.append(Int32(bytes.count))
+            bytes.append(contentsOf: word.utf8)
+            bytes.append(0)
+            byLength[word.unicodeScalars.count, default: []].append(Int32(offset))
+        }
+        starts.append(Int32(bytes.count))
+        self.words = words
+        self.bytes = bytes
+        self.starts = starts
+        self.byLength = byLength
+    }
+
+    var count: Int { words.count }
+
+    /// Which words a query word stands for, and how much each counts: itself 1, a word it starts 0.75, one with a typo
+    /// 0.5 (two in a long word 0.3), one it is part of 0.4.
+    func expansions(_ word: String) -> [String: Double] {
+        var out: [String: Double] = [word: 1]
+        let length = word.unicodeScalars.count
+        // Word starts: a binary search to the first word ≥ `word`, then on while they start with it.
+        if length >= 2 {
+            var low = 0, high = words.count
+            while low < high {
+                let middle = (low + high) / 2
+                if words[middle] < word { low = middle + 1 } else { high = middle }
+            }
+            var index = low
+            var taken = 0
+            while index < words.count, words[index].hasPrefix(word), taken < 150 {
+                if words[index] != word { out[words[index]] = 0.75 }
+                index += 1
+                taken += 1
+            }
+        }
+        guard length >= 3 else { return out }
+        let needle = Array(word.utf8)
+        bytes.withUnsafeBufferPointer { all in
+            guard let base = all.baseAddress else { return }
+            // Parts: every place the word is inside another, in one pass over all the words' bytes.
+            var parts = 0
+            var from = 0
+            while parts < 60, from < all.count {
+                guard let found = needle.withUnsafeBufferPointer({ wanted in
+                    memmem(base + from, all.count - from, wanted.baseAddress, wanted.count)
+                }) else { break }
+                let at = base.distance(to: found.assumingMemoryBound(to: UInt8.self))
+                let index = wordIndex(containing: at)
+                let candidate = words[index]
+                if out[candidate] == nil {
+                    out[candidate] = 0.4
+                    parts += 1
+                }
+                from = Int(starts[index + 1])
+            }
+            // Typos: only words within the allowed difference in length can be close enough.
+            guard length >= 4 else { return }
+            let allowed = length >= 7 ? 2 : 1
+            let ascii = needle.allSatisfy { $0 < 0x80 }
+            let scalars = Array(word.unicodeScalars)
+            var previous = [Int](repeating: 0, count: 64)
+            var current = [Int](repeating: 0, count: 64)
+            for size in (length - allowed)...(length + allowed) {
+                for position in byLength[size] ?? [] {
+                    let index = Int(position)
+                    let start = Int(starts[index]), end = Int(starts[index + 1]) - 1
+                    let candidate = UnsafeBufferPointer(rebasing: all[start..<end])
+                    let distance: Int
+                    if ascii, end - start == size, size < 63 {
+                        // Plain ASCII on both sides: compared as bytes, in two reused rows.
+                        distance = Self.byteDistance(needle, candidate, limit: allowed, previous: &previous, current: &current)
+                    } else {
+                        distance = SearchIndex.distance(scalars, Array(words[index].unicodeScalars), limit: allowed)
+                    }
+                    guard distance <= allowed, distance > 0, out[words[index]] == nil else { continue }
+                    out[words[index]] = distance == 1 ? 0.5 : 0.3
+                }
+            }
+        }
+        return out
+    }
+
+    /// The word whose bytes hold this offset.
+    private func wordIndex(containing offset: Int) -> Int {
+        var low = 0, high = starts.count - 1
+        while low + 1 < high {
+            let middle = (low + high) / 2
+            if Int(starts[middle]) <= offset { low = middle } else { high = middle }
+        }
+        return low
+    }
+
+    /// Levenshtein distance over bytes, giving up once it cannot stay within `limit`, without allocating.
+    private static func byteDistance(_ x: [UInt8], _ y: UnsafeBufferPointer<UInt8>, limit: Int,
+                                     previous: inout [Int], current: inout [Int]) -> Int {
+        if abs(x.count - y.count) > limit { return limit + 1 }
+        for j in 0...y.count { previous[j] = j }
+        for i in 1...x.count {
+            current[0] = i
+            var best = i
+            let a = x[i - 1]
+            for j in 1...y.count {
+                let value = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a == y[j - 1] ? 0 : 1))
+                current[j] = value
+                if value < best { best = value }
+            }
+            if best > limit { return limit + 1 }
+            swap(&previous, &current)
+        }
+        return previous[y.count]
+    }
+}
+
+/// What query words expanded to in one index. Searches run off the main thread, one after another and now and then
+/// side by side, so it takes a lock.
+final class SearchExpansionCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: [String: Double]] = [:]
+
+    func value(_ word: String) -> [String: Double]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[word]
+    }
+
+    func store(_ value: [String: Double], for word: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        // A few hundred words is a long session of typing; past that, start over rather than grow.
+        if values.count > 512 { values.removeAll(keepingCapacity: true) }
+        values[word] = value
     }
 }
 

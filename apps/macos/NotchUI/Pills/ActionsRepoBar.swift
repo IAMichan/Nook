@@ -81,9 +81,8 @@ struct ActionsRepoTab: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, closable ? NookTheme.Spacing.xs : NookTheme.Spacing.md)
         .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-            .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
-        .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+        .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+        .roundedHitShape(NookTheme.Radius.control)
         .onTapGesture(perform: onSelect)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)

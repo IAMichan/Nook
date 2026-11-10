@@ -334,13 +334,20 @@ extension WorkspaceManager {
             if self.run(id)?.statusDetail == "worktreeRemoved" { self.update(id) { $0.statusDetail = nil } }
             self.refreshGit(id)
             self.refreshWorktrees()
-            if shown { self.sendHidden(id, text: message) } else { self.send(id, text: message) }
-            // The project's setup (nook.json `runOnWorktreeCreate`), as for a new worktree.
-            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value
-            for script in setup where script.runOnWorktreeCreate {
-                self.runScript?(path, script.command, script.name)
-                self.append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            // The project's setup (nook.json `runOnWorktreeCreate`), as for a new worktree: one with `"async": false` is
+            // waited for before the message goes; when it fails, the message stays in the conversation, unsent.
+            let setup = ProjectScripts.setup(await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value)
+            if !setup.holdsAgent {
+                if shown { self.sendHidden(id, text: message) } else { self.send(id, text: message) }
             }
+            let failure = await self.startSetupScripts(id, path: path, scripts: setup.scripts)
+            guard setup.holdsAgent, self.run(id) != nil else { return }
+            if let failure {
+                if !shown { self.append(id, RunEvent(kind: .user, text: message)) }
+                self.append(id, RunEvent(kind: .error, text: failure))
+                return
+            }
+            if shown { self.sendHidden(id, text: message) } else { self.send(id, text: message) }
         }
     }
 }

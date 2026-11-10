@@ -118,8 +118,7 @@ struct UpdateFooterButton<Idle: View>: View {
         .padding(.leading, iconOnly ? 0 : NookTheme.Spacing.md)
         .padding(.trailing, iconOnly ? 0 : count == nil ? 9 : 5)
         .frame(minWidth: iconOnly ? 26 : nil, minHeight: 26, maxHeight: 26)
-        .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel,
-                        style: .continuous)
+        .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel)
         .contentShape(Capsule())
         .hoverLift(hovering)
         .fixedSize()

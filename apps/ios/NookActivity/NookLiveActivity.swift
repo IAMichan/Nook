@@ -4,13 +4,15 @@ import WidgetKit
 
 // The widget extension: one Live Activity per session that works on the Mac, on the Lock Screen and in the Dynamic
 // Island (docs/COMPANION.md › Live Activities). The Mac starts, updates and ends it with pushes; the app does the same
-// while it is open. It also carries the usage widget for the Home Screen (`UsageWidget`).
+// while it is open. It also carries the usage widget for the Home Screen (`UsageWidget`) and the agent activity widget
+// for the Home Screen and the Lock Screen (`AgentActivityWidget`).
 
 @main
 struct NookActivityBundle: WidgetBundle {
     var body: some Widget {
         NookLiveActivity()
         UsageWidget()
+        AgentActivityWidget()
     }
 }
 

@@ -162,7 +162,7 @@ struct TranscriptStepDetail: View {
         if open, let tasks, !tasks.isEmpty {
             TaskListRows(steps: tasks)
                 .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
                 .padding(.leading, TranscriptStyle.workIndent)
                 .padding(.bottom, NookTheme.Spacing.xs)
         } else if open, command != nil || output != nil {
@@ -444,7 +444,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .contentShape(Rectangle())
                 .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2,
-                                radius: NookTheme.Radius.control, style: .continuous)
+                                radius: NookTheme.Radius.control)
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }

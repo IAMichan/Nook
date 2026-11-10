@@ -480,7 +480,7 @@ struct AgentsTab: View {
 
     private func item(_ run: WorkspaceRun, comparisons: [UUID: Int]) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
-        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
+        let attention = app.workspace.attention(run, unseen: unseen("run:" + run.id.uuidString, run.updatedAt),
                                                 includeSnooze: false)
         let status: AgentListItem.Status
         switch attention {
@@ -532,7 +532,8 @@ struct AgentsTab: View {
             switch session.status {
             case .running: status = .working
             case .failed: status = .failed
-            default: status = .idle
+            // Compacting between turns (your /compact): it works, though no turn runs.
+            default: status = session.compactingSince != nil ? .working : .idle
             }
         }
         let conversation = app.conversationID(for: session)
@@ -550,7 +551,7 @@ struct AgentsTab: View {
             status: status,
             // Busy: how long this turn runs, not how long ago the session started.
             started: status == .idle ? (session.updated ?? session.started ?? known?.started)
-                : (session.turnStarted ?? session.started ?? known?.started),
+                : (session.turnStarted ?? session.compactingSince ?? session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(session: session),
             unseen: session.status == .done && unseen(session.id, session.updated),
@@ -813,7 +814,7 @@ struct AgentListRow: View, Equatable {
         .padding(.trailing, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, minHeight: compact ? Self.lineHeight : nil, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(background))
+        .roundedBackground(background, radius: NookTheme.Radius.chip)
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .contentShape(Rectangle())
@@ -1128,7 +1129,8 @@ struct AgentConversation: View {
     var body: some View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
-                               working: session.status == .running, fallback: fallback, onReply: onReply,
+                               working: session.status == .running, compactingSince: session.compactingSince,
+                               fallback: fallback, onReply: onReply,
                                bottomBar: bottomBar, directory: session.cwd)
             .id(session.id)
     }

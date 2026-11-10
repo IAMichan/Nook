@@ -469,7 +469,7 @@ struct DiffText: View, Equatable {
             }
         }
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.amber.opacity(0.08)))
+        .roundedBackground(NookTheme.amber.opacity(0.08), radius: NookTheme.Radius.control)
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.leading, gutterWidth)
         .padding(.trailing, 10)
@@ -493,7 +493,7 @@ struct DiffText: View, Equatable {
             SmallGhostButton(title: tr("ws.review.save")) { save(line: line, code: code) }
         }
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.leading, gutterWidth)
         .padding(.trailing, 10)

@@ -535,8 +535,7 @@ private struct StackedDiffTreeRow: View {
             .padding(.leading, NookTheme.Spacing.xs + CGFloat(row.depth) * 12)
             .padding(.trailing, NookTheme.Spacing.xs)
             .frame(height: 24)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
+            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

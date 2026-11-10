@@ -57,7 +57,7 @@ struct ChatChartView: View {
             }
         }
         .padding(NookTheme.Spacing.xl)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
     }
 
     // MARK: Bar, line, area, points
@@ -166,7 +166,7 @@ struct ChatChartView: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
                 HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 2)
+                    NookTheme.shape(2)
                         .fill(Self.palette[index % Self.palette.count])
                         .frame(width: 10, height: 10)
                     Text(part.label)
