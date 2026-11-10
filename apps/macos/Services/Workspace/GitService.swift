@@ -11,6 +11,14 @@ enum ProcessRunner {
 
     static func run(_ executable: String, _ arguments: [String], in directory: String? = nil,
                     environment: [String: String]? = nil, timeout: TimeInterval = 60) throws -> Output {
+        // Foundation autoreleases the pipes and their file handles. A caller that runs many commands in one long loop
+        // (the Worktrees list runs several per worktree) never reaches a drained pool, so without this pool every pipe
+        // stays open until the loop ends; on 2026-11-10 that piled up 4700 pipes and Nook ran out of file descriptors.
+        try autoreleasepool { try runInPool(executable, arguments, in: directory, environment: environment, timeout: timeout) }
+    }
+
+    private static func runInPool(_ executable: String, _ arguments: [String], in directory: String?,
+                                  environment: [String: String]?, timeout: TimeInterval) throws -> Output {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -44,6 +52,12 @@ enum ProcessRunner {
             _ = group.wait(timeout: .now() + 5)
         }
         process.waitUntilExit()
+        // Close the read ends now rather than whenever the handles are freed. Only when both readers finished: a
+        // grandchild that kept the pipe open can leave a reader blocked, and closing under it would race.
+        if group.wait(timeout: .now()) == .success {
+            try? out.fileHandleForReading.close()
+            try? err.fileHandleForReading.close()
+        }
         return Output(status: process.terminationStatus,
                       stdout: String(decoding: outData.data, as: UTF8.self),
                       stderr: String(decoding: errData.data, as: UTF8.self),
