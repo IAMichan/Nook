@@ -18,21 +18,43 @@ struct RootView: View {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
-                // The Mac's panel: one tab at a time, switched in the header row every tab starts with
-                // (`PanelHeader`), no tab bar along the bottom. Each tab keeps where it was.
-                Group {
-                    switch shownTab {
-                    case .nook:
+                // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
+                // each with what waits there as a badge. Each tab keeps where it was.
+                let available = router.available(client)
+                TabView(selection: $router.tab) {
+                    if available.contains(.nook) {
                         NavigationStack(path: $chatPath) { ChatListView(path: $chatPath) }
-                    case .agents:
-                        NavigationStack(path: $sessionPath) {
-                            SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
-                        }
-                    case .chats:
-                        NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
+                            .tabItem { tabLabel(.nook) }
+                            .tag(CompanionTab.nook)
+                            .badge(router.count(.nook, client))
                     }
+                    NavigationStack(path: $sessionPath) {
+                        SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
+                    }
+                    .tabItem { tabLabel(.agents) }
+                    .tag(CompanionTab.agents)
+                    .badge(router.count(.agents, client))
+                    if available.contains(.chats) {
+                        NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
+                            .tabItem { tabLabel(.chats) }
+                            .tag(CompanionTab.chats)
+                            .badge(router.count(.chats, client))
+                    }
+                    if available.contains(.pulls) {
+                        NavigationStack { PullRequestListView() }
+                            .tabItem { tabLabel(.pulls) }
+                            .tag(CompanionTab.pulls)
+                    }
+                    NavigationStack { SettingsView() }
+                        .tabItem { tabLabel(.settings) }
+                        .tag(CompanionTab.settings)
                 }
                 .environmentObject(router)
+                // A tab the Mac no longer allows falls back to Agents.
+                .onChange(of: available) { _, tabs in
+                    if !tabs.contains(router.tab) { router.tab = .agents }
+                }
+                .onChange(of: router.tab) { _, _ in Haptics.tap() }
             }
         }
         .tint(Theme.paper)
@@ -105,9 +127,13 @@ struct RootView: View {
         } message: { Text(client.notice ?? "") }
     }
 
-    /// The chosen tab, or Agents when the Mac does not let this phone use it (`CompanionScope`).
-    private var shownTab: CompanionTab {
-        router.available(client).contains(router.tab) ? router.tab : .agents
+    /// A tab's icon and name in the bar along the bottom.
+    private func tabLabel(_ tab: CompanionTab) -> some View {
+        Label {
+            Text(tab.title)
+        } icon: {
+            Image(icon: tab.symbol(selected: router.tab == tab))
+        }
     }
 }
 
@@ -308,8 +334,6 @@ struct SessionListView: View {
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
     @State private var composing = false
-    /// The pull request list (`PullRequestListView`) is open.
-    @State private var showsPulls = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
     /// Words to find a session by (its title, folder, branch or agent).
@@ -346,12 +370,7 @@ struct SessionListView: View {
             Group {
                 PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
-                    HStack(spacing: Theme.Spacing.sm) {
-                        if client.can(CompanionFeature.pullRequests) {
-                            NookIconButton(systemName: "arrow.triangle.pull", label: String(localized: "Pull requests")) { showsPulls = true }
-                        }
-                        NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
-                    }
+                    NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -401,7 +420,6 @@ struct SessionListView: View {
         .refreshable { await client.refresh() }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
-        .navigationDestination(isPresented: $showsPulls) { PullRequestListView() }
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
