@@ -23,6 +23,10 @@ final class SearchCenter: ObservableObject {
     /// The chat apps' history is being searched for the words in the field.
     @Published private(set) var searchingHistory = false
     @Published private(set) var recent: [String] = SearchCenter.loadRecent()
+    /// What you opened from search lately, newest first, as the index has it now: shown before you type.
+    @Published private(set) var recentlyOpened: [SearchHit] = []
+    /// Search with AI for the text in the field: what it is doing, its answer and the hits it read.
+    @Published private(set) var ai: AIAnswer?
 
     private var index = SearchIndex([])
     private var text = ""
@@ -39,6 +43,9 @@ final class SearchCenter: ObservableObject {
     private var historyWords: [String] = []
     private var historyTask: Task<Void, Never>?
     private var mergeTask: Task<Void, Never>?
+    private var aiTask: Task<Void, Never>?
+    /// What you opened from search: by document id, how often and when last. Ranks those higher next time.
+    private var openedLog: [String: Opened] = SearchCenter.loadOpened()
     /// The extra pause before the apps are asked: each search is a query to a database or a service.
     private static let historyPause: UInt64 = 250_000_000
 
@@ -72,9 +79,11 @@ final class SearchCenter: ObservableObject {
             guard let self else { return }
             let documents = await self.documents(app, priority: .userInitiated)
             guard !Task.isCancelled else { return }
-            let first = await Task.detached(priority: .userInitiated) { SearchIndex(documents) }.value
+            let previous = self.index.isEmpty ? nil : self.index
+            let first = await Task.detached(priority: .userInitiated) { SearchIndex(documents, reusing: previous) }.value
             guard !Task.isCancelled else { return }
             self.index = first
+            self.refreshRecentlyOpened()
             self.loadedAt = Date()
             if !self.text.isEmpty { self.rerun() }
             // The transcripts that are not in memory, read once and kept; a session that was deleted lets go of its own.
@@ -128,9 +137,12 @@ final class SearchCenter: ObservableObject {
     private func rebuild(_ app: AppModel) async -> Bool {
         let full = await documents(app, priority: .utility)
         guard !Task.isCancelled else { return false }
-        let complete = await Task.detached(priority: .utility) { SearchIndex(full) }.value
+        // The documents whose text did not change keep their folded words: most of them, after a batch of transcripts.
+        let previous = index
+        let complete = await Task.detached(priority: .utility) { SearchIndex(full, reusing: previous) }.value
         guard !Task.isCancelled else { return false }
         index = complete
+        refreshRecentlyOpened()
         loadedAt = Date()
         if !text.isEmpty { rerun() }
         return true
@@ -151,6 +163,7 @@ final class SearchCenter: ObservableObject {
     /// Resets the active search query and results without throwing away the index.
     func reset() {
         text = ""
+        stopAI()
         searchTask?.cancel()
         query = SearchQuery()
         hits = []
@@ -181,6 +194,7 @@ final class SearchCenter: ObservableObject {
     private func release() {
         cancel()
         reset()
+        recentlyOpened = []
         index = SearchIndex([])
         loadedAt = nil
         indexing = false
@@ -196,7 +210,8 @@ final class SearchCenter: ObservableObject {
             reset()
             return
         }
-        let pause: UInt64 = text.count <= 2 ? 30_000_000 : 110_000_000
+        // Scoring takes milliseconds now: the pause only folds a burst of keystrokes into one search.
+        let pause: UInt64 = text.count <= 2 ? 15_000_000 : 50_000_000
         searchTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: pause)
             guard !Task.isCancelled else { return }
@@ -215,9 +230,10 @@ final class SearchCenter: ObservableObject {
         let parsed = SearchQuery.parse(text)
         let index = index
         let limit = Self.limit
+        let bonus = openedBonus()
         searchTask?.cancel()
         searchTask = Task { [weak self] in
-            let found = await Task.detached(priority: .userInitiated) { index.search(parsed, limit: limit) }.value
+            let found = await Task.detached(priority: .userInitiated) { index.search(parsed, limit: limit, bonus: bonus) }.value
             guard let self, !Task.isCancelled, self.text == text else { return }
             self.query = parsed
             self.indexHits = found
@@ -291,10 +307,11 @@ final class SearchCenter: ObservableObject {
         let query = query
         let base = indexHits
         let limit = Self.limit
+        let bonus = openedBonus()
         mergeTask = Task { [weak self] in
             let merged = await Task.detached(priority: .userInitiated) {
                 let documents = SearchMerge.documents(found, in: index)
-                return SearchMerge.hits(base, adding: SearchIndex(documents).search(query, limit: limit), limit: limit)
+                return SearchMerge.hits(base, adding: SearchIndex(documents).search(query, limit: limit, bonus: bonus), limit: limit)
             }.value
             guard let self, !Task.isCancelled, self.query == query else { return }
             self.hits = merged
@@ -312,6 +329,7 @@ final class SearchCenter: ObservableObject {
     func cancel() {
         searchTask?.cancel()
         indexTask?.cancel()
+        aiTask?.cancel()
         forgetHistory()
     }
 
@@ -332,5 +350,143 @@ final class SearchCenter: ObservableObject {
 
     private static func loadRecent() -> [String] {
         UserDefaults.standard.stringArray(forKey: recentKey) ?? []
+    }
+}
+
+// MARK: - What you opened
+
+extension SearchCenter {
+    struct Opened: Codable, Equatable {
+        var count: Int
+        var last: Date
+    }
+
+    private static let openedKey = "nook.search.opened"
+    private static let openedLimit = 200
+    private static let recentlyOpenedShown = 5
+
+    /// A hit was opened: next time it ranks a little higher, and it is first among what you opened before you type.
+    func opened(_ hit: SearchHit) {
+        let id = hit.document.id
+        // Actions run again by their name; they need no help to be found.
+        guard hit.document.kind != .action else { return }
+        var entry = openedLog[id] ?? Opened(count: 0, last: Date())
+        entry.count += 1
+        entry.last = Date()
+        openedLog[id] = entry
+        if openedLog.count > Self.openedLimit {
+            let kept = openedLog.sorted { $0.value.last > $1.value.last }.prefix(Self.openedLimit)
+            openedLog = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
+        }
+        if let data = try? JSONEncoder().encode(openedLog) { UserDefaults.standard.set(data, forKey: Self.openedKey) }
+        refreshRecentlyOpened()
+    }
+
+    /// Added to a document's score: more for what you open often and lately, fading over a month.
+    func openedBonus(now: Date = Date()) -> [String: Double] {
+        openedLog.mapValues { entry in
+            let days = max(0, now.timeIntervalSince(entry.last) / 86_400)
+            return min(1.5, 0.6 * log2(1 + Double(entry.count))) * exp(-days / 30)
+        }
+    }
+
+    func refreshRecentlyOpened() {
+        recentlyOpened = openedLog.sorted { $0.value.last > $1.value.last }
+            .lazy.compactMap { [index] item in index.document(item.key) }
+            .prefix(Self.recentlyOpenedShown)
+            .map { SearchHit(document: $0, score: 0, titleRanges: [], snippet: "", snippetRanges: [], passage: nil, matches: 0) }
+    }
+
+    static func loadOpened() -> [String: Opened] {
+        guard let data = UserDefaults.standard.data(forKey: openedKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: Opened].self, from: data)) ?? [:]
+    }
+}
+
+// MARK: - Search with AI
+
+extension SearchCenter {
+    struct AIAnswer: Equatable {
+        enum Phase: Equatable {
+            /// The brain is working out what to search for.
+            case planning
+            /// The searches ran; the brain reads this many hits.
+            case reading(Int)
+            case answered
+            /// No brain is chosen: the hits of the question's own words, without an answer.
+            case noBrain
+            /// The brain gave no answer in time.
+            case failed
+        }
+
+        var question: String
+        var phase: Phase
+        var answer = ""
+        /// What the brain read, numbered from 1 as the answer cites them.
+        var sources: [SearchHit] = []
+        /// The source numbers the answer cites, in the order it names them.
+        var cited: [Int] = []
+
+        var isWorking: Bool {
+            switch phase {
+            case .planning, .reading: return true
+            case .answered, .noBrain, .failed: return false
+            }
+        }
+    }
+
+    /// Asks the chosen brain about the question, over everything search can find: it writes the searches, Nook runs them
+    /// on its own index, and the brain answers from what they found, citing it.
+    func askAI(_ question: String, brain: BrainService, settings: AppSettings) {
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        aiTask?.cancel()
+        ai = AIAnswer(question: question, phase: .planning)
+        aiTask = Task { [weak self] in
+            guard let self else { return }
+            let ready = settings.brainReady
+            // The searches: the brain's, and always the question's own words, so there is something to read when the
+            // brain's plan is late or poor.
+            var searches = [SearchAI.keywordQuery(question)]
+            if ready, let reply = await brain.rewrite(system: SearchAI.planSystem,
+                                                      prompt: SearchAI.planPrompt(question: question, today: Date()), timeout: 15) {
+                searches = SearchAI.queries(fromPlan: SearchAI.clean(reply)) + searches
+            }
+            guard !Task.isCancelled, self.ai?.question == question else { return }
+            let index = self.index
+            let bonus = self.openedBonus()
+            let lists = searches.filter { !$0.isEmpty }
+            let sources = await Task.detached(priority: .userInitiated) {
+                SearchAI.gather(lists.map { index.search(SearchQuery.parse($0), limit: SearchAI.hitsPerQuery, bonus: bonus) })
+            }.value
+            guard !Task.isCancelled, self.ai?.question == question else { return }
+            guard ready else {
+                self.ai = AIAnswer(question: question, phase: .noBrain, sources: sources)
+                return
+            }
+            guard !sources.isEmpty else {
+                self.ai = AIAnswer(question: question, phase: .answered, answer: tr("search.ai.nothing"))
+                return
+            }
+            self.ai = AIAnswer(question: question, phase: .reading(sources.count), sources: sources)
+            let prompt = SearchAI.answerPrompt(question: question, sources: sources,
+                                               language: settings.languageInstruction(for: question), shield: { settings.shielded($0) })
+            let reply = await brain.rewrite(system: SearchAI.answerSystem, prompt: prompt, timeout: 60)
+            guard !Task.isCancelled, self.ai?.question == question else { return }
+            guard let reply, !SearchAI.clean(reply).isEmpty else {
+                self.ai = AIAnswer(question: question, phase: .failed, sources: sources)
+                return
+            }
+            let answer = SearchAI.clean(reply)
+            self.ai = AIAnswer(question: question, phase: .answered, answer: answer, sources: sources,
+                               cited: SearchAI.citations(in: answer, count: sources.count))
+        }
+    }
+
+    /// Back to the plain results: the field changed, or the panel closed.
+    func stopAI() {
+        aiTask?.cancel()
+        aiTask = nil
+        if ai != nil { ai = nil }
     }
 }
