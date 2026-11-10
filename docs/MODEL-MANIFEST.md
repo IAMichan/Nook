@@ -46,7 +46,7 @@ Settings › Agents › Sessions › New session › Models per agent, and the a
   alias itself.
 
 **Network rules.** The fetch goes through `NetworkGuard.fetch` (public hosts only, every redirect checked), at most every
-six hours (`ModelManifestRefresh`), and never while **Settings › Agents › Sessions › New session › Check for new models online** is off: then
+six hours in the background and at most every five minutes when you open a model picker (`ModelManifestRefresh`, `AppModel.modelPickerOpened`; the fetch never blocks the picker), and never while **Settings › Agents › Sessions › New session › Check for new models online** is off: then
 only the bundled list is used and nothing goes online for it.
 
 **Adding a model** is a JSON edit: add the entry, set `adapter.<agent>.minVersion` when it needs a newer CLI, and bump

@@ -18,11 +18,12 @@ extension WorkspaceManager {
 
     private static let versionRereadSeconds: TimeInterval = 30 * 60
 
-    /// Asks the repository for a newer manifest when one is due. A copy that does not validate, or is older than the one
-    /// in use, is dropped: the menus keep the last valid list.
-    func refreshModelManifest() {
+    /// Asks the repository for a newer manifest when one is due (`gap` after the last attempt). A copy that does not
+    /// validate, or is older than the one in use, is dropped: the menus keep the last valid list. The fetch runs in the
+    /// background; a menu that is open picks up the new list when it lands.
+    func refreshModelManifest(every gap: TimeInterval = ModelManifestRefresh.interval) {
         let now = Date()
-        guard ModelManifestRefresh.isDue(online: settings.onlineModelList, lastAttempt: manifestAttempted, now: now) else { return }
+        guard ModelManifestRefresh.isDue(online: settings.onlineModelList, lastAttempt: manifestAttempted, now: now, every: gap) else { return }
         manifestAttempted = now
         Task { [weak self] in
             guard let fetched = try? await NetworkGuard.fetch(ModelManifest.remoteURL), fetched.1.statusCode == 200,
