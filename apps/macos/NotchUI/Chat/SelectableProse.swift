@@ -270,7 +270,7 @@ struct SelectableProse: NSViewRepresentable {
                 return true
             } else if beside {
                 // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
-                if !MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) { NSWorkspace.shared.open(url) }
+                if !MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) { MainActor.assumeIsolated { DefaultBrowser.openOutside(url) } }
             } else if EmbeddedArtifact.app(for: url) != nil {
                 Task { @MainActor in AppModel.shared.openArtifact(url) }
             } else {
