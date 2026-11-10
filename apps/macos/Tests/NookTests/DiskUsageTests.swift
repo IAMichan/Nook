@@ -21,6 +21,18 @@ final class DiskUsageTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(size, 150_000)
     }
 
+    func testCachedSizeMeasuresAgainOnlyWhenOld() throws {
+        let file = folder.appendingPathComponent("build.o")
+        try Data(count: 100_000).write(to: file)
+        let now = Date()
+        let first = try XCTUnwrap(DiskUsage.cachedAllocatedSize(of: folder.path, now: now))
+        try Data(count: 400_000).write(to: folder.appendingPathComponent("more.o"))
+        // Within the age the first measurement stands; past it (or with no age, the refresh button) the folder is walked.
+        XCTAssertEqual(DiskUsage.cachedAllocatedSize(of: folder.path, now: now.addingTimeInterval(60)), first)
+        let later = try XCTUnwrap(DiskUsage.cachedAllocatedSize(of: folder.path, maxAge: 0, now: now.addingTimeInterval(60)))
+        XCTAssertGreaterThanOrEqual(later, first + 400_000)
+    }
+
     func testPurgeRemovesOnlyOldEntries() throws {
         let manager = FileManager.default
         let old = folder.appendingPathComponent("nook-core-tests.old")

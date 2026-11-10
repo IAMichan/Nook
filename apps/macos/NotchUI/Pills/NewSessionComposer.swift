@@ -17,7 +17,15 @@ struct NewSessionComposer: View {
     /// Called with the new session once it runs.
     let onStarted: (UUID) -> Void
 
+    /// Every choice for the new session. Its `task` stays empty while you type: the words live in `task` below, and
+    /// `checkedConfig` puts them in when the session starts.
     @State private var config = NewRunConfig()
+    /// The words in the box, held outside the panel's own state: only the field reads them, so a keystroke redraws the
+    /// field and not every menu, the heading and the tray of this panel (that cost a frame or more per key).
+    @State private var task = NewSessionTask()
+    /// Whether the box holds more than whitespace: all the panel itself needs of the words (the start button, the
+    /// notice). It changes only when the box becomes empty or not.
+    @State private var hasTask = false
     @State private var images: [ImageAttachment] = []
     @State private var project: ProjectInfo?
     @State private var inspecting = false
@@ -65,11 +73,6 @@ struct NewSessionComposer: View {
         .composerFocusOnAppear($focused)
         // Closing the notch (or switching tabs) drops this view; what you typed and chose waits for its return.
         .onDisappear(perform: keepDraft)
-        .onChange(of: config.task) { _, task in
-            // Typing again after a start begins the next draft.
-            if !task.isEmpty { started = false }
-            if !started { ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: task) }
-        }
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
@@ -79,6 +82,21 @@ struct NewSessionComposer: View {
             start(background: true)
             return true
         }], enabled: focused)
+    }
+
+    /// The box's words, read and written outside of `body` so that typing does not redraw the panel.
+    private var taskBinding: Binding<String> {
+        Binding(get: { task.text }, set: { setTask($0) })
+    }
+
+    private func setTask(_ text: String) {
+        guard text != task.text else { return }
+        task.text = text
+        let filled = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if filled != hasTask { hasTask = filled }
+        // Typing again after a start begins the next draft.
+        if !text.isEmpty { started = false }
+        if !started { ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: text) }
     }
 
     /// The folder the panels open in: none for a session on another machine.
@@ -254,7 +272,7 @@ struct NewSessionComposer: View {
     /// The same composer a running session answers in, with the choices for the new session inside it.
     private var box: some View {
         SessionComposer(
-            text: $config.task,
+            text: taskBinding,
             prompt: tr("compose.prompt"),
             minHeight: 56,
             lines: 3...8,
@@ -277,7 +295,7 @@ struct NewSessionComposer: View {
         }
         .rich(composerModel, composerConfig)
         .images($images)
-        .trailing { ComposerMic(text: $config.task) }
+        .trailing { ComposerMic(text: taskBinding) }
         // One step more or less effort without opening the picker.
         .keyCommands(["effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
     }
@@ -294,7 +312,7 @@ struct NewSessionComposer: View {
     private func attachFile() {
         guard !config.projectPath.isEmpty,
               let ref = ComposerFilePicker.pick(startingIn: config.projectPath) else { return }
-        config.task = ComposerAttachments.appending(ref, to: config.task)
+        setTask(ComposerAttachments.appending(ref, to: task.text))
         focused = true
     }
 
@@ -554,7 +572,7 @@ struct NewSessionComposer: View {
             }
             .font(NookTheme.TextStyle.detail)
             .padding(.horizontal, NookTheme.Spacing.md)
-        } else if let reason = blockingReason, project != nil, !config.task.isEmpty {
+        } else if let reason = blockingReason, project != nil, hasTask {
             Text(reason)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
@@ -595,7 +613,7 @@ struct NewSessionComposer: View {
     }
 
     private var blockingReason: String? {
-        if let problem = checkedConfig.problem { return tr("ws.error.config." + problem.rawValue) }
+        if let problem = shownConfig.problem { return tr("ws.error.config." + problem.rawValue) }
         // On another machine the agent is looked up there, not on this Mac.
         if let machine = remoteMachine {
             return RemotePasswords.shared.isUnlocked(machine) ? nil : tr("remote.password.needed", machine.name)
@@ -626,9 +644,16 @@ struct NewSessionComposer: View {
 
     /// The configuration as it will start: with the branch name derived from the task, which only gets filled in at the
     /// moment of starting. Checking `config` itself would see an empty branch name and refuse every new worktree.
-    private var checkedConfig: NewRunConfig {
+    private var checkedConfig: NewRunConfig { configured(task: task.text) }
+
+    /// `checkedConfig` as the panel checks it while you type, without reading the words (see `task`): the check only
+    /// asks whether there are any, and a branch name derived from words is always a valid one.
+    private var shownConfig: NewRunConfig { configured(task: hasTask ? "task" : "") }
+
+    private func configured(task text: String) -> NewRunConfig {
         var copy = config
-        copy.branchName = WorktreeNaming.branchName(task: config.task, id: pendingID)
+        copy.task = text
+        copy.branchName = WorktreeNaming.branchName(task: text, id: pendingID)
         if let remoteMachine {
             copy.remote = RemoteTarget(machine: remoteMachine, directory: remoteFolder.trimmingCharacters(in: .whitespaces))
             copy.baseBranch = config.baseBranch.trimmingCharacters(in: .whitespaces)
@@ -653,8 +678,8 @@ struct NewSessionComposer: View {
         guard let link = promptLinks.pending else { return }
         promptLinks.pending = nil
         // What you were writing stays, under the link's text.
-        let draft = config.task.trimmingCharacters(in: .whitespacesAndNewlines)
-        config.task = draft.isEmpty || draft == link.text ? link.text : link.text + "\n\n" + draft
+        let draft = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        setTask(draft.isEmpty || draft == link.text ? link.text : link.text + "\n\n" + draft)
         if let path = link.project, FileManager.default.fileExists(atPath: path) { select(path) }
         if let name = link.agent?.lowercased(),
            let provider = RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) {
@@ -678,10 +703,12 @@ struct NewSessionComposer: View {
     private func restoreOrPrepare() {
         guard let draft = NewSessionDraft.saved else {
             prepare()
-            if config.task.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { config.task = saved }
+            if task.text.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { setTask(saved) }
             return
         }
         config = draft.config
+        config.task = ""
+        setTask(draft.config.task)
         images = draft.images
         project = draft.project
         allowShared = draft.allowShared
@@ -701,7 +728,7 @@ struct NewSessionComposer: View {
     private func keepDraft() {
         guard !started else { NewSessionDraft.saved = nil; return }
         NewSessionDraft.saved = NewSessionDraft(
-            config: config, images: images, project: project, allowShared: allowShared, showClone: showClone,
+            config: configured(task: task.text), images: images, project: project, allowShared: allowShared, showClone: showClone,
             cloneURL: cloneURL, pendingID: pendingID, remoteMachine: remoteMachine, remoteFolder: remoteFolder,
             excerpts: composerModel.excerpts)
     }
@@ -824,7 +851,7 @@ struct NewSessionComposer: View {
     /// the prompt's name when the session starts.
     private func chooseNoProject() {
         do {
-            select(try ScratchProjects.create(prompt: config.task))
+            select(try ScratchProjects.create(prompt: task.text))
         } catch let failure {
             error = failure.localizedDescription
         }
@@ -916,7 +943,7 @@ struct NewSessionComposer: View {
                 started = true
                 NewSessionDraft.saved = nil
                 ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
-                config.task = ""
+                setTask("")
                 images = []
                 pendingID = UUID()
                 starting = false
@@ -952,7 +979,7 @@ struct NewSessionComposer: View {
                 started = true
                 NewSessionDraft.saved = nil
                 ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
-                config.task = ""
+                setTask("")
                 images = []
                 comparing = []
                 pendingID = UUID()
@@ -963,7 +990,7 @@ struct NewSessionComposer: View {
                 }
                 return
             }
-            ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: config.task)
+            ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: task.text)
             if retry.primary.provider != config.provider || retry.primary.profileID != config.profileID {
                 choose(retry.primary.provider, account: retry.primary.profileID)
             }
@@ -1005,4 +1032,12 @@ private struct NewSessionDraft {
     var remoteMachine: RemoteMachine?
     var remoteFolder: String
     var excerpts: [String: String]
+}
+
+/// The words typed in the new-session box (`NewSessionComposer.task`): observed by the field alone, so a keystroke does
+/// not redraw the panel around it.
+@MainActor
+@Observable
+private final class NewSessionTask {
+    var text = ""
 }

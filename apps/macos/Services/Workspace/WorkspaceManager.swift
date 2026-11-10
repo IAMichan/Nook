@@ -200,6 +200,8 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var worktreesLoading = false
     /// Another refresh was asked for while one ran; it runs once that one is done (`refreshWorktrees`).
     private var worktreesRefreshPending = false
+    /// The pending refresh measures every worktree's size again (the list's refresh button), not from the cache.
+    private var worktreesRefreshForced = false
     @Published private(set) var gitAvailable: Bool?
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
@@ -2621,9 +2623,15 @@ final class WorkspaceManager: ObservableObject {
     /// All worktrees across repositories containing sessions, with linked sessions and change statuses.
     /// One refresh at a time: it reads every worktree (Git and its size on disk), which takes minutes with a hundred of
     /// them, and the list asks again each time it appears. A request during a refresh runs once after it, not alongside.
-    func refreshWorktrees() {
+    /// Sizes come from `DiskUsage.cachedAllocatedSize` unless `force` (the list's refresh button) measures them again.
+    func refreshWorktrees(force: Bool = false) {
         guard let git = gitService else { return }
-        guard !worktreesLoading else { worktreesRefreshPending = true; return }
+        guard !worktreesLoading else {
+            worktreesRefreshPending = true
+            if force { worktreesRefreshForced = true }
+            return
+        }
+        let sizeAge = force ? 0 : DiskUsage.cachedSizeAge
         let roots = Set(runs.compactMap(\.repoRoot))
         let snapshot = runs
         worktreesLoading = true
@@ -2644,7 +2652,7 @@ final class WorkspaceManager: ObservableObject {
                     var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
                     if FileManager.default.fileExists(atPath: worktree.path) {
                         row.changedFiles = git.changedFileCount(worktree.path)
-                        if !worktree.isMain { row.bytes = DiskUsage.allocatedSize(of: worktree.path) }
+                        if !worktree.isMain { row.bytes = DiskUsage.cachedAllocatedSize(of: worktree.path, maxAge: sizeAge) }
                         let base = linked.compactMap(\.baseBranch).first
                         row.baseBranch = base
                         if let base, let divergence = git.divergence(worktree.path, base: base) {
@@ -2660,8 +2668,10 @@ final class WorkspaceManager: ObservableObject {
                 self.worktreeRows = rows
                 self.worktreesLoading = false
                 if self.worktreesRefreshPending {
+                    let forced = self.worktreesRefreshForced
                     self.worktreesRefreshPending = false
-                    self.refreshWorktrees()
+                    self.worktreesRefreshForced = false
+                    self.refreshWorktrees(force: forced)
                 }
             }
         }
