@@ -226,7 +226,7 @@ final class RemoteMCPTests: XCTestCase {
         var access = RemoteMCPAccess()
         let base = "https://relay.example/v1/mcp/" + String(repeating: "b", count: 32)
         let random = random()
-        let texts: RemoteMCPHTTP.Texts = { $0 }
+        let texts: RemoteMCPHTTP.Texts = { $0 == "remotemcp.page.intro" ? "%@ asks" : $0 }
         let registration = try XCTUnwrap(RemoteMCPHTTP.oauth(request("POST", "/register", body: #"{"client_name":"ChatGPT","redirect_uris":["\#(redirect)"]}"#),
                                                              access: &access, base: base, now: now, random: random, texts: texts))
         XCTAssertEqual(registration.status, 201)
