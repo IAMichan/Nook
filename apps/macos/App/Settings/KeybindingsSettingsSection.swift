@@ -211,6 +211,7 @@ struct KeybindingsSettingsSection: View {
     /// The command's name in the user's language; a command Nook does not know keeps its id. ⌘1–⌘9 share one text.
     private static func title(_ command: String) -> String {
         if let number = SessionJump.number(of: command) { return tr("keys.command.session.jump", number) }
+        if let number = ModelPickerKeys.number(of: command) { return tr("keys.command.modelPicker.pick", number) }
         return Keybindings.commandIDs.contains(command) ? tr("keys.command.\(command)") : command
     }
 

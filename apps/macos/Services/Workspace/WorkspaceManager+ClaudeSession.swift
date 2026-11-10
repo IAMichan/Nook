@@ -8,7 +8,7 @@ extension WorkspaceManager {
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
-        [run.model, run.mode.rawValue, run.permission.rawValue, launchInstructions(run), bridge(for: run.id) == nil ? "" : "bridge", run.effort ?? "", run.speedTier ?? "",
+        [run.model, run.mode.rawValue, run.permission.rawValue, launchInstructions(run), bridge(for: run.id) == nil ? "" : "bridge", run.effort ?? "", run.speedTier ?? "", ultracode(run).map { $0 ? "ultracode" : "no-ultracode" } ?? "",
          AgentCredits.omitsFromCommits ? "no-credits" : ""]
             .joined(separator: "|")
     }
@@ -201,6 +201,17 @@ extension WorkspaceManager {
             mutateEvent(id, event.id) { $0.state = .done }
         }
         noteSubagentsWorking(id)
+        releaseHeldCompletion(id)
+    }
+
+    /// A completion held for a monitor (`WakeCompletion`) whose monitor ended without waking the agent once more (its
+    /// process closed, or its end came while no turn followed): the alert it held goes out now, once.
+    func releaseHeldCompletion(_ id: UUID) {
+        guard heldWakeCompletions.contains(id), !BackgroundCommands.monitorRunning(timeline(id)),
+              let run = run(id), run.status == .completed, processes[id] == nil else { return }
+        heldWakeCompletions.remove(id)
+        onTurnFinished?(run)
+        deliverDelegatedResult(id)
     }
 
     /// Asks this Claude Code once whether it knows `--thinking-display`; until the answer is in, sessions start without it.

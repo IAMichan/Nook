@@ -168,6 +168,10 @@ struct RunInspector: View {
                 InfoRow(label: tr("ws.usage.cacheWrite"), value: WSFormat.tokens(usage.cacheWriteTokens))
             }
             InfoRow(label: tr("ws.usage.context"), value: contextText(usage, caps: caps), help: tr("ws.header.contextHelp"))
+            // Where the agent summarizes by itself: Nook's own limit, or the agent's threshold where it says.
+            if let at = workspace.autoCompactAt(run) {
+                InfoRow(label: tr("ws.usage.autoCompact"), value: TokenTally.format(at), help: tr("ws.usage.autoCompactHelp"))
+            }
             if workspace.settings.showCost {
                 InfoRow(label: tr("ws.usage.cost"),
                         value: caps.reportsCost ? WSFormat.cost(usage.reportedCostUSD) : nil,

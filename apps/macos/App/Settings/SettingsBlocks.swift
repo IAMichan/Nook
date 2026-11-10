@@ -422,6 +422,7 @@ struct WorkspaceSettingsSection: View {
             behavior
             TextGenerationSection()
             sessionTidying
+            SnoozeOptionsSection()
         case .projects: projects
         case .openIn: openIn
         case .browser: browser
@@ -913,8 +914,11 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
                 Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)
+                Toggle(tr("settings.ws.autoSettleClosed"), isOn: $inbox.autoSettle.settleOnClosedPullRequest)
                 Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
                         value: $inbox.autoSettle.inactivityDays, in: 1...30)
+                Toggle(tr("settings.ws.autoSettleKeepOpenPR"), isOn: $inbox.autoSettle.keepWithOpenPullRequest)
+                    .help(tr("settings.ws.autoSettleKeepOpenPR.help"))
             }
             Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
                 Text(tr("settings.ws.never")).tag(0)

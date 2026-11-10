@@ -11,6 +11,8 @@ struct AgentInboxList: View {
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
     @ObservedObject private var pullRequests = PullRequestSync.shared
+    /// Publishes only while a Settle or Wake sweep runs, to light the rows it covers.
+    @ObservedObject private var sweep = SessionSweep.rows
     /// The badges show the newest status of each request, also one a watch or the pull request page read.
     @ObservedObject private var pullRequestStatuses = PullRequestStatusStore.shared
     /// Sessions that are running or were, and earlier sessions (settled by nature).
@@ -531,14 +533,16 @@ struct AgentInboxList: View {
                     onPin: { withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) } },
                     settled: entry.row.settled,
                     onSettle: { withAnimation(NookTheme.reveal) { entry.row.settled ? store.unsettle([item]) : store.settle([item]) } },
-                    onSnooze: isRun ? { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } } : nil,
                     onWake: isRun && snoozeActive ? { withAnimation(NookTheme.reveal) { wake(item) } } : nil,
                     limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: item.limitedAt, resetAt: item.limitResetAt, now: now),
                     onSnoozeUntil: isRun ? { end in withAnimation(NookTheme.reveal) { snooze(item, until: end) } } : nil,
-                    onSnoozeCustom: isRun ? { customSnooze = item } : nil),
+                    onSnoozeCustom: isRun ? { customSnooze = item } : nil,
+                    onSettleSweep: { ids in sweepSettle(ids, unsettle: entry.row.settled, byID: byID) },
+                    onWakeSweep: isRun && snoozeActive ? { ids in sweepWake(ids, byID: byID) } : nil),
                 pullRequests: sessionPullRequests(item),
                 jumpHint: jumpNumber(item.id),
                 keyFocused: listFocused && keyRow == item.id,
+                sweepOrigin: sweep.origin == item.id,
                 openPullRequest: { url in
                     select(item.id)
                     // Another forge, or GitHub not connected: its web page.
@@ -554,6 +558,15 @@ struct AgentInboxList: View {
             // Redrawn only when what the row shows changed: the list redraws on every tick and every store change.
             .equatable()
             .id(item.id)
+            // A Settle or Wake sweep takes the rows of the section it started in; the rows it covers light up.
+            .sweepRow(SessionSweep.rows, id: item.id, group: section.kind.rawValue)
+            .overlay {
+                if sweep.swept.contains(item.id) {
+                    NookTheme.shape(NookTheme.Radius.card)
+                        .fill(NookTheme.iris.opacity(0.14))
+                        .allowsHitTesting(false)
+                }
+            }
             .nested(entry.depth)
             // Read the session's timeline while the pointer rests on it, so the click opens it without a hitch.
             .onHover { inside in if inside, let id = runID(item) { app.workspace.prefetchTimeline(id) } }
@@ -635,12 +648,6 @@ struct AgentInboxList: View {
 
     // MARK: Actions
 
-    private func snooze(_ item: AgentListItem, _ choice: SnoozePolicy.Choice) {
-        guard let id = runID(item) else { return }
-        app.workspace.snooze(id, choice)
-        store.note(.snoozed, ids: [item.id])
-    }
-
     private func snooze(_ item: AgentListItem, until end: Date) {
         guard let id = runID(item) else { return }
         app.workspace.snooze(id, until: end)
@@ -650,6 +657,18 @@ struct AgentInboxList: View {
     private func wake(_ item: AgentListItem) {
         guard let id = runID(item) else { return }
         app.workspace.unsnooze(id)
+    }
+
+    /// Settle (or Un-settle) dragged over rows: every row swept goes the way of the one it started on, with one undo.
+    private func sweepSettle(_ ids: [String], unsettle: Bool, byID: [String: AgentListItem]) {
+        let items = ids.compactMap { byID[$0] }
+        guard !items.isEmpty else { return }
+        withAnimation(NookTheme.reveal) { unsettle ? store.unsettle(items) : store.settle(items) }
+    }
+
+    /// Wake dragged over snoozed rows: they all wake.
+    private func sweepWake(_ ids: [String], byID: [String: AgentListItem]) {
+        withAnimation(NookTheme.reveal) { ids.compactMap { byID[$0] }.forEach(wake) }
     }
 
     @ViewBuilder
@@ -696,8 +715,8 @@ struct AgentInboxList: View {
             } else if !item.isBusy {
                 Menu(tr("agents.snooze.menu")) {
                     SnoozeMenuItems(
+                        now: now,
                         limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt, now: now),
-                        onChoice: { choice in withAnimation(NookTheme.reveal) { snooze(item, choice) } },
                         onUntil: { end in withAnimation(NookTheme.reveal) { snooze(item, until: end) } },
                         onCustom: { customSnooze = item })
                 }
@@ -790,8 +809,8 @@ struct AgentInboxList: View {
 
     private func autoSettle(rows: [InboxRow], byID: [String: AgentListItem], now: Date) {
         let workspace = app.workspace
-        let ids = store.autoSettleCandidates(rows: rows, prMerged: { id in
-            runID(byID[id]).map { run in pullRequests.merged(run, since: workspace.lastWrittenAt(run)) } ?? false
+        let ids = store.autoSettleCandidates(rows: rows, pullRequest: { id in
+            runID(byID[id]).map { run in pullRequests.autoSettleState(run, since: workspace.lastWrittenAt(run)) } ?? .none
         }, now: now)
         let settle = ids.compactMap { byID[$0] }
         if !settle.isEmpty { store.settle(settle, now: now, record: false) }

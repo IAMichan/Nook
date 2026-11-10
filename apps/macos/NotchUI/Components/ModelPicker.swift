@@ -165,8 +165,23 @@ struct ModelPicker<Above: View>: View {
             }
             return true
         }
+        // ⌘1–⌘9 pick the nth model listed (`ModelPickerKeys`), also while the search has the keyboard.
+        .keyCommands(numberKeys(shown.models), context: ["modelPickerOpen": true])
         DropdownDivider()
         DropdownRow(symbol: "gearshape", title: settingsTitle, action: openSettings)
+    }
+
+    private func numberKeys(_ models: [ModelPickerItem]) -> [String: () -> Bool] {
+        let enabled = models.map { $0.disabledReason == nil }
+        var out: [String: () -> Bool] = [:]
+        for number in 1...ModelPickerKeys.count {
+            out[ModelPickerKeys.command(number)] = {
+                guard let index = ModelPickerKeys.row(number, enabled: enabled) else { return false }
+                pick(models, at: index)
+                return true
+            }
+        }
+        return out
     }
 
     private func pick(_ rows: [ModelPickerItem], at index: Int?) {

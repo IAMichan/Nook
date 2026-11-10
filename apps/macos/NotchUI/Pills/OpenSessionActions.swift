@@ -121,14 +121,6 @@ struct OpenSessionActions {
             store.note(.snoozed, ids: [item.id])
         }
     }
-
-    func snooze(_ choice: SnoozePolicy.Choice) {
-        guard let runID else { return }
-        withAnimation(NookTheme.reveal) {
-            app.workspace.snooze(runID, choice)
-            store.note(.snoozed, ids: [item.id])
-        }
-    }
 }
 
 /// F2 or the palette's Rename asks the open session's header to show its name field (`AgentRunPanel`), also when the

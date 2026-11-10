@@ -400,10 +400,15 @@ final class ComposerModel: ObservableObject {
         if secretOffer != nil { secretOffer = nil }
     }
 
-    /// A paste that was too big for the box: keep it aside and put a reference in its place.
-    func keepPaste(old: String, new: String) -> String? {
-        guard new.utf8.count - old.utf8.count >= PasteRule.attachThreshold,
-              let parts = PasteRule.split(old: old, new: new), PasteRule.shouldAttach(parts.inserted) else { return nil }
+    /// The next paste stays editable text however big it is (⇧⌘V), unless it would push the message past its limit. The
+    /// composer reads and clears it on the next change of the text.
+    var pastesAsText = false
+
+    /// A paste that was too big for the box, or that would make the message too long: keep it aside and put a reference
+    /// in its place. `asText` (⇧⌘V) keeps a big paste as text. Typing never counts: under 16 characters nothing is kept aside.
+    func keepPaste(old: String, new: String, asText: Bool = false) -> String? {
+        guard new.utf8.count - old.utf8.count >= 16, let parts = PasteRule.split(old: old, new: new),
+              PasteRule.attaches(parts.inserted, result: new, asText: asText) else { return nil }
         let id = String(UUID().uuidString.prefix(8)).lowercased()
         excerpts[id] = parts.inserted
         let ref = ContextRef(kind: .paste, id: id, label: PasteRule.fileName(for: parts.inserted))
@@ -524,13 +529,27 @@ struct ComposerContextRing: View {
     let used: Int
     let window: Int
     var onCompact: (() -> Void)? = nil
+    /// Where the agent summarizes by itself (`AutoCompactMark`): a tick on the ring, and a line in its help.
+    var autoCompactAt: Int? = nil
     @State private var open = false
 
     private var fraction: Double { window > 0 ? min(1, Double(used) / Double(window)) : 0 }
 
+    /// The tick's place on the ring, when it falls inside the window.
+    private var markFraction: Double? {
+        guard let autoCompactAt, window > 0, autoCompactAt < window else { return nil }
+        return Double(autoCompactAt) / Double(window)
+    }
+
+    /// "Compacts automatically at about 280k tokens."
+    private var autoCompactLine: String? {
+        autoCompactAt.map { tr("compose.context.autoCompact", ContextMeter.tokensText($0)) }
+    }
+
     /// "Context window 84% · 168k/200k", and past the warning line the suggestion to summarize.
     private var help: String {
-        let base = tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window))
+        var base = tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window))
+        if let autoCompactLine { base += "\n" + autoCompactLine }
         guard ContextMeter.suggestsCompact(fraction), onCompact != nil else { return base }
         return base + "\n" + tr("compose.context.nearlyFull")
     }
@@ -544,6 +563,12 @@ struct ComposerContextRing: View {
                 Circle().trim(from: 0, to: fraction)
                     .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
+                if let mark = markFraction {
+                    // The auto-compact point: a short, bright stretch of the ring.
+                    Circle().trim(from: max(0, mark - 0.012), to: min(1, mark + 0.012))
+                        .stroke(NookTheme.paper, style: StrokeStyle(lineWidth: 3.5))
+                        .rotationEffect(.degrees(-90))
+                }
             }
             .frame(width: 16, height: 16)
             .frame(width: 26, height: 26)
@@ -558,6 +583,11 @@ struct ComposerContextRing: View {
                 ProgressView(value: fraction).tint(tint)
                 Text(tr("compose.context.detail", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
                     .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                if let autoCompactLine {
+                    Text(autoCompactLine)
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if ContextMeter.suggestsCompact(fraction), onCompact != nil {
                     Text(tr("compose.context.nearlyFull"))
                         .font(NookTheme.TextStyle.detail).foregroundStyle(tint)
@@ -572,6 +602,25 @@ struct ComposerContextRing: View {
             .padding(12)
             .frame(width: 240)
         }
+    }
+}
+
+/// Back at a long session whose prompt cache expired (`ReturnCompaction`): "Compact · 312k" by the send button means your
+/// message goes after a summary; one click makes it "Keep", and the whole history goes with it.
+struct CompactFirstChip: View {
+    let tokens: Int
+    let compacts: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        let size = ContextMeter.tokensText(tokens)
+        Button(action: toggle) {
+            ComposerPill(symbol: compacts ? "arrow.down.right.and.arrow.up.left" : "text.alignleft",
+                         text: tr(compacts ? "compose.compactFirst.compact" : "compose.compactFirst.keep", size),
+                         tint: compacts ? NookTheme.amber : nil, showsChevron: false)
+        }
+        .buttonStyle(.plain)
+        .help(tr(compacts ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp", size))
     }
 }
 

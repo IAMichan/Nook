@@ -75,6 +75,78 @@ enum IdleCompaction {
     }
 }
 
+/// Returning to a long session after its prompt cache expired (t3code's "Compact idle threads › When you return"): the
+/// next message would write the whole history to the cache again at the full price, so the composer offers to
+/// summarize first. A chip by the send button says so; while it is on, sending summarizes (`/compact`) and then sends
+/// your message. One click switches it to Keep, which sends with the full history. The summary before expiry
+/// (`IdleCompaction`) did not run, or missed its window (Nook was not running, the cache was 5 minutes).
+enum ReturnCompaction {
+    struct Candidate: Equatable, Sendable {
+        /// The agent reports how long its prompt cache lives (`ProviderCapabilities.reportsPromptCacheLifetime`).
+        var agentReportsCacheLifetime: Bool
+        /// The agent compacts on `/compact` (`AgentCommands.canCompact`).
+        var canCompact: Bool
+        /// Settings › Sessions › Tokens: summarizing idle sessions is on.
+        var enabled: Bool
+        var status: RunStatus
+        var contextTokens: Int?
+        var cache: PromptCacheWindow?
+        var isRemote: Bool
+    }
+
+    /// The chip shows: a finished session over `IdleCompaction.minimumContextTokens` whose cache has run out, and that
+    /// was not summarized since.
+    static func offers(_ candidate: Candidate, now: Date) -> Bool {
+        guard candidate.enabled, candidate.agentReportsCacheLifetime, candidate.canCompact, candidate.status == .completed,
+              !candidate.isRemote, (candidate.contextTokens ?? 0) >= IdleCompaction.minimumContextTokens,
+              let cache = candidate.cache, !cache.afterCompaction else { return false }
+        return cache.expiresAt <= now
+    }
+}
+
+/// Where the agent summarizes by itself, for the mark on the context meter: Nook's own limit (`SizeCompaction`) for an
+/// agent that compacts on `/compact`, and the agent's own threshold where it tells it (Claude Code's
+/// `autoCompactWindow`, t3code #29220), whichever comes first.
+enum AutoCompactMark {
+    /// Claude Code compacts this far short of its `autoCompactWindow` (t3code measured 150,000 → 117,000 with Claude Code
+    /// 2.1.305, for every catalog model).
+    static let claudeReserve = 33_000
+    /// The windows Claude Code accepts for `autoCompactWindow`.
+    static let claudeWindowRange = 100_000...1_000_000
+
+    /// The first threshold that applies, or nil when neither does.
+    static func tokens(nookLimit: Int?, agentThreshold: Int?) -> Int? {
+        [nookLimit, agentThreshold].compactMap { $0 }.filter { $0 > 0 }.min()
+    }
+
+    /// Claude Code's threshold for an `autoCompactWindow`: only below the model's own window, which caps it.
+    static func claudeThreshold(window: Int?, contextWindow: Int?) -> Int? {
+        guard let window, claudeWindowRange.contains(window) else { return nil }
+        if let contextWindow, contextWindow > 0, window >= contextWindow { return nil }
+        return window - claudeReserve
+    }
+
+    /// `autoCompactWindow` from Claude Code's settings files, strongest first: the model's own entry in
+    /// `modelSettings` (where "auto" means none), else the file's top-level value. Numbers may be written as text.
+    static func claudeWindow(in files: [URL], model: String) -> Int? {
+        let key = model.lowercased().replacingOccurrences(of: "[1m]", with: "")
+        for file in files {
+            guard let data = try? Data(contentsOf: file),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            let entry = ((object["modelSettings"] as? [String: Any])?[key] as? [String: Any])?["autoCompactWindow"]
+            if let text = entry as? String, text == "auto" { return nil }
+            if let window = number(entry) ?? number(object["autoCompactWindow"]), claudeWindowRange.contains(window) { return window }
+        }
+        return nil
+    }
+
+    private static func number(_ value: Any?) -> Int? {
+        if let number = value as? NSNumber { return number.intValue }
+        if let text = value as? String { return Int(text.trimmingCharacters(in: .whitespaces)) }
+        return nil
+    }
+}
+
 /// Summarizing a session once its context grows past a size, whether or not it goes idle. Every request rereads the
 /// whole context, so a session that keeps running at 700K tokens costs several times what one at 200K does.
 enum SizeCompaction {

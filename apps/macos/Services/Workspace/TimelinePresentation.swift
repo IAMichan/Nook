@@ -554,6 +554,19 @@ enum BackgroundCommands {
         events.contains { $0.state == .running && isCommand($0) }
     }
 
+    /// A monitor: a command that watches something and wakes the agent for every line it prints (Claude Code's
+    /// `Monitor`, Grok's monitor tool), by the name of its tool, whatever agent runs it.
+    static func isMonitor(_ event: RunEvent) -> Bool {
+        guard isCommand(event) else { return false }
+        let name = (event.tool ?? "").lowercased()
+        return name == "monitor" || name.hasPrefix("monitor ") || name.hasSuffix("__monitor")
+    }
+
+    /// A monitor still runs, from any turn.
+    static func monitorRunning(_ events: [RunEvent]) -> Bool {
+        events.contains { $0.state == .running && isMonitor($0) }
+    }
+
     /// The commands the bar above the composer shows: those started since your last message, and any still running
     /// from before it (as `Subagents.current`).
     static func current(_ events: [RunEvent]) -> [BackgroundCommandInfo] {
@@ -653,6 +666,19 @@ enum TurnChanges {
         let initial = checkpoints.first.flatMap { $0.date < end ? $0 : nil }
         guard let before = checkpoints.last(where: { $0.date <= start }) ?? initial else { return nil }
         return (before, checkpoints.first { $0.date >= end && $0.date > before.date })
+    }
+}
+
+/// One alert per piece of background work: a monitor wakes the agent for every line it prints, so the turn of such a
+/// wake ends many times while the monitor still runs. That turn's completion is held (no notification, no result for a
+/// delegating session) until a wake turn ends with no monitor left running, or the monitor ends with its process
+/// (t3code's `monitorHoldsWakeCompletion`). For every agent whose timeline reports monitors.
+enum WakeCompletion {
+    /// The latest turn is a wake the agent took by itself, and a monitor still runs.
+    static func holds(_ events: [RunEvent]) -> Bool {
+        guard let turn = TimelinePresentation.split(events).last, let first = turn.first,
+              first.kind == .system, first.tool == "wake" else { return false }
+        return BackgroundCommands.monitorRunning(events)
     }
 }
 
