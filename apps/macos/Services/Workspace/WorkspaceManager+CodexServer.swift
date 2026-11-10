@@ -173,7 +173,7 @@ extension WorkspaceManager {
     /// for an agent without native steering an interrupt followed by the message as the next prompt (see `SteerRoute`).
     /// False when the session cannot be steered right now.
     @discardableResult
-    func steer(_ id: UUID, text: String) -> Bool {
+    func steer(_ id: UUID, text: String, promoted: Bool = false) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSteer(id) else { return false }
         // Codex takes a goal outside its turns: it waits for this turn to end, as a turn of its own.
@@ -181,25 +181,33 @@ extension WorkspaceManager {
             enqueue(id, text: clean)
             return true
         }
-        if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean) }
+        let mark: RunEvent.SteerKind = promoted ? .promoted : .steer
+        if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean, mark: mark) }
         if let process = processes[id], run(id)?.provider == .claude {
-            append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
+            append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
             turns[id]?.steered = true
             process.send(ClaudeStreamParser.userMessage(clean, steer: true))
             return true
         }
         if let process = processes[id], run(id)?.provider == .pi {
-            append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
+            append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
             process.send(PiRPC.prompt(clean, steer: true))
             return true
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
-        append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
+        append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
             guard case .failure(let error) = result else { return }
             Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }
         }
         return true
+    }
+
+    /// A message of yours marked as taken into a running turn.
+    func steered(_ event: RunEvent, _ mark: RunEvent.SteerKind) -> RunEvent {
+        var event = event
+        event.steer = mark
+        return event
     }
 
     /// A running turn that can take a new message right away: Codex on app-server, Claude Code on its live process (not while
@@ -220,9 +228,10 @@ extension WorkspaceManager {
 
     /// Steering an agent that cannot take a message into its turn: the turn is interrupted and the message goes out as the
     /// next prompt as soon as the turn has ended (the same path as "send now" for a queued message, `sendPendingNow`).
-    private func steerByRestart(_ id: UUID, text: String) -> Bool {
+    private func steerByRestart(_ id: UUID, text: String, mark: RunEvent.SteerKind) -> Bool {
         append(id, RunEvent(kind: .system, text: tr("ws.steer.restart")))
         pendingSendNow[id] = text
+        pendingSendNowSteer[id] = mark
         stop(id)
         return true
     }

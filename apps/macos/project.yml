@@ -243,6 +243,7 @@ targets:
       - path: Core/I18n+BrowserCapture.swift
       - path: Core/I18n+RelayPush.swift
       - path: Core/I18n+ChatTimeline.swift
+      - path: Core/I18n+Transcript.swift
       - path: Core/I18n+Limits.swift
       - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
@@ -503,6 +504,7 @@ targets:
       - path: Services/AppPrompt.swift
       - path: Services/PreToolGate.swift
       - path: Services/Workspace/CommandConsole.swift
+      - path: Services/Workspace/AnsiText.swift
       - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift
       - path: Services/Workspace/SessionPrompts.swift

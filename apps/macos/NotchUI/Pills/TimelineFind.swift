@@ -18,6 +18,8 @@ enum TimelineContainers {
                     for case .tools(let gid, let events, _) in inner {
                         for event in events { result[event.id] = path + ["group:" + gid.uuidString] }
                     }
+                case .superseded(let id, let inner):
+                    walk(inner, inside: inside + ["superseded:" + id.uuidString])
                 }
             }
         }

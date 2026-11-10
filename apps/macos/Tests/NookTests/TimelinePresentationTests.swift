@@ -303,4 +303,56 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(AgentToolStep(event: event(.tool, "TodoWrite", tool: "TodoWrite")).summary, "",
                        "a title that is only the tool's name says nothing more")
     }
+
+    func testASteerFoldsTheWorkBeforeItAsASupersededAttempt() {
+        let prompt = RunEvent(kind: .user, text: "Fix de build")
+        let work = [RunEvent(kind: .tool, text: "Bash · swift build", tool: "Bash", state: .done),
+                    RunEvent(kind: .assistant, text: "Ik kijk naar de fout")]
+        var steer = RunEvent(kind: .user, text: "Maak er een PR voor")
+        steer.steer = .steer
+        let after = RunEvent(kind: .tool, text: "Bash · gh pr create", tool: "Bash", state: .running)
+        let blocks = TimelinePresentation.blocks([prompt] + work + [steer, after], active: true)
+        guard blocks.count >= 3, case .event(let first) = blocks[0], case .superseded(let id, let inner) = blocks[1],
+              case .event(let steered) = blocks[2] else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(first.id, prompt.id)
+        XCTAssertEqual(id, work[0].id)
+        XCTAssertEqual(TimelinePresentation.events(inner).map(\.id), work.map(\.id))
+        XCTAssertEqual(steered.steer, .steer)
+        // A message sent after the turn ended is a turn of its own: nothing is superseded.
+        let plain = TimelinePresentation.blocks([prompt] + work + [RunEvent(kind: .result, text: ""), RunEvent(kind: .user, text: "Dank")],
+                                                active: false)
+        XCTAssertFalse(plain.contains { if case .superseded = $0 { return true } else { return false } })
+    }
+
+    func testASupersededTurnIsMadeAgainOnceASteerFollowsIt() {
+        var cache = TimelineBlockCache()
+        let prompt = RunEvent(kind: .user, text: "Fix")
+        let tool = RunEvent(kind: .tool, text: "Bash · ls", tool: "Bash", state: .done)
+        _ = TimelinePresentation.blocks([prompt, tool], active: true, cache: &cache)
+        var steer = RunEvent(kind: .user, text: "Stop, doe iets anders")
+        steer.steer = .promoted
+        let blocks = TimelinePresentation.blocks([prompt, tool, steer], active: true, cache: &cache)
+        XCTAssertTrue(blocks.contains { if case .superseded = $0 { return true } else { return false } })
+    }
+
+    func testModelSwitchSaysWhatChanged() {
+        let sonnet = ModelSwitch.Endpoint(provider: "claude", agent: "Claude Code", model: "Sonnet 5.5", effort: "high")
+        var opus = sonnet
+        opus.model = "Opus 5.5"
+        XCTAssertFalse(ModelSwitch(from: sonnet, to: opus).handoff)
+        XCTAssertTrue(ModelSwitch(from: sonnet, to: opus).modelChanged)
+        XCTAssertFalse(ModelSwitch(from: sonnet, to: opus).effortChanged)
+        XCTAssertTrue(ModelSwitch(from: sonnet, to: sonnet).isNoChange)
+        let codex = ModelSwitch.Endpoint(provider: "codex", agent: "Codex", model: "GPT-5", effort: nil)
+        XCTAssertTrue(ModelSwitch(from: sonnet, to: codex).handoff)
+        XCTAssertFalse(ModelSwitch(from: sonnet, to: codex).isNoChange)
+        // Stored events keep their marks.
+        var event = RunEvent(kind: .system, text: "x", tool: "switch")
+        event.change = ModelSwitch(from: sonnet, to: codex)
+        event.steer = .promoted
+        let decoded = try? JSONDecoder().decode(RunEvent.self, from: JSONEncoder().encode(event))
+        XCTAssertEqual(decoded, event)
+        let old = try? JSONDecoder().decode(RunEvent.self, from: Data(#"{"id":"\#(UUID().uuidString)","date":0,"kind":"user","text":"hi"}"#.utf8))
+        XCTAssertNil(old?.steer, "an event stored before these marks reads without them")
+    }
 }

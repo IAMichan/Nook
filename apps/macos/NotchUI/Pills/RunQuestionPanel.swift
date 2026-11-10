@@ -30,6 +30,8 @@ struct RunQuestionPanel: View {
     @State private var pasteMonitor = PasteMonitor()
     /// `@` in your own answer: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
+    /// Folded to its header and the question's first line, to read the conversation above it before answering.
+    @State private var collapsed = false
 
     private var item: RunQuestion? { question.questions.indices.contains(index) ? question.questions[index] : nil }
     private var isLast: Bool { index >= question.questions.count - 1 }
@@ -53,17 +55,27 @@ struct RunQuestionPanel: View {
                             .foregroundStyle(NookTheme.textTertiary)
                             .monospacedDigit()
                     }
+                    ToolbarIconButton(collapsed ? "chevron.up" : "chevron.down",
+                                      collapsed ? tr("ws.question.expand") : tr("ws.question.collapse")) {
+                        withAnimation(NookTheme.reveal) { collapsed.toggle() }
+                    }
                     if let onStop {
                         ToolbarIconButton("xmark", tr("ws.question.stop")) { onStop() }
                     }
                 }
-                Text(item.question)
-                    .font(NookTheme.TextStyle.body)
-                    .lineSpacing(3)
-                    .foregroundStyle(NookTheme.paper)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                if collapsed {
+                    Text(TranscriptPresentation.headline(item.question))
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else {
+                    // In Markdown, as the agent wrote it: code, bold and lists in a question read as such.
+                    MarkdownView(text: item.question, size: 13)
+                        .equatable()
+                }
 
+                if !collapsed {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                         let picked = picks.contains(option.label)
@@ -105,6 +117,7 @@ struct RunQuestionPanel: View {
                             record(item, Array(picks))
                         }
                     }
+                }
                 }
             }
             .conversationCard()

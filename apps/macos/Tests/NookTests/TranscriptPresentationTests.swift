@@ -247,7 +247,7 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id), ["u1", "step:t1", "interrupted:t1-steps", "u2"])
     }
 
-    func testAMessageSentWhileTheAgentWorkedSplitsTheFoldOfItsTurn() {
+    func testAMessageSentWhileTheAgentWorkedSupersedesTheWorkBeforeIt() {
         var steer = message("q1", .user, "Ook de linter", at: 20)
         steer.queued = true
         let rows = TranscriptPresentation.rows([
@@ -258,14 +258,28 @@ final class TranscriptPresentationTests: XCTestCase {
             message("x1", .assistant, "Klaar.", at: 50),
             message("u2", .user, "Dank", at: 60)
         ], working: false)
-        XCTAssertEqual(rows.map(\.id), ["u1", "fold:s1", "q1", "continued:s2", "x1", "u2"],
-                       "the steer stays in sight, between the work it split")
-        guard case .fold(_, let total, _) = rows[1], case .continued(_, let since, let inner) = rows[3] else {
+        XCTAssertEqual(rows.map(\.id), ["u1", "superseded:s1", "q1", "continued:s2", "x1", "u2"],
+                       "the work before the steer folds as a superseded attempt, the steer stays in sight")
+        guard case .superseded(_, let cut) = rows[1], case .continued(_, let since, let inner) = rows[3] else {
             return XCTFail("\(rows)")
         }
-        XCTAssertEqual(total, 50, "the first fold keeps the whole turn's time")
+        XCTAssertEqual(cut.map(\.id), ["step:a"])
         XCTAssertEqual(since, 30, "the work after the steer counts from the steer")
         XCTAssertEqual(inner.map(\.id), ["step:b"])
+    }
+
+    func testASteerIntoTheRunningTurnSupersedesItsWorkAtOnce() {
+        var steer = message("q1", .user, "Maak er een PR voor", at: 20)
+        steer.queued = true
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de build", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build")], at: 10),
+            steer,
+            message("s2", .tools, steps: [step("b", "Bash", "gh pr create", .running)], at: 30)
+        ], working: true)
+        XCTAssertEqual(Array(rows.map(\.id).prefix(4)), ["u1", "working", "superseded:s1", "q1"])
+        XCTAssertEqual(rows.last?.id, "live")
+        XCTAssertFalse(rows.contains { $0.id == "step:a" }, "the cut-off work is inside the fold")
     }
 
     func testAStoppedTurnStaysOpenAndSaysForHowLong() {
@@ -368,6 +382,27 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(marks.first?.position, 0)
         XCTAssertTrue(marks[1].position > 0.5 && marks[1].position < 1)
         XCTAssertTrue(TranscriptPresentation.promptMarks(events: [RunEvent(kind: .assistant, text: "Hallo")]).isEmpty)
+        XCTAssertEqual(marks.map(\.answer), [events[2].text, "Klaar."], "each mark carries the last answer to it")
+    }
+
+    func testAMarkCarriesItsLastAnswer() {
+        let rows = TranscriptPresentation.rows([message("u1", .user, "Hoi"), message("x1", .assistant, "Eerst dit."),
+                                                message("x2", .assistant, "Ja."), message("u2", .user, "En nu?")], working: false)
+        let marks = TranscriptPresentation.promptMarks(rows)
+        XCTAssertEqual(marks.first?.answer, "Ja.")
+        XCTAssertNil(marks.last?.answer, "no answer yet")
+        let chat = TranscriptPresentation.promptMarks(chat: [("q1", true, "Hoi", 0), ("a1", false, "Hallo!", 0)])
+        XCTAssertEqual(chat.first?.answer, "Hallo!")
+    }
+
+    func testRailMarksFitByComingCloser() {
+        XCTAssertEqual(TranscriptPresentation.railLayout(count: 10, height: 400, pitch: 8).pitch, 8)
+        let crowded = TranscriptPresentation.railLayout(count: 100, height: 400, pitch: 8)
+        XCTAssertEqual(crowded.fit, 100, "every mark fits")
+        XCTAssertEqual(crowded.pitch, 4)
+        let many = TranscriptPresentation.railLayout(count: 500, height: 400, pitch: 8)
+        XCTAssertEqual(many.pitch, TranscriptPresentation.railMinPitch)
+        XCTAssertEqual(many.fit, 100, "past the closest distance the newest show")
     }
 
     func testTheNookChatMarksYourQuestionsOnTheSameRail() {

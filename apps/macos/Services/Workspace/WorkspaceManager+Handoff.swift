@@ -30,6 +30,7 @@ extension WorkspaceManager {
               ProviderInstance.key(run.provider, run.profileID) != ProviderInstance.key(provider, profileID) else { return false }
         loadTimeline(id)
         let events = timeline(id)
+        let before = switchEndpoint(run)
 
         var sessions = run.providerSessions ?? [:]
         var cursors = run.handoffCursors ?? [:]
@@ -73,8 +74,15 @@ extension WorkspaceManager {
             $0.permission = $0.permission.steppedDown(within: provider.capabilities.policies)
         }
         forkNext.remove(id)
-        append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.event.switchedAccount", provider.displayName)
-                                                              : tr("ws.event.switched", previous.displayName, provider.displayName)))
+        if accountOnly {
+            append(id, RunEvent(kind: .system, text: tr("ws.event.switchedAccount", provider.displayName)))
+        } else if let now = self.run(id) {
+            // "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5": a divider with both agents and their models.
+            var event = RunEvent(kind: .system, text: tr("ws.event.switched", previous.displayName, provider.displayName),
+                                 tool: "switch")
+            event.change = ModelSwitch(from: before, to: switchEndpoint(now))
+            append(id, event)
+        }
         if let handoff { appendHandoffNote(id, handoff) }
         // The limit belonged to the old account: its banner and its "Resume at reset" do not apply to the new one.
         let limited = run.limitedAt != nil

@@ -198,6 +198,13 @@ struct AgentRunPanel: View {
                 workspace.requestTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID, quiet: true) }
                 workspace.prewarm(runID)
+                // A queued message you were editing in the session you left goes back to its queue as it was, and the
+                // draft that waited behind it becomes that session's draft again.
+                if composerState.editingQueued != nil {
+                    let restored = workspace.endEditQueued(previous, save: false)
+                    ComposerDraftStore.shared.save(sessionID: previous.uuidString, text: restored ?? "")
+                    composerState.editingQueued = nil
+                }
                 // The draft of the session you left stays saved, and the one of this session comes back.
                 composerState.show(session: runID.uuidString)
                 if let fresh = workspace.run(runID) { loadComposerState(fresh) }
@@ -594,6 +601,8 @@ struct AgentRunPanel: View {
         let store = ComposerDraftStore.shared
         if composerState.session != runID.uuidString { composerState.show(session: runID.uuidString) }
         composerModel.stash = store.stash
+        // ArrowUp walks through what you sent this session, also after a relaunch.
+        composerModel.history.seed(workspace.timeline(runID).filter { $0.kind == .user }.map { ContextRefs.visible($0.text) })
         composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
         let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
         Task {
@@ -1716,9 +1725,18 @@ final class RunComposerState: ObservableObject {
     func show(session: String) {
         switching = true
         defer { switching = false }
+        // The pictures of the session you leave wait for it; a queued message open for editing belongs to that session's
+        // queue, so it closes (the next send would otherwise overwrite a message in a queue that is not shown).
+        if let previous = self.session, previous != session {
+            heldImages[previous] = images.isEmpty ? nil : images
+            images = heldImages.removeValue(forKey: session) ?? []
+            editingQueued = nil
+        }
         self.session = session
         draft = ComposerDraftStore.shared.draft(for: session) ?? ""
     }
+    /// Pictures added in other sessions' composers and not sent yet, by session, while this panel is open.
+    private var heldImages: [String: [ImageAttachment]] = [:]
     @Published var images: [ImageAttachment] = []
     /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
     @Published var quotes = ComposerQuotes()

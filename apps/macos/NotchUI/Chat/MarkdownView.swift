@@ -378,8 +378,12 @@ struct MarkdownView: View, Equatable {
             } else {
                 MarkdownCodeBlock(language: "math", code: tex, size: size)
             }
-        case .code(let language, let code):
-            MarkdownCodeBlock(language: language, code: code, size: size)
+        case .code(let language, let code, let title):
+            MarkdownCodeBlock(language: language, code: code, title: title, size: size)
+        case .details(let summary, let body):
+            MarkdownDetailsBlock(summary: summary, text: body, size: size)
+        case .image(let alt, let source):
+            MarkdownImageBlock(alt: alt, source: source)
         case .chart(let chart):
             ChatChartView(chart: chart)
         case .question(let text, let options):
@@ -471,25 +475,58 @@ private struct CalloutBlock: View {
 // MARK: Code
 
 private struct MarkdownCodeBlock: View {
+    @Environment(\.fileLinkBase) private var fileLinkBase
     let language: String
     let code: String
+    var title: String? = nil
     let size: CGFloat
     /// HTML, SVG and Mermaid: shown as what they draw instead of their source.
     @State private var rendered = false
+    /// Long lines wrap instead of scrolling sideways.
+    @State private var wraps = false
     /// How far the code and its language sit from the block's edge.
     private static let inset: CGFloat = 14
 
+    /// A shell block runs in a terminal in the session's folder; not one that ends mid-command or hides control characters.
+    private var runnable: Bool {
+        guard fileLinkBase != nil, CodeBlockStyle.isShell(language) else { return false }
+        return CodeBlockStyle.canRun(code)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The language on the left, preview and copy as quiet symbol buttons on the right.
+            // The file (or else the language) on the left, the actions as quiet symbol buttons on the right.
             HStack(spacing: NookTheme.Spacing.xxs) {
-                Text(language.isEmpty ? "code" : language)
-                    .font(NookTheme.mono(11))
-                    .foregroundStyle(NookTheme.textTertiary)
+                if let title {
+                    Image(systemName: "doc.text")
+                        .font(NookTheme.font(10, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(title)
+                        .font(NookTheme.mono(11))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .help(language.isEmpty ? title : "\(title) · \(language)")
+                        .padding(.leading, NookTheme.Spacing.xxs)
+                } else {
+                    Text(language.isEmpty ? "code" : language)
+                        .font(NookTheme.mono(11))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
                 Spacer()
                 if CodeRenderView.canRender(language) {
                     ToolbarIconButton(rendered ? "chevron.left.forwardslash.chevron.right" : "eye",
                                       rendered ? tr("code.source") : tr("code.preview")) { rendered.toggle() }
+                }
+                if !rendered {
+                    ToolbarIconButton("arrow.turn.down.left", wraps ? tr("code.noWrap") : tr("code.wrap"), selected: wraps) {
+                        wraps.toggle()
+                    }
+                }
+                if runnable, let base = fileLinkBase {
+                    ToolbarIconButton("play", tr("code.runInTerminal")) {
+                        AppModel.shared.openTerminal(in: base, command: CodeBlockStyle.command(code), title: title)
+                    }
                 }
                 CopyIconButton(tr("button.copy")) { code }
             }
@@ -501,20 +538,100 @@ private struct MarkdownCodeBlock: View {
                     .frame(height: 280)
                     .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip))
                     .padding(8)
+            } else if wraps {
+                codeText.fixedSize(horizontal: false, vertical: true)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    Text(code)
-                        .font(NookTheme.mono(size - 1))
-                        .lineSpacing(3)
-                        .foregroundStyle(NookTheme.textStrong)
-                        .fixedSize(horizontal: true, vertical: true)
-                        .padding(.horizontal, Self.inset)
-                        .padding(.top, NookTheme.Spacing.xs)
-                        .padding(.bottom, NookTheme.Spacing.lg)
+                    codeText.fixedSize(horizontal: true, vertical: true)
                 }
             }
         }
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+    }
+
+    /// The code in the colors of its language (`SyntaxTokenizer`), or plain when Nook does not know it.
+    private var codeText: some View {
+        Group {
+            if let colored = CodeBlockStyle.highlighted(code, language: language, title: title) {
+                Text(colored)
+            } else {
+                Text(code).foregroundStyle(NookTheme.textStrong)
+            }
+        }
+        .font(NookTheme.mono(size - 1))
+        .lineSpacing(3)
+        .textSelection(.enabled)
+        .padding(.horizontal, Self.inset)
+        .padding(.top, NookTheme.Spacing.xs)
+        .padding(.bottom, NookTheme.Spacing.lg)
+    }
+}
+
+/// Colors and actions of a code block in an answer.
+enum CodeBlockStyle {
+    private static let cache = BoundedCache<String, AttributedString>(limit: 200)
+    /// Past this a block stays plain: coloring it on every token of a streaming answer would cost more than it gives.
+    static let colorLimit = 20_000
+
+    private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "shell", "console", "shellsession", "powershell", "pwsh", "ps1"]
+
+    static func isShell(_ language: String) -> Bool { shells.contains(language) }
+
+    /// The language a fence names, as the tokenizer knows it; the file name decides when the fence names none.
+    static func syntax(_ language: String, title: String?) -> SyntaxLanguage? {
+        let aliases: [String: String] = [
+            "typescript": "ts", "javascript": "js", "tsx": "tsx", "jsx": "jsx", "python": "py", "py": "py", "rust": "rs",
+            "golang": "go", "yml": "yaml", "shell": "sh", "console": "sh", "zsh": "zsh", "bash": "sh", "sh": "sh",
+            "markdown": "md", "md": "md", "xml": "xml", "svg": "svg", "vue": "vue", "svelte": "svelte", "jsonc": "jsonc",
+            "json5": "json5", "scss": "scss", "less": "less"
+        ]
+        if !language.isEmpty, let known = SyntaxLanguage.detect(path: "x." + (aliases[language] ?? language)) { return known }
+        return title.flatMap { SyntaxLanguage.detect(path: $0) }
+    }
+
+    /// The code with its tokens colored; nil for a language the tokenizer does not know, or a very long block.
+    static func highlighted(_ code: String, language: String, title: String?) -> AttributedString? {
+        guard let syntax = syntax(language, title: title) else { return nil }
+        return highlighted(code, syntax: syntax)
+    }
+
+    static func highlighted(_ code: String, syntax: SyntaxLanguage) -> AttributedString? {
+        guard code.utf16.count <= colorLimit else { return nil }
+        let key = syntax.rawValue + "\u{0}" + code
+        if let hit = cache.value(for: key) { return hit }
+        var result = AttributedString()
+        var carry = SyntaxTokenizer.Carry.none
+        for (index, line) in code.components(separatedBy: "\n").enumerated() {
+            if index > 0 { result += AttributedString("\n") }
+            let (tokens, next) = SyntaxTokenizer.tokenize(line, language: syntax, carry: carry)
+            carry = next
+            let units = Array(line.utf16)
+            for segment in DiffSyntax.segments(length: units.count, tokens: tokens, changed: nil) {
+                var part = AttributedString(String(decoding: units[segment.start..<segment.end], as: UTF16.self))
+                part.foregroundColor = segment.kind.map(DiffSyntaxStyle.color) ?? NookTheme.textStrong
+                result += part
+            }
+        }
+        cache.set(result, for: key)
+        return result
+    }
+
+    /// A block that can be run as it is: not empty, not ending on a line continuation, and with no control characters
+    /// that could hide what it does.
+    static func canRun(_ code: String) -> Bool {
+        let text = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.hasSuffix("\\") else { return false }
+        return !text.unicodeScalars.contains { scalar in
+            (scalar.value < 0x20 && scalar != "\n" && scalar != "\t") || scalar.value == 0x7F
+                || (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value)
+        }
+    }
+
+    /// The command a shell block runs: without the `$ ` prompts a model often writes in front of each line.
+    static func command(_ code: String) -> String {
+        let lines = code.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        let prompted = lines.allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty || $0.hasPrefix("$ ") }
+        return (prompted ? lines.map { $0.hasPrefix("$ ") ? String($0.dropFirst(2)) : $0 } : lines).joined(separator: "\n")
     }
 }
 
@@ -616,6 +733,13 @@ private struct TableBlock: View, Equatable {
                 if showChart { ChatChartView(chart: chart) } else { grid(numbers) }
             } else {
                 grid(numbers)
+            }
+            if !showChart || chart == nil {
+                HStack {
+                    Spacer(minLength: 0)
+                    TableCopyMenu(header: header, rows: rows)
+                }
+                .padding(.top, -NookTheme.Spacing.xs)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -117,12 +117,9 @@ struct TranscriptThought: View {
             TranscriptWorkLine(symbol: "brain", label: headline.isEmpty ? tr("agents.thought") : headline, live: live,
                                open: more ? open : nil) { if more { toggle() } }
             if more, open {
-                Text(text)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                // In Markdown, as the agent wrote it: its bold headings, code and lists read as such, not as `**`.
+                MarkdownView(text: text, size: 13)
+                    .opacity(0.8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, TranscriptStyle.workIndent)
                     .padding(.bottom, NookTheme.Spacing.xs)
@@ -140,6 +137,14 @@ struct TranscriptStepDetail: View {
     var output: String? = nil
     var failed = false
     var tasks: [RunTaskStep]? = nil
+    /// The language of `command` when the step knows it (a shell command); else JSON arguments are recognised.
+    var commandSyntax: SyntaxLanguage? = nil
+
+    /// Arguments written as a JSON object or list show in JSON's colors.
+    static func syntax(of input: String) -> SyntaxLanguage? {
+        let start = input.first { !$0.isWhitespace }
+        return start == "{" || start == "[" ? .json : nil
+    }
 
     var body: some View {
         if let error, !error.isEmpty {
@@ -162,7 +167,7 @@ struct TranscriptStepDetail: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
         } else if open, command != nil || output != nil {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                if let command { CodeBlock(title: tr("ws.tool.input"), text: command) }
+                if let command { CodeBlock(title: tr("ws.tool.input"), text: command, syntax: commandSyntax ?? Self.syntax(of: command)) }
                 if let output { CodeBlock(title: tr("ws.tool.output"), text: output, failed: failed) }
             }
             .padding(.leading, TranscriptStyle.workIndent)
@@ -180,6 +185,9 @@ struct TranscriptWorkGroup<Steps: View>: View {
     let open: Bool
     let toggle: () -> Void
     @ViewBuilder var steps: () -> Steps
+    /// The steps are taller than the scroll: its edges fade, so a cut-off list shows there is more.
+    @State private var overflows = false
+    private static var maxHeight: CGFloat { 288 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -188,10 +196,25 @@ struct TranscriptWorkGroup<Steps: View>: View {
             if open {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) { steps() }
+                        .padding(.vertical, overflows ? NookTheme.Spacing.sm : 0)
                 }
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                .frame(maxHeight: 288)
+                .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                    overflows = now
+                }
+                .frame(maxHeight: Self.maxHeight)
                 .fixedSize(horizontal: false, vertical: true)
+                .mask {
+                    if overflows {
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 16)
+                            Rectangle()
+                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 16)
+                        }
+                    } else {
+                        Rectangle()
+                    }
+                }
             }
         }
     }
@@ -387,6 +410,126 @@ enum TranscriptSymbols {
         case .read: return "eye"
         case .search: return "magnifyingglass"
         case .other: return "wrench"
+        }
+    }
+}
+
+// MARK: Steers and switches
+
+/// The work of a turn a message of yours steered away from, in a quiet box: "› Superseded attempt  Cut off by a steer";
+/// open, what the agent did before your message came in.
+struct TranscriptSupersededFold<Rows: View>: View {
+    let open: Bool
+    let toggle: () -> Void
+    @ViewBuilder var rows: () -> Rows
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Button(action: toggle) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Image(systemName: "chevron.right")
+                        .font(NookTheme.font(10, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text(tr("agents.superseded.title"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("agents.superseded.reason"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, NookTheme.Spacing.md)
+                .padding(.vertical, NookTheme.Spacing.sm)
+                .contentShape(Rectangle())
+                .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2,
+                                radius: NookTheme.Radius.control, style: .continuous)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .accessibilityAddTraits(open ? .isSelected : [])
+            if open {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { rows() }
+                    .padding(.leading, NookTheme.Spacing.md)
+                    .padding(.bottom, NookTheme.Spacing.xs)
+            }
+        }
+        .padding(.vertical, NookTheme.Spacing.xxs)
+    }
+}
+
+/// A centered label between two hairlines, as the timeline marks something that happened to the session itself.
+struct TimelineSystemDivider<Detail: View>: View {
+    let label: String
+    var symbol: String? = nil
+    @ViewBuilder var detail: () -> Detail
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider()
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if let symbol { Image(systemName: symbol) }
+                Text(label).fontWeight(.medium)
+                detail()
+            }
+            .lineLimit(1)
+            .fixedSize()
+            NookDivider()
+        }
+        .font(NookTheme.TextStyle.label)
+        .foregroundStyle(NookTheme.textTertiary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, NookTheme.Spacing.md)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Where the session went on with another agent, model or effort: "⇄ Context handoff  [logo] Sonnet 5.5 → [logo] GPT-5
+/// High" between the turns when the agent changed, "Sonnet 5.5 → Opus 5.5 High" when only the model or effort did.
+struct ModelSwitchDivider: View {
+    let change: ModelSwitch
+
+    var body: some View {
+        if change.isNoChange {
+            EmptyView()
+        } else if change.handoff {
+            TimelineSystemDivider(label: tr("agents.switch.handoff"), symbol: "arrow.left.arrow.right") {
+                endpoint(change.from, model: true, effort: true)
+                Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold))
+                endpoint(change.to, model: true, effort: true)
+            }
+            .help(ModelSwitchText.plain(change))
+        } else {
+            TimelineSystemDivider(label: words(change.from) + " → " + words(change.to)) { EmptyView() }
+                .help(ModelSwitchText.plain(change))
+        }
+    }
+
+    private func words(_ endpoint: ModelSwitch.Endpoint) -> String {
+        Self.words(endpoint, model: change.modelChanged, effort: change.effortChanged)
+    }
+
+    /// "Sonnet 5.5 High": the model (or the agent's default) and the effort, each only when asked for.
+    static func words(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> String {
+        var parts: [String] = []
+        if model { parts.append(endpoint.model ?? tr("agents.switch.defaultModel")) }
+        if effort {
+            if let level = endpoint.effort {
+                let key = EffortLevels.label(level.lowercased())
+                parts.append(EffortLevels.known.contains(level.lowercased()) ? tr(key) : level)
+            } else if !model {
+                parts.append(tr(EffortLevels.label(nil)))
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private func endpoint(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            AgentLogo(agent: endpoint.agent, size: 13)
+            Text(Self.words(endpoint, model: model, effort: effort && endpoint.effort != nil))
+                .foregroundStyle(NookTheme.textSecondary)
         }
     }
 }
