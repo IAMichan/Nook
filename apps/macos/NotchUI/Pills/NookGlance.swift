@@ -159,7 +159,7 @@ private struct GlanceCard<Content: View>: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: symbol)
+                    Image(icon: symbol)
                         .font(NookTheme.font(11, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 14)
@@ -174,7 +174,7 @@ private struct GlanceCard<Content: View>: View {
                             .foregroundStyle(statusColor)
                             .lineLimit(1)
                     }
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(9, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .opacity(hovering ? 1 : 0)

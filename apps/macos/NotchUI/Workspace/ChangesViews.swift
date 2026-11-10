@@ -114,7 +114,7 @@ struct ReviewCommentsBar: View {
         if let comments = workspace.reviewComments[runID], !comments.isEmpty {
             NookDivider()
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "text.bubble").foregroundStyle(NookTheme.amber)
+                Image(icon: "text.bubble").foregroundStyle(NookTheme.amber)
                 Text(tr("ws.review.count", comments.count))
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)

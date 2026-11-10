@@ -1577,7 +1577,7 @@ final class ChatInboxTests: XCTestCase {
         let history: [String: Any] = ["ok": true, "messages": [
             ["ts": "1700000020.000200", "user": "U2", "text": "mine"],
             ["ts": "1700000010.000100", "user": "U1", "text": "hello"],
-            ["ts": "1700000005.000100", "user": "U1", "subtype": "channel_join", "text": "joined"],
+            ["ts": "1700000005.000100", "user": "U1", "subtype": "bot_add", "text": "added an integration"],
             ["ts": "1700000001.000100", "user": "U1", "text": "", "files": [["name": "plan.pdf"]]]
         ]]
         let messages = SlackData.messages(history, conversation: group, users: ["U1": "Anna"], me: "U2")
@@ -1900,13 +1900,14 @@ final class ChatInboxTests: XCTestCase {
             ChatTimeline.Item(id: "a", author: "Jan", date: now),
             ChatTimeline.Item(id: "b", author: "Jan", date: now.addingTimeInterval(30)),
             ChatTimeline.Item(id: "c", author: "Anna", date: now.addingTimeInterval(40)),
-            ChatTimeline.Item(id: "d", author: "Anna", date: now.addingTimeInterval(40 + ChatTimeline.runGap + 1))
+            // Over an hour later, the same day: still the same run.
+            ChatTimeline.Item(id: "d", author: "Anna", date: now.addingTimeInterval(40 + 90 * 60))
         ]
         XCTAssertEqual(ChatTimeline.entries(items, now: now, calendar: calendar), [
             .message(id: "a", first: true, last: false),
             .message(id: "b", first: false, last: true),
-            .message(id: "c", first: true, last: true),
-            .message(id: "d", first: true, last: true)
+            .message(id: "c", first: true, last: false),
+            .message(id: "d", first: false, last: true)
         ])
     }
 
@@ -2316,6 +2317,329 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[id]?.messages.last?.reactions?.last, InboxReaction(emoji: "❤️", count: 2, mine: true))
         inbox.toggleReaction("👍", on: message!.id, in: id)
         XCTAssertEqual(inbox.threads[id]?.messages.last?.reactions?.first, InboxReaction(emoji: "👍", count: 2, mine: false))
+    }
+
+    // MARK: Who is in a group
+
+    func testMembershipSaysPlainlyWhatHappened() {
+        let added = ChatMembership(.added, by: "Ruben", people: ["David", "Anna", "David", " "])
+        XCTAssertEqual(added.change, .added)
+        XCTAssertEqual(added.people, ["David", "Anna"], "each person once, a blank name left out")
+        XCTAssertEqual(ChatMembership(.added, people: ["David"]).change, .joined, "added by nobody named: they came in")
+        XCTAssertEqual(ChatMembership(.added, by: "David", people: ["David"]).change, .joined, "added themselves: joined")
+        XCTAssertEqual(ChatMembership(.removed, people: ["David"]).change, .gone, "removed by nobody named: gone")
+        let left = ChatMembership(.removed, by: "David", people: ["David"])
+        XCTAssertEqual(left.change, .left, "removed themselves: left")
+        XCTAssertNil(left.by)
+        XCTAssertEqual(ChatMembership(.removed, by: "Ruben", people: ["David"]).change, .removed)
+    }
+
+    func testMembershipLinesInYourLanguage() throws {
+        try XCTSkipIf(tr("chat.member.added") == "chat.member.added", "needs the real translations")
+        try XCTSkipIf(I18n.shared.currentLanguage != .en, "the lines below are in English")
+        XCTAssertEqual(ChatMembership(.added, by: "Ruben", people: ["David"]).line, "Ruben added David")
+        XCTAssertEqual(ChatMembership(.added, by: "Ruben", people: ["David", "Anna", ChatMembership.me]).line,
+                       "Ruben added David, Anna and you")
+        XCTAssertEqual(ChatMembership(.added, by: "Ruben", people: [ChatMembership.me]).line, "Ruben added you")
+        XCTAssertEqual(ChatMembership(.removed, by: ChatMembership.me, people: ["Jan"]).line, "You removed Jan")
+        XCTAssertEqual(ChatMembership(.left, people: ["Anna", "Jan"]).line, "Anna left · Jan left", "a sentence per person")
+        XCTAssertEqual(ChatMembership(.joined, people: [ChatMembership.me]).line, "You joined")
+        XCTAssertEqual(ChatMembership(.gone, people: []).line, "Someone is no longer in the group")
+    }
+
+    func testAChangeInWhoIsInAGroupIsNoNews() {
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "signal", name: "Club", messages: [
+            InboxMessage(id: "m1", sender: "Anna", text: "hoi", date: now)], unread: nil, members: ["Anna", "David"]))
+        var joined = InboxMessage(id: "m2", text: "", date: now.addingTimeInterval(60))
+        joined.membership = ChatMembership(.added, by: "Anna", people: ["David"])
+        inbox.merge(BridgedChat(app: "signal", name: "Club", messages: [joined], unread: nil, members: ["Anna", "David"]))
+        let key = ChatInbox.key(app: "signal", chat: "Club")
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "a line about who is in the group counts as nothing new")
+        XCTAssertEqual(inbox.threads[key]?.messages.map(\.id), ["m1", "m2"], "it shows in the chat")
+        XCTAssertEqual(inbox.threads[key]?.newestIncoming, now, "read is about messages")
+        XCTAssertNil(inbox.threads[key]?.messages.last?.call)
+        inbox.merge(BridgedChat(app: "signal", name: "Club", messages: [
+            InboxMessage(id: "m3", sender: "David", text: "hallo", date: now.addingTimeInterval(120))], unread: nil))
+        XCTAssertEqual(inbox.threads[key]?.unread, 1)
+    }
+
+    func testTelegramMembershipNotices() {
+        let chat = TelegramData.Chat(id: -5, title: "Family", isGroup: true, unread: 0, order: 0)
+        let users: [Int64: String] = [1: "Anna", 2: "David", 3: "Me"]
+        func object(_ content: [String: Any], from user: Int64, mine: Bool = false) -> [String: Any] {
+            ["@type": "message", "id": 10, "date": 1_700_000_000, "is_outgoing": mine,
+             "sender_id": ["@type": "messageSenderUser", "user_id": user], "content": content]
+        }
+        let added = TelegramData.message(object(["@type": "messageChatAddMembers", "member_user_ids": [2]], from: 1),
+                                         chat: chat, users: users, me: 3)
+        XCTAssertEqual(added?.membership, ChatMembership(.added, by: "Anna", people: ["David"]))
+        XCTAssertEqual(added?.text, "")
+        XCTAssertEqual(added?.isIncoming, false)
+        let addedMe = TelegramData.message(object(["@type": "messageChatAddMembers", "member_user_ids": [3]], from: 1),
+                                           chat: chat, users: users, me: 3)
+        XCTAssertEqual(addedMe?.membership?.people, [ChatMembership.me])
+        let left = TelegramData.message(object(["@type": "messageChatDeleteMember", "user_id": 2], from: 2), chat: chat, users: users)
+        XCTAssertEqual(left?.membership, ChatMembership(.left, people: ["David"]))
+        let removed = TelegramData.message(object(["@type": "messageChatDeleteMember", "user_id": 2], from: 3, mine: true),
+                                           chat: chat, users: users, me: 3)
+        XCTAssertEqual(removed?.membership, ChatMembership(.removed, by: ChatMembership.me, people: ["David"]))
+        XCTAssertEqual(removed?.isMine, true)
+        let link = TelegramData.message(object(["@type": "messageChatJoinByLink"], from: 2), chat: chat, users: users)
+        XCTAssertEqual(link?.membership, ChatMembership(.joined, people: ["David"]))
+        XCTAssertNil(TelegramData.message(object(["@type": "messageScreenshotTaken"], from: 1), chat: chat, users: users),
+                     "other notices stay out")
+        let renamed = TelegramData.message(object(["@type": "messageChatChangeTitle", "title": "Club"], from: 1), chat: chat, users: users)
+        XCTAssertEqual(renamed?.groupChange, ChatGroupChange(.renamed, by: "Anna", text: "Club"))
+        XCTAssertEqual(renamed?.isIncoming, false, "a change to the group is no news")
+        let timer = TelegramData.message(object(["@type": "messageChatSetMessageAutoDeleteTime", "message_auto_delete_time": 86400],
+                                                from: 3, mine: true), chat: chat, users: users, me: 3)
+        XCTAssertEqual(timer?.groupChange, ChatGroupChange(.disappearing, by: ChatMembership.me, text: "86400"))
+    }
+
+    func testSlackJoinsAndLeaves() {
+        let group = SlackData.Conversation(id: "C1", user: nil, name: "general", isGroup: true, updated: 0)
+        let json: [String: Any] = ["messages": [
+            ["ts": "1700000002.0", "subtype": "channel_leave", "user": "U2", "text": "<@U2> has left the channel"],
+            ["ts": "1700000001.0", "subtype": "channel_join", "user": "U2", "inviter": "U1", "text": "<@U2> has joined the channel"],
+            ["ts": "1700000000.0", "subtype": "channel_join", "user": "U3", "text": "<@U3> has joined the channel"],
+            ["ts": "1699999999.0", "subtype": "channel_topic", "user": "U1", "text": "set the topic", "topic": "Lunch plans"],
+        ]]
+        let messages = SlackData.messages(json, conversation: group, users: ["U1": "Anna", "U2": "David", "U3": "Jan"], me: "U9")
+        XCTAssertEqual(messages.first?.groupChange, ChatGroupChange(.described, by: "Anna", text: "Lunch plans"), "a new topic is a line")
+        XCTAssertEqual(messages.compactMap(\.membership), [ChatMembership(.joined, people: ["Jan"]),
+                                                    ChatMembership(.added, by: "Anna", people: ["David"]),
+                                                    ChatMembership(.left, people: ["David"])])
+        XCTAssertEqual(messages.map(\.text), ["", "", "", ""])
+    }
+
+    func testTeamsMembershipNotices() {
+        let chat = TeamsData.Chat(id: "19:g", name: "Launch", isGroup: true)
+        let graph: [String: Any] = ["value": [
+            ["id": "s1", "messageType": "systemEventMessage", "createdDateTime": "2026-10-22T07:30:00Z",
+             "eventDetail": ["@odata.type": "#microsoft.graph.membersAddedEventMessageDetail",
+                             "members": [["id": "u2", "displayName": NSNull()]],
+                             "initiator": ["user": ["id": "u1", "displayName": "Anna"]]]],
+            ["id": "s2", "messageType": "systemEventMessage", "createdDateTime": "2026-10-22T07:40:00Z",
+             "eventDetail": ["@odata.type": "#microsoft.graph.membersDeletedEventMessageDetail",
+                             "members": [["id": "u2"]], "initiator": ["user": ["id": "u2"]]]],
+            ["id": "s3", "messageType": "systemEventMessage", "createdDateTime": "2026-10-22T07:50:00Z",
+             "eventDetail": ["@odata.type": "#microsoft.graph.chatRenamedEventMessageDetail"]],
+            ["id": "m1", "messageType": "message", "createdDateTime": "2026-10-22T08:00:00Z",
+             "from": ["user": ["id": "u2", "displayName": "David"]], "body": ["contentType": "text", "content": "hi"]],
+        ]]
+        let messages = TeamsData.messages(graph, chat: chat, me: "me")
+        XCTAssertEqual(messages.map(\.membership), [ChatMembership(.added, by: "Anna", people: ["David"]),
+                                                    ChatMembership(.left, people: ["David"]), nil, nil],
+                       "a name Graph leaves out comes from the chat's messages")
+        XCTAssertEqual(messages[2].groupChange?.kind, .renamed, "a new name is a line too")
+
+        let web: [String: Any] = ["messages": [
+            ["id": "1", "messagetype": "ThreadActivity/AddMember", "composetime": "2026-10-22T07:30:00Z",
+             "content": "<addmember><eventtime>1</eventtime><initiator>8:orgid:me</initiator><target>8:orgid:u2</target><detailedtargetinfo><id>8:orgid:u2</id><friendlyname>David</friendlyname></detailedtargetinfo></addmember>"],
+            ["id": "2", "messagetype": "ThreadActivity/DeleteMember", "composetime": "2026-10-22T07:40:00Z",
+             "content": "<deletemember><initiator>8:orgid:u2</initiator><target>8:orgid:u2</target></deletemember>"],
+            ["id": "3", "messagetype": "ThreadActivity/TopicUpdate", "composetime": "2026-10-22T07:50:00Z", "content": "<topicupdate/>"],
+        ]]
+        let fromWeb = TeamsWebData.messages(web, chat: chat, me: "8:orgid:me")
+        XCTAssertEqual(fromWeb.map(\.membership), [ChatMembership(.added, by: ChatMembership.me, people: ["David"]),
+                                                   ChatMembership(.left, people: ["David"])])
+        XCTAssertEqual(fromWeb.first?.isMine, true)
+    }
+
+    func testMessagesAndWhatsAppDesktopMembershipRows() {
+        let contacts = [AppData.key("+31600000001"): "Anna", AppData.key("+31600000002"): "David"]
+        let added = AppData.messagesMembership(["itemtype": 1, "groupaction": 0, "me": 0, "handle": "+31600000001",
+                                                "other": "+31600000002"], contacts: contacts)
+        XCTAssertEqual(added, ChatMembership(.added, by: "Anna", people: ["David"]))
+        let removedMe = AppData.messagesMembership(["itemtype": 1, "groupaction": 1, "me": 0, "handle": "+31600000001",
+                                                    "other": ""], contacts: contacts)
+        XCTAssertEqual(removedMe, ChatMembership(.removed, by: "Anna", people: [ChatMembership.me]))
+        XCTAssertEqual(AppData.messagesMembership(["itemtype": 3, "groupaction": 0, "me": 1], contacts: contacts),
+                       ChatMembership(.left, people: [ChatMembership.me]))
+        XCTAssertNil(AppData.messagesMembership(["itemtype": 2, "groupaction": 0], contacts: contacts), "a new name is no line")
+        XCTAssertNil(AppData.messagesMembership(["itemtype": 0, "text": "hi"], contacts: contacts))
+
+        func row(_ event: Int, member: String = "", text: String = "", kept: String = "") -> [String: Any] {
+            ["type": 6, "event": event, "member": member, "me": 0, "text": text, "targetname": kept, "sender": "", "membername": ""]
+        }
+        XCTAssertEqual(AppData.whatsAppMembership(row(2, member: "31600000001@s.whatsapp.net", text: "123@lid", kept: "David"),
+                                                  contacts: contacts),
+                       ChatMembership(.added, by: "Anna", people: ["David"]), "who did it by Contacts, whom by the name they gave")
+        XCTAssertEqual(AppData.whatsAppMembership(row(2, text: "31600000002@s.whatsapp.net"), contacts: contacts),
+                       ChatMembership(.joined, people: ["David"]))
+        XCTAssertEqual(AppData.whatsAppMembership(row(3, member: "31600000002@s.whatsapp.net"), contacts: contacts),
+                       ChatMembership(.left, people: ["David"]))
+        XCTAssertEqual(AppData.whatsAppMembership(row(7, member: "31600000001@s.whatsapp.net", text: "31600000002@s.whatsapp.net"),
+                                                  contacts: contacts)?.change, .removed)
+        XCTAssertNil(AppData.whatsAppMembership(row(1, text: "New name"), contacts: contacts), "a new name is no line")
+    }
+
+    // MARK: What an app says of a chat
+
+    func testAProfileKeepsWhatANewerReadLeavesOut() {
+        let old = ChatProfile(about: "Old", created: now, admins: ["Anna"], phone: "+31 6 1")
+        let new = ChatProfile(about: "New", adminsOnly: true)
+        let merged = new.merged(over: old)
+        XCTAssertEqual(merged.about, "New")
+        XCTAssertEqual(merged.admins, ["Anna"])
+        XCTAssertEqual(merged.created, now)
+        XCTAssertEqual(merged.adminsOnly, true)
+        XCTAssertEqual(merged.phone, "+31 6 1")
+        XCTAssertTrue(ChatProfile().isEmpty)
+        XCTAssertNil(ChatProfile.text("  \n"))
+
+        var inbox = ChatInbox()
+        var chat = BridgedChat(app: "telegram", name: "Club", messages: [InboxMessage(id: "m1", sender: "Anna", text: "hoi", date: now)],
+                               unread: 0, members: ["Anna", "Jan"])
+        chat.profile = old
+        inbox.merge(chat)
+        var later = BridgedChat(app: "telegram", name: "Club", messages: [], unread: 0)
+        later.profile = new
+        XCTAssertTrue(inbox.merge(later), "a chat whose app says something new of it changes without a message")
+        let thread = try! XCTUnwrap(inbox.threads[ChatInbox.key(app: "telegram", chat: "Club")])
+        XCTAssertEqual(thread.profile, merged)
+        let details = ChatInbox.details(thread)
+        XCTAssertTrue(details.contains("Members (2): Anna, Jan"))
+        XCTAssertTrue(details.contains("Description: New"))
+        XCTAssertTrue(details.contains("Admins: Anna"))
+        XCTAssertTrue(details.contains("Only admins can send messages"))
+    }
+
+    func testTelegramSaysWhoSomeoneIsAndWhatAGroupIs() {
+        let user: [String: Any] = ["@type": "user", "id": 2, "first_name": "David", "phone_number": "31612345678",
+                                   "usernames": ["active_usernames": ["david_b"]], "is_verified": true,
+                                   "type": ["@type": "userTypeRegular"]]
+        let person = TelegramData.person(user)
+        XCTAssertEqual(person.username, "@david_b")
+        XCTAssertEqual(person.link, "https://t.me/david_b")
+        XCTAssertEqual(person.phone, "+31612345678")
+        XCTAssertEqual(person.verified, true)
+        XCTAssertNil(person.bot)
+        XCTAssertEqual(TelegramData.bio(["bio": ["@type": "formattedText", "text": "Fietser"]]), "Fietser")
+        let info: [String: Any] = ["@type": "basicGroupFullInfo", "description": "Elke vrijdag", "creator_user_id": 1,
+                                   "invite_link": ["invite_link": "https://t.me/+abc"],
+                                   "members": [["member_id": ["@type": "messageSenderUser", "user_id": 1],
+                                                "status": ["@type": "chatMemberStatusCreator"]],
+                                               ["member_id": ["@type": "messageSenderUser", "user_id": 3],
+                                                "status": ["@type": "chatMemberStatusAdministrator"]],
+                                               ["member_id": ["@type": "messageSenderUser", "user_id": 2],
+                                                "status": ["@type": "chatMemberStatusMember"]]]]
+        let group = TelegramData.groupProfile(info, users: [1: "Anna", 2: "David"], me: 3)
+        XCTAssertEqual(group.about, "Elke vrijdag")
+        XCTAssertEqual(group.createdBy, "Anna")
+        XCTAssertEqual(group.link, "https://t.me/+abc")
+        XCTAssertEqual(group.admins, ["Anna", ChatMembership.me])
+        let chat = TelegramData.chat(["@type": "chat", "id": -5, "title": "Club",
+                                      "type": ["@type": "chatTypeBasicGroup", "basic_group_id": 5],
+                                      "permissions": ["can_send_basic_messages": false], "message_auto_delete_time": 604800])
+        XCTAssertEqual(chat?.adminsOnly, true)
+        XCTAssertEqual(chat?.disappearAfter, 604800)
+        let privateChat = TelegramData.chat(["@type": "chat", "id": 2, "title": "David", "type": ["@type": "chatTypePrivate", "user_id": 2]])
+        XCTAssertEqual(privateChat?.user, 2)
+    }
+
+    func testSlackSaysWhoSomeoneIsAndWhatAGroupIsAbout() {
+        let people = SlackData.people(["members": [
+            ["id": "U1", "name": "anna", "tz_label": "Central European Time", "is_bot": false,
+             "profile": ["title": "Designer", "status_text": "Op vakantie", "status_emoji": ":palm_tree:", "email": "anna@x.nl"]],
+            ["id": "B1", "name": "deploybot", "is_bot": true, "profile": [:]],
+        ]])
+        XCTAssertEqual(people["U1"]?.title, "Designer")
+        XCTAssertEqual(people["U1"]?.email, "anna@x.nl")
+        XCTAssertEqual(people["U1"]?.username, "@anna")
+        XCTAssertEqual(people["U1"]?.timeZone, "Central European Time")
+        XCTAssertTrue(people["U1"]?.about?.hasSuffix("Op vakantie") == true)
+        XCTAssertEqual(people["B1"]?.bot, true)
+        let list = SlackData.conversations(["channels": [
+            ["id": "G1", "is_mpim": true, "name": "mpdm-a--b-1", "created": 1_700_000_000, "creator": "U1",
+             "purpose": ["value": "Plannen voor de reis"]],
+        ]])
+        XCTAssertEqual(list.first?.about, "Plannen voor de reis")
+        XCTAssertEqual(list.first?.creator, "U1")
+    }
+
+    func testTeamsSaysWhoOwnsAChatAndItsNewName() {
+        let list: [String: Any] = ["value": [
+            ["id": "1", "chatType": "group", "topic": "Launch", "createdDateTime": "2026-01-02T10:00:00Z", "webUrl": "https://teams.example/1",
+             "members": [["userId": "me", "displayName": "Me", "roles": ["owner"]],
+                         ["userId": "u1", "displayName": "Anna", "roles": ["owner"]],
+                         ["userId": "u2", "displayName": "Jan", "roles": [String]()]]],
+            ["id": "2", "chatType": "oneOnOne",
+             "members": [["userId": "me", "displayName": "Me"], ["userId": "u3", "displayName": "Lisa", "email": "lisa@x.nl"]]],
+        ]]
+        let chats = TeamsData.chats(list, me: "me")
+        XCTAssertEqual(chats[0].profile?.admins, [ChatMembership.me, "Anna"])
+        XCTAssertEqual(chats[0].profile?.link, "https://teams.example/1")
+        XCTAssertNotNil(chats[0].profile?.created)
+        XCTAssertEqual(chats[1].profile?.email, "lisa@x.nl")
+        XCTAssertEqual(TeamsWebData.topicUpdate("<topicupdate><initiator>8:orgid:u1</initiator><value>Nieuw</value></topicupdate>",
+                                                names: ["8:orgid:u1": "Anna"], me: "8:orgid:me"),
+                       ChatGroupChange(.renamed, by: "Anna", text: "Nieuw"))
+    }
+
+    func testMessagesGroupChanges() {
+        let contacts = [AppData.key("+31600000001"): "Anna"]
+        XCTAssertEqual(AppData.messagesGroupChange(["itemtype": 2, "groupaction": 0, "me": 0, "handle": "+31600000001",
+                                                    "grouptitle": "Familie"], contacts: contacts),
+                       ChatGroupChange(.renamed, by: "Anna", text: "Familie"))
+        XCTAssertEqual(AppData.messagesGroupChange(["itemtype": 3, "groupaction": 1, "me": 1], contacts: contacts),
+                       ChatGroupChange(.photo, by: ChatMembership.me))
+        XCTAssertNil(AppData.messagesGroupChange(["itemtype": 3, "groupaction": 0, "me": 1], contacts: contacts), "leaving is a membership")
+        XCTAssertEqual(AppData.whatsAppGroupChange(["type": 6, "event": 1, "text": "Club", "member": "31600000001@s.whatsapp.net",
+                                                    "me": 0, "sender": "", "membername": ""], contacts: contacts),
+                       ChatGroupChange(.renamed, by: "Anna", text: "Club"))
+    }
+
+    func testChatHelperSaysWhatAChatIs() {
+        let group = ChatServiceData.profile(["description": "Wandelclub", "disappearAfter": 86400.0],
+                                            people: [["id": "@a", "fullName": "Anna", "isAdmin": true],
+                                                     ["id": "@me", "fullName": "Me", "isSelf": true, "isAdmin": true],
+                                                     ["id": "@d", "fullName": "David"]], isGroup: true)
+        XCTAssertEqual(group?.about, "Wandelclub")
+        XCTAssertEqual(group?.admins, ["Anna", ChatMembership.me])
+        XCTAssertEqual(group?.disappearAfter, 86400)
+        let person = ChatServiceData.profile([:], people: [["id": "@me", "isSelf": true],
+                                                           ["id": "@d", "identifiers": ["tel:+31612345678", "instagram:david.b"], "isBot": true]],
+                                             isGroup: false)
+        XCTAssertEqual(person?.phone, "+31612345678")
+        XCTAssertEqual(person?.username, "@david.b")
+        XCTAssertEqual(person?.bot, true)
+        var chat = ChatServiceData.Chat(id: "!r", app: "signal", title: "Club", isGroup: true, unread: 0, last: nil)
+        chat.people = ["@a": "Anna"]
+        let renamed = ChatServiceData.messages(["items": [
+            ["id": "$9", "type": "GROUP_CHANGE", "timestamp": "2026-10-22T08:00:00Z", "senderID": "@a", "senderName": "Anna",
+             "isSender": false, "groupChange": ["kind": "renamed", "text": "Wandelclub"]],
+        ]], chat: chat)
+        XCTAssertEqual(renamed.first?.groupChange, ChatGroupChange(.renamed, by: "Anna", text: "Wandelclub"))
+    }
+
+    func testGroupChangeLines() throws {
+        try XCTSkipIf(tr("chat.group.renamed") == "chat.group.renamed", "needs the real translations")
+        try XCTSkipIf(I18n.shared.currentLanguage != .en, "the lines below are in English")
+        XCTAssertEqual(ChatGroupChange(.renamed, by: "Anna", text: "Club").line, "Anna changed the group name to “Club”")
+        XCTAssertEqual(ChatGroupChange(.described, by: ChatMembership.me, text: "x").line, "You changed the group description")
+        XCTAssertEqual(ChatGroupChange(.described, by: "Anna", text: "").line, "Anna removed the group description")
+        XCTAssertEqual(ChatGroupChange(.promoted, people: ["Jan", ChatMembership.me]).line, "Jan is now an admin · You are now an admin")
+        XCTAssertEqual(ChatGroupChange(.disappearing, by: "Anna", text: "0").line, "Anna turned off disappearing messages")
+    }
+
+    func testChatHelperMembership() {
+        var chat = ChatServiceData.Chat(id: "!r", app: "signal", title: "Club", isGroup: true, unread: 0, last: nil)
+        chat.me = "@me"
+        chat.people = ["@signal_a": "Anna", "@signal_d": "David"]
+        let json: [String: Any] = ["items": [
+            ["id": "$1", "type": "MEMBERSHIP", "timestamp": "2026-10-22T07:30:00Z", "senderID": "@signal_a", "senderName": "Anna",
+             "isSender": false, "membership": ["membership": "join", "userID": "@signal_d", "userName": "David", "isSelf": false]],
+            ["id": "$2", "type": "MEMBERSHIP", "timestamp": "2026-10-22T07:40:00Z", "senderID": "@signal_d", "isSender": false,
+             "membership": ["membership": "leave", "userID": "@signal_d", "userName": "", "isSelf": false]],
+            ["id": "$3", "type": "MEMBERSHIP", "timestamp": "2026-10-22T07:50:00Z", "senderID": "", "isSender": false,
+             "membership": ["membership": "leave", "userID": "@me", "isSelf": true]],
+        ]]
+        let messages = ChatServiceData.messages(json, chat: chat)
+        XCTAssertEqual(messages.map(\.membership), [ChatMembership(.added, by: "Anna", people: ["David"]),
+                                                    ChatMembership(.left, people: ["David"]),
+                                                    ChatMembership(.gone, people: [ChatMembership.me])])
     }
 }
 

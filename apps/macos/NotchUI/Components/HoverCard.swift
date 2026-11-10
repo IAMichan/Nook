@@ -63,7 +63,7 @@ struct HoverCardRow: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 16)

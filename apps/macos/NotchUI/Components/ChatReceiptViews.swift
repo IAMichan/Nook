@@ -90,18 +90,45 @@ struct MessageInfoView: View {
     }
 }
 
-/// Who is in a group chat, as its app lists them (you left out): "5 members" under the chat's name, which opens the
-/// list. Shown in the Chats tab for every app that names a group's people.
-struct ChatMembersButton: View {
+/// What a chat's app says about the chat, under its name in the Chats tab, the same for every app: "5 members" for a
+/// group (or "Info" for a person with something to tell), which opens its info: a group's description (who set it),
+/// when and by whom it was made, who may write and edit, and its people with their admins marked; a person's bio, username,
+/// number, address and job title. Only what the app said is shown (`ChatProfile`).
+struct ChatInfoButton: View {
+    let name: String
     let members: [String]
+    let profile: ChatProfile?
+    let isGroup: Bool
+    let appName: String
     @State private var open = false
     @State private var hovering = false
 
-    private var sorted: [String] { members.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending } }
+    private var sorted: [String] {
+        // Admins first, then everyone else, each by name.
+        let admins = Set(profile?.admins ?? [])
+        return members.sorted { a, b in
+            let (aAdmin, bAdmin) = (admins.contains(a), admins.contains(b))
+            if aAdmin != bAdmin { return aAdmin }
+            return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        }
+    }
+
+    /// Whether there is anything to show: a group's people or count, or anything its app said.
+    static func shows(members: [String]?, profile: ChatProfile?) -> Bool {
+        !(members ?? []).isEmpty || !(profile?.isEmpty ?? true)
+    }
+
+    private var label: String {
+        if isGroup {
+            let count = members.isEmpty ? (profile?.memberCount ?? 0) : members.count
+            if count > 0 { return tr("chats.members", count) }
+        }
+        return tr("chats.info")
+    }
 
     var body: some View {
         Button { open = true } label: {
-            Text(tr("chats.members", members.count))
+            Text(label)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
                 .underline(hovering)
@@ -110,30 +137,154 @@ struct ChatMembersButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .pointerStyle(.link)
-        .help(tr("chats.members.title"))
+        .help(tr(isGroup ? "chats.info.group" : "chats.info.person"))
         .popover(isPresented: $open, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                Text(tr("chats.members.title"))
+            ScrollView {
+                ChatInfoPanel(name: name, members: sorted, profile: profile ?? ChatProfile(), isGroup: isGroup, appName: appName)
+                    .padding(NookTheme.Spacing.lg)
+            }
+            .frame(width: 300, alignment: .leading)
+            .frame(maxHeight: 460)
+        }
+    }
+}
+
+/// The info itself, inside `ChatInfoButton`'s popover.
+struct ChatInfoPanel: View {
+    let name: String
+    let members: [String]
+    let profile: ChatProfile
+    let isGroup: Bool
+    let appName: String
+
+    private static let day: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private func person(_ name: String) -> String { name == ChatMembership.me ? tr("chat.you") : name }
+
+    /// "Created by Anna on 12 Mar 2024", as far as the app says.
+    private var createdLine: String? {
+        let when = profile.created.map { Self.day.string(from: $0) }
+        switch (profile.createdBy.map(person), when) {
+        case let (who?, when?): return tr("chats.info.createdBy", who, when)
+        case let (who?, nil): return tr("chats.info.createdByOnly", who)
+        case let (nil, when?): return tr("chats.info.created", when)
+        default: return nil
+        }
+    }
+
+    /// What the app says of the chat besides its people, one line each.
+    private var facts: [(label: String, value: String)] {
+        [(tr("chats.info.ownName"), profile.ownName), (tr("chats.info.username"), profile.username),
+         (tr("chats.info.phone"), profile.phone), (tr("chats.info.email"), profile.email),
+         (tr("chats.info.jobTitle"), profile.title), (tr("chats.info.business"), profile.business),
+         (tr("chats.info.category"), profile.category), (tr("chats.info.address"), profile.address),
+         (tr("chats.info.website"), profile.website), (tr("chats.info.location"), profile.location),
+         (tr("chats.info.timeZone"), profile.timeZone), (tr(isGroup ? "chats.info.inviteLink" : "chats.info.link"), profile.link)]
+            .compactMap { pair in pair.1.flatMap(ChatProfile.text).map { (pair.0, $0) } }
+    }
+
+    private var rules: [String] {
+        [profile.verified == true ? tr("chats.info.verified") : nil, profile.bot == true ? tr("chats.info.bot") : nil,
+         profile.blocked == true ? tr("chats.info.blocked") : nil,
+         profile.adminsOnly == true ? tr("chats.info.adminsOnly") : nil, profile.locked == true ? tr("chats.info.locked") : nil,
+         profile.disappearAfter.flatMap { $0 > 0 ? tr("chats.info.disappearing", ChatGroupChange.duration($0)) : nil }]
+            .compactMap { $0 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(name)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .accessibilityAddTraits(.isHeader)
-                ScrollView {
+                Text(tr(isGroup ? "chats.info.group" : "chats.info.person") + " · " + appName)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            if let about = ChatProfile.text(profile.about) {
+                section(tr(isGroup ? "chats.info.description" : "chats.info.about")) {
+                    ChatMessageText(text: about)
+                        .foregroundStyle(NookTheme.paper)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let by = profile.aboutBy {
+                        Text(tr("chats.info.setBy", person(by)) + (profile.aboutSince.map { " · " + Self.day.string(from: $0) } ?? ""))
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                }
+            }
+            if !facts.isEmpty {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    ForEach(facts, id: \.label) { fact in
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            Text(fact.label)
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.textTertiary)
+                            // Through the chat's own text, so a link or an address in it opens.
+                            ChatMessageText(text: fact.value)
+                                .foregroundStyle(NookTheme.paper)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+            if createdLine != nil || !rules.isEmpty {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    ForEach([createdLine].compactMap { $0 } + rules, id: \.self) { line in
+                        Text(line)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                    }
+                }
+            }
+            if !members.isEmpty {
+                section(tr("chats.info.memberCount", members.count)) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        ForEach(Array(sorted.enumerated()), id: \.offset) { _, name in
+                        ForEach(Array(members.enumerated()), id: \.offset) { _, member in
                             HStack(spacing: NookTheme.Spacing.md) {
-                                ChatPersonBadge(name: name)
-                                Text(name)
+                                ChatPersonBadge(name: member)
+                                Text(member)
                                     .font(NookTheme.TextStyle.body)
                                     .foregroundStyle(NookTheme.paper)
                                     .lineLimit(1)
+                                Spacer(minLength: NookTheme.Spacing.sm)
+                                if profile.admins?.contains(member) == true {
+                                    Text(tr("chats.info.admin"))
+                                        .font(NookTheme.TextStyle.caption)
+                                        .foregroundStyle(NookTheme.mint)
+                                }
                             }
                         }
                     }
                 }
-                .frame(maxHeight: 320)
+            } else if let count = profile.memberCount, count > 0 {
+                Text(tr("chats.info.memberCount", count))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
-            .padding(NookTheme.Spacing.lg)
-            .frame(width: 240, alignment: .leading)
+            if profile.isEmpty && members.isEmpty {
+                Text(tr("chats.info.nothing", appName))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(title)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .accessibilityAddTraits(.isHeader)
+            content()
         }
     }
 }

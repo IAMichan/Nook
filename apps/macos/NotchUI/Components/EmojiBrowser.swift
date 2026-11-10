@@ -98,7 +98,7 @@ private struct EmojiGroupTab: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(selected ? NookTheme.paper : (hovering ? NookTheme.textStrong : NookTheme.textTertiary))
                 .frame(width: 30, height: 26)

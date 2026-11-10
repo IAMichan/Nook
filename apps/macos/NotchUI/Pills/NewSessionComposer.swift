@@ -250,7 +250,7 @@ struct NewSessionComposer: View {
     /// The folder on the remote machine, typed: there is no folder panel for another machine.
     private var remoteRow: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "server.rack").foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "server.rack").foregroundStyle(NookTheme.textTertiary)
             // A long machine name gives way, so the field keeps room to type a path.
             Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1).truncationMode(.middle)
@@ -480,7 +480,7 @@ struct NewSessionComposer: View {
                 isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
                 if config.isolation == .worktree {
-                    Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
                     TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)

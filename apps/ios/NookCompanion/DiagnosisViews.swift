@@ -91,7 +91,7 @@ private struct HopRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.lg) {
-            Image(systemName: symbol).foregroundStyle(color).frame(width: Theme.Spacing.xxl)
+            Image(icon: symbol).foregroundStyle(color).frame(width: Theme.Spacing.xxl)
             Text(DiagnosisText.hop(state.hop, mac: mac)).font(Theme.TextStyle.body).foregroundStyle(Theme.textStrong)
             Spacer(minLength: Theme.Spacing.md)
             Text(DiagnosisText.result(state.result)).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)

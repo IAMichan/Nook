@@ -181,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // The track on one line; play/pause and next live behind it instead of taking two more lines.
             let line = track.artist.isEmpty ? track.title : "\(track.title) – \(track.artist)"
             let music = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-            music.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
+            music.image = NookIcon.nsImage("music.note", accessibilityDescription: nil)
             let controls = NSMenu()
             add(to: controls, title: track.isPlaying ? tr("menu.pause") : tr("menu.play"), action: #selector(playPause))
             add(to: controls, title: tr("menu.nextTrack"), action: #selector(nextTrack))
@@ -290,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                      shortcut: ShortcutAction? = nil) -> NSMenuItem {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
         entry.target = self
-        if let icon { entry.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil) }
+        if let icon { entry.image = NookIcon.nsImage(icon, accessibilityDescription: nil) }
         if let shortcut, let set = ShortcutSet.load().shortcut(for: shortcut), let menuKey = set.menuKey {
             entry.keyEquivalent = menuKey
             entry.keyEquivalentModifierMask = Self.modifierFlags(set.modifiers)

@@ -905,12 +905,12 @@ private struct TrackCover: View {
                 AsyncImage(url: artworkURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    Image(systemName: "music.note")
+                    Image(icon: "music.note")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.music.opacity(0.6))
                 }
             } else {
-                Image(systemName: "music.note")
+                Image(icon: "music.note")
                     .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.music)
             }

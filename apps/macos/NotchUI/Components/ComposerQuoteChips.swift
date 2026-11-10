@@ -37,7 +37,7 @@ private struct QuoteChip: View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             Button { jump?() } label: {
                 HStack(spacing: NookTheme.Spacing.xxs) {
-                    Image(systemName: quote.note.isEmpty ? "text.quote" : "text.bubble")
+                    Image(icon: quote.note.isEmpty ? "text.quote" : "text.bubble")
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(quote.title)

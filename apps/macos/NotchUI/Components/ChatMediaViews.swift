@@ -66,6 +66,8 @@ extension ChatBubble {
         edited = message.isEdited
         deleted = message.isDeleted
         poll = message.poll
+        membership = message.membership
+        groupChange = message.groupChange
         reactions = (message.reactions ?? []).map {
             BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine, people: $0.people ?? [])
         }
@@ -437,7 +439,7 @@ struct ChatStickerView: View {
                 ChatMediaStandIn(clear: true)
                     .aspectRatio(ChatMediaImages.pixelSize(url) ?? CGSize(width: 1, height: 1), contentMode: .fit)
             } else {
-                Image(systemName: "face.smiling")
+                Image(icon: "face.smiling")
                     .font(NookTheme.font(40))
                     .foregroundStyle(NookTheme.textSecondary)
             }
@@ -582,7 +584,7 @@ struct ChatAudioView: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Button { toggle() } label: {
-                Image(systemName: player.failed ? "arrow.up.forward.app" : (player.playing ? "pause.fill" : "play.fill"))
+                Image(icon: player.failed ? "arrow.up.forward.app" : (player.playing ? "pause.fill" : "play.fill"))
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.onPaper)
                     .frame(width: 30, height: 30)
@@ -732,7 +734,7 @@ struct ChatVideoControls: View {
         ZStack {
             if !playback.playing {
                 Button(action: playback.toggle) {
-                    Image(systemName: "play.fill")
+                    Image(icon: "play.fill")
                         .font(NookTheme.font(18, .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
@@ -756,7 +758,7 @@ struct ChatVideoControls: View {
     private var bar: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Button(action: playback.toggle) {
-                Image(systemName: playback.playing ? "pause.fill" : "play.fill")
+                Image(icon: playback.playing ? "pause.fill" : "play.fill")
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 18, height: 18)
@@ -826,7 +828,7 @@ struct ChatCallRow: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 34, height: 34)
@@ -846,5 +848,27 @@ struct ChatCallRow: View {
         }
         .fixedSize()
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A line about the group in the middle of the chat, as the apps show it: someone coming in or going ("Ruben added
+/// David", `ChatMembership`), or the group itself changing ("Anna changed the group name to …", `ChatGroupChange`), the
+/// same for every app. Its time shows on hover.
+struct ChatNoticeLine: View {
+    let text: String
+    let time: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textSecondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
+            .help(time)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, NookTheme.Spacing.xl)
+            .textSelection(.enabled)
     }
 }

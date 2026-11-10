@@ -332,7 +332,7 @@ private struct CardStatusPill: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: status.tone.symbol)
+            Image(icon: status.tone.symbol)
                 .font(NookTheme.font(9.5, .bold))
             Text(status.text)
                 .font(NookTheme.TextStyle.label)
@@ -380,7 +380,7 @@ private struct CardAppIcon: View {
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: "app.fill")
+                Image(icon: "app.fill")
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
             }
@@ -617,7 +617,7 @@ private struct ChoiceRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
+                Image(icon: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(checked ? NookTheme.mint : (hovering ? NookTheme.paper : NookTheme.textTertiary))
                     .padding(.top, 1)

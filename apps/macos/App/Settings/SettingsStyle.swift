@@ -124,7 +124,7 @@ struct SettingsTile: View {
         RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
             .fill(NookTheme.smoke)
             .overlay(
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(size * 0.48, .medium))
                     .foregroundStyle(NookTheme.textStrong)
             )
@@ -227,7 +227,7 @@ struct SetupStep<Content: View>: View {
             ZStack {
                 Circle().fill(done ? ConnectionHealth.working.color : NookTheme.iris)
                 if done {
-                    Image(systemName: "checkmark").font(NookTheme.font(11, .bold))
+                    Image(icon: "checkmark").font(NookTheme.font(11, .bold))
                 } else {
                     Text("\(number)").font(NookTheme.rounded(12, .bold))
                 }
@@ -281,7 +281,7 @@ struct SettingsPickRow: View {
                 }
                 Spacer(minLength: 0)
                 if selected {
-                    Image(systemName: "checkmark").foregroundStyle(NookTheme.mint)
+                    Image(icon: "checkmark").foregroundStyle(NookTheme.mint)
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.md)

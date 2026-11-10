@@ -262,7 +262,7 @@ struct MusicFactRow: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.lg) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.music)
                 .frame(width: 32, height: 32)

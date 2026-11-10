@@ -27,7 +27,7 @@ struct ShortcutRecorder: View {
                     .buttonStyle(.borderless)
                     if current != action.defaultShortcut, !recording {
                         Button { app.setShortcut(action.defaultShortcut, for: action); note = "" } label: {
-                            Image(systemName: "arrow.uturn.backward")
+                            Image(icon: "arrow.uturn.backward")
                         }
                         .buttonStyle(.borderless)
                         .help(tr("shortcut.reset"))

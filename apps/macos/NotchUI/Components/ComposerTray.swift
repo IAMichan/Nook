@@ -49,7 +49,7 @@ struct ComposerErrorLine: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(icon: "exclamationmark.triangle.fill")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coral)
             Text(message)

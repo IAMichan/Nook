@@ -16,6 +16,11 @@ enum SlackData {
         var isGroup: Bool
         /// When it last changed, as Slack lists it (seconds); 0 when Slack does not say.
         var updated: Double
+        /// A group conversation's topic or purpose, when one was set.
+        var about: String? = nil
+        /// When it was made, and by whom (a user id).
+        var created: Date? = nil
+        var creator: String? = nil
     }
 
     /// What Slack is asked with: a token, and after signing in on slack.com (`SlackWebSession`) the `d` cookie the
@@ -90,6 +95,29 @@ enum SlackData {
         return names
     }
 
+    /// What Slack says of each person (users.list), by their id: their status (with its emoji) as their line, job title,
+    /// username, email address, phone number, time zone, and whether they are a bot.
+    static func people(_ json: [String: Any]) -> [String: ChatProfile] {
+        var people: [String: ChatProfile] = [:]
+        for member in json["members"] as? [[String: Any]] ?? [] {
+            guard let id = member["id"] as? String else { continue }
+            let profile = member["profile"] as? [String: Any] ?? [:]
+            var person = ChatProfile()
+            if let status = ChatProfile.text(profile["status_text"] as? String) {
+                let emoji = (profile["status_emoji"] as? String).flatMap { emoji(shortcode: $0) }
+                person.about = [emoji, status].compactMap { $0 }.joined(separator: " ")
+            }
+            person.title = ChatProfile.text(profile["title"] as? String)
+            person.email = ChatProfile.text(profile["email"] as? String)
+            person.phone = ChatProfile.text(profile["phone"] as? String)
+            if let name = ChatProfile.text(member["name"] as? String) { person.username = "@" + name }
+            person.timeZone = ChatProfile.text(member["tz_label"] as? String) ?? ChatProfile.text(member["tz"] as? String)
+            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true { person.bot = true }
+            people[id] = person
+        }
+        return people
+    }
+
     /// Each person's profile picture (users.list, `profile.image_72`): a public address, fetched without the token.
     static func avatars(_ json: [String: Any]) -> [String: String] {
         var pictures: [String: String] = [:]
@@ -114,8 +142,12 @@ enum SlackData {
             // `updated` is in milliseconds; `created` in seconds.
             let updated = (channel["updated"] as? Double).map { $0 > 10_000_000_000 ? $0 / 1000 : $0 }
                 ?? (channel["created"] as? Double) ?? 0
+            let about = ChatProfile.text((channel["topic"] as? [String: Any])?["value"] as? String)
+                ?? ChatProfile.text((channel["purpose"] as? [String: Any])?["value"] as? String)
+            let created = (channel["created"] as? Double).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
             return Conversation(id: id, user: channel["user"] as? String, name: (channel["name"] as? String) ?? "",
-                                isGroup: isGroup, updated: updated)
+                                isGroup: isGroup, updated: updated, about: isGroup ? about : nil, created: isGroup ? created : nil,
+                                creator: isGroup ? (channel["creator"] as? String).flatMap { $0.isEmpty ? nil : $0 } : nil)
         }
     }
 
@@ -133,14 +165,29 @@ enum SlackData {
         return people.isEmpty ? conversation.name : people.joined(separator: ", ")
     }
 
-    /// The messages of conversations.history, oldest first. Joins, leaves and other notices are left out; what stays of
-    /// a deleted message shows as deleted, an edited one says so, and a message with only a file shows its name.
+    /// The messages of conversations.history, oldest first. Someone joining or leaving shows as a line in the chat
+    /// (`membership`); other notices are left out. What stays of a deleted message shows as deleted, an edited one says
+    /// so, and a message with only a file shows its name.
     static func messages(_ json: [String: Any], conversation: Conversation, users: [String: String], me: String?) -> [InboxMessage] {
-        let skipped: Set<String> = ["channel_join", "channel_leave", "group_join", "group_leave", "bot_add", "bot_remove",
-                                    "channel_topic", "channel_purpose", "channel_name", "message_deleted", "message_changed"]
+        let skipped: Set<String> = ["bot_add", "bot_remove", "channel_name", "message_deleted", "message_changed"]
         let messages: [InboxMessage] = (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
             guard let ts = message["ts"] as? String, let seconds = Double(ts) else { return nil }
             if let subtype = message["subtype"] as? String, skipped.contains(subtype) { return nil }
+            if let subtype = message["subtype"] as? String, subtype == "channel_topic" || subtype == "channel_purpose" {
+                // A new topic or purpose: a line, with what it says now.
+                let user = (message["user"] as? String) ?? ""
+                var line = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
+                                        date: Date(timeIntervalSince1970: seconds), fromMe: me != nil && user == me)
+                line.groupChange = ChatGroupChange(.described, by: user == me ? ChatMembership.me : users[user] ?? user,
+                                                   text: message[subtype == "channel_topic" ? "topic" : "purpose"] as? String)
+                return line
+            }
+            if let change = membership(message, users: users, me: me) {
+                var line = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
+                                        date: Date(timeIntervalSince1970: seconds), fromMe: change.by == ChatMembership.me)
+                line.membership = change
+                return line
+            }
             // What stays of a deleted message that had answers ("This message was deleted."): it shows as deleted.
             if message["subtype"] as? String == "tombstone" {
                 return InboxMessage(id: messageID(conversation: conversation.id, ts: ts), text: "",
@@ -167,6 +214,19 @@ enum SlackData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// Someone joining (`channel_join`, `group_join`; with an `inviter` who added them) or leaving (`channel_leave`,
+    /// `group_leave`) a conversation, by their names in Slack. Slack posts nothing when someone is removed. Nil for any
+    /// other message.
+    static func membership(_ message: [String: Any], users: [String: String], me: String?) -> ChatMembership? {
+        let subtype = message["subtype"] as? String ?? ""
+        guard ["channel_join", "group_join", "channel_leave", "group_leave"].contains(subtype),
+              let user = message["user"] as? String, !user.isEmpty else { return nil }
+        func name(_ id: String) -> String { id == me ? ChatMembership.me : users[id] ?? id }
+        guard subtype.hasSuffix("_join") else { return ChatMembership(.left, people: [name(user)]) }
+        let inviter = (message["inviter"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return ChatMembership(.added, by: inviter.map(name), people: [name(user)])
     }
 
     /// A huddle in a conversation (`subtype: huddle_thread`, its `room`) as a call: how long it lasted once it ended,

@@ -110,7 +110,7 @@ private struct PullStateMark: View {
     var conflict = false
 
     var body: some View {
-        Image(systemName: symbol).font(Theme.font(14, .semibold)).foregroundStyle(color)
+        Image(icon: symbol).font(Theme.font(14, .semibold)).foregroundStyle(color)
             .frame(width: 22).accessibilityLabel(Text(word))
     }
 
@@ -151,9 +151,9 @@ private struct ChecksMark: View {
 
     var body: some View {
         switch ci {
-        case "failing": Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.coral).accessibilityLabel(Text("Checks fail"))
-        case "pending": Image(systemName: "clock").foregroundStyle(Theme.amber).accessibilityLabel(Text("Checks run"))
-        case "passing": Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.mint).accessibilityLabel(Text("Checks pass"))
+        case "failing": Image(icon: "xmark.circle.fill").foregroundStyle(Theme.coral).accessibilityLabel(Text("Checks fail"))
+        case "pending": Image(icon: "clock").foregroundStyle(Theme.amber).accessibilityLabel(Text("Checks run"))
+        case "passing": Image(icon: "checkmark.circle.fill").foregroundStyle(Theme.mint).accessibilityLabel(Text("Checks pass"))
         default: EmptyView()
         }
     }
@@ -393,7 +393,7 @@ private struct PullFileCard: View {
             HStack(spacing: Theme.Spacing.md) {
                 Button(action: toggle) {
                     HStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "chevron.right").font(Theme.font(10, .bold)).foregroundStyle(Theme.textTertiary)
+                        Image(icon: "chevron.right").font(Theme.font(10, .bold)).foregroundStyle(Theme.textTertiary)
                             .rotationEffect(.degrees(open ? 90 : 0))
                         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                             Text(verbatim: (file.path as NSString).lastPathComponent)
@@ -412,7 +412,7 @@ private struct PullFileCard: View {
                 }
                 .buttonStyle(PressFade())
                 Button { mark(!viewed) } label: {
-                    Image(systemName: viewed ? "checkmark.circle.fill" : "circle")
+                    Image(icon: viewed ? "checkmark.circle.fill" : "circle")
                         .font(Theme.font(18)).foregroundStyle(viewed ? Theme.mint : Theme.textTertiary)
                 }
                 .buttonStyle(PressFade())
@@ -533,7 +533,7 @@ private struct PullPatchLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
             Text(verbatim: number.map(String.init) ?? "").foregroundStyle(Theme.textTertiary).frame(width: 34, alignment: .trailing)
-            Image(systemName: "text.bubble.fill").font(Theme.font(8)).foregroundStyle(Theme.iris).opacity(commented ? 1 : 0)
+            Image(icon: "text.bubble.fill").font(Theme.font(8)).foregroundStyle(Theme.iris).opacity(commented ? 1 : 0)
             Text(verbatim: line.isEmpty ? " " : line).foregroundStyle(tint ?? Theme.textStrong).fixedSize(horizontal: true, vertical: false)
         }
         .font(Theme.TextStyle.code)
@@ -590,7 +590,7 @@ private struct PullReviewSheet: View {
                                     Text(note.body).font(Theme.TextStyle.body).foregroundStyle(Theme.paper)
                                 }
                                 Spacer(minLength: 0)
-                                Button { drafts.remove(at: index) } label: { Image(systemName: "trash") }
+                                Button { drafts.remove(at: index) } label: { Image(icon: "trash") }
                                     .foregroundStyle(Theme.textTertiary)
                                     .accessibilityLabel("Remove comment")
                             }

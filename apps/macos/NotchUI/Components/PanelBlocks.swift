@@ -30,7 +30,7 @@ struct NookSearchField: View {
 
     var body: some View {
         HStack(spacing: style == .ghost ? NookTheme.Spacing.md : NookTheme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
+            Image(icon: "magnifyingglass")
                 .font(NookTheme.font(glyphSize, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .accessibilityHidden(true)
@@ -133,7 +133,7 @@ struct NookSearchLauncher: View {
         let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "magnifyingglass")
+                Image(icon: "magnifyingglass")
                     .font(NookTheme.font(11, .medium))
                     .accessibilityHidden(true)
                 if !compact {
@@ -224,7 +224,7 @@ struct PanelNewButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "square.and.pencil")
+            Image(icon: "square.and.pencil")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)

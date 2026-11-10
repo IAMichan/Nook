@@ -84,10 +84,10 @@ struct AccountOptionsSection: View {
                             .textFieldStyle(.roundedBorder)
                             .font(NookTheme.TextStyle.code)
                     }
-                    Toggle(isOn: $row.sensitive) { Image(systemName: "key.fill") }
+                    Toggle(isOn: $row.sensitive) { Image(icon: "key.fill") }
                         .toggleStyle(.button)
                         .help(tr("accounts.variables.secret"))
-                    Button { rows.removeAll { $0.id == row.id }; saveVariables() } label: { Image(systemName: "minus.circle") }
+                    Button { rows.removeAll { $0.id == row.id }; saveVariables() } label: { Image(icon: "minus.circle") }
                         .buttonStyle(.plain)
                         .help(tr("accounts.variables.remove"))
                         .accessibilityLabel(tr("accounts.variables.remove"))
