@@ -318,6 +318,8 @@ struct SessionComposer<Controls: View>: View {
     var busy = false
     var onStop: (() -> Void)? = nil
     var focus: FocusState<Bool>.Binding? = nil
+    /// Offers the microphone next to Send (`DictationButton`).
+    var dictates = true
     let onSend: () -> Void
     @ViewBuilder var controls: () -> Controls
 
@@ -371,6 +373,8 @@ struct SessionComposer<Controls: View>: View {
 
     @ViewBuilder
     private var sendButton: some View {
+        // Dictation next to Send, in every composer (`DictationButton`); what is heard lands in the field to read first.
+        if dictates { DictationButton(text: $text) }
         if busy, isEmpty, let onStop {
             round("stop.fill", label: "Stop", active: true, action: onStop)
         } else {

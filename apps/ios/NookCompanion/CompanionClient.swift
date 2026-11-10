@@ -88,7 +88,19 @@ final class CompanionClient: ObservableObject {
     @Published var revokedMac: String?
     /// The conversation a question that waited in the outbox started, by its request id, once the Mac took it.
     @Published private(set) var askedConversations: [String: String] = [:]
+    /// The pull requests of Agents › Pull requests on the Mac, each session's linked ones, and each one opened, by its
+    /// address (`CompanionFeature.pullRequests`). Kept per Mac (`PullCache`), so they read without a connection.
+    @Published private(set) var pulls: [PullDigest] = []
+    @Published private(set) var pullsAt: Date?
+    @Published private(set) var linkedPulls: [String: [PullDigest]] = [:]
+    @Published private(set) var pullDetails: [String: PullDetailDigest] = [:]
+    /// A gentle word when the Mac and this app work together but one speaks an older protocol (`CompanionVersionNotice`).
+    @Published private(set) var versionNotice: CompanionVersionNotice?
     private(set) var pushToken: String?
+    /// What the phone keeps of the active Mac's pull requests (`PullCacheStore`).
+    var pullCache = PullCache()
+    /// When the limits were last asked for the usage widget.
+    var usageAskedAt: Date?
 
     /// The last answers of the active Mac, kept for the next launch (`CacheStore`), and the save that is coming.
     private var cache = CompanionCache()
@@ -135,7 +147,7 @@ final class CompanionClient: ObservableObject {
 
     /// What the active Mac could do last time, and its outbox, each kept per Mac (`CompanionPairings.storageName`).
     private var featuresKey: String { storageName("companion.features") }
-    private var outboxName: String { storageName("companion-outbox.json") }
+    var outboxName: String { storageName("companion-outbox.json") }
 
     private func storageName(_ base: String) -> String {
         guard let id = pairings.active?.id else { return base }
@@ -230,6 +242,7 @@ final class CompanionClient: ObservableObject {
         OutboxStore.save(outbox, name: outboxName)
         UserDefaults.standard.removeObject(forKey: featuresKey)
         CacheStore.remove(mac: id)
+        PullCacheStore.remove(mac: id)
         ClockOffsets.forget(id)
         for entry in retries.waiting(for: id) { retries.remove(entry.id) }
         RetryStore.save(retries)
@@ -280,6 +293,12 @@ final class CompanionClient: ObservableObject {
         outbox = OutboxStore.load(name: outboxName)
         // The last the phone saw of this Mac, until it answers: shown as not live ("Last updated …"), never over newer.
         cache = mac.map { CacheStore.load(mac: $0.id) } ?? CompanionCache()
+        pullCache = mac.map { PullCacheStore.load(mac: $0.id) } ?? PullCache()
+        pulls = pullCache.list
+        pullsAt = pullCache.listAt.map(Date.init(timeIntervalSince1970:))
+        linkedPulls = pullCache.linked
+        pullDetails = pullCache.details.mapValues(\.detail)
+        versionNotice = nil
         sessions = cache.sessions
         timelines = cache.allTimelines
         launchOptions = cache.launch
@@ -359,6 +378,8 @@ final class CompanionClient: ObservableObject {
         // Buttons on notifications that could not reach their Mac get another go, quietly.
         if !retries.entries.isEmpty { Task { await retryNotificationActions(mac: nil, quiet: true) } }
         guard link != nil else { return }
+        // What other apps shared meanwhile goes to its Mac's outbox (`ShareQueue`).
+        takeShares()
         guard supervisor != nil else {
             failures = 0
             superviseIfNeeded()
@@ -595,9 +616,11 @@ final class CompanionClient: ObservableObject {
         // A new connection has no session open on the Mac yet: the one on screen follows again.
         if let session = watchedSession { await watchSession(session) }
         await LiveActivities.shared.reconcile(sessions)
+        takeShares()
         await drainOutbox()
         if let id = activeMacID, !retries.waiting(for: id).isEmpty { await retryNotificationActions(mac: id, quiet: true) }
         await refreshInbox()
+        await refreshUsage()
         await refreshOthers()
     }
 
@@ -706,7 +729,7 @@ final class CompanionClient: ObservableObject {
 
     /// Sends what waits in the outbox, oldest first, until the Mac cannot be reached. Each message keeps its id, so one
     /// whose answer got lost is not carried out twice (`CommandReceipts` on the Mac).
-    private func drainOutbox() async {
+    func drainOutbox() async {
         guard !draining, let link else { return }
         draining = true
         defer { draining = false }
@@ -753,7 +776,7 @@ final class CompanionClient: ObservableObject {
     /// Something you wrote (a message, a new session, a question to Nook, a message to a chat): through the outbox when
     /// the Mac answers repeats once (`CompanionFeature.retry`), so it waits on the phone while the Mac cannot be reached;
     /// straight to the Mac otherwise.
-    private func deliver(_ request: CompanionRequest) async -> Delivery {
+    func deliver(_ request: CompanionRequest) async -> Delivery {
         guard can(CompanionFeature.retry), outbox.enqueue(request, now: Date()) else {
             return await perform(request).map(Delivery.sent) ?? .refused
         }
@@ -966,6 +989,13 @@ final class CompanionClient: ObservableObject {
         case refused
     }
 
+    /// A share from another app into the outbox, waiting from when it was shared. False when it cannot wait there.
+    func enqueueShared(_ request: CompanionRequest, sharedAt: Date) -> Bool {
+        guard outbox.enqueue(request, now: sharedAt) else { return false }
+        OutboxStore.save(outbox, name: outboxName)
+        return true
+    }
+
     /// Something that waits in the outbox is let go: it will not be sent.
     func discardWaiting(_ id: String) {
         outbox.remove(id)
@@ -1052,7 +1082,7 @@ final class CompanionClient: ObservableObject {
     /// in `notice`. `quiet` is for the requests a screen repeats by itself: a session or chat that is gone says so on that
     /// screen instead of in an alert every few seconds.
     @discardableResult
-    private func perform(_ req: CompanionRequest, quiet: Bool = false) async -> CompanionResponse? {
+    func perform(_ req: CompanionRequest, quiet: Bool = false) async -> CompanionResponse? {
         guard let link else { return nil }
         do {
             let response = try await transport(req, link: link)
@@ -1133,6 +1163,8 @@ final class CompanionClient: ObservableObject {
             if response.appVersion != macAppVersion { macAppVersion = response.appVersion }
             let granted = response.scopes.map(Set.init)
             if granted != scopes { scopes = granted }
+            let notice = CompanionCompatibility.notice(response)
+            if notice != versionNotice { versionNotice = notice }
         }
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)
@@ -1173,6 +1205,9 @@ final class CompanionClient: ObservableObject {
             if response.message != inboxStatus { inboxStatus = response.message }
         }
         if let lines = response.inboxLines, let chat = req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
+        takePulls(response, for: req)
+        if let accounts = response.usage?.accounts ?? response.home?.accounts { keepUsage(accounts) }
+        if response.sessions != nil || response.launch != nil || response.features != nil { writeShareTargets() }
         // A Mac that says nothing of typing leaves it empty, never standing from an earlier answer.
         if response.inboxLines != nil, let chat = req.item {
             let typing = response.inboxTyping ?? []
