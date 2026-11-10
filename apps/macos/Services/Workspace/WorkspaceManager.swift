@@ -519,6 +519,9 @@ final class WorkspaceManager: ObservableObject {
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
+        reattachKeptRuns()
+        // Guest links that still work connect again (within their 24 hours).
+        GuestShares.shared.start(workspace: self)
         if !started.isEmpty { scheduleSave() }
     }
 
@@ -1572,18 +1575,7 @@ final class WorkspaceManager: ObservableObject {
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
-        let provider = run.provider
-        process.onLines = { [weak self] lines in
-            // Parsed here, on the process's own queue: the main thread only applies the events.
-            let parsed = ParsedStreamLine.parse(lines, provider: provider)
-            Task { @MainActor in
-                guard let self else { return }
-                for line in parsed { self.handle(parsed: line, for: id) }
-            }
-        }
-        process.onExit = { [weak self, weak process] status, stderr in
-            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
-        }
+        bindTurn(process, id, provider: run.provider)
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         do {
             try process.start()
@@ -1602,6 +1594,23 @@ final class WorkspaceManager: ObservableObject {
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
+    }
+
+    /// A turn's process tells this session what it writes and when it ends.
+    func bindTurn(_ process: AgentProcess, _ id: UUID, provider: RunProvider) {
+        process.onLines = { [weak self, weak process] lines in
+            let end = process?.consumed ?? 0
+            // Parsed here, on the process's own queue: the main thread only applies the events.
+            let parsed = ParsedStreamLine.parse(lines, provider: provider)
+            Task { @MainActor in
+                guard let self else { return }
+                for line in parsed { self.handle(parsed: line, for: id) }
+                process?.markHandled(end)
+            }
+        }
+        process.onExit = { [weak self, weak process] status, stderr in
+            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
+        }
     }
 
     /// Opens the agent's connection when you open an idle session (an existing conversation), so your first message goes
@@ -2765,6 +2774,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
+        let kept = detachKeptRuns()
+        GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
         for id in Array(acpClients.keys) { closeAcpClient(id) }
@@ -2773,7 +2784,7 @@ final class WorkspaceManager: ObservableObject {
             process.closeInput()
             process.stop(grace: 1)
         }
-        for index in runs.indices where runs[index].status.isActive {
+        for index in runs.indices where runs[index].status.isActive && !kept.contains(runs[index].id) {
             runs[index].interruptedWhileWaiting = runs[index].status == .waitingApproval ? true : nil
             runs[index].status = .stopped
             runs[index].statusDetail = "interrupted"

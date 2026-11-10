@@ -50,10 +50,12 @@ if [ "$(uname)" != "Darwin" ]; then
     "Services/Updates/Ed25519Verifier.swift"
     "../../packages/protocol/Sources/CompanionSeal.swift"
     "../../packages/protocol/Sources/RelayPushSeal.swift"
+    "../../packages/protocol/Sources/GuestLinkSeal.swift"
   )
 fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
+  "SessionKeeperTests"
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "TextGeneratorTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
   "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"

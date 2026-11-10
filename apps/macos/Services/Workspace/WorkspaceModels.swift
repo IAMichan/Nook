@@ -316,6 +316,16 @@ struct TurnUsage: Equatable, Sendable {
 }
 
 /// A single session in the workspace. Stored in `RunStore`, persisted across restarts.
+/// Where a session's agent lives while Nook is away, and how far Nook read it.
+struct KeptSession: Codable, Equatable, Sendable {
+    /// The keeper's folder, under `NookPaths.keeperDirectory`.
+    var folder: String
+    /// How much of its output Nook handled; nil after a crash, when that was not saved.
+    var offset: UInt64? = nil
+    /// Codex: the turn that was running.
+    var turnID: String? = nil
+}
+
 struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
@@ -412,6 +422,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var tasks: [RunTaskStep]? = nil
     /// The goal the agent works toward, as it reported it (see `SessionGoals`).
     var goal: SessionGoal? = nil
+    /// Its agent runs through a keeper and can outlive Nook (see `SessionKeeper`).
+    var kept: KeptSession? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
     var prWatch: PullRequestWatch? = nil
     /// The pull requests watched besides `prWatch`, which stays the one the composer's tray shows.

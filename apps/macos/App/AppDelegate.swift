@@ -66,6 +66,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = working == 1 ? tr("quit.working.one") : tr("quit.working.many", working)
         alert.informativeText = tr("quit.working.detail")
+        // With sessions kept running (Settings › Agents), say which go on and which stop.
+        if model.workspace.settings.keepSessionsRunning {
+            let summary = KeptRuns.quitSummary(model.workspace.keptCandidates, enabled: true)
+            if summary.keep > 0 {
+                alert.informativeText = summary.stop == 0 ? tr("quit.kept.all", summary.keep) : tr("quit.kept.some", summary.keep, summary.stop)
+            }
+        }
         alert.addButton(withTitle: tr("quit.working.quit"))
         alert.addButton(withTitle: tr("button.cancel"))
         alert.showsSuppressionButton = true

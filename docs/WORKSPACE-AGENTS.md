@@ -76,6 +76,49 @@ without session or extensions), thinking levels go with `--thinking`, accounts w
 a native fork and rollback (Pi's `fork` needs an entry id of its session), Pi's own session files as past sessions, and
 Pi's select, input and editor dialogs (cancelled). The wire format follows Pi's documented protocol; it has not been run
 against a real Pi on this Mac, only against recorded transcripts (`PiRPCTests`).
+### Sessions that outlive Nook
+
+With **Keep sessions running when Nook closes** on (off by default), every agent runs through `nook-keeper` (`SessionKeeper`),
+one small Perl process per agent in a session of its own. It writes the agent's stdout to a spool in `~/.nook/keep/<id>` (a
+folder only you can enter) and takes stdin and signals over a socket there. Quitting or updating lets go of the agents at work;
+the next launch attaches from the last line Nook handled (`reattachKeptRuns`). After a crash that position is unknown, so Nook
+goes on from the current end: what happened in between stays out of the timeline. A session that waits for your approval or a
+question is not kept: what it asked went with Nook, and it stops as before. An agent that asks for approval while Nook is closed
+waits until Nook is back. A keeper whose agent ended waits a week for Nook, then cleans up.
+
+### Guest links
+
+**Share with a guest** in a session's menu copies a link that lets one person follow that session in a browser for 24 hours
+(`GuestShares`, `GuestLink`, the relay's `worker/guest.js`). The page shows the timeline live. The guest may write a message
+(up to 4 files, 10 MB together); it does not reach the agent: it waits in the session above the composer until you press
+**Send** or **Dismiss**. **Stop sharing** ends the link at once, and it ends by itself after 24 hours, or when Nook quits.
+The key that seals everything lives only in the link's fragment (`GuestLinkSeal`), so the relay passes bytes it cannot read.
+The Mac must be on and Nook open. Guest links need a relay (Settings › iPhone).
+
+### Nook in another app (remote MCP)
+
+**Settings › Automation › Nook in another app** (off by default) lets a cloud assistant such as Claude.ai or ChatGPT use some of
+the tools above through your relay (`RemoteMCPServer`, the relay's `worker/mcp.js`). The Mac keeps one outgoing connection; the
+assistant is given an address (`<relay>/v1/mcp/<room>`, the room comes from a token in the Keychain, so the address cannot be
+used to listen). In the assistant you add it as a custom connector; the assistant discovers the sign-in itself (RFC 9728 and
+8414, dynamic client registration, PKCE S256).
+
+- **Sign-in with a code.** When an assistant starts to sign in, Nook posts a notice and shows the sign-in in Settings with a
+  six-digit code and the access level to give. Typing that code on the page the assistant opened is what lets it in; five wrong
+  tries or ten minutes end the sign-in, and Nook can turn it down.
+- **Access levels** (`RemoteAccessLevel`): *Read only* (sessions, pull request status, chats, scheduled tasks: reads only),
+  *Sessions* (also follow up, start and organize sessions, answer questions) and *Full* (also Nook's apps, `nook_use` and
+  `nook_chat_*`, and scheduling). Terminal, browser, simulators, rendered pages, secrets, taking over the screen and opening
+  pull requests are never offered: they need a project folder or this Mac's screen. A lower level counts from the next call.
+- **Grants.** A grant lasts 30 days. Access tokens last an hour and are renewed with a refresh token that works once and never
+  extends the grant. Nook keeps only hashes of tokens (`remote-mcp.json`, readable by you only). Settings lists each grant with
+  its access level and **Revoke**; **Revoke all and change the address** also makes a new address.
+- **Every call is still Nook's.** Calls run through the bridge as an agent that is not in Nook: reads go through, anything that
+  changes something (sending to a session, starting one, a message, an event, scheduling) waits for your yes in Nook, and every
+  call, allowed or refused, lands in the audit log. An approval the assistant stops waiting for is withdrawn.
+- **Not sealed.** Assistants speak plain HTTPS, so the relay can read what they send, like webhooks; it stores and logs none of it.
+
+The local `nook-mcp` for agents on this Mac is unchanged.
 
 ### Android devices
 
