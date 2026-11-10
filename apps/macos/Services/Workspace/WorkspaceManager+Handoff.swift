@@ -135,13 +135,15 @@ extension WorkspaceManager {
     /// branch. The agent forgets everything so far (every agent's conversation in this session, a summary waiting for
     /// the next turn, and how far each agent had followed the timeline); the timeline stays, with a divider where the
     /// new conversation starts. Not while the agent works: its conversation is still changing.
+    /// `quietly`: a caller that waits and tries again later says nothing in the timeline when the agent is still busy.
     @discardableResult
-    func clearConversation(_ id: UUID) -> Bool {
+    func clearConversation(_ id: UUID, quietly: Bool = false) -> Bool {
         guard run(id) != nil else { return false }
         guard canTransfer(id) else {
-            append(id, RunEvent(kind: .system, text: tr("ws.clear.busy")))
+            if !quietly { append(id, RunEvent(kind: .system, text: tr("ws.clear.busy"))) }
             return false
         }
+        freshArmed.remove(id)
         loadTimeline(id)
         closeCodexServer(id)
         closeClaudeProcess(id)

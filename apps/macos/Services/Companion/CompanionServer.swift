@@ -577,9 +577,10 @@ final class CompanionServer: ObservableObject {
             guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
             // While it works: into the running turn when the phone asks to steer and the turn can take it (as the Mac's
             // composer steers), else in line for after the turn.
+            // `/clear`, and the message after it, start a new conversation as on the Mac (`FreshConversation`).
             let outcome: String
-            if !run.status.isActive {
-                outcome = workspace.submit(runID, text: text) ? "sent" : "queued"
+            if !run.status.isActive || workspace.startsFreshConversation(runID, text: text) {
+                outcome = workspace.submit(runID, text: text, fromYou: true) ? "sent" : "queued"
             } else if request.steer == true, workspace.canSteer(runID), workspace.steer(runID, text: text) {
                 outcome = "steered"
             } else {

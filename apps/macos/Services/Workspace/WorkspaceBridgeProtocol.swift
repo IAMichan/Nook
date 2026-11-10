@@ -29,6 +29,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case sessionList = "session_list"
     case sessionSend = "session_send"
     case sessionStart = "session_start"
+    case sessionWait = "session_wait"
     case sessionSearch = "session_search"
     case sessionOrganize = "session_organize"
     case sessionQuestions = "session_questions"
@@ -64,7 +65,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot,
              .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList, .deviceList, .deviceScreenshot,
              .browserSnapshot, .browserWaitFor, .listScheduledTasks, .getPullRequestStatus, .nookTools, .nookChatList,
-             .nookChatRead, .sessionSearch: return .read
+             .nookChatRead, .sessionSearch, .sessionWait: return .read
         case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .sessionStart, .deviceOpen, .deviceClose,
              .browserClick, .browserType, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest,
              .requestSecret, .nookChatSend, .takeOverScreen, .sessionOrganize, .renderPage: return .local
@@ -113,6 +114,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionList: return "Nook sessions"
         case .sessionSend: return "Message session"
         case .sessionStart: return "Start session"
+        case .sessionWait: return "Wait for sessions"
         case .sessionSearch: return "Search sessions"
         case .sessionOrganize: return "Organize session"
         case .sessionQuestions: return "Questions of sessions"
@@ -181,7 +183,9 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .taskCancel:
             return "Stops a task you delegated, and every task that task delegated in turn."
         case .sessionStart:
-            return "Starts a new session in a folder on this Mac, with its own agent. Always waits for the user's approval unless you have full rights, and starts with the rights that ask the user. Use delegate_task for a task whose result you need."
+            return "Starts 1 to 20 new top-level sessions in Nook, each with its own agent. Default place: beside you in your folder or worktree; or folder, a new worktree each (worktree, base e.g. origin/main), or scratch (no project). Without task it starts idle, named by title. Waits for the user's approval unless you have full rights; the sessions ask the user before they act. Returns ids and nook:// links (mention a session by its link). For a subtask whose result you need, use delegate_task."
+        case .sessionWait:
+            return "Waits until sessions are done with their turn or ask the user something: any (default) or all, at most timeout_seconds. Returns each one's state and last answer."
         case .sessionList:
             return "Lists the user's sessions in Nook (most recent first): id, title, agent, status, folder and branch. Use it to find a session to read with session_read or to message with session_send."
         case .sessionSearch:
@@ -193,7 +197,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .renderPage:
             return "Shows an HTML page inline in your session's timeline in Nook, where the user reads along: a chart, a diagram, a table, a mock-up or a small interactive view of your results. Give a page or fragment with inline <style> and <script> as html, or path to an .html file in your working directory (its local images, CSS and scripts get embedded); it runs sandboxed, with no network (load nothing from the web: inline data, SVG and data: URLs work), no access to Nook, the user's files or other pages, no forms, popups or links that go anywhere, at the height you ask (default 360, at most 1200 points; it does not grow with its content). At most 512 KB of HTML. The page is kept with the session. Use it to show, not to ask: the page cannot send anything back."
         case .sessionSend:
-            return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. Use it to hand over a result or ask a question; it is queued when that session is busy. The user approves each message unless the session has full rights. You cannot message yourself."
+            return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. mode queue (default): after its turn; auto: steers a running turn when it can, else queues; steer: into the running turn; restart: stops the turn and starts again with this. The user approves each message unless the session has full rights. You cannot message yourself."
         case .deviceList:
             return "Lists the iOS Simulators on this Mac and the Android devices adb sees or can start (ids starting with android), whether each is booted, and which ones this session has open in Nook's Simulator page. Call it before device_open when you do not know a device id."
         case .deviceOpen:
@@ -295,18 +299,37 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionList:
             return object(["limit": ["type": "integer", "description": "How many sessions to return (default 15, at most 50)."]])
         case .sessionStart:
-            return object([
-                "folder": ["type": "string", "description": "The absolute folder to work in."],
-                "task": ["type": "string", "description": "The first message; complete and self-contained."],
+            let one: [String: Any] = [
+                "task": ["type": "string", "description": "The first message; complete and self-contained. Leave out to start idle."],
+                "title": ["type": "string", "description": "The session's name; required without task."],
                 "agent": ["type": "string", "description": "The agent (see orchestrator_capabilities); default: the folder's own."],
                 "model": ["type": "string", "description": "The model; default: the folder's own."],
-                "worktree": ["type": "boolean", "description": "Work in a new git worktree on a branch of its own. Default: the folder's own choice."]
-            ], required: ["folder", "task"])
+                "plan": ["type": "boolean", "description": "Start in Plan mode (read-only)."]
+            ]
+            return object(one.merging([
+                "sessions": ["type": "array", "minItems": 1, "maxItems": BridgeSessionArguments.maxStart, "items": ["type": "object"],
+                             "description": "Several at once: objects with task, title, agent, model, plan (agent, model, plan default to the fields above)."],
+                "folder": ["type": "string", "description": "The absolute folder to work in. Default: yours."],
+                "worktree": ["type": "boolean", "description": "Each in a new git worktree on a branch of its own. Default: the folder's own choice (beside you: no)."],
+                "base": ["type": "string", "description": "The worktree's start: a branch or origin/main. Default: the folder's branch."],
+                "scratch": ["type": "boolean", "description": "A new folder without a project."],
+                "client_request_id": ["type": "string", "description": "A retry with it starts nothing twice."]
+            ]) { first, _ in first })
         case .sessionSend:
             return object([
                 "session_id": ["type": "string", "description": "The session id from session_list."],
-                "message": ["type": "string", "description": "The message; complete and self-contained."]
+                "message": ["type": "string", "description": "The message; complete and self-contained."],
+                "mode": ["type": "string", "enum": BridgeSessionArguments.SendMode.allCases.map(\.rawValue),
+                         "description": "queue (default), auto, steer or restart."]
             ], required: ["session_id", "message"])
+        case .sessionWait:
+            return object([
+                "session_ids": ["type": "array", "items": ["type": "string"], "minItems": 1,
+                                "maxItems": BridgeSessionArguments.maxWaitSessions, "description": "The session ids."],
+                "mode": ["type": "string", "enum": DelegatedTask.WaitMode.allCases.map(\.rawValue),
+                         "description": "any (default) or all."],
+                "timeout_seconds": ["type": "integer", "description": "How long to wait (default 45, at most 840)."]
+            ], required: ["session_ids"])
         case .sessionSearch:
             return object([
                 "query": ["type": "string", "description": "The words to find, as literal text (not a pattern); case and accents do not matter."],
@@ -598,7 +621,7 @@ enum BridgePolicy {
             return .allow
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot, .browserSnapshot,
              .browserWaitFor, .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList,
-             .sessionSearch, .deviceList, .deviceScreenshot, .listScheduledTasks, .getPullRequestStatus, .nookTools,
+             .sessionSearch, .sessionWait, .deviceList, .deviceScreenshot, .listScheduledTasks, .getPullRequestStatus, .nookTools,
              .nookChatList, .nookChatRead:
             // Reads: allowed above. Listed so a new tool must be placed here, never allowed by default.
             return .allow
@@ -617,7 +640,7 @@ extension BridgeTool {
             return true
         case .workspaceInfo, .terminalRead, .terminalList, .terminalStop, .browserRead, .browserScreenshot,
              .browserSnapshot, .browserWaitFor, .orchestratorCapabilities, .taskStatus, .taskWait, .taskCancel,
-             .sessionRead, .sessionList, .sessionSearch, .renderPage, .deviceList, .deviceOpen, .deviceScreenshot,
+             .sessionRead, .sessionList, .sessionSearch, .sessionWait, .renderPage, .deviceList, .deviceOpen, .deviceScreenshot,
              .deviceClose, .listScheduledTasks, .watchPullRequest, .getPullRequestStatus, .nookTools, .nookChatList,
              .nookChatRead:
             return false
@@ -748,8 +771,8 @@ struct BridgeLaunch: Equatable, Sendable {
     device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \
     request_secret for an API key (you get a file path; never ask for one in chat), `sudo -A` for sudo; nook_tools and nook_use for Nook's apps and connectors \
     (actions wait for approval); nook_chat_list, nook_chat_read and nook_chat_send for Nook Chat; take_over_screen for \
-    the user's own apps, then nook_use (read_ui, look_ui, control_ui); session_search, session_questions and \
-    session_organize for the user's other sessions; render_page to show a chart, diagram or mock-up as HTML.
+    the user's own apps, then nook_use (read_ui, look_ui, control_ui); session_start (new top-level sessions), \
+    session_send, session_wait, session_search, session_questions and session_organize for the user's other sessions; render_page to show a chart, diagram or mock-up as HTML.
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because
@@ -912,7 +935,8 @@ extension BridgeTool {
             return .browser
         case .pullRequestCreate, .watchPullRequest, .getPullRequestStatus: return .pullRequests
         case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel: return .delegation
-        case .sessionRead, .sessionList, .sessionSend, .sessionStart, .sessionSearch, .sessionOrganize, .sessionQuestions:
+        case .sessionRead, .sessionList, .sessionSend, .sessionStart, .sessionSearch, .sessionOrganize, .sessionQuestions,
+             .sessionWait:
             return .sessions
         case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return .devices
         case .scheduleTask, .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow: return .scheduling

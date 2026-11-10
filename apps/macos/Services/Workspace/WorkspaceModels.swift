@@ -916,10 +916,17 @@ struct NewRunConfig: Equatable, Sendable {
     var remote: RemoteTarget? = nil
     /// Set for a session of a model comparison after its first one (see `ModelComparison`).
     var lineage: RunLineage? = nil
+    /// Who started it when it was not you in the composer ("Started by Claude Code in the session …"): the first line of
+    /// its timeline. Set by `session_start`, `nook start` and Nook Chat marks a thread an agent created.
+    var startedBy: String? = nil
+    /// Starts without a first message (`session_start` with a title only): the session waits, ready, for yours.
+    var startsIdle = false
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {
-        if task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .missingTask }
+        if task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !startsIdle || title.trimmingCharacters(in: .whitespaces).isEmpty {
+            return .missingTask
+        }
         if let remote {
             guard RemoteMachines.isValidHost(remote.host), RemoteMachines.isValidDirectory(remote.directory),
                   provider != .antigravity else { return .invalidRemote }

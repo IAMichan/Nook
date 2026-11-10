@@ -485,7 +485,7 @@ extension AppModel {
                            reply: { [weak self] text in
                                let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
                                guard !message.isEmpty else { return }
-                               self?.workspace.submit(runID, text: message)
+                               self?.workspace.submit(runID, text: message, fromYou: true)
                            })
     }
 

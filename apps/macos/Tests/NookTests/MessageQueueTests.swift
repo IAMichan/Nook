@@ -143,6 +143,22 @@ final class MessageQueueTests: XCTestCase {
         XCTAssertTrue(q.isEmpty)
     }
 
+    func testFreshMarkSurvivesRequeueAndStorage() throws {
+        var q = MessageQueue()
+        q.enqueue("after clear", fresh: true)
+        q.enqueue("plain")
+        let id = q.messages[0].id
+        XCTAssertTrue(q.isFresh(id))
+        XCTAssertFalse(q.isFresh(q.messages[1].id))
+        // Sent now but it could not go out: it waits at the front, still starting a new conversation.
+        let text = try XCTUnwrap(q.promoteToSteer(id))
+        q.requeueFirst(text, fresh: true)
+        XCTAssertEqual(q.messages.map(\.fresh), [true, false])
+        var back = try JSONDecoder().decode(MessageQueue.self, from: JSONEncoder().encode(q))
+        XCTAssertEqual(back.messages.map(\.fresh), [true, false])
+        XCTAssertEqual(back.next()?.fresh, true)
+    }
+
     func testCodableToleratesMissingAndUnknownFields() throws {
         var q = queue("a")
         q.hold()
@@ -152,6 +168,7 @@ final class MessageQueueTests: XCTestCase {
         let old = #"{"messages":[{"text":"x","future":1}],"other":true}"#.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(MessageQueue.self, from: old)
         XCTAssertEqual(decoded.messages.first?.text, "x")
+        XCTAssertEqual(decoded.messages.first?.fresh, false, "a message stored before /clear waited in line is an ordinary one")
         XCTAssertFalse(decoded.isHeld)
         XCTAssertTrue(try JSONDecoder().decode(MessageQueue.self, from: Data("{}".utf8)).isEmpty)
     }

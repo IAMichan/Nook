@@ -509,9 +509,10 @@ final class ScheduledTaskStore: ObservableObject {
             guard trigger != .webhook || run.permission == .ask else {
                 return finish(task.id, status: .failed, error: "sched.error.webhookRights")
             }
-            // A fresh conversation each run: the agent starts over, the timeline keeps every earlier run.
-            if fresh { app.workspace.startFreshConversation(sessionID, reason: tr("automation.sched.freshEvent", task.title)) }
-            app.workspace.send(sessionID, text: prompt)
+            // A fresh conversation each run: the agent starts over, the timeline keeps every earlier run. When the last turn
+            // is still finishing (its snapshot), the prompt waits in line marked fresh and starts the new conversation then.
+            let cleared = fresh && app.workspace.startFreshConversation(sessionID, reason: tr("automation.sched.freshEvent", task.title))
+            app.workspace.submit(sessionID, text: prompt, fresh: fresh && !cleared)
             finish(task.id, status: .succeeded, error: nil)
         }
     }

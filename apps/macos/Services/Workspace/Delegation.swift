@@ -253,6 +253,24 @@ enum DelegatedTask {
         return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 
+    /// The `session_wait` result: the same as `task_wait`'s, named for sessions (`sessionId`, `sessions`).
+    static func renderSessionWait(_ snapshots: [Snapshot], waitTimedOut: Bool) -> String {
+        let sessions: [Any] = snapshots.compactMap { snapshot in
+            (try? JSONSerialization.jsonObject(with: Data(render(snapshot).utf8))).map { object -> Any in
+                var session = object as? [String: Any] ?? [:]
+                session["waitTimedOut"] = nil
+                session["sessionId"] = session.removeValue(forKey: "taskId")
+                // A session you did not delegate: its branch is not yours to merge.
+                session["merge"] = nil
+                return session
+            }
+        }
+        let object: [String: Any] = ["sessions": sessions, "waitTimedOut": waitTimedOut,
+                                     "settled": snapshots.filter(isSettled).map(\.taskID)]
+        let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+
     /// The message that wakes the parent when a child it did not wait for has finished.
     static func wakeMessage(_ snapshot: Snapshot) -> String {
         var text = "Delegated task \"\(snapshot.title)\" (\(snapshot.taskID)) \(snapshot.state.rawValue)."
