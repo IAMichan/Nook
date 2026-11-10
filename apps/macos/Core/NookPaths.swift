@@ -49,6 +49,10 @@ enum NookPaths {
     static var commandLineURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook")
     }
+    /// One folder per kept agent (`SessionKeeper`): short, since a socket's path must be.
+    static var keeperDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/keep", isDirectory: true)
+    }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
     /// Folders of sessions started without a project (`ScratchProjects`): ~/.nook/scratch, beside ~/.nook/worktrees.
     static var scratchDirectory: URL {

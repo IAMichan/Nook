@@ -1,6 +1,13 @@
 import Foundation
 
 /// How Nook launches an agent: executable, arguments (as list, never via a shell), environment, and directory.
+/// Where a kept agent lives. `offset`: attach to the keeper there, from that much of its output; nil starts a new one.
+struct KeeperPlacement: Equatable, Sendable {
+    var folder: String
+    var script: String
+    var offset: UInt64? = nil
+}
+
 struct LaunchSpec: Equatable, Sendable {
     var executable: String
     var arguments: [String]
@@ -13,6 +20,8 @@ struct LaunchSpec: Equatable, Sendable {
     var keepsInputOpen: Bool
     /// Variables of your environment the agent must not see (Antigravity: other Google accounts and projects).
     var removedEnvironment: [String] = []
+    /// Runs through a keeper, so it outlives Nook (`SessionKeeper`).
+    var keeper: KeeperPlacement? = nil
 
     /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
@@ -221,12 +230,30 @@ final class AgentProcess: @unchecked Sendable {
     /// The process has exited: exit code and the last lines of stderr.
     var onExit: (@Sendable (Int32, String) -> Void)?
 
-    init(spec: LaunchSpec, transport: ProviderTransport = SpawnedProcess(), scheduler: ProcessScheduler = DispatchProcessScheduler(),
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler(),
          trafficLog: ProviderTrafficLog? = nil) {
         self.spec = spec
-        self.process = transport
+        self.process = transport ?? spec.keeper.map {
+            KeptTransport(folder: URL(fileURLWithPath: $0.folder), script: $0.script, offset: $0.offset)
+        } ?? SpawnedProcess()
+        consumed = spec.keeper?.offset ?? 0
+        handled = consumed
         self.scheduler = scheduler
         self.trafficLog = trafficLog ?? ProviderTrafficLog.forLaunch(spec)
+    }
+
+    /// Stdout bytes taken as complete lines so far; on the output queue. Inside `onLines` it says where that batch ends.
+    private(set) var consumed: UInt64 = 0
+    private var handled: UInt64 = 0
+    /// The output Nook has really handled: where another Nook goes on.
+    var handledOffset: UInt64 { lock.withLock { handled } }
+    func markHandled(_ offset: UInt64) { lock.withLock { handled = max(handled, offset) } }
+    var isKept: Bool { process is KeptTransport }
+
+    /// Nook goes and the agent stays: only for an agent with a keeper. It reports no exit after this.
+    func detach() {
+        onExit = nil
+        (process as? KeptTransport)?.detach()
     }
 
     var pid: Int32 { process.pid }
@@ -297,6 +324,12 @@ final class AgentProcess: @unchecked Sendable {
         stopping = true
         lock.unlock()
         guard first, process.isRunning else { return }
+        // The keeper sees it through, also when Nook quits right after this.
+        if let kept = process as? KeptTransport {
+            trafficLog?.signal(SIGINT)
+            kept.stopForGood()
+            return
+        }
         // An exited leader stays unreaped until the last signal, so its group id cannot be given to another program.
         process.hold()
         trafficLog?.signal(SIGINT)
@@ -333,6 +366,7 @@ final class AgentProcess: @unchecked Sendable {
             start = newline + 1
             from = start
         }
+        consumed += UInt64(buffer.distance(from: buffer.startIndex, to: start))
         if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         guard !batch.isEmpty else { return }
         if let trafficLog { for line in batch { trafficLog.inbound(line) } }
