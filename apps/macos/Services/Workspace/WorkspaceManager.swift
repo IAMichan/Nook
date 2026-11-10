@@ -364,6 +364,16 @@ final class WorkspaceManager: ObservableObject {
     private var gitReading: Set<UUID> = []
     /// Of those, the ones asked again while reading, and whether that ask showed the spinner.
     private var gitAgain: [UUID: Bool] = [:]
+    /// Where each session's branch is counted from (`GitService.branchComparison`), kept while its branch, upstream and
+    /// commits stay the same (for at most `branchPointMaxAge`), so a refresh as the agent writes adds two diffs, not ten
+    /// git processes.
+    private var branchPoints: [UUID: BranchPoint] = [:]
+    struct BranchPoint: Sendable {
+        var key: String
+        var point: String?
+        var at: Date
+    }
+    private static let branchPointMaxAge: TimeInterval = 60
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
     /// Sessions whose running turn is an independent copy (`forkNext` at launch): the id the agent reports is a new
@@ -2248,6 +2258,7 @@ final class WorkspaceManager: ObservableObject {
         sessionTimelines[id] = nil
         gitReading.remove(id)
         gitAgain[id] = nil
+        branchPoints[id] = nil
         codexTotals[id] = nil
         codexSubagents[id] = nil
         openPullRequests[id] = nil
@@ -2339,17 +2350,24 @@ final class WorkspaceManager: ObservableObject {
         if !quiet || self.git[id] == nil { showGitLoading(id) }
         let directory = run.workingDirectory
         let base = run.baseBranch
+        let cachedPoint = branchPoints[id].flatMap { Date().timeIntervalSince($0.at) < Self.branchPointMaxAge ? $0 : nil }
         Task.detached(priority: .utility) {
             var status: GitStatus?
             var problem: String?
             var divergence: (ahead: Int, behind: Int)?
+            var branch: (changes: [GitFileChange], point: BranchPoint)?
             if git.remote != nil || FileManager.default.fileExists(atPath: directory) {
                 do { status = try git.status(directory) } catch let failure { problem = failure.localizedDescription }
                 if let base { divergence = git.divergence(directory, base: base) }
+                // What the row counts is what its hover card and the Changes panel show: the branch since it left its
+                // base, committed work included (`FolderGitModel`). A session on another machine counts what is not
+                // committed, as its review there does.
+                if git.remote == nil, let status { branch = Self.branchChanges(git, directory: directory, status: status, cached: cachedPoint) }
             } else {
                 problem = tr("ws.error.folderGone", directory)
             }
             let result = (status: status, divergence: divergence, problem: problem)
+            let branchResult = branch
             await MainActor.run { [weak self] in
                 // A session deleted while git was read leaves nothing behind.
                 guard let self, self.run(id) != nil else { return }
@@ -2363,10 +2381,12 @@ final class WorkspaceManager: ObservableObject {
                 if quiet, let previous, previous.sameContent(as: next) { next.updated = previous.updated }
                 if next != previous { self.git[id] = next }
                 if let status = result.status {
-                    let added = status.files.reduce(0) { $0 + ($1.added ?? 0) }
-                    let removed = status.files.reduce(0) { $0 + ($1.removed ?? 0) }
+                    if let branchResult { self.branchPoints[id] = branchResult.point }
+                    let counted = branchResult?.changes ?? status.files
+                    let added = counted.reduce(0) { $0 + ($1.added ?? 0) }
+                    let removed = counted.reduce(0) { $0 + ($1.removed ?? 0) }
                     self.update(id, save: false) {
-                        $0.changedFiles = status.files.count
+                        $0.changedFiles = counted.count
                         $0.changedLinesAdded = added
                         $0.changedLinesRemoved = removed
                     }
@@ -2376,6 +2396,22 @@ final class WorkspaceManager: ObservableObject {
                 if let again { self.refreshGit(id, quiet: again) }
             }
         }
+    }
+
+    /// The branch's changes since where it left its base, else (no base, or git cannot tell) what is not committed.
+    nonisolated private static func branchChanges(_ git: GitService, directory: String, status: GitStatus,
+                                                  cached: BranchPoint?) -> (changes: [GitFileChange], point: BranchPoint) {
+        let commits = git.headCommits(directory).joined(separator: ",")
+        let key = "\(status.branch ?? "")|\(status.upstream ?? "")|\(status.ahead)|\(status.behind)|\(status.detached)|\(commits)"
+        let point: BranchPoint
+        if let cached, cached.key == key {
+            point = cached
+        } else {
+            let comparison = git.branchComparison(directory, status: status, remotes: git.remotes(directory))
+            point = BranchPoint(key: key, point: comparison.point, at: Date())
+        }
+        let changes = point.point.flatMap { try? git.changes(directory, since: $0, status: status) } ?? status.files
+        return (changes, point)
     }
 
     private func showGitLoading(_ id: UUID) {
