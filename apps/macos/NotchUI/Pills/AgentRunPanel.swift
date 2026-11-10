@@ -1934,6 +1934,8 @@ private final class RunTimelineDerived {
     private var pullRequestBeforeLast: URL?
     /// Each turn's blocks, so only the turn that changed is laid out again.
     private var blockCache = TimelineBlockCache()
+    /// Each finished turn's changed files, so only a turn whose events changed is read again.
+    private var turnCache = TurnDiffCache()
     /// The last search in the find bar, for the events it searched.
     private var found: (query: String, events: [RunEvent], result: TimelineSearchResult)?
 
@@ -1979,7 +1981,7 @@ private final class RunTimelineDerived {
         revision &+= 1
         turnOfEvent = nil
         // Also the turns without an edit: git may find files they changed by a command (`countTurns`).
-        turns = TurnDiff.collect(events: all, keepEmpty: true)
+        turns = TurnDiff.collect(events: all, keepEmpty: true, cache: &turnCache)
         finalAnswers = []
         cards = [:]
         let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -2060,9 +2062,11 @@ final class RunPullRequestLinks {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)
         case .tool:
-            guard let output = event.output,
+            // The link first: a substring check rules out almost every tool call, and the command regex below is dear
+            // when the whole session is read again on each change.
+            guard let output = event.output, let url = MarkdownBlock.lastGitHubPullRequest(in: output),
                   PullRequestToolCall.showsPullRequest(tool: event.tool, command: [event.text, event.detail]) else { return nil }
-            return MarkdownBlock.lastGitHubPullRequest(in: output)
+            return url
         default:
             return nil
         }
@@ -2076,9 +2080,9 @@ final class RunPullRequestLinks {
                 if let url = MarkdownBlock.lastGitHubPullRequest(in: message.text) { return url }
             case .tools:
                 for step in message.steps.reversed() {
-                    guard let output = step.output,
+                    guard let output = step.output, let url = MarkdownBlock.lastGitHubPullRequest(in: output),
                           PullRequestToolCall.showsPullRequest(tool: step.name, command: [step.summary, step.command]) else { continue }
-                    if let url = MarkdownBlock.lastGitHubPullRequest(in: output) { return url }
+                    return url
                 }
             default:
                 continue
