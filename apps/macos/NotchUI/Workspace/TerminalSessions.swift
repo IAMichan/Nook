@@ -255,7 +255,7 @@ final class TerminalStore: ObservableObject {
     }
 
     private func make(in directory: String, command: String?, title: String?, owner: TerminalOwner?, group: UUID?) -> TerminalSession {
-        let name = title ?? URL(fileURLWithPath: directory).lastPathComponent
+        let name = title ?? (directory as NSString).lastPathComponent
         opened += 1
         return TerminalSession(title: name.isEmpty ? "Terminal" : name, directory: directory, command: command,
                                shortID: "t\(opened)", owner: owner, group: group)

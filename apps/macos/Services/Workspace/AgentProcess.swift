@@ -25,7 +25,7 @@ struct LaunchSpec: Equatable, Sendable {
 
     /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
-        let program = URL(fileURLWithPath: executable).lastPathComponent
+        let program = (executable as NSString).lastPathComponent
         let shown = arguments.map { argument -> String in
             let short = argument.count > 48 ? String(argument.prefix(45)) + "…" : argument
             return short.contains(" ") ? "\"\(short)\"" : short

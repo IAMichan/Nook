@@ -249,7 +249,7 @@ enum RemoteLaunch {
         if arguments.count == 2, arguments[0] == "-ilc" {
             agent = arguments[1]
         } else {
-            let program = URL(fileURLWithPath: executable).lastPathComponent
+            let program = (executable as NSString).lastPathComponent
             agent = "exec " + ([program] + arguments).map(CustomAgents.quote).joined(separator: " ")
         }
         let exports = environment.keys.sorted().filter { $0.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil }

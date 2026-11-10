@@ -198,9 +198,9 @@ enum AgentActivity: Equatable, Sendable {
             let described = (input["description"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             return .running(ToolSummary.oneLine(described ?? command, 80))
         case .edit:
-            return .editing(ToolSummary.path(input).map { URL(fileURLWithPath: $0).lastPathComponent } ?? fallback)
+            return .editing(ToolSummary.path(input).map { ($0 as NSString).lastPathComponent } ?? fallback)
         case .read:
-            return .reading(ToolSummary.path(input).map { URL(fileURLWithPath: $0).lastPathComponent } ?? fallback)
+            return .reading(ToolSummary.path(input).map { ($0 as NSString).lastPathComponent } ?? fallback)
         case .search:
             let subject = ["pattern", "query"].lazy.compactMap { input[$0] as? String }.first ?? fallback
             return .searching(ToolSummary.oneLine(subject, 80))

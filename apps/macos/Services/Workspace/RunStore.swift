@@ -263,8 +263,9 @@ final class RunStore: @unchecked Sendable {
     }
 
     private static let importedKey = "json_timelines_imported"
-    /// Set once every session is indexed. The second key: the first index (`run_text`) is dropped and built anew.
-    private static let indexedKey = "search_index_v2_built"
+    /// Set once every session is indexed. The third key: the first index (`run_text`) and the second, which kept a copy of
+    /// the text (`RunEventLog.dropSearchWithText`), are dropped and built anew.
+    private static let indexedKey = "search_index_v3_built"
 
     /// Indexes every session written before the index existed, once, in the background. Rows are read on the read
     /// connection and folded without the lock; only writing a session's index takes it, so a timeline you open never waits
@@ -296,6 +297,8 @@ final class RunStore: @unchecked Sendable {
         }
         lock.lock()
         log?.setMeta(Self.indexedKey, ISO8601DateFormatter().string(from: Date()))
+        // An index that kept the text was dropped on opening: its room goes back to the disk.
+        log?.compact()
         lock.unlock()
     }
 

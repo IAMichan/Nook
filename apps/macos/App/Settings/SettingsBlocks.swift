@@ -510,7 +510,7 @@ struct WorkspaceSettingsSection: View {
             } else {
                 Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
                     ForEach(choices, id: \.self) { path in
-                        let name = URL(fileURLWithPath: path).lastPathComponent
+                        let name = (path as NSString).lastPathComponent
                         Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
                             .tag(path).help(AgentPathFormat.tilde(path))
                     }

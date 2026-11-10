@@ -1014,7 +1014,7 @@ final class Installation: @unchecked Sendable {
     func run(_ executable: String, _ arguments: [String], in directory: String, environment: [String: String],
              timeout: TimeInterval, onLine: ((String) -> Void)? = nil) throws {
         try checkCancelled()
-        let name = URL(fileURLWithPath: executable).lastPathComponent
+        let name = (executable as NSString).lastPathComponent
         append("\n== \(name) \(arguments.joined(separator: " "))\n")
         let output = try FileHandle(forWritingTo: logURL)
         defer { try? output.close() }

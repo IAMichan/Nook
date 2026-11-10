@@ -648,8 +648,8 @@ enum AgentTranscript {
             guard let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             return value
         }
-        let fileName = string("file_path").map { URL(fileURLWithPath: $0).lastPathComponent }
-            ?? string("notebook_path").map { URL(fileURLWithPath: $0).lastPathComponent }
+        let fileName = string("file_path").map { ($0 as NSString).lastPathComponent }
+            ?? string("notebook_path").map { ($0 as NSString).lastPathComponent }
         let summary: String?
         switch name {
         case "Bash": summary = string("description") ?? string("command")
@@ -692,7 +692,7 @@ enum AgentTranscript {
 
     /// Gemini CLI: what a step was about, from its own argument names.
     private static func geminiSummary(_ raw: String, _ input: [String: Any]) -> String {
-        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine(URL(fileURLWithPath: path).lastPathComponent) }
+        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine((path as NSString).lastPathComponent) }
         if let paths = input["paths"] as? [String], let first = paths.first {
             return oneLine(paths.count == 1 ? first : "\(first) +\(paths.count - 1)")
         }
@@ -705,7 +705,7 @@ enum AgentTranscript {
     /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.
     private static func codexSummary(_ name: String, _ arguments: [String: Any]) -> String {
         if let command = arguments["command"] as? [String] {
-            if command.count >= 3, ["bash", "sh", "zsh"].contains(URL(fileURLWithPath: command[0]).lastPathComponent),
+            if command.count >= 3, ["bash", "sh", "zsh"].contains((command[0] as NSString).lastPathComponent),
                command[1].hasPrefix("-") { return oneLine(command[2]) }
             return oneLine(command.joined(separator: " "))
         }
