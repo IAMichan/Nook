@@ -33,9 +33,15 @@ extension WorkspaceManager {
     }
 
     func snooze(_ id: UUID, _ choice: SnoozePolicy.Choice, now: Date = Date()) {
+        snooze(id, until: choice.end(from: now), now: now)
+    }
+
+    /// Snoozed until `end`: a custom moment, or when the session's usage limit resets.
+    func snooze(_ id: UUID, until end: Date, now: Date = Date()) {
+        guard end > now else { return }
         update(id) {
             $0.snoozedAt = now
-            $0.snoozedUntil = choice.end(from: now)
+            $0.snoozedUntil = end
         }
     }
 
@@ -61,7 +67,8 @@ extension WorkspaceManager {
         let base = AgentAttention.resolve(input)
         guard includeSnooze else { return base }
         input.settled = settled || SnoozePolicy.isSnoozed(until: run.snoozedUntil, since: run.snoozedAt, attention: base,
-                                                          finishedAt: run.status.isActive ? nil : run.updatedAt, now: now)
+                                                          finishedAt: run.status.isActive ? nil : run.updatedAt,
+                                                          limitedAt: run.limitedAt, now: now)
         return AgentAttention.resolve(input)
     }
 
