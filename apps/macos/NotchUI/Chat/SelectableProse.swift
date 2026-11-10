@@ -34,7 +34,9 @@ struct SelectableProse: NSViewRepresentable {
     /// Whether a block is plain text that can join a selectable run.
     static func joins(_ block: MarkdownBlock) -> Bool {
         switch block {
-        case .heading, .paragraph, .list: return true
+        // A paragraph with formulas is typeset on its own (`MathView`).
+        case .paragraph(let text): return !MathText.containsMath(text)
+        case .heading, .list: return true
         default: return false
         }
     }
@@ -315,7 +317,7 @@ struct SelectableProse: NSViewRepresentable {
     /// `files`: a code span that names a file by a relative path becomes a link (there is a folder to read it from).
     /// `citations`: an answer from Nook with numbered sources, whose `[2]` become raised numbers that open them.
     static func attributed(_ blocks: [MarkdownBlock], size: CGFloat, files: Bool = false, citations: Bool = false) -> NSAttributedString {
-        let key = "\(size)|\(files)|\(citations)|\(NookTheme.accentHex)|\(cacheKey(blocks))" as NSString
+        let key = "\(size)|\(files)|\(citations)|\(NookTheme.accentHex)|\(NookTheme.revision)|\(cacheKey(blocks))" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         let result = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {

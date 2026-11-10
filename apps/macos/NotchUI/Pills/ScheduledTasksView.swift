@@ -410,7 +410,7 @@ private struct ScheduledTaskEditor: View {
                         } label: {
                             Text(ScheduledTaskText.weekdayName(day))
                                 .font(NookTheme.TextStyle.strong)
-                                .foregroundStyle(on ? NookTheme.ink : NookTheme.textSecondary)
+                                .foregroundStyle(on ? NookTheme.onPaper : NookTheme.textSecondary)
                                 .padding(.horizontal, 10)
                                 .frame(height: 26)
                                 .background(Capsule().fill(on ? NookTheme.paper : NookTheme.field))

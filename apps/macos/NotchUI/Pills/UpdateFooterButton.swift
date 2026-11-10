@@ -108,7 +108,7 @@ struct UpdateFooterButton<Idle: View>: View {
                 Text("\(count)")
                     .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
-                    .foregroundStyle(NookTheme.ink)
+                    .foregroundStyle(NookTheme.onPaper)
                     .padding(.horizontal, 5)
                     .frame(minWidth: 16, minHeight: 16)
                     .background(Capsule().fill(look.tint))

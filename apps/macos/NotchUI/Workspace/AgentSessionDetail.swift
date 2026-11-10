@@ -836,7 +836,7 @@ private struct SessionQuestionOptionButton: View {
             RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(chosen ? NookTheme.amber.opacity(0.2) : (isHovered ? NookTheme.smoke : NookTheme.well))
             RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : Color.white.opacity(0.08)), lineWidth: 1)
+                .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : NookTheme.wash.opacity(0.08)), lineWidth: 1)
 
             Text(number < 9 ? "\(number + 1)" : "·")
                 .font(NookTheme.mono(11, .semibold))
@@ -856,7 +856,7 @@ private struct SessionQuestionOptionButton: View {
         } else {
             Image(systemName: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))
-                .foregroundStyle(isHovered ? NookTheme.amber : Color.white.opacity(0.08))
+                .foregroundStyle(isHovered ? NookTheme.amber : NookTheme.wash.opacity(0.08))
                 .opacity(isHovered ? 1 : 0.4)
                 .padding(.top, 3)
         }

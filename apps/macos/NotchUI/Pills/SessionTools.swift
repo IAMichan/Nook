@@ -427,7 +427,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     panel(.side, tool: side, maximized: tooNarrow ? nil : $panelMaximized)
                         // With the list away, its tabs stay clear of the traffic lights and the list's toggle.
                         .padding(.leading, headerInset)
-                        .background(NookTheme.notch)
+                        .background(NookTheme.canvas)
                 }
             }
             // The panels on the right, and the docked session panel that steps aside for them, open and close at once.

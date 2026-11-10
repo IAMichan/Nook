@@ -149,7 +149,7 @@ struct SourcesDisclosure: View {
                 plainIcon(group)
                     .padding(1.5)
                     .background(Circle().fill(NookTheme.graphite))
-                    .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1))
+                    .overlay(Circle().stroke(NookTheme.canvas, lineWidth: 1))
             }
         }
         .accessibilityHidden(true)
@@ -253,7 +253,7 @@ struct SourcesDisclosure: View {
                         size: 14, source: id)
             .overlay(alignment: .bottomTrailing) {
                 Circle().fill(color(group.status)).frame(width: 5, height: 5)
-                    .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1))
+                    .overlay(Circle().stroke(NookTheme.canvas, lineWidth: 1))
                     .offset(x: 2, y: 2)
             }
     }
@@ -333,7 +333,7 @@ private struct SourceFixButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(NookTheme.TextStyle.label)
-                .foregroundStyle(prominent ? NookTheme.ink : NookTheme.paper)
+                .foregroundStyle(prominent ? NookTheme.onPaper : NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 26)
                 .background(Capsule().fill(prominent ? NookTheme.amber : NookTheme.smoke))
@@ -496,7 +496,7 @@ private struct ReferenceRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text("\(reference.number)")
                     .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(cited ? NookTheme.ink : NookTheme.textSecondary)
+                    .foregroundStyle(cited ? NookTheme.onIris : NookTheme.textSecondary)
                     .frame(minWidth: 16, minHeight: 16)
                     .background(Circle().fill(cited ? NookTheme.iris : NookTheme.smoke))
                 VStack(alignment: .leading, spacing: 1) {

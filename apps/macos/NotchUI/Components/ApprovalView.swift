@@ -189,7 +189,7 @@ struct ApprovalView: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
             .overlay(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
             )
         } else if approval.diff.isEmpty {
             // The whole command: scrolled, never cut off.
@@ -212,7 +212,7 @@ struct ApprovalView: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
             .overlay(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
             )
         } else {
             ScrollView(showsIndicators: true) {
@@ -233,7 +233,7 @@ struct ApprovalView: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
             .overlay(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
             )
         }
     }
@@ -308,7 +308,7 @@ struct ApprovalView: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
         .overlay(
             RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
         )
     }
 }

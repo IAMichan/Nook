@@ -81,7 +81,7 @@ final class TabWindowController {
     private func make(_ tab: PanelTab, app: AppModel) -> Entry {
         let presence = WindowPresence()
         let minSize = CGSize(width: 420, height: 420)
-        let root = WindowContent(presence: presence, background: NookTheme.notch, minSize: minSize) {
+        let root = WindowContent(presence: presence, background: NookTheme.canvas, minSize: minSize) {
             TabWindowView(tab: tab)
         }
             .nookAttention()
@@ -95,12 +95,11 @@ final class TabWindowController {
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.contentView = host
-        window.appearance = NSAppearance(named: .darkAqua)
+        NookWindowLook.adopt(window)
         window.title = "Nook · " + tab.title
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
-        window.backgroundColor = .black
         window.minSize = NSSize(width: minSize.width, height: minSize.height)
         window.isReleasedWhenClosed = false
         // Each tab has a window of its own and its own place on screen.
@@ -165,7 +164,7 @@ private struct TabWindowView: View {
                 .frame(maxWidth: .infinity)
                 .ignoresSafeArea(edges: .top)
         }
-        .background(NookTheme.notch.ignoresSafeArea())
+        .background(NookTheme.canvas.ignoresSafeArea())
         .overlay(alignment: .top) {
             if searching {
                 ZStack(alignment: .top) {
@@ -196,7 +195,7 @@ private struct TabWindowView: View {
         .chatMediaStage(mediaStage)
         .nookToastHost()
         .tint(NookTheme.iris)
-        .id(app.settings.accentHex)
+        .id("\(app.settings.accentHex)-\(app.settings.themeRevision)")
     }
 
     /// What the search keeps to in this tab's window: Chats searches the chats of every connected app, the other
