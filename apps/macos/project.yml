@@ -241,6 +241,7 @@ targets:
       - path: Core/I18n+ConnectionsAgents.swift
       - path: Core/I18n+ConnectionsDevices.swift
       - path: Core/I18n+AgentTools.swift
+      - path: Core/I18n+Secrets.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -435,6 +436,10 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/Workspace/SecretFiles.swift
+      - path: Services/Workspace/SudoAskpass.swift
+      - path: Services/Workspace/OnePassword.swift
+      - path: Services/Workspace/SecretPasteDetector.swift
       - path: Services/Workspace/BrowserSession.swift
       - path: Services/Workspace/WorkspaceBridgeSessions.swift
       - path: Services/Workspace/RenderedPage.swift
