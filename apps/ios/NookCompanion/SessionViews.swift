@@ -246,6 +246,7 @@ struct SessionDetailView: View {
                     Button("One hour") { manage(session, .snoozeHour) }
                     Button("This evening") { manage(session, .snoozeEvening) }
                     Button("Tomorrow morning") { manage(session, .snoozeTomorrow) }
+                    SnoozeCustomItems(session: session, actions: actions) { manage(session, $0) }
                 } label: { Label("Snooze", systemImage: "clock") }
             }
             if actions.contains(.rename) {

@@ -5,7 +5,7 @@
 //
 //   DEVELOPMENT_TEAM = YOURTEAMID
 //
-// It applies to all three targets (NookCompanion, NookNotifications, NookActivity).
+// It applies to every target (NookCompanion, NookNotifications, NookActivity, NookShare).
 DEVELOPMENT_TEAM =
 
 #include? "Signing.local.xcconfig"

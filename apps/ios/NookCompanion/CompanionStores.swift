@@ -77,6 +77,15 @@ enum CacheStore {
     static func remove(mac: String) { SupportFile.remove(name(mac)) }
 }
 
+/// The pull requests the phone saw of each Mac (`PullCache`), one file per Mac: `companion-pulls-<id>.json`.
+enum PullCacheStore {
+    private static func name(_ mac: String) -> String { "companion-pulls-\(mac).json" }
+
+    static func load(mac: String) -> PullCache { SupportFile.read(name(mac), as: PullCache.self) ?? PullCache() }
+    static func save(_ cache: PullCache, mac: String) { SupportFile.write(cache, name(mac)) }
+    static func remove(mac: String) { SupportFile.remove(name(mac)) }
+}
+
 /// Deny and Reply buttons that could not reach their Mac (`NotificationRetries`), across all Macs.
 enum RetryStore {
     private static let name = "companion-notification-retries.json"

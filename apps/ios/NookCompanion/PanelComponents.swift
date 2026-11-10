@@ -318,6 +318,8 @@ struct SessionComposer<Controls: View>: View {
     var busy = false
     var onStop: (() -> Void)? = nil
     var focus: FocusState<Bool>.Binding? = nil
+    /// Offers the microphone next to Send (`DictationButton`).
+    var dictates = true
     let onSend: () -> Void
     @ViewBuilder var controls: () -> Controls
 
@@ -371,6 +373,8 @@ struct SessionComposer<Controls: View>: View {
 
     @ViewBuilder
     private var sendButton: some View {
+        // Dictation next to Send, in every composer (`DictationButton`); what is heard lands in the field to read first.
+        if dictates { DictationButton(text: $text) }
         if busy, isEmpty, let onStop {
             round("stop.fill", label: "Stop", active: true, action: onStop)
         } else {
@@ -403,9 +407,10 @@ struct SessionComposer<Controls: View>: View {
 }
 
 extension SessionComposer where Controls == EmptyView {
-    init(text: Binding<String>, prompt: LocalizedStringKey, canSend: Bool = true, sending: Bool = false, busy: Bool = false,
+    init(text: Binding<String>, prompt: LocalizedStringKey, minHeight: CGFloat = 22, lines: ClosedRange<Int> = 1...6,
+         canSend: Bool = true, sending: Bool = false, busy: Bool = false,
          onStop: (() -> Void)? = nil, focus: FocusState<Bool>.Binding? = nil, onSend: @escaping () -> Void) {
-        self.init(text: text, prompt: prompt, canSend: canSend, sending: sending, busy: busy, onStop: onStop, focus: focus,
+        self.init(text: text, prompt: prompt, minHeight: minHeight, lines: lines, canSend: canSend, sending: sending, busy: busy, onStop: onStop, focus: focus,
                   onSend: onSend) { EmptyView() }
     }
 }

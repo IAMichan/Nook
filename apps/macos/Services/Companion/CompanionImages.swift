@@ -31,3 +31,36 @@ enum CompanionImages {
         }
     }
 }
+
+/// Files that come with a message from the iPhone companion (`CompanionRequest.attachments`, mostly from its share
+/// sheet): checked (`CompanionFile.fits`, with the pictures of the same message), saved next to the pictures in a
+/// folder of their own under their own name, and handed to the agent as paths below the words, as pictures are.
+enum CompanionFiles {
+    /// The words with the files' paths under them; the words alone without files; nil when a file may not go.
+    static func attach(_ files: [CompanionFile]?, images: [CompanionImage]?, to text: String) -> String? {
+        guard let files, !files.isEmpty else { return text }
+        guard CompanionFile.fits(images: images ?? [], files: files) else { return nil }
+        var paths: [String] = []
+        for file in files {
+            guard let bytes = file.bytes, let name = CompanionFile.safeName(file.name), let url = save(bytes, name: name) else { return nil }
+            paths.append(url.path)
+        }
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (words.isEmpty ? "" : words + "\n\n") + paths.joined(separator: "\n")
+    }
+
+    /// One folder per file, so its own name stays and two files of the same name never meet; readable by you only.
+    private static func save(_ data: Data, name: String) -> URL? {
+        let folder = NookPaths.supportDirectory.appendingPathComponent("images", isDirectory: true)
+            .appendingPathComponent("phone-files", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString.prefix(8).lowercased(), isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let url = folder.appendingPathComponent(name)
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+}
