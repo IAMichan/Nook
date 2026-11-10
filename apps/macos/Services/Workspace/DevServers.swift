@@ -8,6 +8,8 @@ struct DevServer: Equatable, Identifiable, Sendable {
     var pid: Int32
     var command: String
     var port: Int
+    /// Started by Nook: from one of its terminals or by an agent it runs. Only such a server gets a Stop button.
+    var startedByNook = false
     var id: Int { port }
     /// Always opened on localhost: a server listening on all addresses answers there too.
     var url: URL { URL(string: "http://localhost:\(port)")! }
@@ -82,6 +84,65 @@ enum DevServerScanner {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// Whether Nook may stop a dev server: only one it started itself, from one of its terminals or through an agent it runs.
+/// A server you started in another terminal app is yours to stop there. Matched by pid and process group only, never by
+/// name, and checked again right before the stop, so a pid the system gave to another program meanwhile is never hit.
+enum DevServerOwnership {
+    /// What Nook started: its own process, the shells of its terminals, and the process groups its agents run in.
+    struct Roots: Equatable, Sendable {
+        var processes: Set<Int32>
+        var groups: Set<Int32>
+
+        /// Nook itself, the terminal `shells` and the agents' groups (`ProcessGroupLedger`).
+        static func current(shells: [Int32]) -> Roots {
+            var groups: Set<Int32> = []
+            for entry in ProcessGroupLedger.current?.entries() ?? [] { groups.insert(entry.groupID) }
+            return Roots(processes: Set(shells.filter { $0 > 0 }).union([getpid()]), groups: groups)
+        }
+    }
+
+    /// `pid` runs below one of the roots, or in an agent's process group (a server an agent left running after its shell
+    /// ended is handed to launchd, but keeps its group).
+    static func startedByNook(pid: Int32, group: Int32?, roots: Roots, parent: (Int32) -> Int32?) -> Bool {
+        guard pid > 1 else { return false }
+        if let group, roots.groups.contains(group) { return true }
+        return ProcessTree.descends(pid, from: roots.processes, parent: parent)
+    }
+
+    /// Marks each server Nook started.
+    static func mark(_ servers: [DevServer], roots: Roots) -> [DevServer] {
+        servers.map { server in
+            var server = server
+            server.startedByNook = startedByNook(pid: server.pid, group: ProcessTree.group(of: server.pid), roots: roots,
+                                                 parent: ProcessTree.parent(of:))
+            return server
+        }
+    }
+
+    /// Stops a server Nook started, with the processes in its group (a wrapper's workers). When that group must live on
+    /// (Nook's own, an agent's, a terminal's shell), the server and the processes it started stop instead. False when it is
+    /// not (or no longer) Nook's.
+    @discardableResult
+    static func stop(_ server: DevServer, roots: Roots) -> Bool {
+        let group = ProcessTree.group(of: server.pid)
+        guard startedByNook(pid: server.pid, group: group, roots: roots, parent: ProcessTree.parent(of:)) else { return false }
+        let protected = protectedGroups(roots)
+        let target = ProcessTree.stopTarget(pid: server.pid, group: group, protectedGroups: protected)
+        if case .process = target {
+            for child in ProcessTree.descendants(of: server.pid, children: ProcessTree.children(of:)).reversed() {
+                ProcessTree.stop(.process(child))
+            }
+        }
+        ProcessTree.stop(target)
+        return true
+    }
+
+    /// The groups a stop never takes down: Nook's, the agents', and each terminal shell's (a shell leads its own group).
+    static func protectedGroups(_ roots: Roots) -> Set<Int32> {
+        roots.groups.union(roots.processes).union([getpgrp()])
     }
 }
 

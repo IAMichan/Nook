@@ -26,6 +26,8 @@ final class InboxStore: ObservableObject {
     var undoArchive: (([String]) -> Void)?
     /// Settling a session that still reads as busy also ends that turn where the session lives; it gets the ids.
     var settleBusy: (([String]) -> Void)?
+    /// After sessions settled: their terminals and project scripts get tidied (`AppModel.applySettleActions`).
+    var settled: (([AgentListItem]) -> Void)?
 
     private let defaults: UserDefaults
     private static let key = "agents.inbox.v1"
@@ -44,11 +46,19 @@ final class InboxStore: ObservableObject {
         let stored = defaults.data(forKey: Self.key).flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
         state = stored?.state ?? InboxState()
         showWorking = stored?.showWorking ?? true
-        autoSettle = stored?.autoSettle ?? AutoSettlePolicy.Settings()
+        // The first trace an earlier Nook left (`FinishedSessions` writes it on its first launch): an install that has it
+        // keeps auto-settle as it was, a new one starts with it on.
+        let usedSince = defaults.object(forKey: Self.usedSinceKey) as? Date
+        autoSettle = AutoSettlePolicy.initial(stored: stored?.autoSettle, usedSince: usedSince)
         groupByProject = stored?.groupByProject ?? true
         collapsedProjects = stored?.collapsedProjects ?? []
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
+        // The choice is kept, so a later launch reads it instead of guessing again.
+        if stored?.autoSettle == nil { save() }
     }
+
+    /// `FinishedSessions.keepsOpenSince`: when this Mac first ran a Nook with an Agents list.
+    private static let usedSinceKey = "agents.keepsUnsettledSince"
 
     private func save() {
         let stored = Stored(state: state, showWorking: showWorking, autoSettle: autoSettle,
@@ -115,6 +125,7 @@ final class InboxStore: ObservableObject {
         if !busy.isEmpty { settleBusy?(busy) }
         if record { undoLog.record(.settled, ids: keys, now: now) }
         save()
+        if !items.isEmpty { settled?(items) }
     }
 
     func unsettle(_ items: [AgentListItem], now: Date = Date(), record: Bool = true) {
