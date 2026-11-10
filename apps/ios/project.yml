@@ -27,7 +27,20 @@ targets:
     sources:
       - path: NookCompanion
       - path: Shared
+      # The phone's Foundation-only logic, tested on the Mac (NookTests): dictation's languages, diagrams and math.
+      - path: Core
       - path: ../../packages/protocol/Sources
+      # Mermaid and KaTeX, the same files the Mac ships, so diagrams and math draw offline (`RichMessageText`).
+      - path: ../macos/Resources/mermaid
+        type: folder
+        buildPhase: resources
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      - path: ../macos/Resources/katex
+        type: folder
+        buildPhase: resources
+        group: Shared from the Mac
+        createIntermediateGroups: false
       # The agents' and models' real marks, drawn in code, shared with the Mac app so both show the same logos.
       # Everything from the Mac stays in one group without intermediate groups: XcodeGen would also list these files
       # under an "apps" group, and Xcode refuses to open a project with a member in two groups.
@@ -46,6 +59,7 @@ targets:
     dependencies:
       - target: NookActivity
       - target: NookNotifications
+      - target: NookShare
     info:
       path: NookCompanion/Info.plist
       properties:
@@ -57,6 +71,11 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
         NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
+        # Dictation in the composers (`Dictation`): recognized on the iPhone itself where it can be; never sent to the Mac.
+        NSMicrophoneUsageDescription: Nook Companion listens while you dictate a message, and only then.
+        NSSpeechRecognitionUsageDescription: Nook Companion turns what you dictate into text, on this iPhone where it can.
+        # Saving a diagram from a message (`RichSegmentView`): add-only, Nook Companion never reads your photos.
+        NSPhotoLibraryAddUsageDescription: Nook Companion saves the diagram you touch and hold to your photos.
         # Finds the Mac again on the network when Nook restarted on another port (CompanionClient, MacFinder).
         NSBonjourServices: [_nookcompanion._tcp]
         UIBackgroundModes: [remote-notification]
@@ -96,8 +115,9 @@ targets:
         createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
       - path: NookCompanion/Localizable.xcstrings
-      # The only shared protocol file it needs: the activity's attributes and content.
+      # The only shared protocol files it needs: the activity's attributes and content, and the usage widget's timeline.
       - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
+      - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
     dependencies:
       - sdk: ActivityKit.framework
       - sdk: WidgetKit.framework
@@ -118,6 +138,12 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
+    # The usage widget reads the limits the app keeps in the app group (`UsageSnapshot`). Needs the App Group
+    # group.nl.imdigital.nook.companion on the app id nl.imdigital.nook.companion.activity too.
+    entitlements:
+      path: NookActivity/NookActivity.entitlements
+      properties:
+        com.apple.security.application-groups: [group.nl.imdigital.nook.companion]
   # Opens notifications that came through Nook's relay (docs/COMPANION.md › Push through Nook's relay): the text is
   # sealed with the pairing's push key, which the app keeps in the shared Keychain (PushKeyStore); falls back to
   # "Nook needs you".
@@ -150,6 +176,51 @@ targets:
         SKIP_INSTALL: YES
     entitlements:
       path: NookNotifications/NookNotifications.entitlements
+      properties:
+        com.apple.security.application-groups: [group.nl.imdigital.nook.companion]
+  # The share sheet's "Nook" (docs/COMPANION.md › Sharing to Nook): text, links, pictures and a file into a new session, a
+  # session or a question to Nook. It holds no pairing key: it leaves the share in the app group (`ShareQueue`), and the
+  # app sends it through its outbox. Needs the App Group on the app id nl.imdigital.nook.companion.share.
+  NookShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NookShare
+      - path: Shared/AppGroup.swift
+      - path: ../../packages/protocol/Sources
+      - path: ../macos/NotchUI/Theme/NookTheme.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      - path: NookCompanion/Theme.swift
+      - path: NookCompanion/ImagePicking.swift
+      - path: NookCompanion/Localizable.xcstrings
+    dependencies:
+      - sdk: UniformTypeIdentifiers.framework
+    info:
+      path: NookShare/Info.plist
+      properties:
+        CFBundleName: Nook Share
+        CFBundleDisplayName: Nook
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 2
+              NSExtensionActivationSupportsFileWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_NAME: NookShare
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.share
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+    entitlements:
+      path: NookShare/NookShare.entitlements
       properties:
         com.apple.security.application-groups: [group.nl.imdigital.nook.companion]
 schemes:
