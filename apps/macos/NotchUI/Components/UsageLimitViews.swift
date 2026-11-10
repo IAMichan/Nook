@@ -163,7 +163,7 @@ private struct UsageLimitRow: View {
                 let width = proxy.size.width
                 let at = elapsed.map { LimitSegmentPosition.at($0, width: width) }
                 ZStack(alignment: .leading) {
-                    Rectangle().fill(Color.white.opacity(0.05))
+                    Rectangle().fill(NookTheme.wash.opacity(0.05))
                     Rectangle()
                         .fill(UsageTone.fill(used: used).opacity(0.35))
                         .frame(width: width * CGFloat(used) / 100)
@@ -547,7 +547,7 @@ private struct UsageBlockRows: View {
                                     .padding(.horizontal, NookTheme.Spacing.sm)
                                     .padding(.vertical, NookTheme.Spacing.xxs)
                                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
-                                        .fill(Color.white.opacity(0.08)))
+                                        .fill(NookTheme.wash.opacity(0.08)))
                             }
                         }
                         Text(detail(block))
@@ -700,7 +700,7 @@ private struct LimitSegment: View {
                     GeometryReader { proxy in
                         let width = proxy.size.width
                         ZStack(alignment: .leading) {
-                            Rectangle().fill(Color.white.opacity(0.05))
+                            Rectangle().fill(NookTheme.wash.opacity(0.05))
                             // A reset usually frees all that was used. Only when it frees part of it (a spent week
                             // holds the session window) is that part hatched, so the rest reads as still blocked.
                             // Compared on the unrounded share: `used` is rounded for display, so 8.6 % used shows as
@@ -858,7 +858,7 @@ private struct LimitLegendRow: View {
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 26)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(hovering || open ? Color.white.opacity(0.08) : Color.clear))
+                .fill(hovering || open ? NookTheme.wash.opacity(0.08) : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

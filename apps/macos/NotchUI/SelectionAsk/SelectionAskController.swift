@@ -249,7 +249,7 @@ final class SelectionAskController {
         anchor = window.convertFromScreen(found.anchor)
         let panel = makePanel()
         panel.level = window.level
-        panel.appearance = window.appearance ?? NSAppearance(named: .darkAqua)
+        panel.appearance = window.appearance ?? window.effectiveAppearance
         contentSize = panel.contentView?.fittingSize ?? CGSize(width: 320, height: 36)
         place()
         window.addChildWindow(panel, ordered: .above)

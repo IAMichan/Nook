@@ -557,7 +557,7 @@ final class FileViewerWindow: NSObject, NSWindowDelegate {
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.appearance = NSAppearance(named: .darkAqua)
+        NookWindowLook.adopt(window, background: false)
         window.minSize = NSSize(width: 360, height: 240)
         window.delegate = self
         self.window = window

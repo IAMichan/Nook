@@ -92,10 +92,10 @@ struct NoticeMark: View {
                         if let symbol {
                             Image(systemName: symbol)
                                 .font(NookTheme.font(6, .heavy))
-                                .foregroundStyle(NookTheme.ink)
+                                .foregroundStyle(NookTheme.onPaper)
                                 .frame(width: 10, height: 10)
                                 .background(Circle().fill(tone))
-                                .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1.5))
+                                .overlay(Circle().stroke(NookTheme.canvas, lineWidth: 1.5))
                                 .offset(x: 4, y: 4)
                         }
                     }

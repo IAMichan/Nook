@@ -1,8 +1,10 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// Settings › Appearance: how Nook looks and sounds. A large live Nook on top that shows each mood, the three styles as
-/// cards, then the color (the biggest change after the style), the face and finish folded away, and Nook as a buddy.
+/// cards, then the color (the biggest change after the style), the windows' appearance and theme, the face and finish
+/// folded away, and Nook as a buddy.
 extension SettingsView {
     // MARK: Appearance
 
@@ -55,6 +57,8 @@ extension SettingsView {
             } header: {
                 Text(tr("settings.display.color"))
             }
+
+            themeSection
 
             // The style above sets the face and the finish; changing them one by one is folded away.
             SettingsFold(tr("settings.appearance.fineTune"), summary: tr("settings.appearance.fineTuneSummary"),
@@ -192,5 +196,136 @@ extension SettingsView {
         case .line: return tr("settings.display.mouth.line")
         case .none: return tr("settings.display.mouth.none")
         }
+    }
+
+    // MARK: Appearance and theme
+
+    /// System, Light or Dark for the windows, then the themes as cards: each with a small preview of its dark and of its
+    /// light palette, and a click on one uses it for that appearance. A VS Code theme can be imported as one more.
+    var themeSection: some View {
+        Section {
+            Picker(selection: $settings.appearanceMode) {
+                ForEach(NookAppearanceMode.allCases) { mode in
+                    Text(Self.title(for: mode)).tag(mode)
+                }
+            } label: {
+                SettingText("theme.appearance")
+            }
+            .pickerStyle(.segmented)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
+                ForEach(settings.themes) { theme in
+                    themeCard(theme)
+                }
+            }
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            HStack {
+                Button(tr("theme.import")) { importVSCodeTheme() }
+                Spacer()
+            }
+            Toggle(isOn: $settings.renderMath) { SettingText("theme.renderMath") }
+            SettingNote(tr("theme.renderMathNote"))
+            Toggle(isOn: $settings.richComposer) { SettingText("theme.richComposer") }
+            SettingNote(tr("theme.richComposerNote"))
+        } header: {
+            Text(tr("theme.header"))
+        } footer: {
+            SettingNote(tr("theme.footer"))
+        }
+    }
+
+    static func title(for mode: NookAppearanceMode) -> String {
+        switch mode {
+        case .system: return tr("theme.mode.system")
+        case .light: return tr("theme.mode.light")
+        case .dark: return tr("theme.mode.dark")
+        }
+    }
+
+    /// A built-in theme's name in the reader's language; an imported one keeps its own.
+    static func title(for theme: NookColorTheme) -> String {
+        theme.custom ? theme.name : tr("theme.name.\(theme.id)")
+    }
+
+    /// One theme: its name, and a preview per appearance it has; the one in use for dark or light carries a ring.
+    private func themeCard(_ theme: NookColorTheme) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text(Self.title(for: theme)).font(NookTheme.TextStyle.strong).lineLimit(1)
+                Spacer(minLength: 0)
+                if theme.custom {
+                    ToolbarIconButton("trash", tr("theme.remove"), height: 18, width: 18) {
+                        settings.customThemes.removeAll { $0.id == theme.id }
+                        if settings.darkThemeID == theme.id { settings.darkThemeID = NookColorTheme.nook.id }
+                        if settings.lightThemeID == theme.id { settings.lightThemeID = NookColorTheme.nook.id }
+                    }
+                }
+            }
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if let dark = theme.dark {
+                    themePreview(dark, chosen: settings.darkThemeID == theme.id, label: tr("theme.forDark")) {
+                        settings.darkThemeID = theme.id
+                    }
+                }
+                if let light = theme.light {
+                    themePreview(light, chosen: settings.lightThemeID == theme.id, label: tr("theme.forLight")) {
+                        settings.lightThemeID = theme.id
+                    }
+                }
+            }
+        }
+        .padding(NookTheme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.graphite))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Self.title(for: theme))
+    }
+
+    /// A small window in a palette: its canvas, a lifted sidebar, two lines of text and the accent.
+    private func themePreview(_ palette: NookPalette, chosen: Bool, label: String, choose: @escaping () -> Void) -> some View {
+        Button(action: choose) {
+            HStack(spacing: 0) {
+                Rectangle().fill(Color(hex: palette.surface)).frame(width: 16)
+                VStack(alignment: .leading, spacing: 3) {
+                    Capsule().fill(Color(hex: palette.paper)).frame(width: 28, height: 3)
+                    Capsule().fill(Color(hex: palette.textSecondary)).frame(width: 20, height: 3)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 3) {
+                        Circle().fill(Color(hex: palette.accent)).frame(width: 6, height: 6)
+                        Circle().fill(Color(hex: palette.mint)).frame(width: 6, height: 6)
+                        Circle().fill(Color(hex: palette.coral)).frame(width: 6, height: 6)
+                    }
+                }
+                .padding(5)
+                Spacer(minLength: 0)
+            }
+            .frame(height: 44)
+            .frame(maxWidth: .infinity)
+            .background(Color(hex: palette.canvas))
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                .strokeBorder(chosen ? NookTheme.iris : NookTheme.line2, lineWidth: chosen ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+
+    /// Picks a VS Code color theme file (JSON) and adds it as a theme; it is used at once for the appearance it is made for.
+    private func importVSCodeTheme() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url,
+              let source = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let fallback = url.deletingPathExtension().lastPathComponent
+        guard let result = try? VSCodeThemeImport.parse(source, fallbackName: fallback) else {
+            ToastCenter.shared.warning(tr("theme.importFailed"))
+            return
+        }
+        let custom = NookCustomTheme(id: "custom-" + UUID().uuidString.prefix(8).lowercased(), name: result.name, source: source)
+        settings.customThemes.append(custom)
+        if result.palette.isDark { settings.darkThemeID = custom.id } else { settings.lightThemeID = custom.id }
     }
 }

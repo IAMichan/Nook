@@ -933,7 +933,7 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
         panel.styleMask = [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel, .fullSizeContentView]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.appearance = NSAppearance(named: .darkAqua)
+        NookWindowLook.adopt(panel, background: false)
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
