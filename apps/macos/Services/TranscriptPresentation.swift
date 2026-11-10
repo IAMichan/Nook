@@ -354,9 +354,23 @@ enum TranscriptPresentation {
             for message in messages {
                 marks.append(PromptMark(id: message.id, row: row.id, position: above / total, text: message.text))
             }
+            if case .assistant(let message, _) = row, !marks.isEmpty, !message.text.isEmpty {
+                marks[marks.count - 1].answer = message.text
+            }
             above += weight
         }
         return marks
+    }
+
+    /// The closest the rail's marks sit when there are many: past that the newest ones show.
+    static let railMinPitch: CGFloat = 4
+
+    /// The distance between the rail's marks so that all of them fit in `height`, never wider than `pitch`, never
+    /// closer than `railMinPitch`; and how many fit at that distance.
+    static func railLayout(count: Int, height: CGFloat, pitch: CGFloat) -> (pitch: CGFloat, fit: Int) {
+        guard count > 0, height > 0 else { return (pitch, 0) }
+        let step = min(pitch, max(railMinPitch, height / CGFloat(count)))
+        return (step, max(1, min(count, Int(height / step))))
     }
 
     /// The same marks for a session Nook runs, from its events: `row` is the event itself. A finished turn folds its
@@ -376,6 +390,8 @@ enum TranscriptPresentation {
         for (event, weight) in zip(events, weights) {
             if event.kind == .user {
                 marks.append(PromptMark(id: event.id.uuidString, row: event.id.uuidString, position: above / total, text: event.text))
+            } else if event.kind == .assistant, !marks.isEmpty, !event.text.isEmpty {
+                marks[marks.count - 1].answer = event.text
             }
             above += weight
         }
@@ -396,6 +412,8 @@ enum TranscriptPresentation {
         for (message, weight) in zip(messages, weights) {
             if message.fromYou {
                 marks.append(PromptMark(id: message.id, row: message.id, position: above / total, text: message.text))
+            } else if !marks.isEmpty, !message.text.isEmpty {
+                marks[marks.count - 1].answer = message.text
             }
             above += weight
         }
@@ -425,6 +443,8 @@ struct PromptMark: Identifiable, Equatable {
     let row: String
     let position: Double
     let text: String
+    /// The agent's last answer to this prompt, before your next one: shown under the prompt when you hover its mark.
+    var answer: String? = nil
 }
 
 extension SessionOutputs {

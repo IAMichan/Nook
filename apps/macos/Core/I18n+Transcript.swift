@@ -5,6 +5,10 @@ import Foundation
 
 let transcriptTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.message.copyPromptLink": "Promptlink kopiëren",
+        "agents.message.promptLinkCopied": "Promptlink gekopieerd",
+        "ws.question.collapse": "Vraag inklappen",
+        "ws.question.expand": "Vraag uitklappen",
         "code.wrap": "Regels laten teruglopen",
         "code.noWrap": "Regels niet laten teruglopen",
         "code.runInTerminal": "Uitvoeren in terminal",
@@ -14,6 +18,10 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copyCSV": "Kopiëren als CSV",
     ],
     .en: [
+        "agents.message.copyPromptLink": "Copy prompt link",
+        "agents.message.promptLinkCopied": "Prompt link copied",
+        "ws.question.collapse": "Collapse question",
+        "ws.question.expand": "Expand question",
         "code.wrap": "Wrap lines",
         "code.noWrap": "Don't wrap lines",
         "code.runInTerminal": "Run in terminal",
@@ -23,6 +31,10 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copyCSV": "Copy as CSV",
     ],
     .de: [
+        "agents.message.copyPromptLink": "Prompt-Link kopieren",
+        "agents.message.promptLinkCopied": "Prompt-Link kopiert",
+        "ws.question.collapse": "Frage einklappen",
+        "ws.question.expand": "Frage ausklappen",
         "code.wrap": "Zeilen umbrechen",
         "code.noWrap": "Zeilen nicht umbrechen",
         "code.runInTerminal": "Im Terminal ausführen",
@@ -32,6 +44,10 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copyCSV": "Als CSV kopieren",
     ],
     .fr: [
+        "agents.message.copyPromptLink": "Copier le lien du prompt",
+        "agents.message.promptLinkCopied": "Lien du prompt copié",
+        "ws.question.collapse": "Replier la question",
+        "ws.question.expand": "Déplier la question",
         "code.wrap": "Renvoyer les lignes à la ligne",
         "code.noWrap": "Ne pas renvoyer à la ligne",
         "code.runInTerminal": "Exécuter dans le terminal",
@@ -41,6 +57,10 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copyCSV": "Copier en CSV",
     ],
     .es: [
+        "agents.message.copyPromptLink": "Copiar enlace del prompt",
+        "agents.message.promptLinkCopied": "Enlace del prompt copiado",
+        "ws.question.collapse": "Contraer pregunta",
+        "ws.question.expand": "Expandir pregunta",
         "code.wrap": "Ajustar líneas",
         "code.noWrap": "No ajustar líneas",
         "code.runInTerminal": "Ejecutar en el terminal",

@@ -591,7 +591,12 @@ enum CodeBlockStyle {
 
     /// The code with its tokens colored; nil for a language the tokenizer does not know, or a very long block.
     static func highlighted(_ code: String, language: String, title: String?) -> AttributedString? {
-        guard code.utf16.count <= colorLimit, let syntax = syntax(language, title: title) else { return nil }
+        guard let syntax = syntax(language, title: title) else { return nil }
+        return highlighted(code, syntax: syntax)
+    }
+
+    static func highlighted(_ code: String, syntax: SyntaxLanguage) -> AttributedString? {
+        guard code.utf16.count <= colorLimit else { return nil }
         let key = syntax.rawValue + "\u{0}" + code
         if let hit = cache.value(for: key) { return hit }
         var result = AttributedString()

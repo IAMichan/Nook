@@ -454,7 +454,8 @@ private struct TranscriptRowView: View, Equatable {
             .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
             // Why it failed, right under it, then what it opens to.
             TranscriptStepDetail(error: step.state == .failed ? step.error : nil, open: open.contains(key), command: command,
-                                 output: output, failed: step.state == .failed, tasks: tasks)
+                                 output: output, failed: step.state == .failed, tasks: tasks,
+                                 commandSyntax: step.command != nil ? .shell : nil)
         }
     }
 
@@ -589,14 +590,16 @@ struct TranscriptPromptRail: View {
     @State private var hovered: String?
 
     private static let width: CGFloat = 20
-    /// The height each mark takes, and so the distance between two marks.
+    /// The height each mark takes, and so the distance between two marks, while they fit.
     private static let pitch: CGFloat = NookTheme.Spacing.md
-
     var body: some View {
         GeometryReader { geometry in
-            let fit = max(1, Int(geometry.size.height / Self.pitch))
+            let layout = TranscriptPresentation.railLayout(count: marks.count, height: geometry.size.height, pitch: Self.pitch)
             VStack(spacing: 0) {
-                ForEach(marks.suffix(fit)) { mark in markButton(mark) }
+                // One message needs no map: the rail shows from the second on.
+                if marks.count > 1 {
+                    ForEach(marks.suffix(layout.fit)) { mark in markButton(mark, pitch: layout.pitch) }
+                }
             }
             .frame(width: Self.width, height: geometry.size.height)
         }
@@ -604,19 +607,19 @@ struct TranscriptPromptRail: View {
         .animation(NookTheme.hover, value: hovered)
     }
 
-    private func markButton(_ mark: PromptMark) -> some View {
+    private func markButton(_ mark: PromptMark, pitch: CGFloat) -> some View {
         let lit = hovered == mark.id
         return Button { onSelect(mark) } label: {
             Capsule()
                 .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
-                .frame(width: lit ? 12 : 8, height: 1.5)
+                .frame(width: lit ? 12 : 8, height: pitch < 6 ? 1 : 1.5)
                 .padding(.leading, NookTheme.Spacing.xs)
-                .frame(width: Self.width, height: Self.pitch, alignment: .leading)
+                .frame(width: Self.width, height: pitch, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(width: Self.width, height: Self.pitch)
-        .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
+        .frame(width: Self.width, height: pitch)
+        .hoverCard { PromptCard(text: Self.prompt(mark.text), answer: mark.answer.map(Self.answer)) }
         .onHover { inside in
             if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
         }
@@ -628,22 +631,48 @@ struct TranscriptPromptRail: View {
         let words = ImageAttachment.splittingAttachments(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
         return words.count > 600 ? String(words.prefix(599)) + "…" : words
     }
+
+    /// The answer as a few plain lines: its Markdown markers out, its blank lines folded.
+    private static func answer(_ text: String) -> String {
+        let plain = text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("```") && !$0.hasPrefix("|") }
+            .map { line in
+                var line = line
+                while let first = line.first, "#>*-".contains(first) { line = String(line.dropFirst()).trimmingCharacters(in: .whitespaces) }
+                return line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            }
+            .joined(separator: " ")
+        return plain.count > 400 ? String(plain.prefix(399)) + "…" : plain
+    }
 }
 
-/// The prompt behind a mark on the rail, in a card beside it.
+/// The prompt behind a mark on the rail, in a card beside it, with the agent's answer to it under a line.
 private struct PromptCard: View {
     let text: String
+    var answer: String? = nil
 
     var body: some View {
-        Text(text)
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textSecondary)
-            .lineLimit(12)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(NookTheme.Spacing.lg)
-            .frame(width: 300, alignment: .leading)
-            .background(DropdownStyle.panel)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Text(text)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(answer == nil ? 12 : 4)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if let answer, !answer.isEmpty {
+                NookDivider()
+                Text(answer)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(width: 300, alignment: .leading)
+        .background(DropdownStyle.panel)
     }
 }
 

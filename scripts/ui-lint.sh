@@ -32,6 +32,7 @@ OWN_COLORS=(
   "NotchUI/Components/ComposerDropdown.swift"
   "NotchUI/Chat/ChatChartView.swift"
   "NotchUI/Workspace/WorkspaceComponents.swift"
+  "NotchUI/Workspace/TerminalColors.swift"  # a command's own terminal colors (256-color cube, RGB)
   "NotchUI/Pills/Music/MusicControls.swift"
   "App/MCPSettingsSection.swift"
   "App/Settings/SettingsStyle.swift"

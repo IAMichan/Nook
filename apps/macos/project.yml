@@ -504,6 +504,7 @@ targets:
       - path: Services/AppPrompt.swift
       - path: Services/PreToolGate.swift
       - path: Services/Workspace/CommandConsole.swift
+      - path: Services/Workspace/AnsiText.swift
       - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift
       - path: Services/Workspace/SessionPrompts.swift

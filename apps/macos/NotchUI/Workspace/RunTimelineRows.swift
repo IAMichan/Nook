@@ -443,7 +443,8 @@ struct ToolRow: View {
             }
             // Why it failed, right under it, then what it opens to.
             TranscriptStepDetail(error: step.error, open: expanded && file == nil, command: tasks == nil ? input : nil,
-                                 output: tasks == nil ? step.output : nil, failed: failed, tasks: tasks)
+                                 output: tasks == nil ? step.output : nil, failed: failed, tasks: tasks,
+                                 commandSyntax: step.command != nil ? .shell : nil)
         }
     }
 }
@@ -452,6 +453,9 @@ struct CodeBlock: View {
     let title: String
     let text: String
     var failed = false
+    /// The language to color the text in (a command line as shell, arguments as JSON); nil leaves it plain, unless the
+    /// text carries terminal colors, which then show.
+    var syntax: SyntaxLanguage? = nil
     /// The text's own height: the block is as tall as it, up to `maxHeight`, and scrolls beyond that.
     @State private var height: CGFloat = 0
     private let maxHeight: CGFloat = 260
@@ -462,7 +466,7 @@ struct CodeBlock: View {
                 Text(title).font(NookTheme.TextStyle.caption).foregroundStyle(WS.tertiary)
                 Spacer()
                 Button {
-                    Pasteboard.copy(text)
+                    Pasteboard.copy(AnsiText.hasCodes(text) ? AnsiText.plain(text) : text)
                 } label: {
                     Image(systemName: "doc.on.doc").font(NookTheme.font(10))
                 }
@@ -473,9 +477,8 @@ struct CodeBlock: View {
             // Both ways, at a fixed height: a long output (a whole file) scrolls inside the block instead of spilling
             // over the rows around it.
             ScrollView([.horizontal, .vertical], showsIndicators: height > maxHeight) {
-                Text(text)
+                content
                     .font(NookTheme.mono(11))
-                    .foregroundStyle(failed ? NookTheme.coralSoft : NookTheme.textStrong)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
@@ -485,6 +488,17 @@ struct CodeBlock: View {
         }
         .padding(10)
         .cardBackground(WS.code, stroke: WS.border, radius: NookTheme.Radius.control)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if AnsiText.hasCodes(text) {
+            Text(TerminalColors.attributed(text, base: failed ? NookTheme.coralSoft : NookTheme.textStrong))
+        } else if !failed, let syntax, let colored = CodeBlockStyle.highlighted(text, syntax: syntax) {
+            Text(colored)
+        } else {
+            Text(text).foregroundStyle(failed ? NookTheme.coralSoft : NookTheme.textStrong)
+        }
     }
 }
 
