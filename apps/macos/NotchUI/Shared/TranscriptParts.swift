@@ -23,6 +23,21 @@ enum TranscriptStyle {
     static let workIcon: CGFloat = 24
     static let workIndent: CGFloat = workIcon + NookTheme.Spacing.sm
 
+    /// Whether a message of yours holds Markdown blocks (a code fence, a quote, a list, a heading, a table), which draw
+    /// as blocks; without them its lines show as they are, with only inline Markdown.
+    static func hasMarkdownBlocks(_ text: String) -> Bool {
+        text.split(separator: "\n", omittingEmptySubsequences: true).contains { raw in
+            let line = raw.drop { $0 == " " || $0 == "\t" }
+            if line.hasPrefix("```") || line.hasPrefix("> ") || line == ">" || line.hasPrefix("- ") || line.hasPrefix("* ")
+                || line.hasPrefix("+ ") || line.hasPrefix("|") { return true }
+            if line.hasPrefix("#"), line.drop(while: { $0 == "#" }).first == " " { return true }
+            let digits = line.prefix { $0.isNumber }
+            guard !digits.isEmpty, digits.count <= 3 else { return false }
+            let rest = line.dropFirst(digits.count)
+            return (rest.hasPrefix(". ") || rest.hasPrefix(") "))
+        }
+    }
+
     /// Whether a message of yours is long enough to fold.
     static func isLong(_ text: String) -> Bool {
         text.count > foldCharacters || text.split(separator: "\n", omittingEmptySubsequences: false).count > foldLines

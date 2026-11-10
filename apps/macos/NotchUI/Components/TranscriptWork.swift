@@ -117,12 +117,9 @@ struct TranscriptThought: View {
             TranscriptWorkLine(symbol: "brain", label: headline.isEmpty ? tr("agents.thought") : headline, live: live,
                                open: more ? open : nil) { if more { toggle() } }
             if more, open {
-                Text(text)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                // In Markdown, as the agent wrote it: its bold headings, code and lists read as such, not as `**`.
+                MarkdownView(text: text, size: 13)
+                    .opacity(0.8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, TranscriptStyle.workIndent)
                     .padding(.bottom, NookTheme.Spacing.xs)
@@ -140,6 +137,14 @@ struct TranscriptStepDetail: View {
     var output: String? = nil
     var failed = false
     var tasks: [RunTaskStep]? = nil
+    /// The language of `command` when the step knows it (a shell command); else JSON arguments are recognised.
+    var commandSyntax: SyntaxLanguage? = nil
+
+    /// Arguments written as a JSON object or list show in JSON's colors.
+    static func syntax(of input: String) -> SyntaxLanguage? {
+        let start = input.first { !$0.isWhitespace }
+        return start == "{" || start == "[" ? .json : nil
+    }
 
     var body: some View {
         if let error, !error.isEmpty {
@@ -162,7 +167,7 @@ struct TranscriptStepDetail: View {
                 .padding(.bottom, NookTheme.Spacing.xs)
         } else if open, command != nil || output != nil {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                if let command { CodeBlock(title: tr("ws.tool.input"), text: command) }
+                if let command { CodeBlock(title: tr("ws.tool.input"), text: command, syntax: commandSyntax ?? Self.syntax(of: command)) }
                 if let output { CodeBlock(title: tr("ws.tool.output"), text: output, failed: failed) }
             }
             .padding(.leading, TranscriptStyle.workIndent)
@@ -180,6 +185,9 @@ struct TranscriptWorkGroup<Steps: View>: View {
     let open: Bool
     let toggle: () -> Void
     @ViewBuilder var steps: () -> Steps
+    /// The steps are taller than the scroll: its edges fade, so a cut-off list shows there is more.
+    @State private var overflows = false
+    private static var maxHeight: CGFloat { 288 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -188,10 +196,25 @@ struct TranscriptWorkGroup<Steps: View>: View {
             if open {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) { steps() }
+                        .padding(.vertical, overflows ? NookTheme.Spacing.sm : 0)
                 }
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                .frame(maxHeight: 288)
+                .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                    overflows = now
+                }
+                .frame(maxHeight: Self.maxHeight)
                 .fixedSize(horizontal: false, vertical: true)
+                .mask {
+                    if overflows {
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 16)
+                            Rectangle()
+                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 16)
+                        }
+                    } else {
+                        Rectangle()
+                    }
+                }
             }
         }
     }

@@ -61,6 +61,11 @@ struct TranscriptUserMessage<Attachments: View>: View {
                     }
                 }
                 TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: true) {
+                    // A nook://prompt link that opens this prompt as a draft in a new session, to share or keep.
+                    if let link = PromptLink.build(text: parts.text, project: fileLinkBase.map { ($0 as NSString).lastPathComponent }) {
+                        CopyIconButton(tr("agents.message.copyPromptLink"), copiedLabel: tr("agents.message.promptLinkCopied"),
+                                       height: 22, width: 22) { link.absoluteString }
+                    }
                     if let onEdit {
                         ToolbarIconButton("pencil", tr("agents.message.editFromHere"), height: 22, width: 22, onEdit)
                     }
@@ -72,14 +77,23 @@ struct TranscriptUserMessage<Attachments: View>: View {
         .onHover { hovering = $0 }
     }
 
+    /// Your words in Markdown, as the agent reads them: a quote, list or code block as such, `code` and **bold** inline.
+    /// Only a message with blocks takes the whole width of the bubble; one of plain lines keeps hugging its words.
+    @ViewBuilder
     private func words(_ string: String, folded: Bool) -> some View {
-        Text(string)
-            .font(NookTheme.font(TranscriptStyle.textSize))
-            .foregroundStyle(NookTheme.paper)
-            .lineSpacing(5)
-            .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
-            .transcriptFolded(folded)
+        if TranscriptStyle.hasMarkdownBlocks(string) {
+            MarkdownView(text: string, size: TranscriptStyle.textSize)
+                .equatable()
+                .transcriptFolded(folded)
+        } else {
+            Text(MarkdownBlock.inline(string, size: TranscriptStyle.textSize, files: fileLinkBase != nil))
+                .font(NookTheme.font(TranscriptStyle.textSize))
+                .foregroundStyle(NookTheme.paper)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .transcriptFolded(folded)
+        }
     }
 }
 
