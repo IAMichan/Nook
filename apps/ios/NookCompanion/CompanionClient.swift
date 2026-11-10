@@ -90,10 +90,10 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var askedConversations: [String: String] = [:]
     /// The pull requests of Agents › Pull requests on the Mac, each session's linked ones, and each one opened, by its
     /// address (`CompanionFeature.pullRequests`). Kept per Mac (`PullCache`), so they read without a connection.
-    @Published private(set) var pulls: [PullDigest] = []
-    @Published private(set) var pullsAt: Date?
-    @Published private(set) var linkedPulls: [String: [PullDigest]] = [:]
-    @Published private(set) var pullDetails: [String: PullDetailDigest] = [:]
+    @Published var pulls: [PullDigest] = []
+    @Published var pullsAt: Date?
+    @Published var linkedPulls: [String: [PullDigest]] = [:]
+    @Published var pullDetails: [String: PullDetailDigest] = [:]
     /// A gentle word when the Mac and this app work together but one speaks an older protocol (`CompanionVersionNotice`).
     @Published private(set) var versionNotice: CompanionVersionNotice?
     private(set) var pushToken: String?
