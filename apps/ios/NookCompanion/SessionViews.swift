@@ -427,6 +427,13 @@ struct ItemView: View {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
+                // What you type denies it and tells the agent why, or what to do instead.
+                SessionComposer(text: $text, prompt: "Or deny with a reason") {
+                    let reason = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    text = ""
+                    Haptics.warning()
+                    Task { await client.decide(session, item: item, allow: false, reason: reason) }
+                }
             case .question:
                 if item.canAllow {
                     VStack(spacing: Theme.Spacing.sm) {
