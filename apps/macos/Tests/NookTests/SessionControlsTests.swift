@@ -27,7 +27,7 @@ final class SessionControlsTests: XCTestCase {
             switch provider {
             case .claude:
                 XCTAssertEqual(provider.capabilities.denyReason, .inResponse, "control_response carries a message")
-            case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+            case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
                 // Codex's decline and ACP's reject outcome have no text: the reason follows as a message.
                 XCTAssertEqual(provider.capabilities.denyReason, .followUpMessage, provider.rawValue)
             }
@@ -126,7 +126,7 @@ final class SessionControlsTests: XCTestCase {
                 XCTAssertEqual(SpeedTiers.tiers(for: provider, model: nil, listed: []), [SpeedTiers.claudeFast])
             case .codex:
                 XCTAssertTrue(provider.capabilities.speedTiers)
-            case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+            case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
                 XCTAssertFalse(provider.capabilities.speedTiers, provider.rawValue)
                 XCTAssertEqual(SpeedTiers.tiers(for: provider, model: nil, listed: []), [])
             }
