@@ -22,11 +22,20 @@ enum ProcessRunner {
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
 
+        defer {
+            try? out.fileHandleForReading.close()
+            try? out.fileHandleForWriting.close()
+            try? err.fileHandleForReading.close()
+            try? err.fileHandleForWriting.close()
+        }
+
         // Drain both pipes concurrently, otherwise a process with heavy output deadlocks.
         let outData = DataBox()
         let errData = DataBox()
         let group = DispatchGroup()
         try process.run()
+        try? out.fileHandleForWriting.close()
+        try? err.fileHandleForWriting.close()
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             outData.data = out.fileHandleForReading.readDataToEndOfFile()

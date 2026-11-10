@@ -619,6 +619,12 @@ extension AppModel {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = output
+        defer {
+            try? input.fileHandleForReading.close()
+            try? input.fileHandleForWriting.close()
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         try process.run()
         input.fileHandleForWriting.write(Data((key + "\n").utf8))
         try? input.fileHandleForWriting.close()

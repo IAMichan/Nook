@@ -2619,15 +2619,17 @@ final class WorkspaceManager: ObservableObject {
     /// All worktrees across repositories containing sessions, with linked sessions and change statuses.
     func refreshWorktrees() {
         guard let git = gitService else { return }
-        let repos = Array(Set(runs.compactMap(\.repoRoot))).sorted()
+        let repos = Array(Set(runs.compactMap { $0.repoRoot.flatMap { git.mainCheckout(of: $0) ?? $0 } })).sorted()
         let snapshot = runs
         worktreesLoading = true
         Task.detached(priority: .utility) {
             var rows: [WorktreeRow] = []
+            var seenPaths = Set<String>()
             for repo in repos where FileManager.default.fileExists(atPath: repo) {
                 guard let list = try? git.worktrees(repo) else { continue }
                 for worktree in list {
                     let path = WorkspacePathPolicy.normalize(worktree.path)
+                    guard seenPaths.insert(path).inserted else { continue }
                     let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
                     // Only show root workspace if a session is actively using it.
                     if worktree.isMain && linked.isEmpty { continue }

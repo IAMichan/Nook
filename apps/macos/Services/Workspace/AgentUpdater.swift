@@ -137,6 +137,10 @@ final class AgentUpdater: ObservableObject {
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         do { try process.run() } catch { return nil }
         let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
@@ -154,6 +158,10 @@ final class AgentUpdater: ObservableObject {
             let output = Pipe()
             process.standardOutput = output
             process.standardError = output
+            defer {
+                try? output.fileHandleForReading.close()
+                try? output.fileHandleForWriting.close()
+            }
             do { try process.run() } catch { return (false, error.localizedDescription) }
             let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
             DispatchQueue.global().asyncAfter(deadline: .now() + updateTimeout, execute: stop)

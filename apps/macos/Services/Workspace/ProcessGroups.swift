@@ -435,7 +435,10 @@ final class SpawnedProcess: @unchecked Sendable {
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         handle.readabilityHandler = { handle in
             let data = handle.availableData
-            if data.isEmpty { handle.readabilityHandler = nil }
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                try? handle.close()
+            }
             onData(data)
         }
         return handle
