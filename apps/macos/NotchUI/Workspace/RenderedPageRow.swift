@@ -47,9 +47,8 @@ struct RenderedPageRow: View, Equatable {
                     SandboxedPageView(html: html) { measured = $0 }
                         .frame(maxWidth: .infinity)
                         .frame(height: height)
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                            .stroke(NookTheme.line2, lineWidth: 1))
+                        .roundedClip(NookTheme.Radius.control)
+                        .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.control)
                         .padding(.leading, TranscriptStyle.workIndent)
                 } else {
                     // Being read: the room it will take, so the timeline does not jump when it arrives.

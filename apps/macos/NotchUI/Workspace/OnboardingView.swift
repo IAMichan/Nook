@@ -171,8 +171,7 @@ struct OnboardingView: View {
                     .padding(.horizontal, NookTheme.Spacing.md)
                     .padding(.vertical, NookTheme.Spacing.sm)
                     .frame(maxWidth: named ? .infinity : nil)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                        .fill(current ? NookTheme.rowSelected : NookTheme.field))
+                    .roundedBackground(current ? NookTheme.rowSelected : NookTheme.field, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

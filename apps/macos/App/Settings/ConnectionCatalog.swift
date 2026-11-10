@@ -353,11 +353,8 @@ struct ConnectionOptionTile: View {
             }
             .padding(NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .fill(hovering ? NookTheme.smoke : NookTheme.graphite)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.smoke : NookTheme.graphite, radius: NookTheme.Radius.card)
+            .roundedHitShape(NookTheme.Radius.card)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

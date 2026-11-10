@@ -26,7 +26,7 @@ struct ConfigPreview: View {
             .font(NookTheme.mono(11))
             .textSelection(.enabled)
             .padding(NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.chip)
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: onCancel)
@@ -370,9 +370,9 @@ struct Keycap: View {
             .padding(.horizontal, label.count > 1 ? 9 : 0)
             .frame(minWidth: 24, minHeight: 22)
             .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.chip)
                     .fill(NookTheme.smoke)
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(NookTheme.line2))
+                    .roundedStrokeBorder(NookTheme.line2, radius: NookTheme.Radius.chip)
                     .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
             )
     }

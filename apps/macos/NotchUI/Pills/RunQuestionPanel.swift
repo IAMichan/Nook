@@ -222,12 +222,9 @@ struct RunQuestionPanel: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.sm + 2)
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.field)
-        )
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
         .overlay(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.card)
                 .stroke(ownFocused || drop.hovering ? NookTheme.amber.opacity(0.55) : NookTheme.wash.opacity(0.04),
                         style: StrokeStyle(lineWidth: 1, dash: drop.hovering ? [5, 4] : []))
         )
@@ -358,15 +355,9 @@ private struct QuestionOptionRow: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(backgroundColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .stroke(borderColor, lineWidth: isHovered || isPicked ? 1.2 : 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedBackground(backgroundColor, radius: NookTheme.Radius.control)
+            .roundedStroke(borderColor, radius: NookTheme.Radius.control, lineWidth: isHovered || isPicked ? 1.2 : 1)
+            .roundedHitShape(NookTheme.Radius.control)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -389,9 +380,9 @@ private struct QuestionOptionRow: View {
 
     private var keycapBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(isPicked ? NookTheme.amber.opacity(0.2) : (isHovered ? NookTheme.smoke : NookTheme.well))
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .stroke(isPicked ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : NookTheme.wash.opacity(0.08)), lineWidth: 1)
 
             Text(number < 9 ? "\(number + 1)" : "·")

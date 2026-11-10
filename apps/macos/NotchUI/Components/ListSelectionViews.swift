@@ -16,7 +16,7 @@ struct SelectionModeButton: View {
                 .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 30, height: 30)
                 // The same height, corners and fill as the search field it sits next to.
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(active ? NookTheme.smoke : NookTheme.field))
+                .roundedBackground(active ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -47,8 +47,7 @@ struct SelectableRow: ViewModifier {
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }
             content
-                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                    .stroke(NookTheme.iris.opacity(selected ? 0.55 : 0), lineWidth: 1))
+                .roundedStroke(NookTheme.iris.opacity(selected ? 0.55 : 0), radius: NookTheme.Radius.panel)
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -104,7 +103,7 @@ struct SelectionBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.graphite))
+        .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.panel)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .onChange(of: count) { _, _ in confirming = nil }
     }
@@ -141,7 +140,7 @@ struct SelectionBar: View {
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(asking ? NookTheme.paper : (action.destructive ? NookTheme.coral : NookTheme.paper))
                 .frame(width: 30, height: 26)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(asking ? NookTheme.coral.opacity(0.8) : NookTheme.field))
+                .roundedBackground(asking ? NookTheme.coral.opacity(0.8) : NookTheme.field, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

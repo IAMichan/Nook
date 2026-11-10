@@ -209,7 +209,7 @@ struct MusicStatsView: View {
             SmallGhostButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Dates
@@ -240,7 +240,7 @@ private struct MusicStatsCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(NookTheme.Spacing.xl)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 }
 
@@ -392,7 +392,7 @@ private struct MusicRecapCard: View {
     let listener: String?
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.sheet)
         HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("music.stats.recapTitle", periodTitle))
@@ -509,11 +509,11 @@ private struct MusicHeatmap: View {
         let seconds = weekHours[day][hour]
         let share = Double(seconds) / Double(most)
         let lit = hovered.map { $0.day == day && $0.hour == hour } ?? false
-        return RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+        return NookTheme.shape(NookTheme.Radius.chip / 2)
             .fill(seconds == 0 ? NookTheme.smoke.opacity(0.6) : NookTheme.music.opacity(0.18 + 0.82 * share))
             .overlay {
                 if lit {
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous).strokeBorder(NookTheme.paper, lineWidth: 1)
+                    NookTheme.shape(NookTheme.Radius.chip / 2).strokeBorder(NookTheme.paper, lineWidth: 1)
                 }
             }
             .frame(maxWidth: .infinity)
