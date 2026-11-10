@@ -1900,13 +1900,14 @@ final class ChatInboxTests: XCTestCase {
             ChatTimeline.Item(id: "a", author: "Jan", date: now),
             ChatTimeline.Item(id: "b", author: "Jan", date: now.addingTimeInterval(30)),
             ChatTimeline.Item(id: "c", author: "Anna", date: now.addingTimeInterval(40)),
-            ChatTimeline.Item(id: "d", author: "Anna", date: now.addingTimeInterval(40 + ChatTimeline.runGap + 1))
+            // Over an hour later, the same day: still the same run.
+            ChatTimeline.Item(id: "d", author: "Anna", date: now.addingTimeInterval(40 + 90 * 60))
         ]
         XCTAssertEqual(ChatTimeline.entries(items, now: now, calendar: calendar), [
             .message(id: "a", first: true, last: false),
             .message(id: "b", first: false, last: true),
-            .message(id: "c", first: true, last: true),
-            .message(id: "d", first: true, last: true)
+            .message(id: "c", first: true, last: false),
+            .message(id: "d", first: false, last: true)
         ])
     }
 
