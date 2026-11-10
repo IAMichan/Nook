@@ -82,6 +82,8 @@ enum MusicLayout {
     static let rowBleed = NookTheme.Spacing.sm
     /// The narrowest a cover gets, in a shelf and in a row on Home.
     static let cover: CGFloat = 132
+    /// The narrowest an artist's face gets on Home: smaller than a cover, so the row reads as people, not as more covers.
+    static let artist: CGFloat = 96
     /// A cover in a row of tracks.
     static let rowArtwork: CGFloat = 36
     /// The height of a rank (a track or an artist) on the statistics page.
@@ -110,8 +112,10 @@ struct MusicPageView: View {
         return sections.contains(stored) ? stored : .home
     }
     private var period: MusicStatsPeriod { MusicStatsPeriod(rawValue: storedPeriod) ?? .week }
-    /// Now Playing is the player itself: the bar would only say the same twice.
-    private var showsBar: Bool { info != nil && section != .nowPlaying }
+    /// Home's playing card is on screen: it has the same controls as the bar.
+    @State private var homeCardVisible = true
+    /// Now Playing is the player itself, and Home's card says the same while it shows: the bar would only say it twice.
+    private var showsBar: Bool { info != nil && section != .nowPlaying && !(section == .home && homeCardVisible) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -138,6 +142,8 @@ struct MusicPageView: View {
         .task(id: "\(info?.trackKey ?? "")|\(section.rawValue)") { load() }
         // The playlists back "Add to playlist" everywhere in the tab, so they load with the page, not with their section.
         .task(id: service.playlistSourceApp) { service.refreshPlaylists() }
+        // Back on Home the card is at the top again; until it reports otherwise, the bar stays away.
+        .onChange(of: section) { homeCardVisible = true }
         .onChange(of: info?.shuffle) { if section == .home || section == .nowPlaying { service.refreshUpNext() } }
     }
 
@@ -170,7 +176,9 @@ struct MusicPageView: View {
     @ViewBuilder
     private var stage: some View {
         switch section {
-        case .home: MusicHomeView(info: info, service: service, lyrics: lyrics, onOpen: { select($0) })
+        case .home:
+            MusicHomeView(info: info, service: service, lyrics: lyrics, onOpen: { select($0) },
+                          onPlayingCardVisible: { homeCardVisible = $0 })
         case .nowPlaying:
             if let info { MusicNowPlayingView(info: info, service: service, lyrics: lyrics) }
         case .search: MusicSearchView(service: service)

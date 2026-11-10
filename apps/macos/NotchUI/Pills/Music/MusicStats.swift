@@ -116,9 +116,9 @@ struct MusicStatsView: View {
         return change > 0 ? tr("music.stats.up", change) : tr("music.stats.down", abs(change))
     }
 
-    /// The fun part, as tiles two by two.
+    /// The fun part, as tiles two by two: an adaptive grid left one fact alone on a row of three.
     private func facts(_ stats: MusicStats) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: NookTheme.Spacing.lg, alignment: .top)],
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: NookTheme.Spacing.lg, alignment: .top), count: 2),
                   alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if let type = stats.listenerType {
                 MusicFactRow(symbol: listenerSymbol(type), title: listener(type).0, detail: listener(type).1)
