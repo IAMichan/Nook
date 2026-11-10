@@ -131,7 +131,7 @@ struct ChatDayDivider: View {
             .foregroundStyle(NookTheme.textStrong)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
+            .roundedBackground(NookTheme.chatTheirs, radius: NookTheme.Radius.control)
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.xl)
             .padding(.bottom, NookTheme.Spacing.md)
@@ -174,7 +174,7 @@ struct ChatQuote: View {
             Capsule().fill(tint).frame(width: 3).padding(.vertical, NookTheme.Spacing.xs).padding(.leading, NookTheme.Spacing.xs)
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.paper.opacity(0.05)))
+        .roundedBackground(NookTheme.paper.opacity(0.05), radius: NookTheme.Radius.chip)
         .accessibilityElement(children: .combine)
     }
 }

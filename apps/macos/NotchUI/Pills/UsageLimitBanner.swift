@@ -47,7 +47,7 @@ struct UsageLimitBanner: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
         }
     }
 

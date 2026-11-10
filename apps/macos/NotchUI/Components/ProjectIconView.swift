@@ -20,8 +20,7 @@ struct ProjectIconView: View {
                     .font(NookTheme.font(size * (letters.count > 1 ? 0.5 : 0.62), .bold))
                     .foregroundStyle(color)
                     .frame(width: size, height: size)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip * size / 24, style: .continuous)
-                        .fill(color.opacity(0.22)))
+                    .roundedBackground(color.opacity(0.22), radius: NookTheme.Radius.chip * size / 24)
             case .image(let path)?:
                 if let image = ProjectIconImages.image(path) {
                     Image(nsImage: image)
@@ -29,7 +28,7 @@ struct ProjectIconView: View {
                         .interpolation(.high)
                         .aspectRatio(contentMode: .fill)
                         .frame(width: size, height: size)
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip * size / 24, style: .continuous))
+                        .roundedClip(NookTheme.Radius.chip * size / 24)
                 } else {
                     Image(icon: symbol).font(NookTheme.font(size * 0.85, .medium))
                 }

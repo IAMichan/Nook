@@ -142,7 +142,7 @@ struct CICheckLogView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(step.running ? NookTheme.rowSelected : .clear))
+        .roundedBackground(step.running ? NookTheme.rowSelected : .clear, radius: NookTheme.Radius.chip)
     }
 
     private func stepColor(_ step: CILog.Step) -> Color {
@@ -211,7 +211,7 @@ struct CICheckLogView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
     }
 
     // MARK: Log
@@ -259,7 +259,7 @@ struct CICheckLogView: View {
                 .padding(NookTheme.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
             .onAppear { proxy.scrollTo("end", anchor: .bottomLeading) }
             .onChange(of: lines.count) { _, _ in proxy.scrollTo("end", anchor: .bottomLeading) }
         }
@@ -340,7 +340,7 @@ struct CICheckLogView: View {
                 .padding(NookTheme.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
             .frame(maxHeight: .infinity)
             .layoutPriority(1)
         }

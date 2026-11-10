@@ -21,6 +21,7 @@ copying it again.
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
+| `NookTheme.shape(_:)`, `.roundedBackground(_:radius:)`, `.roundedStroke(_:radius:)`, `.roundedStrokeBorder(_:radius:)`, `.roundedClip(_:)`, `.roundedHitShape(_:)`, `.cardBackground(_:stroke:radius:)` | Every rounded shape: a continuous corner on a `Radius`. Fill behind, a line over the edge (centered or inside), a clip, the hit area, or fill and stroke together. Never build a `RoundedRectangle(cornerRadius:)` by hand; for a shape inside a `ZStack` or a `let shape`, use `NookTheme.shape(_:)` |
 | `NookTheme.Spacing.xxs … xxxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24, 32 (`xxxl` between the sections of a page) |
 | `NookTheme.open`, `close`, `swap`, `hover`, `reveal`, `scroll` | Animations: opening and closing the notch, switching tabs, hover feedback, showing or hiding part of a panel (a section, a preview, a selection), and scrolling to a line. Never an inline `.easeOut(duration:)` |
 | `.hoverLift(_:scale:)` | The shared hover lift of buttons and chips |
@@ -123,7 +124,7 @@ Nook has one visual language, and the repository guards it in three places:
 1. **`UIConsistencyTests`** (`apps/macos/Tests/NookTests/UIConsistencyTests.swift`) reads every source under `NotchUI`
    and `App` and fails when a view uses `Font.system(size:)` inline, one of SwiftUI's own text styles (`.caption`,
    `.callout`, `.headline`, `.system(.body)`), a literal `Color(hex:)` / `Color(red:)` / `NSColor(white:)`, a system
-   state or text color (`.red`, `.orange`, `.green`, `.secondary`), or a corner radius written as a number from the scale. It runs with the Xcode tests and with
+   state or text color (`.red`, `.orange`, `.green`, `.secondary`), or a corner radius written as a number from the scale, or a `RoundedRectangle(cornerRadius:)` built inline instead of `NookTheme.shape` and the `.rounded…` helpers. It runs with the Xcode tests and with
    `./scripts/core-tests.sh`.
    It also fails when a search field or a 1 pt divider is built inline instead of with `NookSearchField` or
    `NookDivider`, so these look and behave the same everywhere, and when a pull request icon is named or sized by hand
@@ -146,7 +147,7 @@ The checklist for a new or changed view:
   `rowFill(selected:hovering:)` for rows. Strokes are `line`, `line2`, `hairline`, or `fieldStroke`.
 - State color means one thing everywhere: `iris` is Nook, `mint` is done or listening, `amber` waits on you,
   `coral` is an error, `violet` is merged.
-- Corners from `NookTheme.Radius`, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
+- Corners from `NookTheme.Radius` through `NookTheme.shape` and the `.rounded…` helpers, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
   `NookTheme.open` / `close` / `swap` / `hover` / `reveal` / `scroll`, and a looping animation (a pulse, a blinking
   cursor) stops with Reduce Motion. Anything that loops for long (a pulse, a halo, a spinner, a shimmer, dots, a symbol) is a
   `LayerLoop`, `ShimmerLayer`, `LayerLevelBars`, or `LayerSymbol` at an `EnergyPlan` rate: Core Animation draws it, and the

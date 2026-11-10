@@ -123,7 +123,7 @@ struct TasksStrip: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     private var segments: some View {
@@ -224,7 +224,7 @@ struct SubagentBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     /// One short bar per subagent: lit while it runs, mint once done, coral when it failed.
@@ -420,7 +420,7 @@ private struct SubagentCard: View {
         .conversationCard(padding: NookTheme.Spacing.lg)
         .overlay {
             if agent.isRunning {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.conversationCard, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.conversationCard)
                     .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
         }
@@ -567,8 +567,7 @@ struct PullRequestWatchStrip: View {
         }
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(hovering ? NookTheme.rowHover : Color.clear))
+        .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
         // The whole row opens the pull request (in the session's side panel); the checks and the eye keep their own click.
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
@@ -832,7 +831,7 @@ struct BackgroundCommandBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
         .onChange(of: focus.wrappedValue) { _, id in
             guard let id else { return }
             focus.wrappedValue = nil
@@ -883,7 +882,7 @@ struct BackgroundCommandBar: View {
             if expanded { detail(command) }
         }
         // Lit up for a moment when its call in the conversation sent you here.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+        .background(NookTheme.shape(NookTheme.Radius.control)
             .fill(NookTheme.iris.opacity(flashed == command.id ? 0.16 : 0))
             .padding(.horizontal, -NookTheme.Spacing.sm))
     }
@@ -921,7 +920,7 @@ struct BackgroundCommandBar: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
         .padding(.leading, 20)
         .padding(.bottom, NookTheme.Spacing.xs)
     }
@@ -1036,7 +1035,7 @@ struct BackgroundCommandList: View {
         .conversationCard(padding: NookTheme.Spacing.lg)
         .overlay {
             if command.isRunning {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.conversationCard, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.conversationCard)
                     .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
         }

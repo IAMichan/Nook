@@ -60,7 +60,7 @@ struct BrowserTakeoverOverlay: View {
 
     private var stoppedPill: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "hand.raised.fill")
+            Image(icon: "hand.raised.fill")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
             Text(tr("browser.takeover.stopped"))

@@ -1523,8 +1523,7 @@ struct ChatsRow: View, Equatable {
                 // Where it stands, the same mark for every app; your own newest message has its ticks in front.
                 if entry.showsReadMark { ChatReadMark(state: entry.read) }
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

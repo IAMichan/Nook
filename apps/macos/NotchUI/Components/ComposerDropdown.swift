@@ -140,8 +140,7 @@ struct DropdownRow: View {
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(tile)
                         .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                            .fill(tile.opacity(hovering ? 0.24 : 0.16)))
+                        .roundedBackground(tile.opacity(hovering ? 0.24 : 0.16), radius: NookTheme.Radius.control)
                 } else if let symbol {
                     NookSymbol(symbol, size: 13)
                         .font(NookTheme.TextStyle.label)
@@ -172,9 +171,8 @@ struct DropdownRow: View {
             .padding(.vertical, detail == nil ? (tile == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.xs) : NookTheme.Spacing.md)
             .frame(minHeight: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(chosen && !highlighted ? DropdownStyle.chosen
-                      : ((hovering || highlighted) && disabledReason == nil ? DropdownStyle.hover : .clear)))
+            .roundedBackground(chosen && !highlighted ? DropdownStyle.chosen : ((hovering || highlighted) && disabledReason == nil ? DropdownStyle.hover : .clear),
+                               radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -290,8 +288,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
         } label: {
             icon(place)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(place == current ? DropdownStyle.chosen : .clear))
+                .roundedBackground(place == current ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.control)
                 // Top corner: the bottom one holds the account badge.
                 .overlay(alignment: .topTrailing) {
                     if place == chosen && place != current {

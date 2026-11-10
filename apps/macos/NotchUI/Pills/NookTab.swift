@@ -140,7 +140,7 @@ struct NookChatView: View {
                     } else {
                         BrowserView(store: .shared, onClose: { viewModel.browserBesideChat = false })
                             .background(NookTheme.field)
-                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+                            .roundedClip(NookTheme.Radius.sheet)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -164,7 +164,7 @@ struct NookChatView: View {
         .onChange(of: chat.composerFocusRequests) { _, _ in focusComposer() }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
+                NookTheme.shape(NookTheme.Radius.sheet)
                     .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .overlay(Text(tr("chat.dropFile")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper))
                     .allowsHitTesting(false)

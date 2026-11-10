@@ -193,7 +193,7 @@ struct AgentTile: View {
     init(_ kind: AgentKind) { logo = AgentLogo(kind, size: 20) }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        NookTheme.shape(size * 0.27)
             .fill(NookTheme.smoke)
             .overlay(logo)
             .frame(width: size, height: size)

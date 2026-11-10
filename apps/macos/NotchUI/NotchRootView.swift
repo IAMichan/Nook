@@ -899,7 +899,7 @@ private struct TrackCover: View {
     var body: some View {
         let artworkURL = app.nowPlaying.current?.artworkURL
         ZStack {
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
                 AsyncImage(url: artworkURL) { image in
@@ -916,7 +916,7 @@ private struct TrackCover: View {
             }
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+        .roundedClip(NookTheme.Radius.chip)
     }
 }
 

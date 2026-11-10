@@ -18,7 +18,7 @@ struct SmallPrimaryButton: View {
             .foregroundStyle(NookTheme.onPrimary)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
         }
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.45)
@@ -50,8 +50,8 @@ struct NookAcknowledgeButton: View {
             .padding(.leading, countdown == nil ? (compact ? 12 : 16) : (compact ? 7 : 9))
             .padding(.trailing, compact ? 12 : 16)
             .frame(height: height ?? (compact ? 30 : 38))
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
+            .roundedHitShape(NookTheme.Radius.control)
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -197,8 +197,8 @@ struct ToolbarIconButton: View {
                 .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5)
                                  : (hovering || selected ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: width, height: height)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(hovering && enabled ? NookTheme.graphite : (selected ? NookTheme.rowSelected : Color.clear)))
+                .roundedBackground(hovering && enabled ? NookTheme.graphite : (selected ? NookTheme.rowSelected : Color.clear),
+                                   radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -322,7 +322,7 @@ struct SmallGhostButton: View {
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.graphite : Color.clear))
+                .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
