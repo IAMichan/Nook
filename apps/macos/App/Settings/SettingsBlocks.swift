@@ -429,6 +429,7 @@ struct WorkspaceSettingsSection: View {
             // What runs by itself, then what agents may use. The raw traffic log is under Maintenance.
             scheduled
             bridge
+            RemoteMCPSettingsSection(ws: ws)
         case .worktrees:
             worktreeCreation
             worktreeCleanup

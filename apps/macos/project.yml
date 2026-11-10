@@ -427,6 +427,9 @@ targets:
       - path: Services/Workspace/KeptTransport.swift
       - path: Services/Workspace/KeptRuns.swift
       - path: Services/Workspace/GuestLink.swift
+      - path: Services/Workspace/RemoteMCP.swift
+      - path: Services/Workspace/RemoteMCPHTTP.swift
+      - path: Services/Workspace/RemoteMCPTunnel.swift
       - path: Services/Workspace/AndroidDevices.swift
       - path: Services/Workspace/RemoteBridge.swift
       - path: Services/Workspace/NookCommandLine.swift

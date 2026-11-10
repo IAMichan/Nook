@@ -188,6 +188,31 @@ final class WorkspaceBridge: ObservableObject {
         let connection: String
         /// It came through a session on another machine: nothing it says about itself counts without that session's token.
         var remote = false
+        /// A cloud assistant (Claude.ai, ChatGPT) that signed in through the relay (`RemoteMCPServer`), and what it may use.
+        var assistant: (name: String, level: RemoteAccessLevel)? = nil
+    }
+
+    /// One MCP message from an assistant outside this Mac. It has no folder and no session: it gets the tools of its level
+    /// only, and everything that is not a read still asks you, as for every agent that is not in Nook.
+    func answer(assistant message: [String: Any], name: String, level: RemoteAccessLevel) async -> [String: Any]? {
+        let context = Context(agentID: "assistant", cwd: "", env: [:], connection: UUID().uuidString, assistant: (name, level))
+        let instructions = "You are an assistant outside Nook; the user's Nook on their Mac answers you. Only the tools listed are available; a tool that changes something asks the user in Nook first and may be refused or take minutes."
+        // The relay stops waiting after a few minutes: an approval still open by then is withdrawn, so the call ends as refused.
+        let connection = context.connection
+        let withdraw = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 270 * 1_000_000_000)
+            if !Task.isCancelled { self?.connectionClosed(connection) }
+        }
+        defer {
+            withdraw.cancel()
+            connectionClosed(connection)
+        }
+        return await BridgeRPC.response(to: message, instructions: instructions, offered: level.offered) { tool, arguments in
+            let outcome = await self.call(tool, arguments, context)
+            self.audit(tool, BridgeCaller(kind: .external, agent: name, title: "", directory: "", mode: nil, permission: nil),
+                       Self.summary(arguments), outcome.isError ? "remote assistant: refused or failed" : "remote assistant: done")
+            return outcome
+        }
     }
 
     private func handle(_ data: Data, _ connection: HookConnection, remote: Bool) {
@@ -221,6 +246,9 @@ final class WorkspaceBridge: ObservableObject {
     private func caller(_ context: Context) -> BridgeCaller? {
         guard let app else { return nil }
         let workspace = app.workspace
+        if let assistant = context.assistant {
+            return BridgeCaller(kind: .external, agent: assistant.name, title: "", directory: "", mode: nil, permission: nil)
+        }
         if context.remote {
             guard let id = BridgeIdentity.run(env: context.env, accepts: workspace.acceptsRemoteBridge),
                   let run = workspace.run(id) else { return nil }
@@ -263,6 +291,10 @@ final class WorkspaceBridge: ObservableObject {
     private func call(_ tool: BridgeTool, _ arguments: [String: Any], _ context: Context) async -> BridgeRPC.ToolResult {
         guard let caller = self.caller(context) else {
             return .error("Nook could not tell which session this is. Start the agent from a project folder.")
+        }
+        if let assistant = context.assistant, !assistant.level.allows(tool) {
+            audit(tool, caller, Self.summary(arguments), "geweigerd: outside the access level")
+            return .error("This sign-in does not include this tool. The user can raise its access level in Nook (Settings › Automation).")
         }
         if caller.remote, !RemoteBridge.allows(tool) { return .error(RemoteBridge.refusal) }
         if caller.remote, tool == .sessionRead, case .run(let own) = caller.kind,
