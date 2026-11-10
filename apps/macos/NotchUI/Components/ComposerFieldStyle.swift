@@ -254,7 +254,7 @@ enum ComposerChipArt {
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor(NookTheme.textStrong),
         ])
-        let symbol = NSImage(systemSymbolName: symbol(ref.kind), accessibilityDescription: nil)?
+        let symbol = NookIcon.nsImage(symbol(ref.kind))?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
         let pad = NookTheme.Spacing.sm
         let iconWidth = symbol.map { $0.size.width + NookTheme.Spacing.xs } ?? 0

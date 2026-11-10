@@ -505,7 +505,7 @@ private struct TranscriptRowView: View, Equatable {
         flatRowContent(row, answers: answers)
             .padding(.horizontal, lit ? NookTheme.Spacing.xs : 0)
             .padding(.vertical, lit ? NookTheme.Spacing.xxs : 0)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(lit ? 0.16 : 0)))
+            .roundedBackground(NookTheme.iris.opacity(lit ? 0.16 : 0), radius: NookTheme.Radius.control)
     }
 
     @ViewBuilder

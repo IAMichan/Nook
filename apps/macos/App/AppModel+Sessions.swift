@@ -235,7 +235,7 @@ extension AppModel {
     func nameSessionsAfterAgents() {
         for run in workspace.runs where !run.archived && !run.isRemote {
             guard let current = run.providerSessionID, !current.isEmpty,
-                  run.title == URL(fileURLWithPath: run.projectPath).lastPathComponent else { continue }
+                  run.title == (run.projectPath as NSString).lastPathComponent else { continue }
             let agent = run.provider.displayName
             guard let past = history.sessions.first(where: { $0.agent.name == agent && $0.isConversation(current) }),
                   !past.title.isEmpty else { continue }

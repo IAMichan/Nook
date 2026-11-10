@@ -190,7 +190,7 @@ struct AutocompleteSettingsSection: View {
                 }
                 if !store.prefs.modelPath.isEmpty, !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix),
                    !autocomplete.candidates.contains(where: { $0.url.path == store.prefs.modelPath }) {
-                    Text(URL(fileURLWithPath: store.prefs.modelPath).lastPathComponent).tag(store.prefs.modelPath)
+                    Text((store.prefs.modelPath as NSString).lastPathComponent).tag(store.prefs.modelPath)
                 }
             }
             .onChange(of: store.prefs.modelPath) { _, _ in autocomplete.refresh() }
@@ -204,7 +204,7 @@ struct AutocompleteSettingsSection: View {
             if !store.prefs.modelPath.hasPrefix(CompletionSource.brainPrefix) {
                 LabeledContent(tr("autocomplete.lora")) {
                     HStack {
-                        Text(store.prefs.loraAdapterPath.isEmpty ? tr("autocomplete.lora.none") : URL(fileURLWithPath: store.prefs.loraAdapterPath).lastPathComponent)
+                        Text(store.prefs.loraAdapterPath.isEmpty ? tr("autocomplete.lora.none") : (store.prefs.loraAdapterPath as NSString).lastPathComponent)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                         Button(tr("autocomplete.lora.choose")) { chooseFile(adapter: true) }

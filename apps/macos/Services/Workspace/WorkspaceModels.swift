@@ -441,7 +441,7 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var timelineDetail: TimelineDetail? = nil
 
     var projectName: String {
-        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        let name = (projectPath as NSString).lastPathComponent
         let folder = name.isEmpty ? projectPath : name
         // A session on another machine says which: "buildbox:app".
         return remote.map { $0.name + ":" + folder } ?? folder
@@ -1244,7 +1244,7 @@ enum ToolSummary {
             return detail.isEmpty ? mcp.label : "\(mcp.label) · \(oneLine(detail, 100))"
         }
         if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
-        if let path = path(input) { return "\(tool) · \(URL(fileURLWithPath: path).lastPathComponent)" }
+        if let path = path(input) { return "\(tool) · \((path as NSString).lastPathComponent)" }
         for key in ["pattern", "query", "url", "description", "prompt"] {
             if let value = input[key] as? String, !value.isEmpty { return "\(tool) · \(oneLine(value, 100))" }
         }
@@ -1255,7 +1255,7 @@ enum ToolSummary {
     static func command(_ input: [String: Any]) -> String? {
         if let text = input["command"] as? String { return text }
         if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains(URL(fileURLWithPath: parts[0]).lastPathComponent),
+            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
                parts[1].hasPrefix("-") {
                 return parts[2...].joined(separator: " ")
             }

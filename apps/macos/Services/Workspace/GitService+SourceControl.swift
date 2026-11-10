@@ -50,7 +50,7 @@ extension GitService {
 
     /// The main checkout that `path` (any folder or worktree of a repository) belongs to.
     func mainCheckout(of path: String) -> String? {
-        guard let common = commonDirectory(for: path), URL(fileURLWithPath: common).lastPathComponent == ".git" else { return nil }
+        guard let common = commonDirectory(for: path), (common as NSString).lastPathComponent == ".git" else { return nil }
         return URL(fileURLWithPath: common).deletingLastPathComponent().path
     }
 

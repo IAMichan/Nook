@@ -514,7 +514,7 @@ extension SessionOutputs {
                     for raw in SharedFiles.paths(AgentActivity.input(step.input) ?? [:]) {
                         let path = resolve(raw, in: directory)
                         guard let kind = kind(path: path) else { continue }
-                        let output = SessionOutput(id: "file:" + path, kind: kind, title: URL(fileURLWithPath: path).lastPathComponent,
+                        let output = SessionOutput(id: "file:" + path, kind: kind, title: (path as NSString).lastPathComponent,
                                                    path: path, date: date)
                         if let at = files[path] { outputs[at] = output } else { files[path] = outputs.count; outputs.append(output) }
                     }
@@ -522,7 +522,7 @@ extension SessionOutputs {
                 guard let raw = step.path, step.state != .failed else { continue }
                 let path = resolve(raw, in: directory)
                 guard let kind = kind(path: path) else { continue }
-                let output = SessionOutput(id: "file:" + path, kind: kind, title: URL(fileURLWithPath: path).lastPathComponent,
+                let output = SessionOutput(id: "file:" + path, kind: kind, title: (path as NSString).lastPathComponent,
                                            path: path, date: date)
                 if let at = files[path] { outputs[at] = output } else { files[path] = outputs.count; outputs.append(output) }
             }

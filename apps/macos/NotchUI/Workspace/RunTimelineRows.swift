@@ -201,7 +201,7 @@ struct SharedFilesRow: View {
             TranscriptWorkLine(symbol: "paperclip", label: SharedFiles.caption(input) ?? tr("ws.shared.title"))
                 .help(paths.map(AgentPathFormat.tilde).joined(separator: "\n"))
             ForEach(videos, id: \.self) { path in
-                VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: URL(fileURLWithPath: path).lastPathComponent,
+                VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: (path as NSString).lastPathComponent,
                           maxHeight: 420)
             }
             if !others.isEmpty {
@@ -297,7 +297,7 @@ struct SharedFileTile: View {
     @State private var thumbnail: NSImage?
     @State private var hovering = false
 
-    private var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    private var name: String { (path as NSString).lastPathComponent }
 
     var body: some View {
         Button(action: action) {

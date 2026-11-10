@@ -710,7 +710,7 @@ final class CompanionServer: ObservableObject {
             candidates = Array(runs.dropFirst(CompanionHistory.liveCount))
         } else {
             candidates = runs.filter { run in
-                CompanionHistory.matches(query, [run.title, URL(fileURLWithPath: run.workingDirectory).lastPathComponent,
+                CompanionHistory.matches(query, [run.title, (run.workingDirectory as NSString).lastPathComponent,
                                                  run.branch ?? "", run.provider.displayName])
             }
         }
@@ -740,7 +740,7 @@ final class CompanionServer: ObservableObject {
         let lastAnswer = workspace.lastAnswer(run.id)
         return SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
                              attention: String(describing: workspace.attention(run, unseen: false, now: now)),
-                             folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,
+                             folder: (run.workingDirectory as NSString).lastPathComponent, branch: run.branch,
                              updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
                              model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
                              actions: Self.actions(run, now: now).map(\.rawValue),

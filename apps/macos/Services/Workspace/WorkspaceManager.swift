@@ -706,7 +706,7 @@ final class WorkspaceManager: ObservableObject {
         let git = gitService
         let info = await Task.detached(priority: .userInitiated) {
             let normalized = WorkspacePathPolicy.normalize(path)
-            var info = ProjectInfo(path: normalized, name: URL(fileURLWithPath: normalized).lastPathComponent,
+            var info = ProjectInfo(path: normalized, name: (normalized as NSString).lastPathComponent,
                                    verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
                                    branches: [], defaultBase: nil, hasCommits: false, dirtyFiles: 0, isWorktree: false)
             guard info.verdict == .ok, let git, let root = git.repositoryRoot(for: normalized) else { return info }
@@ -789,7 +789,7 @@ final class WorkspaceManager: ObservableObject {
             let prefix = settings.sessionDefaults(for: root).branchPrefix
             let name = ProjectSettings.branchName(config.branchName, globalPrefix: WorktreeNaming.branchPrefix, projectPrefix: prefix)
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
-            let repoName = URL(fileURLWithPath: root).lastPathComponent
+            let repoName = (root as NSString).lastPathComponent
             let reserved = Set(runs.compactMap(\.worktreePath))
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
                                                    slug: WorktreeNaming.directorySlug(branch: name, prefix: prefix),
@@ -1062,7 +1062,7 @@ final class WorkspaceManager: ObservableObject {
         let permission = settings.sessionDefaults(for: repoRoot ?? projectPath).permission(for: provider)
         let run = WorkspaceRun(
             id: id,
-            title: task.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: task),
+            title: task.isEmpty ? (projectPath as NSString).lastPathComponent : WorktreeNaming.title(from: task),
             task: task,
             provider: provider,
             profileID: profileID,
@@ -1623,7 +1623,7 @@ final class WorkspaceManager: ObservableObject {
             let reserved = Set(runs.filter { $0.id != id }.compactMap(\.worktreePath))
             let path = WorktreeNaming.worktreePath(
                 root: (settings.worktreeRoot as NSString).expandingTildeInPath,
-                repoName: URL(fileURLWithPath: root).lastPathComponent,
+                repoName: (root as NSString).lastPathComponent,
                 slug: WorktreeNaming.directorySlug(branch: branch, prefix: prefix),
                 exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
             update(id) {

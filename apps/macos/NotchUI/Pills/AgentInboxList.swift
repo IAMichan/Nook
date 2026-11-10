@@ -407,7 +407,7 @@ struct AgentInboxList: View {
     private func folderIcon(_ group: InboxProjectGroup) -> ProjectIcon? {
         let settings = app.workspace.settings
         guard !group.project.isEmpty, !settings.projectOverrides.byProject.isEmpty else { return nil }
-        let path = settings.projectOverrides.projects.first { URL(fileURLWithPath: $0).lastPathComponent == group.project }
+        let path = settings.projectOverrides.projects.first { ($0 as NSString).lastPathComponent == group.project }
         return path.flatMap(settings.projectIcon)
     }
 

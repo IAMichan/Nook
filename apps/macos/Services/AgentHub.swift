@@ -1280,7 +1280,7 @@ final class AgentHub: ObservableObject {
 
     /// The folder a session's row names: for an agent's own worktree, the repository it was made from (see `WorktreeOrigin`).
     static func projectName(_ cwd: String) -> String {
-        let name = URL(fileURLWithPath: cwd).lastPathComponent
+        let name = (cwd as NSString).lastPathComponent
         guard !(name.isEmpty || cwd.isEmpty || name == "/") else { return "no folder" }
         return WorktreeOrigin.repositoryName(of: cwd) ?? name
     }
@@ -1331,7 +1331,7 @@ final class AgentHub: ObservableObject {
     static func commandText(_ input: [String: Any]) -> String? {
         if let text = input["command"] as? String { return text }
         if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains(URL(fileURLWithPath: parts[0]).lastPathComponent),
+            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
                parts[1].hasPrefix("-") {
                 return parts[2...].joined(separator: " ")
             }
@@ -1400,7 +1400,7 @@ final class AgentHub: ObservableObject {
             return assessment
         }
         if let edit {
-            let file = filePath(input).map { URL(fileURLWithPath: $0).lastPathComponent } ?? "a file"
+            let file = filePath(input).map { ($0 as NSString).lastPathComponent } ?? "a file"
             return CommandAssessment(level: .review, title: "", note: "Modifies \(file) · +\(edit.added) −\(edit.removed)")
         }
         if let url = input["url"] as? String {
@@ -1425,7 +1425,7 @@ final class AgentHub: ObservableObject {
             case "Write", "write_file": verb = "Writes"
             default: verb = "Modifies"
             }
-            return "\(verb) \(URL(fileURLWithPath: path).lastPathComponent)"
+            return "\(verb) \((path as NSString).lastPathComponent)"
         case "Grep", "Glob", "search_file_content", "glob":
             return "Searches \(shorten((input["pattern"] as? String) ?? "", 40))"
         case "WebFetch", "web_fetch":

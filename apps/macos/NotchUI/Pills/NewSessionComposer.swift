@@ -207,7 +207,7 @@ struct NewSessionComposer: View {
 
     private func projectRow(_ path: String) -> some View {
         let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
-        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: URL(fileURLWithPath: path).lastPathComponent,
+        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: (path as NSString).lastPathComponent,
                            detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
     }
 
@@ -235,7 +235,7 @@ struct NewSessionComposer: View {
     /// "app", "buildbox:app", or the invitation to pick one.
     private var projectLabel: String {
         if let remoteMachine {
-            let folder = remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent
+            let folder = remoteFolder.isEmpty ? "…" : (remoteFolder as NSString).lastPathComponent
             return remoteMachine.name + ":" + folder
         }
         if let project, ScratchProjects.isScratch(project.path) { return tr("ws.new.noProject") }

@@ -467,7 +467,7 @@ struct SearchPanel: View {
         }
         .padding(NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.control)
         .accessibilityElement(children: .combine)
     }
 
