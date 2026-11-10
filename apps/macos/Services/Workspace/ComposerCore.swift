@@ -243,6 +243,26 @@ enum PasteRule {
 
     static func shouldAttach(_ text: String) -> Bool { text.utf8.count >= attachThreshold }
 
+    /// The most characters one message holds: a longer draft stays in the box, with a notice, until you
+    /// shorten it or split it into several messages.
+    static let messageLimit = 120_000
+
+    /// Characters over the limit, or nil when the draft fits.
+    static func overLimit(_ text: String) -> Int? {
+        // Asked on every redraw of the composer: a text has at least as many UTF-16 units as characters, and counting
+        // those is constant time.
+        guard text.utf16.count > messageLimit else { return nil }
+        let count = text.count
+        return count > messageLimit ? count - messageLimit : nil
+    }
+
+    /// Whether a paste of `inserted` that made the box `result` goes aside as an attachment: a big one unless you pasted
+    /// it as text (⇧⌘V), and any paste that would push the message past `messageLimit`, as text or not.
+    static func attaches(_ inserted: String, result: String, asText: Bool) -> Bool {
+        if overLimit(result) != nil { return true }
+        return !asText && shouldAttach(inserted)
+    }
+
     /// A name for the pasted text: "Pasted text (45 KB).txt".
     static func fileName(for text: String) -> String {
         "Pasted text (\(max(1, text.utf8.count / 1024)) KB)"
