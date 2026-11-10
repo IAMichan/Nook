@@ -112,7 +112,9 @@ final class ChatInboxConnector: ContextSource {
                     }
                     let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
                     let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
-                    return "\(appName) chat with \(thread.name):\n" + ChatInbox.transcript(thread, limit: limit)
+                    let details = ChatInbox.details(thread)
+                    return "\(appName) chat with \(thread.name):\n" + (details.isEmpty ? "" : details + "\n\nMessages:\n")
+                        + ChatInbox.transcript(thread, limit: limit)
                 }
             ),
             ToolSpec(

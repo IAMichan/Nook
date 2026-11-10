@@ -360,8 +360,19 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     /// Deleted for everyone (by whoever wrote it, in its app or from Nook): the chat keeps its place and says so, the same
     /// for every app (`withdrawn()`). Someone else's keeps what Nook already had of it, marked "Deleted".
     var deleted: Bool? = nil
+    /// Someone came into the group or went out of it ("Ruben added David"): the chat shows it as a centred line, not
+    /// as a message (`text` stays empty). Nil for every message.
+    var membership: ChatMembership? = nil
+    /// The group itself changed ("Ruben changed the group name to …"): a centred line like `membership`.
+    var groupChange: ChatGroupChange? = nil
 
     var isMine: Bool { fromMe == true }
+    /// A line about the group rather than a message: who is in it, or the group itself changed.
+    var notice: String? { membership?.line ?? groupChange?.line }
+    var isNotice: Bool { membership != nil || groupChange != nil }
+    /// Someone else's message: what counts as new, makes a chat unread and brings a card up. A change in who is in a
+    /// group does none of that, as in the apps themselves.
+    var isIncoming: Bool { !isMine && !isNotice }
     var isEdited: Bool { edited == true }
     var isDeleted: Bool { deleted == true }
 
@@ -385,10 +396,11 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     }
 
     /// A call its app noted in the chat ("Missed voice call"), read from its line the same way for every app.
-    var call: ChatCall? { media == nil && poll == nil && !isDeleted ? ChatFormat.call(text) : nil }
+    var call: ChatCall? { media == nil && poll == nil && !isNotice && !isDeleted ? ChatFormat.call(text) : nil }
 
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
+        if let notice { return notice }
         if isDeleted { return tr(isMine ? "chat.message.deletedMine" : "chat.message.deleted") }
         if let poll { return poll.line }
         if let call { return call.summary(mine: isMine) }
@@ -411,6 +423,9 @@ struct BridgedChat: Equatable, Sendable {
     var avatar: String? = nil
     /// A group's other members by name (you left out), when the app lists them; nil when it does not.
     var members: [String]? = nil
+    /// What the app says about the chat itself (a group's description and admins, a person's bio); nil when this read
+    /// says nothing of it.
+    var profile: ChatProfile? = nil
     /// The app lists this chat as one of yours (Teams): it shows in the Chats tab even without messages, or with only
     /// old ones, as long as the app keeps listing it.
     var listed: Bool = false
@@ -579,6 +594,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var avatar: String? = nil
     /// A group's other members by name (you left out), as its app lists them; nil when it is not known.
     var members: [String]? = nil
+    /// What its app says about the chat itself (`ChatProfile`), as far as its bridges said it; nil when nothing.
+    var profile: ChatProfile? = nil
     /// When a bridge last listed this chat as one of yours (`BridgedChat.listed`): it stays while that is recent, even
     /// without messages or with only old ones.
     var listed: Date? = nil
@@ -637,7 +654,7 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
         return max(newest, newestReaction?.date ?? .distantPast)
     }
     /// The newest message from someone else: what "read" is about.
-    var newestIncoming: Date? { messages.last { !$0.isMine }?.date }
+    var newestIncoming: Date? { messages.last { $0.isIncoming }?.date }
 
     /// Read here, read in Nook only, or read in the app too: the same three states for every chat app.
     var readState: ChatReadState {
@@ -939,8 +956,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// older than `since`, and still unread. Oldest first, so the newest notice comes last.
     static func fresh(before: ChatInbox, after: ChatInbox, since: Date) -> [String] {
         after.threads.values.compactMap { thread -> (String, Date)? in
-            guard thread.unread > 0, let newest = thread.messages.last(where: { !$0.isMine }), newest.date >= since,
-                  before.threads[thread.id]?.messages.last(where: { !$0.isMine })?.id != newest.id else { return nil }
+            guard thread.unread > 0, let newest = thread.messages.last(where: \.isIncoming), newest.date >= since,
+                  before.threads[thread.id]?.messages.last(where: \.isIncoming)?.id != newest.id else { return nil }
             return (thread.id, newest.date)
         }
         .sorted { $0.1 < $1.1 }
@@ -1139,7 +1156,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 || (chat.hasOlder != nil && chat.hasOlder != known.hasOlder) || (chat.chatID != nil && chat.name != known.name)
                 || (chat.activity != nil && chat.activity != known.activity) || (chat.waitsInApp != nil && chat.waitsInApp != known.waitsInApp)
         } ?? false
-        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil || chat.listed || !chat.deleted.isEmpty
+        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil
+                                                     || (chat.profile != nil && chat.profile?.merged(over: known?.profile) != known?.profile) || chat.listed || !chat.deleted.isEmpty
                                                      || (chat.avatar != nil && chat.avatar != known?.avatar) || described))
                 || (known == nil && gone == nil && chat.listed)
         else { return false }
@@ -1216,14 +1234,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let byIDOnly = chat.chatID != nil
         for message in messages where !ids.contains(message.id) && (byIDOnly || !thread.messages.contains(where: {
             // Two photos sent in a row are two messages, even without a caption.
-            message.media == nil && $0.media == nil && message.poll == nil && !message.isDeleted && $0.isMine == message.isMine && $0.text == message.text
+            message.media == nil && $0.media == nil && message.poll == nil && !message.isNotice && !message.isDeleted
+                && $0.isMine == message.isMine && $0.text == message.text
                 && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow
         })) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
             thread.messages.insert(message.isDeleted ? message.withdrawn() : message, at: index)
             ids.insert(message.id)
             // History (fetched on opening the chat, or after the Mac slept) is never new, nor is a deleted message.
-            if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, !message.isDeleted, message.date > newestBefore,
+            if chat.unread == nil, !chat.history, let newestBefore, message.isIncoming, !message.isDeleted, message.date > newestBefore,
                message.date > answered ?? .distantPast {
                 thread.unread += 1
             }
@@ -1249,7 +1268,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             if let read {
                 // Read in Nook or answered: only what came in after that is new here, never more than the app itself
                 // counts. A chat Nook holds no messages of goes by when its app says it last had one.
-                let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
+                let fresh = thread.messages.filter { $0.isIncoming && $0.date > read }.count
                 thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
             } else if thread.markedUnread != nil {
                 // Marked unread by hand: only more from the app counts (new messages); its count going down is the app
@@ -1263,6 +1282,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
         thread.name = chat.name
         if let avatar = chat.avatar { thread.avatar = avatar }
         if let members = chat.members { thread.members = members }
+        if let profile = chat.profile {
+            let merged = profile.merged(over: thread.profile)
+            thread.profile = merged.isEmpty ? nil : merged
+        }
         if let account = chat.account { thread.account = account }
         if let kind = chat.kind { thread.kind = kind }
         if let handle = chat.handle { thread.handle = handle }
@@ -1341,7 +1364,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             return
         }
         guard var thread = threads[id] else { return }
-        let fresh = thread.messages.filter { !$0.isMine && $0.date > through }.count
+        let fresh = thread.messages.filter { $0.isIncoming && $0.date > through }.count
         thread.unread = fresh
         thread.readInNook = max(thread.readInNook ?? through, through)
         thread.readInApp = through
@@ -1663,6 +1686,37 @@ extension ChatInbox {
         }.joined(separator: "\n")
     }
 
+    /// What its app says about the chat itself, a line each, for Nook to go by: its people, description, admins, when it
+    /// was made and who may write; a person's bio, username, number, address and job title. Empty when nothing is known.
+    static func details(_ thread: InboxThread) -> String {
+        let profile = thread.profile ?? ChatProfile()
+        func person(_ name: String) -> String { name == ChatMembership.me ? "You" : name }
+        var lines: [String] = []
+        if let members = thread.members, !members.isEmpty { lines.append("Members (\(members.count)): " + members.joined(separator: ", ")) }
+        else if let count = profile.memberCount { lines.append("Members: \(count)") }
+        if let about = ChatProfile.text(profile.about) {
+            let by = profile.aboutBy.map { " (set by \(person($0)))" } ?? ""
+            lines.append((thread.isGroup ? "Description" : "About") + by + ": " + about)
+        }
+        if let admins = profile.admins, !admins.isEmpty { lines.append("Admins: " + admins.map(person).joined(separator: ", ")) }
+        if profile.created != nil || profile.createdBy != nil {
+            lines.append("Created" + (profile.createdBy.map { " by \(person($0))" } ?? "") + (profile.created.map { " on " + stamp($0) } ?? ""))
+        }
+        if profile.adminsOnly == true { lines.append("Only admins can send messages") }
+        if profile.locked == true { lines.append("Only admins can edit the group info") }
+        if let seconds = profile.disappearAfter, seconds > 0 { lines.append("Messages disappear after \(Int(seconds)) seconds") }
+        if profile.verified == true { lines.append("Verified") }
+        if profile.bot == true { lines.append("A bot") }
+        if profile.blocked == true { lines.append("You blocked them") }
+        for (label, value) in [("Their own name", profile.ownName), ("Username", profile.username), ("Phone", profile.phone),
+                               ("Email", profile.email), ("Job title", profile.title), ("Business", profile.business),
+                               ("Category", profile.category), ("Address", profile.address), ("Website", profile.website),
+                               ("Location", profile.location), ("Time zone", profile.timeZone), ("Link", profile.link)] {
+            if let value = ChatProfile.text(value) { lines.append("\(label): \(value)") }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// A chat's messages, oldest first: "[2026-10-20 12:04] Anna: See you at eight".
     static func transcript(_ thread: InboxThread, limit: Int = 30) -> String {
         thread.messages.suffix(limit).map { "[\(stamp($0.date))] " + line($0, in: thread) }.joined(separator: "\n")
@@ -1692,6 +1746,8 @@ extension ChatInbox {
 
     private static func line(_ message: InboxMessage, in thread: InboxThread) -> String {
         let text = message.summary.count > 300 ? String(message.summary.prefix(300)) + "…" : message.summary
+        // A change in who is in the group says who did it itself.
+        if message.isNotice { return text }
         let who = message.isMine ? "You" : (message.sender.isEmpty ? thread.name : message.sender)
         return "\(who): \(text)"
     }

@@ -1137,12 +1137,25 @@ final class WhatsAppLink: ObservableObject {
     @discardableResult
     func loadMembers(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
+        // A person's chat: what the gateway says of them (their "about" line, a business's details).
+        if isConnected, let provider, WAJID.kind(key) == .person,
+           membersLoaded[key].map({ Date().timeIntervalSince($0) > 600 }) ?? true {
+            membersLoaded[key] = Date()
+            guard let person = await provider.personInfo(key) else { return false }
+            return inbox.setPerson(person, chat: key)
+        }
         guard isConnected, let provider, WAJID.isGroup(key),
               membersLoaded[key].map({ Date().timeIntervalSince($0) > 600 }) ?? true else { return false }
         membersLoaded[key] = Date()
-        let members = WAMembers.others(await provider.groupMembers(key), me: me)
+        let info = await provider.groupInfo(key)
+        // Admins stay marked once you are left out of the list: you are named apart.
+        let members = WAMembers.others(info.members, me: me)
         guard !members.isEmpty else { return false }
-        return inbox.setMembers(members, chat: key)
+        var profile = info.profile
+        if profile != nil, info.members.contains(where: { member in member.admin && me.map(member.matches) == true }) {
+            profile?.youAreAdmin = true
+        }
+        return inbox.setMembers(members, profile: profile, chat: key)
     }
 
     // MARK: Files

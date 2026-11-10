@@ -248,8 +248,102 @@ func (in *intent) SendMessage(ctx context.Context, roomID id.RoomID, evtType eve
 }
 
 func (in *intent) SendState(ctx context.Context, roomID id.RoomID, evtType event.Type, stateKey string, content *event.Content, ts time.Time) (*mautrix.RespSendEvent, error) {
+	in.m.noteMembership(in.user, roomID, evtType, stateKey, content, ts)
+	in.m.noteRoomChange(in.user, roomID, evtType, content, ts)
 	in.m.applyState(roomID, evtType, stateKey, content)
 	return &mautrix.RespSendEvent{EventID: newEventID()}, nil
+}
+
+// membershipGrace is how long after a room was made here its people are still the ones it started with, not news.
+const membershipGrace = 2 * time.Minute
+
+// noteMembership keeps someone coming into a room or going out of it in its timeline, before the state changes: who
+// was added, removed, joined or left, as the chat shows it. Not the people a room starts with (its first sync here),
+// nor a change the bridge marks to be left out of the timeline.
+func (m *LocalMatrix) noteMembership(sender id.UserID, roomID id.RoomID, evtType event.Type, stateKey string, content *event.Content, ts time.Time) {
+	if evtType.Type != event.StateMember.Type || stateKey == "" {
+		return
+	}
+	evtType.Class = event.StateEventType
+	parsed(content, evtType)
+	member, ok := content.Parsed.(*event.MemberEventContent)
+	if !ok {
+		return
+	}
+	if exclude, _ := content.Raw["com.beeper.exclude_from_timeline"].(bool); exclude {
+		return
+	}
+	in := func(membership event.Membership) bool {
+		return membership == event.MembershipJoin || membership == event.MembershipInvite
+	}
+	user := id.UserID(stateKey)
+	now, before := in(member.Membership), in(m.store.Membership(roomID, user))
+	if now == before || (!now && member.Membership != event.MembershipLeave && member.Membership != event.MembershipBan) {
+		return
+	}
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	created := m.store.RoomCreated(roomID)
+	if created == 0 || ts.UnixMilli()-created < membershipGrace.Milliseconds() {
+		return
+	}
+	if sender == m.botMXID() {
+		// The bridge itself: the network did not say who did it.
+		sender = ""
+	}
+	membership := event.MembershipLeave
+	if now {
+		membership = event.MembershipJoin
+	}
+	m.store.AddMembership(roomID, sender, user, membership, ts)
+}
+
+// noteRoomChange keeps a new name, topic or picture of a room in its timeline, before the state changes, as the chat
+// shows it ("Anna changed the group name to …"). Not a room's first state, a change to the same, or one the bridge marks
+// to be left out of the timeline.
+func (m *LocalMatrix) noteRoomChange(sender id.UserID, roomID id.RoomID, evtType event.Type, content *event.Content, ts time.Time) {
+	var column string
+	switch evtType.Type {
+	case event.StateRoomName.Type:
+		column = "name"
+	case event.StateTopic.Type:
+		column = "topic"
+	case event.StateRoomAvatar.Type:
+		column = "avatar"
+	default:
+		return
+	}
+	evtType.Class = event.StateEventType
+	parsed(content, evtType)
+	if exclude, _ := content.Raw["com.beeper.exclude_from_timeline"].(bool); exclude {
+		return
+	}
+	var value string
+	switch c := content.Parsed.(type) {
+	case *event.RoomNameEventContent:
+		value = c.Name
+	case *event.TopicEventContent:
+		value = c.Topic
+	case *event.RoomAvatarEventContent:
+		value = string(c.URL)
+	default:
+		return
+	}
+	if value == m.store.RoomColumn(roomID, column) {
+		return
+	}
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	created := m.store.RoomCreated(roomID)
+	if created == 0 || ts.UnixMilli()-created < membershipGrace.Milliseconds() {
+		return
+	}
+	if sender == m.botMXID() {
+		sender = ""
+	}
+	m.store.AddRoomChange(roomID, sender, evtType.Type, value, ts)
 }
 
 // applyState keeps the room state Nook shows: the name, picture, topic, people and power levels.
@@ -398,8 +492,13 @@ func (in *intent) SetAvatarURL(ctx context.Context, avatarURL id.ContentURIStrin
 	return nil
 }
 
-func (in *intent) SetExtraProfileMeta(ctx context.Context, data any) error { return nil }
-func (in *intent) SetProfile(ctx context.Context, data any) error          { return nil }
+func (in *intent) SetExtraProfileMeta(ctx context.Context, data any) error {
+	if raw, err := json.Marshal(data); err == nil {
+		in.m.store.SetProfileExtra(in.user, string(raw))
+	}
+	return nil
+}
+func (in *intent) SetProfile(ctx context.Context, data any) error { return nil }
 
 func (in *intent) CreateRoom(ctx context.Context, req *mautrix.ReqCreateRoom) (id.RoomID, error) {
 	roomID := req.BeeperLocalRoomID

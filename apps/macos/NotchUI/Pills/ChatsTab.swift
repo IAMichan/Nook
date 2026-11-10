@@ -26,6 +26,8 @@ struct ChatsEntry: Identifiable, Equatable {
     var ticks: BubbleTicks? = nil
     /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
     var members: [String]? = nil
+    /// What its app says about the chat itself: a group's description and admins, a person's bio (`ChatInfoButton`).
+    var profile: ChatProfile? = nil
     /// The phone number behind a private chat, to find its photo in Contacts, when its app gives one. Nil for a group
     /// and for a chat matched by name.
     var handle: String? = nil
@@ -123,7 +125,7 @@ extension ChatsEntry {
         return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
                           last: last, read: thread.readState,
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
-                          members: thread.members, handle: thread.handle, avatar: thread.avatar,
+                          members: thread.members, profile: thread.profile, handle: thread.handle, avatar: thread.avatar,
                           account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
                           chatID: thread.chatID, kind: thread.kind)
     }
@@ -1561,6 +1563,9 @@ private struct ChatsHoverCard: View {
             if let members = entry.members, !members.isEmpty {
                 HoverCardRow(symbol: "person.2", text: members.joined(separator: ", "))
             }
+            if let about = ChatProfile.text(entry.profile?.about) {
+                HoverCardRow(symbol: "text.alignleft", text: about)
+            }
             if !entry.preview.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tr("chats.card.newest"))
@@ -2219,10 +2224,12 @@ private struct ChatsDetail: View, Equatable {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .lineLimit(1)
-        // A group whose app lists its people: how many, and a click lists them.
-        if let members = entry.members, !members.isEmpty {
+        // A group's people, or what a person's app says of them: how many, and a click shows the chat's info.
+        if ChatInfoButton.shows(members: entry.members, profile: entry.profile) {
             headerDot
-            ChatMembersButton(members: members)
+            ChatInfoButton(name: entry.name, members: entry.members ?? [], profile: entry.profile,
+                           isGroup: entry.kind == .group || (entry.members?.count ?? 0) > 1 || entry.profile?.admins != nil,
+                           appName: appName)
         }
         // Read but not new: where it stands, small, instead of a strip above the answer field.
         if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {

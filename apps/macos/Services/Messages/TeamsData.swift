@@ -17,6 +17,8 @@ enum TeamsData {
         var members: [String] = []
         /// Its newest message as the chat list shows it, so the chat has a line before its history is read.
         var preview: InboxMessage? = nil
+        /// What Teams says of the chat: when it was made, its owners, the other person's address, its link.
+        var profile: ChatProfile? = nil
     }
 
     /// A Teams account you signed in with. Its refresh token is in the Keychain under `refreshAccount`; the rest is not
@@ -134,6 +136,22 @@ enum TeamsData {
             var result = Chat(id: id, name: name, isGroup: kind != "oneOnOne", last: ChatJSON.date(preview?["createdDateTime"]),
                               readUntil: ChatJSON.date(viewpoint?["lastMessageReadDateTime"]), members: kind == "oneOnOne" ? [] : people)
             if let preview { result.preview = messages(["value": [preview]], chat: result, me: me).first }
+            var profile = ChatProfile(created: ChatJSON.date(chat["createdDateTime"]))
+            if kind == "oneOnOne" {
+                let other = members.first { me == nil || ($0["userId"] as? String) != me }
+                profile.email = ChatProfile.text(other?["email"] as? String)
+            } else {
+                // Owners of a group chat are its admins (`roles: ["owner"]`), you as yourself.
+                let owners = members.filter { ($0["roles"] as? [String] ?? []).contains("owner") }
+                if !members.isEmpty {
+                    profile.admins = owners.compactMap { member in
+                        if let me, member["userId"] as? String == me { return ChatMembership.me }
+                        return ChatProfile.text(member["displayName"] as? String) ?? ChatProfile.text(member["email"] as? String)
+                    }
+                }
+            }
+            profile.link = ChatProfile.text(chat["webUrl"] as? String)
+            result.profile = profile.isEmpty ? nil : profile
             return result
         }
     }
@@ -177,10 +195,32 @@ enum TeamsData {
         (json["@odata.nextLink"] as? String).flatMap(URL.init(string:))
     }
 
-    /// The messages of /me/chats/{id}/messages, oldest first. System notices (someone joined, a call ended) are left
-    /// out; a deleted message shows as deleted, an edited one says so, and a message with only a file shows its name.
+    /// The messages of /me/chats/{id}/messages, oldest first. Someone added, removed, joining or leaving shows as a
+    /// line in the chat (`membership`); other system notices (a call ended, a new topic) are left out. A deleted message
+    /// shows as deleted, an edited one says so, and a message with only a file shows its name.
     static func messages(_ json: [String: Any], chat: Chat, me: String?) -> [InboxMessage] {
-        let messages: [InboxMessage] = (json["value"] as? [[String: Any]] ?? []).compactMap { message in
+        let list = json["value"] as? [[String: Any]] ?? []
+        // Who is who by the names their messages carry: a notice often names people by their id only.
+        var names: [String: String] = [:]
+        for message in list {
+            let user = ((message["from"] as? [String: Any])?["user"] as? [String: Any]) ?? [:]
+            if let id = user["id"] as? String, let name = user["displayName"] as? String, !name.isEmpty { names[id] = name }
+        }
+        let messages: [InboxMessage] = list.compactMap { message in
+            if let id = message["id"] as? String, message["messageType"] as? String == "systemEventMessage",
+               let sent = ChatJSON.date(message["createdDateTime"]) {
+                let detail = message["eventDetail"] as? [String: Any] ?? [:]
+                if let change = membership(detail, names: names, me: me) {
+                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
+                    line.membership = change
+                    return line
+                }
+                if let change = groupChange(detail, names: names, me: me) {
+                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
+                    line.groupChange = change
+                    return line
+                }
+            }
             guard let id = message["id"] as? String, (message["messageType"] as? String ?? "message") == "message",
                   let sent = ChatJSON.date(message["createdDateTime"]) else { return nil }
             if message["deletedDateTime"] as? String != nil || message["isDeleted"] as? Bool == true {
@@ -215,6 +255,52 @@ enum TeamsData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// Who came into the chat or went, from a system notice's `eventDetail`: members added or removed by its `initiator`
+    /// (`membersAddedEventMessageDetail`, `membersDeletedEventMessageDetail`), or joining or leaving themselves
+    /// (`membersJoinedEventMessageDetail`, `membersLeftEventMessageDetail`). Names come from the notice, else from the
+    /// chat's messages (`names`, by id); nil for any other notice.
+    static func membership(_ detail: [String: Any], names: [String: String], me: String?) -> ChatMembership? {
+        let kind = ((detail["@odata.type"] as? String) ?? "").lowercased()
+        let change: ChatMembership.Change
+        if kind.hasSuffix("membersaddedeventmessagedetail") { change = .added }
+        else if kind.hasSuffix("membersdeletedeventmessagedetail") { change = .removed }
+        else if kind.hasSuffix("membersjoinedeventmessagedetail") { change = .joined }
+        else if kind.hasSuffix("memberslefteventmessagedetail") { change = .left }
+        else { return nil }
+        func name(_ person: [String: Any]?) -> String? {
+            guard let person else { return nil }
+            let id = person["id"] as? String
+            if let id, id == me { return ChatMembership.me }
+            if let shown = person["displayName"] as? String, !shown.isEmpty { return shown }
+            return id.flatMap { names[$0] }
+        }
+        let members = detail["members"] as? [[String: Any]] ?? []
+        guard !members.isEmpty else { return nil }
+        let initiator = (detail["initiator"] as? [String: Any])?["user"] as? [String: Any]
+        let people = members.map { name($0) ?? "" }
+        // Someone who added or removed only themselves joined or left, also when Teams does not name them.
+        if let id = initiator?["id"] as? String, members.compactMap({ $0["id"] as? String }) == [id] {
+            return ChatMembership(change == .removed || change == .left ? .left : .joined, people: people)
+        }
+        return ChatMembership(change, by: change == .added || change == .removed ? name(initiator) : nil, people: people)
+    }
+
+    /// The chat itself changed, from a system notice's `eventDetail`: a new name (`chatRenamedEventMessageDetail`,
+    /// `chatDisplayName`) or a pinned message (`messagePinnedEventMessageDetail`), by its `initiator`. Nil for any other.
+    static func groupChange(_ detail: [String: Any], names: [String: String], me: String?) -> ChatGroupChange? {
+        let kind = ((detail["@odata.type"] as? String) ?? "").lowercased()
+        let initiator = (detail["initiator"] as? [String: Any])?["user"] as? [String: Any]
+        let by: String? = initiator.flatMap { user in
+            if let id = user["id"] as? String, id == me { return ChatMembership.me }
+            return ChatProfile.text(user["displayName"] as? String) ?? (user["id"] as? String).flatMap { names[$0] }
+        }
+        if kind.hasSuffix("chatrenamedeventmessagedetail") {
+            return ChatGroupChange(.renamed, by: by, text: detail["chatDisplayName"] as? String)
+        }
+        if kind.hasSuffix("messagepinnedeventmessagedetail") { return ChatGroupChange(.pinned, by: by) }
+        return nil
     }
 
     /// The message an answer quotes, from Graph's `messageReference` attachment (its content a JSON text with the
