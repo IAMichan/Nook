@@ -832,7 +832,9 @@ enum BridgeRPC {
     }
 
     /// The answer to one message, or nil for a notification (no id), which gets none.
+    /// `offered`: the tools this caller may list and call; an assistant outside Nook gets fewer (`RemoteAccessLevel`).
     static func response(to message: [String: Any], instructions: String? = BridgeLaunch.instructions,
+                         offered: [BridgeTool] = BridgeTool.allCases,
                          call: (BridgeTool, [String: Any]) async -> ToolResult) async -> [String: Any]? {
         guard let id = message["id"], !(id is NSNull) else { return nil }
         let method = (message["method"] as? String) ?? ""
@@ -854,9 +856,9 @@ enum BridgeRPC {
         case "ping":
             return result([:])
         case "tools/list":
-            return result(["tools": BridgeTool.allCases.map(\.definition)])
+            return result(["tools": offered.map(\.definition)])
         case "tools/call":
-            guard let name = params["name"] as? String, let tool = BridgeTool.named(name) else {
+            guard let name = params["name"] as? String, let tool = BridgeTool.named(name), offered.contains(tool) else {
                 return failure(-32602, "Unknown tool: \((params["name"] as? String) ?? "")")
             }
             let arguments = (params["arguments"] as? [String: Any]) ?? [:]
