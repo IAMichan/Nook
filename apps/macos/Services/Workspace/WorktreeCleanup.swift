@@ -15,8 +15,8 @@ enum WorktreeCleanup {
 
     // MARK: Cleanup rules
 
-    /// When Nook removes a session's worktree by itself (Settings › Workspace). All off by default: a worktree stays until
-    /// you remove it, or a rule you switched on says it may go. The branch always stays, and a session whose worktree went
+    /// When Nook removes a session's worktree by itself (Settings › Workspace). These are the rules as such, all off;
+    /// `WorkspaceSettings` switches on "after a merge" and "a week after settling" by default. The branch always stays, and a session whose worktree went
     /// gets it back with its next message (`reopen`).
     struct Rules: Equatable, Sendable {
         /// Once the session's pull request is merged (and nothing was committed in the worktree since).
