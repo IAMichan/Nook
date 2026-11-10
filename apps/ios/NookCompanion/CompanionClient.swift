@@ -88,6 +88,9 @@ final class CompanionClient: ObservableObject {
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
+    /// Connected, and still catching up on what changed while the phone was away (after connecting, and after the app
+    /// comes back to the front), as t3code's "synchronizing" before "live". The header says so while it lasts.
+    @Published private(set) var synchronizing = false
     /// The name of a Mac that removed this iPhone (`CompanionResponse.revoked`), until the user pairs again or lets it go.
     @Published var revokedMac: String?
     /// The conversation a question that waited in the outbox started, by its request id, once the Mac took it.
@@ -397,7 +400,10 @@ final class CompanionClient: ObservableObject {
             replacing = true
             channel.close()
         case .probe:
-            Task { await probe(channel) }
+            Task {
+                await probe(channel)
+                await resynchronize()
+            }
         }
     }
 
@@ -553,7 +559,11 @@ final class CompanionClient: ObservableObject {
             apply(response, to: CompanionRequest(op: .list))
             phase = .connected
             channel.startHeartbeat()
-            Task { await afterConnecting() }
+            synchronizing = true
+            Task {
+                await afterConnecting()
+                synchronizing = false
+            }
             await watch(channel)
             if self.channel === channel { self.channel = nil }
             CompanionDiagnosticsLog.phone.record("closed", ["route": route.logKind, "up": String(Int(Date().timeIntervalSince(since))),
@@ -642,6 +652,20 @@ final class CompanionClient: ObservableObject {
         if update.revoked == true { return revoked() }
         apply(update, to: CompanionRequest(op: .list))
         Task { await LiveActivities.shared.reconcile(sessions) }
+    }
+
+    /// Back in front after a glance elsewhere, on a connection that still answers: what is open is asked again from where
+    /// the phone left it (the session's last entry, the open chat, the lists), as t3code resubscribes from its last
+    /// sequence on every wakeup, so nothing an update lost while the phone slept stays behind.
+    func resynchronize() async {
+        guard phase == .connected, channel != nil, !synchronizing else { return }
+        synchronizing = true
+        defer { synchronizing = false }
+        await perform(CompanionRequest.versioned(.list), quiet: true)
+        if let session = watchedSession { await watchSession(session) }
+        if let chat = watchedChat { await watchChat(chat) }
+        await refreshInbox()
+        if can(CompanionFeature.chat), allows(.nookChat) { await loadChats() }
     }
 
     /// A quick look whether the channel still answers; if not, it is replaced at once.
