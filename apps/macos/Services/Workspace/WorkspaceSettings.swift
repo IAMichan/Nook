@@ -64,6 +64,26 @@ final class WorkspaceSettings: ObservableObject {
     @Published var worktreeRoot: String {
         didSet { defaults.set(worktreeRoot, forKey: "ws.worktreeRoot") }
     }
+    /// New worktrees are cloned (APFS copy-on-write) from a cached checkout of the repository (`WorktreeCheckoutCache`).
+    /// Off by default; switching it off deletes the cache.
+    @Published var fastWorktrees: Bool {
+        didSet {
+            defaults.set(fastWorktrees, forKey: "ws.fastWorktrees")
+            if oldValue, !fastWorktrees { WorktreeCheckoutCache.clear() }
+        }
+    }
+    /// How new worktrees check out submodules, for every project that does not set its own.
+    @Published var worktreeSubmodules: SubmoduleMode {
+        didSet { defaults.set(worktreeSubmodules.rawValue, forKey: "ws.worktreeSubmodules") }
+    }
+    /// Fast-forward each project's default branch in its main checkout when it is clean (projects can override it).
+    @Published var autoPullDefaultBranch: Bool {
+        didSet { defaults.set(autoPullDefaultBranch, forKey: "ws.autoPullDefaultBranch") }
+    }
+    /// Clones go into `<host>/<owner>/<repo>` under the folder you clone into, like ghq lays them out.
+    @Published var cloneHostLayout: Bool {
+        didSet { defaults.set(cloneHostLayout, forKey: "ws.cloneHostLayout") }
+    }
     /// Prefix of the branches Nook creates ("nook" → "nook/fix-login-3fa2"). Read by `WorktreeNaming.branchPrefix`.
     @Published var branchPrefix: String {
         didSet { defaults.set(branchPrefix, forKey: WorktreeNaming.branchPrefixKey) }
@@ -235,6 +255,10 @@ final class WorkspaceSettings: ObservableObject {
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
         worktreeRoot = defaults.string(forKey: "ws.worktreeRoot").flatMap { $0.isEmpty ? nil : $0 } ?? Self.standardWorktreeRoot
         branchPrefix = defaults.string(forKey: WorktreeNaming.branchPrefixKey) ?? WorktreeNaming.defaultBranchPrefix
+        fastWorktrees = defaults.bool(forKey: "ws.fastWorktrees")
+        worktreeSubmodules = SubmoduleMode(rawValue: defaults.string(forKey: "ws.worktreeSubmodules") ?? "") ?? .recursive
+        autoPullDefaultBranch = defaults.bool(forKey: "ws.autoPullDefaultBranch")
+        cloneHostLayout = defaults.bool(forKey: "ws.cloneHostLayout")
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
@@ -378,7 +402,7 @@ final class WorkspaceSettings: ObservableObject {
         SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
                         isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix),
                         titleInstructions: titleInstructions, agentInstructions: agentInstructions,
-                        browserSignIns: browserSignInPolicy)
+                        browserSignIns: browserSignInPolicy, submodules: worktreeSubmodules, autoPull: autoPullDefaultBranch)
     }
 
     /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.
@@ -407,6 +431,36 @@ final class WorkspaceSettings: ObservableObject {
     }
 
     func resetOverride(_ key: ProjectSettingKey, for project: String) { projectOverrides.reset(key, for: project) }
+
+    /// The agents switched off for the project this folder belongs to (raw values).
+    func agentsOff(for folder: String?) -> Set<String> {
+        ProjectSettings.agentsOff(overrides: projectOverrides, folder: folder)
+    }
+
+    /// Whether this agent may start sessions in the folder's project.
+    func isAgentOn(_ provider: RunProvider, for folder: String?) -> Bool { !agentsOff(for: folder).contains(provider.rawValue) }
+
+    func setAgent(_ provider: RunProvider, on: Bool, for project: String) {
+        let off = ProjectSettings.agentsOff(projectOverrides.values(for: project))
+        if let value = ProjectSettings.togglingAgent(provider.rawValue, on: on, in: off) {
+            projectOverrides.set(.agentsOff, value, for: project)
+        } else {
+            projectOverrides.reset(.agentsOff, for: project)
+        }
+    }
+
+    func isArchivedProject(_ path: String) -> Bool { ProjectSettings.isArchived(path, overrides: projectOverrides) }
+
+    /// Archives a project out of the pickers, or brings it back. Its sessions, settings and files stay.
+    func setArchived(_ archived: Bool, project path: String) {
+        if archived { projectOverrides.set(.archived, .string("on"), for: path) } else { projectOverrides.reset(.archived, for: path) }
+    }
+
+    func projectIcon(_ path: String) -> ProjectIcon? { ProjectSettings.icon(path, overrides: projectOverrides) }
+
+    func setProjectIcon(_ icon: ProjectIcon?, project path: String) {
+        if let icon { projectOverrides.set(.icon, .string(icon.stored), for: path) } else { projectOverrides.reset(.icon, for: path) }
+    }
 
     // MARK: Apps
 

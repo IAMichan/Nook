@@ -209,6 +209,7 @@ targets:
       - path: Core/I18n+DiffReview.swift
       - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
+      - path: Core/I18n+SourceControl.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
@@ -493,6 +494,10 @@ targets:
       - path: Services/Workspace/ConnectorSignIn.swift
       - path: Services/Workspace/AgentTimeline.swift
       - path: Services/Workspace/GitService.swift
+      - path: Services/Workspace/GitIndexStat.swift
+      - path: Services/Workspace/WorktreeCheckoutCache.swift
+      - path: Services/Workspace/SourceControl.swift
+      - path: Services/Workspace/GitService+SourceControl.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
