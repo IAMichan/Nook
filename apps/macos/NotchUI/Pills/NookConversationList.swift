@@ -191,7 +191,7 @@ struct NookList: View {
                         .fixedSize()
                     NookDivider()
                     // The shelf opens upwards: its chevron points up while closed, down while open.
-                    Image(systemName: "chevron.down")
+                    Image(icon: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(showArchived ? 0 : 180))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -272,7 +272,7 @@ private struct NookRenameField: View {
             .focused($focused)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 40)
-            .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel)
             .onAppear { focused = true }
             .onSubmit(commit)
             .onChange(of: focused) { _, now in
@@ -338,7 +338,7 @@ private struct NookRow: View, Equatable {
                     .foregroundStyle(receded || conversation.archived ? NookTheme.textSecondary : NookTheme.paper)
                     .lineLimit(1)
                 if conversation.pinned {
-                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering ? 0 : 1)
@@ -351,7 +351,7 @@ private struct NookRow: View, Equatable {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
+        .roundedBackground(background, radius: NookTheme.Radius.card)
         .contentShape(Rectangle())
     }
 

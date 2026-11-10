@@ -430,7 +430,7 @@ struct AgentInboxList: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: NookTheme.Spacing.xl)
                 } else {
-                    Image(systemName: open ? "folder" : "folder.fill")
+                    Image(icon: open ? "folder" : "folder.fill")
                         .font(NookTheme.font(13, .medium))
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: NookTheme.Spacing.xl)
@@ -455,7 +455,7 @@ struct AgentInboxList: View {
                 if canStart {
                     Color.clear.frame(width: Self.newSessionWidth - NookTheme.Spacing.md, height: 1)
                 }
-                Image(systemName: "chevron.down")
+                Image(icon: "chevron.down")
                     .font(NookTheme.font(10, .semibold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
@@ -463,8 +463,7 @@ struct AgentInboxList: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovered ? NookTheme.rowHover : .clear))
+            .roundedBackground(hovered ? NookTheme.rowHover : .clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -563,7 +562,7 @@ struct AgentInboxList: View {
             .sweepRow(SessionSweep.rows, id: item.id, group: section.kind.rawValue)
             .overlay {
                 if sweep.swept.contains(item.id) {
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    NookTheme.shape(NookTheme.Radius.card)
                         .fill(NookTheme.iris.opacity(0.14))
                         .allowsHitTesting(false)
                 }
@@ -585,7 +584,7 @@ struct AgentInboxList: View {
             }
             .overlay {
                 if dropTarget == item.id, runID(item) != nil {
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    NookTheme.shape(NookTheme.Radius.card)
                         .stroke(NookTheme.paper.opacity(0.5), lineWidth: 1.5)
                         .allowsHitTesting(false)
                 }
@@ -841,7 +840,7 @@ struct AgentInboxList: View {
                     Button { store.undo() } label: {
                         ViewThatFits(in: .horizontal) {
                             Text(tr("inbox.undo")).lineLimit(1).fixedSize()
-                            Image(systemName: "arrow.uturn.backward")
+                            Image(icon: "arrow.uturn.backward")
                         }
                     }
                         .buttonStyle(.plain)
@@ -855,7 +854,7 @@ struct AgentInboxList: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .frame(height: 32)
                 // Lifted a step above the sidebar it floats over, as a toast is, so the rows under it don't read through.
-                .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+                .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
                 .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
                 .transition(.opacity)
             }
@@ -950,8 +949,8 @@ private struct InboxRenameField: View {
             .focusOnAppear($focused)
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).stroke(NookTheme.fieldStroke))
+            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
+            .roundedStroke(NookTheme.fieldStroke, radius: NookTheme.Radius.control)
             .onAppear { draft = name }
             .onSubmit {
                 let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -968,7 +967,7 @@ private extension View {
     func nested(_ depth: Int) -> some View {
         if depth > 0 {
             HStack(spacing: 0) {
-                Image(systemName: "arrow.turn.down.right")
+                Image(icon: "arrow.turn.down.right")
                     .font(NookTheme.font(9.5, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(width: NookTheme.Spacing.xl)

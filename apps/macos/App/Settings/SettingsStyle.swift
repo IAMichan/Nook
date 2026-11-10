@@ -121,10 +121,10 @@ struct SettingsTile: View {
 
     /// `colors` is kept for the callers that still pass one: every tile has the same quiet look now.
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        NookTheme.shape(size * 0.27)
             .fill(NookTheme.smoke)
             .overlay(
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(size * 0.48, .medium))
                     .foregroundStyle(NookTheme.textStrong)
             )
@@ -156,7 +156,7 @@ struct ServiceTile: View {
     }
 
     private var tile: some View {
-        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        NookTheme.shape(size * 0.27)
             .fill(NookTheme.smoke)
             .overlay(
                 SiteIcon(domain: domain, fallback: fallback, tint: tint, size: size * 0.62, source: source)
@@ -227,7 +227,7 @@ struct SetupStep<Content: View>: View {
             ZStack {
                 Circle().fill(done ? ConnectionHealth.working.color : NookTheme.iris)
                 if done {
-                    Image(systemName: "checkmark").font(NookTheme.font(11, .bold))
+                    Image(icon: "checkmark").font(NookTheme.font(11, .bold))
                 } else {
                     Text("\(number)").font(NookTheme.rounded(12, .bold))
                 }
@@ -281,13 +281,13 @@ struct SettingsPickRow: View {
                 }
                 Spacer(minLength: 0)
                 if selected {
-                    Image(systemName: "checkmark").foregroundStyle(NookTheme.mint)
+                    Image(icon: "checkmark").foregroundStyle(NookTheme.mint)
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5))))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5)),
+                               radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -321,8 +321,7 @@ struct SheetPart<Content: View>: View {
             }
             .padding(embedded ? 0 : NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(embedded ? Color.clear : NookTheme.surface))
+            .roundedBackground(embedded ? Color.clear : NookTheme.surface, radius: NookTheme.Radius.card)
         }
     }
 }

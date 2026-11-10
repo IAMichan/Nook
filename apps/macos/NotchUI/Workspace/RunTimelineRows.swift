@@ -312,7 +312,7 @@ struct SharedFileTile: View {
                     NookDivider()
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
+                    Image(icon: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
                         .font(NookTheme.font(10.5, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(name)
@@ -326,11 +326,8 @@ struct SharedFileTile: View {
                 .frame(maxWidth: thumbnail == nil ? 220 : 140, alignment: .leading)
             }
             .background(NookTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .strokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke)
-            )
+            .roundedClip(NookTheme.Radius.card)
+            .roundedStrokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke, radius: NookTheme.Radius.card)
             .fixedSize()
             .contentShape(Rectangle())
         }
@@ -402,7 +399,7 @@ struct TimelineProblemCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(tint)
                 .frame(width: TranscriptStyle.workIcon)
@@ -490,7 +487,7 @@ struct CodeBlock: View {
                 Button {
                     Pasteboard.copy(AnsiText.hasCodes(text) ? AnsiText.plain(text) : text)
                 } label: {
-                    Image(systemName: "doc.on.doc").font(NookTheme.font(10))
+                    Image(icon: "doc.on.doc").font(NookTheme.font(10))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(WS.tertiary)
@@ -549,7 +546,7 @@ struct ApprovalRow: View {
         }
         .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .onTapGesture { toggle() }
     }
 

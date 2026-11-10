@@ -334,11 +334,14 @@ extension WorkspaceBridge {
     // MARK: Browser interaction
 
     private static let nothingOpen = "Nothing is open in Nook's browser. Open a page with browser_open first."
+    /// The answer to a step after the user pressed Stop on the glowing page (`BrowserTakeoverOverlay`).
+    static let stoppedByUser = "The user stopped you from driving Nook's browser (the Stop button on the page). Do not open, click or type there again; tell the user what you still wanted to do in the browser. They can allow it again on the page."
 
     func browserSnapshot(_ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
         // Looking must not start the browser; a page put away out of sight comes back first.
         guard let browser = SessionBrowsers.shared.existing(for: caller), browser.pageURL != nil else { return .error(Self.nothingOpen) }
         let limit = min(400, max(1, BridgeArgs.int(arguments["limit"]) ?? 150))
+        browser.agentLooks(caller.agent)
         let object = BridgeBrowserScript.result(try await browser.evaluate(BridgeBrowserScript.snapshot(limit: limit)))
         let lines = (object["lines"] as? [String]) ?? []
         var text = "# \((object["title"] as? String) ?? "")\nURL: \((object["url"] as? String) ?? "")\n\n"
@@ -349,6 +352,10 @@ extension WorkspaceBridge {
 
     func browserInteract(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async throws -> BridgeRPC.ToolResult {
         guard let browser = SessionBrowsers.shared.existing(for: caller), let page = browser.pageURL else { return .error(Self.nothingOpen) }
+        guard !browser.agentsStopped else {
+            audit(tool, caller, page.host ?? page.absoluteString, "gestopt door gebruiker")
+            return .error(Self.stoppedByUser)
+        }
         let target: BridgeBrowserScript.Target
         switch BridgeBrowserScript.target(arguments) {
         case .failure(let error): return .error(error.message)
@@ -376,6 +383,8 @@ extension WorkspaceBridge {
         case .allow:
             break
         }
+        // Stopped while the approval waited: the step does not happen.
+        guard browser.agentDrives(caller.agent) else { return .error(Self.stoppedByUser) }
         let script = tool == .browserClick ? BridgeBrowserScript.click(target)
             : BridgeBrowserScript.type(target, value: value, append: BridgeArgs.bool(arguments["append"]) ?? false,
                                        submit: BridgeArgs.bool(arguments["submit"]) ?? false)
@@ -399,6 +408,8 @@ extension WorkspaceBridge {
         let selector = BridgeArgs.string(arguments["selector"])
         guard text != nil || selector != nil else { return .error("Give the text or selector to wait for.") }
         guard let browser = SessionBrowsers.shared.existing(for: caller), browser.pageURL != nil else { return .error(Self.nothingOpen) }
+        guard !browser.agentsStopped else { return .error(Self.stoppedByUser) }
+        browser.agentLooks(caller.agent)
         let gone = BridgeArgs.bool(arguments["gone"]) ?? false
         let timeout = min(30, max(1, BridgeArgs.int(arguments["timeout_seconds"]) ?? 10))
         let script = BridgeBrowserScript.condition(text: text, selector: selector, gone: gone)
@@ -413,6 +424,7 @@ extension WorkspaceBridge {
                     return BridgeRPC.ToolResult(text: (gone ? "Gone: " : "Found: ") + what + " on \(browser.webView.url?.absoluteString ?? "").")
                 }
             }
+            if browser.agentsStopped { return .error(Self.stoppedByUser) }
             if Date() >= deadline || Task.isCancelled {
                 return .error("Waited \(timeout) s; \(what) \(gone ? "is still there" : "did not appear"). Check the page with browser_snapshot or browser_screenshot.")
             }

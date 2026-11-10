@@ -14,7 +14,7 @@ struct ConnectorSignInBanner: View {
             let waiting = shown.first(where: \.waiting)
             AdaptiveActionRow {
                 HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "powerplug")
+                    Image(icon: "powerplug")
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.amber)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -41,7 +41,7 @@ struct ConnectorSignInBanner: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
         }
     }
 }
@@ -64,7 +64,7 @@ struct ConnectorSignInMenu: View {
         } label: {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Text(tr("ws.connector.signIn"))
-                Image(systemName: "chevron.down").font(NookTheme.font(9, .semibold))
+                Image(icon: "chevron.down").font(NookTheme.font(9, .semibold))
             }
             .font(NookTheme.TextStyle.strong)
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)

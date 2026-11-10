@@ -10,7 +10,7 @@ struct MusicDock: View {
     static let barHeight: CGFloat = 64
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.composer)
         MusicBar(info: info, service: service, onExpand: onOpen)
             .frame(maxWidth: .infinity)
             .frame(height: Self.barHeight)
@@ -58,8 +58,8 @@ private struct MusicBar: View {
                 }
                 .padding(NookTheme.Spacing.xs)
                 .padding(.trailing, NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                    .fill(NookTheme.rowFill(selected: false, hovering: hoveringTrack, rest: .clear)))
+                .roundedBackground(NookTheme.rowFill(selected: false, hovering: hoveringTrack, rest: .clear),
+                                   radius: NookTheme.Radius.panel)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -103,7 +103,7 @@ struct MusicShowAllButton: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Text(tr("music.showAll")).font(NookTheme.TextStyle.label)
-                Image(systemName: "chevron.right").font(NookTheme.font(9, .bold))
+                Image(icon: "chevron.right").font(NookTheme.font(9, .bold))
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .padding(.horizontal, NookTheme.Spacing.md)

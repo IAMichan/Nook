@@ -36,7 +36,7 @@ private struct SettingsAnchor: ViewModifier {
     func body(content: Content) -> some View {
         content
             // A wash just around the row's own text, so lighting it never moves anything.
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .background(NookTheme.shape(NookTheme.Radius.chip)
                 .fill(NookTheme.iris.opacity(lit ? 0.22 : 0))
                 .padding(.horizontal, -NookTheme.Spacing.sm)
                 .padding(.vertical, -NookTheme.Spacing.xs))
@@ -112,7 +112,7 @@ struct SettingsFold<Content: View>: View {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))

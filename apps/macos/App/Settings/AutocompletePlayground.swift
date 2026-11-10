@@ -29,8 +29,8 @@ struct AutocompletePlaygroundSection: View {
                                 .allowsHitTesting(false)
                         }
                     }
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.well))
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control).strokeBorder(.quaternary))
+                    .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
+                    .roundedStrokeBorder(.quaternary, radius: NookTheme.Radius.control)
                 HStack(spacing: NookTheme.Spacing.md) {
                     if playground.thinking {
                         ProgressView().controlSize(.small)

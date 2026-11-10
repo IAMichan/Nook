@@ -216,7 +216,7 @@ struct HoverCardGitAction: View {
         HoverCardButton(help: primary ? tr("ws.quick.help") : tr("ws.quick.newBranchHint"), closes: false,
                         action: { start(action) }) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: Self.symbol(action))
+                Image(icon: Self.symbol(action))
                     .font(NookTheme.font(11, .medium))
                     .foregroundStyle(primary ? NookTheme.iris : NookTheme.textTertiary)
                     .frame(width: 16)

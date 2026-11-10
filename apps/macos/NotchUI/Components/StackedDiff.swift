@@ -337,7 +337,7 @@ private struct StackedDiffHeader: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "chevron.right")
+            Image(icon: "chevron.right")
                 .font(NookTheme.font(10, .bold))
                 .foregroundStyle(file.tint)
                 .rotationEffect(.degrees(open ? 90 : 0))
@@ -517,7 +517,7 @@ private struct StackedDiffTreeRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 if row.isDirectory {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(8, .bold))
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .frame(width: 10)
@@ -535,8 +535,7 @@ private struct StackedDiffTreeRow: View {
             .padding(.leading, NookTheme.Spacing.xs + CGFloat(row.depth) * 12)
             .padding(.trailing, NookTheme.Spacing.xs)
             .frame(height: 24)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
+            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

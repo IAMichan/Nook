@@ -94,7 +94,7 @@ private struct DiffFileCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(Theme.font(10, .bold))
                         .foregroundStyle(Theme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))
@@ -132,8 +132,8 @@ private struct DiffFileCard: View {
             }
         }
         // A changed file as the Mac's diff shows it: on `surface`, framed by `line2`.
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.card, style: .continuous)
+        .roundedClip(Theme.Radius.card)
+        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.card)
     }
 }
 

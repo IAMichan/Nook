@@ -69,7 +69,7 @@ struct PullRequestConversationFilter: View {
     var body: some View {
         ComposerDropdown(width: 220) {
             HStack(spacing: NookTheme.Spacing.xxs) {
-                Image(systemName: "line.3.horizontal.decrease")
+                Image(icon: "line.3.horizontal.decrease")
                 Text(hidden > 0 ? tr("agents.pr.comments.hidden", hidden) : tr("agents.pr.comments.filter"))
             }
             .font(NookTheme.TextStyle.caption)
@@ -167,7 +167,7 @@ struct PullRequestInlineEditor: View {
                 .font(NookTheme.TextStyle.body)
                 .lineLimit(2...12)
                 .padding(NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
                 .onExitCommand(perform: close)
             HStack(spacing: NookTheme.Spacing.sm) {
                 Spacer(minLength: 0)
@@ -389,7 +389,7 @@ private struct PullRequestCommentLocation: View {
         if case .lineComment(let path, let line) = event.kind {
             let label = path + (line.map { ":\($0)" } ?? "")
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "doc.text").font(NookTheme.font(10))
+                Image(icon: "doc.text").font(NookTheme.font(10))
                 Text(label).font(NookTheme.mono(11)).lineLimit(1).truncationMode(.head).help(label)
                 if event.outdated {
                     Text(tr("agents.pr.thread.outdated"))
@@ -425,7 +425,7 @@ private struct FoldedConversation: View {
                 Button(action: toggle) {
                     HStack(spacing: NookTheme.Spacing.xxs) {
                         Text(tr(item.root.resolved ? "agents.pr.thread.resolved" : "agents.pr.thread.dismissed"))
-                        Image(systemName: "chevron.down")
+                        Image(icon: "chevron.down")
                             .font(NookTheme.font(8.5, .bold))
                             .rotationEffect(.degrees(open ? 180 : 0))
                     }
@@ -515,7 +515,7 @@ struct PullRequestReactionPicker: View {
 
     var body: some View {
         ComposerDropdown(width: 196) {
-            Image(systemName: "face.smiling")
+            Image(icon: "face.smiling")
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 20, height: 20)

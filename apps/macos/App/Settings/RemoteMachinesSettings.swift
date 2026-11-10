@@ -66,7 +66,7 @@ struct RemoteMachinesSection: View {
                                   machines = RemoteMachines.load()
                               },
                               startsOpen: askPassword.contains(machine.id)) {
-                    Image(systemName: "server.rack")
+                    Image(icon: "server.rack")
                         .font(NookTheme.font(16))
                         .foregroundStyle(NookTheme.textSecondary)
                 } menu: {

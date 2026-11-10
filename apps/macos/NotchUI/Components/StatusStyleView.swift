@@ -42,7 +42,7 @@ struct AgentStatusBadge: View {
                 if AgentStatusStyle.pulses(state) {
                     SteppedPulseDot(color: tint, size: 6)
                 } else {
-                    Image(systemName: state.symbol)
+                    Image(icon: state.symbol)
                 }
             }
             .foregroundStyle(tint)

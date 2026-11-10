@@ -560,7 +560,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             }
             .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.iris.opacity(0.1)))
+            .roundedBackground(NookTheme.iris.opacity(0.1), radius: NookTheme.Radius.card)
         case .failed(let message):
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(message)

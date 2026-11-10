@@ -166,7 +166,7 @@ extension SettingsView {
                         HStack(spacing: NookTheme.Spacing.sm) {
                             Text(AppModel.title(of: recommendation)).fontWeight(index == 0 ? .semibold : .regular)
                             if index == 0, recommendation.choice != .unavailable {
-                                Image(systemName: "star.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                                Image(icon: "star.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                             }
                         }
                         Text(recommendation.reason).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
@@ -621,7 +621,7 @@ private struct ModelLogo: View {
             if let logo = BrandLogo.forName(name) {
                 BrandMark(logo: logo, size: 18)
             } else {
-                Image(systemName: "cpu").font(NookTheme.font(14)).foregroundStyle(NookTheme.textSecondary)
+                Image(icon: "cpu").font(NookTheme.font(14)).foregroundStyle(NookTheme.textSecondary)
             }
         }
         .frame(width: 22)
@@ -631,7 +631,7 @@ private struct ModelLogo: View {
 /// A small crossed-out eye next to a model that cannot read pictures; the tooltip explains it.
 struct NoImagesBadge: View {
     var body: some View {
-        Image(systemName: "eye.slash")
+        Image(icon: "eye.slash")
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textSecondary)
             .help(tr("brain.noImages.help"))

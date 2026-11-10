@@ -131,7 +131,7 @@ struct ChatDayDivider: View {
             .foregroundStyle(NookTheme.textStrong)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
+            .roundedBackground(NookTheme.chatTheirs, radius: NookTheme.Radius.control)
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.xl)
             .padding(.bottom, NookTheme.Spacing.md)
@@ -174,7 +174,7 @@ struct ChatQuote: View {
             Capsule().fill(tint).frame(width: 3).padding(.vertical, NookTheme.Spacing.xs).padding(.leading, NookTheme.Spacing.xs)
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.paper.opacity(0.05)))
+        .roundedBackground(NookTheme.paper.opacity(0.05), radius: NookTheme.Radius.chip)
         .accessibilityElement(children: .combine)
     }
 }
@@ -217,7 +217,7 @@ struct MessageTicksMark: View {
         Group {
             switch ticks {
             case .pending:
-                Image(systemName: "clock").font(NookTheme.font(10.5, .semibold))
+                Image(icon: "clock").font(NookTheme.font(10.5, .semibold))
             case .sent:
                 check
             case .delivered, .read:
@@ -227,7 +227,7 @@ struct MessageTicksMark: View {
                     check.padding(.leading, 5)
                 }
             case .failed:
-                Image(systemName: "exclamationmark.circle.fill").font(NookTheme.font(11.5, .semibold))
+                Image(icon: "exclamationmark.circle.fill").font(NookTheme.font(11.5, .semibold))
             }
         }
         .foregroundStyle(color)
@@ -237,7 +237,7 @@ struct MessageTicksMark: View {
     }
 
     private var check: some View {
-        Image(systemName: "checkmark").font(NookTheme.font(10.5, .bold))
+        Image(icon: "checkmark").font(NookTheme.font(10.5, .bold))
     }
 
     private var color: Color {

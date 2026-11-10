@@ -43,7 +43,7 @@ struct NookTabBar<Value: Hashable>: View {
                     onSelect(item.value)
                 } label: {
                     HStack(spacing: 5) {
-                        if let symbol = item.symbol { Image(systemName: symbol).font(NookTheme.font(11, .medium)) }
+                        if let symbol = item.symbol { Image(icon: symbol).font(NookTheme.font(11, .medium)) }
                         Text(item.title).lineLimit(1)
                         if item.count > 0 {
                             NookCountBadge(count: item.count)
@@ -82,7 +82,7 @@ struct NookTabBar<Value: Hashable>: View {
                 .overlay(alignment: .trailing) {
                     if let onClose, item.value == selected || hovered == item.value {
                         Button { onClose(item.value) } label: {
-                            Image(systemName: "xmark")
+                            Image(icon: "xmark")
                                 .font(NookTheme.font(8, .bold))
                                 .foregroundStyle(NookTheme.textSecondary)
                                 // A bigger target than the glyph, centered where the glyph is.
@@ -103,10 +103,9 @@ struct NookTabBar<Value: Hashable>: View {
         .padding(segmented ? NookTheme.Spacing.xxs : 0)
         .background {
             if segmented {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.control)
                     .fill(NookTheme.graphite)
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                        .stroke(NookTheme.line2, lineWidth: 1))
+                    .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.control)
             }
         }
         .animation(NookTheme.hover, value: hovered)
@@ -114,7 +113,7 @@ struct NookTabBar<Value: Hashable>: View {
     }
 
     private var shape: AnyShape {
-        segmented ? AnyShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)) : AnyShape(Capsule())
+        segmented ? AnyShape(NookTheme.shape(NookTheme.Radius.chip)) : AnyShape(Capsule())
     }
 
     /// The selected tab's title: dark on a light accent, as `onIris` says.

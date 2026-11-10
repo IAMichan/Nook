@@ -297,7 +297,7 @@ struct AgentRunPanel: View {
                 // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
                 // whenever the running session redrew the header.
                 ComposerDropdown(width: 248) {
-                    Image(systemName: "chevron.down")
+                    Image(icon: "chevron.down")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 20, height: 20)
@@ -833,7 +833,7 @@ struct AgentRunPanel: View {
                                         if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
-                                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                                    .roundedBackground(NookTheme.iris.opacity(current == event.id ? 0.16 : 0), radius: NookTheme.Radius.control)
                                 )
                             }
                             // While the agent writes, only the block it writes into is drawn again.
@@ -1161,7 +1161,7 @@ struct AgentRunPanel: View {
     private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
         AdaptiveActionRow(spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
+                Image(icon: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
                     .foregroundStyle(run.status.color)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
@@ -1197,7 +1197,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
     }
 
     @ViewBuilder
@@ -1293,7 +1293,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     /// "Edit from here": go back to before the message, keeping the files as they are or putting them back too (only
@@ -1320,7 +1320,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     private func editFromHere(_ target: RunEvent, revertingFiles: Bool) {
@@ -1433,7 +1433,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Composer
@@ -1692,7 +1692,7 @@ struct AgentRunPanel: View {
                 withAnimation(NookTheme.reveal) { showsOlderBranches.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "chevron.up")
+                    Image(icon: "chevron.up")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(showsOlderBranches ? 180 : 0))
                     Text(showsOlderBranches ? tr("ws.branches.hideOlder")
@@ -2036,7 +2036,15 @@ final class RunPullRequestLinks {
 
     func url(_ id: UUID, events: [RunEvent]) -> URL? {
         if let hit = memo[id], hit.count == events.count, hit.last == events.last?.id { return hit.url }
-        let url = Self.last(in: events)
+        let url: URL?
+        if let hit = memo[id], hit.count > 0, hit.count < events.count, events[hit.count - 1].id == hit.last {
+            // Events came after the ones read: only those (and the last one read, which may have grown while it streamed)
+            // can hold a newer link. Reading the whole session again on every event of a long run cost the inbox list
+            // a scan of thousands of events per update.
+            url = Self.last(in: Array(events[(hit.count - 1)...])) ?? hit.url
+        } else {
+            url = Self.last(in: events)
+        }
         memo[id] = (events.count, events.last?.id, url)
         return url
     }

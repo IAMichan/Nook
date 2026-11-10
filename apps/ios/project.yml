@@ -54,6 +54,13 @@ targets:
       - path: ../macos/NotchUI/Theme/NookPalette.swift
         group: Shared from the Mac
         createIntermediateGroups: false
+      # The icons: Lucide as custom symbols, and the table that names them (`Image(icon:)`).
+      - path: ../macos/NotchUI/Theme/NookIcon.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      - path: ../macos/Resources/Lucide.xcassets
+        group: Shared from the Mac
+        createIntermediateGroups: false
       # The components both apps share: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
       # messages and the time under them.
       - path: ../macos/NotchUI/Shared

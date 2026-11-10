@@ -14,7 +14,7 @@ struct SideChatStrip: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     private func row(_ chat: WorkspaceRun) -> some View {
@@ -26,7 +26,7 @@ struct SideChatStrip: View {
                     if chat.status.isActive {
                         ProgressView().controlSize(.mini).frame(width: 12)
                     } else {
-                        Image(systemName: "bubble.left.and.bubble.right").font(NookTheme.font(11, .semibold))
+                        Image(icon: "bubble.left.and.bubble.right").font(NookTheme.font(11, .semibold))
                     }
                     Text(tr("ws.side.strip")).foregroundStyle(NookTheme.textTertiary)
                     Text(chat.task.isEmpty ? chat.title : chat.task)

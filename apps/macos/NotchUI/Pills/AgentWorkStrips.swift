@@ -14,7 +14,7 @@ struct GoalStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "scope").font(NookTheme.font(11, .semibold))
+                Image(icon: "scope").font(NookTheme.font(11, .semibold))
                 Text(tr("ws.goal.title")).foregroundStyle(NookTheme.textTertiary)
                 Text(goal.objective)
                     .foregroundStyle(NookTheme.paper.opacity(0.85))
@@ -52,7 +52,7 @@ struct FreshConversationStrip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "eraser").font(NookTheme.font(11, .semibold))
+            Image(icon: "eraser").font(NookTheme.font(11, .semibold))
             VStack(alignment: .leading, spacing: 1) {
                 Text(tr("ws.fresh.title")).foregroundStyle(NookTheme.paper.opacity(0.85))
                 Text(tr("ws.fresh.detail")).foregroundStyle(NookTheme.textTertiary)
@@ -79,7 +79,7 @@ struct TasksStrip: View {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "checklist").font(NookTheme.font(11, .semibold))
+                    Image(icon: "checklist").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.tasks.title")).foregroundStyle(NookTheme.textTertiary)
                     Text(progress.current)
                         .foregroundStyle(NookTheme.paper.opacity(0.85))
@@ -90,7 +90,7 @@ struct TasksStrip: View {
                         .font(NookTheme.mono(11, .medium))
                         .foregroundStyle(NookTheme.textSecondary)
                     if steps.count > 1 && steps.count <= 10 { segments }
-                    Image(systemName: "chevron.up")
+                    Image(icon: "chevron.up")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(open ? 180 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -105,7 +105,7 @@ struct TasksStrip: View {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                            Image(systemName: symbol(step.status))
+                            Image(icon: symbol(step.status))
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(color(step.status))
                                 .frame(width: 12)
@@ -123,7 +123,7 @@ struct TasksStrip: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     private var segments: some View {
@@ -182,7 +182,7 @@ struct SubagentBar: View {
                         if running > 0 {
                             ProgressView().controlSize(.mini).frame(width: 12)
                         } else {
-                            Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
+                            Image(icon: "person.2").font(NookTheme.font(11, .semibold))
                         }
                         Text(tr("ws.subagents.title")).foregroundStyle(NookTheme.textTertiary)
                         Text(agents.first(where: \.isRunning)?.title ?? agents.last?.title ?? "")
@@ -198,7 +198,7 @@ struct SubagentBar: View {
                             .font(NookTheme.mono(11, .medium))
                             .foregroundStyle(NookTheme.textSecondary)
                         if agents.count > 1 && agents.count <= 10 { segments }
-                        Image(systemName: "chevron.up")
+                        Image(icon: "chevron.up")
                             .font(NookTheme.font(8.5, .bold))
                             .rotationEffect(.degrees(open ? 180 : 0))
                             .foregroundStyle(NookTheme.textTertiary)
@@ -224,7 +224,7 @@ struct SubagentBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     /// One short bar per subagent: lit while it runs, mint once done, coral when it failed.
@@ -301,7 +301,7 @@ struct SubagentStatusMark: View {
             if running {
                 ProgressView().controlSize(.mini)
             } else {
-                Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                Image(icon: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
                     .font(NookTheme.font(size, .semibold))
                     .foregroundStyle(failed ? NookTheme.coralSoft : NookTheme.mint)
             }
@@ -420,7 +420,7 @@ private struct SubagentCard: View {
         .conversationCard(padding: NookTheme.Spacing.lg)
         .overlay {
             if agent.isRunning {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.conversationCard, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.conversationCard)
                     .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
         }
@@ -567,8 +567,7 @@ struct PullRequestWatchStrip: View {
         }
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(hovering ? NookTheme.rowHover : Color.clear))
+        .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
         // The whole row opens the pull request (in the session's side panel); the checks and the eye keep their own click.
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
@@ -635,7 +634,7 @@ struct PullRequestWatchStrip: View {
         let watching = watch != nil
         let label = tr(watching ? "ws.prwatch.watching" : "ws.prwatch.notWatching")
         return Button(action: toggle) {
-            Image(systemName: watching ? "eye.fill" : "eye.slash")
+            Image(icon: watching ? "eye.fill" : "eye.slash")
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(watching ? NookTheme.mint : (hovering ? NookTheme.textSecondary : NookTheme.textTertiary))
                 .frame(width: 22, height: 22)
@@ -781,7 +780,7 @@ struct BackgroundCommandBar: View {
                         if running > 0 {
                             ProgressView().controlSize(.mini).frame(width: 12)
                         } else {
-                            Image(systemName: "terminal").font(NookTheme.font(11, .semibold))
+                            Image(icon: "terminal").font(NookTheme.font(11, .semibold))
                         }
                         Text(tr("ws.background.title")).foregroundStyle(NookTheme.textTertiary)
                         Text(commands.last(where: \.isRunning)?.title ?? commands.last?.title ?? "")
@@ -805,7 +804,7 @@ struct BackgroundCommandBar: View {
                             .font(NookTheme.mono(11, .medium))
                             .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize()
-                        Image(systemName: "chevron.up")
+                        Image(icon: "chevron.up")
                             .font(NookTheme.font(8.5, .bold))
                             .rotationEffect(.degrees(open ? 180 : 0))
                             .foregroundStyle(NookTheme.textTertiary)
@@ -832,7 +831,7 @@ struct BackgroundCommandBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
         .onChange(of: focus.wrappedValue) { _, id in
             guard let id else { return }
             focus.wrappedValue = nil
@@ -864,13 +863,13 @@ struct BackgroundCommandBar: View {
                         .truncationMode(.tail)
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if command.printed != nil && !expanded {
-                        Image(systemName: "text.alignleft")
+                        Image(icon: "text.alignleft")
                             .font(NookTheme.font(9, .semibold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .help(tr("ws.background.hasOutput"))
                     }
                     SubagentElapsed(command: command)
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(8, .bold))
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -883,7 +882,7 @@ struct BackgroundCommandBar: View {
             if expanded { detail(command) }
         }
         // Lit up for a moment when its call in the conversation sent you here.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+        .background(NookTheme.shape(NookTheme.Radius.control)
             .fill(NookTheme.iris.opacity(flashed == command.id ? 0.16 : 0))
             .padding(.horizontal, -NookTheme.Spacing.sm))
     }
@@ -921,7 +920,7 @@ struct BackgroundCommandBar: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
         .padding(.leading, 20)
         .padding(.bottom, NookTheme.Spacing.xs)
     }
@@ -947,7 +946,7 @@ struct BackgroundCommandLink: View {
                     .foregroundStyle(command?.failed == true ? NookTheme.coralSoft
                                      : (command?.isRunning != false ? NookTheme.iris : NookTheme.textTertiary))
                 if let command { SubagentElapsed(command: command) }
-                Image(systemName: "arrow.down")
+                Image(icon: "arrow.down")
                     .font(NookTheme.font(8.5, .bold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
             }
@@ -1036,7 +1035,7 @@ struct BackgroundCommandList: View {
         .conversationCard(padding: NookTheme.Spacing.lg)
         .overlay {
             if command.isRunning {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.conversationCard, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.conversationCard)
                     .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
             }
         }

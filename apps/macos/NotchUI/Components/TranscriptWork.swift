@@ -49,7 +49,7 @@ struct TranscriptWorkLine: View {
 
     var body: some View {
         let content = HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: failed ? "exclamationmark.circle" : symbol)
+            Image(icon: failed ? "exclamationmark.circle" : symbol)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.6) : (tint ?? NookTheme.textTertiary))
                 .frame(width: TranscriptStyle.workIcon)
@@ -62,23 +62,23 @@ struct TranscriptWorkLine: View {
                     .truncationMode(.tail)
             }
             if let open {
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(9, .bold))
                     .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .opacity(!quietChevron || open || hovering ? 1 : 0)
             }
             if failed {
-                Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral.opacity(0.6))
+                Image(icon: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral.opacity(0.6))
             }
             if let reveals {
-                Image(systemName: "sidebar.right")
+                Image(icon: "sidebar.right")
                     .font(NookTheme.font(9.5, .medium))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(reveals || hovering ? 1 : 0)
             }
             if let link {
-                Image(systemName: link)
+                Image(icon: link)
                     .font(NookTheme.font(9.5, .medium))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
@@ -162,7 +162,7 @@ struct TranscriptStepDetail: View {
         if open, let tasks, !tasks.isEmpty {
             TaskListRows(steps: tasks)
                 .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
                 .padding(.leading, TranscriptStyle.workIndent)
                 .padding(.bottom, NookTheme.Spacing.xs)
         } else if open, command != nil || output != nil {
@@ -258,7 +258,7 @@ struct TranscriptFoldLine: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 // The sentence first; the checks beside it make do with what is left.
                 Text(text).lineLimit(1).layoutPriority(1)
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(11, .semibold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                 if !checks.isEmpty { VerificationChips(checks: checks) }
@@ -428,7 +428,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button(action: toggle) {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))
@@ -444,7 +444,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .contentShape(Rectangle())
                 .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2,
-                                radius: NookTheme.Radius.control, style: .continuous)
+                                radius: NookTheme.Radius.control)
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
@@ -469,7 +469,7 @@ struct TimelineSystemDivider<Detail: View>: View {
         HStack(spacing: NookTheme.Spacing.md) {
             NookDivider()
             HStack(spacing: NookTheme.Spacing.sm) {
-                if let symbol { Image(systemName: symbol) }
+                if let symbol { Image(icon: symbol) }
                 Text(label).fontWeight(.medium)
                 detail()
             }
@@ -501,7 +501,7 @@ struct ModelSwitchDivider: View {
             TimelineSystemDivider(label: tr(change.handoff ? "agents.switch.handoff" : "agents.switch.account"),
                                   symbol: change.handoff ? "arrow.left.arrow.right" : "person.2") {
                 endpoint(change.from, model: true, effort: true)
-                Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold))
+                Image(icon: "arrow.right").font(NookTheme.font(9, .semibold))
                 endpoint(change.to, model: true, effort: true)
             }
             .help(ModelSwitchText.plain(change))

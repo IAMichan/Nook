@@ -109,7 +109,7 @@ extension View {
     /// stroke. Rows inside are split with `NookDivider`.
     func panelCard() -> some View {
         background(NookTheme.field)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedClip(NookTheme.Radius.panel)
     }
 }
 
@@ -150,7 +150,7 @@ struct WSEmptyState: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(26, .light))
                 .foregroundStyle(NookTheme.textTertiary)
             Text(title)
@@ -242,7 +242,7 @@ struct NookShelfHeader<Accessory: View>: View {
                         .font(NookTheme.TextStyle.detail.monospacedDigit())
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                Image(systemName: "chevron.down")
+                Image(icon: "chevron.down")
                     .font(NookTheme.textFont(10, .semibold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)

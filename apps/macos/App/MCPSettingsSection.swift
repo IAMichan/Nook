@@ -197,7 +197,7 @@ private struct MCPServerDetailSheet: View {
                         VStack(spacing: NookTheme.Spacing.md) {
                             ForEach(connector.tools, id: \.name) { tool in
                                 HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                                    Image(systemName: tool.kind == .read ? "eye.fill" : "bolt.fill")
+                                    Image(icon: tool.kind == .read ? "eye.fill" : "bolt.fill")
                                         .font(NookTheme.font(12))
                                         .foregroundStyle(tool.kind == .read ? NookTheme.mint : NookTheme.amber)
                                         .padding(.top, NookTheme.Spacing.xxs)
@@ -298,7 +298,7 @@ struct AddMCPServerWizardSheet: View {
                         SettingNote(tr("mcp.wizard.smartPasteHelp"))
                     }
                     .padding(NookTheme.Spacing.lg)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.iris.opacity(0.1)))
+                    .roundedBackground(NookTheme.iris.opacity(0.1), radius: NookTheme.Radius.card)
                 }
 
                 // A preset fills in its name and command: only its keys are left to you, the rest is folded away.
@@ -342,7 +342,7 @@ struct AddMCPServerWizardSheet: View {
                             TextEditor(text: $rawSecrets)
                                 .font(NookTheme.mono(11))
                                 .frame(height: 70)
-                                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).stroke(NookTheme.fieldStroke))
+                                .roundedStroke(NookTheme.fieldStroke, radius: NookTheme.Radius.chip)
                             Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textSecondary)

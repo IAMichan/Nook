@@ -71,7 +71,7 @@ private struct SelectionBarButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(accent ? NookTheme.iris : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 Text(title)
@@ -136,14 +136,14 @@ struct SelectionAskCard: View {
         }
         .frame(width: SelectionAskController.cardWidth)
         .composerFocusOnAppear($focused)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel, style: .continuous)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel)
+        .roundedClip(NookTheme.Radius.panel)
         .shadow(color: NookTheme.notch.opacity(0.5), radius: 14, y: 6)
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: "text.quote")
+            Image(icon: "text.quote")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.iris)
                 .padding(.top, NookTheme.Spacing.xxs)

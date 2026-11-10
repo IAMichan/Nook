@@ -140,7 +140,7 @@ struct NookChatView: View {
                     } else {
                         BrowserView(store: .shared, onClose: { viewModel.browserBesideChat = false })
                             .background(NookTheme.field)
-                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+                            .roundedClip(NookTheme.Radius.sheet)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -164,7 +164,7 @@ struct NookChatView: View {
         .onChange(of: chat.composerFocusRequests) { _, _ in focusComposer() }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
+                NookTheme.shape(NookTheme.Radius.sheet)
                     .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .overlay(Text(tr("chat.dropFile")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper))
                     .allowsHitTesting(false)
@@ -345,7 +345,7 @@ struct NookChatView: View {
                         .help(tr("ws.title.renameHelp"))
                 }
                 if conversation.pinned {
-                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 if conversation.busy, let since = conversation.turnStarted {
@@ -391,7 +391,7 @@ struct NookChatView: View {
             Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
                 .disabled(conversation.busy)
         } label: {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 28, height: 28)

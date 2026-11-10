@@ -49,7 +49,7 @@ struct OpenInTarget: Identifiable, Hashable {
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
         } else {
-            Image(systemName: "terminal").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
+            Image(icon: "terminal").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
         }
     }
 }
@@ -728,7 +728,7 @@ private struct PanelRow: View {
                 content.opacity(enabled ? 1 : 0.55)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
+        .roundedBackground(hovering && enabled ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.card)
         .onHover { hovering = $0 }
         .help(disabledReason ?? help ?? "")
     }
@@ -761,7 +761,7 @@ private struct PanelRow: View {
     }
 
     private var chevron: some View {
-        Image(systemName: menuSymbol)
+        Image(icon: menuSymbol)
             .font(NookTheme.font(menuSymbol == "chevron.down" ? 10 : 12, menuSymbol == "chevron.down" ? .semibold : .medium))
             .foregroundStyle(NookTheme.textSecondary)
     }

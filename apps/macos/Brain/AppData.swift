@@ -166,6 +166,103 @@ enum AppData {
         }
     }
 
+    // MARK: Who is in a group
+
+    /// Someone added to a group or removed from it (`item_type` 1, `group_action_type` 0 or 1: the message's handle did
+    /// it to `other_handle`, no handle being you) or leaving it (`item_type` 3, `group_action_type` 0), by their names in
+    /// Contacts. Nil for any other row.
+    static func messagesMembership(_ row: [String: Any], contacts: [String: String]) -> ChatMembership? {
+        let kind = number(row["itemtype"]) ?? 0
+        let action = number(row["groupaction"]) ?? 0
+        let mine = (number(row["me"]) ?? 0) != 0
+        func name(_ raw: String) -> String {
+            let handle = cleanHandle(raw)
+            return handle.isEmpty ? ChatMembership.me : contacts[key(handle)] ?? handle
+        }
+        let actor = mine ? ChatMembership.me : name(string(row["handle"]))
+        switch (kind, action) {
+        case (1, 0), (1, 1):
+            return ChatMembership(action == 0 ? .added : .removed, by: actor, people: [name(string(row["other"]))])
+        case (3, 0):
+            return ChatMembership(.left, people: [actor])
+        default:
+            return nil
+        }
+    }
+
+    /// The group itself changed: a new name (`item_type` 2, the name in `group_title`) or picture (`item_type` 3,
+    /// `group_action_type` 1 set, 2 removed), by the message's handle (none: you). Nil for any other row.
+    static func messagesGroupChange(_ row: [String: Any], contacts: [String: String]) -> ChatGroupChange? {
+        let kind = number(row["itemtype"]) ?? 0
+        let action = number(row["groupaction"]) ?? 0
+        let handle = cleanHandle(string(row["handle"]))
+        let by = (number(row["me"]) ?? 0) != 0 || handle.isEmpty ? ChatMembership.me : contacts[key(handle)] ?? handle
+        switch (kind, action) {
+        case (2, _):
+            let title = string(row["grouptitle"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return title.isEmpty ? nil : ChatGroupChange(.renamed, by: by, text: title)
+        case (3, 1): return ChatGroupChange(.photo, by: by)
+        case (3, 2): return ChatGroupChange(.photoRemoved, by: by)
+        default: return nil
+        }
+    }
+
+    /// WhatsApp's message type of a group's notice (someone added, a new name, a new picture…), in its own database.
+    static let whatsAppGroupEventType = 6
+
+    /// A group's notice about who is in it: someone added (event 2, the member who did it and the JID they added in its
+    /// text; without a member, they came in through the link or the app does not say who), someone leaving (3) or
+    /// removed (7). Names: the one WhatsApp keeps for them, else your Contacts by their number. Nil for any other row.
+    static func whatsAppMembership(_ row: [String: Any], contacts: [String: String]) -> ChatMembership? {
+        guard Int(number(row["type"]) ?? 0) == whatsAppGroupEventType else { return nil }
+        let event = Int(number(row["event"]) ?? 0)
+        guard [2, 3, 7].contains(event) else { return nil }
+        func named(_ jid: String, kept: String) -> String {
+            if !kept.isEmpty { return kept }
+            guard !jid.isEmpty, !jid.hasSuffix("@lid") else { return "" }
+            return contacts[key(jid)] ?? cleanHandle(jid)
+        }
+        let member = string(row["member"])
+        let mine = (number(row["me"]) ?? 0) != 0
+        let saved = string(row["sender"])
+        var actor: String? = mine ? ChatMembership.me
+            : member.isEmpty ? nil : named(member, kept: saved.isEmpty ? string(row["membername"]) : saved)
+        // Someone WhatsApp keeps no name for still did it: "Someone added David", not "David joined".
+        if actor == "" { actor = tr("chat.member.someone") }
+        let targets = string(row["text"]).split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { $0.contains("@") }
+        // The kept name is the first person's; anyone after them goes by Contacts.
+        let people = targets.enumerated().map { named($0.element, kept: $0.offset == 0 ? string(row["targetname"]) : "") }
+        switch event {
+        case 2:
+            if targets.isEmpty { return actor.map { ChatMembership(.joined, people: [$0]) } }
+            if targets == [member] { return ChatMembership(.joined, people: people) }
+            return ChatMembership(.added, by: actor, people: people)
+        case 3:
+            return ChatMembership(.left, people: [actor ?? ""])
+        default:
+            if targets.isEmpty { return nil }
+            if targets == [member] { return ChatMembership(.left, people: people) }
+            return ChatMembership(.removed, by: actor, people: people)
+        }
+    }
+
+    /// A group's notice about the group itself: a new name (event 1, the new name its text, the member who gave it).
+    /// WhatsApp's other notices on this Mac (a picture, settings) keep too little to say what changed: none. Nil for any
+    /// other row.
+    static func whatsAppGroupChange(_ row: [String: Any], contacts: [String: String]) -> ChatGroupChange? {
+        guard Int(number(row["type"]) ?? 0) == whatsAppGroupEventType, Int(number(row["event"]) ?? 0) == 1 else { return nil }
+        let name = string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let member = string(row["member"])
+        let saved = string(row["sender"]).isEmpty ? string(row["membername"]) : string(row["sender"])
+        var by: String? = (number(row["me"]) ?? 0) != 0 ? ChatMembership.me : nil
+        if by == nil, !member.isEmpty {
+            by = !saved.isEmpty ? saved : member.hasSuffix("@lid") ? tr("chat.member.someone") : contacts[key(member)] ?? cleanHandle(member)
+        }
+        return ChatGroupChange(.renamed, by: by, text: name)
+    }
+
     /// The same person however the number is written: an address in lowercase, a phone number by its last nine digits
     /// ("+31 6 1234 5678", "0612345678" and "31612345678@s.whatsapp.net" are one key).
     static func key(_ handle: String) -> String {

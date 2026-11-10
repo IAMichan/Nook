@@ -97,11 +97,11 @@ struct MusicArtwork: View {
                     .transition(.opacity)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .roundedClip(cornerRadius)
         // A faint edge, so a dark cover keeps its shape on the black canvas.
         .overlay {
             if cornerRadius > 0 {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(NookTheme.paper.opacity(0.08), lineWidth: 1)
+                NookTheme.shape(cornerRadius).strokeBorder(NookTheme.paper.opacity(0.08), lineWidth: 1)
             }
         }
         .task(id: url) {
@@ -161,9 +161,9 @@ struct MusicArtworkState: View {
     var body: some View {
         if hovering || playing {
             ZStack {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(Color.black.opacity(0.5))
+                NookTheme.shape(cornerRadius).fill(Color.black.opacity(0.5))
                 if hovering {
-                    Image(systemName: "play.fill").font(NookTheme.font(12, .bold)).foregroundStyle(NookTheme.paper)
+                    Image(icon: "play.fill").font(NookTheme.font(12, .bold)).foregroundStyle(NookTheme.paper)
                 } else {
                     EqualizerBars(color: NookTheme.music, height: 10, isPlaying: isPlaying)
                         .scaleEffect(0.7)
@@ -196,7 +196,7 @@ struct MusicCoverPlaceholder: View {
             .overlay {
                 if showsSymbol {
                     GeometryReader { geo in
-                        Image(systemName: symbol)
+                        Image(icon: symbol)
                             .font(NookTheme.font(max(10, min(geo.size.width, geo.size.height) * 0.3), .semibold))
                             .foregroundStyle(Color.white.opacity(0.6))
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -341,7 +341,7 @@ struct MusicToggleButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            Image(icon: systemName)
                 .font(NookTheme.font(size * 0.44, .semibold))
                 .foregroundStyle(isOn ? NookTheme.music : (hovering ? NookTheme.paper : NookTheme.textTertiary))
                 .frame(width: size, height: size)
@@ -394,7 +394,7 @@ struct MusicVolumeControl: View {
                     onChange(max(10, beforeMute))
                 }
             } label: {
-                Image(systemName: icon)
+                Image(icon: icon)
                     .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                     .frame(width: 20, height: 24, alignment: .center)

@@ -505,7 +505,7 @@ private struct TranscriptRowView: View, Equatable {
         flatRowContent(row, answers: answers)
             .padding(.horizontal, lit ? NookTheme.Spacing.xs : 0)
             .padding(.vertical, lit ? NookTheme.Spacing.xxs : 0)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(lit ? 0.16 : 0)))
+            .roundedBackground(NookTheme.iris.opacity(lit ? 0.16 : 0), radius: NookTheme.Radius.control)
     }
 
     @ViewBuilder
@@ -855,7 +855,7 @@ struct TranscriptNotice: View {
             // A rule on both sides, as `TimelineNewDivider`, so the turn before it reads as closed.
             HStack(spacing: NookTheme.Spacing.md) {
                 NookDivider()
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                Image(icon: "arrow.down.right.and.arrow.up.left")
                 Text(tokens.map { tr("agents.notice.compactedFrom", TokenTally.format($0)) } ?? tr("agents.notice.compacted"))
                     .lineLimit(1)
                     .fixedSize()

@@ -300,7 +300,7 @@ struct AgentSessionDetail: View {
         }
         .scrollIndicators(.never)
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
     }
 
     /// The pull request of a session Nook does not run: the open one for its folder and branch, else the last one its
@@ -509,7 +509,7 @@ struct AgentSessionDetail: View {
         if request.items.count > 1 { context += " · \(index + 1)/\(request.items.count)" }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
+                Image(icon: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
                 Text(context)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
@@ -798,15 +798,9 @@ private struct SessionQuestionOptionButton: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(backgroundColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .stroke(borderColor, lineWidth: isHovered || chosen ? 1.2 : 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedBackground(backgroundColor, radius: NookTheme.Radius.control)
+            .roundedStroke(borderColor, radius: NookTheme.Radius.control, lineWidth: isHovered || chosen ? 1.2 : 1)
+            .roundedHitShape(NookTheme.Radius.control)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -829,9 +823,9 @@ private struct SessionQuestionOptionButton: View {
 
     private var keycapBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(chosen ? NookTheme.amber.opacity(0.2) : (isHovered ? NookTheme.smoke : NookTheme.well))
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : NookTheme.wash.opacity(0.08)), lineWidth: 1)
 
             Text(number < 9 ? "\(number + 1)" : "·")
@@ -845,12 +839,12 @@ private struct SessionQuestionOptionButton: View {
     @ViewBuilder
     private var trailingIndicator: some View {
         if multiSelect {
-            Image(systemName: chosen ? "checkmark.square.fill" : "square")
+            Image(icon: chosen ? "checkmark.square.fill" : "square")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(chosen ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
                 .padding(.top, 2)
         } else {
-            Image(systemName: isHovered ? "arrow.right.circle.fill" : "circle")
+            Image(icon: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(isHovered ? NookTheme.amber : NookTheme.wash.opacity(0.08))
                 .opacity(isHovered ? 1 : 0.4)

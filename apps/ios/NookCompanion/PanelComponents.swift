@@ -22,11 +22,11 @@ struct HomeLogo: View {
         Group {
             switch content {
             case .agent(let name): AgentLogo(agent: name, size: size * 0.56)
-            case .symbol(let name): Image(systemName: name).font(Theme.font(size * 0.42, .medium)).foregroundStyle(tint)
+            case .symbol(let name): Image(icon: name).font(Theme.font(size * 0.42, .medium)).foregroundStyle(tint)
             }
         }
         .frame(width: size, height: size)
-        .background(tileFill, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        .roundedBackground(tileFill, radius: size * 0.28)
         .accessibilityHidden(true)
     }
 
@@ -251,8 +251,7 @@ struct RowPress: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(configuration.isPressed ? Theme.rowHover : Color.clear,
-                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .roundedBackground(configuration.isPressed ? Theme.rowHover : Color.clear, radius: radius)
             .animation(Theme.hover, value: configuration.isPressed)
     }
 }
@@ -268,7 +267,7 @@ struct NookSearchField: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
+            Image(icon: "magnifyingglass")
                 .font(Theme.textFont(11, .medium))
                 .foregroundStyle(Theme.textTertiary)
             TextField(prompt, text: $text)
@@ -283,7 +282,7 @@ struct NookSearchField: View {
                     Haptics.tap()
                     text = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(icon: "xmark.circle.fill")
                         .font(Theme.textFont(11, .medium))
                         .foregroundStyle(Theme.textTertiary)
                         .frame(width: 28, height: 28)
@@ -295,7 +294,7 @@ struct NookSearchField: View {
         .padding(.leading, Theme.Spacing.md)
         .padding(.trailing, Theme.Spacing.xxs)
         .frame(minHeight: 38)
-        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .roundedBackground(Theme.field, radius: Theme.Radius.control)
     }
 }
 
@@ -360,7 +359,7 @@ struct SessionComposer<Controls: View>: View {
         .onTapGesture { focused.wrappedValue = true }
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous) }
+    private var shape: RoundedRectangle { Theme.shape(Theme.Radius.composer) }
 
     private func field(_ focused: FocusState<Bool>.Binding) -> some View {
         TextField(prompt, text: $text, axis: .vertical)
@@ -394,7 +393,7 @@ struct SessionComposer<Controls: View>: View {
                 if sending {
                     ProgressView().controlSize(.small).tint(Theme.onIris)
                 } else {
-                    Image(systemName: symbol).font(Theme.font(13, .bold))
+                    Image(icon: symbol).font(Theme.font(13, .bold))
                         .foregroundStyle(active ? Theme.onIris : Theme.textTertiary)
                 }
             }
@@ -432,11 +431,11 @@ struct ComposerPill: View {
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
-                Image(systemName: symbol).font(Theme.font(12, .medium))
+                Image(icon: symbol).font(Theme.font(12, .medium))
             }
             Text(text).lineLimit(1)
             if showsChevron {
-                Image(systemName: "chevron.down").font(Theme.font(9, .bold)).opacity(0.6)
+                Image(icon: "chevron.down").font(Theme.font(9, .bold)).opacity(0.6)
             }
         }
         .font(Theme.TextStyle.label)
@@ -521,8 +520,8 @@ struct SuggestionGrid: View {
                     }
                     .padding(Theme.Spacing.md)
                     .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+                    .roundedBackground(Theme.field, radius: Theme.Radius.panel)
+                    .roundedHitShape(Theme.Radius.panel)
                 }
                 .buttonStyle(RowPress(radius: Theme.Radius.panel))
             }

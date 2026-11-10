@@ -237,6 +237,15 @@ func (a *API) isSelf(ctx context.Context, net *Network, user id.UserID) bool {
 func (a *API) chatJSON(ctx context.Context, room *Room) map[string]any {
 	net := a.byID[room.Bridge]
 	members, _ := a.store.Members(room.ID)
+	users := make([]id.UserID, 0, len(members))
+	for _, member := range members {
+		users = append(users, member.User)
+	}
+	extras := a.store.ProfileExtras(users)
+	levels := &event.PowerLevelsEventContent{}
+	if raw := a.store.RoomColumn(room.ID, "power_levels"); raw != "" {
+		_ = json.Unmarshal([]byte(raw), levels)
+	}
 	var people []map[string]any
 	var others []string
 	for _, member := range members {
@@ -244,8 +253,21 @@ func (a *API) chatJSON(ctx context.Context, room *Room) map[string]any {
 			continue
 		}
 		self := net != nil && a.isSelf(ctx, net, member.User)
-		people = append(people, map[string]any{"id": string(member.User), "fullName": member.Name, "imgURL": a.mediaURL(member.Avatar),
-			"isSelf": self})
+		person := map[string]any{"id": string(member.User), "fullName": member.Name, "imgURL": a.mediaURL(member.Avatar),
+			"isSelf": self}
+		// What the network says of them besides their name: identifiers (a number, a username) and whether they are a bot.
+		if extra := extras[member.User]; extra != nil {
+			if ids, ok := extra["com.beeper.bridge.identifiers"].([]any); ok && len(ids) > 0 {
+				person["identifiers"] = ids
+			}
+			if bot, _ := extra["com.beeper.bridge.is_network_bot"].(bool); bot {
+				person["isBot"] = true
+			}
+		}
+		if level, ok := levels.Users[member.User]; ok && level >= 50 {
+			person["isAdmin"] = true
+		}
+		people = append(people, person)
 		if !self && member.Name != "" {
 			others = append(others, member.Name)
 		}
@@ -270,6 +292,16 @@ func (a *API) chatJSON(ctx context.Context, room *Room) map[string]any {
 	}
 	if account := a.accountName(ctx, net, room); account != "" {
 		res["account"] = account
+	}
+	// A group's topic (its description), and how long messages last when the chat makes them disappear.
+	if room.Topic != "" {
+		res["description"] = room.Topic
+	}
+	if net != nil && net.Bridge != nil {
+		if portal, err := net.Bridge.GetPortalByMXID(ctx, room.ID); err == nil && portal != nil && portal.Disappear.Type != "" &&
+			portal.Disappear.Timer > 0 {
+			res["disappearAfter"] = portal.Disappear.Timer.Seconds()
+		}
 	}
 	return res
 }
@@ -386,7 +418,7 @@ func (a *API) messages(w http.ResponseWriter, r *http.Request) {
 	reads := a.store.Reads(room.ID)
 	items := make([]map[string]any, 0, len(list))
 	for _, e := range list {
-		if e.Sender == net.Matrix.botMXID() {
+		if e.Sender == net.Matrix.botMXID() && !strings.HasPrefix(e.Type, "m.room.") {
 			continue
 		}
 		items = append(items, a.messageJSON(r.Context(), net, room, e, reactions[e.ID], names, reads))
@@ -458,6 +490,43 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 	out := map[string]any{
 		"id": string(e.ID), "chatID": string(room.ID), "timestamp": time.UnixMilli(e.TS).UTC().Format(time.RFC3339Nano),
 		"senderID": string(e.Sender), "senderName": names[e.Sender], "isSender": mine, "isDeleted": e.Deleted, "isEdited": e.Edited != nil, "type": "TEXT",
+	}
+	if e.Type == event.StateMember.Type {
+		// Someone came in or went: who (`userID`, by name), and who did it (the sender, when the network says).
+		var change struct {
+			Membership event.Membership `json:"membership"`
+		}
+		_ = json.Unmarshal(e.Content.VeryRaw, &change)
+		if change.Membership == "" {
+			if member, ok := e.Content.Parsed.(*event.MemberEventContent); ok {
+				change.Membership = member.Membership
+			}
+		}
+		user := id.UserID(e.Target)
+		out["type"] = "MEMBERSHIP"
+		out["text"] = ""
+		out["membership"] = map[string]any{"membership": string(change.Membership), "userID": string(user),
+			"userName": names[user], "isSelf": a.isSelf(ctx, net, user)}
+		return out
+	}
+	if e.Type == event.StateRoomName.Type || e.Type == event.StateTopic.Type || e.Type == event.StateRoomAvatar.Type {
+		// The room itself changed: its new name, topic or picture (empty: taken away), by the sender when known.
+		var change struct {
+			Value string `json:"value"`
+		}
+		_ = json.Unmarshal(e.Content.VeryRaw, &change)
+		kind := map[string]string{event.StateRoomName.Type: "renamed", event.StateTopic.Type: "described"}[e.Type]
+		if e.Type == event.StateRoomAvatar.Type {
+			kind = "photo"
+			if change.Value == "" {
+				kind = "photoRemoved"
+			}
+			change.Value = ""
+		}
+		out["type"] = "GROUP_CHANGE"
+		out["text"] = ""
+		out["groupChange"] = map[string]any{"kind": kind, "text": change.Value}
+		return out
 	}
 	if poll, ok := e.Content.Parsed.(*event.PollStartEventContent); ok {
 		out["type"] = "POLL"

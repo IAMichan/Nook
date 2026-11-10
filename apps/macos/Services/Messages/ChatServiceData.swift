@@ -35,6 +35,9 @@ enum ChatServiceData {
         var canVote = false
         /// The account in its app (Instagram username, etc.), when the service gives one.
         var account: String? = nil
+        /// What the network says of the chat: a group's description and admins, how long messages last, the other
+        /// person's number or username.
+        var profile: ChatProfile? = nil
     }
 
     /// The networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"), most
@@ -93,8 +96,34 @@ enum ChatServiceData {
                         tags: tags(people), isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
                         canReact: supports(abilities?["reaction"]), canVote: chat["canVote"] as? Bool == true,
-                        account: (account?.isEmpty == false ? account : nil))
+                        account: (account?.isEmpty == false ? account : nil), profile: profile(chat, people: people, isGroup: isGroup))
         }
+    }
+
+    /// What a chat says of itself besides its people: a group's `description`, its admins (`isAdmin` people, you as
+    /// yourself) and how long messages last (`disappearAfter`, seconds); in a private chat what the network says of the
+    /// other person (`identifiers`: "tel:+31…", "mailto:…", a username; `isBot`).
+    static func profile(_ chat: [String: Any], people: [[String: Any]], isGroup: Bool) -> ChatProfile? {
+        var profile = ChatProfile(about: ChatProfile.text(chat["description"] as? String))
+        if let seconds = chat["disappearAfter"] as? Double, seconds > 0 { profile.disappearAfter = seconds }
+        if isGroup {
+            let admins = people.filter { $0["isAdmin"] as? Bool == true }.compactMap { person -> String? in
+                person["isSelf"] as? Bool == true ? ChatMembership.me : ChatProfile.text(person["fullName"] as? String)
+            }
+            if !admins.isEmpty { profile.admins = admins }
+        } else if let other = people.first(where: { $0["isSelf"] as? Bool != true }) {
+            for identifier in other["identifiers"] as? [String] ?? [] {
+                if identifier.hasPrefix("tel:") { profile.phone = profile.phone ?? String(identifier.dropFirst(4)) }
+                else if identifier.hasPrefix("mailto:") { profile.email = profile.email ?? String(identifier.dropFirst(7)) }
+                else if let colon = identifier.firstIndex(of: ":") {
+                    // "instagram:anna.b", "x:anna": the username they go by on the network.
+                    let name = identifier[identifier.index(after: colon)...]
+                    if !name.isEmpty, !name.allSatisfy(\.isNumber), profile.username == nil { profile.username = "@" + name }
+                }
+            }
+            if other["isBot"] as? Bool == true { profile.bot = true }
+        }
+        return profile.isEmpty ? nil : profile
     }
 
     /// A capability level (-2 rejected … 2 fully supported); one that is not given counts as there, and the app says
@@ -294,6 +323,21 @@ enum ChatServiceData {
                   message["isHidden"] as? Bool != true,
                   let sent = ChatJSON.date(message["timestamp"]) else { return nil }
             let mine = message["isSender"] as? Bool == true
+            if let change = membership(message, chat: chat) {
+                var line = InboxMessage(id: messageID(id, chat: chat.id), text: "", date: sent, fromMe: change.by == ChatMembership.me)
+                line.membership = change
+                return line
+            }
+            if message["type"] as? String == "GROUP_CHANGE", let change = message["groupChange"] as? [String: Any],
+               let kind = (change["kind"] as? String).flatMap(ChatGroupChange.Kind.init(rawValue:)) {
+                // The chat's new name, topic or picture, by the sender when the network says.
+                let senderID = (message["senderID"] as? String) ?? ""
+                let by: String? = mine ? ChatMembership.me : senderID.isEmpty ? nil
+                    : ((message["senderName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? chat.people[senderID] ?? tr("chat.member.someone"))
+                var line = InboxMessage(id: messageID(id, chat: chat.id), text: "", date: sent, fromMe: mine)
+                line.groupChange = ChatGroupChange(kind, by: by, text: change["text"] as? String)
+                return line
+            }
             if message["isDeleted"] as? Bool == true {
                 let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
                 return InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: "", date: sent, fromMe: mine).withdrawn()
@@ -325,6 +369,25 @@ enum ChatServiceData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// Someone coming into the chat or going (`type: MEMBERSHIP`, `membership: {membership: "join"|"leave", userID,
+    /// userName, isSelf}`, the sender who did it when the network says), by their names in the chat. Nil for any other
+    /// message.
+    static func membership(_ message: [String: Any], chat: Chat) -> ChatMembership? {
+        guard message["type"] as? String == "MEMBERSHIP", let change = message["membership"] as? [String: Any] else { return nil }
+        let user = (change["userID"] as? String) ?? ""
+        let person = change["isSelf"] as? Bool == true || (chat.me != nil && user == chat.me) ? ChatMembership.me
+            : ((change["userName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? chat.people[user] ?? "")
+        let senderID = (message["senderID"] as? String) ?? ""
+        let by: String? = message["isSender"] as? Bool == true ? ChatMembership.me
+            : senderID.isEmpty ? nil : ((message["senderName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? chat.people[senderID] ?? "")
+        let joined = change["membership"] as? String == "join"
+        // The person themselves, or nobody named: they came in or went by themselves, or the network does not say how.
+        if senderID.isEmpty || senderID == user {
+            return ChatMembership(joined ? .joined : (senderID.isEmpty ? .gone : .left), people: [person])
+        }
+        return ChatMembership(joined ? .added : .removed, by: by == "" ? tr("chat.member.someone") : by, people: [person])
     }
 
     /// A poll (`type: POLL`, its text the question) with who chose each option, the same as every app's poll: you as

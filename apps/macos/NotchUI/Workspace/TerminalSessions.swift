@@ -503,7 +503,7 @@ private struct TerminalGroupHeader: View {
     var body: some View {
         Button(action: select) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: split?.symbol ?? "square")
+                Image(icon: split?.symbol ?? "square")
                     .font(NookTheme.font(10, .medium))
                 Text(tr(split == nil ? "terminal.group.single" : (split == .stacked ? "terminal.group.stacked" : "terminal.group.sideBySide")))
                     .lineLimit(1)
@@ -516,8 +516,7 @@ private struct TerminalGroupHeader: View {
             .foregroundStyle(active || hovering ? NookTheme.textStrong : NookTheme.textTertiary)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: TerminalMetrics.groupHeader)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
+            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -538,7 +537,7 @@ private struct TerminalRow: View {
     var body: some View {
         Button(action: select) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "terminal")
+                Image(icon: "terminal")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(width: 14, height: 14)
@@ -566,14 +565,13 @@ private struct TerminalRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: TerminalMetrics.row)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .overlay(alignment: .trailing) {
             Button(action: close) {
-                Image(systemName: "xmark")
+                Image(icon: "xmark")
                     .font(NookTheme.font(9, .semibold))
                     .foregroundStyle(NookTheme.paper)
                     .frame(width: 14, height: 14)
@@ -630,9 +628,8 @@ struct TerminalActionBar: View {
             }
         }
         .frame(height: TerminalMetrics.action.height)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-            .strokeBorder(NookTheme.border, lineWidth: 1))
+        .roundedClip(NookTheme.Radius.control)
+        .roundedStrokeBorder(NookTheme.border, radius: NookTheme.Radius.control)
         .fixedSize()
         .confirmCloseTerminal($closing)
     }
@@ -648,7 +645,7 @@ private struct TerminalActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .medium))
                 .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5) : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: TerminalMetrics.action.width, height: TerminalMetrics.action.height)
@@ -747,7 +744,7 @@ struct SessionTerminalBar: View {
 
     var body: some View {
         Group {
-            Image(systemName: "folder")
+            Image(icon: "folder")
                 .font(NookTheme.font(10, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
             Text(AgentPathFormat.tilde(directory))
@@ -797,7 +794,7 @@ struct SessionTerminalActions: View {
                             .help(script.command)
                     }
                 } label: {
-                    Image(systemName: "play")
+                    Image(icon: "play")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: TerminalMetrics.action.width, height: TerminalMetrics.action.height)

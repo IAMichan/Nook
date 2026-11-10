@@ -749,7 +749,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.composer)
     }
 
     /// The faint light along the top edge of the box, fading out before its middle.
@@ -886,7 +886,7 @@ struct SessionComposer<Controls: View>: View {
                 if sending {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: symbol).font(NookTheme.font(12, .bold))
+                    Image(icon: symbol).font(NookTheme.font(12, .bold))
                 }
             }
             .foregroundStyle(active ? NookTheme.onIris : NookTheme.textTertiary)
@@ -964,7 +964,7 @@ struct ComposerPill: View {
         .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.smoke : Color.clear))
+        .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -979,13 +979,13 @@ struct ComposerPill: View {
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
-                Image(systemName: symbol).font(NookTheme.font(13, .medium))
+                Image(icon: symbol).font(NookTheme.font(13, .medium))
             }
             if !iconOnly {
                 Text(shown).lineLimit(1)
             }
             if showsChevron && density == .full {
-                Image(systemName: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
+                Image(icon: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
             }
         }
     }
@@ -1067,11 +1067,11 @@ struct ComposerIcon: View {
     @State private var hovering = false
 
     var body: some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.font(12, .semibold))
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
     }

@@ -159,7 +159,7 @@ private struct GlanceCard<Content: View>: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: symbol)
+                    Image(icon: symbol)
                         .font(NookTheme.font(11, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 14)
@@ -174,7 +174,7 @@ private struct GlanceCard<Content: View>: View {
                             .foregroundStyle(statusColor)
                             .lineLimit(1)
                     }
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(9, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .opacity(hovering ? 1 : 0)
@@ -183,9 +183,8 @@ private struct GlanceCard<Content: View>: View {
             }
             .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.graphite : NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

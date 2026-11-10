@@ -30,7 +30,7 @@ struct NookSearchField: View {
 
     var body: some View {
         HStack(spacing: style == .ghost ? NookTheme.Spacing.md : NookTheme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
+            Image(icon: "magnifyingglass")
                 .font(NookTheme.font(glyphSize, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .accessibilityHidden(true)
@@ -43,9 +43,9 @@ struct NookSearchField: View {
         .frame(height: height)
         .background {
             if style == .panel {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field)
+                NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.field)
             } else if style == .ghost, hovering {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowHover)
+                NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.rowHover)
             }
         }
         .onHover { if style == .ghost { hovering = $0 } }
@@ -130,10 +130,10 @@ struct NookSearchLauncher: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.control)
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "magnifyingglass")
+                Image(icon: "magnifyingglass")
                     .font(NookTheme.font(11, .medium))
                     .accessibilityHidden(true)
                 if !compact {
@@ -169,7 +169,7 @@ struct NookKeyHint: View {
             .foregroundStyle(NookTheme.textTertiary)
             .padding(.horizontal, NookTheme.Spacing.xs)
             .frame(height: 18)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
             .fixedSize()
             .accessibilityHidden(true)
     }
@@ -224,12 +224,11 @@ struct PanelNewButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "square.and.pencil")
+            Image(icon: "square.and.pencil")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(active || hovering ? NookTheme.smoke : Color.clear))
+                .roundedBackground(active || hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -275,7 +274,7 @@ struct PanelNoticeBar<Trailing: View>: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.vertical, NookTheme.Spacing.md)
                 .cardBackground(NookTheme.surface, stroke: (tone ?? NookTheme.line2).opacity(tone == nil ? 1 : 0.35),
-                                radius: NookTheme.Radius.panel, style: .continuous)
+                                radius: NookTheme.Radius.panel)
                 .padding(.top, NookTheme.Spacing.md)
                 .transition(.opacity.combined(with: .offset(y: -4)))
         }

@@ -41,6 +41,7 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(claude.contains("--no-session-persistence"), "never shows up in the session list")
         XCTAssertTrue(TextGenerationRunner.isScratchFolder("/private/var/folders/x/T/nook-text-937351B9-A5B9"))
         XCTAssertFalse(TextGenerationRunner.isScratchFolder("/Users/me/Code/nook"))
+        XCTAssertTrue(TextGenerationRunner.isScratchFolder("/private/var/folders/x/T/nook-text-937351B9-A5B9/"), "a trailing slash")
         let codex = TextGeneration.codexArguments(schemaPath: "/t/s.json", outputPath: "/t/a.txt")
         XCTAssertEqual(codex.first, "exec")
         XCTAssertEqual(value(after: "-s", in: codex), "read-only")

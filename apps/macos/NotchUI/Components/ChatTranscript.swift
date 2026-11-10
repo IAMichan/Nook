@@ -233,7 +233,7 @@ struct ChatTranscript: View, Equatable {
                 // Reading back, several messages at once (a bridge's read, an answer of yours replaced by the app's own,
                 // a message hidden) are no reason to pull you down either: only a chat still opening jumps to its newest.
                 if !arrived, scrolledByUser, !atBottom {
-                    if bubbles.last?.fromMe == false { missed += 1 }
+                    if let newest = bubbles.last, !newest.fromMe, newest.notice == nil { missed += 1 }
                     return
                 }
                 if arrived, !settling {
@@ -348,7 +348,11 @@ struct ChatTranscript: View, Equatable {
     }
 
     private func entries(_ bubbles: [ChatBubble]) -> [ChatTimeline.Entry] {
-        let items = bubbles.map { ChatTimeline.Item(id: $0.id, author: $0.fromMe ? "\u{1}me" : $0.sender, date: $0.date) }
+        // A change in who is in the group stands on its own: the messages around it are runs of their own.
+        let items = bubbles.map { bubble in
+            ChatTimeline.Item(id: bubble.id, author: bubble.notice != nil ? "\u{2}" + bubble.id : (bubble.fromMe ? "\u{1}me" : bubble.sender),
+                              date: bubble.date)
+        }
         return timeline.entries(items, language: I18n.shared.currentLanguage)
     }
 
@@ -367,7 +371,11 @@ struct ChatTranscript: View, Equatable {
                         ChatNewDivider()
                             .padding(.top, NookTheme.Spacing.md)
                     }
-                    if let bubble = byID[row.id] {
+                    if let bubble = byID[row.id], let notice = bubble.notice {
+                        ChatNoticeLine(text: notice, time: bubble.time)
+                            .padding(.vertical, NookTheme.Spacing.md)
+                            .id(bubble.id)
+                    } else if let bubble = byID[row.id] {
                         ChatBubbleView(bubble: bubble, first: first, last: last, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),
@@ -1017,7 +1025,7 @@ private struct MessageMenuButton: View {
         Menu {
             items
         } label: {
-            Image(systemName: "chevron.down")
+            Image(icon: "chevron.down")
                 .font(NookTheme.font(9, .bold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                 .frame(width: 18, height: 18)
@@ -1056,7 +1064,7 @@ private struct ChatJumpButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "chevron.down")
+            Image(icon: "chevron.down")
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                 .frame(width: 32, height: 32)
@@ -1299,7 +1307,7 @@ private struct BubbleActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
@@ -1348,7 +1356,7 @@ private struct MoreEmojiButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
+            Image(icon: "plus")
                 .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 36, height: 36)
@@ -1467,7 +1475,7 @@ struct VideoTile: View {
                                 .interpolation(.high)
                                 .aspectRatio(contentMode: .fit)
                         }
-                        Image(systemName: "play.fill")
+                        Image(icon: "play.fill")
                             .font(NookTheme.font(18, .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
@@ -1483,7 +1491,7 @@ struct VideoTile: View {
         .overlay(alignment: .topTrailing) {
             if showEnlarge {
                 Button { enlarge() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Image(icon: "arrow.up.left.and.arrow.down.right")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
@@ -1511,7 +1519,7 @@ struct VideoTile: View {
             }
         }
         .fittedMedia(size)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        .roundedClip(NookTheme.Radius.card)
         .onHover { hovering = $0 }
         .onDisappear { playback?.pause() }
         // Its frame is read once its message comes near view, not for every video in the history at once.
@@ -1793,11 +1801,11 @@ struct ChatPhotoPlaceholder: View {
     var body: some View {
         let shown = size.map(PhotoButton.fittedSize(for:))
             ?? CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
-        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.card)
             .fill(NookTheme.ink.opacity(0.3))
             .fittedMedia(shown)
             .overlay {
-                Image(systemName: "photo")
+                Image(icon: "photo")
                     .font(NookTheme.font(22))
                     .foregroundStyle(NookTheme.textTertiary)
             }
@@ -1831,7 +1839,7 @@ struct PhotoButton: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .fittedMedia(size)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+                .roundedClip(NookTheme.Radius.card)
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())
         }
@@ -1861,7 +1869,7 @@ struct AttachmentButton: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 36, height: 46)
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .roundedClip(4)
                 } else {
                     // The icon macOS gives this kind of file (a PDF, a spreadsheet, a zip), as Finder shows it.
                     Image(nsImage: Self.icon(for: name))
@@ -1888,7 +1896,7 @@ struct AttachmentButton: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .padding(.vertical, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.ink.opacity(hovering ? 0.32 : 0.22)))
+            .roundedBackground(NookTheme.ink.opacity(hovering ? 0.32 : 0.22), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

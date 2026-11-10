@@ -81,7 +81,7 @@ private struct SidePanelTab<Value: Hashable>: View {
                     .opacity(hovering ? 0 : 1)
                     .accessibilityHidden(true)
                 Button(action: close) {
-                    Image(systemName: "xmark")
+                    Image(icon: "xmark")
                         .font(NookTheme.font(9, .bold))
                         .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
@@ -109,8 +109,7 @@ private struct SidePanelTab<Value: Hashable>: View {
         .padding(.leading, NookTheme.Spacing.sm)
         .padding(.trailing, NookTheme.Spacing.md)
         .frame(height: 24)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+        .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         // In the main window the tabs lie in the title bar's row, where `onHover` hears nothing.
@@ -199,14 +198,13 @@ struct SidePanelLauncher: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(minWidth: 20, minHeight: 20)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.line2))
+                    .roundedBackground(NookTheme.line2, radius: NookTheme.Radius.chip)
             }
             .font(NookTheme.TextStyle.body)
             .foregroundStyle(enabled ? NookTheme.paper : NookTheme.textTertiary)
             .padding(.horizontal, 10)
             .frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(lit ? NookTheme.smoke : Color.clear))
+            .roundedBackground(lit ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
