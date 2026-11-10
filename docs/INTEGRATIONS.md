@@ -302,6 +302,7 @@ check the agent's protocol before you write `–`.
 | Questions with options in place of the composer, and your own answer with files and pictures (attached, pasted or dropped; their paths go below your words, `AnswerAttachments`), also answerable by a parent task through `session_questions` | ✓ (`AskUserQuestion`) | ✓ (app-server `requestUserInput`; not in the `codex exec` fallback) | – (ACP has no question request, only permission requests) | – (same) | – (same) | – (same) | – (same) | – (same) |
 | The agent's goal (`/goal`) above the composer, from what the agent reports (`SessionGoals`); `/goal` goes to Codex through `thread/goal/*`, with pause and resume buttons | ✓ (its `<synthetic>` replies and Stop hook feedback; no pause; a goal that is met stays until cleared, Claude Code reports no end) | ✓ (app-server; `codex exec` takes none) | – (no goal) | – (same) | – (same) | – (same) | – (same) | – (a `/goal` the agent announces goes as a message; it reports nothing back) |
 | Keeps working while Nook is closed or updates (`SessionKeeper`, Settings; off by default); a session waiting for you stops as before. Works below the agent's protocol, so every agent gets it; each only says how it takes up again (`reattachKeptRuns`) | ✓ (stream-json goes on from the spool) | ✓ (app-server; `codex exec` is not kept apart from its process either) | ✓ (ACP; the turn ends on the answer to the earlier prompt) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| Share a session as a guest link (read-only for 24 h; what the guest writes waits for you to send or dismiss; `GuestShares`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Regenerate a session's written title from its menu or ⇧⌘K, with your own title rules from Settings › Agents (or the project's own) in the prompt (`regenerateTitle`, `TextGeneration.titlePrompt`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Pages the agent shows inline in its session (`render_page` on the bridge: kept with the session, drawn in the MCP app sandbox with no network, no messages to Nook and a capped height, `RenderedPage`, `RenderedPageRow`); the iPhone companion lists the page's title | ✓ (sessions Nook runs) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
 | MCP steps read by server and tool ("GitHub › Create issue"); the Claude app's computer-use tools by what they do on your screen (`ScreenAction`), asking for control in amber | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -396,6 +397,10 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 
 ## Open gaps
 
+- **Nook in another app (remote MCP)** serves Claude.ai and ChatGPT alike through one HTTP endpoint with OAuth
+  (`RemoteMCPServer`). It offers the tools that need no project folder (sessions, pull request status, chats, Nook's apps,
+  scheduling); terminal, browser, simulators, pages, secrets and screen control stay with agents in Nook. Not verified against
+  the live assistants: that needs a deployed relay and a Claude.ai or ChatGPT account (docs/WORKSPACE-AGENTS.md).
 - **Teams files.** Pictures pasted in a Teams message show and can be sent (Teams' media service, with the website's
   session). Other files live in SharePoint or OneDrive, which Nook does not reach: they show as a file row that opens
   Teams, and Nook does not send them. Chats read only through Microsoft Graph do not fetch pictures yet.
