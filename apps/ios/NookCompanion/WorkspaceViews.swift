@@ -39,6 +39,8 @@ struct SessionFilesView: View {
     @EnvironmentObject private var client: CompanionClient
     let sessionID: String
     var path = ""
+    /// The file's size as its folder listed it; nil for a folder or when not known.
+    var size: Int? = nil
     @State private var digest: FolderDigest?
     @State private var failed = false
 
@@ -47,8 +49,14 @@ struct SessionFilesView: View {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 if let digest {
                     if digest.binary == true {
-                        WSEmptyState(symbol: "doc", title: String(localized: "No text"),
-                                     message: String(localized: "This file cannot be shown on the phone."))
+                        // Pictures, PDFs and films open with Quick Look where the Mac sends files
+                        // (`CompanionFeature.filePreview`).
+                        if client.can(CompanionFeature.filePreview) {
+                            FilePreviewPanel(sessionID: sessionID, path: path, size: size)
+                        } else {
+                            WSEmptyState(symbol: "doc", title: String(localized: "No text"),
+                                         message: String(localized: "This file cannot be shown on the phone."))
+                        }
                     } else if let text = digest.text {
                         Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(Theme.paper).textSelection(.enabled)
                         if digest.truncated == true {
@@ -60,9 +68,10 @@ struct SessionFilesView: View {
                         }
                         ForEach(digest.entries ?? []) { entry in
                             NavigationLink {
-                                SessionFilesView(sessionID: sessionID, path: path.isEmpty ? entry.name : path + "/" + entry.name)
+                                SessionFilesView(sessionID: sessionID, path: path.isEmpty ? entry.name : path + "/" + entry.name,
+                                                 size: entry.size)
                             } label: {
-                                Label(entry.name, systemImage: entry.isFolder ? "folder" : "doc.text")
+                                Label(entry.name, systemImage: entry.isFolder ? "folder" : Self.symbol(entry.name))
                                     .font(Theme.TextStyle.label).foregroundStyle(Theme.paper)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.vertical, Theme.Spacing.xs)
@@ -84,6 +93,17 @@ struct SessionFilesView: View {
         .task {
             digest = await client.loadFiles(sessionID, path: path)
             failed = digest == nil
+        }
+    }
+
+    /// A file's symbol by its kind, so a picture or a PDF reads as one in the list.
+    static func symbol(_ name: String) -> String {
+        switch (name as NSString).pathExtension.lowercased() {
+        case "png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp", "svg": return "photo"
+        case "pdf": return "doc.richtext"
+        case "mov", "mp4", "m4v": return "film"
+        case "mp3", "m4a", "wav", "aiff": return "waveform"
+        default: return "doc.text"
         }
     }
 }

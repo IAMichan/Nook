@@ -438,6 +438,9 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionResilience.swift
       - path: ../../packages/protocol/Sources/CompanionPullRequests.swift
       - path: ../../packages/protocol/Sources/CompanionShare.swift
+      - path: ../../packages/protocol/Sources/CompanionWire.swift
+      - path: ../../packages/protocol/Sources/CompanionHistory.swift
+      - path: ../../packages/protocol/Sources/CompanionAgentWidget.swift
       - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
       # The phone's Foundation-only logic: dictation languages, diagrams and math, comment positions in a diff.
       - path: ../ios/Core/DictationText.swift

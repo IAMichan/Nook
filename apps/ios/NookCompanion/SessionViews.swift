@@ -23,7 +23,8 @@ struct SessionDetailView: View {
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
 
-    private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
+    /// From the live list, or an older session opened from the settled ones or a search.
+    private var session: SessionDigest? { client.session(sessionID) }
     private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
 
     var body: some View {

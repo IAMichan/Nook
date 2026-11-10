@@ -140,6 +140,14 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// in the answer); one pull request in full by its address (`item`; `pull` in the answer); an action on it
     /// (`item`, `pullAction`); and a new session that works on it (`pullWork`; `created` in the answer).
     case pulls, pull, pullAct, pullWork
+    /// Older sessions than the live list holds, a page at a time, and older sessions that match words
+    /// (`CompanionFeature.history`): `text` is the words (nil or empty pages through all of them), `item` the cursor
+    /// from the last page's `CompanionResponse.cursor` (nil: from the start). `sessions` in the answer, and `cursor`
+    /// while there are more.
+    case history
+    /// A piece of one file of a session's folder (`CompanionFeature.filePreview`), to preview on the phone: `item` is
+    /// its path as for `files`, `text` the byte offset to read from ("0" or nil for the start). `fileChunk` in the answer.
+    case fileData
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -203,8 +211,16 @@ enum CompanionFeature {
     static let pullRequests = "pullRequests"
     /// The Mac takes files with `send` and `start` (`CompanionRequest.attachments`), as from the share sheet.
     static let attachments = "attachments"
+    /// The Mac answers `history`: older sessions a page at a time, and a search through all of them.
+    static let history = "history"
+    /// The Mac opens compressed requests and compresses large answers for a phone that asks for it
+    /// (`CompanionRequest.compression`, `CompanionWire`).
+    static let compression = "compression"
+    /// The Mac answers `fileData`: any file of a session's folder in pieces, up to `FileChunk.maxFileBytes`.
+    static let filePreview = "filePreview"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
-                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments]
+                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
+                      compression, filePreview]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -296,6 +312,9 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// Files that go with `send` or `start` (`CompanionFeature.attachments`): the Mac saves them and gives their
     /// paths below the words, as it does with pictures.
     var attachments: [CompanionFile]? = nil
+    /// This phone opens compressed answers (`CompanionWire`): the Mac may compress a large one. Nil from a phone that
+    /// cannot, which always gets plain JSON; a Mac without `CompanionFeature.compression` ignores it.
+    var compression: Bool? = nil
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
@@ -373,6 +392,10 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var pulls: [PullDigest]? = nil
     /// The pull request of `pull`, and of `pullAct` after the action.
     var pull: PullDetailDigest? = nil
+    /// With `history`: where the next page starts, nil on the last page.
+    var cursor: String? = nil
+    /// The piece of a file `fileData` asked for.
+    var fileChunk: FileChunk? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
