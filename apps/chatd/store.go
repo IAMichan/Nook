@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS profile (
 	name TEXT NOT NULL DEFAULT '',
 	avatar TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS profile_extra (
+	user TEXT PRIMARY KEY,
+	data TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS timeline (
 	id TEXT PRIMARY KEY,
 	room TEXT NOT NULL,
@@ -284,6 +288,39 @@ func (s *Store) SetMember(room id.RoomID, user id.UserID, membership event.Membe
 	s.changed("chat.upserted", room)
 }
 
+// Membership is where someone stands in a room now; "" when the room never had them.
+func (s *Store) Membership(room id.RoomID, user id.UserID) event.Membership {
+	var membership string
+	_ = s.db.QueryRow(`SELECT membership FROM member WHERE room=? AND user=?`, room, user).Scan(&membership)
+	return event.Membership(membership)
+}
+
+// RoomCreated is when the room was made here (Unix milliseconds); 0 for a room that is not here.
+func (s *Store) RoomCreated(room id.RoomID) int64 {
+	var created int64
+	_ = s.db.QueryRow(`SELECT created FROM room WHERE id=?`, room).Scan(&created)
+	return created
+}
+
+// AddMembership puts a change in who is in a room in its timeline, as the chat shows it among the messages: `sender`
+// (empty when the network does not say) made `user` come in (join) or go out (leave, ban). It is no message: it does not
+// move the chat or count as unread (`roomColumns`).
+func (s *Store) AddMembership(room id.RoomID, sender, user id.UserID, membership event.Membership, ts time.Time) {
+	raw, _ := json.Marshal(map[string]any{"membership": membership})
+	_, _ = s.db.Exec(`INSERT INTO timeline (id, room, sender, type, ts, content, target) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		newEventID(), room, sender, event.StateMember.Type, ts.UnixMilli(), string(raw), string(user))
+	s.changed("message.upserted", room)
+}
+
+// AddRoomChange puts a new name, topic or picture of a room in its timeline (`value` the new one, empty when it was
+// taken away): no message, it does not move the chat or count as unread.
+func (s *Store) AddRoomChange(room id.RoomID, sender id.UserID, evtType, value string, ts time.Time) {
+	raw, _ := json.Marshal(map[string]any{"value": value})
+	_, _ = s.db.Exec(`INSERT INTO timeline (id, room, sender, type, ts, content) VALUES (?, ?, ?, ?, ?, ?)`,
+		newEventID(), room, sender, evtType, ts.UnixMilli(), string(raw))
+	s.changed("message.upserted", room)
+}
+
 // Members are the people in a room with their names: the room's own, else their profile.
 func (s *Store) Members(room id.RoomID) ([]Member, error) {
 	rows, err := s.db.Query(`SELECT m.user, m.membership,
@@ -305,6 +342,29 @@ func (s *Store) Members(room id.RoomID) ([]Member, error) {
 		members = append(members, m)
 	}
 	return members, rows.Err()
+}
+
+// SetProfileExtra keeps what the network says of a person besides their name and picture (their identifiers, such as
+// a phone number or username, and whether they are a bot), as the bridge hands it over.
+func (s *Store) SetProfileExtra(user id.UserID, data string) {
+	_, _ = s.db.Exec(`INSERT INTO profile_extra (user, data) VALUES (?, ?) ON CONFLICT (user) DO UPDATE SET data=excluded.data`,
+		user, data)
+}
+
+// ProfileExtras are what the network said of these people besides their name and picture, by user.
+func (s *Store) ProfileExtras(users []id.UserID) map[id.UserID]map[string]any {
+	result := map[id.UserID]map[string]any{}
+	for _, user := range users {
+		var data string
+		if s.db.QueryRow(`SELECT data FROM profile_extra WHERE user=?`, user).Scan(&data) != nil || data == "" {
+			continue
+		}
+		var parsed map[string]any
+		if json.Unmarshal([]byte(data), &parsed) == nil {
+			result[user] = parsed
+		}
+	}
+	return result
 }
 
 func (s *Store) SetProfile(user id.UserID, name, avatar *string) {
@@ -441,6 +501,10 @@ func scanStored(row interface{ Scan(...any) error }) (*Stored, error) {
 	return &e, nil
 }
 
+// shownTypes are the events a chat shows: messages, stickers, polls, people coming in or going out, and the room's new
+// name, topic or picture.
+const shownTypes = `'m.room.message','m.sticker','org.matrix.msc3381.poll.start','m.room.member','m.room.name','m.room.topic','m.room.avatar'`
+
 const storedColumns = `id, room, sender, type, ts, content, target, edited, deleted, status, status_text`
 
 func (s *Store) Event(evtID id.EventID) (*Stored, error) {
@@ -453,14 +517,14 @@ func (s *Store) Event(evtID id.EventID) (*Stored, error) {
 
 // Messages are the newest messages of a room, newest first.
 func (s *Store) Messages(room id.RoomID, limit int) ([]*Stored, error) {
-	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker','org.matrix.msc3381.poll.start')
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN (`+shownTypes+`)
 		ORDER BY ts DESC LIMIT ?`, room, limit)
 }
 
 // MessagesBefore are the newest `limit` messages of a room sent before `before` (Unix milliseconds): scrolling back
 // goes on from the oldest message the app shows, as far as the history goes.
 func (s *Store) MessagesBefore(room id.RoomID, before int64, limit int) ([]*Stored, error) {
-	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker','org.matrix.msc3381.poll.start') AND ts < ?
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN (`+shownTypes+`) AND ts < ?
 		ORDER BY ts DESC LIMIT ?`, room, before, limit)
 }
 

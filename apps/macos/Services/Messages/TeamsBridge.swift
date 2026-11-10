@@ -365,17 +365,21 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                 retries[chat.id] = early + 1
             }
             fetched.insert(chat.id)
-            result.append(BridgedChat(app: app, name: chat.name, messages: messages,
+            var bridged = BridgedChat(app: app, name: chat.name, messages: messages,
                                       unread: TeamsData.unread(messages, readUntil: chat.readUntil),
-                                      members: chat.members.isEmpty ? nil : chat.members, listed: true))
+                                      members: chat.members.isEmpty ? nil : chat.members, listed: true)
+            bridged.profile = chat.profile
+            result.append(bridged)
         }
         for chat in chats where !fetched.contains(chat.id) {
             let preview = chat.preview.map { [$0] } ?? []
             // Until its history is read, the list's newest message is all Nook knows: it is unread when it came after
             // you last read the chat. After that the count from the history stands.
             let unread = seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
-            result.append(BridgedChat(app: app, name: chat.name, messages: preview, unread: unread,
-                                      members: chat.members.isEmpty ? nil : chat.members, listed: true))
+            var bridged = BridgedChat(app: app, name: chat.name, messages: preview, unread: unread,
+                                      members: chat.members.isEmpty ? nil : chat.members, listed: true)
+            bridged.profile = chat.profile
+            result.append(bridged)
         }
         return result
     }
@@ -474,15 +478,19 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let messages = read.messages
             // Messages deleted since (here or in Teams) leave the chat in Nook too.
-            result.append(BridgedChat(app: app, name: chat.name, messages: messages,
+            var bridged = BridgedChat(app: app, name: chat.name, messages: messages,
                                       unread: TeamsData.unread(messages, readUntil: chat.readUntil), listed: true,
-                                      deleted: TeamsWebData.deleted(answer)))
+                                      deleted: TeamsWebData.deleted(answer))
+            bridged.profile = chat.profile
+            result.append(bridged)
         }
         for chat in chats where !fetched.contains(chat.id) && !chat.name.isEmpty {
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let preview = chat.preview.map { [$0] } ?? []
             let unread = state.seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
-            result.append(BridgedChat(app: app, name: chat.name, messages: preview, unread: unread, listed: true))
+            var bridged = BridgedChat(app: app, name: chat.name, messages: preview, unread: unread, listed: true)
+            bridged.profile = chat.profile
+            result.append(bridged)
         }
         return result
     }

@@ -233,7 +233,7 @@ struct ChatTranscript: View, Equatable {
                 // Reading back, several messages at once (a bridge's read, an answer of yours replaced by the app's own,
                 // a message hidden) are no reason to pull you down either: only a chat still opening jumps to its newest.
                 if !arrived, scrolledByUser, !atBottom {
-                    if bubbles.last?.fromMe == false { missed += 1 }
+                    if let newest = bubbles.last, !newest.fromMe, newest.notice == nil { missed += 1 }
                     return
                 }
                 if arrived, !settling {
@@ -348,7 +348,11 @@ struct ChatTranscript: View, Equatable {
     }
 
     private func entries(_ bubbles: [ChatBubble]) -> [ChatTimeline.Entry] {
-        let items = bubbles.map { ChatTimeline.Item(id: $0.id, author: $0.fromMe ? "\u{1}me" : $0.sender, date: $0.date) }
+        // A change in who is in the group stands on its own: the messages around it are runs of their own.
+        let items = bubbles.map { bubble in
+            ChatTimeline.Item(id: bubble.id, author: bubble.notice != nil ? "\u{2}" + bubble.id : (bubble.fromMe ? "\u{1}me" : bubble.sender),
+                              date: bubble.date)
+        }
         return timeline.entries(items, language: I18n.shared.currentLanguage)
     }
 
@@ -367,7 +371,11 @@ struct ChatTranscript: View, Equatable {
                         ChatNewDivider()
                             .padding(.top, NookTheme.Spacing.md)
                     }
-                    if let bubble = byID[row.id] {
+                    if let bubble = byID[row.id], let notice = bubble.notice {
+                        ChatNoticeLine(text: notice, time: bubble.time)
+                            .padding(.vertical, NookTheme.Spacing.md)
+                            .id(bubble.id)
+                    } else if let bubble = byID[row.id] {
                         ChatBubbleView(bubble: bubble, first: first, last: last, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),

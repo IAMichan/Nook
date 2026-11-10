@@ -24,6 +24,12 @@ enum TelegramData {
         var isPinned: Bool = false
         /// Its notifications are muted (for a while or for good).
         var isMuted: Bool = false
+        /// The other person of a private chat, by their user id.
+        var user: Int64? = nil
+        /// What the chat's own settings say: only admins write (members may not send), and after how long messages
+        /// disappear (0: they do not).
+        var adminsOnly: Bool? = nil
+        var disappearAfter: Double? = nil
     }
 
     /// Where the login stands.
@@ -94,7 +100,62 @@ enum TelegramData {
                     photo: picture?.id, avatar: picture?.path, readOutbox: int64(object["last_read_outbox_message_id"]) ?? 0,
                     basicGroup: type(kind) == "chatTypeBasicGroup" ? int64(kind["basic_group_id"]) : nil,
                     supergroup: type(kind) == "chatTypeSupergroup" ? int64(kind["supergroup_id"]) : nil,
-                    isPinned: isPinned(object["positions"]), isMuted: isMuted(object["notification_settings"]))
+                    isPinned: isPinned(object["positions"]), isMuted: isMuted(object["notification_settings"]),
+                    user: type(kind) == "chatTypePrivate" ? int64(kind["user_id"]) : nil,
+                    adminsOnly: isGroup ? adminsOnly(object["permissions"]) : nil,
+                    disappearAfter: int64(object["message_auto_delete_time"]).map(Double.init))
+    }
+
+    /// A group where members may not send text (`permissions.can_send_basic_messages`, `can_send_messages` before
+    /// TDLib 1.8.14): only admins write. Nil when the chat does not say.
+    static func adminsOnly(_ permissions: Any?) -> Bool? {
+        guard let permissions = permissions as? [String: Any] else { return nil }
+        guard let send = (permissions["can_send_basic_messages"] ?? permissions["can_send_messages"]) as? Bool else { return nil }
+        return !send
+    }
+
+    /// What Telegram says of a person (a `user`): their username, number, whether they are verified or a bot, and the
+    /// link to them.
+    static func person(_ user: [String: Any]) -> ChatProfile {
+        var profile = ChatProfile()
+        let usernames = (user["usernames"] as? [String: Any])?["active_usernames"] as? [String] ?? []
+        if let name = usernames.first ?? (user["username"] as? String), !name.isEmpty {
+            profile.username = "@" + name
+            profile.link = "https://t.me/" + name
+        }
+        if let phone = user["phone_number"] as? String, !phone.isEmpty { profile.phone = "+" + phone }
+        if user["is_verified"] as? Bool == true { profile.verified = true }
+        if type(user["type"] as? [String: Any] ?? [:]) == "userTypeBot" { profile.bot = true }
+        return profile
+    }
+
+    /// A person's bio from their `userFullInfo` (`bio`, formatted text; a plain string in older TDLib).
+    static func bio(_ info: [String: Any]) -> String? {
+        let bio = info["bio"]
+        return ChatProfile.text((bio as? String) ?? ((bio as? [String: Any])?["text"] as? String))
+    }
+
+    /// What Telegram says of a group from its `basicGroupFullInfo` or `supergroupFullInfo`: its description, who made
+    /// it, how many are in it, its invite link and (a basic group's members) its admins, by name (you as
+    /// `ChatMembership.me`).
+    static func groupProfile(_ info: [String: Any], users: [Int64: String], me: Int64?) -> ChatProfile {
+        var profile = ChatProfile(about: ChatProfile.text(info["description"] as? String))
+        func name(_ user: Int64) -> String { user == me ? ChatMembership.me : users[user] ?? "" }
+        if let creator = int64(info["creator_user_id"]), creator != 0 { profile.createdBy = name(creator) }
+        if let count = int64(info["member_count"]), count > 0 { profile.memberCount = Int(count) }
+        if let link = (info["invite_link"] as? [String: Any])?["invite_link"] as? String, !link.isEmpty { profile.link = link }
+        if info["members"] != nil { profile.admins = admins(info).map(name).filter { !$0.isEmpty } }
+        return profile
+    }
+
+    /// The admins (the owner too) among a `basicGroupFullInfo`'s or `chatMembers`' members, by user id.
+    static func admins(_ object: [String: Any]) -> [Int64] {
+        (object["members"] as? [[String: Any]] ?? []).compactMap { member in
+            let status = type(member["status"] as? [String: Any] ?? [:])
+            guard status == "chatMemberStatusCreator" || status == "chatMemberStatusAdministrator" else { return nil }
+            let sender = member["member_id"] as? [String: Any] ?? [:]
+            return type(sender) == "messageSenderUser" ? int64(sender["user_id"]) : int64(member["user_id"])
+        }
     }
 
     /// The people of a group, by their user id: a `basicGroupFullInfo`'s or a `chatMembers`' `members`.
@@ -225,10 +286,27 @@ enum TelegramData {
     }
 
     /// A `message` as a message in Nook: what it says (a file by its kind and caption), who wrote it in a group, and
-    /// whether it is yours. Nil for a message without anything to show (a service message, a pinned notice).
-    static func message(_ object: [String: Any], chat: Chat, users: [Int64: String]) -> InboxMessage? {
+    /// whether it is yours. Someone added, removed, joining or leaving shows as a line in the chat (`membership`); nil
+    /// for a message without anything to show (another service message, a pinned notice). `me`: your own user id.
+    static func message(_ object: [String: Any], chat: Chat, users: [Int64: String], me: Int64? = nil) -> InboxMessage? {
         guard type(object) == "message", let id = int64(object["id"]) else { return nil }
         let content = object["content"] as? [String: Any] ?? [:]
+        if let change = membership(content, sender: senderUser(object), mine: object["is_outgoing"] as? Bool == true,
+                                   users: users, me: me) {
+            var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", text: "",
+                                       date: Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0)),
+                                       fromMe: change.by == ChatMembership.me)
+            message.membership = change
+            return message
+        }
+        if let change = groupChange(content, sender: senderUser(object), mine: object["is_outgoing"] as? Bool == true,
+                                    users: users, me: me) {
+            var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", text: "",
+                                       date: Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0)),
+                                       fromMe: change.by == ChatMembership.me)
+            message.groupChange = change
+            return message
+        }
         let attached = file(content)
         let asked = poll(content)
         // A file shows as itself, with its caption as the text; a poll as itself; anything else as its text.
@@ -245,6 +323,50 @@ enum TelegramData {
         // Changed after it was sent: Telegram dates the last change (`edit_date`, 0 when there was none).
         if (int64(object["edit_date"]) ?? 0) > 0 { message.edited = true }
         return message
+    }
+
+    /// Someone added (`messageChatAddMembers`, by the sender), joining through a link or after a request
+    /// (`messageChatJoinByLink`, `messageChatJoinByRequest`) or removed or leaving (`messageChatDeleteMember`, by the
+    /// sender: themselves when they left), by their names in Telegram; nil for any other content.
+    static func membership(_ content: [String: Any], sender: Int64?, mine: Bool, users: [Int64: String], me: Int64?) -> ChatMembership? {
+        func name(_ user: Int64) -> String { user == me ? ChatMembership.me : users[user] ?? "" }
+        let by = mine ? ChatMembership.me : sender.map(name)
+        switch type(content) {
+        case "messageChatAddMembers":
+            let added = (content["member_user_ids"] as? [Any] ?? []).compactMap(int64)
+            // Someone who added only themselves came back to the group.
+            if added == [sender].compactMap({ $0 }) { return ChatMembership(.joined, people: [by ?? ""]) }
+            return ChatMembership(.added, by: by, people: added.map(name))
+        case "messageChatJoinByLink", "messageChatJoinByRequest":
+            return ChatMembership(.joined, people: [by ?? ""])
+        case "messageChatDeleteMember":
+            guard let user = int64(content["user_id"]) else { return nil }
+            if user == sender { return ChatMembership(.left, people: [by ?? ""]) }
+            return ChatMembership(.removed, by: by, people: [name(user)])
+        default:
+            return nil
+        }
+    }
+
+    /// The group itself changed, by the sender: a new name (`messageChatChangeTitle`), picture
+    /// (`messageChatChangePhoto`, `messageChatDeletePhoto`), the group made (`messageBasicGroupChatCreate`,
+    /// `messageSupergroupChatCreate`), a message pinned (`messagePinMessage`) or messages set to disappear
+    /// (`messageChatSetMessageAutoDeleteTime`). Nil for any other content.
+    static func groupChange(_ content: [String: Any], sender: Int64?, mine: Bool, users: [Int64: String], me: Int64?) -> ChatGroupChange? {
+        let by = mine ? ChatMembership.me : sender.map { $0 == me ? ChatMembership.me : users[$0] ?? "" }
+        switch type(content) {
+        case "messageChatChangeTitle": return ChatGroupChange(.renamed, by: by, text: content["title"] as? String)
+        case "messageChatChangePhoto": return ChatGroupChange(.photo, by: by)
+        case "messageChatDeletePhoto": return ChatGroupChange(.photoRemoved, by: by)
+        case "messageBasicGroupChatCreate", "messageSupergroupChatCreate":
+            return ChatGroupChange(.created, by: by, text: content["title"] as? String)
+        case "messagePinMessage": return ChatGroupChange(.pinned, by: by)
+        case "messageChatSetMessageAutoDeleteTime", "messageChatSetTtl":
+            let seconds = int64(content["message_auto_delete_time"]) ?? int64(content["ttl"]) ?? 0
+            return ChatGroupChange(.disappearing, by: by, text: String(seconds))
+        default:
+            return nil
+        }
     }
 
     /// The message this one answers, in the same chat: `reply_to` (TDLib 1.8.21 and later, with the part you quoted,
