@@ -677,22 +677,11 @@ private struct ChatBubbleView: View, Equatable {
                         .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
                             if let ticks = bubble.ticks { MessageInfoView(ticks: ticks, readers: bubble.readers) }
                         }
-                        // Over the bubble's bottom edge at its leading side, as the chat apps show them, clear of the
-                        // time at its trailing side.
-                        .overlay(alignment: .bottomLeading) {
-                            if !bubble.reactions.isEmpty {
-                                ReactionChips(reactions: bubble.reactions, onReact: onReact)
-                                    .padding(.leading, NookTheme.Spacing.md)
-                                    .alignmentGuide(.bottom) { $0[.top] + ReactionChips.overlap }
-                            }
-                        }
                     if !bubble.reactions.isEmpty {
-                        // The room the pill takes under the bubble, so the next message does not run into it.
-                        ReactionChips(reactions: bubble.reactions, onReact: nil)
-                            .hidden()
-                            .frame(width: 0)
-                            .padding(.top, -ReactionChips.overlap)
-                            .accessibilityHidden(true)
+                        // Under the bubble at its leading side, in its own room, so it never covers the message's
+                        // text or time and the next message does not run into it.
+                        ReactionChips(reactions: bubble.reactions, onReact: onReact)
+                            .padding(.leading, NookTheme.Spacing.md)
                     }
                 }
             }
@@ -1150,7 +1139,7 @@ struct QuotedMessage: View {
     }
 }
 
-/// The emoji on a message as one pill over the bubble's bottom edge, as WhatsApp and iMessage show them: the emoji, the
+/// The emoji on a message as one pill under the bubble: the emoji, the
 /// most used first, and how many reacted in all. Tinted when one is yours; a click shows who put which emoji there.
 private struct ReactionChips: View {
     let reactions: [BubbleReaction]
@@ -1158,8 +1147,6 @@ private struct ReactionChips: View {
     /// Who reacted is open under the emoji.
     @State private var showingPeople = false
 
-    /// How far the pill reaches up over the bubble.
-    static let overlap: CGFloat = NookTheme.Spacing.sm
     /// The most emoji the pill shows; the rest are in the count and in the list of who reacted.
     private static let shown = 3
 
@@ -1203,9 +1190,6 @@ private struct ReactionChips: View {
                 .fill(NookTheme.chatTheirs)
                 .overlay(Capsule().fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
         }
-        // A ring in the chat's own black cuts the pill out of the bubble it sits on.
-        .padding(NookTheme.Spacing.xxs)
-        .background(Capsule().fill(NookTheme.canvas))
         .contentShape(Capsule())
     }
 
