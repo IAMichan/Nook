@@ -58,6 +58,42 @@ enum UsageLimits {
         }
     }
 
+    /// One line of the composer's limit chip: a window's short name and how much of it is used.
+    struct ChipLine: Equatable {
+        var short: String
+        var used: Int
+    }
+
+    /// The composer chip's lines: the shortest and the longest window, each the fullest of the windows that last that long
+    /// (an agent with a quota per model has several), in that order; one line when every window lasts as long.
+    static func chipLines(_ windows: [(duration: TimeInterval?, percent: Double, window: String)]) -> [ChipLine] {
+        var spans: [(duration: TimeInterval?, windows: [(duration: TimeInterval?, percent: Double, window: String)])] = []
+        for window in windows {
+            let key = window.duration.map { ($0 / 60).rounded() * 60 }
+            if let index = spans.firstIndex(where: { $0.duration == key }) {
+                spans[index].windows.append(window)
+            } else {
+                spans.append((key, [window]))
+            }
+        }
+        spans.sort { ($0.duration ?? .infinity) < ($1.duration ?? .infinity) }
+        let picked = spans.count > 1 ? [spans[0], spans[spans.count - 1]] : spans
+        return picked.map { span in
+            let percent = span.windows.map(\.percent).max() ?? 0
+            return ChipLine(short: shortWindow(span.duration, fallback: span.windows[0].window),
+                            used: Int(min(100, max(0, percent)).rounded()))
+        }
+    }
+
+    /// "5h", "W", "3d": a window's length in a letter or two, to fit beside the chip's ring.
+    static func shortWindow(_ duration: TimeInterval?, fallback: String) -> String {
+        guard let duration, duration > 0 else { return String(fallback.prefix(2)) }
+        let day: TimeInterval = 24 * 3600
+        if duration < day { return tr("compose.limits.shortHours", max(1, Int((duration / 3600).rounded()))) }
+        if duration >= 6 * day { return tr("compose.limits.shortWeek") }
+        return tr("compose.limits.shortDays", Int((duration / day).rounded()))
+    }
+
     /// The latest reset of the blocked windows; nil when one of them did not say when.
     /// An account's limit windows (percent used, reset): when every full one has reset. Nil when none is full or a
     /// full one has no reset time.
