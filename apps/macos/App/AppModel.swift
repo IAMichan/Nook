@@ -269,6 +269,9 @@ final class AppModel: ObservableObject {
     var capturingScreenPart = false
     /// Attachment indicator for the input field: file currently included.
     @Published private(set) var attachmentName: String?
+    /// Why the file you just attached to the chat could not be read; shown under the chat's box until you attach
+    /// another, send, or close it.
+    @Published var attachmentError: String?
 
     private init() {
         // Every view of the app redraws when one of these changes. Launching sends dozens of changes in a row (each
