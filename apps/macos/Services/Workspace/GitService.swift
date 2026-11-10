@@ -17,6 +17,7 @@ enum ProcessRunner {
         try autoreleasepool { try runInPool(executable, arguments, in: directory, environment: environment, timeout: timeout) }
     }
 
+    /// Body of `run`, called inside its autorelease pool: starts the process, drains stdout and stderr, and waits.
     private static func runInPool(_ executable: String, _ arguments: [String], in directory: String?,
                                   environment: [String: String]?, timeout: TimeInterval) throws -> Output {
         let process = Process()
