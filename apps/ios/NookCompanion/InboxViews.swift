@@ -84,6 +84,8 @@ struct InboxListView: View {
                 .padding(.horizontal, Theme.Spacing.md)
             }
             .padding(.bottom, Theme.Spacing.xxl)
+            // A chat that gets a message moves up instead of jumping there.
+            .animation(Theme.reveal, value: client.inbox)
         }
         .scrollDismissesKeyboard(.immediately)
         .refreshable { await client.loadInbox() }

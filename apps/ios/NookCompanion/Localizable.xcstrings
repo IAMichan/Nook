@@ -1210,6 +1210,34 @@
         }
       }
     },
+    "All calm. Nothing needs you right now." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles ruhig. Gerade braucht nichts deine Aufmerksamkeit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo en calma. Ahora mismo nada te necesita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout est calme. Rien ne vous attend pour l’instant."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles rustig. Er hoeft nu niets van je."
+          }
+        }
+      }
+    },
     "All quiet. Here is your day." : {
       "localizations" : {
         "de" : {
@@ -3408,6 +3436,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze sessie beëindigen?"
+          }
+        }
+      }
+    },
+    "Everything between your iPhone and your Mac is encrypted end to end." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles zwischen deinem iPhone und deinem Mac ist Ende-zu-Ende-verschlüsselt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo lo que pasa entre tu iPhone y tu Mac está cifrado de extremo a extremo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout ce qui passe entre votre iPhone et votre Mac est chiffré de bout en bout."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles tussen je iPhone en je Mac is end-to-end versleuteld."
           }
         }
       }
@@ -9866,6 +9922,34 @@
         }
       }
     },
+    "Unread chats" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungelesene Chats"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chats sin leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discussions non lues"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ongelezen chats"
+          }
+        }
+      }
+    },
     "Unreadable reply from your Mac." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10463,6 +10547,34 @@
         }
       }
     },
+    "Waiting on you" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf dich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te espera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous attend"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wacht op jou"
+          }
+        }
+      }
+    },
     "Waits for you on your Mac" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11053,6 +11165,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Werkt al %@"
+          }
+        }
+      }
+    },
+    "Working late?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch spät dran?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Trabajando hasta tarde?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encore debout ?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog laat bezig?"
           }
         }
       }
