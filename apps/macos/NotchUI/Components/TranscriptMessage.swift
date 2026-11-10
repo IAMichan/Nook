@@ -17,6 +17,8 @@ struct TranscriptUserMessage<Attachments: View>: View {
     var date: Date? = nil
     /// Sent while the agent was working: it changed course mid-turn.
     var steered = false
+    /// It waited in the queue first and was then taken into the running turn.
+    var promoted = false
     /// "Edit from here": goes back to before this message and puts it in the composer again; nil where it cannot.
     var onEdit: (() -> Void)? = nil
     /// Pictures that came with the message as attachments rather than as paths in its text (the Nook chat's).
@@ -31,13 +33,16 @@ struct TranscriptUserMessage<Attachments: View>: View {
         let parts = ImageAttachment.splittingAttachments(from: ContextRefs.timeline(text, folder: fileLinkBase))
         let long = TranscriptStyle.isLong(parts.text)
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
-            if steered {
+            if steered || promoted {
+                // "↪ Steer" marks a message that went into the turn while it ran.
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "arrow.turn.down.right")
-                    Text(tr("agents.message.steered"))
+                    Image(systemName: "arrow.uturn.right")
+                    Text(tr("agents.message.steer"))
                 }
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.textTertiary)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .help(promoted ? tr("agents.message.steerPromotedHelp") : tr("agents.message.steerHelp"))
+                .accessibilityElement(children: .combine)
             }
             attachments()
             if !parts.images.isEmpty {
@@ -98,8 +103,8 @@ struct TranscriptUserMessage<Attachments: View>: View {
 }
 
 extension TranscriptUserMessage where Attachments == EmptyView {
-    init(text: String, date: Date? = nil, steered: Bool = false, onEdit: (() -> Void)? = nil) {
-        self.init(text: text, date: date, steered: steered, onEdit: onEdit) { EmptyView() }
+    init(text: String, date: Date? = nil, steered: Bool = false, promoted: Bool = false, onEdit: (() -> Void)? = nil) {
+        self.init(text: text, date: date, steered: steered, promoted: promoted, onEdit: onEdit) { EmptyView() }
     }
 }
 

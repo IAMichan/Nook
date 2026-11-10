@@ -346,7 +346,12 @@ private struct TranscriptRowView: View, Equatable {
     }
 
     var body: some View {
-        if case let (key, text, inner)? = Self.fold(row) {
+        if case .superseded(let id, let inner) = row {
+            let key = "superseded:" + id
+            TranscriptSupersededFold(open: open.contains(key), toggle: { toggle(key) }) {
+                ForEach(inner) { flatRow($0, answers: false).id($0.id) }
+            }
+        } else if case let (key, text, inner)? = Self.fold(row) {
             TranscriptFold(text: text, open: open.contains(key), checks: checks, ruled: ruled, toggle: { toggle(key) }) {
                 ForEach(inner) { flatRow($0, answers: false).id($0.id) }
             }
@@ -375,7 +380,7 @@ private struct TranscriptRowView: View, Equatable {
         case .user(let message):
             // Space above your message: each turn starts as its own block, as in the Nook chat.
             TranscriptUserMessage(text: message.text, date: message.date, steered: message.queued)
-                .padding(.top, TranscriptStyle.turnGap - NookTheme.Spacing.sm)
+                .padding(.top, message.queued ? NookTheme.Spacing.xs : TranscriptStyle.turnGap - NookTheme.Spacing.sm)
                 .padding(.bottom, NookTheme.Spacing.xxs)
         case .assistant(let message, let isFinal):
             // Only the final answer of a turn has the footer (copy and time).
@@ -398,7 +403,7 @@ private struct TranscriptRowView: View, Equatable {
             stepLine(step)
         case .group(let id, let steps, let thoughts):
             group(id: id, steps: steps, thoughts: thoughts)
-        case .fold, .continued:
+        case .fold, .continued, .superseded:
             EmptyView()
         case .notice(let message):
             TranscriptNotice(message: message)
@@ -504,6 +509,7 @@ private final class TranscriptDerived {
             return ["group:" + id] + steps.map { "step:" + $0.id } + thoughts.values.flatMap { $0.map { "think:" + $0.id } }
         case .fold(let id, _, let inner): return ["fold:" + id] + inner.flatMap(openKeys)
         case .continued(let id, _, let inner): return ["continued:" + id] + inner.flatMap(openKeys)
+        case .superseded(let id, let inner): return ["superseded:" + id] + inner.flatMap(openKeys)
         case .live(_, let thought): return thought.map { ["think:" + $0.id] } ?? []
         case .user, .assistant, .notice, .working, .interrupted: return []
         }
@@ -539,7 +545,7 @@ private final class TranscriptDerived {
         foldChecks = [:]
         for row in rows {
             switch row {
-            case .fold(_, _, let inner), .continued(_, _, let inner):
+            case .fold(_, _, let inner), .continued(_, _, let inner), .superseded(_, let inner):
                 foldChecks[row.id] = Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))
             default: break
             }
@@ -554,7 +560,7 @@ private final class TranscriptDerived {
         for row in rows {
             let answers: [TranscriptRow]
             switch row {
-            case .fold(_, _, let inner), .continued(_, _, let inner): answers = inner
+            case .fold(_, _, let inner), .continued(_, _, let inner), .superseded(_, let inner): answers = inner
             default: answers = [row]
             }
             for case let .assistant(message, _) in answers {

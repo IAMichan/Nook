@@ -30,8 +30,9 @@ struct EventRow: View {
         switch event.kind {
         case .user:
             // Each turn starts as its own block, as in the Nook chat and an agent's transcript.
-            TranscriptUserMessage(text: event.text, date: event.date, onEdit: onEdit)
-                .padding(.top, TranscriptStyle.turnGap - NookTheme.Spacing.sm)
+            TranscriptUserMessage(text: event.text, date: event.date, steered: event.steer == .steer,
+                                  promoted: event.steer == .promoted, onEdit: onEdit)
+                .padding(.top, event.steer == nil ? TranscriptStyle.turnGap - NookTheme.Spacing.sm : NookTheme.Spacing.xs)
                 .padding(.bottom, NookTheme.Spacing.xxs)
 
         case .assistant:
@@ -107,6 +108,10 @@ struct EventRow: View {
                         .padding(.bottom, NookTheme.Spacing.xs)
                 }
             }
+
+        case .system where event.tool == "switch" && event.change != nil:
+            // Another agent, model or effort from here on.
+            ModelSwitchDivider(change: event.change!)
 
         case .system where event.tool == "clear":
             // `/clear`: the agent starts a new conversation here and remembers nothing above the line.

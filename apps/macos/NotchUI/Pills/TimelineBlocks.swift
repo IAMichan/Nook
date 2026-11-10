@@ -40,6 +40,13 @@ struct TimelineBlockView: View, Equatable {
                     TimelineBlockView(block: inner, expanded: expanded, context: context, toggle: toggle, eventRow: eventRow)
                 }
             }
+        case .superseded(let id, let blocks):
+            let key = "superseded:" + id.uuidString
+            TranscriptSupersededFold(open: expanded.contains(key), toggle: { toggle(key) }) {
+                ForEach(blocks) { inner in
+                    TimelineBlockView(block: inner, expanded: expanded, context: context, toggle: toggle, eventRow: eventRow)
+                }
+            }
         }
     }
 }
@@ -78,7 +85,7 @@ extension TimelineBlock {
         switch self {
         case .event(let event): return [event.id]
         case .tools(_, let events, _): return events.map(\.id)
-        case .fold(_, _, let blocks, _): return blocks.flatMap(\.eventIDs)
+        case .fold(_, _, let blocks, _), .superseded(_, let blocks): return blocks.flatMap(\.eventIDs)
         }
     }
 }
