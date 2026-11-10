@@ -620,6 +620,7 @@ targets:
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
       - path: Services/Search/NookSearch.swift
+      - path: Services/Search/SearchAI.swift
       - path: Brain/MacReport.swift
       - path: Brain/EnergyVAD.swift
       - path: Services/Updates/AppUpdateCore.swift

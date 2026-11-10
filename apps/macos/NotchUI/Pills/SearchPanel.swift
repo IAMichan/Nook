@@ -5,8 +5,9 @@ import SwiftUI
 /// sessions and their transcripts, chats, call notes, memories, notices, settings and actions. Typing ranks as you go;
 /// a chip (or Tab) keeps one kind; ↑/↓ (or ⌃N/⌃P) move, Return opens the hit right where it matched, ⌘1 to ⌘9 open the
 /// first nine at once, Esc, the cross or a click beside it closes. Return before the results are in opens the best one
-/// as soon as they arrive. With nothing typed it shows your recent searches and how to search more precisely (see
-/// `SearchQuery` for the query language).
+/// as soon as they arrive. ⌘Return (or the AI row) searches with AI: the brain answers the question from what search
+/// finds, citing the hits it read, which are then the list (`SearchAI`). With nothing typed it shows what you opened
+/// lately, your recent searches and how to search more precisely (see `SearchQuery` for the query language).
 struct SearchPanel: View {
     @EnvironmentObject private var app: AppModel
     /// Shows a tab in the surface that holds the panel (the notch or the main window).
@@ -31,16 +32,23 @@ struct SearchPanel: View {
         _kind = State(initialValue: kind)
     }
 
-    /// What a row is: a hit, or asking Nook what you typed.
+    /// What a row is: a hit, searching with AI, or asking Nook what you typed.
     private enum Row: Identifiable {
         case hit(SearchHit, top: Bool)
+        case ai(String)
         case ask(String)
 
         var id: String {
             switch self {
             case .hit(let hit, let top): return (top ? "top:" : "") + hit.id
+            case .ai: return "ai"
             case .ask: return "ask"
             }
+        }
+
+        var isHit: Bool {
+            if case .hit = self { return true }
+            return false
         }
     }
 
@@ -52,15 +60,31 @@ struct SearchPanel: View {
         return center.hits.filter { $0.document.kind == kind }
     }
 
+    private var typed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Search with AI's answer for what is typed, while it is the one asked.
+    private var answer: SearchCenter.AIAnswer? {
+        guard let ai = center.ai, ai.question == typed else { return nil }
+        return ai
+    }
+
     private var rows: [Row] {
+        // With an AI answer the list is what it read, the hits it cites first.
+        if let answer {
+            return SearchAI.ordered(answer.sources, citing: answer.cited).map { Row.hit($0, top: false) }
+        }
         let hits = visible
         var rows: [Row] = []
+        let typed = typed
+        // A question in your own words: asking AI comes first.
+        let question = !typed.isEmpty && SearchAI.looksLikeQuestion(typed)
+        if question { rows.append(.ai(typed)) }
         if let top = hits.first, kind == nil, hits.count > 1 { rows.append(.hit(top, top: true)) }
         let rest = kind == nil && hits.count > 1 ? Array(hits.dropFirst()) : hits
         for group in Self.kinds {
             rows += rest.filter { $0.document.kind == group }.map { Row.hit($0, top: false) }
         }
-        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty, !question { rows.append(.ai(typed)) }
         if !typed.isEmpty, center.query.hasText || center.query.isEmpty { rows.append(.ask(typed)) }
         return rows
     }
@@ -75,7 +99,7 @@ struct SearchPanel: View {
             }
             .padding(.leading, NookTheme.Spacing.xs)
             .padding(.trailing, NookTheme.Spacing.md)
-            if !text.isEmpty { chips.padding(.horizontal, NookTheme.Spacing.lg).padding(.bottom, NookTheme.Spacing.md) }
+            if !text.isEmpty, answer == nil { chips.padding(.horizontal, NookTheme.Spacing.lg).padding(.bottom, NookTheme.Spacing.md) }
             NookDivider()
             Group {
                 if text.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -114,8 +138,10 @@ struct SearchPanel: View {
         .onChange(of: text) { _, value in
             index = 0
             openWhenReady = false
+            if center.ai?.question != value.trimmingCharacters(in: .whitespacesAndNewlines) { center.stopAI() }
             center.search(value)
         }
+        .onChange(of: center.ai?.sources.map(\.id)) { _, _ in index = 0 }
         .onChange(of: kind) { _, _ in index = 0 }
         .onChange(of: center.hits) { _, _ in index = min(index, max(0, rows.count - 1)) }
         .onChange(of: center.searched) { _, value in
@@ -165,6 +191,11 @@ struct SearchPanel: View {
         let list = rows
         switch Int(event.keyCode) {
         case kVK_Return, kVK_ANSI_KeypadEnter:
+            // ⌘Return: search with AI, whichever row is chosen.
+            if flags == .command {
+                askAI()
+                return true
+            }
             guard flags.isEmpty else { return false }
             submit()
         case kVK_DownArrow where flags.isEmpty:
@@ -195,9 +226,8 @@ struct SearchPanel: View {
 
     /// Return: the chosen row, or the best hit once the results for what is typed are in.
     private func submit() {
-        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typed.isEmpty else { return }
-        if center.searched != text {
+        if answer == nil, center.searched != text {
             openWhenReady = true
             center.searchNow()
         } else {
@@ -209,7 +239,7 @@ struct SearchPanel: View {
 
     @ViewBuilder
     private func results(_ list: [Row]) -> some View {
-        if list.allSatisfy({ if case .ask = $0 { return true } else { return false } }), center.searched == text, !center.indexing,
+        if answer == nil, list.allSatisfy({ !$0.isHit }), center.searched == text, !center.indexing,
            !center.searchingHistory {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 ListEmptyNote(tr("search.none"))
@@ -226,6 +256,9 @@ struct SearchPanel: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        if let answer {
+                            answerCard(answer).padding(.bottom, NookTheme.Spacing.sm)
+                        }
                         ForEach(Array(list.enumerated()), id: \.element.id) { offset, row in
                             if let label = sectionLabel(list, at: offset) {
                                 NookSectionLabel(label, inset: NookTheme.Spacing.md)
@@ -249,13 +282,14 @@ struct SearchPanel: View {
         }
     }
 
-    /// A label over the first row of each group: the top hit, then each kind.
+    /// A label over the first row of each group: the top hit, then each kind; with an AI answer, its sources.
     private func sectionLabel(_ list: [Row], at offset: Int) -> String? {
+        if answer != nil { return offset == 0 ? tr("search.ai.sources") : nil }
         func group(_ row: Row) -> String {
             switch row {
             case .hit(_, let top) where top: return tr("search.top")
             case .hit(let hit, _): return Self.title(hit.document.kind)
-            case .ask: return ""
+            case .ai, .ask: return ""
             }
         }
         let current = group(list[offset])
@@ -266,16 +300,25 @@ struct SearchPanel: View {
     @ViewBuilder
     private func rowView(_ row: Row, selected: Bool) -> some View {
         switch row {
-        case .hit(let hit, _): hitRow(hit, selected: selected)
-        case .ask(let typed): askRow(typed, selected: selected)
+        case .hit(let hit, _): hitRow(hit, selected: selected, number: sourceNumber(hit))
+        case .ai(let typed): actionRow("sparkles", tr("search.ai.row", typed), hint: "⌘↩", selected: selected)
+        case .ask(let typed): actionRow("bubble.left", tr("search.ask", typed), hint: nil, selected: selected)
         }
     }
 
-    private func hitRow(_ hit: SearchHit, selected: Bool) -> some View {
+    /// A hit's number in the AI answer, as it cites it ([1] is the first source).
+    private func sourceNumber(_ hit: SearchHit) -> Int? {
+        answer?.sources.firstIndex { $0.id == hit.id }.map { $0 + 1 }
+    }
+
+    private func hitRow(_ hit: SearchHit, selected: Bool, number: Int? = nil) -> some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             face(hit.document, selected: selected)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 HStack(spacing: NookTheme.Spacing.sm) {
+                    if let number {
+                        Text(verbatim: "[\(number)]").font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.iris)
+                    }
                     Text(Self.marked(hit.document.title, hit.titleRanges, font: NookTheme.TextStyle.body, bold: NookTheme.TextStyle.strong))
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
@@ -358,14 +401,18 @@ struct SearchPanel: View {
         return line
     }
 
-    private func askRow(_ typed: String, selected: Bool) -> some View {
+    /// Searching with AI or asking Nook, for what is typed.
+    private func actionRow(_ icon: String, _ title: String, hint: String?, selected: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(icon: "sparkles")
+            Image(icon: icon)
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.iris)
                 .frame(width: 18)
-            Text(tr("search.ask", typed)).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
+            Text(title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
             Spacer(minLength: 0)
+            if let hint {
+                Text(verbatim: hint).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary).accessibilityHidden(true)
+            }
             if selected { returnHint }
         }
         .padding(.horizontal, NookTheme.Spacing.md)
@@ -373,6 +420,81 @@ struct SearchPanel: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
         .contentShape(Rectangle())
         .accessibilityAddTraits(.isButton)
+    }
+
+    // MARK: Search with AI
+
+    private func askAI() {
+        guard !typed.isEmpty else { return }
+        index = 0
+        center.askAI(typed, brain: app.brain, settings: app.settings)
+    }
+
+    /// The AI's answer over its sources: what it is doing while it works, then the answer with its citations marked.
+    private func answerCard(_ answer: SearchCenter.AIAnswer) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(icon: "sparkles").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.iris)
+                Text(tr("search.ai.title")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong)
+                Spacer(minLength: NookTheme.Spacing.md)
+                if answer.isWorking { ProgressView().controlSize(.small) }
+                if answer.phase == .answered {
+                    SmallGhostButton(title: tr("search.ai.continue")) { continueInChat(answer.question) }
+                }
+            }
+            switch answer.phase {
+            case .planning:
+                Text(tr("search.ai.planning")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+            case .reading(let count):
+                Text(tr("search.ai.reading", count)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+            case .answered:
+                Text(Self.answerText(answer.answer, sources: answer.sources.count))
+                    .foregroundStyle(NookTheme.paper)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .noBrain:
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Text(tr("search.ai.noBrain")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    Spacer(minLength: 0)
+                    SmallGhostButton(title: tr("search.ai.chooseBrain")) {
+                        close()
+                        app.openSettings(section: .brain)
+                    }
+                }
+            case .failed:
+                Text(tr("search.ai.failed")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+            }
+        }
+        .padding(NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The answer as Markdown (bold, code, links), with its citations [1], [2] in the accent colour.
+    static func answerText(_ answer: String, sources: Int) -> AttributedString {
+        var text = (try? AttributedString(markdown: answer, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(answer)
+        text.font = NookTheme.TextStyle.body
+        for number in stride(from: sources, through: 1, by: -1) {
+            var from = text.startIndex
+            while let range = text[from...].range(of: "[\(number)]") {
+                text[range].foregroundColor = NookTheme.iris
+                text[range].font = NookTheme.TextStyle.label
+                from = range.upperBound
+            }
+        }
+        return text
+    }
+
+    /// Goes on in a conversation with Nook about the question, where it can use its tools and follow-ups.
+    private func continueInChat(_ question: String) {
+        center.remember(question)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { close() }
+        app.askFromSearch(question)
+        select(.chat)
     }
 
     /// On the chosen row: Return opens it.
@@ -386,6 +508,16 @@ struct SearchPanel: View {
     private var start: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                if !center.recentlyOpened.isEmpty {
+                    NookSectionLabel(tr("search.recentlyOpened"), inset: NookTheme.Spacing.md)
+                    ForEach(center.recentlyOpened) { hit in
+                        Button { openHit(hit) } label: {
+                            hitRow(hit, selected: false).modifier(SearchHoverFill())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.bottom, NookTheme.Spacing.md)
+                }
                 if !center.recent.isEmpty {
                     HStack {
                         NookSectionLabel(tr("search.recent"), inset: NookTheme.Spacing.md)
@@ -482,6 +614,11 @@ struct SearchPanel: View {
 
     private func open(_ list: [Row]) {
         guard list.indices.contains(index) else { return }
+        // Searching with AI keeps the panel open: its answer shows here.
+        if case .ai = list[index] {
+            askAI()
+            return
+        }
         center.remember(text)
         // Gone at once: fading out two hundred rows in the same frames that build the tab it opens was the lag after
         // Return.
@@ -490,11 +627,23 @@ struct SearchPanel: View {
         withTransaction(instant) { close() }
         switch list[index] {
         case .hit(let hit, _):
+            center.opened(hit)
             if let tab = app.openSearchHit(hit) { select(tab) }
+        case .ai:
+            break
         case .ask(let typed):
             app.askFromSearch(typed)
             select(.chat)
         }
+    }
+
+    /// Opens a hit from the start (what you opened lately): no search to remember.
+    private func openHit(_ hit: SearchHit) {
+        center.opened(hit)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { close() }
+        if let tab = app.openSearchHit(hit) { select(tab) }
     }
 
     // MARK: Look
