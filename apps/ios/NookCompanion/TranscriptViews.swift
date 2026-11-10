@@ -546,6 +546,8 @@ struct ToolTally {
 struct FloatingWorkingControl: View {
     var workingSince: Date?
     var working = false
+    /// Something waits on you (an approval, a question): says so while the agent waits.
+    var waiting = false
     var snoozed = false
     var onWake: (() -> Void)? = nil
     var showScrollToEnd = false
@@ -553,10 +555,13 @@ struct FloatingWorkingControl: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            if working || snoozed {
+            if working || waiting || snoozed {
                 HStack(spacing: Theme.Spacing.md) {
-                    if working {
-                        PulseDot(color: Theme.blue, size: 7)
+                    if waiting {
+                        Image(icon: "exclamationmark.shield.fill").foregroundStyle(Theme.amber)
+                        Text("Waiting for you")
+                    } else if working {
+                        PulseDot(color: Theme.sky, size: 7)
                         if let workingSince {
                             TimelineView(.periodic(from: .now, by: 1)) { context in
                                 Text(verbatim: String(localized: "Working for \(TranscriptDuration.text(max(0, context.date.timeIntervalSince(workingSince))))"))
@@ -601,6 +606,7 @@ struct FloatingWorkingControl: View {
             }
         }
         .animation(Theme.reveal, value: working)
+        .animation(Theme.reveal, value: waiting)
         .animation(Theme.reveal, value: snoozed)
         .animation(Theme.reveal, value: showScrollToEnd)
         .frame(maxWidth: .infinity)
@@ -610,12 +616,15 @@ struct FloatingWorkingControl: View {
 extension View {
     /// Liquid Glass where the system has it, a dark material with a faint edge before.
     @ViewBuilder
+    /// Before it, t3code's fallback: the surface at 74 % over a blur, an edge of 8 % white and a soft shadow below.
     func floatingGlass<S: Shape>(_ shape: S) -> some View {
         if #available(iOS 26, *) {
             glassEffect(.regular, in: shape)
         } else {
             background(.ultraThinMaterial, in: shape)
+                .background(Theme.surface.opacity(0.74), in: shape)
                 .overlay(shape.stroke(Theme.paper.opacity(0.08), lineWidth: 1))
+                .shadow(color: Theme.notch.opacity(0.22), radius: 14, y: 14)
         }
     }
 }

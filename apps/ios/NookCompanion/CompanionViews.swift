@@ -18,8 +18,8 @@ struct RootView: View {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
-                // The Mac's panel: one tab at a time, switched in the header row every tab starts with
-                // (`PanelHeader`), no tab bar along the bottom. Each tab keeps where it was.
+                // One tab at a time, switched in the glass bar at the bottom (`PhoneTabBar`), as in t3code's iPhone app;
+                // the bar steps aside while a tab shows a session or a chat. Each tab keeps where it was.
                 Group {
                     switch shownTab {
                     case .nook:
@@ -32,6 +32,12 @@ struct RootView: View {
                         NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
                     }
                 }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if atTabRoot {
+                        PhoneTabBar().transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(Theme.reveal, value: atTabRoot)
                 .environmentObject(router)
             }
         }
@@ -103,6 +109,15 @@ struct RootView: View {
         .alert("", isPresented: Binding(get: { client.notice != nil }, set: { if !$0 { client.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(client.notice ?? "") }
+    }
+
+    /// The shown tab is at its list, with nothing pushed on it: the tab bar shows.
+    private var atTabRoot: Bool {
+        switch shownTab {
+        case .nook: return chatPath.isEmpty
+        case .agents: return sessionPath.isEmpty
+        case .chats: return inboxPath.isEmpty
+        }
     }
 
     /// The chosen tab, or Agents when the Mac does not let this phone use it (`CompanionScope`).
@@ -287,6 +302,8 @@ struct SessionListView: View {
     @State private var link: PromptLink?
     /// Words to find a session by (its title, folder, branch or agent).
     @State private var query = ""
+    /// The project (folder) the list is narrowed to; nil shows every one.
+    @State private var project: String?
     /// Recent sessions beyond the first few, shown on request so the list stays short.
     @State private var showsAllRecent = false
     /// The Working and Recent shelves, open or folded; remembered.
@@ -296,6 +313,7 @@ struct SessionListView: View {
     private var ordered: [SessionDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.sessions
+            .filter { project == nil || $0.folder == project }
             .filter { session in
                 words.isEmpty || [session.title, session.folder, session.branch ?? "", session.agent]
                     .contains { $0.localizedCaseInsensitiveContains(words) }
@@ -319,35 +337,40 @@ struct SessionListView: View {
             Group {
                 PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
-                    HStack(spacing: Theme.Spacing.sm) {
-                        if client.can(CompanionFeature.pullRequests) {
-                            NookIconButton(systemName: "arrow.triangle.pull", label: String(localized: "Pull requests")) { showsPulls = true }
-                        }
-                        NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
+                    if client.can(CompanionFeature.pullRequests) {
+                        HeaderButton(symbol: "arrow.triangle.pull", label: String(localized: "Pull requests")) { showsPulls = true }
                     }
+                    HeaderButton(symbol: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }
-                .buttonStyle(.borderless)
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     ConnectionLine()
                     // New sessions written while the Mac could not be reached: they start once it answers.
                     ForEach(client.outbox.starts) { entry in
                         WaitingRow(symbol: "square.and.pencil", title: entry.request.launch?.task ?? "",
                                    detail: String(localized: "New session · waiting for your Mac")) { client.discardWaiting(entry.id) }
                     }
-                    // Finding one among many: words that match its title, folder, branch or agent.
-                    if client.sessions.count > 8 {
-                        NookSearchField(prompt: "Search sessions", text: $query)
+                    // Finding one among many, as t3code's list: words that match its title, folder, branch or agent, and
+                    // the project it works in.
+                    if !client.sessions.isEmpty {
+                        NookSearchField(prompt: "Search", text: $query)
+                    }
+                    if projects.count > 1 {
+                        ProjectChips(projects: projects, chosen: $project)
                     }
                     if ordered.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
-                    ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
+                if !needsYou.isEmpty {
+                    SectionHeader(title: String(localized: "Needs you"), urgent: true)
+                        .padding(.horizontal, Theme.Spacing.md)
+                    rows(needsYou)
+                }
                 group(String(localized: "Working"), working, open: $workingOpen)
-                group(String(localized: "Recent"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
+                group(String(localized: "Settled"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
                       open: $recentOpen)
                 if recentOpen, rest.count > Self.recentShown, !showsAllRecent, query.isEmpty {
                     Button { withAnimation(Theme.reveal) { showsAllRecent = true } } label: {
@@ -394,7 +417,31 @@ struct SessionListView: View {
             composing = true
             client.pendingPrompt = nil
         }
+        // A project that has no sessions any more is not a filter any more.
+        .onChange(of: projects) { _, list in
+            if let chosen = project, !list.contains(chosen) { project = nil }
+        }
         .screen()
+    }
+
+    /// The folders the sessions work in, the most recent first, for the project filter (at most eight).
+    private var projects: [String] {
+        var seen = Set<String>()
+        return client.sessions.sorted { $0.updated > $1.updated }
+            .map(\.folder)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .prefix(8)
+            .map { $0 }
+    }
+
+    /// Rows of sessions, each opening its session, with its actions under a long press and a swipe.
+    @ViewBuilder
+    private func rows(_ sessions: [SessionDigest]) -> some View {
+        ForEach(sessions) { session in
+            PhoneSessionRow(session: session, open: { path.append(session.id) }, divider: session.id != sessions.last?.id)
+                .contextMenu { SessionQuickActions(session: session) }
+                .sessionSwipeActions(session)
+        }
     }
 
     /// The New session sheet, or why this Mac does not let the phone start one.
@@ -418,35 +465,24 @@ struct SessionListView: View {
                 SectionHeader(title: String(localized: "On \(mac.name)"), count: sessions.filter(Self.needsYou).count, urgent: sessions.contains(where: Self.needsYou))
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.bottom, Theme.Spacing.xs)
-                ForEach(sessions.prefix(10)) { session in
-                    Button {
+                let shown = Array(sessions.prefix(10))
+                ForEach(shown) { session in
+                    PhoneSessionRow(session: session, open: {
                         client.switchMac(to: mac.id)
                         path.append(session.id)
-                    } label: { AgentRow(session: session) }
-                        .buttonStyle(RowPress())
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.xxs / 2)
+                    }, divider: session.id != shown.last?.id)
                 }
             }
         }
     }
 
-    /// A shelf of sessions, as the Mac's Agents list: its header folds it; the rows stand without lines between them,
-    /// and only the one under your finger lifts.
+    /// A shelf of sessions, as t3code's list: its header folds it ("Settled (6)" while folded).
     @ViewBuilder
     private func group(_ title: String, _ sessions: [SessionDigest], total: Int? = nil, open: Binding<Bool>) -> some View {
         if !sessions.isEmpty {
             SectionHeader(title: title, count: total ?? sessions.count, expanded: open)
                 .padding(.horizontal, Theme.Spacing.md)
-            if open.wrappedValue {
-                ForEach(sessions) { session in
-                    Button { path.append(session.id) } label: { AgentRow(session: session) }
-                        .buttonStyle(RowPress())
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .contextMenu { SessionQuickActions(session: session) }
-                        .sessionSwipeActions(session)
-                }
-            }
+            if open.wrappedValue { rows(sessions) }
         }
     }
 }
@@ -707,60 +743,84 @@ struct AgentRow: View {
     }
 }
 
-/// A session that waits for you, the Mac's `PanelNoticeBar`: whose it is, what it asks, and its answer right there
-/// (Allow with Deny beside it in one pill, or Answer); a tap on its top opens the session.
-struct SessionNotice: View {
+/// A session in the Agents list, as a row of t3code's thread list: its agent's mark and its title, its state in the
+/// corner (`PhoneStatusLabel`), what it asks of you or its last words under it, and its branch and agent below. A session
+/// that waits on you shows its answer right there (Allow once and Decline, or Answer); the rest of the row opens it.
+/// Rows run edge to edge with a hairline between them, inset to the text.
+struct PhoneSessionRow: View {
     @EnvironmentObject private var client: CompanionClient
     let session: SessionDigest
-    /// Opens the session; nil uses a navigation link (a list row needs a plain button, or the whole row becomes one link).
-    var open: (() -> Void)? = nil
+    /// Opens the session.
+    let open: () -> Void
+    /// Draws the hairline under it (not under the last row of a group).
+    var divider = true
 
     private var item: SessionDigest.Item? { session.items.first }
+    private var needsYou: Bool { SessionListView.needsYou(session) }
+    /// Text starts here, past the mark, so the lines under the title line up with it.
+    private static let textInset: CGFloat = 16 + Theme.Spacing.md
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            opener {
-                HStack(spacing: Theme.Spacing.md) {
-                    AgentMark(agent: session.agent, size: 16)
-                    Text(session.title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                    Spacer(minLength: Theme.Spacing.md)
-                    StatusPill(attention: session.attention, short: true)
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: open) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                        AgentMark(agent: session.agent, size: 16, quiet: !needsYou && session.attention != "working")
+                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                        Text(session.title)
+                            .font(Theme.TextStyle.rowTitle)
+                            .foregroundStyle(needsYou || session.attention == "working" ? Theme.paper : Theme.textStrong)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        PhoneStatusLabel(session: session)
+                    }
+                    if let line = secondLine {
+                        Text(line)
+                            .font(Theme.TextStyle.detail)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(2)
+                            .padding(.leading, Self.textInset)
+                    }
+                    meta.padding(.leading, Self.textInset).padding(.top, Theme.Spacing.xxs)
                 }
+                .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-
-            if let item {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    Text(item.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(4)
-                    if !item.detail.isEmpty {
-                        Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary).lineLimit(2)
-                            .padding(Theme.Spacing.md)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                    .strokeBorder(Theme.hairline, lineWidth: 0.5)
-                            )
-                    }
-                }
-                actions(item)
-            } else if !session.excerpt.isEmpty {
-                Text(session.excerpt).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(3)
+            .buttonStyle(PressFade())
+            if let item, needsYou { actions(item).padding(.leading, Self.textInset).padding(.bottom, Theme.Spacing.lg) }
+            if divider {
+                NookDivider(inset: Self.textInset, tint: Theme.separator)
             }
         }
-        .padding(Theme.Spacing.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel,
-                        style: .continuous)
+        .padding(.horizontal, Theme.Spacing.xl + Theme.Spacing.xs)
     }
 
-    @ViewBuilder
-    private func opener<Label: View>(@ViewBuilder _ label: () -> Label) -> some View {
-        if let open {
-            Button(action: open, label: label).buttonStyle(PressFade())
-        } else {
-            NavigationLink(value: session.id, label: label).buttonStyle(PressFade())
+    /// What it asks of you, or its last words while it waits on you or failed.
+    private var secondLine: String? {
+        if let item {
+            let words = item.kind == .approval && !item.detail.isEmpty ? "\(item.detail): \(item.title)" : item.title
+            return words.isEmpty ? nil : words
         }
+        guard needsYou, !session.excerpt.isEmpty else { return nil }
+        return session.excerpt
+    }
+
+    /// The branch (in code type), the agent and the folder, as t3code's row: what tells two similar sessions apart.
+    private var meta: some View {
+        let branch = session.branch.flatMap { $0.isEmpty || $0 == session.folder ? nil : $0 }
+        return HStack(spacing: Theme.Spacing.xs) {
+            if let branch {
+                Text(verbatim: branch).font(Theme.mono(11.5)).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: "·")
+            }
+            Text(verbatim: session.agent).lineLimit(1)
+            Text(verbatim: "·")
+            Text(verbatim: session.folder).lineLimit(1)
+        }
+        .font(Theme.TextStyle.caption)
+        .foregroundStyle(Theme.textTertiary)
     }
 
     @ViewBuilder
@@ -771,25 +831,19 @@ struct SessionNotice: View {
                 ApproveOffLabel()
             case .approval:
                 if item.canAllow {
-                    NookSplitButton(primary: NookNoticeAction(String(localized: "Allow"), symbol: "checkmark") {
+                    PhoneActionButton(title: String(localized: "Allow once"), style: .prominent, compact: true) {
                         Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                    }, secondary: NookNoticeAction(String(localized: "Deny")) {
-                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
-                    })
-                } else {
-                    NookGhostButton(title: String(localized: "Deny")) {
-                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
                     }
-                    Label("Only on your Mac: this one is risky or unknown.", systemImage: "lock.fill")
-                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
+                }
+                PhoneActionButton(title: String(localized: "Decline"), style: .danger, compact: true) {
+                    Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                }
+                if !item.canAllow {
+                    Label("Only on your Mac", systemImage: "lock.fill")
+                        .font(Theme.TextStyle.caption).foregroundStyle(Theme.amber).lineLimit(1)
                 }
             case .question:
-                opener {
-                    Text("Answer").font(Theme.textFont(14, .semibold)).foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 18)
-                        .frame(height: SharedMetrics.buttonHeight)
-                        .background(Theme.paper, in: Capsule())
-                }
+                PhoneActionButton(title: String(localized: "Answer"), style: .prominent, compact: true, action: open)
             }
             Spacer(minLength: 0)
             if session.items.count > 1 {

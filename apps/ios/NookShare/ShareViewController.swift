@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
+        Theme.applyPhoneLook()
         let model = ShareModel(context: extensionContext)
         let host = UIHostingController(rootView: ShareView(model: model).preferredColorScheme(.dark))
         addChild(host)

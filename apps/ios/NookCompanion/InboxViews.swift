@@ -49,8 +49,8 @@ struct InboxListView: View {
                                 }
                             }
                         } else {
-                            // Finding one among many; a short list needs no search or filter.
-                            if client.inbox.count > 8 {
+                            // Finding one among many, as t3code's lists; only a very short list does without.
+                            if client.inbox.count > 3 {
                                 NookSearchField(prompt: "Search chats", text: $query)
                                 HStack(spacing: Theme.Spacing.xs) {
                                     NookFilterChip(title: String(localized: "All"), selected: filter == .all) { filter = .all }
@@ -77,7 +77,7 @@ struct InboxListView: View {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
                         if index > 0 { NookRowSeparator() }
                         NavigationLink(value: chat.id) { InboxRow(chat: chat) }
-                            .buttonStyle(RowPress())
+                            .buttonStyle(RowPress(radius: PhoneRadius.row))
                             .contextMenu { markButton(chat) }
                     }
                 }

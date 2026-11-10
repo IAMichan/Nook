@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Notifications.registerCategories()
         // A phone paired before relay pushes existed gets its push key for the notification extension now.
         PushKeyStore.sync(pairingKeys: PairingStore.load().macs.compactMap { $0.link?.key })
+        Theme.applyPhoneLook()
         Theme.applyBarAppearance()
         Task { @MainActor in LiveActivities.shared.start() }
         return true
