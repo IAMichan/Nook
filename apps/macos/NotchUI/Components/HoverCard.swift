@@ -77,14 +77,18 @@ struct HoverCardRow: View {
     }
 }
 
-/// Opens a card next to the view once the pointer rests on it a moment, so sweeping over a list stays quiet. The card
-/// stays while the pointer is on the view or on the card, and waits a moment after it left either, so you can cross the
-/// gap between them and click what the card holds. A click on the view closes it. While `suppressed` (the pointer is on
-/// the row's own buttons) it stays closed: an open popover takes the first click outside it to close itself, so a click
-/// on such a button would otherwise do nothing.
+/// Opens a card next to the view once the pointer rests on it a moment (at once when its delays are zero), so sweeping
+/// over a list stays quiet. The card stays while the pointer is on the view or on the card, and waits a moment after it
+/// left either, so you can cross the gap between them and click what the card holds. A click on the view closes it.
+/// While `suppressed` (the pointer is on the row's own buttons) it stays closed: an open popover takes the first click
+/// outside it to close itself, so a click on such a button would otherwise do nothing.
 private struct HoverCardModifier<Card: View>: ViewModifier {
     let arrowEdge: Edge
     let suppressed: Bool
+    /// How long the pointer rests before the card opens, and how long it waits after the pointer left.
+    var openDelay: Duration = .milliseconds(650)
+    /// Long enough to reach a card next to the row, short enough that it is gone before the next row's card comes.
+    var closeDelay: Duration = .milliseconds(300)
     /// Told whether the card is open.
     var presented: Binding<Bool>? = nil
     let card: () -> Card
@@ -92,10 +96,6 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
     @State private var onCard = false
     @State private var showCard = false
     @State private var delay: Task<Void, Never>?
-
-    private static var openDelay: Duration { .milliseconds(650) }
-    /// Long enough to reach a card next to the row, short enough that it is gone before the next row's card comes.
-    private static var closeDelay: Duration { .milliseconds(300) }
 
     func body(content: Content) -> some View {
         content
@@ -134,13 +134,15 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
             showCard = false
         } else if showCard {
             guard !hovering, !onCard else { return }
+            guard closeDelay > .zero else { showCard = false; return }
             delay = Task { @MainActor in
-                try? await Task.sleep(for: Self.closeDelay)
+                try? await Task.sleep(for: closeDelay)
                 if !Task.isCancelled { showCard = false }
             }
         } else if hovering {
+            guard openDelay > .zero else { showCard = true; return }
             delay = Task { @MainActor in
-                try? await Task.sleep(for: Self.openDelay)
+                try? await Task.sleep(for: openDelay)
                 if !Task.isCancelled, hovering { showCard = true }
             }
         }
@@ -187,9 +189,13 @@ extension View {
         }
     }
 
-    /// Shows `card` in a popover after the pointer rests on this view for a moment, unless `suppressed`.
-    func hoverCard<Card: View>(arrowEdge: Edge = .trailing, suppressed: Bool = false,
+    /// Shows `card` in a popover after the pointer rests on this view for a moment, unless `suppressed`. `instant`
+    /// opens it as soon as the pointer is on the view and closes it as soon as it left, for a card that holds nothing
+    /// to click (the prompt behind a mark on the conversation's rail).
+    func hoverCard<Card: View>(arrowEdge: Edge = .trailing, suppressed: Bool = false, instant: Bool = false,
                                @ViewBuilder _ card: @escaping () -> Card) -> some View {
-        modifier(HoverCardModifier(arrowEdge: arrowEdge, suppressed: suppressed, card: card))
+        modifier(HoverCardModifier(arrowEdge: arrowEdge, suppressed: suppressed,
+                                   openDelay: instant ? .zero : .milliseconds(650),
+                                   closeDelay: instant ? .zero : .milliseconds(300), card: card))
     }
 }
