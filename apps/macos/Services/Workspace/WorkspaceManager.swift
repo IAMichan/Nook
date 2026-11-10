@@ -196,6 +196,8 @@ final class WorkspaceManager: ObservableObject {
     var onCodexRateLimits: ((JSONBox, String) -> Void)?
     /// A turn stopped on a usage limit: the limits shown are read again now, so they say why.
     var onLimitReached: (() -> Void)?
+    /// When the account of this session is free again by its own limits (`QuotaService`), for a turn that did not say.
+    var limitResetHint: ((WorkspaceRun) -> Date?)?
     /// Claude Code reported how full a subscription window is, for the account (`AgentProfile.id`) the session runs with.
     var onPlanWindow: ((UsageLimits.PlanReading, String) -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
@@ -1121,7 +1123,8 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Turns
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
-    func send(_ id: UUID, text: String) {
+    @discardableResult
+    func send(_ id: UUID, text: String) -> Bool {
         send(id, text: text, shown: false)
     }
 
