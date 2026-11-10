@@ -200,7 +200,8 @@ final class MCPConnector: ContextSource, ObservableObject {
 
     private func connected() async throws -> MCPClient {
         if let client, client.initialized { return client }
-        let secrets = MCPServerStore.shared.secrets(for: config)
+        // A value may be a 1Password reference (op://…): read now, kept in memory only.
+        let secrets = try await SecretProviders.resolveAll(MCPServerStore.shared.secrets(for: config))
         let transport: MCPTransport
         switch config.transport {
         case .stdio(let command, let arguments):

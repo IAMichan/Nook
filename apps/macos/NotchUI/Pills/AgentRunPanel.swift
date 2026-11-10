@@ -548,6 +548,8 @@ struct AgentRunPanel: View {
         config.skills = skills
         config.pullRequests = { repo in await GitHubPullRequests.openPullRequests(repo: repo) }
         config.keepsBigPastes = true
+        // A pasted secret goes to this session's private files; a session on another machine could not read them.
+        config.secretScope = run.remote == nil ? run.id.uuidString : nil
         config.onCommand = { [workspace, app, runID] command in
             switch command.action {
             case .plan: workspace.configure(runID, mode: .plan)

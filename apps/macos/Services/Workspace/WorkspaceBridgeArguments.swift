@@ -673,6 +673,27 @@ enum BridgeSecret {
     /// The keychain account: names are not case-sensitive.
     static func account(_ name: String) -> String { accountPrefix + name.lowercased() }
 
+    /// How the value reaches the agent. `file` (the default) puts it in a private file and gives the agent only the path,
+    /// so the value never enters its transcript; `value` returns it in the tool's output, and the user is told so first.
+    enum Delivery: String, Equatable, Sendable {
+        case file, value
+    }
+
+    /// The delivery asked for: `file` when none is given, nil for anything else.
+    static func delivery(_ value: Any?) -> Delivery? {
+        guard let raw = BridgeArgs.string(value) else { return value == nil || value is NSNull || value is String ? .file : nil }
+        return Delivery(rawValue: raw.lowercased())
+    }
+
+    /// A page where the user can find or make the secret (a dashboard's API keys page), shown as a button on the card.
+    /// Only a plain web address: http or https, a host, no user name or password in it, at most 2,000 characters.
+    static func signInURL(_ value: Any?) -> URL? {
+        guard let raw = BridgeArgs.string(value), raw.count <= 2_000, let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
+        return url
+    }
+
     static func envelope(name: String, value: String) -> String {
         "The value of \(name) is between the markers (the markers are not part of it): \(open)\(value)\(close)"
     }
