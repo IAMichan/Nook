@@ -47,6 +47,8 @@ final class BrowserStore: ObservableObject {
 
     /// One website data store for all tabs of this browser: see `BrowserProfiles`.
     private let dataStore: WKWebsiteDataStore
+    /// Where this browser's cookies are now, for sign-ins imported while it is open.
+    var websiteDataStore: WKWebsiteDataStore { dataStore }
 
     init(session: BrowserSession.Key? = nil) {
         self.session = session
