@@ -1623,7 +1623,9 @@ struct AgentRunPanel: View {
         let model = run.autoModel == true ? [tr("auto.model"), picked].compactMap { $0 }.joined(separator: " · ") : picked
         let chosenModel = run.autoModel == true ? AutoModel.id : run.model
         let idle = workspace.canTransfer(runID)
-        let providers = idle ? app.connectedProviders : [run.provider]
+        // The agents its project switched off are not offered to move to; the session's own agent always is.
+        let allowed = app.connectedProviders(in: run.projectPath)
+        let providers = idle ? (allowed.contains(run.provider) ? allowed : [run.provider] + allowed) : [run.provider]
         return ModelPickerDropdown {
             ComposerPill(agent: run.provider.displayName, account: profile.map { AccountTag.of($0, app: app) },
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),

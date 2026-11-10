@@ -403,6 +403,14 @@ struct AgentInboxList: View {
     private static let chevronWidth: CGFloat = 12
     private static let newSessionWidth: CGFloat = 24
 
+    /// The icon the group's project set for itself (Settings › Projects), found by the project's folder name.
+    private func folderIcon(_ group: InboxProjectGroup) -> ProjectIcon? {
+        let settings = app.workspace.settings
+        guard !group.project.isEmpty, !settings.projectOverrides.byProject.isEmpty else { return nil }
+        let path = settings.projectOverrides.projects.first { URL(fileURLWithPath: $0).lastPathComponent == group.project }
+        return path.flatMap(settings.projectIcon)
+    }
+
     private func foldButton(_ group: InboxProjectGroup, name: String, open: Bool, hovered: Bool, canStart: Bool) -> some View {
         Button {
             withAnimation(NookTheme.reveal) {
@@ -415,10 +423,16 @@ struct AgentInboxList: View {
         } label: {
             // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
             HStack(spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) {
-                Image(systemName: open ? "folder" : "folder.fill")
-                    .font(NookTheme.font(13, .medium))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .frame(width: NookTheme.Spacing.xl)
+                if let icon = folderIcon(group) {
+                    ProjectIconView(icon: icon, size: 15)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .frame(width: NookTheme.Spacing.xl)
+                } else {
+                    Image(systemName: open ? "folder" : "folder.fill")
+                        .font(NookTheme.font(13, .medium))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .frame(width: NookTheme.Spacing.xl)
+                }
                 Text(name)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.textStrong)

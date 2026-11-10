@@ -501,8 +501,11 @@ struct GitService: Sendable {
         Self.parseWorktrees(try run(["worktree", "list", "--porcelain"], in: repo))
     }
 
-    /// Creates a new worktree with a new branch from `base`. Current directory and branch remain unchanged.
-    func addWorktree(repo: String, path: String, branch: String, base: String, refreshBase: Bool = true) throws {
+    /// Creates a new worktree with a new branch from `base`. Current directory and branch remain unchanged. With a
+    /// `checkoutCache`, the files come from a cached checkout when one fits (true), else Git checks them out (false).
+    @discardableResult
+    func addWorktree(repo: String, path: String, branch: String, base: String, refreshBase: Bool = true,
+                     checkoutCache: WorktreeCheckoutCache? = nil) throws -> Bool {
         guard hasCommits(repo) else { throw GitError("This repository has no commits yet; a worktree requires an initial commit.") }
         if refreshBase { refreshRemoteBase(base, in: repo) }
         guard refExists(base, in: repo) else { throw GitError("Base branch '\(base)' does not exist.") }
@@ -513,6 +516,10 @@ struct GitService: Sendable {
             try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
         }
+        if remote == nil, let checkoutCache, checkoutCache.create(repo: repo, path: path, branch: branch, base: base) {
+            try checkoutCache.runPostCheckoutHook(worktree: path)
+            return true
+        }
         do {
             // On another machine git makes the folders on the way itself.
             // No upstream: from `origin/main` git would otherwise make the new branch track main.
@@ -520,6 +527,20 @@ struct GitService: Sendable {
         } catch {
             throw Self.friendlyWorktreeError(error, base: base)
         }
+        return false
+    }
+
+    /// Checks out the submodules of a new worktree as `mode` says; nothing without a `.gitmodules`. Throws Git's error.
+    func updateSubmodules(_ worktree: String, mode: SubmoduleMode) throws {
+        guard mode != .skip else { return }
+        if remote == nil {
+            guard FileManager.default.fileExists(atPath: worktree + "/.gitmodules") else { return }
+        } else {
+            guard (try? run(["ls-files", "--error-unmatch", ".gitmodules"], in: worktree)) != nil else { return }
+        }
+        var arguments = ["submodule", "update", "--init"]
+        if mode == .recursive { arguments.append("--recursive") }
+        try run(arguments, in: worktree, timeout: 900)
     }
 
     /// Checks out an existing branch in a new worktree: a session's worktree that was removed, coming back.

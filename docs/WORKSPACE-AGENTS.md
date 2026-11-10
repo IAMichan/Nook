@@ -135,6 +135,40 @@ rate checks):
 
 Open coalesce windows live in memory: a restart of Nook within a window drops that run (the sender's delivery was
 already answered).
+## Source control
+
+How Nook makes worktrees and handles the repositories behind sessions (`WorkspaceManager+SourceControl.swift`,
+`GitService+SourceControl.swift`, `SourceControl.swift`, `WorktreeCheckoutCache.swift`).
+
+- **Fast worktrees** (Settings › Code › Worktrees, off by default). Nook keeps up to three clean checkouts of a
+  repository's tracked files in `~/Library/Application Support/Nook/Checkout cache` and makes a new worktree with
+  `git worktree add --no-checkout`, an APFS `clonefile` of the cached files, and the cached index with each file's own
+  stat data; an older cached commit is moved forward with `git read-tree -m -u`, and `git status` must then be empty.
+  Anything it cannot reproduce exactly uses plain `git worktree add`: another machine or volume, a sparse checkout, a
+  filter in any attributes file (Git LFS), SHA-256, a changed `.gitattributes`, or a check that fails. Only tracked files
+  are cached; the main checkout's `node_modules` is cloned (copy-on-write) into the worktree when the lockfiles match and
+  Git ignores it. Repositories under 5,000 tracked files are never cached: Git is faster there. Measured on this Mac
+  (2026-11-10): 30,000 files 2.8 s plain → 1.8 s cached (first `git status` 0.33 s → 0.13 s); 1,867 files (Nook) 0.76 s
+  either way, because the cache is skipped.
+- **Submodules** per project (recursive, top level only, or skip), applied after every new worktree on this Mac and over
+  SSH; a failure is shown in the session and leaves the worktree usable.
+- **Auto-pull** (opt-in, per project or for all): with the half-minute tick, at most every 15 minutes per checkout, Nook
+  fetches the default branch and runs `git merge --ff-only`, only when the main checkout is on that branch, has no
+  tracked changes, no merge or rebase is under way, no session works in it without a worktree, and it is strictly behind.
+  Nothing runs while no project has it on. Every fast-forward lands in the action log.
+- **Clones** go into `<host>/<owner>/<repo>` when that layout is on (under the layout root of the current project, else
+  `~/Developer`). SSH runs with `BatchMode`; when SSH itself is refused (no key, unknown host key, no connection), the
+  clone is tried once over HTTPS and a toast says so.
+- **Publish** (the git button of a session without a remote, Settings › Projects, and **New project…** in the composer):
+  a sheet shows what will happen and does nothing until you press Publish. Nook makes the folder a repository with a
+  first commit when needed, creates the GitHub repository (private by default) with the GitHub account it uses for pull
+  requests or the GitHub CLI's login, sets `origin`, and pushes with that token for this push only. An empty repository
+  of the same name left by a failed push is reused. Every attempt goes to the action log. Agents cannot publish.
+- **Commits in the Changes tab:** the newest 100 commits, one at a time; a hash or GitHub commit link in an agent's
+  answer opens that commit there (an older one is read on its own).
+- **Projects** in Settings › Projects can be archived (out of the composer, the command palette and auto-pull; reversible
+  under Archived projects), get an icon (emoji, monogram on a tint, or an image copied into Nook's folder) shown in the
+  composer, the session list's project headers and Settings, and switch single coding agents off.
 
 ## Available MCP Tools
 

@@ -21,6 +21,16 @@ enum ProjectSettingKey: Hashable, Sendable {
     /// Whether the project's browsers keep their sign-ins between launches ("on"), forget them ("off") or ask at the first
     /// sign-in ("ask"); see `BrowserSignInPolicy`.
     case browserSignIns
+    /// How a new worktree checks out the repository's submodules (`SubmoduleMode`).
+    case submodules
+    /// Whether Nook fast-forwards the main checkout's default branch in the background ("on") or not ("off").
+    case autoPull
+    /// The coding agents switched off for the project: a list of `RunProvider` raw values (project only, no global value).
+    case agentsOff
+    /// The project is archived: left out of the project pickers, kept in Settings › Projects ("on"; project only).
+    case archived
+    /// The icon the project's lists show (`ProjectIcon.stored`; project only).
+    case icon
 
     var raw: String {
         switch self {
@@ -33,6 +43,11 @@ enum ProjectSettingKey: Hashable, Sendable {
         case .agentInstructions: return "agentInstructions"
         case .worktreeCleanup: return "worktreeCleanup"
         case .browserSignIns: return "browserSignIns"
+        case .submodules: return "submodules"
+        case .autoPull: return "autoPull"
+        case .agentsOff: return "agentsOff"
+        case .archived: return "archived"
+        case .icon: return "icon"
         }
     }
 }
@@ -53,6 +68,10 @@ struct SessionDefaults: Equatable, Sendable {
     var worktreeCleanup = true
     /// Whether the project's browsers remember sign-ins after Nook quits. Ask (the default): the first sign-in asks.
     var browserSignIns: BrowserSignInPolicy = .ask
+    /// How a new worktree checks out submodules. Recursive by default, as Git's own `clone --recursive` would.
+    var submodules: SubmoduleMode = .recursive
+    /// Fast-forward the main checkout's default branch in the background when it is clean. Off by default.
+    var autoPull = false
 
     func model(for provider: RunProvider) -> String { models[provider.rawValue] ?? "" }
 
@@ -85,6 +104,14 @@ enum BrowserSignInPolicy: String, CaseIterable, Identifiable, Sendable {
         case .ask: return "ask"
         }
     }
+}
+
+/// How a new worktree checks out the repository's submodules: all of them with theirs (recursive), only the ones the
+/// repository declares itself (top level), or none (skip, for a repository whose setup script does it).
+enum SubmoduleMode: String, CaseIterable, Identifiable, Sendable {
+    case recursive, topLevel, skip
+
+    var id: String { rawValue }
 }
 
 /// Every folder's overrides, stored as one value (UserDefaults, JSON). A key a folder does not set inherits.
@@ -252,6 +279,8 @@ enum ProjectSettings {
         layers.set(ProjectSettingKey.titleInstructions.raw, .string(global.titleInstructions), in: .environment)
         layers.set(ProjectSettingKey.agentInstructions.raw, .string(global.agentInstructions), in: .environment)
         layers.set(ProjectSettingKey.worktreeCleanup.raw, .string(global.worktreeCleanup ? "on" : "off"), in: .environment)
+        layers.set(ProjectSettingKey.submodules.raw, .string(global.submodules.rawValue), in: .environment)
+        layers.set(ProjectSettingKey.autoPull.raw, .string(global.autoPull ? "on" : "off"), in: .environment)
         for (key, value) in overrides { layers.set(key, value, in: .project) }
         return layers
     }
@@ -277,7 +306,53 @@ enum ProjectSettings {
         result.agentInstructions = string(.agentInstructions) ?? global.agentInstructions
         result.worktreeCleanup = string(.worktreeCleanup).map { $0 != "off" } ?? global.worktreeCleanup
         result.browserSignIns = string(.browserSignIns).flatMap(BrowserSignInPolicy.init(stored:)) ?? global.browserSignIns
+        result.submodules = string(.submodules).flatMap(SubmoduleMode.init(rawValue:)) ?? global.submodules
+        result.autoPull = string(.autoPull).map { $0 == "on" } ?? global.autoPull
         return result
+    }
+
+    // MARK: Project only (no value for all projects)
+
+    /// The agents a project switched off (raw values), from the project the folder belongs to.
+    static func agentsOff(overrides: ProjectOverrides, folder: String?) -> Set<String> {
+        guard let folder, let project = overrides.project(containing: folder) else { return [] }
+        return agentsOff(overrides.values(for: project))
+    }
+
+    /// The agents one project's stored values switch off.
+    static func agentsOff(_ values: [String: SettingValue]) -> Set<String> {
+        switch values[ProjectSettingKey.agentsOff.raw] {
+        case .list(let values)?:
+            return Set(values.compactMap { if case .string(let raw) = $0 { return raw } else { return nil } })
+        case .string(let text)?:
+            return Set(text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+        default:
+            return []
+        }
+    }
+
+    /// `agentsOff` with one agent switched on or off; nil when none is left off (the key goes back to unset).
+    static func togglingAgent(_ provider: String, on: Bool, in off: Set<String>) -> SettingValue? {
+        var next = off
+        if on { next.remove(provider) } else { next.insert(provider) }
+        return next.isEmpty ? nil : .list(next.sorted().map { .string($0) })
+    }
+
+    /// Whether a project folder is archived: only the folder itself, never a folder inside it.
+    static func isArchived(_ path: String, overrides: ProjectOverrides) -> Bool {
+        if case .string("on")? = overrides.values(for: path)[ProjectSettingKey.archived.raw] { return true }
+        return false
+    }
+
+    /// `paths` without the archived projects, in their order.
+    static func withoutArchived(_ paths: [String], overrides: ProjectOverrides) -> [String] {
+        paths.filter { !isArchived($0, overrides: overrides) }
+    }
+
+    /// The icon a project folder set for itself.
+    static func icon(_ path: String, overrides: ProjectOverrides) -> ProjectIcon? {
+        if case .string(let text)? = overrides.values(for: path)[ProjectSettingKey.icon.raw] { return ProjectIcon(stored: text) }
+        return nil
     }
 
     /// What an agent is told at launch: the project's instructions for every agent (Settings › Projects, else the ones for
@@ -368,5 +443,68 @@ enum ProjectSettings {
         // A folder with overrides is never dropped, however long ago it was used.
         for path in overrides.projects where seen.insert(path).inserted { result.append(path) }
         return result
+    }
+}
+
+/// The icon a project shows where projects are listed: an emoji, one or two letters on a tint (a monogram), or an image
+/// file. Stored as one string ("emoji:🚀", "monogram:NK:mint", "image:/path/icon.png"); anything unknown reads as nil.
+enum ProjectIcon: Equatable, Sendable {
+    /// The named colors a monogram may use; the view maps each to its `NookTheme` color.
+    enum Tint: String, CaseIterable, Identifiable, Sendable {
+        case mint, amber, coral, violet, blue, music
+        var id: String { rawValue }
+    }
+
+    case emoji(String)
+    case monogram(String, Tint)
+    case image(String)
+
+    init?(stored: String) {
+        let parts = stored.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "emoji":
+            guard let emoji = Self.cleanEmoji(parts[1]) else { return nil }
+            self = .emoji(emoji)
+        case "monogram":
+            let fields = parts[1].split(separator: ":", maxSplits: 1).map(String.init)
+            guard let letters = Self.cleanMonogram(fields[0]) else { return nil }
+            self = .monogram(letters, fields.count > 1 ? Tint(rawValue: fields[1]) ?? .mint : .mint)
+        case "image":
+            guard parts[1].hasPrefix("/") else { return nil }
+            self = .image(parts[1])
+        default:
+            return nil
+        }
+    }
+
+    var stored: String {
+        switch self {
+        case .emoji(let emoji): return "emoji:" + emoji
+        case .monogram(let letters, let tint): return "monogram:\(letters):\(tint.rawValue)"
+        case .image(let path): return "image:" + path
+        }
+    }
+
+    /// The first character of the text, when it is an emoji.
+    static func cleanEmoji(_ text: String) -> String? {
+        guard let first = text.trimmingCharacters(in: .whitespacesAndNewlines).first,
+              first.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0.properties.isEmoji && $0.value > 0xFF })
+        else { return nil }
+        return String(first)
+    }
+
+    /// One or two letters or digits, upper-cased; nil when the text has none.
+    static func cleanMonogram(_ text: String) -> String? {
+        let letters = text.filter { $0.isLetter || $0.isNumber }.prefix(2).uppercased()
+        return letters.isEmpty ? nil : letters
+    }
+
+    /// The monogram a project gets by default: the first letters of the first two words of its folder name.
+    static func initials(_ folderName: String) -> String {
+        let words = folderName.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        let letters = words.count > 1 ? words.prefix(2).compactMap(\.first).map(String.init).joined()
+                                      : String(words.first?.prefix(2) ?? "")
+        return letters.isEmpty ? "?" : letters.uppercased()
     }
 }
