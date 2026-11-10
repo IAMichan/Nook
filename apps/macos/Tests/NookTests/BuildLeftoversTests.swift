@@ -79,6 +79,61 @@ final class BuildLeftoversTests: XCTestCase {
         XCTAssertEqual(found.first { $0.url.lastPathComponent == "coretests2" }?.kind, .testPackage)
     }
 
+    /// `scripts/xcode.sh` builds into `<worktree>/.build/xcode`; a worktree that stays for weeks kept 3–5 GB there.
+    func testFindsAStaleXcodeBuildInAWorktreeBuildFolder() throws {
+        let stale = base.appendingPathComponent("worktrees/idle")
+        let busy = base.appendingPathComponent("worktrees/busy")
+        roots.worktrees = [stale, busy]
+        try make(stale.appendingPathComponent(".build/xcode"), workspace: stale.path + "/apps/macos/Nook.xcodeproj", age: old)
+        try make(stale.appendingPathComponent(".build/notes"), age: old)
+        try make(busy.appendingPathComponent(".build/xcode"), workspace: busy.path + "/apps/macos/Nook.xcodeproj", age: 60)
+
+        let found = BuildLeftovers.find(in: roots, now: now)
+
+        // The temporary folder is under /var, a symlink to /private/var: compare resolved paths.
+        XCTAssertEqual(found.map { $0.url.resolvingSymlinksInPath().path },
+                       [stale.appendingPathComponent(".build/xcode").resolvingSymlinksInPath().path])
+        XCTAssertEqual(found.map(\.kind), [.xcodeBuild])
+    }
+
+    func testRemovesDependenciesOnlyFromIdleWorktrees() throws {
+        let idle = base.appendingPathComponent("worktrees/idle")
+        let busy = base.appendingPathComponent("worktrees/busy")
+        roots.worktrees = [idle, busy]
+        roots.idleWorktrees = [idle]
+        for folder in ["node_modules/react/node_modules", "packages/app/node_modules", "apps/web/src", ".git/node_modules"] {
+            try manager.createDirectory(at: idle.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        try manager.createDirectory(at: busy.appendingPathComponent("node_modules"), withIntermediateDirectories: true)
+        // A link to a shared install is not the worktree's to remove.
+        try manager.createSymbolicLink(at: idle.appendingPathComponent("apps/web/node_modules"), withDestinationURL: busy.appendingPathComponent("node_modules"))
+
+        let found = BuildLeftovers.find(in: roots, now: now)
+
+        // Listing a folder gives /private/var for the temporary folder's /var: compare resolved paths.
+        let root = idle.resolvingSymlinksInPath().path + "/"
+        XCTAssertEqual(Set(found.map { $0.url.resolvingSymlinksInPath().path.replacingOccurrences(of: root, with: "") }),
+                       ["node_modules", "packages/app/node_modules"])
+        XCTAssertEqual(Set(found.map(\.kind)), [.dependencies])
+    }
+
+    func testAWorktreeIsIdleUnlessSomethingWorksInIt() {
+        let worktree = "/w/nook/feature"
+        XCTAssertTrue(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/other", "/Users/me"], mainCheckouts: []))
+        XCTAssertFalse(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/feature/"], mainCheckouts: []))
+        XCTAssertFalse(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/feature/apps/web"], mainCheckouts: []))
+        XCTAssertFalse(BuildLeftovers.isIdle(worktree, busy: [], mainCheckouts: ["/w/nook/feature"]))
+        XCTAssertTrue(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/feature-2"], mainCheckouts: []))
+    }
+
+    func testLowDiskSpaceWarnsOnceUntilItRecovered() {
+        XCTAssertFalse(DiskSpace.isLow(available: 30_000_000_000, wasLow: false))
+        XCTAssertTrue(DiskSpace.isLow(available: 20_000_000_000, wasLow: false))
+        // Hovering around the limit stays one low period.
+        XCTAssertTrue(DiskSpace.isLow(available: 30_000_000_000, wasLow: true))
+        XCTAssertFalse(DiskSpace.isLow(available: 45_000_000_000, wasLow: true))
+    }
+
     func testFindsDerivedDataOfRemovedWorktreesOnly() throws {
         let gone = base.appendingPathComponent("worktrees/feature/apps/macos/Nook.xcodeproj").path
         let kept = base.appendingPathComponent("worktrees/live/apps/macos/Nook.xcodeproj").path

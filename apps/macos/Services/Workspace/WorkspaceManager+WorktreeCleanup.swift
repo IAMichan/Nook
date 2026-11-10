@@ -227,17 +227,24 @@ extension WorkspaceManager {
     /// At most this often: each sweep lists the temporary folders, scratchpads and DerivedData.
     private static let buildLeftoversInterval: TimeInterval = 6 * 60 * 60
 
-    /// Builds agents left where removing a worktree does not reach (see `BuildLeftovers`). Every removal lands in the
-    /// audit log.
-    func sweepBuildLeftovers(now: Date = Date()) {
-        guard settings.buildLeftoverCleanup else { return }
-        if let last = buildLeftoversAt, now.timeIntervalSince(last) < Self.buildLeftoversInterval { return }
+    /// Builds agents left where removing a worktree does not reach (see `BuildLeftovers`), and the installed
+    /// dependencies of worktrees nobody used for a week. Every removal lands in the audit log. `force` skips the
+    /// interval (the disk runs low); `done` gets the bytes freed.
+    func sweepBuildLeftovers(now: Date = Date(), force: Bool = false, done: ((Int64) -> Void)? = nil) {
+        guard settings.buildLeftoverCleanup else { done?(0); return }
+        if !force, let last = buildLeftoversAt, now.timeIntervalSince(last) < Self.buildLeftoversInterval { return }
         buildLeftoversAt = now
         // Worktrees: Nook's own (`<root>/<repo>/<name>`), the sessions' wherever they are, and Claude Code's in the
         // repositories Nook works in (`<repo>/.claude/worktrees/<name>`).
         let local = runs.filter { !$0.isRemote }
         let sessionWorktrees = local.compactMap(\.worktreePath)
         let containers = [(settings.worktreeRoot, 2)] + Set(local.compactMap(\.repoRoot)).map { ($0 + "/.claude/worktrees", 1) }
+        // In use within a week: a session runs or ran there, or a terminal is open there. Everything else is idle.
+        let recent = now.addingTimeInterval(-BuildLeftovers.idleAge)
+        let busy = local.filter { $0.status.isActive || processes[$0.id] != nil || $0.updatedAt > recent }
+            .flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) }
+            + (openTerminalFolders?() ?? [])
+        let mainCheckouts = Set(local.compactMap(\.repoRoot).map(WorkspacePathPolicy.normalize))
         Task.detached(priority: .background) { [weak self] in
             var worktrees = Set(sessionWorktrees.map { URL(fileURLWithPath: $0) })
             for (container, depth) in containers {
@@ -247,13 +254,14 @@ extension WorkspaceManager {
                 }
                 worktrees.formUnion(level)
             }
-            let removed = BuildLeftovers.sweep(.standard(worktrees: Array(worktrees)))
-            guard !removed.isEmpty else { return }
+            let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, busy: busy, mainCheckouts: mainCheckouts) }
+            let removed = BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle)))
             await MainActor.run {
                 for item in removed {
                     self?.onAudit?("build_cleanup", "\(AgentPathFormat.tilde(item.leftover.url.path)) · \(item.leftover.kind.rawValue)",
                                    "removed \(DiskUsage.format(item.bytes))")
                 }
+                done?(removed.reduce(0) { $0 + $1.bytes })
             }
         }
     }
@@ -366,5 +374,36 @@ extension WorkspaceManager {
             }
             return nil
         }.value
+    }
+}
+
+extension WorkspaceManager {
+    /// At most this often: reading the free space is cheap, but nothing fills a disk within minutes.
+    private static let diskSpaceInterval: TimeInterval = 5 * 60
+
+    /// When the startup disk runs low (`DiskSpace`): first frees what is safe to free at once (build leftovers and the
+    /// cleanup rules you switched on, without waiting for their interval), then says how much is free and what the
+    /// worktrees take, once until the disk recovered.
+    func watchDiskSpace(now: Date = Date()) {
+        if let last = diskSpaceCheckedAt, now.timeIntervalSince(last) < Self.diskSpaceInterval { return }
+        diskSpaceCheckedAt = now
+        guard let available = DiskSpace.available() else { return }
+        let wasLow = diskSpaceLow
+        diskSpaceLow = DiskSpace.isLow(available: available, wasLow: wasLow)
+        guard diskSpaceLow, !wasLow else { return }
+        worktreeCleanupAt = nil
+        applyWorktreeCleanup(now: now)
+        let root = (settings.worktreeRoot as NSString).expandingTildeInPath
+        sweepBuildLeftovers(now: now, force: true) { [weak self] freed in
+            Task { [weak self] in
+                let worktrees = await Task.detached(priority: .utility) { DiskUsage.allocatedSize(of: root) }.value
+                guard let self else { return }
+                let free = DiskSpace.available() ?? available
+                self.onAudit?("disk_space", "\(DiskUsage.format(free)) free", "freed \(DiskUsage.format(freed))")
+                // Freeing lifted it above the limit: nothing to say, and the next drop says it.
+                guard free < DiskSpace.lowBytes else { self.diskSpaceLow = false; return }
+                self.onLowDiskSpace?(free, freed, worktrees)
+            }
+        }
     }
 }
