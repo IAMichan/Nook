@@ -45,6 +45,29 @@ struct GoalStrip: View {
     }
 }
 
+/// `/clear` waits for your next message: that one starts a new conversation (`WorkspaceManager.armFreshConversation`).
+/// "Keep this conversation" takes it back.
+struct FreshConversationStrip: View {
+    let keep: () -> Void
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(systemName: "eraser").font(NookTheme.font(11, .semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(tr("ws.fresh.title")).foregroundStyle(NookTheme.paper.opacity(0.85))
+                Text(tr("ws.fresh.detail")).foregroundStyle(NookTheme.textTertiary)
+            }
+            Spacer(minLength: 6)
+            Button(tr("ws.fresh.keep"), action: keep)
+                .buttonStyle(.plain)
+                .foregroundStyle(NookTheme.iris)
+                .help(tr("ws.fresh.keep.help"))
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textSecondary)
+    }
+}
+
 struct TasksStrip: View {
     let steps: [RunTaskStep]
     @State private var open = false

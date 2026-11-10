@@ -46,10 +46,12 @@ extension AppModel {
             ),
             ToolSpec(
                 name: "message_agent_session",
-                description: "Sends a message to a coding agent session for the user: a follow-up, an answer to its question, or what it should do next. It waits in line when the agent is busy.",
+                description: "Sends a message to a coding agent session for the user: a follow-up, an answer to its question, or what it should do next. mode queue (default) waits in line when the agent is busy; auto takes it into a running turn when the agent can; steer only into the running turn; restart stops the turn and starts again with this message.",
                 schema: ["type": "object", "properties": [
                     "session_id": sessionID,
-                    "message": ["type": "string", "description": "The complete message for the agent."]
+                    "message": ["type": "string", "description": "The complete message for the agent."],
+                    "mode": ["type": "string", "enum": BridgeSessionArguments.SendMode.allCases.map(\.rawValue),
+                             "description": "queue (default), auto, steer or restart."]
                 ], "required": ["session_id", "message"]],
                 kind: .action,
                 summarize: { [weak self] input in
@@ -64,8 +66,18 @@ extension AppModel {
                         throw NookError("No such session. Use an id from list_agent_sessions.")
                     }
                     guard !message.isEmpty else { throw NookError("Give the message for the agent.") }
-                    let sent = self.workspace.submit(id, text: message)
-                    return sent ? "Sent to \(run.title)" : "Queued for \(run.title): it gets it after its current turn"
+                    let mode: BridgeSessionArguments.SendMode
+                    switch BridgeSessionArguments.sendMode(input["mode"]) {
+                    case .success(let value): mode = value
+                    case .failure(let error): throw NookError(error.message)
+                    }
+                    switch self.workspace.deliver(id, text: message, mode: mode) {
+                    case .sent: return "Sent to \(run.title)"
+                    case .queued: return "Queued for \(run.title): it gets it after its current turn"
+                    case .steered: return "Taken into \(run.title)'s running turn"
+                    case .restarted: return "Stopped \(run.title)'s turn; it starts again with this message"
+                    case nil: throw NookError("\(run.provider.displayName) cannot take a message during its turn. Use mode queue or restart.")
+                    }
                 }
             ),
             ToolSpec(
@@ -77,7 +89,11 @@ extension AppModel {
                               "description": "Which agent. Defaults to the user's default agent."],
                     "folder": ["type": "string", "description": "The project folder (a path or a folder name the user worked in before). Defaults to the most recent one. With machine: the folder on that machine (~/code/app or /srv/app), default ~."],
                     "machine": ["type": "string", "description": "Run it on another machine over SSH: the name or host of a machine from list_remote_machines. Leave out to run on this Mac."],
-                    "plan": ["type": "boolean", "description": "Start in Plan mode (read-only). Default false."]
+                    "plan": ["type": "boolean", "description": "Start in Plan mode (read-only). Default false."],
+                    "title": ["type": "string", "description": "A name for the session. Default: made from the task."],
+                    "worktree": ["type": "boolean", "description": "Work in a new git worktree on a branch of its own. Default false."],
+                    "base": ["type": "string", "description": "With worktree: the branch it starts from, such as main or origin/main. Default: the folder's current branch."],
+                    "scratch": ["type": "boolean", "description": "Start in a new folder of its own, without a project (instead of folder)."]
                 ], "required": ["task"]],
                 kind: .action,
                 summarize: { input in
@@ -214,7 +230,9 @@ extension AppModel {
         }
         let wanted = ((input["folder"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let folder: String?
-        if wanted.isEmpty {
+        if (input["scratch"] as? Bool) == true {
+            folder = try ScratchProjects.create(prompt: task)
+        } else if wanted.isEmpty {
             folder = projects.first
         } else {
             let path = WorkspacePathPolicy.normalize((wanted as NSString).expandingTildeInPath)
@@ -237,8 +255,19 @@ extension AppModel {
 
         var config = sessionConfig(task: task, provider: provider, folder: folder, plan: (input["plan"] as? Bool) ?? false)
         config.projectPath = folder
+        config.title = ((input["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        config.startedBy = tr("ws.event.startedByChat")
+        let base = ((input["base"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if (input["worktree"] as? Bool) == true || !base.isEmpty {
+            guard base.isEmpty || BridgeSessionArguments.isPlausibleRef(base) else { throw NookError("base is not a branch name: \(base)") }
+            config.isolation = .worktree
+            config.branchName = WorktreeNaming.branchName(task: task, id: UUID())
+            let git = workspace.gitService
+            config.baseBranch = base.isEmpty ? await Task.detached(priority: .userInitiated) { git?.currentBranch(folder) ?? "" }.value : base
+        }
         let id = try await workspace.start(config, allowSharedFolder: true)
-        return "Started \(provider.displayName) in \((folder as NSString).lastPathComponent) | session id \(id.uuidString)"
+        let link = SessionLink.build(id: id.uuidString, title: workspace.run(id)?.title ?? "").map { " | link \($0.absoluteString)" } ?? ""
+        return "Started \(provider.displayName) in \((folder as NSString).lastPathComponent) | session id \(id.uuidString)" + link
     }
 
     /// A session on a saved machine, in a folder there. The agent runs under that machine's own login, so it is not
@@ -262,6 +291,8 @@ extension AppModel {
         }
         var config = sessionConfig(task: task, provider: provider, folder: nil, plan: (input["plan"] as? Bool) ?? false)
         config.remote = RemoteTarget(machine: machine, directory: directory)
+        config.title = ((input["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        config.startedBy = tr("ws.event.startedByChat")
         let id = try await workspace.start(config, allowSharedFolder: true)
         UserDefaults.standard.set(directory, forKey: "agents.remoteFolder." + machine.id)
         return "Started \(provider.displayName) on \(machine.name) in \(directory) | session id \(id.uuidString)"

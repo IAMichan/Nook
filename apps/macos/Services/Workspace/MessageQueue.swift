@@ -8,13 +8,17 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
     var edited: Bool
     /// Set on news about a pull request: the lines `text` was made from. Nil for a message of yours.
     var pullRequest: PullRequestNotice?
+    /// Sent after `/clear`: it starts a new conversation with the agent, never one taken into a running turn.
+    var fresh: Bool
 
-    init(id: UUID = UUID(), text: String, createdAt: Date = Date(), edited: Bool = false, pullRequest: PullRequestNotice? = nil) {
+    init(id: UUID = UUID(), text: String, createdAt: Date = Date(), edited: Bool = false, pullRequest: PullRequestNotice? = nil,
+         fresh: Bool = false) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
         self.edited = edited
         self.pullRequest = pullRequest
+        self.fresh = fresh
     }
 
     init(from decoder: Decoder) throws {
@@ -24,6 +28,7 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(timeIntervalSince1970: 0)
         edited = try c.decodeIfPresent(Bool.self, forKey: .edited) ?? false
         pullRequest = try c.decodeIfPresent(PullRequestNotice.self, forKey: .pullRequest)
+        fresh = try c.decodeIfPresent(Bool.self, forKey: .fresh) ?? false
     }
 }
 
@@ -62,10 +67,11 @@ struct MessageQueue: Codable, Equatable, Sendable {
 
     /// Returns the new message, or nil when the text is empty or the queue is full.
     @discardableResult
-    mutating func enqueue(_ text: String, now: Date = Date(), id: UUID = UUID(), pullRequest: PullRequestNotice? = nil) -> QueuedMessage? {
+    mutating func enqueue(_ text: String, now: Date = Date(), id: UUID = UUID(), pullRequest: PullRequestNotice? = nil,
+                          fresh: Bool = false) -> QueuedMessage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, messages.count < Self.limit else { return nil }
-        let message = QueuedMessage(id: id, text: trimmed, createdAt: now, pullRequest: pullRequest)
+        let message = QueuedMessage(id: id, text: trimmed, createdAt: now, pullRequest: pullRequest, fresh: fresh)
         messages.append(message)
         return message
     }
@@ -108,10 +114,15 @@ struct MessageQueue: Codable, Equatable, Sendable {
 
     /// Puts a message that could not go out back at the front. It was shown already, so the limit does not apply:
     /// it waits instead of getting lost.
-    mutating func requeueFirst(_ text: String, now: Date = Date()) {
+    mutating func requeueFirst(_ text: String, now: Date = Date(), fresh: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        messages.insert(QueuedMessage(text: trimmed, createdAt: now), at: 0)
+        messages.insert(QueuedMessage(text: trimmed, createdAt: now, fresh: fresh), at: 0)
+    }
+
+    /// Whether this waiting message starts a new conversation (`QueuedMessage.fresh`).
+    func isFresh(_ id: UUID) -> Bool {
+        messages.first { $0.id == id }?.fresh == true
     }
 
     /// Brings the news waiting about this pull request up to date: what was solved meanwhile leaves the message, and a

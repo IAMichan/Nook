@@ -23,8 +23,8 @@ enum NookCommandLine {
     my @words;
     while (@ARGV) {
         my $arg = shift @ARGV;
-        if ($arg =~ /^--(json|wait|worktree)$/) { $option{$1} = 1; }
-        elsif ($arg =~ /^--(agent|model|limit)$/) { $option{$1} = shift @ARGV; }
+        if ($arg =~ /^--(json|wait|worktree|scratch|plan)$/) { $option{$1} = 1; }
+        elsif ($arg =~ /^--(agent|model|limit|title|base|mode)$/) { $option{$1} = shift @ARGV; }
         elsif ($arg eq '--help' || $arg eq '-h') { usage(0); }
         else { push @words, $arg; }
     }
@@ -40,16 +40,25 @@ enum NookCommandLine {
         },
     );
     if ($command eq 'start') {
-        my $folder = need(shift @words);
-        my %arguments = (folder => abs_path($folder) // $folder, task => message(@words));
-        $arguments{agent} = $option{agent} if defined $option{agent};
-        $arguments{model} = $option{model} if defined $option{model};
+        my %arguments;
+        if ($option{scratch}) { $arguments{scratch} = JSON::PP::true; }
+        else { my $folder = need(shift @words); $arguments{folder} = abs_path($folder) // $folder; }
+        # With --title the message may be left out: the session starts idle and waits for yours.
+        $arguments{task} = message(@words) if @words || !defined $option{title};
+        for my $key (qw(agent model title base)) { $arguments{$key} = $option{$key} if defined $option{$key}; }
         $arguments{worktree} = JSON::PP::true if $option{worktree};
-        my $text = show(call('session_start', \%arguments));
-        finish($text =~ /^([0-9A-Fa-f-]{36})/ ? $1 : undef);
+        $arguments{plan} = JSON::PP::true if $option{plan};
+        my $result = call('session_start', \%arguments);
+        show($result) if $option{json} || $result->{isError};
+        my $started = eval { $json->decode(do { my $t = text_of($result); utf8::encode($t); $t }) } // {};
+        my @ids = map { $_->{sessionId} // () } @{ $started->{sessions} // [] };
+        print join("\n", @ids), "\n" unless $option{json};
+        finish($ids[0]);
     } elsif ($command eq 'send') {
         my $id = need(shift @words);
-        show(call('session_send', { session_id => $id, message => message(@words) }));
+        my %arguments = (session_id => $id, message => message(@words));
+        $arguments{mode} = $option{mode} if defined $option{mode};
+        show(call('session_send', \%arguments));
         finish($id);
     } elsif ($command eq 'wait') {
         $option{wait} = 1;
@@ -73,8 +82,10 @@ enum NookCommandLine {
     nook list [--limit n]                    your sessions, newest first
     nook read <id>                           what a session did
     nook search <words>                      find sessions by what was said
-    nook start <folder> <message|->          start a session [--agent a] [--model m] [--worktree] [--wait]
-    nook send <id> <message|->               send a session a message [--wait]
+    nook start <folder> <message|->          start a session [--agent a] [--model m] [--title t] [--plan]
+                                             [--worktree] [--base origin/main] [--scratch, no folder] [--wait]
+                                             with --title the message may be left out: it starts idle
+    nook send <id> <message|->               send a session a message [--mode queue|auto|steer|restart] [--wait]
     nook wait <id>                           wait until the session is done or needs you
     nook tools                               list every tool
     nook call <tool> [json]                  call one tool

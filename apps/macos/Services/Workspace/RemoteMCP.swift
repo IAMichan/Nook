@@ -18,7 +18,7 @@ enum RemoteAccessLevel: String, CaseIterable, Codable, Sendable {
 
     static let reads: Set<BridgeTool> = [
         .workspaceInfo, .sessionList, .sessionRead, .sessionSearch, .listScheduledTasks, .getPullRequestStatus, .taskStatus,
-        .orchestratorCapabilities, .nookChatList, .nookChatRead,
+        .orchestratorCapabilities, .nookChatList, .nookChatRead, .sessionWait,
     ]
     static let steering: Set<BridgeTool> = [.sessionSend, .sessionStart, .sessionQuestions, .sessionOrganize]
     static let apps: Set<BridgeTool> = [

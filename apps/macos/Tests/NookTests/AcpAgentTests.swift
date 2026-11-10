@@ -279,6 +279,31 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertTrue(AgentErrorText.sessionGone("Unknown session abc"))
         XCTAssertFalse(AgentErrorText.sessionGone("Model not found"), "only the conversation being gone starts a new one")
         XCTAssertFalse(AgentErrorText.sessionGone("network timeout"))
+        XCTAssertTrue(AgentErrorText.sessionGone("No conversation found with session ID: 4b1c"), "Claude Code's --resume")
+    }
+
+    func testFailuresANewConversationFixes() {
+        XCTAssertEqual(FreshConversation.recovery(for: "No conversation found with session ID: 4b1c"), .gone)
+        XCTAssertEqual(FreshConversation.recovery(for: "error: no rollout found for thread id 019a"), .gone)
+        XCTAssertEqual(FreshConversation.recovery(for: "API Error: 400 Prompt is too long"), .full)
+        XCTAssertEqual(FreshConversation.recovery(for: "stream error: context_length_exceeded"), .full)
+        XCTAssertEqual(FreshConversation.recovery(for: "Your input exceeds the context window of this model."), .full)
+        // Read from any failed turn, so a guess must never cost a conversation the agent still has.
+        XCTAssertNil(FreshConversation.recovery(for: "Invalid session token, please log in"))
+        XCTAssertNil(FreshConversation.recovery(for: "Model not found"))
+        XCTAssertNil(FreshConversation.recovery(for: "Claude usage limit reached"))
+        XCTAssertNil(FreshConversation.recovery(for: "network timeout"))
+    }
+
+    func testClearIsACommandOnlyOnItsOwn() {
+        XCTAssertTrue(FreshConversation.isCommand("/clear"))
+        XCTAssertTrue(FreshConversation.isCommand("  /CLEAR \n"))
+        XCTAssertFalse(FreshConversation.isCommand("/clear the cache please"), "words after it are a message for the agent")
+        XCTAssertFalse(FreshConversation.isCommand("clear"))
+        XCTAssertFalse(FreshConversation.isCommand("/goal clear"))
+    }
+
+    func testAuthMethodsAndCancel() {
         XCTAssertEqual(AcpRPC.authMethodIDs(["authMethods": [["id": "oauth-personal", "name": "Google"], ["id": "gemini-api-key"], ["name": "x"]]]),
                        ["oauth-personal", "gemini-api-key"])
         XCTAssertEqual((AcpRPC.cancelledOutcome["outcome"] as? [String: String])?["outcome"], "cancelled")
