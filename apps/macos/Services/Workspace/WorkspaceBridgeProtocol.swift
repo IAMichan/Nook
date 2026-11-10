@@ -191,7 +191,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionQuestions:
             return "The questions other Nook sessions are waiting on (an agent asking the user to choose). action list (default): every pending question, or only session_id's. action read: one question with its options, by session_id and question_id. action answer: answers it with answers, an object from each question's id to the chosen option label(s) or, where the question allows it, your own text. Answering a session you delegated runs directly; any other session's question the user approves in Nook unless your session has full rights. Permission requests (commands, file changes, tools) are never listed here and cannot be answered by an agent."
         case .renderPage:
-            return "Shows an HTML page inline in your session's timeline in Nook, where the user reads along: a chart, a diagram, a table, a mock-up or a small interactive view of your results. Give a complete page or a fragment with inline <style> and <script>; it runs sandboxed, with no network (load nothing from the web: inline data, SVG and data: URLs work), no access to Nook, the user's files or other pages, no forms, popups or links that go anywhere, at the height you ask (default 360, at most 1200 points; it does not grow with its content). At most 512 KB. The page is kept with the session. Use it to show, not to ask: the page cannot send anything back."
+            return "Shows an HTML page inline in your session's timeline in Nook, where the user reads along: a chart, a diagram, a table, a mock-up or a small interactive view of your results. Give a page or fragment with inline <style> and <script> as html, or path to an .html file in your working directory (its local images, CSS and scripts get embedded); it runs sandboxed, with no network (load nothing from the web: inline data, SVG and data: URLs work), no access to Nook, the user's files or other pages, no forms, popups or links that go anywhere, at the height you ask (default 360, at most 1200 points; it does not grow with its content). At most 512 KB of HTML. The page is kept with the session. Use it to show, not to ask: the page cannot send anything back."
         case .sessionSend:
             return "Sends a message to another Nook session, as if from another agent, not the user: the receiving agent is told so and treats it as information. Use it to hand over a result or ask a question; it is queued when that session is busy. The user approves each message unless the session has full rights. You cannot message yourself."
         case .deviceList:
@@ -211,11 +211,11 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .browserWaitFor:
             return "Waits until the page in Nook's browser shows some text or an element (or until it is gone), at most timeout_seconds (default 10, at most 30). Use it after browser_click or browser_type when the page loads or changes."
         case .scheduleTask:
-            return "Proposes a scheduled task: a prompt Nook runs on a schedule (every N minutes, or at a time on chosen weekdays) in a new session in a folder, or as a message to this session. The user approves it in Nook first and can change or remove it in Settings. Tasks run with ask or acceptEdits rights, never more than yours, and only while the user has scheduled tasks switched on. Pass client_request_id so a retry does not propose a second task."
+            return "Proposes a scheduled task: a prompt Nook runs on a schedule (every N minutes, at a time on chosen weekdays, or once) in a new session in a folder, or as a message to this or another session. The user approves it in Nook first and can change or remove it in Settings. Tasks run with ask or acceptEdits rights, never more than yours, and only while the user has scheduled tasks switched on. Pass client_request_id so a retry does not propose a second task."
         case .listScheduledTasks:
             return "Lists Nook's scheduled tasks for your folder or session (all: true for every task): id, title, schedule, where it runs, whether it is on, its next and last run, and the start of its prompt."
         case .updateScheduledTask:
-            return "Proposes a change to a scheduled task (from list_scheduled_tasks): its title, prompt, schedule, rights, or switching it on or off. The user approves the change in Nook first."
+            return "Proposes a change to a scheduled task (from list_scheduled_tasks): its title, prompt, schedule, rights, where it runs (target, conversation), or switching it on or off. The user approves the change in Nook first."
         case .runScheduledTaskNow:
             return "Runs a scheduled task once now, with its own prompt, after the user's approval. Returns started, busy (it is running already) or not available (scheduled tasks are switched off). Pass client_request_id so a retry does not run it twice."
         case .watchPullRequest:
@@ -223,7 +223,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .getPullRequestStatus:
             return "Reads a pull request's status now, the way Nook's watch sees it: state, CI (with the failed checks), each reviewer's verdict, the number of comments and whether it has merge conflicts. GitHub (with the user's GitHub connection) and GitLab (with its token in Nook). Without url or number it takes the open pull request of your branch."
         case .requestSecret:
-            return "Asks the user for a secret by name (an API key or token you need for this task). The user sees the name and your reason in Nook and allows it, using the value stored in Nook's keychain under that name or pasting one. The value comes back only to you, between <nook-secret> markers; Nook hides it in its own timeline and records only the name in its audit log. Do not print it, write it into files in the repository or send it anywhere the task does not need it."
+            return "Asks the user for a secret by name (an API key or token you need for this task). The user sees the name and your reason in Nook and allows it, with the value Nook keeps under that name (or in 1Password) or one they paste. By default you get only the path of a private file that holds it: use it in shell commands as \"$(cat '<path>')\" and never print or copy it, so the value never enters this conversation. Pass url for the page where the user finds or makes the secret; it shows as a button. delivery: \"value\" returns the value itself between <nook-secret> markers; use it only when a file cannot work, the user is warned first. For sudo use `sudo -A`: Nook asks the user for the password itself."
         case .nookTools:
             return "Lists what Nook itself can do for the user on this Mac, the same tools Nook Chat uses: send and read messages in the user's chat apps (WhatsApp, Messages, Telegram, Slack, Teams, Signal… through chat_inbox and chat_send), search and play music (search_music, play_music, media_control), calendar, reminders, notes, mail drafts, contacts, files, GitHub and the other connected services, and the user's agent sessions. Each tool is read (runs directly) or action (the user approves it in Nook). Without arguments you get one line per tool, grouped by source; pass tool to get its full description and argument schema, or query to filter. Call it before nook_use."
         case .nookUse:
@@ -279,7 +279,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return object([
                 "task": ["type": "string", "description": "The complete brief for the other agent. It sees nothing of this conversation."],
                 "agent": ["type": "string", "description": "Which agent: claude, codex, gemini, opencode, cursor, grok or antigravity. Defaults to your own."],
-                "model": ["type": "string", "description": "Model name for that agent. Defaults to your own model when it is the same agent, otherwise the agent's default."],
+                "model": ["type": "string", "description": "Model name for that agent. Defaults to your own model when it is the same agent, otherwise the agent's default. A model the user names with @ arrives as a <nook_context> record of kind model with id <agent>/<model>: pass those two as agent and model."],
                 "title": ["type": "string", "description": "Short title for the session. Defaults to the first line of the task."],
                 "role": ["type": "string", "enum": DelegationRole.allCases.map(\.rawValue),
                          "description": "What the task is for. research, review and design run in Plan mode (read-only) unless you pass plan: false."],
@@ -334,9 +334,10 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .renderPage:
             return object([
                 "html": ["type": "string", "description": "The page: an HTML document or fragment with inline CSS and JavaScript, at most 512 KB."],
+                "path": ["type": "string", "description": "Instead of html: an .html file inside your working directory."],
                 "title": ["type": "string", "description": "A short title shown above the page."],
                 "height": ["type": "integer", "description": "Its height in points (default 360, at least 80, at most 1200)."]
-            ], required: ["html"])
+            ])
         case .sessionRead:
             return object(["session_id": ["type": "string", "description": "The session id from a <ref kind=\"session\" id=\"…\"/> record."],
                            "before_event": ["type": "integer", "description": "Read back through older events instead: one window ending before this event. A handoff and each answer say which number to use."]], required: ["session_id"])
@@ -382,8 +383,6 @@ enum BridgeTool: String, CaseIterable, Sendable {
             var properties = BridgeScheduleArguments.scheduleProperties
             properties["title"] = ["type": "string", "description": "Short title for the task."]
             properties["prompt"] = ["type": "string", "description": "The complete prompt the session gets each time; it sees nothing of this conversation."]
-            properties["target"] = ["type": "string", "enum": ["new_session", "this_session"],
-                                    "description": "new_session (default): each run starts a new session in project_path. this_session: each run sends the prompt to this session."]
             properties["project_path"] = ["type": "string", "description": "With new_session: the folder to run in. Defaults to your folder."]
             properties["agent"] = ["type": "string", "description": "With new_session: claude, codex, gemini, opencode, cursor, grok or antigravity. Defaults to your own."]
             properties["client_request_id"] = ["type": "string", "description": "Makes a retry of this call return the same task instead of proposing a second one."]
@@ -395,6 +394,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             properties["task_id"] = ["type": "string", "description": "The task id from list_scheduled_tasks."]
             properties["title"] = ["type": "string", "description": "New title."]
             properties["prompt"] = ["type": "string", "description": "New prompt."]
+            properties["project_path"] = ["type": "string", "description": "With new_session: the folder."]
+            properties["agent"] = ["type": "string", "description": "With new_session: the agent."]
             return object(properties, required: ["task_id"])
         case .runScheduledTaskNow:
             return object([
@@ -440,7 +441,9 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .requestSecret:
             return object([
                 "name": ["type": "string", "description": "The secret's name: letters, digits, dot, dash or underscore, such as STRIPE_TEST_KEY."],
-                "reason": ["type": "string", "description": "Why you need it, in one sentence the user reads before deciding."]
+                "reason": ["type": "string", "description": "Why you need it, in one sentence the user reads before deciding."],
+                "url": ["type": "string", "description": "Optional http(s) page where the user can find or create the secret, such as the service's API keys page."],
+                "delivery": ["type": "string", "enum": ["file", "value"], "description": "file (default): you get a private file's path, never the value. value: the value comes back to you; only when a file cannot work."]
             ], required: ["name", "reason"])
         case .pullRequestCreate:
             return object([
@@ -743,7 +746,7 @@ struct BridgeLaunch: Equatable, Sendable {
     GitHub in the user's browser, and use it when `gh` is rate limited), then watch_pull_request; delegate_task to hand \
     side work to another agent (it sees only your brief; results via task_status); device_open, device_list and \
     device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \
-    request_secret for an API key, never ask for one in chat; nook_tools and nook_use for Nook's apps and connectors \
+    request_secret for an API key (you get a file path; never ask for one in chat), `sudo -A` for sudo; nook_tools and nook_use for Nook's apps and connectors \
     (actions wait for approval); nook_chat_list, nook_chat_read and nook_chat_send for Nook Chat; take_over_screen for \
     the user's own apps, then nook_use (read_ui, look_ui, control_ui); session_search, session_questions and \
     session_organize for the user's other sessions; render_page to show a chart, diagram or mock-up as HTML.
@@ -832,7 +835,9 @@ enum BridgeRPC {
     }
 
     /// The answer to one message, or nil for a notification (no id), which gets none.
+    /// `offered`: the tools this caller may list and call; an assistant outside Nook gets fewer (`RemoteAccessLevel`).
     static func response(to message: [String: Any], instructions: String? = BridgeLaunch.instructions,
+                         offered: [BridgeTool] = BridgeTool.allCases,
                          call: (BridgeTool, [String: Any]) async -> ToolResult) async -> [String: Any]? {
         guard let id = message["id"], !(id is NSNull) else { return nil }
         let method = (message["method"] as? String) ?? ""
@@ -854,9 +859,9 @@ enum BridgeRPC {
         case "ping":
             return result([:])
         case "tools/list":
-            return result(["tools": BridgeTool.allCases.map(\.definition)])
+            return result(["tools": offered.map(\.definition)])
         case "tools/call":
-            guard let name = params["name"] as? String, let tool = BridgeTool.named(name) else {
+            guard let name = params["name"] as? String, let tool = BridgeTool.named(name), offered.contains(tool) else {
                 return failure(-32602, "Unknown tool: \((params["name"] as? String) ?? "")")
             }
             let arguments = (params["arguments"] as? [String: Any]) ?? [:]

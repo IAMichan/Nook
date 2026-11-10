@@ -363,9 +363,10 @@ struct CommandReceipts: Sendable {
     static func keeps(_ op: CompanionOp) -> Bool {
         switch op {
         case .send, .answer, .decide, .stop, .start, .ask, .inboxSend, .manage, .chatStop, .music, .inboxMark,
-             .register, .unregister, .liveActivity, .requestUpdate:
+             .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork:
             return true
-        case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff:
+        case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff,
+             .pulls, .pull:
             return false
         }
     }

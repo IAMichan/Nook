@@ -28,7 +28,7 @@ extension WorkspaceManager {
         switch run.provider {
         case .claude: signInClaudeConnector(id, name: name)
         case .codex: signInCodexConnector(id, name: name)
-        case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .pi, .acp: return
         }
     }
 

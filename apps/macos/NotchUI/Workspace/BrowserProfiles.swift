@@ -56,6 +56,12 @@ enum BrowserProfiles {
         return policy(for: key) == .forget ? ephemeral : store(id(of: name))
     }
 
+    /// The store a project (nil: Nook's own browser) keeps its sign-ins in, whatever it does with them now: where imported
+    /// sign-ins go (`BrowserCookieImporter`).
+    static func keptStore(project: String?) -> WKWebsiteDataStore {
+        store(id(of: project ?? nookOwner))
+    }
+
     /// A project (nil: Nook's own browser) stopped keeping sign-ins: what it kept goes. Its id stays known: a browser
     /// still open writes on until it closes, and `sweep` clears that at the next launch.
     static func forget(project: String?) {

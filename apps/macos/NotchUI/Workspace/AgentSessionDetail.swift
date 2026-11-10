@@ -88,8 +88,9 @@ struct AgentSessionDetail: View {
 
     private func takeFromSidePanel() {
         guard case .live(let session) = selection,
-              let text = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
-        draft = SessionPrompts.merging(text, into: draft)
+              let delivery = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
+        draft = delivery.merged(into: draft)
+        composerState.images += delivery.images
         composerFocused = true
     }
 
@@ -209,7 +210,8 @@ struct AgentSessionDetail: View {
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval, inline: true, onDecide: { app.approvals.decide(approval, $0) },
-                             onSecret: { app.approvals.allow(approval, secret: $0) })
+                             onSecret: { app.approvals.allow(approval, secret: $0) },
+                             onDenyWithReason: { app.approvals.decide(approval, .deny, reason: $0) })
                     .sessionComposerBounds()
             } else if !app.demoMode, let request = bridgeRequest(for: session) {
                 // A command or pull request this agent asks for through Nook's workspace.
@@ -694,6 +696,8 @@ struct AgentSessionDetail: View {
         var config = ComposerConfig()
         config.fileRoot = folder.isEmpty ? nil : folder
         config.keepsBigPastes = true
+        // An agent on this Mac reads the private file a pasted secret goes to.
+        config.secretScope = SecretFiles.composerScope
         return config
     }
 
@@ -827,7 +831,7 @@ private struct SessionQuestionOptionButton: View {
             RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(chosen ? NookTheme.amber.opacity(0.2) : (isHovered ? NookTheme.smoke : NookTheme.well))
             RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : Color.white.opacity(0.08)), lineWidth: 1)
+                .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : NookTheme.wash.opacity(0.08)), lineWidth: 1)
 
             Text(number < 9 ? "\(number + 1)" : "·")
                 .font(NookTheme.mono(11, .semibold))
@@ -847,7 +851,7 @@ private struct SessionQuestionOptionButton: View {
         } else {
             Image(systemName: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))
-                .foregroundStyle(isHovered ? NookTheme.amber : Color.white.opacity(0.08))
+                .foregroundStyle(isHovered ? NookTheme.amber : NookTheme.wash.opacity(0.08))
                 .opacity(isHovered ? 1 : 0.4)
                 .padding(.top, 3)
         }

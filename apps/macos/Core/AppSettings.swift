@@ -309,6 +309,71 @@ final class AppSettings: ObservableObject {
             NookTheme.accentHex = accentHex
         }
     }
+    /// System, Light or Dark for Nook's windows (Settings › Appearance). The notch stays dark: it is the hardware's.
+    @Published var appearanceMode: NookAppearanceMode {
+        didSet {
+            UserDefaults.standard.set(appearanceMode.rawValue, forKey: "appearanceMode")
+            applyTheme()
+        }
+    }
+    /// The theme that shows in dark and the one that shows in light (`NookColorTheme.id`).
+    @Published var darkThemeID: String {
+        didSet {
+            UserDefaults.standard.set(darkThemeID, forKey: "darkThemeID")
+            applyTheme()
+        }
+    }
+    @Published var lightThemeID: String {
+        didSet {
+            UserDefaults.standard.set(lightThemeID, forKey: "lightThemeID")
+            applyTheme()
+        }
+    }
+    /// VS Code color themes the user imported, kept as their JSON (`NookCustomTheme`).
+    @Published var customThemes: [NookCustomTheme] {
+        didSet {
+            UserDefaults.standard.set(try? JSONEncoder().encode(customThemes), forKey: "customThemes")
+            customThemeCache = customThemes.compactMap(\.theme)
+            applyTheme()
+        }
+    }
+    private var customThemeCache: [NookColorTheme] = []
+
+    /// Typeset TeX in answers and Markdown previews (`MathView`); off shows the TeX as written.
+    @Published var renderMath: Bool {
+        didSet {
+            UserDefaults.standard.set(renderMath, forKey: "renderMath")
+            MathText.renderingEnabled = renderMath
+        }
+    }
+    /// Show Markdown styled in the session composer as you type (`ComposerMarkdownStyle`); the text sent stays the same.
+    @Published var richComposer: Bool {
+        didSet { UserDefaults.standard.set(richComposer, forKey: "richComposer") }
+    }
+
+    /// The built-in themes, then the imported ones.
+    var themes: [NookColorTheme] { NookColorTheme.builtIn + customThemeCache }
+
+    var themeChoice: NookThemeChoice {
+        NookThemeChoice(mode: appearanceMode, darkTheme: darkThemeID, lightTheme: lightThemeID)
+    }
+
+    /// Hands the chosen palettes to `NookTheme` and the mode to the windows; a change redraws them.
+    func applyTheme() {
+        let choice = themeChoice
+        let changed = NookTheme.apply(dark: choice.palette(dark: true, themes: themes),
+                                      light: choice.palette(dark: false, themes: themes))
+        let modeChanged = NookWindowLook.mode != appearanceMode
+        NookWindowLook.mode = appearanceMode
+        if changed || modeChanged {
+            NookWindowLook.refresh()
+            themeRevision = NookTheme.revision
+        }
+    }
+
+    /// `NookTheme.revision` as published: roots key their `.id` on it, so a new palette draws everywhere at once.
+    @Published private(set) var themeRevision = 0
+
     /// Nook's appearance: eye and mouth style, gloss, glow and blush (Settings › Appearance).
     @Published var nookLook: NookLook {
         didSet {
@@ -664,6 +729,15 @@ final class AppSettings: ObservableObject {
         let storedAccent = (defaults.object(forKey: "accentHex") as? Int).map { UInt32(truncatingIfNeeded: $0) } ?? NookTheme.defaultAccentHex
         accentHex = storedAccent
         NookTheme.accentHex = storedAccent
+        appearanceMode = NookAppearanceMode(rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .dark
+        darkThemeID = defaults.string(forKey: "darkThemeID") ?? NookColorTheme.nook.id
+        lightThemeID = defaults.string(forKey: "lightThemeID") ?? NookColorTheme.nook.id
+        let storedThemes = (defaults.data(forKey: "customThemes")).flatMap { try? JSONDecoder().decode([NookCustomTheme].self, from: $0) } ?? []
+        customThemes = storedThemes
+        customThemeCache = storedThemes.compactMap(\.theme)
+        renderMath = defaults.object(forKey: "renderMath") as? Bool ?? true
+        MathText.renderingEnabled = defaults.object(forKey: "renderMath") as? Bool ?? true
+        richComposer = defaults.object(forKey: "richComposer") as? Bool ?? true
         let storedLook = NookLook(stored: defaults.string(forKey: "nookLook"))
         nookLook = storedLook
         NookAppearance.shared.look = storedLook
@@ -718,6 +792,7 @@ final class AppSettings: ObservableObject {
         onboardingDone = defaults.bool(forKey: "onboardingDone") || !(key ?? "").isEmpty
             || !(defaults.string(forKey: "localModel") ?? "").isEmpty
         refreshProviderKey()
+        applyTheme()
     }
 
     /// Saves the key. Active for at least this session; `keychainError` is set if Keychain failed.

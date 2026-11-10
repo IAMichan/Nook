@@ -43,11 +43,15 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘N | `session.new` | `!terminalFocus` | A new Nook chat in the Nook list, a new agent session elsewhere in the main window |
 | ⌘Z | `session.undo` | `!terminalFocus && !editableFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
 | ⇧⌘T | `panel.reopenClosed` | `!terminalFocus` | Reopen the tab closed last: a session's side or bottom panel tab (in the panel it was in, a pull request tab with its pull request), or a tab on the Pull requests page |
-| ⇧⌘L | `selection.quote` | `!terminalFocus && !editableFocus` | Words selected in an agent's answer go with your next message, as a chip above the composer |
+| ⇧⌘L | `selection.quote` | `!terminalFocus && !editableFocus` | Words selected in an agent's answer go with your next message, as a chip above the composer; the chip can carry your own note, and a click on it jumps back to the passage |
 | ⌘L | `selection.ask` | `!terminalFocus && !editableFocus` | The same, and the keyboard goes to the composer to ask about them |
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | The chat above or below on Chats; the repository tab on the left or right on the Actions page |
 | ⌘D | `diff.toggle` | `!terminalFocus` | The Changes tab on the latest turn (or the branch), and again to close it |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Opens the model picker of the composer on screen (↑ ↓ move over the models, Return picks, Escape closes) |
+| ⇧⌘E | `effortPicker.toggle` | `!terminalFocus` | Opens the effort picker of the composer on screen, when its agent has levels |
+| ⇧⌘A | `permissionPicker.toggle` | `!terminalFocus` | Opens the access picker of the composer on screen |
+| — | `effort.increase` / `effort.decrease` | | Unbound on purpose: one effort level up or down in the composer on screen without opening the picker (`EffortStep`; for an agent that lists a model per level, the next model of that family) |
+| ⌥⌘5 | window capture (Settings › Shortcuts) | | Captures the front window: its picture and its text (Accessibility, else read from the picture) go to the composer of the session you work in, or to the Nook chat (Settings › Shortcuts chooses). Needs Screen Recording |
 | ⇧⌘S | `session.settle` | `!terminalFocus` | Settles the open session, or brings a settled one back |
 | ⇧⌘P | `session.pin` | `!terminalFocus` | Pins the open session, or unpins it |
 | — | `session.interrupt` | | Unbound on purpose: stops the open session's turn (a session Nook runs); also in the command palette |
@@ -71,6 +75,9 @@ that runs it shows as "not available yet" in Settings, and its keys pass on to t
 Keys that are not commands stay with their view: Return, Tab, Escape and the plain arrows inside a field or a list,
 ⌘1–⌘3 for the main window's tabs outside the Agents tab, ⇧⌘F for search everything (besides ⌘K), and a sheet's
 `.cancelAction` / `.defaultAction`.
+
+In a session composer that shows a suggested next prompt (ghost text after a finished turn, Settings › Sessions ›
+Text generation), Tab puts the suggestion in the box and Escape dismisses it; typing anything dismisses it too.
 
 ## Keys in the Agents list and the pickers
 

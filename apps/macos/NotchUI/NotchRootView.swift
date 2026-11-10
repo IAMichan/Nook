@@ -108,7 +108,7 @@ struct NotchRootView: View {
         // or closed. An animated frame laid the whole panel out again on every frame of the spring (and set off every
         // `onGeometryChange` in it), which is where opening and closing stuttered.
         .animation(nil) { $0.frame(width: size.width, height: size.height, alignment: .top) }
-        .id("\(contentKey)-\(settings.accentHex)")
+        .id("\(contentKey)-\(settings.accentHex)-\(settings.themeRevision)")
         .transition(.notchContent)
     }
 

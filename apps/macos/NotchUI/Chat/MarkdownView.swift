@@ -44,7 +44,7 @@ extension MarkdownBlock {
                     continue
                 }
                 var piece = AttributedString(text, attributes: run.attributes)
-                let url = link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
+                let url = link.flatMap { isSafeLink($0) || isFileLink($0) || isCommitLink($0) ? $0 : nil }
                 piece.link = url
                 if code {
                     piece.font = .system(size: size * 0.85, design: .monospaced)
@@ -110,10 +110,23 @@ extension MarkdownBlock {
     /// side panel like any other.
     private static func linkPieces(_ text: String, link: URL?, code: Bool, files: Bool) -> [(text: String, link: URL?)] {
         if let link { return [(text, link)] }
-        if code { return [(text, codeLink(text) ?? codeFileLink(text, relative: files))] }
+        if code {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            // In an agent's conversation a commit hash in code opens that commit in the session's Changes tab.
+            if files, CommitReference.isHash(trimmed) { return [(text, CommitReference.link(trimmed))] }
+            return [(text, codeLink(text) ?? codeFileLink(text, relative: files))]
+        }
         var pieces: [(text: String, link: URL?)] = []
         var start = text.startIndex
-        for found in bareLinks(text) {
+        var matches = bareLinks(text)
+        if files {
+            let links = matches.map(\.range)
+            for range in CommitReference.hashes(in: text) where !links.contains(where: { $0.overlaps(range) }) {
+                if let url = CommitReference.link(String(text[range])) { matches.append((range, url)) }
+            }
+            matches.sort { $0.range.lowerBound < $1.range.lowerBound }
+        }
+        for found in matches {
             if start < found.range.lowerBound { pieces.append((String(text[start..<found.range.lowerBound]), nil)) }
             pieces.append((String(text[found.range]), found.url))
             start = found.range.upperBound
@@ -245,6 +258,18 @@ extension EnvironmentValues {
 }
 
 extension MarkdownBlock {
+    /// A commit hash Nook linked in an agent's answer (`CommitReference`).
+    static func isCommitLink(_ url: URL) -> Bool { url.scheme == CommitReference.scheme && CommitReference.hash(in: url) != nil }
+
+    /// In an agent's conversation, a commit hash or a GitHub commit page opens that commit in the session's Changes tab
+    /// when its folder has it (a GitHub page it does not have opens as a page). False: not a commit link here.
+    @MainActor
+    static func openCommitLink(_ url: URL, base: String?, beside: Bool) -> Bool {
+        guard beside, let base, let hash = CommitReference.hash(in: url) else { return isCommitLink(url) }
+        AppModel.shared.openCommitBeside(hash, folder: base, fallback: url.scheme == CommitReference.scheme ? nil : url)
+        return true
+    }
+
     /// A link to a file (`src/app.swift:12:3`, `./README.md`, `file:///…`) rather than to a web page or a mail address.
     static func isFileLink(_ url: URL) -> Bool {
         guard !isSafeLink(url) else { return false }
@@ -314,6 +339,9 @@ struct MarkdownView: View, Equatable {
                 MainActor.assumeIsolated { AnswerCitation.open(number, in: answerReferences) }
                 return .handled
             }
+            if MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
+                return .handled
+            }
             if MarkdownBlock.isFileLink(url) {
                 return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }
                     ? .handled : .discarded
@@ -323,7 +351,11 @@ struct MarkdownView: View, Equatable {
             if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
             // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
             if pullRequestLinksBeside {
-                return MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) ? .handled : .systemAction
+                // Your own browser: while Nook is the default browser that is the one you had before, not Nook again.
+                return MainActor.assumeIsolated {
+                    if !AppModel.shared.openLinkBeside(url) { DefaultBrowser.openOutside(url) }
+                    return .handled
+                }
             }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
@@ -335,8 +367,17 @@ struct MarkdownView: View, Equatable {
     @ViewBuilder
     private func view(for block: MarkdownBlock) -> some View {
         switch block {
+        case .paragraph(let text) where MathText.containsMath(text):
+            // Running text with formulas in it: typeset as a whole, so the formulas sit in the line.
+            MathView(text: text, size: size)
         case .heading, .paragraph, .list:
             ProseSegment(blocks: [block], size: size)
+        case .math(let tex):
+            if MathText.renderingEnabled {
+                MathView(text: tex, display: true, size: size)
+            } else {
+                MarkdownCodeBlock(language: "math", code: tex, size: size)
+            }
         case .code(let language, let code):
             MarkdownCodeBlock(language: language, code: code, size: size)
         case .chart(let chart):

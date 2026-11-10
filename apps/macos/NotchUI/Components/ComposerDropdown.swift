@@ -98,6 +98,8 @@ struct DropdownRow: View {
     var agent: String? = nil
     var account: AccountTag? = nil
     var brand: BrandLogo? = nil
+    /// A project's own icon (Settings › Projects), drawn instead of the symbol.
+    var projectIcon: ProjectIcon? = nil
     let title: String
     var detail: String? = nil
     var trailing: String? = nil
@@ -127,6 +129,9 @@ struct DropdownRow: View {
                     AgentMark(agent: agent, account: account, size: 15, ring: DropdownStyle.panel)
                 } else if let brand {
                     BrandMark(logo: brand, size: 14)
+                } else if let projectIcon {
+                    ProjectIconView(icon: projectIcon, size: 15)
+                        .padding(.top, detail == nil ? 0 : 1)
                 } else if let symbol, let tile {
                     NookSymbol(symbol, size: 13)
                         .font(NookTheme.font(12, .semibold))
@@ -421,6 +426,8 @@ struct AgentModelPicker: View {
             if picked == Self.autoPlace { return ModelPickerList(models: [autoRow()]) }
             return shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? ModelPickerList(models: [])
         }
+        // The picker's content only exists while it is open: opening it looks for newer models.
+        .onAppear { app.modelPickerOpened() }
     }
 
     private func pickerPlace(_ place: Place) -> ModelPickerPlace {
@@ -461,7 +468,17 @@ struct AgentModelPicker: View {
                 choose(current.provider, pickedProfile(current), custom)
             })
         }
-        return ModelPickerList(models: filtered(current, query: query).map { modelRow($0, of: current) }, actions: actions)
+        let options = filtered(current, query: query)
+        // A model that needs a newer agent: the update that unlocks it is one click away (Settings asks first).
+        if AgentUpdates.updatable(current.provider),
+           let required = options.lazy.compactMap({ app.modelUpdateVersion($0, for: current.provider) }).first {
+            actions.append(ModelPickerItem(id: "update:" + current.provider.rawValue,
+                                           title: tr("agentUpdate.pickerTitle", current.provider.displayName),
+                                           symbol: "arrow.down.circle", detail: tr("agentUpdate.pickerDetail", required)) {
+                app.requestAgentUpdate([current.provider])
+            })
+        }
+        return ModelPickerList(models: options.map { modelRow($0, of: current) }, actions: actions)
     }
 
     // MARK: Auto

@@ -21,6 +21,17 @@ final class ComposerInbox: ObservableObject {
         let id = UUID()
         let target: SessionContextTarget
         let text: String
+        /// Pictures for the composer's strip (a window capture).
+        var images: [ImageAttachment] = []
+        /// Files the agent reads itself, as tiles above the box (a window capture's text).
+        var files: [ContextRef] = []
+
+        /// The draft after this lands in it: the text as a block above what you wrote, the files at its end.
+        func merged(into draft: String) -> String {
+            var result = text.isEmpty ? draft : SessionPrompts.merging(text, into: draft)
+            for file in files { result = ComposerAttachments.appending(file, to: result) }
+            return result
+        }
     }
 
     /// Written only when something is handed over, so idle composers see nothing.
@@ -31,8 +42,14 @@ final class ComposerInbox: ObservableObject {
         ToastCenter.shared.success(tr("session.context.added"))
     }
 
-    /// The text for this composer, once; nil when it is meant for another session.
-    func take(run: UUID?, directory: String) -> String? {
+    /// Pictures and files (with optional text) for a session's composer; `confirmation` is the toast that says so.
+    func add(images: [ImageAttachment], files: [ContextRef], text: String = "", to target: SessionContextTarget, confirmation: String) {
+        delivery = Delivery(target: target, text: text, images: images, files: files)
+        ToastCenter.shared.success(confirmation)
+    }
+
+    /// What is meant for this composer, once; nil when it is meant for another session.
+    func take(run: UUID?, directory: String) -> Delivery? {
         guard let delivery else { return nil }
         let target = delivery.target
         let matches: Bool
@@ -43,7 +60,7 @@ final class ComposerInbox: ObservableObject {
         }
         guard matches else { return nil }
         self.delivery = nil
-        return delivery.text
+        return delivery
     }
 }
 

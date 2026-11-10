@@ -498,7 +498,7 @@ private struct MusicBestMatch: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "play.fill")
                     .font(NookTheme.font(13, .bold))
-                    .foregroundStyle(NookTheme.ink)
+                    .foregroundStyle(NookTheme.onPaper)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(NookTheme.paper))
                     .padding(.trailing, NookTheme.Spacing.md)
@@ -622,7 +622,7 @@ struct MusicCoverCard: View {
                             .overlay(alignment: item.round ? .center : .bottomTrailing) {
                                 Image(systemName: item.hoverSymbol)
                                     .font(NookTheme.font(13, .bold))
-                                    .foregroundStyle(NookTheme.ink)
+                                    .foregroundStyle(NookTheme.onPaper)
                                     .frame(width: 36, height: 36)
                                     .background(Circle().fill(item.hoverSymbol == "play.fill" ? NookTheme.music : NookTheme.paper))
                                     .shadow(color: .black.opacity(0.35), radius: 8, y: 4)

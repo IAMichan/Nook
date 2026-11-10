@@ -44,6 +44,82 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Updating the agents
+
+**Settings › Agents › Updates** lists each agent program Nook found, with its installed version (`--version`) and the
+newest one. Which installer owns a program is read from its real path once symlinks are resolved (`AgentUpdates.owner`):
+a Homebrew cask or formula (`brew upgrade [--cask] <name>`), a global npm install (`npm install -g <package>@latest`,
+with the npm of the Node that holds it), pnpm, Bun, Volta, mise (`mise upgrade <tool>`), or the agent's own updater
+(`claude update`, `opencode upgrade`, `cursor-agent update`). A program inside an app bundle, or one Nook does not
+recognise, is left to you and its row says so. The newest version comes from Homebrew's own index (`brew info --json=v2`)
+or the npm registry (through `NetworkGuard`), looked up when the page opens and at most every half hour.
+
+**Update** and **Update all** (every agent with a newer version and a command) ask first: the confirmation lists the
+commands and the running sessions of those agents, which keep the version they started with. The updates run one after
+another with their last output line on the agent's row, each start and end goes to the audit log, and afterwards Nook
+reads the version again, asks the agent again for its models, and says how it went. In a model picker, a model that needs
+a newer agent comes with an **Update** row that opens this question. Antigravity's ACP server (Nook installs that release
+itself) and ACP registry agents (run with npx or uvx) are not listed.
+
+### Pi
+
+Pi (`pi`, the pi.dev agent) runs as a session in Nook over its RPC mode: one `pi --mode rpc` process per turn that reads
+and writes one JSON object per line (`PiRPC`, `PiStreamParser`, `WorkspaceManager+Pi`). Nook sends `get_state` and the
+`prompt` (or `compact` for `/compact`), reads streamed text and thoughts, tool calls, usage with cost and the end of the
+turn, and resumes the conversation from the session file `get_state` names (`--session`). Pi has no permission system
+and no MCP client, so Nook loads an extension into every Pi session (`PiExtension`, written to
+`~/Library/Application Support/Nook/nook-pi-extension.ts`): its blocking `tool_call` hook asks through Pi's `confirm`
+dialog, which Nook shows as an approval (Supervised asks before everything but reads, Auto-accept edits also lets
+`edit` and `write` through, Full access asks nothing; there is no "Auto", Pi has no reviewer), and it starts `nook-mcp`
+and registers its tools in Pi as `mcp__nook__*`. Models come from `get_available_models` (a short-lived process
+without session or extensions), thinking levels go with `--thinking`, accounts with `PI_CODING_AGENT_DIR`. Not built:
+a native fork and rollback (Pi's `fork` needs an entry id of its session), Pi's own session files as past sessions, and
+Pi's select, input and editor dialogs (cancelled). The wire format follows Pi's documented protocol; it has not been run
+against a real Pi on this Mac, only against recorded transcripts (`PiRPCTests`).
+### Sessions that outlive Nook
+
+With **Keep sessions running when Nook closes** on (off by default), every agent runs through `nook-keeper` (`SessionKeeper`),
+one small Perl process per agent in a session of its own. It writes the agent's stdout to a spool in `~/.nook/keep/<id>` (a
+folder only you can enter) and takes stdin and signals over a socket there. Quitting or updating lets go of the agents at work;
+the next launch attaches from the last line Nook handled (`reattachKeptRuns`). After a crash that position is unknown, so Nook
+goes on from the current end: what happened in between stays out of the timeline. A session that waits for your approval or a
+question is not kept: what it asked went with Nook, and it stops as before. An agent that asks for approval while Nook is closed
+waits until Nook is back. A keeper whose agent ended waits a week for Nook, then cleans up.
+
+### Guest links
+
+**Share with a guest** in a session's menu copies a link that lets one person follow that session in a browser for 24 hours
+(`GuestShares`, `GuestLink`, the relay's `worker/guest.js`). The page shows the timeline live. The guest may write a message
+(up to 4 files, 10 MB together); it does not reach the agent: it waits in the session above the composer until you press
+**Send** or **Dismiss**. **Stop sharing** ends the link at once, and it ends by itself after 24 hours, or when Nook quits.
+The key that seals everything lives only in the link's fragment (`GuestLinkSeal`), so the relay passes bytes it cannot read.
+The Mac must be on and Nook open. Guest links need a relay (Settings › iPhone).
+
+### Nook in another app (remote MCP)
+
+**Settings › Automation › Nook in another app** (off by default) lets a cloud assistant such as Claude.ai or ChatGPT use some of
+the tools above through your relay (`RemoteMCPServer`, the relay's `worker/mcp.js`). The Mac keeps one outgoing connection; the
+assistant is given an address (`<relay>/v1/mcp/<room>`, the room comes from a token in the Keychain, so the address cannot be
+used to listen). In the assistant you add it as a custom connector; the assistant discovers the sign-in itself (RFC 9728 and
+8414, dynamic client registration, PKCE S256).
+
+- **Sign-in with a code.** When an assistant starts to sign in, Nook posts a notice and shows the sign-in in Settings with a
+  six-digit code and the access level to give. Typing that code on the page the assistant opened is what lets it in; five wrong
+  tries or ten minutes end the sign-in, and Nook can turn it down.
+- **Access levels** (`RemoteAccessLevel`): *Read only* (sessions, pull request status, chats, scheduled tasks: reads only),
+  *Sessions* (also follow up, start and organize sessions, answer questions) and *Full* (also Nook's apps, `nook_use` and
+  `nook_chat_*`, and scheduling). Terminal, browser, simulators, rendered pages, secrets, taking over the screen and opening
+  pull requests are never offered: they need a project folder or this Mac's screen. A lower level counts from the next call.
+- **Grants.** A grant lasts 30 days. Access tokens last an hour and are renewed with a refresh token that works once and never
+  extends the grant. Nook keeps only hashes of tokens (`remote-mcp.json`, readable by you only). Settings lists each grant with
+  its access level and **Revoke**; **Revoke all and change the address** also makes a new address.
+- **Every call is still Nook's.** Calls run through the bridge as an agent that is not in Nook: reads go through, anything that
+  changes something (sending to a session, starting one, a message, an event, scheduling) waits for your yes in Nook, and every
+  call, allowed or refused, lands in the audit log. An approval the assistant stops waiting for is withdrawn.
+- **Not sealed.** Assistants speak plain HTTPS, so the relay can read what they send, like webhooks; it stores and logs none of it.
+
+The local `nook-mcp` for agents on this Mac is unchanged.
+
 ### Android devices
 
 The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):
@@ -76,6 +152,100 @@ That socket is separate from `bridge.sock`: a call on it needs a token made for 
 (terminals, pull requests, devices, delegation, connectors, secrets) and every other session is refused, because whoever controls that machine controls
 what comes through. `localhost` in the browser is the Mac. Without Perl the session simply runs without these tools.
 
+### Project scripts (`nook.json`)
+
+A project lists its commands in `nook.json` at the repository root (or in a folder below it); the session panel and the
+terminal bar run them, and **Add script** writes new ones there (`ProjectScripts`).
+
+```json
+{"scripts": [
+  {"id": "dev", "name": "Dev server", "command": "pnpm dev", "previewUrl": "http://localhost:5173",
+   "autoOpenPreview": true, "runOnWorktreeCreate": false, "stopOnSettle": true},
+  {"id": "clean", "name": "Clean", "command": "rm -rf node_modules .next", "runOnSettle": true}
+]}
+```
+
+| Key | Meaning |
+|-----|---------|
+| `id`, `name`, `command` | The script; `command` is required, the others are derived from it when missing. |
+| `previewUrl`, `autoOpenPreview` | The page the script serves; opened in Nook's browser a moment after it starts. |
+| `runOnWorktreeCreate` | Runs in a terminal next to the session when Nook makes a worktree for it (setup). |
+| `stopOnSettle` | When the session settles, the terminal running this script stops, together with every process it started (each process group under the shell, except Nook's own and an agent's). |
+| `runOnSettle` | When a session in a worktree of its own settles, this runs once in a new terminal in that worktree (cleanup). The terminal closes when the command succeeds and stays open with the error when it fails. It never runs for a session in the project's own checkout, which other work shares. |
+
+Settling a session (by hand, from the selection bar, or by auto-settle) also closes its terminals that sit idle at a shell
+prompt; a terminal that still runs something you started by hand stays. When another session that has not settled works in
+the same folder (or a folder around it), nothing is touched, since those terminals are its too. Remote sessions are left
+alone. The plan is pure and tested (`SettleActions`, `SettleActionsTests`); `AppModel.applySettleActions` carries it out.
+
+### Dev servers
+
+The bar of servers above a session (`DevServerStrip`) lists what listens on a port from the session's folder. A server
+Nook started (below one of its terminal shells, or in the process group of an agent it runs, `DevServerOwnership`) has a
+**Stop** button: it stops the server's process group, or only the server and what it started when that group is Nook's,
+an agent's or a terminal shell's. A server you started in another terminal app gets no stop; a click on its greyed button
+says why. Ownership is decided by pid and process group only (never by name) and checked again right before the signal.
+
+### Scheduled tasks
+
+A task (Settings › Automation › Scheduled tasks, or `schedule_task`) runs every N minutes, at a time on chosen weekdays,
+**once** at a date and time (a run the Mac slept through runs when it wakes; afterwards the task shows as done and
+editing it does not run it again unless its moment changes), or when its webhook is called.
+
+**Where runs go:** a new session in a project each run, or one session. A one-session task either **continues the
+conversation** or starts a **fresh conversation each run** (`WorkspaceManager.startFreshConversation`: the agent's
+process ends and its next turn starts without the earlier conversation, for every agent; the timeline keeps every run).
+The editor can change the target, which moves the task to another session; `update_scheduled_task` takes `target`
+(`new_session`, `this_session`, `session` with `session_id`) and `conversation` (`continue`, `fresh`).
+
+**Webhook tasks** (`WebhookRules`, applied in `ScheduledTaskStore.acceptWebhook` after the signature, delivery id and
+rate checks):
+
+| Rule | Behavior |
+|------|----------|
+| Placeholders | `{{body.path}}` (JSON or form fields, list items by index: `{{body.items.0.id}}`), `{{body}}`, `{{headers.name}}` in the prompt. Each value reaches the agent inside an `<untrusted-webhook-value field="…">` tag (a value cannot close its tag) with a note that it is outside data, not an instruction. Without placeholders the whole body is quoted as before. |
+| Filters | `equals`, `is one of` (comma-separated) and `exists` on a value named like a placeholder. Every filter must pass; otherwise the sender gets `202 filtered`, nothing runs, and the Deliveries log names the first filter that failed. Objects and lists only pass `exists`. |
+| Duplicate key | A template such as `{{headers.x-github-delivery}}`; a key seen in the past week (500 keys at most per task) is skipped (`202 duplicate key`). A key whose placeholders are missing skips the check. |
+| Coalesce window | 10–3600 seconds: the first delivery opens the window, later ones in it do not extend it, and one run gets the latest delivery with the count. |
+| Deliveries log | The latest 50 verified deliveries per task with time, outcome (accepted, filtered, duplicate, combined, skipped) and why, in the task's editor. Stored with the tasks. |
+
+Open coalesce windows live in memory: a restart of Nook within a window drops that run (the sender's delivery was
+already answered).
+## Source control
+
+How Nook makes worktrees and handles the repositories behind sessions (`WorkspaceManager+SourceControl.swift`,
+`GitService+SourceControl.swift`, `SourceControl.swift`, `WorktreeCheckoutCache.swift`).
+
+- **Fast worktrees** (Settings › Code › Worktrees, off by default). Nook keeps up to three clean checkouts of a
+  repository's tracked files in `~/Library/Application Support/Nook/Checkout cache` and makes a new worktree with
+  `git worktree add --no-checkout`, an APFS `clonefile` of the cached files, and the cached index with each file's own
+  stat data; an older cached commit is moved forward with `git read-tree -m -u`, and `git status` must then be empty.
+  Anything it cannot reproduce exactly uses plain `git worktree add`: another machine or volume, a sparse checkout, a
+  filter in any attributes file (Git LFS), SHA-256, a changed `.gitattributes`, or a check that fails. Only tracked files
+  are cached; the main checkout's `node_modules` is cloned (copy-on-write) into the worktree when the lockfiles match and
+  Git ignores it. Repositories under 5,000 tracked files are never cached: Git is faster there. Measured on this Mac
+  (2026-11-10): 30,000 files 2.8 s plain → 1.8 s cached (first `git status` 0.33 s → 0.13 s); 1,867 files (Nook) 0.76 s
+  either way, because the cache is skipped.
+- **Submodules** per project (recursive, top level only, or skip), applied after every new worktree on this Mac and over
+  SSH; a failure is shown in the session and leaves the worktree usable.
+- **Auto-pull** (opt-in, per project or for all): with the half-minute tick, at most every 15 minutes per checkout, Nook
+  fetches the default branch and runs `git merge --ff-only`, only when the main checkout is on that branch, has no
+  tracked changes, no merge or rebase is under way, no session works in it without a worktree, and it is strictly behind.
+  Nothing runs while no project has it on. Every fast-forward lands in the action log.
+- **Clones** go into `<host>/<owner>/<repo>` when that layout is on (under the layout root of the current project, else
+  `~/Developer`). SSH runs with `BatchMode`; when SSH itself is refused (no key, unknown host key, no connection), the
+  clone is tried once over HTTPS and a toast says so.
+- **Publish** (the git button of a session without a remote, Settings › Projects, and **New project…** in the composer):
+  a sheet shows what will happen and does nothing until you press Publish. Nook makes the folder a repository with a
+  first commit when needed, creates the GitHub repository (private by default) with the GitHub account it uses for pull
+  requests or the GitHub CLI's login, sets `origin`, and pushes with that token for this push only. An empty repository
+  of the same name left by a failed push is reused. Every attempt goes to the action log. Agents cannot publish.
+- **Commits in the Changes tab:** the newest 100 commits, one at a time; a hash or GitHub commit link in an agent's
+  answer opens that commit there (an older one is read on its own).
+- **Projects** in Settings › Projects can be archived (out of the composer, the command palette and auto-pull; reversible
+  under Archived projects), get an icon (emoji, monogram on a tint, or an image copied into Nook's folder) shown in the
+  composer, the session list's project headers and Settings, and switch single coding agents off.
+
 ## Available MCP Tools
 
 | Tool | Description | Policy |
@@ -99,18 +269,18 @@ what comes through. `localhost` in the browser is the Mac. Without Perl the sess
 | `session_search` | Searches the user's sessions (titles and timelines, `TimelineSearch`), most recent first, and returns each matching session with its id and a few excerpts; `session_id` searches one, `include_archived` adds archived ones. A full-text index in `runs.sqlite` (FTS5, trigrams of the folded text of each event, `RunEventLog.sessions(mentioning:)`) first names the sessions that mention the text, so every session is searched, not only the newest 300; timelines open in Nook are always searched too. Without FTS5, or for a query under three characters, the newest sessions are read as before. | Immediate |
 | `session_organize` | Pins or unpins, settles or reopens, snoozes (`until`: hour, evening, tomorrow) or wakes, archives or unarchives, marks unread or read one session: the same actions as the Agents list (`InboxStore`, `FinishedSessions`, `SessionVisits`). A session that works or waits cannot be settled, snoozed or archived. | Requires approval, unless the session runs with **Allow everything**; disabled in Plan mode |
 | `session_questions` | Lists (`action: list`) and reads (`read`) the questions other sessions wait on, with their options, and answers one (`answer`, checked against the question's options). Permission requests are not questions and never show here. The answered session's timeline says who answered. | List and read: immediate (also in Plan mode) · Answer a task the caller delegated: immediate · Any other answer: requires approval, unless the session runs with **Allow everything**; disabled in Plan mode |
-| `render_page` | Shows an HTML page (`html`, `title`, `height` 80–1200, at most 512 KB, at most 24 per session) inline in the caller's own timeline: a chart, a diagram, a mock-up. Kept as a file with the session (`RenderedPage`, removed with it) and drawn by `RenderedPageRow` in a sandboxed frame (`allow-scripts` only) under the MCP app policy with no declared origins, so nothing loads or connects; the web view has no message handler and cancels every navigation, and exists only while its row is on screen and Nook is not saving energy, so a page that animates costs nothing out of sight. Only for sessions Nook runs. `show_chart` stays Nook Chat's own. | Immediate (disabled in Plan mode) |
+| `render_page` | Shows an HTML page (`html`, `title`, `height` 80–1200, at most 512 KB, at most 24 per session) inline in the caller's own timeline: a chart, a diagram, a mock-up. Instead of `html` the agent may give `path`: an `.html` file in its working directory (`RenderedPageFile`). Nook reads it once and embeds the local stylesheets, `@import`s and scripts inline and the images, fonts and media as data: URLs (at most 2 MB each, 6 MB for the page); every file is resolved through its symlinks and must lie inside the working directory, and what does not, is missing or too large is left out and named in the reply. Not for sessions on another machine. Kept as a file with the session (`RenderedPage`, removed with it) and drawn by `RenderedPageRow` in a sandboxed frame (`allow-scripts` only) under the MCP app policy with no declared origins, so nothing loads or connects; the web view has no message handler and cancels every navigation, and exists only while its row is on screen and Nook is not saving energy, so a page that animates costs nothing out of sight. Only for sessions Nook runs. `show_chart` stays Nook Chat's own. | Immediate (disabled in Plan mode) |
 | `browser_snapshot` | Lists the links, buttons, fields and headings on the page, each interactive one with a ref (`e7`) for `browser_click` / `browser_type`. Password values are never shown. | Immediate |
 | `browser_click` | Clicks one element by ref, CSS selector or visible text. | Local pages (`localhost`): immediate · Other sites: requires approval (unless the session has full access); disabled in Plan mode |
 | `browser_type` | Types into one field (replace or append, optionally submit its form), firing `input`/`change` so frameworks notice. The typed text is never written to the audit log. | Same as `browser_click` |
 | `browser_wait_for` | Waits until text or a selector appears (or is gone), at most 30 seconds. | Immediate |
 | `list_scheduled_tasks` | Lists scheduled tasks for the caller's folder or session (`all: true` for every task) with schedule, target, rights, next and last run. | Immediate |
-| `schedule_task` | Proposes a scheduled task: every N minutes or at a time on chosen weekdays, in a new session in a folder or as a message to this session. Rights are `ask` or `acceptEdits`, never `bypass` and never more than the caller. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
-| `update_scheduled_task` | Proposes a change to a task's title, prompt, schedule, rights or on/off state; the card shows the task after the change and before it. | Always requires approval; disabled in Plan mode |
+| `schedule_task` | Proposes a scheduled task: every N minutes, at a time on chosen weekdays or once (`once_at`), in a new session in a folder or as a message to this or another session (`target`, `session_id`), continuing its conversation or fresh each run (`conversation`). Rights are `ask` or `acceptEdits`, never `bypass` and never more than the caller. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
+| `update_scheduled_task` | Proposes a change to a task's title, prompt, schedule, rights, target (moving it to a new session in a folder, this session or another session), conversation mode or on/off state; the card shows the task after the change and before it. | Always requires approval; disabled in Plan mode |
 | `run_scheduled_task_now` | Runs a task once with its own prompt; returns `started`, `busy` or `not available`. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
 | `watch_pull_request` | Turns on the session's existing pull request watch (GitHub / GitLab, see `WorkspaceManager.watchPullRequest`): news goes to the timeline, and failed CI, a merge conflict with the base branch (also one already there when the watch starts), reviews and comments wake the agent with a message. While the agent works that message waits in the queue; failed checks or a conflict solved in the meantime, or a merge or close, take it out again (`PullRequestNews.stillNeeded`), also in a last look just before it goes out. Kept with the session across restarts; `stop: true` ends it. Sessions Nook started only. | Immediate (disabled in Plan mode) |
 | `get_pull_request_status` | Reads state, CI with failed checks, each reviewer's verdict, the comment count and whether an open one has merge conflicts, via the same snapshot as the watch. Review and comment texts are left out. | Immediate |
-| `request_secret` | Asks for a named secret. The card shows the name and the agent's reason; on **Allow** Nook returns the value kept under `agent-secret.<name>` in its keychain (`SecretStore`), or asks you to paste one (optionally keeping it). The value goes only to the calling session, between `<nook-secret>` markers that Nook's timeline replaces before storing or showing tool output; the audit entry records the name only. | Always requires approval; disabled in Plan mode |
+| `request_secret` | Asks for a named secret. The card shows the name, the agent's reason and, with `url`, a button that opens the page where the secret is found or made (http or https only). On **Allow** Nook takes the value kept under `agent-secret.<name>` in its keychain (`SecretStore`) or asks you to paste one (optionally keeping it); a value that is a 1Password reference (`op://vault/item/field`) is read with the 1Password CLI at that moment and kept in memory only. By default (`delivery: "file"`) the value goes to a private file (`SecretFiles`: `~/Library/Application Support/Nook/agent-secrets/<session>/<name>`, folder `0700`, file `0600`, written with `O_EXCL | O_NOFOLLOW` and renamed into place) and the agent gets only the path, to use as `"$(cat '<path>')"`; the value never enters its transcript. Files go after 24 hours, when the session is archived or deleted, when Nook quits and at the next launch. With `delivery: "value"` the card warns first and the value comes back between `<nook-secret>` markers that Nook's timeline replaces. The audit entry records the name and how it was delivered, never the value. | Always requires approval; disabled in Plan mode; not for sessions on another machine |
 | `nook_tools` | Lists Nook's own tools, the same set Nook Chat uses: messages in every chat app (`chat_inbox`, `chat_send`, `whatsapp_send`…), music (`search_music`, `play_music`, `media_control`), calendar, reminders, notes, mail drafts, contacts, connectors and the user's agent sessions. One line per tool grouped by source; `tool` gives its full description and argument schema, `query` filters. Sources the user keeps on this Mac (Settings › Privacy) are left out. | Immediate |
 | `nook_use` | Runs one of those tools exactly as Nook Chat would. Read tools answer directly (results filtered by the privacy level); action tools are checked like a plan step (`AppModel.actionProblems`), shown as an approval card with the step and every argument, and then run by the plan runner (`AppModel.perform`), with its audit entry and duplicate check. | Read tools: immediate (also in Plan mode) · Action tools: always require approval, whatever the session's rights; disabled in Plan mode |
 | `nook_chat_list` | Lists the user's Nook Chat conversations: id, title, whether Nook is answering, last message. | Immediate |
@@ -151,6 +321,9 @@ Delegation rules are implemented in `Delegation.swift` (pure Foundation, tested 
 - Approval cards display the **entire** command or pull request details (repository, head → base branch, title, body) along with `CommandRisk` warnings.
 - Agents cannot send arbitrary keystrokes to an existing interactive shell; they can only start tracked commands via `terminal_run` and read output from terminals in their own project directory.
 - A session on another machine reaches only the tools `RemoteBridge.allows` lists, on a socket of its own, with a token per run.
-- Agents can only reach secrets kept under the `agent-secret.` prefix, never Nook's own keys and tokens. The agent's own transcript (outside Nook) does contain a secret it was given.
+- Agents can only reach secrets kept under the `agent-secret.` prefix, never Nook's own keys and tokens. A secret delivered as a file (the default) never enters the agent's transcript; one asked for with `delivery: "value"` does, in the agent's own transcript outside Nook.
+- **sudo.** Every session Nook starts on this Mac gets `SUDO_ASKPASS` pointing at `nook-askpass` (`SudoAskpass`, `0700` in Nook's support folder; parity across Claude Code, Codex, Gemini CLI and every ACP agent through `AgentCommand.spec`/`acpSpec` and Codex's app-server). `sudo -A …` runs it; it sends one JSON line over `bridge.sock` (`{"askpass": {"prompt", "command"}, "cwd", "env"}`) and Nook shows a private card with the command sudo was started with and a password field (never kept). The password goes back on that connection only and the helper prints it to sudo; the agent, the timeline and the action log (which records `sudo` and the decision) never see it. Declined, timed out or without Nook, the helper exits 1. Secrets switched off for the agent, or Plan mode, decline at once. Not offered on the socket for other machines.
+- **Pasted secrets.** When a paste into a session's composer (a session Nook runs, a new session, an agent's own session) looks like a secret (`SecretPasteDetector`: known key shapes, private key blocks, `NAME_TOKEN=…` assignments and a lone random token; never hashes, UUIDs, paths, addresses or identifiers), a notice above the box offers **Keep private**: the value goes to a private file and the message carries a `nook-context://v1/secret/<path>` reference, which reaches the agent as the path and how to use it. Not for sessions on another machine.
+- **1Password.** Settings › Automation › Secret providers shows whether the 1Password CLI is installed and how it signs in (the 1Password app on this Mac, a service account token, or a Connect server address and token; tokens in `SecretStore`), with a Test button (`op whoami`, or reading a reference you type and dropping the value). References work for `request_secret` values and for MCP server variables and headers.
 - A retried call with the same `client_request_id` gets the first answer; a retry while the first call still waits for you gets no second approval card.
 - The workspace browser blocks `file://` and custom URL schemes. What it keeps of sign-ins follows `BrowserSignInPolicy` (`BrowserProfiles`): **Ask** (the default), **Keep** or **Forget**, set for all browsers in Settings › Browser and per project in Settings › Projects. Every project, and Nook's own browser, gets a persistent store of its own that no other project reaches; a project's agents can use its sign-ins. While the policy is Ask, the browser writes to that store too, and the first sign-in (a password sent from a form, `BrowserSignInScript`) asks above the page whether to stay signed in: Keep stores the answer where the question came from (the project's own row if it set Ask itself, otherwise the setting for all), Don't keep empties the store, Later asks again next time. A store that was never kept is emptied at the next launch. Forget uses one ephemeral store, so nothing reaches the disk. Sessions on another machine always forget.

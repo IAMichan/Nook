@@ -9,11 +9,11 @@ enum WS {
     static let surface = Color(hex: 0x151517)
     static let raised = Color(hex: 0x1B1B1E)
     static let border = NookTheme.border
-    static let subtle = Color.white.opacity(0.04)
+    static let subtle = NookTheme.wash.opacity(0.04)
     /// A row or control under the pointer.
-    static let hover = Color.white.opacity(0.045)
+    static let hover = NookTheme.wash.opacity(0.045)
     /// The selected row.
-    static let selected = Color.white.opacity(0.085)
+    static let selected = NookTheme.wash.opacity(0.085)
     static let text = NookTheme.paper
     static let secondary = NookTheme.textSecondary
     static let tertiary = NookTheme.textTertiary

@@ -508,6 +508,8 @@ struct AgentsTab: View {
             unseen: attention == .ready,
             snoozedUntil: run.snoozedUntil,
             snoozedAt: run.snoozedAt,
+            limitedAt: run.limitedAt,
+            limitResetAt: run.limitResetAt,
             machine: run.remote?.name ?? MachineName.local,
             model: run.resolvedModel ?? run.model,
             accountName: accountName(app.profile(for: run)),
@@ -637,6 +639,9 @@ struct AgentListItem: Identifiable, Equatable {
     /// Snoozed by you: out of the way until the snooze ends or the session needs you.
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
+    /// Stopped by a usage limit since then, and when that limit resets (a session Nook runs).
+    var limitedAt: Date? = nil
+    var limitResetAt: Date? = nil
     /// For the hover card: the machine it runs on, the model, and the account's name.
     var machine = ""
     var model = ""
@@ -682,6 +687,10 @@ struct AgentRowActions {
     /// Snoozing and waking are for sessions Nook runs.
     var onSnooze: ((SnoozePolicy.Choice) -> Void)? = nil
     var onWake: (() -> Void)? = nil
+    /// While a usage limit holds the session: when it resets, for "until the limit resets".
+    var limitResetsAt: Date? = nil
+    var onSnoozeUntil: ((Date) -> Void)? = nil
+    var onSnoozeCustom: (() -> Void)? = nil
 }
 
 /// A session as t3code shows a thread: its folder with the status or how long ago, its name, and a line of what it did
@@ -785,6 +794,12 @@ struct AgentListRow: View, Equatable {
                 if let onSnooze = actions.onSnooze {
                     ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
                         Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
+                    }
+                    if let reset = actions.limitResetsAt, let onUntil = actions.onSnoozeUntil {
+                        Button(SnoozeText.untilReset(reset)) { onUntil(reset) }
+                    }
+                    if let onCustom = actions.onSnoozeCustom {
+                        Button(tr("automation.snooze.custom"), action: onCustom)
                     }
                 }
             }
@@ -981,9 +996,8 @@ struct AgentListRow: View, Equatable {
             // are in its right-click menu.
             if let onSnooze = actions.onSnooze, !compactStatus {
                 Menu {
-                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
-                        Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
-                    }
+                    SnoozeMenuItems(limitResetsAt: actions.limitResetsAt, onChoice: onSnooze, onUntil: actions.onSnoozeUntil,
+                                    onCustom: actions.onSnoozeCustom)
                 } label: {
                     rowIcon("clock", tr("agents.snooze.menu"))
                 }

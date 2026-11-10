@@ -34,12 +34,12 @@ enum CompanionAgents {
     }
 
     /// The phone allows or denies a request; nil when it was decided, else why not.
-    static func decide(_ app: AppModel, session: String, item: String, allow: Bool) -> CompanionError? {
+    static func decide(_ app: AppModel, session: String, item: String, allow: Bool, reason: String = "") -> CompanionError? {
         guard let approval = app.approvals.pending.first(where: { $0.id == item && sessionID($0, hub: app.hub) == session }) else {
             return .unknownItem
         }
         if allow, !canAllow(approval) { return .notAllowedFromPhone }
-        app.approvals.decide(approval, allow ? .allow : .deny, source: .phone)
+        app.approvals.decide(approval, allow ? .allow : .deny, source: .phone, reason: reason)
         return nil
     }
 

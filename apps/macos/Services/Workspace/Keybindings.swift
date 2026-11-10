@@ -373,10 +373,12 @@ enum Keybindings {
         "session.back", "session.forward", "session.rename", "session.openInEditor", "session.copyReference",
         "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle", "sessionPanel.toggle", "tab.close",
         "terminal.splitRight", "terminal.splitDown", "focus.next", "focus.previous",
+        "effortPicker.toggle", "permissionPicker.toggle", "effort.increase", "effort.decrease",
     ] + (1...SessionJump.count).map(SessionJump.command)
 
-    /// Default chat and workspace keybindings. `session.interrupt` stays unbound on purpose. ⌘S also brings a stashed
-    /// draft back into an empty composer, so the stash rule does not ask for `composerDraft`.
+    /// Default chat and workspace keybindings. `session.interrupt`, `effort.increase` and `effort.decrease` stay unbound on
+    /// purpose. ⌘S also brings a stashed draft back into an empty composer, so the stash rule does not ask for
+    /// `composerDraft`.
     static let defaults: [KeybindingRule] = [
         KeybindingRule(key: "mod+enter", command: "composer.send", when: "composerFocus && !turnRunning"),
         KeybindingRule(key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning"),
@@ -394,6 +396,9 @@ enum Keybindings {
         KeybindingRule(key: "mod+shift+]", command: "session.next", when: nil),
         KeybindingRule(key: "mod+d", command: "diff.toggle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+m", command: "modelPicker.toggle", when: "!terminalFocus"),
+        // The composer's effort and rights pickers; one step of effort up or down is yours to bind (no default key).
+        KeybindingRule(key: "mod+shift+e", command: "effortPicker.toggle", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+shift+a", command: "permissionPicker.toggle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+s", command: "session.settle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+p", command: "session.pin", when: "!terminalFocus"),
         KeybindingRule(key: "mod+z", command: "session.undo", when: "!terminalFocus && !editableFocus"),

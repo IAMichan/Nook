@@ -64,6 +64,26 @@ final class WorkspaceSettings: ObservableObject {
     @Published var worktreeRoot: String {
         didSet { defaults.set(worktreeRoot, forKey: "ws.worktreeRoot") }
     }
+    /// New worktrees are cloned (APFS copy-on-write) from a cached checkout of the repository (`WorktreeCheckoutCache`).
+    /// Off by default; switching it off deletes the cache.
+    @Published var fastWorktrees: Bool {
+        didSet {
+            defaults.set(fastWorktrees, forKey: "ws.fastWorktrees")
+            if oldValue, !fastWorktrees { WorktreeCheckoutCache.clear() }
+        }
+    }
+    /// How new worktrees check out submodules, for every project that does not set its own.
+    @Published var worktreeSubmodules: SubmoduleMode {
+        didSet { defaults.set(worktreeSubmodules.rawValue, forKey: "ws.worktreeSubmodules") }
+    }
+    /// Fast-forward each project's default branch in its main checkout when it is clean (projects can override it).
+    @Published var autoPullDefaultBranch: Bool {
+        didSet { defaults.set(autoPullDefaultBranch, forKey: "ws.autoPullDefaultBranch") }
+    }
+    /// Clones go into `<host>/<owner>/<repo>` under the folder you clone into, like ghq lays them out.
+    @Published var cloneHostLayout: Bool {
+        didSet { defaults.set(cloneHostLayout, forKey: "ws.cloneHostLayout") }
+    }
     /// Prefix of the branches Nook creates ("nook" → "nook/fix-login-3fa2"). Read by `WorktreeNaming.branchPrefix`.
     @Published var branchPrefix: String {
         didSet { defaults.set(branchPrefix, forKey: WorktreeNaming.branchPrefixKey) }
@@ -113,6 +133,10 @@ final class WorkspaceSettings: ObservableObject {
         guard let repo, !sessionDefaults(for: repo).worktreeCleanup else { return worktreeCleanupRules }
         return WorktreeCleanup.Rules(keepWhen: worktreeKeepWhen)
     }
+    /// How much of the agent's work a session's timeline shows, unless the session chose for itself (`TimelineDetail`).
+    @Published var timelineDetail: TimelineDetail {
+        didSet { defaults.set(timelineDetail.rawValue, forKey: "ws.timelineDetail") }
+    }
     /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
@@ -150,6 +174,23 @@ final class WorkspaceSettings: ObservableObject {
     @Published var titleInstructions: String {
         didSet { defaults.set(titleInstructions, forKey: "ws.titleInstructions") }
     }
+    /// Who writes each kind of text (`TextTask.rawValue` → `TextGenerator.stored`); absent: the agent's CLI.
+    @Published var textGenerators: [String: String] {
+        didSet { defaults.set(textGenerators, forKey: "ws.textGenerators") }
+    }
+    /// After an agent's turn the empty composer shows the message you will likely send next (`NextPromptSuggestion`).
+    /// Off by default: each suggestion is one more request.
+    @Published var suggestNextPrompt: Bool {
+        didSet { defaults.set(suggestNextPrompt, forKey: "ws.suggestNextPrompt") }
+    }
+
+    func textGenerator(for task: TextTask) -> TextGenerator { TextGenerator(stored: textGenerators[task.rawValue]) }
+
+    func setTextGenerator(_ generator: TextGenerator, for task: TextTask) {
+        let stored: String? = generator == .agent ? nil : generator.stored
+        guard textGenerators[task.rawValue] != stored else { return }
+        textGenerators[task.rawValue] = stored
+    }
     /// At most this many sessions work at once; a turn past it waits for a free place (`SessionCapacity`). 0: no limit.
     @Published var maxWorkingSessions: Int {
         didSet { defaults.set(maxWorkingSessions, forKey: "ws.maxWorkingSessions") }
@@ -173,6 +214,14 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(autoCompactTokens, forKey: SizeCompaction.settingKey) }
     }
     /// A session that a restart of Nook cut off gets "Continue where you left off." once.
+    /// Agents go on while Nook is closed (`SessionKeeper`). Off by default.
+    @Published var keepSessionsRunning: Bool {
+        didSet { defaults.set(keepSessionsRunning, forKey: "ws.keepSessionsRunning") }
+    }
+    /// Nook in another app: cloud assistants reach Nook's tools through the relay (`RemoteMCPServer`). Off by default.
+    @Published var remoteMCPEnabled: Bool {
+        didSet { defaults.set(remoteMCPEnabled, forKey: "ws.remoteMCPEnabled") }
+    }
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
@@ -235,6 +284,10 @@ final class WorkspaceSettings: ObservableObject {
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
         worktreeRoot = defaults.string(forKey: "ws.worktreeRoot").flatMap { $0.isEmpty ? nil : $0 } ?? Self.standardWorktreeRoot
         branchPrefix = defaults.string(forKey: WorktreeNaming.branchPrefixKey) ?? WorktreeNaming.defaultBranchPrefix
+        fastWorktrees = defaults.bool(forKey: "ws.fastWorktrees")
+        worktreeSubmodules = SubmoduleMode(rawValue: defaults.string(forKey: "ws.worktreeSubmodules") ?? "") ?? .recursive
+        autoPullDefaultBranch = defaults.bool(forKey: "ws.autoPullDefaultBranch")
+        cloneHostLayout = defaults.bool(forKey: "ws.cloneHostLayout")
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
@@ -250,12 +303,15 @@ final class WorkspaceSettings: ObservableObject {
         worktreeKeepWhen = WorktreeCleanup.KeepWhen(rawValue: defaults.string(forKey: "ws.worktreeKeepWhen") ?? "") ?? .uncommittedChanges
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
+        timelineDetail = TimelineDetail(rawValue: defaults.string(forKey: "ws.timelineDetail") ?? "") ?? .everything
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
+        textGenerators = defaults.dictionary(forKey: "ws.textGenerators") as? [String: String] ?? [:]
+        suggestNextPrompt = defaults.bool(forKey: "ws.suggestNextPrompt")
         agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
         maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
@@ -263,6 +319,8 @@ final class WorkspaceSettings: ObservableObject {
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         idleCompaction = defaults.object(forKey: IdleCompaction.settingKey) as? Bool ?? true
         autoCompactTokens = defaults.object(forKey: SizeCompaction.settingKey) as? Int ?? SizeCompaction.defaultTokens
+        keepSessionsRunning = defaults.bool(forKey: "ws.keepSessionsRunning")
+        remoteMCPEnabled = defaults.bool(forKey: "ws.remoteMCPEnabled")
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         watchNewPullRequests = defaults.object(forKey: "ws.watchNewPullRequests") as? Bool ?? true
@@ -380,7 +438,7 @@ final class WorkspaceSettings: ObservableObject {
         SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
                         isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix),
                         titleInstructions: titleInstructions, agentInstructions: agentInstructions,
-                        browserSignIns: browserSignInPolicy)
+                        browserSignIns: browserSignInPolicy, submodules: worktreeSubmodules, autoPull: autoPullDefaultBranch)
     }
 
     /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.
@@ -409,6 +467,36 @@ final class WorkspaceSettings: ObservableObject {
     }
 
     func resetOverride(_ key: ProjectSettingKey, for project: String) { projectOverrides.reset(key, for: project) }
+
+    /// The agents switched off for the project this folder belongs to (raw values).
+    func agentsOff(for folder: String?) -> Set<String> {
+        ProjectSettings.agentsOff(overrides: projectOverrides, folder: folder)
+    }
+
+    /// Whether this agent may start sessions in the folder's project.
+    func isAgentOn(_ provider: RunProvider, for folder: String?) -> Bool { !agentsOff(for: folder).contains(provider.rawValue) }
+
+    func setAgent(_ provider: RunProvider, on: Bool, for project: String) {
+        let off = ProjectSettings.agentsOff(projectOverrides.values(for: project))
+        if let value = ProjectSettings.togglingAgent(provider.rawValue, on: on, in: off) {
+            projectOverrides.set(.agentsOff, value, for: project)
+        } else {
+            projectOverrides.reset(.agentsOff, for: project)
+        }
+    }
+
+    func isArchivedProject(_ path: String) -> Bool { ProjectSettings.isArchived(path, overrides: projectOverrides) }
+
+    /// Archives a project out of the pickers, or brings it back. Its sessions, settings and files stay.
+    func setArchived(_ archived: Bool, project path: String) {
+        if archived { projectOverrides.set(.archived, .string("on"), for: path) } else { projectOverrides.reset(.archived, for: path) }
+    }
+
+    func projectIcon(_ path: String) -> ProjectIcon? { ProjectSettings.icon(path, overrides: projectOverrides) }
+
+    func setProjectIcon(_ icon: ProjectIcon?, project path: String) {
+        if let icon { projectOverrides.set(.icon, .string(icon.stored), for: path) } else { projectOverrides.reset(.icon, for: path) }
+    }
 
     // MARK: Apps
 

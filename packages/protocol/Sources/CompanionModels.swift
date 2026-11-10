@@ -91,6 +91,7 @@ enum Base64URL {
 // MARK: Messages
 
 enum CompanionOp: String, Codable, Sendable, CaseIterable {
+    /// `decide`: `allow` answers the request `item` of `session`; with a denial `text` is the reason the agent is told.
     case hello, list, decide, answer, send, stop
     /// The phone's APNs token (`text`, hex) and its environment (`item`: "production" or "development"); `unregister` removes it.
     case register, unregister
@@ -135,12 +136,19 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// Opens Nook's update panel on the Mac (`CompanionFeature.requestUpdate`), so the update waits there for a click.
     /// It never installs anything; `message` in the answer is "available", "none" or "unavailable".
     case requestUpdate
+    /// Pull requests (`CompanionFeature.pullRequests`): the Mac's list, or a session's linked ones with `session` (`pulls`
+    /// in the answer); one pull request in full by its address (`item`; `pull` in the answer); an action on it
+    /// (`item`, `pullAction`); and a new session that works on it (`pullWork`; `created` in the answer).
+    case pulls, pull, pullAct, pullWork
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
 /// that apply in `SessionDigest.actions`.
 enum SessionAction: String, Codable, Sendable, CaseIterable {
     case rename, archive, snoozeHour, snoozeEvening, snoozeTomorrow, unsnooze
+    /// Snoozed until a moment you pick (`text`: seconds since 1970; `CompanionSnooze`), and until the usage limit that
+    /// stopped the session resets (`SessionDigest.limitResetsAt`).
+    case snoozeUntil, snoozeLimitReset
     /// Ends the process of an agent outside Nook; it saves its conversation, so it can be continued in Nook.
     case end
 }
@@ -191,8 +199,12 @@ enum CompanionFeature {
     /// `watch` may name the last entry the phone has (`item`): the Mac answers with only what came after
     /// (`TimelineDelta.resume`).
     static let resume = "resume"
+    /// The Mac answers `pulls`, `pull`, `pullAct` and `pullWork`.
+    static let pullRequests = "pullRequests"
+    /// The Mac takes files with `send` and `start` (`CompanionRequest.attachments`), as from the share sheet.
+    static let attachments = "attachments"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
-                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume]
+                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -277,15 +289,23 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// With `subscribe` and `ping` (`CompanionFeature.foreground`): the app is in front on the phone right now. Nil from a
     /// phone that does not say, which gets every push as before.
     var foreground: Bool?
+    /// What `pullAct` does to the pull request `item`.
+    var pullAction: CompanionPullAction? = nil
+    /// The new session of `pullWork`.
+    var pullWork: PullWorkRequest? = nil
+    /// Files that go with `send` or `start` (`CompanionFeature.attachments`): the Mac saves them and gives their
+    /// paths below the words, as it does with pictures.
+    var attachments: [CompanionFile]? = nil
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
          replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
-         steer: Bool? = nil, images: [CompanionImage]? = nil, foreground: Bool? = nil) {
+         steer: Bool? = nil, images: [CompanionImage]? = nil, foreground: Bool? = nil, pullAction: CompanionPullAction? = nil,
+         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
         self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer; self.images = images
-        self.foreground = foreground
+        self.foreground = foreground; self.pullAction = pullAction; self.pullWork = pullWork; self.attachments = attachments
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -349,6 +369,10 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     /// Sent once over the live connection when the Mac removes this phone (`CompanionFeature.revoke`): its key is gone
     /// from now on, and the phone has to pair again.
     var revoked: Bool? = nil
+    /// Pull requests of `pulls`: the Mac's list, or the linked ones of the session asked for.
+    var pulls: [PullDigest]? = nil
+    /// The pull request of `pull`, and of `pullAct` after the action.
+    var pull: PullDetailDigest? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -389,6 +413,9 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// The running turn can take a message right now (`CompanionRequest.steer`); nil from a Mac without
     /// `CompanionFeature.steer`, false while it cannot (idle, waiting on you, or an agent that cannot be steered).
     var canSteer: Bool? = nil
+    /// When the usage limit that stopped this session resets (seconds since 1970), while it holds and the Mac knows;
+    /// "until the limit resets" snoozes until then (`SessionAction.snoozeLimitReset`).
+    var limitResetsAt: Double? = nil
 }
 
 extension LiveActivitySnapshot {

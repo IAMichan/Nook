@@ -269,7 +269,9 @@ enum SettingsRestore {
         switch self {
         case .general: return GeneralListAndConfirmations.changed
         case .appearance:
-            return AppSettings.shared.nookLook != .classic || AppSettings.shared.accentHex != NookTheme.defaultAccentHex
+            let settings = AppSettings.shared
+            return settings.nookLook != .classic || settings.accentHex != NookTheme.defaultAccentHex
+                || settings.themeChoice != NookThemeChoice()
         }
     }
 
@@ -279,6 +281,9 @@ enum SettingsRestore {
         case .appearance:
             AppSettings.shared.nookLook = .classic
             AppSettings.shared.accentHex = NookTheme.defaultAccentHex
+            AppSettings.shared.appearanceMode = .dark
+            AppSettings.shared.darkThemeID = NookColorTheme.nook.id
+            AppSettings.shared.lightThemeID = NookColorTheme.nook.id
         }
     }
 }

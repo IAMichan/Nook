@@ -93,6 +93,8 @@ struct BridgeScheduleDraft: Equatable, Sendable {
         case newSession(path: String?, agent: String?)
         /// Each run sends the prompt to the calling session.
         case thisSession
+        /// Each run sends the prompt to this session (one of the user's sessions in Nook).
+        case session(UUID)
     }
 
     var title: String
@@ -101,6 +103,8 @@ struct BridgeScheduleDraft: Equatable, Sendable {
     var target: Target
     var permission: PermissionPolicy
     var enabled: Bool
+    /// With a session target: each run starts a fresh conversation there instead of continuing it.
+    var fresh = false
 }
 
 /// A change to a scheduled task; nil fields stay as they are.
@@ -111,8 +115,14 @@ struct BridgeScheduleChange: Equatable, Sendable {
     var rule: ScheduleRule?
     var permission: PermissionPolicy?
     var enabled: Bool?
+    /// Where runs go from now on (moving the task); nil keeps it.
+    var target: BridgeScheduleDraft.Target?
+    /// Fresh conversation each run (true) or continue (false), for a session target; nil keeps it.
+    var fresh: Bool?
 
-    var isEmpty: Bool { title == nil && prompt == nil && rule == nil && permission == nil && enabled == nil }
+    var isEmpty: Bool {
+        title == nil && prompt == nil && rule == nil && permission == nil && enabled == nil && target == nil && fresh == nil
+    }
 
     func applied(to task: ScheduledTask) -> ScheduledTask {
         var copy = task
@@ -140,8 +150,69 @@ enum BridgeScheduleArguments {
                          "description": "With at: only on these days. Default every day."],
             "rights": ["type": "string", "enum": [PermissionPolicy.ask.rawValue, PermissionPolicy.acceptEdits.rawValue],
                        "description": "What each run may do without asking: ask (default) or acceptEdits. Never more than you have."],
-            "enabled": ["type": "boolean", "description": "Whether the task is on. Default true for a new task."]
+            "once_at": ["type": "string", "description": "Or run once at this local time, \"YYYY-MM-DD HH:MM\"."],
+            "enabled": ["type": "boolean", "description": "Whether the task is on. Default true for a new task."],
+            "target": ["type": "string", "enum": ["new_session", "this_session", "session"],
+                       "description": "new_session (in project_path), this_session, or session (session_id)."],
+            "session_id": ["type": "string", "description": "With target session: an id from session_list."],
+            "conversation": ["type": "string", "enum": ["continue", "fresh"],
+                             "description": "With a session target: continue its conversation (default) or start fresh each run."]
         ]
+    }
+
+    /// `once_at`: "2026-11-12 09:30", "2026-11-12T09:30", or ISO 8601 with a zone. Local time when no zone is given.
+    static func onceDate(_ text: String, timeZone: TimeZone = .current) -> Date? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: trimmed) { return date }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        for format in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: trimmed) { return date }
+        }
+        return nil
+    }
+
+    /// The target fields; nil when none is given. `defaultTarget` is what a missing `target` means.
+    static func target(_ arguments: [String: Any], defaultTarget: String?) -> Result<(BridgeScheduleDraft.Target, Bool?)?, BridgeArgumentError> {
+        let conversation = BridgeArgs.string(arguments["conversation"])?.lowercased()
+        var fresh: Bool?
+        switch conversation {
+        case nil: fresh = nil
+        case "continue": fresh = false
+        case "fresh": fresh = true
+        default: return .failure(BridgeArgumentError("conversation must be continue or fresh."))
+        }
+        let path = BridgeArgs.string(arguments["project_path"])
+        let agent = BridgeArgs.string(arguments["agent"])?.lowercased()
+        let sessionID = BridgeArgs.string(arguments["session_id"])
+        let inferred: String? = sessionID != nil ? "session" : (path != nil || agent != nil ? "new_session" : nil)
+        guard let name = BridgeArgs.string(arguments["target"]) ?? inferred ?? defaultTarget else {
+            return .success(nil)
+        }
+        switch name {
+        case "new_session":
+            guard sessionID == nil else { return .failure(BridgeArgumentError("session_id only goes with target session.")) }
+            guard fresh == nil else { return .failure(BridgeArgumentError("conversation only goes with this_session or session.")) }
+            return .success((.newSession(path: path, agent: agent), nil))
+        case "this_session":
+            guard path == nil, agent == nil, sessionID == nil else {
+                return .failure(BridgeArgumentError("project_path and agent only go with target new_session, session_id with session."))
+            }
+            return .success((.thisSession, fresh))
+        case "session":
+            guard path == nil, agent == nil else {
+                return .failure(BridgeArgumentError("project_path and agent only go with target new_session."))
+            }
+            guard let raw = sessionID, let id = UUID(uuidString: raw.hasPrefix("run:") ? String(raw.dropFirst(4)) : raw) else {
+                return .failure(BridgeArgumentError("target session needs session_id, a session id from session_list."))
+            }
+            return .success((.session(id), fresh))
+        default:
+            return .failure(BridgeArgumentError("target must be new_session, this_session or session."))
+        }
     }
 
     /// The schedule in the arguments; nil when none is given.
@@ -150,6 +221,15 @@ enum BridgeScheduleArguments {
         let every = arguments["every_minutes"].flatMap { $0 is NSNull ? nil : $0 }
         let at = BridgeArgs.string(arguments["at"])
         let days = arguments["weekdays"].flatMap { $0 is NSNull ? nil : $0 }
+        if let once = BridgeArgs.string(arguments["once_at"]) {
+            guard every == nil, at == nil, days == nil else {
+                return .failure(BridgeArgumentError("once_at goes alone: not with every_minutes, at or weekdays."))
+            }
+            guard let date = onceDate(once) else {
+                return .failure(BridgeArgumentError("once_at must be a local date and time as \"YYYY-MM-DD HH:MM\", for example \"2026-11-12 09:30\"."))
+            }
+            return .success(.once(at: date))
+        }
         if every != nil, at != nil {
             return .failure(BridgeArgumentError("Give either every_minutes or at, not both."))
         }
@@ -215,24 +295,13 @@ enum BridgeScheduleArguments {
                 return .failure(BridgeArgumentError("Give the prompt the task runs."))
             }
             guard let rule = try rule(arguments).get() else {
-                return .failure(BridgeArgumentError("Give a schedule: every_minutes, or at with optional weekdays."))
+                return .failure(BridgeArgumentError("Give a schedule: every_minutes, at with optional weekdays, or once_at."))
             }
-            let target: BridgeScheduleDraft.Target
-            switch BridgeArgs.string(arguments["target"]) ?? "new_session" {
-            case "new_session":
-                target = .newSession(path: BridgeArgs.string(arguments["project_path"]), agent: BridgeArgs.string(arguments["agent"])?.lowercased())
-            case "this_session":
-                guard BridgeArgs.string(arguments["project_path"]) == nil, BridgeArgs.string(arguments["agent"]) == nil else {
-                    return .failure(BridgeArgumentError("project_path and agent only go with target new_session."))
-                }
-                target = .thisSession
-            default:
-                return .failure(BridgeArgumentError("target must be new_session or this_session."))
-            }
+            let (target, fresh) = try self.target(arguments, defaultTarget: "new_session").get() ?? (.newSession(path: nil, agent: nil), nil)
             let permission = try permission(arguments["rights"], caller: caller).get() ?? .ask
             let enabled = arguments["enabled"].flatMap(BridgeArgs.bool) ?? true
             return .success(BridgeScheduleDraft(title: title, prompt: prompt, rule: rule, target: target,
-                                                permission: permission, enabled: enabled))
+                                                permission: permission, enabled: enabled, fresh: fresh ?? false))
         } catch {
             // `Result.get()` throws its own error type, so this is always a BridgeArgumentError.
             return .failure(error)
@@ -253,8 +322,17 @@ enum BridgeScheduleArguments {
                 guard let flag = BridgeArgs.bool(value) else { return .failure(BridgeArgumentError("enabled must be true or false.")) }
                 change.enabled = flag
             }
+            if let (target, fresh) = try self.target(arguments, defaultTarget: nil).get() {
+                change.target = target
+                change.fresh = fresh
+            } else if let conversation = BridgeArgs.string(arguments["conversation"])?.lowercased() {
+                guard conversation == "continue" || conversation == "fresh" else {
+                    return .failure(BridgeArgumentError("conversation must be continue or fresh."))
+                }
+                change.fresh = conversation == "fresh"
+            }
             guard !change.isEmpty else {
-                return .failure(BridgeArgumentError("Nothing to change: give a title, prompt, schedule, rights or enabled."))
+                return .failure(BridgeArgumentError("Nothing to change: give a title, prompt, schedule, rights, enabled or target."))
             }
             return .success(change)
         } catch {
@@ -275,6 +353,8 @@ enum BridgeScheduleArguments {
             return days.isEmpty || days.count == 7 ? "at \(time) every day" : "at \(time) on " + days.joined(separator: ", ")
         case .webhook:
             return "when its webhook is called"
+        case .once(let at):
+            return "once at " + ISO8601DateFormatter().string(from: at)
         }
     }
 
@@ -284,11 +364,13 @@ enum BridgeScheduleArguments {
         var line = "- \(task.id.uuidString) · \(task.title) · \(describe(task.rule)) · " + (task.enabled ? "on" : "off")
         switch task.target {
         case .newSession(let path, let provider, _): line += " · new \(provider) session in \(path)"
-        case .existingSession(let id): line += " · message to session \(id.uuidString)"
+        case .existingSession(let id, let fresh):
+            line += " · message to session \(id.uuidString)" + (fresh ? " (fresh conversation each run)" : " (continues the conversation)")
         }
         line += " · rights \(permission.rawValue)"
         if running { line += " · running now" }
         if let next = task.nextRun { line += " · next \(iso.string(from: next))" }
+        if task.isDone { line += " · done" }
         if let last = task.lastRun {
             line += " · last \(iso.string(from: last))" + (task.lastStatus.map { " (\($0.rawValue))" } ?? "")
         }
@@ -590,6 +672,27 @@ enum BridgeSecret {
 
     /// The keychain account: names are not case-sensitive.
     static func account(_ name: String) -> String { accountPrefix + name.lowercased() }
+
+    /// How the value reaches the agent. `file` (the default) puts it in a private file and gives the agent only the path,
+    /// so the value never enters its transcript; `value` returns it in the tool's output, and the user is told so first.
+    enum Delivery: String, Equatable, Sendable {
+        case file, value
+    }
+
+    /// The delivery asked for: `file` when none is given, nil for anything else.
+    static func delivery(_ value: Any?) -> Delivery? {
+        guard let raw = BridgeArgs.string(value) else { return value == nil || value is NSNull || value is String ? .file : nil }
+        return Delivery(rawValue: raw.lowercased())
+    }
+
+    /// A page where the user can find or make the secret (a dashboard's API keys page), shown as a button on the card.
+    /// Only a plain web address: http or https, a host, no user name or password in it, at most 2,000 characters.
+    static func signInURL(_ value: Any?) -> URL? {
+        guard let raw = BridgeArgs.string(value), raw.count <= 2_000, let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
+        return url
+    }
 
     static func envelope(name: String, value: String) -> String {
         "The value of \(name) is between the markers (the markers are not part of it): \(open)\(value)\(close)"

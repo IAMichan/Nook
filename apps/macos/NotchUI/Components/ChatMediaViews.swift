@@ -584,7 +584,7 @@ struct ChatAudioView: View {
             Button { toggle() } label: {
                 Image(systemName: player.failed ? "arrow.up.forward.app" : (player.playing ? "pause.fill" : "play.fill"))
                     .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.ink)
+                    .foregroundStyle(NookTheme.onPaper)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(fromMe ? NookTheme.mint : NookTheme.paper))
                     .contentShape(Circle())

@@ -50,15 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return false
     }
 
-    /// `nook://prompt?text=…`: fills a draft in a new session, never sends it (see PromptLink).
+    /// Nook's own `nook://` links, and web links and pages while Nook is the default browser (see `openIncoming`).
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            guard let link = PromptLink.parse(url: url) else { continue }
-            PromptLinkInbox.shared.pending = link
-            model.viewModel.selectedAgentID = "new"
-            model.viewModel.show(.panel(.agents))
-            return
-        }
+        model.openIncoming(urls)
     }
 
     /// Quitting stops the sessions Nook runs (they can be resumed later). While one is still at work, Nook asks
@@ -72,6 +66,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = working == 1 ? tr("quit.working.one") : tr("quit.working.many", working)
         alert.informativeText = tr("quit.working.detail")
+        // With sessions kept running (Settings › Agents), say which go on and which stop.
+        if model.workspace.settings.keepSessionsRunning {
+            let summary = KeptRuns.quitSummary(model.workspace.keptCandidates, enabled: true)
+            if summary.keep > 0 {
+                alert.informativeText = summary.stop == 0 ? tr("quit.kept.all", summary.keep) : tr("quit.kept.some", summary.keep, summary.stop)
+            }
+        }
         alert.addButton(withTitle: tr("quit.working.quit"))
         alert.addButton(withTitle: tr("button.cancel"))
         alert.showsSuppressionButton = true
@@ -89,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if AppUpdater.shared.restarting { AppUpdater.endProcess(after: AppUpdater.quitDeadline) }
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
+        // Secrets delivered to agents as private files never outlive Nook.
+        WorkspaceBridge.shared.removeAllSecrets()
         model.recap.flush()
         UpdateTrialRunner.cleanExit()
         AutocompleteController.shared.flush()

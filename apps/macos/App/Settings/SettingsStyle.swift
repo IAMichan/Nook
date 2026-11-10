@@ -232,7 +232,7 @@ struct SetupStep<Content: View>: View {
                     Text("\(number)").font(NookTheme.rounded(12, .bold))
                 }
             }
-            .foregroundStyle(done ? NookTheme.ink : NookTheme.onIris)
+            .foregroundStyle(done ? NookTheme.onPaper : NookTheme.onIris)
             .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Text(title).font(NookTheme.TextStyle.strong)

@@ -420,6 +420,7 @@ struct WorkspaceSettingsSection: View {
         case .sessions:
             defaults
             behavior
+            TextGenerationSection()
             sessionTidying
         case .projects: projects
         case .openIn: openIn
@@ -429,6 +430,8 @@ struct WorkspaceSettingsSection: View {
             // What runs by itself, then what agents may use. The raw traffic log is under Maintenance.
             scheduled
             bridge
+            SecretProvidersSection()
+            RemoteMCPSettingsSection(ws: ws)
         case .worktrees:
             worktreeCreation
             worktreeCleanup
@@ -507,7 +510,9 @@ struct WorkspaceSettingsSection: View {
             } else {
                 Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
                     ForEach(choices, id: \.self) { path in
-                        Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
+                        let name = URL(fileURLWithPath: path).lastPathComponent
+                        Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
+                            .tag(path).help(AgentPathFormat.tilde(path))
                     }
                 } label: {
                     SettingText("settings.projects.project")
@@ -517,6 +522,7 @@ struct WorkspaceSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.scope.footer"))
         }
+        ArchivedProjectsSection(scope: $scope)
     }
 
     @ViewBuilder
@@ -628,6 +634,22 @@ struct WorkspaceSettingsSection: View {
                 .lineLimit(2...8)
                 .help(tr("settings.ws.agentInstructions.help"))
         }
+        inheritable(.submodules, path) {
+            Picker(tr("sc.submodules"), selection: Binding(
+                get: { resolved.submodules }, set: { ws.setOverride(.submodules, $0.rawValue, for: path) })) {
+                ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
+            }
+            .help(tr("sc.submodules.help"))
+        }
+        inheritable(.autoPull, path) {
+            Picker(tr("sc.autoPull"), selection: Binding(
+                get: { resolved.autoPull }, set: { ws.setOverride(.autoPull, $0 ? "on" : "off", for: path) })) {
+                Text(tr("sc.autoPull.on")).tag(true)
+                Text(tr("sc.autoPull.off")).tag(false)
+            }
+            .help(tr("sc.autoPull.help"))
+        }
+        ProjectSourceControlRows(path: path)
     }
 
     /// A per-project row: its control, then "Inherited" or the button that goes back to the value for all projects.
@@ -673,7 +695,9 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
-    /// Nook's browser: the search engine of its address bar, and whether an agent's links open there or in your own.
+    /// Nook's browser: the search engine of its address bar, whether an agent's links open there or in your own, its
+    /// sign-ins (kept, imported from another browser), and Nook as the Mac's default browser.
+    @ViewBuilder
     private var browser: some View {
         Section(tr("settings.browser.title")) {
             BrowserSearchPicker()
@@ -689,7 +713,9 @@ struct WorkspaceSettingsSection: View {
                 SettingText("settings.browser.signIns")
             }
             .help(tr("settings.browser.signIns.detail"))
+            BrowserImportRow()
         }
+        DefaultBrowserSection()
     }
 
     /// How a choice for browser sign-ins reads in a picker.
@@ -821,6 +847,12 @@ struct WorkspaceSettingsSection: View {
                 .lineLimit(2...8)
                 .help(tr("settings.ws.agentInstructions.help"))
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+            // A session can choose for itself in its menu.
+            Picker(selection: $ws.timelineDetail) {
+                ForEach(TimelineDetail.allCases) { detail in Text(tr(detail.titleKey)).tag(detail) }
+            } label: {
+                SettingLabel(tr("settings.ws.timelineDetail"), hint: tr("settings.ws.timelineDetail.help"))
+            }
             Picker(tr("settings.ws.maxWorking"), selection: $ws.maxWorkingSessions) {
                 ForEach(SessionCapacity.choices, id: \.self) { count in
                     Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)
@@ -833,6 +865,7 @@ struct WorkspaceSettingsSection: View {
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            KeptSessionsSettingsRows(ws: ws, workspace: app.workspace)
         } header: {
             SettingText("ws.section.restart")
         }
@@ -870,6 +903,7 @@ struct WorkspaceSettingsSection: View {
             } label: {
                 SettingText("settings.ws.branchPrefix")
             }
+            SourceControlGlobalRows()
         }
     }
 
@@ -1109,6 +1143,55 @@ struct WatchedPullRequestsSection: View {
             ToastCenter.shared.success(tr("connection.added", added.joined(separator: ", ")))
             dismiss()
         }
+    }
+}
+
+/// Nook as the Mac's default browser, and where the links other apps hand it then open (see `DefaultBrowser`,
+/// `IncomingLinkRoute`). macOS asks itself before it switches.
+private struct DefaultBrowserSection: View {
+    @AppStorage(IncomingLinkTarget.defaultsKey) private var target = IncomingLinkTarget.session.rawValue
+    @State private var isNook = DefaultBrowser.isNook
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                if isNook {
+                    Button(tr("browserDefault.restore")) {
+                        DefaultBrowser.restorePrevious { done($0) }
+                    }
+                    .disabled(PreviousBrowser.load() == nil)
+                } else {
+                    Button(tr("browserDefault.make")) {
+                        DefaultBrowser.makeNook { done($0) }
+                    }
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    SettingText("browserDefault.title")
+                    SettingNote(isNook ? tr("browserDefault.isNook") : tr("browserDefault.detail"))
+                }
+            }
+            Picker(selection: $target) {
+                ForEach(IncomingLinkTarget.allCases) { Text(tr("browserDefault.target." + $0.rawValue)).tag($0.rawValue) }
+            } label: {
+                SettingText("browserDefault.target")
+            }
+            .help(tr("browserDefault.target.help"))
+            if let error { SettingNote(error, tone: .error) }
+        }
+        .onAppear {
+            DefaultBrowser.refresh()
+            isNook = DefaultBrowser.isNook
+        }
+    }
+
+    /// macOS answered (you chose, or it refused): show what holds now.
+    private func done(_ failure: Error?) {
+        DefaultBrowser.refresh()
+        isNook = DefaultBrowser.isNook
+        // Cancelling the system's question is no error worth a line.
+        error = failure.flatMap { ($0 as NSError).code == NSUserCancelledError ? nil : $0.localizedDescription }
     }
 }
 

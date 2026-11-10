@@ -4,6 +4,8 @@ import Foundation
 /// ones (kVK_*, cmdKey…), written out so this file needs nothing from AppKit (tested in ShortcutsTests).
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable, Sendable {
     case talk, ask, lookAtScreen, screenPart, recordCall
+    /// The front window's picture and text into the composer of the session you work in (or the Nook chat).
+    case captureWindow
 
     var id: String { rawValue }
 
@@ -15,6 +17,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable, Sendable {
         case .ask: return 3
         case .screenPart: return 4
         case .recordCall: return 5
+        case .captureWindow: return 6
         }
     }
 
@@ -25,6 +28,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable, Sendable {
         case .lookAtScreen: return Shortcut(keyCode: 0x2D, modifiers: Shortcut.option | Shortcut.command)   // N
         case .screenPart: return Shortcut(keyCode: 0x15, modifiers: Shortcut.option | Shortcut.command)     // 4
         case .recordCall: return Shortcut(keyCode: 0x0F, modifiers: Shortcut.option | Shortcut.command)     // R
+        case .captureWindow: return Shortcut(keyCode: 0x17, modifiers: Shortcut.option | Shortcut.command)  // 5, beside ⌥⌘4
         }
     }
 }

@@ -111,6 +111,53 @@ extension WorkspaceManager {
                             tool: "handoff", detail: handoff.text))
     }
 
+    // MARK: How much the timeline shows
+
+    /// This session's own choice of how much of the work its timeline shows; nil follows Settings.
+    func setTimelineDetail(_ id: UUID, _ detail: TimelineDetail?) {
+        guard run(id)?.timelineDetail != detail else { return }
+        update(id) { $0.timelineDetail = detail }
+    }
+
+    // MARK: Clear
+
+    /// `/clear`: the session goes on in a new, empty conversation with the same agent, in the same folder and on the same
+    /// branch. The agent forgets everything so far (every agent's conversation in this session, a summary waiting for
+    /// the next turn, and how far each agent had followed the timeline); the timeline stays, with a divider where the
+    /// new conversation starts. Not while the agent works: its conversation is still changing.
+    @discardableResult
+    func clearConversation(_ id: UUID) -> Bool {
+        guard run(id) != nil else { return false }
+        guard canTransfer(id) else {
+            append(id, RunEvent(kind: .system, text: tr("ws.clear.busy")))
+            return false
+        }
+        loadTimeline(id)
+        closeCodexServer(id)
+        closeClaudeProcess(id)
+        closeAcpClient(id)
+        forkNext.remove(id)
+        append(id, RunEvent(kind: .system, text: tr("ws.event.cleared"), tool: "clear"))
+        // What came before the divider is no agent's to pick up: a switch to another agent later hands over only what
+        // follows it.
+        let now = timeline(id).count
+        update(id) { run in
+            run.providerSessionID = nil
+            run.providerSessions = nil
+            run.handoffCursors = run.handoffCursors.map { $0.mapValues { _ in now } }
+                ?? [ProviderInstance.key(run.provider, run.profileID): now]
+            run.pendingHandoff = nil
+            run.pendingRollback = nil
+            run.conversation = nil
+            run.goal = nil
+            run.tasks = nil
+            run.promptCache = nil
+            run.usage.contextTokens = nil
+        }
+        scheduleSave()
+        return true
+    }
+
     // MARK: Fork
 
     /// A new session that starts from this one: Claude Code forks its own conversation; any other agent starts from a

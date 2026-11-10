@@ -2,7 +2,7 @@ import Foundation
 
 /// A command a project defines for its sessions, in `nook.json` at the repository root:
 /// `{"scripts": [{"id": "dev", "name": "Dev server", "command": "pnpm dev", "runOnWorktreeCreate": false,
-/// "previewUrl": "http://localhost:5173", "autoOpenPreview": true}]}`.
+/// "previewUrl": "http://localhost:5173", "autoOpenPreview": true, "stopOnSettle": true}]}`.
 struct ProjectScript: Equatable, Identifiable, Sendable {
     var id: String
     var name: String
@@ -12,6 +12,10 @@ struct ProjectScript: Equatable, Identifiable, Sendable {
     /// The page this script serves; shown above the browser and, with `autoOpenPreview`, opened when it runs.
     var previewURL: URL?
     var autoOpenPreview: Bool
+    /// When the session settles, the terminal this script runs in is stopped, with everything it started (`SettleActions`).
+    var stopOnSettle = false
+    /// Runs by itself when a session in its own worktree settles (`cargo clean`, `rm -rf node_modules`).
+    var runOnSettle = false
 }
 
 enum ProjectScripts {
@@ -105,7 +109,9 @@ enum ProjectScripts {
             let preview = (item["previewUrl"] as? String).flatMap { BridgeURLPolicy.url($0) }
             scripts.append(ProjectScript(id: id, name: name.isEmpty ? command : name, command: command,
                                          runOnWorktreeCreate: (item["runOnWorktreeCreate"] as? Bool) ?? false,
-                                         previewURL: preview, autoOpenPreview: (item["autoOpenPreview"] as? Bool) ?? false))
+                                         previewURL: preview, autoOpenPreview: (item["autoOpenPreview"] as? Bool) ?? false,
+                                         stopOnSettle: (item["stopOnSettle"] as? Bool) ?? false,
+                                         runOnSettle: (item["runOnSettle"] as? Bool) ?? false))
         }
         return scripts
     }

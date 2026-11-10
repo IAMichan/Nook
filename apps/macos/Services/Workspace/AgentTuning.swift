@@ -129,7 +129,7 @@ enum AgentTuning {
             case .antigravity:
                 advice += jsonServers(.antigravity, file: home.appendingPathComponent(".gemini/antigravity/mcp_config.json"))
             // Grok and the ACP agents you add keep no configuration file Nook knows (docs/INTEGRATIONS.md).
-            case .grok, .acp: break
+            case .grok, .pi, .acp: break
             }
         }
         return advice

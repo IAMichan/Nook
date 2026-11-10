@@ -134,6 +134,8 @@ extension AgentKind {
         case .claude: return "CLAUDE_CONFIG_DIR"
         case .codex: return "CODEX_HOME"
         case .gemini: return "GEMINI_CLI_HOME"
+        // Pi keeps its settings, sign-ins and sessions in the folder `PI_CODING_AGENT_DIR` names (default ~/.pi/agent).
+        case .pi: return "PI_CODING_AGENT_DIR"
         case .antigravity, .opencode, .cursor, .grok, .acp: return nil
         }
     }
@@ -145,7 +147,7 @@ extension AgentKind {
         case .gemini:
             let url = URL(fileURLWithPath: home, isDirectory: true)
             return url.lastPathComponent == ".gemini" ? url.deletingLastPathComponent().path : home
-        case .claude, .codex, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .claude, .codex, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return home
         }
     }
@@ -155,7 +157,7 @@ extension AgentKind {
     var takesAPIKeyAccounts: Bool {
         switch self {
         case .claude, .codex: return true
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return false
         }
     }
 
@@ -163,7 +165,7 @@ extension AgentKind {
     var singleAccountNote: String? {
         switch self {
         case .antigravity: return "accounts.antigravitySingle"
-        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: return nil
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp: return nil
         }
     }
 
@@ -171,7 +173,7 @@ extension AgentKind {
     var hookAgentID: String {
         switch self {
         case .claude: return "claude-code"
-        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return rawValue
+        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return rawValue
         }
     }
 
@@ -179,7 +181,7 @@ extension AgentKind {
     func home(fromVariable value: String) -> String {
         switch self {
         case .gemini: return URL(fileURLWithPath: value, isDirectory: true).appendingPathComponent(".gemini", isDirectory: true).path
-        case .claude, .codex, .antigravity, .opencode, .cursor, .grok, .acp: return value
+        case .claude, .codex, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return value
         }
     }
 
@@ -191,6 +193,7 @@ extension AgentKind {
         case .acp: return defaultHome.appendingPathComponent(slug, isDirectory: true)
         case .claude: return home.appendingPathComponent(".claude-\(slug)", isDirectory: true)
         case .codex: return home.appendingPathComponent(".codex-\(slug)", isDirectory: true)
+        case .pi: return home.appendingPathComponent(".pi-\(slug)", isDirectory: true).appendingPathComponent("agent", isDirectory: true)
         case .gemini, .antigravity, .opencode, .cursor, .grok:
             return home.appendingPathComponent(".gemini-\(slug)", isDirectory: true).appendingPathComponent(".gemini", isDirectory: true)
         }
