@@ -963,12 +963,23 @@ struct AgentRunPanel: View {
 
     /// Picks a passage of an answer for the next message; `ask` also puts the keyboard in the box to ask about it.
     private func addQuote(_ text: String, ask: Bool) {
-        switch quotes.add(text) {
+        // Where it was taken from, so the chip can go back there: the newest answer that holds these words.
+        let entries = workspace.timeline(runID).filter { $0.kind == .assistant }.map { (id: $0.id, text: $0.text) }
+        switch quotes.add(text, source: ComposerQuotes.source(of: text, in: entries)) {
         case .tooLong: ToastCenter.shared.warning(tr("ws.review.quoteTooLong"))
         case .full: ToastCenter.shared.warning(tr("compose.quote.full"))
         case .empty: break
         case nil: if ask { focused = true }
         }
+    }
+
+    /// Back to where a quote was taken from in the conversation, lit up for a moment; a note when it is gone.
+    private func jumpToQuote(_ quote: ComposerQuotes.Quote) {
+        guard let source = quote.source, workspace.timeline(runID).contains(where: { $0.id == source }) else {
+            ToastCenter.shared.warning(tr("compose.quote.gone"))
+            return
+        }
+        conversationFocus = source
     }
 
     /// ⇧⌘L / ⌘L on words selected in an answer; false (the key goes on) when nothing is selected there.
@@ -1452,7 +1463,9 @@ struct AgentRunPanel: View {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if !quotes.isEmpty {
-                        ComposerQuoteChips(quotes: quotes.items) { id in quotes.remove(id) }
+                        ComposerQuoteChips(quotes: quotes.items, remove: { id in quotes.remove(id) },
+                                           setNote: { id, note in quotes.setNote(note, for: id) },
+                                           jump: { quote in jumpToQuote(quote) })
                         if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if !branches.isEmpty {
