@@ -223,7 +223,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .getPullRequestStatus:
             return "Reads a pull request's status now, the way Nook's watch sees it: state, CI (with the failed checks), each reviewer's verdict, the number of comments and whether it has merge conflicts. GitHub (with the user's GitHub connection) and GitLab (with its token in Nook). Without url or number it takes the open pull request of your branch."
         case .requestSecret:
-            return "Asks the user for a secret by name (an API key or token you need for this task). The user sees the name and your reason in Nook and allows it, using the value stored in Nook's keychain under that name or pasting one. The value comes back only to you, between <nook-secret> markers; Nook hides it in its own timeline and records only the name in its audit log. Do not print it, write it into files in the repository or send it anywhere the task does not need it."
+            return "Asks the user for a secret by name (an API key or token you need for this task). The user sees the name and your reason in Nook and allows it, with the value Nook keeps under that name (or in 1Password) or one they paste. By default you get only the path of a private file that holds it: use it in shell commands as \"$(cat '<path>')\" and never print or copy it, so the value never enters this conversation. Pass url for the page where the user finds or makes the secret; it shows as a button. delivery: \"value\" returns the value itself between <nook-secret> markers; use it only when a file cannot work, the user is warned first. For sudo use `sudo -A`: Nook asks the user for the password itself."
         case .nookTools:
             return "Lists what Nook itself can do for the user on this Mac, the same tools Nook Chat uses: send and read messages in the user's chat apps (WhatsApp, Messages, Telegram, Slack, Teams, Signal… through chat_inbox and chat_send), search and play music (search_music, play_music, media_control), calendar, reminders, notes, mail drafts, contacts, files, GitHub and the other connected services, and the user's agent sessions. Each tool is read (runs directly) or action (the user approves it in Nook). Without arguments you get one line per tool, grouped by source; pass tool to get its full description and argument schema, or query to filter. Call it before nook_use."
         case .nookUse:
@@ -440,7 +440,9 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .requestSecret:
             return object([
                 "name": ["type": "string", "description": "The secret's name: letters, digits, dot, dash or underscore, such as STRIPE_TEST_KEY."],
-                "reason": ["type": "string", "description": "Why you need it, in one sentence the user reads before deciding."]
+                "reason": ["type": "string", "description": "Why you need it, in one sentence the user reads before deciding."],
+                "url": ["type": "string", "description": "Optional http(s) page where the user can find or create the secret, such as the service's API keys page."],
+                "delivery": ["type": "string", "enum": ["file", "value"], "description": "file (default): you get a private file's path, never the value. value: the value comes back to you; only when a file cannot work."]
             ], required: ["name", "reason"])
         case .pullRequestCreate:
             return object([
@@ -743,7 +745,7 @@ struct BridgeLaunch: Equatable, Sendable {
     GitHub in the user's browser, and use it when `gh` is rate limited), then watch_pull_request; delegate_task to hand \
     side work to another agent (it sees only your brief; results via task_status); device_open, device_list and \
     device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \
-    request_secret for an API key, never ask for one in chat; nook_tools and nook_use for Nook's apps and connectors \
+    request_secret for an API key (you get a file path; never ask for one in chat), `sudo -A` for sudo; nook_tools and nook_use for Nook's apps and connectors \
     (actions wait for approval); nook_chat_list, nook_chat_read and nook_chat_send for Nook Chat; take_over_screen for \
     the user's own apps, then nook_use (read_ui, look_ui, control_ui); session_search, session_questions and \
     session_organize for the user's other sessions; render_page to show a chart, diagram or mock-up as HTML.

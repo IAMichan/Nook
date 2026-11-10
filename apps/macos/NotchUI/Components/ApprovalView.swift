@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// A permission request from an agent: what it wants (the whole command or the whole change), how risky that looks, and
 /// the buttons to decide. The notch and the Agents list show it as a card; a conversation as a row of its timeline
@@ -146,7 +147,8 @@ struct ApprovalView: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "key.fill").foregroundStyle(NookTheme.textTertiary)
-                    SecureField(tr("bridge.approval.secretField", name), text: $secretValue)
+                    SecureField(approval.secretKeepable ? tr("bridge.approval.secretField", name) : tr("secrets.sudo.field"),
+                                text: $secretValue)
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.body)
                         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
@@ -155,9 +157,11 @@ struct ApprovalView: View {
                         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
                         .onSubmit(allow)
                 }
-                Toggle(tr("bridge.secret.prompt.remember"), isOn: $rememberSecret)
-                    .toggleStyle(.checkbox)
-                    .font(NookTheme.TextStyle.caption)
+                if approval.secretKeepable {
+                    Toggle(tr("bridge.secret.prompt.remember"), isOn: $rememberSecret)
+                        .toggleStyle(.checkbox)
+                        .font(NookTheme.TextStyle.caption)
+                }
             }
         }
     }
@@ -204,7 +208,7 @@ struct ApprovalView: View {
         let value = secretValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if approval.secretName != nil, let onSecret, !value.isEmpty {
             secretValue = ""
-            onSecret(BridgeSecretAnswer(value: value, remember: rememberSecret))
+            onSecret(BridgeSecretAnswer(value: value, remember: approval.secretKeepable && rememberSecret))
         } else {
             onDecide(.allow)
         }
@@ -218,6 +222,8 @@ struct ApprovalView: View {
                 + (onDenyWithReason != nil && !writingReason
                     ? [NookNoticeAction(tr("approval.denyReason")) { writingReason = true }] : [])
                 + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
+                // The page where the secret is found or made, as the agent named it (http or https only).
+                + (approval.signInURL.map { url in [NookNoticeAction(tr("secrets.signIn.open")) { NSWorkspace.shared.open(url) }] } ?? [])
         )
     }
 

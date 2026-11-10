@@ -704,6 +704,8 @@ struct AgentSessionDetail: View {
         var config = ComposerConfig()
         config.fileRoot = folder.isEmpty ? nil : folder
         config.keepsBigPastes = true
+        // An agent on this Mac reads the private file a pasted secret goes to.
+        config.secretScope = SecretFiles.composerScope
         return config
     }
 

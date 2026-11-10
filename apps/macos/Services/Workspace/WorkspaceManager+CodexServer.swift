@@ -36,6 +36,7 @@ extension WorkspaceManager {
         guard let run = run(id) else { return }
         var environment = accountEnvironment(run.profileID)
         environment["NOOK_RUN_ID"] = id.uuidString
+        environment.merge(SudoAskpass.launchEnvironment()) { _, new in new }
         let spec = placed(LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
                                      workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)

@@ -2070,6 +2070,7 @@ final class WorkspaceManager: ObservableObject {
     func setArchived(_ id: UUID, _ archived: Bool) {
         guard let run = run(id), !(archived && run.status.isActive) else { return }
         update(id) { $0.archived = archived }
+        if archived { WorkspaceBridge.shared.forgetSecrets(run: id) }
     }
 
     func markReviewed(_ id: UUID) {
@@ -2217,6 +2218,7 @@ final class WorkspaceManager: ObservableObject {
         }
         runs.removeAll { $0.id == id }
         SessionBrowsers.shared.discard(run: id)
+        WorkspaceBridge.shared.forgetSecrets(run: id)
         forgetSessionState(id)
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }

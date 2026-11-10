@@ -209,6 +209,9 @@ struct ContextRef: Codable, Equatable, Hashable, Sendable {
         /// A model, named for the agent to use (for a subagent or a delegated task); it does not change the session's
         /// own model. Its id is "agent/model" (`ModelMention.id`).
         case model
+        /// A secret you pasted, kept out of the message: the id is the private file that holds it (`SecretFiles`), the
+        /// label its name. The agent gets the path and how to use it, never the value.
+        case secret
     }
 
     var kind: Kind
@@ -247,7 +250,7 @@ enum ContextRefs {
         case .file: return ref.id
         case .pullRequest: return "#" + ref.label
         case .skill: return "$" + ref.label
-        case .session, .excerpt, .source, .paste, .model: return ref.label
+        case .session, .excerpt, .source, .paste, .model, .secret: return ref.label
         }
     }
 
@@ -296,7 +299,9 @@ enum ContextRefs {
             let key = "\(item.kind.rawValue)|\(item.id)"
             guard seen.insert(key).inserted else { continue }
             var record = "<ref kind=\"\(item.kind.rawValue)\" id=\"\(escape(item.id))\""
-            if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
+            if item.kind == .secret {
+                record += ">\n\(escape(SecretFiles.instructions(name: item.label, path: item.id)))\n</ref>"
+            } else if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
                 let limit = item.kind == .paste ? pasteLimit : excerptLimit
                 let clipped = content.count > limit ? String(content.prefix(limit)) + "\n…" : content
                 record += ">\n\(escape(clipped))\n</ref>"
@@ -314,7 +319,7 @@ enum ContextRefs {
         case .session: return "[session: " + item.label + "]"
         case .pullRequest: return "#" + item.label
         case .skill: return "$" + item.label
-        case .excerpt, .paste: return "[" + item.label + "]"
+        case .excerpt, .paste, .secret: return "[" + item.label + "]"
         case .source: return "[" + item.label + "]"
         case .model: return "[model: " + item.label + "]"
         }

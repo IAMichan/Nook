@@ -30,6 +30,10 @@ struct AgentApproval: Identifiable {
     var prose = false
     /// A secret Nook does not keep yet: the request shows a secure field for its value.
     var secretName: String? = nil
+    /// Where the user can find or make the secret an agent asks for: a button on the card.
+    var signInURL: URL? = nil
+    /// Whether the typed secret may be kept in Nook's keychain (not for a sudo password).
+    var secretKeepable = true
 
     var id: String {
         switch origin {
@@ -109,7 +113,7 @@ final class ApprovalCenter {
             project: URL(fileURLWithPath: request.caller.directory).lastPathComponent, tool: request.tool.rawValue,
             title: request.title, command: request.detail, diff: [], note: request.note, danger: request.danger,
             canAlways: false, canTerminal: false, created: request.created, prose: request.tool.approvalReadsAsProse,
-            secretName: request.secretName
+            secretName: request.secretName, signInURL: request.signInURL, secretKeepable: request.secretKeepable
         )
     }
 
