@@ -84,11 +84,6 @@ struct NewSessionComposer: View {
         }], enabled: focused)
     }
 
-    /// The box's words, read and written outside of `body` so that typing does not redraw the panel.
-    private var taskBinding: Binding<String> {
-        Binding(get: { task.text }, set: { setTask($0) })
-    }
-
     private func setTask(_ text: String) {
         guard text != task.text else { return }
         task.text = text
@@ -271,6 +266,14 @@ struct NewSessionComposer: View {
 
     /// The same composer a running session answers in, with the choices for the new session inside it.
     private var box: some View {
+        // The words are read in `TaskField`, not here: SwiftUI reads a binding's value when it compares the composer it
+        // was given with the last one, and a binding made in this `body` would then redraw the whole panel per key.
+        TaskField(task: task, set: setTask) { taskBinding in
+            composer(taskBinding)
+        }
+    }
+
+    private func composer(_ taskBinding: Binding<String>) -> some View {
         SessionComposer(
             text: taskBinding,
             prompt: tr("compose.prompt"),
@@ -1040,4 +1043,15 @@ private struct NewSessionDraft {
 @Observable
 private final class NewSessionTask {
     var text = ""
+}
+
+/// Hands the composer a binding to the box's words, so only this view, not the panel around it, observes them.
+private struct TaskField<Content: View>: View {
+    let task: NewSessionTask
+    let set: (String) -> Void
+    @ViewBuilder let content: (Binding<String>) -> Content
+
+    var body: some View {
+        content(Binding(get: { task.text }, set: set))
+    }
 }
