@@ -72,7 +72,7 @@ struct UsageWidgetView: View {
             .foregroundStyle(Theme.textSecondary)
             if rows.isEmpty {
                 Spacer(minLength: 0)
-                Text(entry.timeline.taken == nil ? "Open Nook Companion to see your limits." : "Your Mac reports no plan limits.")
+                Text(entry.timeline.taken == nil ? String(localized: "Open Nook Companion to see your limits.") : String(localized: "Your Mac reports no plan limits."))
                     .font(Theme.font(12))
                     .foregroundStyle(Theme.textSecondary)
                 Spacer(minLength: 0)
