@@ -456,6 +456,19 @@ struct NookChatView: View {
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now
             }
+            // A mark per question of yours on the leading edge, as in an agent's transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
+                let shown = marks.update(chat.messages)
+                if overflows, !shown.isEmpty {
+                    TranscriptPromptRail(marks: shown) { mark in
+                        scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                    }
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+                }
+            }
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 inputBar
@@ -470,19 +483,6 @@ struct NookChatView: View {
                 LinearGradient(colors: [NookTheme.notch, NookTheme.notch.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: 10)
                     .allowsHitTesting(false)
-            }
-            // A mark per question of yours on the leading edge, as in an agent's transcript: a click jumps to it.
-            .overlay(alignment: .leading) {
-                let shown = marks.update(chat.messages)
-                if overflows, !shown.isEmpty {
-                    TranscriptPromptRail(marks: shown) { mark in
-                        scroll.userScrolled()
-                        guard let id = UUID(uuidString: mark.row) else { return }
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                    }
-                    .padding(.vertical, NookTheme.Spacing.md)
-                    .transition(.opacity)
-                }
             }
             // Opening the chat or another conversation: start at its end and follow again.
             .onAppear { settleAtEnd(proxy) }
