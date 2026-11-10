@@ -122,6 +122,18 @@ struct EventRow: View {
             TranscriptWorkLine(symbol: "arrow.turn.right.down", label: event.text)
                 .help(event.text)
 
+        case .system where CompactionProgress.isCompaction(event):
+            // A compaction: live while the agent summarizes, then what it did (`CompactionProgress`).
+            switch event.state {
+            case .running?:
+                TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: tr("ws.activity.compacting"), live: true)
+            case .failed?:
+                TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: tr("ws.event.compactionStopped"), failed: true)
+            default:
+                TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: event.text)
+                    .help(event.text)
+            }
+
         case .system where event.tool == "wake":
             // The agent picks up what it left running in the background: a turn of its own starts here.
             TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)

@@ -22,8 +22,11 @@ struct ComposerTrigger: Equatable, Sendable {
 
     var kind: Kind
     var query: String
-    /// The text the trigger stands on, from its character to the end.
+    /// The text the trigger stands on, from its character to the caret.
     var token: String
+    /// Where `token` is in the text (UTF-16 offsets), when it was read at the caret (`detect(in:caret:)`); nil means at
+    /// the end.
+    var range: Range<Int>? = nil
 
     private static func character(_ kind: Kind) -> Character {
         switch kind {
@@ -42,6 +45,17 @@ struct ComposerTrigger: Equatable, Sendable {
         return trigger(String(text[text.index(after: space)...]), atStart: false)
     }
 
+    /// The trigger that ends right at `caret` (UTF-16 offset), so `@` typed in the middle of the text opens the list
+    /// there too; the text after the caret plays no part. Nil `caret` (or the end) reads the end of the text.
+    static func detect(in text: String, caret: Int?) -> ComposerTrigger? {
+        let length = text.utf16.count
+        let end = min(max(caret ?? length, 0), length)
+        guard let index = String.Index(exactUTF16: end, in: text) else { return nil }
+        guard var found = detect(in: String(text[..<index])) else { return nil }
+        found.range = (end - found.token.utf16.count)..<end
+        return found
+    }
+
     private static func trigger(_ token: String, atStart: Bool) -> ComposerTrigger? {
         guard let first = token.first else { return nil }
         let kind: Kind
@@ -57,8 +71,54 @@ struct ComposerTrigger: Equatable, Sendable {
 
     /// The text with the trigger replaced (a chosen link, or a command's text), followed by a space.
     func replacing(in text: String, with insertion: String) -> String {
-        guard text.hasSuffix(token) else { return text }
-        return String(text.dropLast(token.count)) + insertion + " "
+        inserting(insertion, in: text).text
+    }
+
+    /// The text with the trigger replaced by `insertion` where it was typed, and the caret (UTF-16) right after it. A
+    /// space follows the insertion unless the text goes on with one already; the caret then lands past that space. Text
+    /// that no longer holds the token where it was is left alone (caret nil).
+    func inserting(_ insertion: String, in text: String) -> (text: String, caret: Int?) {
+        guard let start = tokenStart(in: text) else { return (text, nil) }
+        let end = text.index(start, offsetBy: token.count)
+        let head = String(text[..<start]) + insertion
+        let rest = text[end...]
+        if let next = rest.first, next.isWhitespace {
+            // Past the space or line break that is already there.
+            return (head + rest, head.utf16.count + String(next).utf16.count)
+        }
+        return (head + " " + rest, head.utf16.count + 1)
+    }
+
+    /// The text without the trigger (a command that runs instead of filling the box), and the caret where it was.
+    func removing(from text: String) -> (text: String, caret: Int?) {
+        guard let start = tokenStart(in: text) else { return (text, nil) }
+        let end = text.index(start, offsetBy: token.count)
+        if range == nil || end == text.endIndex {
+            let kept = String(text[..<start]).trimmingCharacters(in: .whitespaces)
+            return (kept + text[end...], kept.utf16.count)
+        }
+        return (String(text[..<start]) + text[end...], text[..<start].utf16.count)
+    }
+
+    /// Where the token starts, if the text still holds it where it was read.
+    private func tokenStart(in text: String) -> String.Index? {
+        guard let range else {
+            guard text.hasSuffix(token) else { return nil }
+            return text.index(text.endIndex, offsetBy: -token.count)
+        }
+        guard let start = String.Index(exactUTF16: range.lowerBound, in: text),
+              let end = String.Index(exactUTF16: range.upperBound, in: text),
+              text[start..<end] == token else { return nil }
+        return start
+    }
+}
+
+extension String.Index {
+    /// The index at a UTF-16 offset of `text`; nil when the offset is outside the text or splits a character.
+    init?(exactUTF16 offset: Int, in text: String) {
+        guard offset >= 0, offset <= text.utf16.count,
+              let index = text.utf16.index(text.utf16.startIndex, offsetBy: offset).samePosition(in: text) else { return nil }
+        self = index
     }
 }
 

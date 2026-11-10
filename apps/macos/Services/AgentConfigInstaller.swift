@@ -185,17 +185,17 @@ enum AgentConfigInstaller {
                 let asks = (hooks["PreToolUse"] as? [[String: Any]])?.contains {
                     ($0["matcher"] as? String) == "AskUserQuestion" && containsMarker($0)
                 } ?? false
-                return current && asks ? .installed : .outdated
+                return current && asks && !lacksCompaction(target, hooks) ? .installed : .outdated
             }
             // Connected before Nook answered their permissions: reconnect to get the waiting hook.
             if target == .copilot {
                 let waits = "\(hooks["preToolUse"] ?? "")".contains("--wait")
-                return waits ? .installed : .outdated
+                return waits && !lacksCompaction(target, hooks) ? .installed : .outdated
             }
             if target == .muse {
                 return hooks["PermissionRequest"].map(containsMarker) == true ? .installed : .outdated
             }
-            return .installed
+            return lacksCompaction(target, hooks) ? .outdated : .installed
         case .openCode, .amp, .hermes:
             return pluginState(target)
         }
@@ -241,7 +241,8 @@ enum AgentConfigInstaller {
             if install {
                 let plain = HookScript.command("--agent claude-code")
                 for event in ["SessionStart", "SessionEnd", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure",
-                              "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop"] {
+                              "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop"]
+                    + HookCompaction.claudeCodeEvents {
                     try append(&hooks, event: event, group: group(plain, timeout: 5))
                 }
                 try append(&hooks, event: "PreToolUse", group: group(plain, timeout: 5))
@@ -258,7 +259,8 @@ enum AgentConfigInstaller {
             if install {
                 let plain = HookScript.command("--agent codex")
                 for (event, timeout) in [("SessionStart", 5), ("UserPromptSubmit", 5), ("PreToolUse", 5),
-                                         ("PostToolUse", 5), ("Stop", 5), ("SessionEnd", 3)] {
+                                         ("PostToolUse", 5), ("Stop", 5), ("SessionEnd", 3)]
+                    + HookCompaction.codexEvents.map({ ($0, 5) }) {
                     try append(&hooks, event: event, group: group(plain, timeout: timeout))
                 }
                 var waiting = group(HookScript.command("--agent codex --wait"), timeout: 120)
@@ -277,7 +279,8 @@ enum AgentConfigInstaller {
                 // Gemini uses proprietary names and millisecond timeouts; Nook receives canonical names.
                 for (event, name, timeout) in [("SessionStart", "SessionStart", 10_000), ("SessionEnd", "SessionEnd", 10_000),
                                                ("BeforeTool", "PreToolUse", 5_000), ("AfterTool", "PostToolUse", 5_000),
-                                               ("BeforeAgent", "UserPromptSubmit", 5_000), ("AfterAgent", "Stop", 5_000)] {
+                                               ("BeforeAgent", "UserPromptSubmit", 5_000), ("AfterAgent", "Stop", 5_000),
+                                               ("PreCompress", "PreCompact", 5_000)] {
                     try append(&hooks, event: event,
                                group: group(HookScript.command("--agent gemini \(name)"), matcher: "*", timeout: timeout))
                 }
@@ -309,7 +312,7 @@ enum AgentConfigInstaller {
             hooks = try withoutNook(hooks)
             if install {
                 for event in ["sessionStart", "sessionEnd", "beforeSubmitPrompt", "preToolUse", "postToolUse",
-                              "postToolUseFailure", "subagentStart", "subagentStop", "stop"] {
+                              "postToolUseFailure", "subagentStart", "subagentStop", "stop"] + HookCompaction.cursorEvents {
                     try append(&hooks, event: event, group: ["command": HookScript.command("--agent cursor \(event)")])
                 }
                 if root["version"] == nil { root["version"] = 1 }
@@ -323,7 +326,8 @@ enum AgentConfigInstaller {
             hooks = try withoutNook(hooks)
             if install {
                 for (event, timeout) in [("sessionStart", 10), ("userPromptSubmitted", 10), ("postToolUse", 10),
-                                         ("agentStop", 10), ("sessionEnd", 3), ("notification", 10)] {
+                                         ("agentStop", 10), ("sessionEnd", 3), ("notification", 10)]
+                    + HookCompaction.copilotEvents.map({ ($0, 10) }) {
                     let entry: [String: Any] = ["type": "command",
                                                 "bash": HookScript.command("--agent copilot \(event)"),
                                                 "timeoutSec": timeout]
@@ -595,6 +599,21 @@ enum AgentConfigInstaller {
             if !kept.isEmpty { result[event] = kept }
         }
         return result
+    }
+
+    /// Whether an install of `target` was made before Nook showed a compaction while it runs (`HookCompaction`):
+    /// reconnecting adds the agent's compaction hooks. False for an agent that has none.
+    private static func lacksCompaction(_ target: Target, _ hooks: [String: Any]) -> Bool {
+        let events: [String]
+        switch target {
+        case .claudeHooks: events = HookCompaction.claudeCodeEvents
+        case .codex: events = HookCompaction.codexEvents
+        case .gemini: events = HookCompaction.geminiEvents
+        case .cursor: events = HookCompaction.cursorEvents
+        case .copilot: events = HookCompaction.copilotEvents
+        case .muse, .antigravity, .claudeStatusLine, .openCode, .amp, .hermes: return false
+        }
+        return HookCompaction.lacks(events, in: hooks, ours: containsMarker)
     }
 
     private static func containsMarker(_ value: Any) -> Bool {

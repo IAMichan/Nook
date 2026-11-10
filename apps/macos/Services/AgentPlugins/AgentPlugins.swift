@@ -54,6 +54,7 @@ enum AgentPlugins {
           'session.idle': 'Stop',
           'session.error': 'StopFailure',
           'session.deleted': 'SessionEnd',
+          'session.compacted': 'PostCompact',
         };
         const TOOLS = { bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob', webfetch: 'WebFetch', task: 'Task' };
 
@@ -180,6 +181,10 @@ enum AgentPlugins {
               cwd: directory || '',
               tool_name: toolName(input?.tool),
             });
+          },
+          // Right before OpenCode summarizes the session; the summary itself is left as it is.
+          'experimental.session.compacting': async (input) => {
+            forward('PreCompact', { session_id: input?.sessionID || '', cwd: directory || '' });
           },
         });
 

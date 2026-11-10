@@ -174,6 +174,8 @@ enum AgentActivity: Equatable, Sendable {
     case reviewing
     /// The last step failed: it works out what to do about it.
     case recovering
+    /// It summarizes the conversation to free up context (`CompactionProgress`).
+    case compacting
 
     /// A tool call by name and input.
     static func of(tool: String, input: [String: Any], fallback: String = "") -> AgentActivity {
@@ -238,6 +240,8 @@ enum AgentActivity: Equatable, Sendable {
     /// The live line of a session's last turn: the tool that runs, else what the agent did last.
     static func current(_ events: [RunEvent]) -> AgentActivity {
         let turn = TimelinePresentation.split(events).last ?? []
+        // While it compacts, the agent does nothing else.
+        if CompactionProgress.running(in: turn) != nil { return .compacting }
         if let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) { return of(running) }
         guard let last = turn.last(where: { [.assistant, .thinking, .tool, .fileChange, .error, .user].contains($0.kind) }) else {
             return .starting
