@@ -364,7 +364,7 @@ final class AgentWorkTests: XCTestCase {
     }
 
     func testCustomAgentStore() {
-        let defaults = UserDefaults(suiteName: "nook.tests.acp." + UUID().uuidString)!
+        let defaults = scratchDefaults("nook.tests.acp")
         XCTAssertEqual(CustomAgents.load(defaults: defaults), [])
         let first = CustomAgent(profileID: "acp-a", name: "A", command: "a")
         CustomAgents.upsert(first, defaults: defaults)
@@ -755,7 +755,7 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(BrowserSearchEngine.address("swift actors", engine: .duckDuckGo)?.host, "duckduckgo.com")
         XCTAssertNil(BrowserSearchEngine.address("   ", engine: .bing))
         XCTAssertNil(BrowserSearchEngine.address("file:///etc/passwd", engine: .bing).flatMap { $0.isFileURL ? $0 : nil })
-        let defaults = UserDefaults(suiteName: "browser-search-\(UUID().uuidString)")!
+        let defaults = scratchDefaults("browser-search")
         XCTAssertEqual(BrowserSearchEngine.current(defaults: defaults), .duckDuckGo)
         defaults.set("kagi", forKey: BrowserSearchEngine.defaultsKey)
         XCTAssertEqual(BrowserSearchEngine.current(defaults: defaults), .kagi)

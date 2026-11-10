@@ -31,6 +31,35 @@ final class DiskUsageTests: XCTestCase {
         XCTAssertEqual(DiskUsage.cachedAllocatedSize(of: folder.path, now: now.addingTimeInterval(60)), first)
         let later = try XCTUnwrap(DiskUsage.cachedAllocatedSize(of: folder.path, maxAge: 0, now: now.addingTimeInterval(60)))
         XCTAssertGreaterThanOrEqual(later, first + 400_000)
+        // With the Worktrees list closed a refresh takes what was measured, however old, and measures nothing.
+        XCTAssertEqual(DiskUsage.knownSize(of: folder.path), later)
+        XCTAssertNil(DiskUsage.knownSize(of: folder.appendingPathComponent("never-measured").path))
+    }
+
+    func testListingSeesGrowthNewAndRemovedFilesWithoutListingAgain() throws {
+        let listing = DirectoryListing()
+        let transcripts: (String) -> Bool = { $0.hasSuffix(".jsonl") }
+        let first = folder.appendingPathComponent("a.jsonl")
+        try Data("one\n".utf8).write(to: first)
+        try Data("x".utf8).write(to: folder.appendingPathComponent("notes.txt"))
+        let listed = listing.files(in: folder, where: transcripts)
+        XCTAssertEqual(listed.map(\.url.lastPathComponent), ["a.jsonl"])
+        XCTAssertEqual(listed.first?.stamp.size, 4)
+        // Unchanged, the same stamps: a caller keyed on them parses nothing again.
+        XCTAssertEqual(listing.files(in: folder, where: transcripts).map(\.stamp), listed.map(\.stamp))
+
+        // Appending leaves the directory's date alone: the known file is looked at again.
+        let handle = try FileHandle(forWritingTo: first)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("two\n".utf8))
+        try handle.close()
+        XCTAssertEqual(listing.files(in: folder, where: transcripts).first?.stamp.size, 8)
+
+        try Data("three\n".utf8).write(to: folder.appendingPathComponent("b.jsonl"))
+        XCTAssertEqual(Set(listing.files(in: folder, where: transcripts).map(\.url.lastPathComponent)), ["a.jsonl", "b.jsonl"])
+        try FileManager.default.removeItem(at: first)
+        XCTAssertEqual(listing.files(in: folder, where: transcripts).map(\.url.lastPathComponent), ["b.jsonl"])
+        XCTAssertTrue(listing.files(in: folder.appendingPathComponent("gone"), where: transcripts).isEmpty)
     }
 
     func testPurgeRemovesOnlyOldEntries() throws {

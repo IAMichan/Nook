@@ -534,6 +534,7 @@ targets:
       - path: Services/Workspace/WorktreeCleanup.swift
       - path: Services/Workspace/WorktreeArchive.swift
       - path: Services/Workspace/DiskUsage.swift
+      - path: Services/DirectoryListing.swift
       - path: Services/Workspace/BuildLeftovers.swift
       - path: Services/Workspace/ComposerLists.swift
       - path: Services/Workspace/ComposerMarkdownStyle.swift
