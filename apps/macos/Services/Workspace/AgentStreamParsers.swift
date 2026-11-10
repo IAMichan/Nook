@@ -659,6 +659,7 @@ enum ParsedStreamLine: Sendable, Equatable {
     case claude([ClaudeStreamEvent])
     case codex([CodexStreamEvent])
     case gemini([GeminiStreamEvent])
+    case pi([PiStreamEvent])
     /// An agent whose output Nook does not read line by line here (the ACP agents read their own messages).
     case none
 
@@ -667,6 +668,7 @@ enum ParsedStreamLine: Sendable, Equatable {
         case .claude: return .claude(ClaudeStreamParser.parse(line))
         case .codex: return .codex(CodexStreamParser.parse(line))
         case .gemini: return .gemini(GeminiStreamParser.parse(line))
+        case .pi: return .pi(PiStreamParser.parse(line))
         case .opencode, .cursor, .grok, .antigravity, .acp: return .none
         }
     }

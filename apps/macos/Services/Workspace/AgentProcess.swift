@@ -133,9 +133,39 @@ enum AgentCommand {
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
 
+        case .pi:
+            return piSpec(input, environment: environment)
+
         case .opencode, .cursor, .grok, .antigravity, .acp:
             return acpSpec(input)
         }
+    }
+
+    /// Pi in RPC mode, one process per turn: it resumes the conversation from its session file, loads Nook's extension
+    /// (approvals and the workspace bridge) and starts with the turn's commands on stdin (`PiRPC.turnInput`).
+    static func piSpec(_ input: Input, environment base: [String: String]) -> LaunchSpec {
+        var environment = base
+        var arguments = ["--mode", "rpc"]
+        if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--session", resume] }
+        if !input.model.isEmpty {
+            if let model = PiRPC.splitModel(input.model) {
+                arguments += ["--provider", model.provider, "--model", model.modelID]
+            } else {
+                arguments += ["--model", input.model]
+            }
+        }
+        if let effort = input.effort, PiRPC.thinkingLevels.contains(effort) { arguments += ["--thinking", effort] }
+        let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note, omit: input.omitAgentCredits)
+        if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
+        arguments += ["--extension", PiExtension.fileURL.path]
+        environment[PiExtension.permissionVariable] = PiExtension.permissionValue(input.permission)
+        if let bridge = input.bridge {
+            environment.merge(bridge.environment(runID: input.runID)) { _, new in new }
+            environment[PiExtension.bridgeVariable] = bridge.script
+        }
+        return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
+                          workingDirectory: input.workingDirectory, initialInput: PiRPC.turnInput(for: input.prompt),
+                          keepsInputOpen: true)
     }
 
     /// The ACP server command of an agent that only runs over ACP (see AcpAgent).

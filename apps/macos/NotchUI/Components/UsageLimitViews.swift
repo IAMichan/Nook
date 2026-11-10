@@ -261,7 +261,7 @@ extension UsageLimitSection {
         case .claude: return tr("settings.usage.claudeMissing")
         case .codex: return tr("ws.usage.quotaUnavailable")
         case .gemini: return tr("agents.usage.geminiNoLimits")
-        case .opencode, .cursor, .grok, .acp: return tr("agents.usage.acpNoLimits")
+        case .opencode, .cursor, .grok, .pi, .acp: return tr("agents.usage.acpNoLimits")
         case .antigravity: return app.antigravityUsage.noLogin ? tr("agents.usage.antigravityNoToken") : tr("ws.usage.quotaUnavailable")
         }
     }

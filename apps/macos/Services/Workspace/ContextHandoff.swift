@@ -194,7 +194,8 @@ enum AgentRestart {
     /// `initialize` answer (`AcpSessionCapabilities.continues`), so they answer nil here.
     static func resumesNatively(_ provider: RunProvider) -> Bool? {
         switch provider {
-        case .claude, .codex: return true
+        // Pi's conversation is a session file `--session` opens again.
+        case .claude, .codex, .pi: return true
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return nil
         }
     }

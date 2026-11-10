@@ -121,7 +121,7 @@ extension WorkspaceManager {
     func claudeToolSearch(_ run: WorkspaceRun) -> String? {
         switch run.provider {
         case .claude: break
-        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return nil
+        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return nil
         }
         guard !run.isRemote else { return nil }
         let files = ClaudeToolSearch.settingsFiles(workingDirectory: run.workingDirectory,
