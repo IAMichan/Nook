@@ -91,6 +91,7 @@ enum Base64URL {
 // MARK: Messages
 
 enum CompanionOp: String, Codable, Sendable, CaseIterable {
+    /// `decide`: `allow` answers the request `item` of `session`; with a denial `text` is the reason the agent is told.
     case hello, list, decide, answer, send, stop
     /// The phone's APNs token (`text`, hex) and its environment (`item`: "production" or "development"); `unregister` removes it.
     case register, unregister

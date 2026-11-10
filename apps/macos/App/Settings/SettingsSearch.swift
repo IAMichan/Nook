@@ -151,6 +151,7 @@ enum SettingsSearch {
         .init("textgen.section", .sessions),
         .init("textgen.next.setting", .sessions),
         .init("textgen.task.gitText", .sessions),
+        .init("settings.ws.timelineDetail", .sessions),
         .init("ws.section.restart", .sessions),
         .init("ws.section.tidy", .sessions),
         .init("settings.ws.showCost", .usage),

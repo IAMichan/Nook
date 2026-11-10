@@ -14,8 +14,14 @@ struct ApprovalView: View {
     let onDecide: (ApprovalDecision) -> Void
     /// Allow with the secret typed in the field (only for a secret Nook does not keep yet).
     var onSecret: ((BridgeSecretAnswer) -> Void)? = nil
+    /// Deny and tell the agent why, or what to do instead (see `ProviderCapabilities.denyReason`). Nil where the
+    /// request has nobody to read a reason.
+    var onDenyWithReason: ((String) -> Void)? = nil
     @State private var secretValue = ""
     @State private var rememberSecret = false
+    @State private var writingReason = false
+    @State private var reason = ""
+    @FocusState private var reasonFocused: Bool
 
     private var prPreview: PullRequestApprovalPreview? {
         PullRequestApprovalPreview.parse(approval.command)
@@ -41,6 +47,8 @@ struct ApprovalView: View {
         .onChange(of: approval.id) {
             secretValue = ""
             rememberSecret = false
+            writingReason = false
+            reason = ""
         }
     }
 
@@ -50,6 +58,7 @@ struct ApprovalView: View {
             Group {
                 content
                 secretField
+                reasonField
                 AdaptiveActionRow {
                     Label(AgentDisplayState.approval.longWord, systemImage: "shield")
                         .font(NookTheme.TextStyle.detail)
@@ -77,6 +86,7 @@ struct ApprovalView: View {
             }
             content
             secretField
+            reasonField
         }
         .padding(NookTheme.Spacing.lg)
         .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
@@ -152,6 +162,43 @@ struct ApprovalView: View {
         }
     }
 
+    /// Where the reason for a denial is typed: Return denies with it, Escape closes it again.
+    @ViewBuilder
+    private var reasonField: some View {
+        if writingReason, onDenyWithReason != nil {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: "text.bubble").foregroundStyle(NookTheme.textTertiary)
+                TextField(tr("approval.denyReason.placeholder"), text: $reason, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.TextStyle.body)
+                    .lineLimit(1...4)
+                    .focused($reasonFocused)
+                    .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                    .padding(.vertical, NookTheme.Spacing.xs + NookTheme.Spacing.xxs)
+                    .frame(minWidth: 160, minHeight: 30)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                    .onSubmit(deny)
+                    .onExitCommand {
+                        writingReason = false
+                        reason = ""
+                    }
+            }
+            .onAppear { reasonFocused = true }
+        }
+    }
+
+    /// Deny: with the typed reason when there is one.
+    private func deny() {
+        let text = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if writingReason, let onDenyWithReason, !text.isEmpty {
+            reason = ""
+            writingReason = false
+            onDenyWithReason(text)
+        } else {
+            onDecide(.deny)
+        }
+    }
+
     /// Allow: with the typed secret when there is one, otherwise as usual (Nook then asks for the value itself).
     private func allow() {
         let value = secretValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -166,8 +213,10 @@ struct ApprovalView: View {
     private var actions: some View {
         NookNoticeActions(
             primary: NookNoticeAction(tr("button.allow")) { allow() },
-            secondary: NookNoticeAction(tr("button.deny")) { onDecide(.deny) },
+            secondary: NookNoticeAction(tr("button.deny")) { deny() },
             extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
+                + (onDenyWithReason != nil && !writingReason
+                    ? [NookNoticeAction(tr("approval.denyReason")) { writingReason = true }] : [])
                 + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
         )
     }

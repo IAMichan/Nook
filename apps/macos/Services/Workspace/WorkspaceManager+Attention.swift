@@ -75,4 +75,24 @@ extension WorkspaceManager {
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if !run.status.isActive { refreshWarmSession(id) }
     }
+
+    /// The speed tiers the session's agent offers for its model (`SpeedTiers`).
+    func speedTiers(for run: WorkspaceRun) -> [SpeedTier] {
+        SpeedTiers.tiers(for: run.provider, model: run.model, listed: offeredModels(run.provider, profileID: run.profileID))
+    }
+
+    /// The tier a launch uses: the chosen one while the model still offers it.
+    func speedTier(_ run: WorkspaceRun) -> String? {
+        SpeedTiers.resolve(run.speedTier, offered: speedTiers(for: run))
+    }
+
+    /// The speed tier for the next turns. Codex takes it with the next `turn/start`; Claude Code reads fast mode as it
+    /// starts, so an idle session's waiting process starts again with it, and a running turn keeps its speed.
+    func setSpeedTier(_ id: UUID, _ tier: String?) {
+        guard let run = run(id), run.speedTier != tier else { return }
+        update(id) { $0.speedTier = SpeedTiers.resolve(tier, offered: self.speedTiers(for: run)) }
+        // Only a parked Claude Code process reads this set: it then starts again with the new tier.
+        if run.status.isActive { claudeChangedDuringTurn.insert(id) }
+        if !run.status.isActive { refreshWarmSession(id) }
+    }
 }
