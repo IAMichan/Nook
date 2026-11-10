@@ -36,7 +36,7 @@ extension MarkdownBlock {
             let code = run.inlinePresentationIntent?.contains(.code) == true
             for (text, link) in linkPieces(String(parsed[run.range].characters), link: run.link, code: code, files: files) {
                 var piece = AttributedString(text, attributes: run.attributes)
-                let url = link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
+                let url = link.flatMap { isSafeLink($0) || isFileLink($0) || isCommitLink($0) ? $0 : nil }
                 piece.link = url
                 if code {
                     piece.font = .system(size: size * 0.85, design: .monospaced)
@@ -60,10 +60,23 @@ extension MarkdownBlock {
     /// side panel like any other.
     private static func linkPieces(_ text: String, link: URL?, code: Bool, files: Bool) -> [(text: String, link: URL?)] {
         if let link { return [(text, link)] }
-        if code { return [(text, codeLink(text) ?? codeFileLink(text, relative: files))] }
+        if code {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            // In an agent's conversation a commit hash in code opens that commit in the session's Changes tab.
+            if files, CommitReference.isHash(trimmed) { return [(text, CommitReference.link(trimmed))] }
+            return [(text, codeLink(text) ?? codeFileLink(text, relative: files))]
+        }
         var pieces: [(text: String, link: URL?)] = []
         var start = text.startIndex
-        for found in bareLinks(text) {
+        var matches = bareLinks(text)
+        if files {
+            let links = matches.map(\.range)
+            for range in CommitReference.hashes(in: text) where !links.contains(where: { $0.overlaps(range) }) {
+                if let url = CommitReference.link(String(text[range])) { matches.append((range, url)) }
+            }
+            matches.sort { $0.range.lowerBound < $1.range.lowerBound }
+        }
+        for found in matches {
             if start < found.range.lowerBound { pieces.append((String(text[start..<found.range.lowerBound]), nil)) }
             pieces.append((String(text[found.range]), found.url))
             start = found.range.upperBound
@@ -195,6 +208,18 @@ extension EnvironmentValues {
 }
 
 extension MarkdownBlock {
+    /// A commit hash Nook linked in an agent's answer (`CommitReference`).
+    static func isCommitLink(_ url: URL) -> Bool { url.scheme == CommitReference.scheme && CommitReference.hash(in: url) != nil }
+
+    /// In an agent's conversation, a commit hash or a GitHub commit page opens that commit in the session's Changes tab
+    /// when its folder has it (a GitHub page it does not have opens as a page). False: not a commit link here.
+    @MainActor
+    static func openCommitLink(_ url: URL, base: String?, beside: Bool) -> Bool {
+        guard beside, let base, let hash = CommitReference.hash(in: url) else { return isCommitLink(url) }
+        AppModel.shared.openCommitBeside(hash, folder: base, fallback: url.scheme == CommitReference.scheme ? nil : url)
+        return true
+    }
+
     /// A link to a file (`src/app.swift:12:3`, `./README.md`, `file:///…`) rather than to a web page or a mail address.
     static func isFileLink(_ url: URL) -> Bool {
         guard !isSafeLink(url) else { return false }
@@ -259,6 +284,9 @@ struct MarkdownView: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
         .environment(\.openURL, OpenURLAction { [fileLinkBase, pullRequestLinksBeside] url in
+            if MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
+                return .handled
+            }
             if MarkdownBlock.isFileLink(url) {
                 return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }
                     ? .handled : .discarded

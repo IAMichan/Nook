@@ -25,6 +25,8 @@ struct NewSessionComposer: View {
     @State private var error: String?
     @State private var allowShared = false
     @State private var showClone = false
+    /// A project just made with "New project…": the sheet that offers to publish it.
+    @State private var newProjectPlan: PublishPlan?
     /// The last project request from the Agents list this composer applied (`PromptLinkInbox.requestProject`).
     @State private var appliedProjectRequest: UUID?
     @State private var cloneURL = ""
@@ -163,6 +165,10 @@ struct NewSessionComposer: View {
                 DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
                             chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
                 DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
+                // A new folder with a repository in it, offered to publish on GitHub at once.
+                DropdownRow(symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"), detail: tr("sc.newProject.detail")) {
+                    chooseNewProject()
+                }
                 // Another machine over SSH (Settings › Agents › Workspace › Machines).
                 let machines = RemoteMachines.load()
                 if !machines.isEmpty {
@@ -175,6 +181,10 @@ struct NewSessionComposer: View {
                 }
             }
             .help(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
+            .sheet(item: $newProjectPlan) { plan in
+                PublishRepositorySheet(plan: plan) { _ in newProjectPlan = nil }
+                    .environmentObject(workspace)
+            }
             Text("?").foregroundStyle(NookTheme.paper)
             if inspecting {
                 ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
@@ -184,8 +194,8 @@ struct NewSessionComposer: View {
 
     private func projectRow(_ path: String) -> some View {
         let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
-        return DropdownRow(symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent, detail: AgentPathFormat.tilde(path),
-                           chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
+        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: URL(fileURLWithPath: path).lastPathComponent,
+                           detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
     }
 
     private func favoriteBinding(_ path: String) -> Binding<Bool> {
@@ -303,10 +313,11 @@ struct NewSessionComposer: View {
                          short: auto ? tr("auto.model") : !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
                             : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID)))
         } content: {
-            if app.connectedProviders.isEmpty {
-                DropdownHeader(title: tr("agents.noneConnected"))
+            let providers = app.connectedProviders(in: remoteMachine == nil ? config.projectPath : nil)
+            if providers.isEmpty {
+                DropdownHeader(title: tr(app.connectedProviders.isEmpty ? "agents.noneConnected" : "sc.agents.allOff"))
             } else {
-                AgentModelPicker(providers: app.connectedProviders, provider: config.provider, profileID: config.profileID,
+                AgentModelPicker(providers: providers, provider: config.provider, profileID: config.profileID,
                                  model: config.model, comparing: remoteMachine == nil ? $comparing : nil) { provider, account, model in
                     if provider != config.provider || (account != nil && account != config.profileID) {
                         choose(provider, account: account ?? rememberedProfile(for: provider) ?? config.profileID)
@@ -529,9 +540,12 @@ struct NewSessionComposer: View {
 
     private var projectMenu: (favorites: [String], recent: [String]) {
         // Folders of sessions without a project stay out of Recent; one you turned into a project is a favorite.
+        // An archived project stays out (Settings › Projects brings it back), unless it is the one chosen now.
         ProjectSettings.projectMenu(
-            favorites: settings.favoriteProjects,
-            recent: ([config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd))
+            favorites: ProjectSettings.withoutArchived(settings.favoriteProjects, overrides: settings.projectOverrides),
+            recent: ProjectSettings.withoutArchived(
+                [config.projectPath, settings.lastProject] + settings.recentProjects + app.history.sessions.map(\.cwd),
+                overrides: settings.projectOverrides)
                 .filter { !ScratchProjects.isScratch($0) }
         )
     }
@@ -561,6 +575,7 @@ struct NewSessionComposer: View {
             return RemotePasswords.shared.isUnlocked(machine) ? nil : tr("remote.password.needed", machine.name)
         }
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
+        if !settings.isAgentOn(config.provider, for: config.projectPath) { return tr("sc.agents.offHere", config.provider.displayName) }
         if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
         if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
         if !comparing.isEmpty {
@@ -711,7 +726,8 @@ struct NewSessionComposer: View {
     /// then your default one, or else the first that is.
     private func applyFolderDefaults(_ folder: String?) {
         let defaults = settings.composerDefaults(for: folder)
-        let connected = app.connectedProviders
+        // An agent the project switched off is never the one it starts with.
+        let connected = app.connectedProviders(in: folder)
         let provider = [defaults.provider, settings.defaultProvider].first(where: connected.contains)
             ?? connected.first ?? defaults.provider
         config.provider = provider
@@ -801,22 +817,43 @@ struct NewSessionComposer: View {
         select(url.path)
     }
 
+    /// "New project…": a new folder where you choose, with an empty repository, then the offer to publish it on GitHub
+    /// (Cancel keeps it on this Mac only).
+    private func chooseNewProject() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = tr("sc.newProject.defaultName")
+        panel.prompt = tr("sc.newProject.create")
+        panel.message = tr("sc.newProject.message")
+        panel.directoryURL = URL(fileURLWithPath: WorkspaceManager.cloneParent(project: project.map { $0.repoRoot ?? $0.path },
+                                                                               hostLayout: false))
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        error = nil
+        Task {
+            do {
+                let plan = try await workspace.createProject(at: url.path)
+                settings.rememberProject(plan.folder)
+                select(plan.folder)
+                newProjectPlan = plan
+            } catch let failure {
+                error = failure.localizedDescription
+            }
+        }
+    }
+
     private func clone() {
         guard !cloning, GitService.isCloneURL(cloneURL) else { return }
         cloning = true
         error = nil
-        let parent: String
-        if let project {
-            parent = URL(fileURLWithPath: project.repoRoot ?? project.path).deletingLastPathComponent().path
-        } else {
-            parent = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer").path
-        }
+        let parent = WorkspaceManager.cloneParent(project: project.map { $0.repoRoot ?? $0.path },
+                                                  hostLayout: settings.cloneHostLayout)
         Task {
             do {
-                let path = try await workspace.clone(url: cloneURL, into: parent)
+                let cloned = try await workspace.clone(url: cloneURL, into: parent)
                 showClone = false
                 cloneURL = ""
-                select(path)
+                if cloned.usedHTTPS { ToastCenter.shared.success(tr("sc.clone.usedHTTPS")) }
+                select(cloned.path)
             } catch let failure {
                 error = failure.localizedDescription
             }

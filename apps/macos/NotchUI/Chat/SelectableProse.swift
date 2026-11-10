@@ -244,6 +244,9 @@ struct SelectableProse: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+            if let url, MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
+                return true
+            }
             if let url, MarkdownBlock.isFileLink(url) {
                 let base = fileLinkBase, beside = pullRequestLinksBeside
                 Task { @MainActor in _ = MarkdownBlock.openFileLink(url, base: base, beside: beside) }

@@ -10,6 +10,9 @@ struct GitQuickButton: View {
     /// The step of the action under way, kept by the workspace so every view of the session shows it.
     private var progress: String? { workspace.quickGitProgress(runID)?.step }
     @State private var confirmDefault: GitQuickAction?
+    /// A project without a remote can be published to GitHub (`PublishRepositorySheet`).
+    @State private var publishPlan: PublishPlan?
+    @State private var publishing: PublishPlan?
 
     var body: some View {
         let active = workspace.run(runID)?.status.isActive == true
@@ -47,6 +50,16 @@ struct GitQuickButton: View {
                 case nil:
                     EmptyView()
                 }
+                if progress == nil, state?.hasRemote == false, let plan = publishPlan {
+                    Button { publishing = plan } label: {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            NookSymbol("icloud.and.arrow.up")
+                            Text(tr("sc.publish.button"))
+                        }
+                    }
+                    .disabled(active)
+                    .help(tr("sc.publish.help"))
+                }
             }
             // Where the work goes: onto the open pull request, or a new branch once that one is merged.
             if progress == nil, let state, case .success(let action) = GitQuickResolver.resolve(state),
@@ -62,6 +75,21 @@ struct GitQuickButton: View {
         .task(id: workspace.git[runID]?.updated) {
             guard progress == nil else { return }
             state = await workspace.quickGitState(runID)
+            if state?.hasRemote == false, let run = workspace.run(runID), run.remote == nil {
+                publishPlan = await workspace.publishPlan(folder: run.workingDirectory)
+            } else {
+                publishPlan = nil
+            }
+        }
+        .sheet(item: $publishing) { plan in
+            PublishRepositorySheet(plan: plan) { page in
+                publishing = nil
+                if page != nil {
+                    publishPlan = nil
+                    Task { state = await workspace.quickGitState(runID) }
+                }
+            }
+            .environmentObject(workspace)
         }
         .confirmationDialog(tr("ws.quick.defaultTitle", state?.branch ?? ""),
                             isPresented: Binding(get: { confirmDefault != nil }, set: { if !$0 { confirmDefault = nil } })) {

@@ -98,6 +98,8 @@ struct DropdownRow: View {
     var agent: String? = nil
     var account: AccountTag? = nil
     var brand: BrandLogo? = nil
+    /// A project's own icon (Settings › Projects), drawn instead of the symbol.
+    var projectIcon: ProjectIcon? = nil
     let title: String
     var detail: String? = nil
     var trailing: String? = nil
@@ -127,6 +129,9 @@ struct DropdownRow: View {
                     AgentMark(agent: agent, account: account, size: 15, ring: DropdownStyle.panel)
                 } else if let brand {
                     BrandMark(logo: brand, size: 14)
+                } else if let projectIcon {
+                    ProjectIconView(icon: projectIcon, size: 15)
+                        .padding(.top, detail == nil ? 0 : 1)
                 } else if let symbol, let tile {
                     NookSymbol(symbol, size: 13)
                         .font(NookTheme.font(12, .semibold))
