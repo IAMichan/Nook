@@ -364,6 +364,8 @@ extension AppModel {
             self?.viewModel.dismissCard(id: "bridge-" + id)
         }
         bridge.start()
+        RemoteMCPServer.shared.bridge = bridge
+        RemoteMCPServer.shared.set(wanted: WorkspaceSettings.shared.remoteMCPEnabled)
         workspace.bridgeLaunch = { WorkspaceBridge.shared.launch }
     }
 

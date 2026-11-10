@@ -76,6 +76,10 @@ extension WorkspaceManager {
     /// The launch as this session needs it: unchanged here, through ssh for a session on another machine. An ACP agent
     /// you added takes its own variables along; local account folders stay here.
     func placed(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
+        keptWhenAsked(onMachine(spec, for: run), run)
+    }
+
+    private func onMachine(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
         // The arguments the account adds go on every launch of its agent, here or over ssh.
         var spec = spec
         spec.arguments += accountArguments(run.profileID)

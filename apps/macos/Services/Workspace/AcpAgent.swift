@@ -741,7 +741,11 @@ final class AcpClient: @unchecked Sendable {
 
     init(spec: LaunchSpec) {
         process = AgentProcess(spec: spec)
+        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
     }
+
+    /// An answer to a request of an earlier Nook (see `SessionKeeper`): how a kept turn ends, since its request went with it.
+    var onOrphanAnswer: (@Sendable (JSONBox) -> Void)?
 
     var isRunning: Bool { process.isRunning }
 
@@ -799,6 +803,7 @@ final class AcpClient: @unchecked Sendable {
         }
         if case .response(let id, let result, let error) = message {
             let completion = lock.withLock { pending.removeValue(forKey: id) }
+            if completion == nil, error == nil, let result { onOrphanAnswer?(result) }
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }
             return
         }

@@ -431,6 +431,7 @@ struct WorkspaceSettingsSection: View {
             scheduled
             bridge
             SecretProvidersSection()
+            RemoteMCPSettingsSection(ws: ws)
         case .worktrees:
             worktreeCreation
             worktreeCleanup
@@ -864,6 +865,7 @@ struct WorkspaceSettingsSection: View {
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            KeptSessionsSettingsRows(ws: ws, workspace: app.workspace)
         } header: {
             SettingText("ws.section.restart")
         }

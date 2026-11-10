@@ -494,6 +494,8 @@ final class CodexAppServerClient: @unchecked Sendable {
 
     init(spec: LaunchSpec) {
         process = AgentProcess(spec: spec)
+        // A keeper's agent has seen ids from an earlier Nook: answers to those must not match new requests.
+        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
     }
 
     var isRunning: Bool { process.isRunning }

@@ -41,7 +41,11 @@ extension WorkspaceManager {
                                      workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
-            Task { @MainActor in self?.handleCodexServer(id, client, message, events) }
+            let end = client.process.consumed
+            Task { @MainActor in
+                self?.handleCodexServer(id, client, message, events)
+                client.process.markHandled(end)
+            }
         }
         client.onExit = { [weak self] status, stderr in
             Task { @MainActor in
@@ -295,7 +299,7 @@ extension WorkspaceManager {
 
     // MARK: Messages
 
-    private func handleCodexServer(_ id: UUID, _ client: CodexAppServerClient, _ message: CodexRPCMessage, _ events: [CodexStreamEvent]) {
+    func handleCodexServer(_ id: UUID, _ client: CodexAppServerClient, _ message: CodexRPCMessage, _ events: [CodexStreamEvent]) {
         guard codexServers[id] === client else { return }
         for event in events {
             switch event {
@@ -541,7 +545,7 @@ extension WorkspaceManager {
         launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
     }
 
-    private func codexServerExited(_ id: UUID, _ client: CodexAppServerClient, status: Int32, stderr: String, prompt: String, executable: String) {
+    func codexServerExited(_ id: UUID, _ client: CodexAppServerClient, status: Int32, stderr: String, prompt: String, executable: String) {
         guard codexServers[id] === client else { return }
         codexServers[id] = nil
         codexIdleClose[id]?.cancel()

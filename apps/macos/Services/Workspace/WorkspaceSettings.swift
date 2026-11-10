@@ -214,6 +214,14 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(autoCompactTokens, forKey: SizeCompaction.settingKey) }
     }
     /// A session that a restart of Nook cut off gets "Continue where you left off." once.
+    /// Agents go on while Nook is closed (`SessionKeeper`). Off by default.
+    @Published var keepSessionsRunning: Bool {
+        didSet { defaults.set(keepSessionsRunning, forKey: "ws.keepSessionsRunning") }
+    }
+    /// Nook in another app: cloud assistants reach Nook's tools through the relay (`RemoteMCPServer`). Off by default.
+    @Published var remoteMCPEnabled: Bool {
+        didSet { defaults.set(remoteMCPEnabled, forKey: "ws.remoteMCPEnabled") }
+    }
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
@@ -311,6 +319,8 @@ final class WorkspaceSettings: ObservableObject {
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         idleCompaction = defaults.object(forKey: IdleCompaction.settingKey) as? Bool ?? true
         autoCompactTokens = defaults.object(forKey: SizeCompaction.settingKey) as? Int ?? SizeCompaction.defaultTokens
+        keepSessionsRunning = defaults.bool(forKey: "ws.keepSessionsRunning")
+        remoteMCPEnabled = defaults.bool(forKey: "ws.remoteMCPEnabled")
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         watchNewPullRequests = defaults.object(forKey: "ws.watchNewPullRequests") as? Bool ?? true
