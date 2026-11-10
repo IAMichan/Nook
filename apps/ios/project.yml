@@ -197,6 +197,9 @@ targets:
       - path: ../macos/NotchUI/Theme/NookTheme.swift
         group: Shared from the Mac
         createIntermediateGroups: false
+      - path: ../macos/NotchUI/Theme/NookPalette.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
       - path: NookCompanion/ImagePicking.swift
       - path: NookCompanion/Localizable.xcstrings
