@@ -28,6 +28,27 @@ final class RunStoreTests: XCTestCase {
         XCTAssertEqual(loaded[0].status, .completed)
     }
 
+    /// Saves reuse the JSON of sessions that did not change: the file must be the same as encoding the whole list.
+    func testSavesReuseUnchangedSessionsAndWriteTheSameFile() throws {
+        let store = RunStore(directory: folder)
+        let file = folder.appendingPathComponent("runs.json")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var runs = [TestData.run(status: .running), TestData.run(status: .completed), TestData.run(status: .failed)]
+        try store.saveRuns(runs)
+        XCTAssertEqual(try Data(contentsOf: file), try encoder.encode(runs))
+
+        runs[1].title = "Renamed"
+        runs.remove(at: 2)
+        runs.insert(TestData.run(status: .stopped), at: 0)
+        try store.saveRuns(runs)
+        XCTAssertEqual(try Data(contentsOf: file), try encoder.encode(runs))
+        XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.title), runs.map(\.title))
+
+        try store.saveRuns([])
+        XCTAssertEqual(try Data(contentsOf: file), Data("[]".utf8))
+    }
+
     func testActiveRunsAreNotRunningAfterRestart() throws {
         let store = RunStore(directory: folder)
         var running = TestData.run(status: .running)
