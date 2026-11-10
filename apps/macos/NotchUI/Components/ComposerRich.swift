@@ -131,11 +131,13 @@ final class ComposerModel: ObservableObject {
 
     // MARK: Suggestions
 
-    /// Looks at the end of the text and fills the list.
-    func update(for text: String, _ config: ComposerConfig) {
+    /// Looks at the text before the caret (UTF-16; nil: the end) and fills the list.
+    func update(for text: String, caret: Int? = nil, _ config: ComposerConfig) {
         search?.cancel()
+        // "@chat …" and "@open …" read the whole box, so they count with the caret at its end.
+        let atEnd = caret.map { $0 >= text.utf16.count } ?? true
         // Each list comes from its source once per key: the chats are every inbox thread, sorted.
-        let chatQuery = EmbeddedAppCatalog.chatQuery(in: text)
+        let chatQuery = atEnd ? EmbeddedAppCatalog.chatQuery(in: text) : nil
         let chats: [(name: String, detail: String)]? = chatQuery == nil ? nil : config.chats()
         // "@chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
         if let query = chatQuery, let all = chats, !all.isEmpty {
@@ -151,11 +153,11 @@ final class ComposerModel: ObservableObject {
             })
         }
         // "@open whats": the app list stays open past the space after "@open" and filters by the name typed after it.
-        if !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
+        if atEnd, !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
             return publish(appRows(query, config, chats: chats))
         }
-        guard let found = ComposerTrigger.detect(in: text) else { return close() }
+        guard let found = ComposerTrigger.detect(in: text, caret: caret) else { return close() }
         trigger = found
         switch found.kind {
         case .command:
@@ -321,23 +323,29 @@ final class ComposerModel: ObservableObject {
 
     /// The text after choosing a line: a command runs or fills the box, a reference becomes a link.
     func accept(_ suggestion: ComposerSuggestion, in text: String, _ config: ComposerConfig) -> String {
+        accepting(suggestion, in: text, config).text
+    }
+
+    /// As `accept`, with where the caret goes (UTF-16): right after what went in where the trigger was typed. Nil leaves
+    /// it at the end.
+    func accepting(_ suggestion: ComposerSuggestion, in text: String, _ config: ComposerConfig) -> (text: String, caret: Int?) {
         if case .stash(let index) = suggestion.payload {
             defer { close() }
             let restored = stash.restore(at: index) ?? text
             onStashChanged?()
-            return restored
+            return (restored, nil)
         }
-        guard let trigger else { return text }
+        guard let trigger else { return (text, nil) }
         defer { close() }
         switch suggestion.payload {
         case .stash:
-            return text
+            return (text, nil)
         case .command(let command):
-            if command.action == .insert { return trigger.replacing(in: text, with: command.insertion) }
+            if command.action == .insert { return trigger.inserting(command.insertion, in: text) }
             config.onCommand(command)
-            return String(text.dropLast(trigger.token.count)).trimmingCharacters(in: .whitespaces)
+            return trigger.removing(from: text)
         case .ref(let ref):
-            return trigger.replacing(in: text, with: config.plainReferences ? ContextRefs.plainText(ref) : ContextRefs.link(ref))
+            return trigger.inserting(config.plainReferences ? ContextRefs.plainText(ref) : ContextRefs.link(ref), in: text)
         }
     }
 
