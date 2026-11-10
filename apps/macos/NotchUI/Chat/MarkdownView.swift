@@ -335,8 +335,17 @@ struct MarkdownView: View, Equatable {
     @ViewBuilder
     private func view(for block: MarkdownBlock) -> some View {
         switch block {
+        case .paragraph(let text) where MathText.containsMath(text):
+            // Running text with formulas in it: typeset as a whole, so the formulas sit in the line.
+            MathView(text: text, size: size)
         case .heading, .paragraph, .list:
             ProseSegment(blocks: [block], size: size)
+        case .math(let tex):
+            if MathText.renderingEnabled {
+                MathView(text: tex, display: true, size: size)
+            } else {
+                MarkdownCodeBlock(language: "math", code: tex, size: size)
+            }
         case .code(let language, let code):
             MarkdownCodeBlock(language: language, code: code, size: size)
         case .chart(let chart):
