@@ -283,6 +283,12 @@ final class CodexUsage: ObservableObject {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        defer {
+            try? input.fileHandleForReading.close()
+            try? input.fileHandleForWriting.close()
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         do { try process.run() } catch { return nil }
         defer { if process.isRunning { process.terminate() } }
 

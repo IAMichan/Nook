@@ -417,6 +417,14 @@ enum SubscriptionBrain {
                 process.standardError = err
                 let input = stdin == nil ? nil : Pipe()
                 process.standardInput = input ?? FileHandle.nullDevice
+                defer {
+                    try? out.fileHandleForReading.close()
+                    try? out.fileHandleForWriting.close()
+                    try? err.fileHandleForReading.close()
+                    try? err.fileHandleForWriting.close()
+                    try? input?.fileHandleForReading.close()
+                    try? input?.fileHandleForWriting.close()
+                }
                 do {
                     try process.run()
                 } catch {

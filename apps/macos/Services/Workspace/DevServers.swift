@@ -80,6 +80,10 @@ enum DevServerScanner {
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         do { try process.run() } catch { return nil }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
