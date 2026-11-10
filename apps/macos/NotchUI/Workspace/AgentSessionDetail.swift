@@ -399,7 +399,7 @@ struct AgentSessionDetail: View {
             let model = current.model.isEmpty ? nil : app.modelName(current.model, for: current.provider, profileID: current.profileID)
             let providers = app.connectedProviders
             ModelPickerDropdown {
-                ComposerPill(agent: current.provider.displayName, account: shown.map { AccountTag.of($0, app: app) },
+                ComposerPill(agent: current.provider.displayName, account: AccountTag.badge(shown, app: app),
                              text: [current.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                              short: model ?? current.provider.displayName)
             } content: {
@@ -422,7 +422,7 @@ struct AgentSessionDetail: View {
     /// The agent and account the conversation runs with, when Nook cannot continue it with another one.
     private func agentPill(name: String, profile: AgentProfile?) -> some View {
         let label = profile.map { AccountLabel.name($0, app: app) }
-        return ComposerPill(agent: name, account: profile.map { AccountTag.of($0, app: app) },
+        return ComposerPill(agent: name, account: AccountTag.badge(profile, app: app),
                             text: [name, label].compactMap { $0 }.joined(separator: " · "), short: name, showsChevron: false)
     }
 

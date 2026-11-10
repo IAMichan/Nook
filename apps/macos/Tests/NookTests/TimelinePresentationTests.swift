@@ -355,4 +355,27 @@ final class TimelinePresentationTests: XCTestCase {
         let old = try? JSONDecoder().decode(RunEvent.self, from: Data(#"{"id":"\#(UUID().uuidString)","date":0,"kind":"user","text":"hi"}"#.utf8))
         XCTAssertNil(old?.steer, "an event stored before these marks reads without them")
     }
+
+    func testAccountSwitchNamesBothAccounts() {
+        let work = ModelSwitch.Endpoint(provider: "claude", agent: "Claude Code", model: "Sonnet 5.5", effort: nil,
+                                        profile: "claude-work", account: "Work")
+        var personal = work
+        personal.profile = "claude"
+        personal.account = "Personal"
+        // Same model, other account: still a switch worth marking, but no handoff while they share a conversation.
+        let shared = ModelSwitch(from: work, to: personal)
+        XCTAssertTrue(shared.accountChanged)
+        XCTAssertFalse(shared.handoff)
+        XCTAssertFalse(shared.isNoChange)
+        XCTAssertEqual(ModelSwitchText.plain(shared), "Claude Code (Work) Sonnet 5.5 → Claude Code (Personal) Sonnet 5.5")
+        var own = shared
+        own.accountHandoff = true
+        XCTAssertTrue(own.handoff, "an account with a conversation of its own gets the context handed over")
+        // A switch saved before accounts were noted reads as before.
+        let legacy = try? JSONDecoder().decode(ModelSwitch.self, from: Data(
+            #"{"from":{"provider":"claude","agent":"Claude Code","model":"Sonnet 5.5"},"to":{"provider":"claude","agent":"Claude Code","model":"Opus 5.5"}}"#.utf8))
+        XCTAssertNotNil(legacy)
+        XCTAssertEqual(legacy?.accountChanged, false)
+        XCTAssertEqual(legacy?.handoff, false)
+    }
 }

@@ -485,16 +485,21 @@ struct TimelineSystemDivider<Detail: View>: View {
     }
 }
 
-/// Where the session went on with another agent, model or effort: "⇄ Context handoff  [logo] Sonnet 5.5 → [logo] GPT-5
-/// High" between the turns when the agent changed, "Sonnet 5.5 → Opus 5.5 High" when only the model or effort did.
+/// Where the session went on with another agent, account, model or effort: "⇄ Context handoff  [logo] Sonnet 5.5 →
+/// [logo] GPT-5 High" between the turns when the agent changed, "Sonnet 5.5 → Opus 5.5 High" when only the model or
+/// effort did. As in t3code, each logo carries its account's badge (initials, or the color you gave it) when the agent has
+/// several accounts, so a switch to another account reads "[logo·WO] Sonnet 5.5 → [logo·PE] Sonnet 5.5", the logo a
+/// step dimmer behind its badge, the model in the agent's color, and "account · model" under the pointer.
 struct ModelSwitchDivider: View {
     let change: ModelSwitch
+    @EnvironmentObject private var app: AppModel
 
     var body: some View {
         if change.isNoChange {
             EmptyView()
-        } else if change.handoff {
-            TimelineSystemDivider(label: tr("agents.switch.handoff"), symbol: "arrow.left.arrow.right") {
+        } else if change.handoff || change.accountChanged {
+            TimelineSystemDivider(label: tr(change.handoff ? "agents.switch.handoff" : "agents.switch.account"),
+                                  symbol: change.handoff ? "arrow.left.arrow.right" : "person.2") {
                 endpoint(change.from, model: true, effort: true)
                 Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold))
                 endpoint(change.to, model: true, effort: true)
@@ -525,11 +530,31 @@ struct ModelSwitchDivider: View {
         return parts.joined(separator: " ")
     }
 
-    private func endpoint(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            AgentLogo(agent: endpoint.agent, size: 13)
-            Text(Self.words(endpoint, model: model, effort: effort && endpoint.effort != nil))
-                .foregroundStyle(NookTheme.textSecondary)
+    /// The badge of the account a side ran under: the account as it is now when it still exists, else the name it had.
+    /// A switch between two accounts of one agent always shows both badges, also once the other account is gone.
+    private func badge(_ endpoint: ModelSwitch.Endpoint) -> AccountTag? {
+        guard !app.demoMode, let id = endpoint.profile else { return nil }
+        if let profile = app.profiles.profile(id: id) {
+            if let shown = AccountTag.badge(profile, app: app) { return shown }
+            return change.accountChanged ? AccountTag.of(profile, app: app) : nil
         }
+        guard change.accountChanged, let name = endpoint.account, !name.isEmpty else { return nil }
+        return AccountTag(role: .personal, name: name)
+    }
+
+    private func endpoint(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> some View {
+        let account = badge(endpoint)
+        let text = Self.words(endpoint, model: model, effort: effort && endpoint.effort != nil)
+        let brand = BrandLogo.forName(endpoint.agent)
+        return HStack(spacing: NookTheme.Spacing.xs) {
+            AgentLogo(agent: endpoint.agent, size: 13)
+                .opacity(account == nil ? 1 : 0.6)
+                .accountBadge(account, size: 13, ring: NookTheme.canvas)
+                .padding(.trailing, account == nil ? 0 : 3)
+            Text(text)
+                .fontWeight(.medium)
+                .foregroundStyle(brand?.style ?? AnyShapeStyle(NookTheme.textSecondary))
+        }
+        .help([account?.label ?? endpoint.agent, text].joined(separator: " · "))
     }
 }

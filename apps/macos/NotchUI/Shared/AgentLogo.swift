@@ -127,10 +127,25 @@ struct AccountTag: Hashable {
         }
     }
 
-    /// The first letter of the account's name, shown on a colored badge instead of the role's symbol.
-    fileprivate var initial: String? {
-        guard accent != nil, icon == nil, let letter = name.first(where: { $0.isLetter || $0.isNumber }) else { return nil }
-        return String(letter).uppercased()
+    /// The account's initials as t3code writes them on its badge: two letters of a one-word name ("Work" → "WO"), the
+    /// first letter of the first two words otherwise ("Acme Labs" → "AL"). Punctuation splits words ("Claude (hub)" → "CH");
+    /// an apostrophe inside a word does not ("Theo's Work" → "TW").
+    static func initials(_ name: String) -> String {
+        let apostrophes: Set<Character> = ["'", "\u{2019}"]
+        let spaced = String(name.map { $0.isPunctuation && !apostrophes.contains($0) ? " " : $0 })
+        let words = spaced.split(whereSeparator: \.isWhitespace)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "'\u{2019}")) }
+            .filter { !$0.isEmpty }
+        guard let first = words.first else { return "" }
+        if words.count == 1 { return String(first.prefix(2)).uppercased() }
+        return words.prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
+    }
+
+    /// The letters on the badge: the account's initials, unless you gave it an icon.
+    fileprivate var letters: String? {
+        guard icon == nil else { return nil }
+        let letters = Self.initials(name)
+        return letters.isEmpty ? nil : letters
     }
 
     fileprivate var symbol: String {
@@ -142,8 +157,10 @@ struct AccountTag: Hashable {
         }
     }
 
+    /// The account's own color, or a quiet grey card as t3code draws a badge without one.
     fileprivate var fill: Color {
         if let accent { return Color(hex: accent) }
+        if letters != nil { return NookTheme.smoke }
         switch role {
         case .personal: return Color(hex: 0x3A3A42)
         case .work: return Color(hex: 0x3D58D6)
@@ -151,16 +168,18 @@ struct AccountTag: Hashable {
         }
     }
 
-    /// Black or white, whichever reads better on the badge's color.
+    /// Black or white, whichever reads better on the badge's color; the muted text color on the grey card.
     fileprivate var glyph: Color {
         if let accent, NookTheme.relativeLuminance(accent) > 0.45 { return NookTheme.ink.opacity(0.9) }
+        if accent == nil, letters != nil { return NookTheme.textSecondary }
         return Color.white.opacity(0.92)
     }
 }
 
-/// A small round badge: a person for a personal account, a briefcase for a work account, a key for an API key; an account
-/// you gave a color shows that color with the first letter of its name, and one you gave an icon shows that icon.
-/// The letter or icon sits in the middle of the circle.
+/// A small badge in the corner of an agent's logo, as t3code marks a model of another account: the account's initials on
+/// a grey card ("WO" for Work), on the account's own color when you gave it one, or the icon you gave it. A badge with two
+/// letters grows into a pill; one letter or an icon stays round. Without a name it falls back to the role's symbol
+/// (a person, a briefcase, a key).
 struct AccountBadge: View {
     let kind: AccountTag
     var size: CGFloat = 10
@@ -168,32 +187,32 @@ struct AccountBadge: View {
     var ring: Color = NookTheme.rowRest
 
     var body: some View {
-        Circle()
-            .fill(kind.fill)
-            .overlay {
-                Group {
-                    if let initial = kind.initial {
-                        Text(initial)
-                            .font(NookTheme.rounded(size * 0.62, .bold))
-                            .minimumScaleFactor(0.5)
-                    } else {
-                        // Scaled to fit a square inside the circle, so wide and tall symbols alike stay in the middle.
-                        // The margin around it is a whole point on each side: a fractional one is rounded to the pixel
-                        // grid on one side only, which pushes the icon left on the small badges (an agent row's 8 pt).
-                        Image(systemName: kind.symbol)
-                            .resizable()
-                            .scaledToFit()
-                            .fontWeight(.bold)
-                            .frame(width: glyphSide, height: glyphSide)
-                    }
-                }
-                .foregroundStyle(kind.glyph)
-                .frame(width: size, height: size, alignment: .center)
+        Group {
+            if let letters = kind.letters {
+                Text(letters)
+                    .font(NookTheme.rounded(size * (letters.count > 1 ? 0.56 : 0.62), .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(.horizontal, letters.count > 1 ? max(1, (size * 0.18).rounded()) : 0)
+                    .frame(minWidth: size, minHeight: size, maxHeight: size)
+            } else {
+                // Scaled to fit a square inside the circle, so wide and tall symbols alike stay in the middle.
+                // The margin around it is a whole point on each side: a fractional one is rounded to the pixel
+                // grid on one side only, which pushes the icon left on the small badges (an agent row's 8 pt).
+                Image(systemName: kind.symbol)
+                    .resizable()
+                    .scaledToFit()
+                    .fontWeight(.bold)
+                    .frame(width: glyphSide, height: glyphSide)
+                    .frame(width: size, height: size)
             }
-            .frame(width: size, height: size)
-            .overlay(Circle().stroke(ring, lineWidth: 1.5))
-            .help(kind.label)
-            .accessibilityLabel(kind.label)
+        }
+        .foregroundStyle(kind.glyph)
+        .background(Capsule(style: .continuous).fill(kind.fill))
+        .overlay(Capsule(style: .continuous).stroke(ring, lineWidth: 1.5))
+        .fixedSize()
+        .help(kind.label)
+        .accessibilityLabel(kind.label)
     }
 
     /// The icon's side: about 54% of the badge, with the same whole-point margin left and right, top and bottom.
@@ -227,7 +246,7 @@ extension View {
             if let account {
                 // Whole points for its size and place, so the badge and the icon in it land on the pixel grid
                 // and the icon stays centered at every logo size.
-                AccountBadge(kind: account, size: max(8, (size * 0.56).rounded()), ring: ring)
+                AccountBadge(kind: account, size: max(9, (size * 0.62).rounded()), ring: ring)
                     .offset(x: (size * 0.28).rounded(), y: (size * 0.22).rounded())
             }
         }
@@ -243,16 +262,31 @@ extension AgentLogo {
 
 extension AccountTag {
     /// Work when the account belongs to an organization, or when you named it that way ("Werk", "Business");
-    /// otherwise personal. Carries the color, icon and name you gave the account (Settings › Agents).
+    /// otherwise personal. Carries the account's name (for its initials), and the color and icon you gave it
+    /// (Settings › Agents).
     @MainActor
     static func of(_ profile: AgentProfile, app: AppModel) -> AccountTag {
         let organization = app.history.profileAccounts[profile.id]?.organization ?? ""
         let label = profile.label.lowercased()
         let role: Role = !organization.isEmpty || workWords.contains(where: { label.contains($0) }) ? .work : .personal
-        // Only a colored badge shows the name; one without keeps "Work account" / "Personal account" as its tooltip.
-        guard profile.hasOwnBadge else { return AccountTag(role: role) }
-        let name = !profile.label.isEmpty ? profile.label : (!organization.isEmpty ? organization : tr("agents.personal"))
-        return AccountTag(role: role, accent: profile.accent, name: name, icon: profile.icon)
+        return AccountTag(role: role, accent: profile.accent, name: AccountLabel.name(profile, app: app), icon: profile.icon)
+    }
+
+    /// The badge on the agent's logo where it runs under `profile`, or nil when there is nothing to tell apart. As in
+    /// t3code: an account you gave a color or an icon always shows its badge; otherwise only while you have more than
+    /// one account of that agent, so the model picker and the timeline say which account a model belongs to.
+    @MainActor
+    static func badge(_ profile: AgentProfile?, app: AppModel) -> AccountTag? {
+        guard let profile, !app.demoMode else { return nil }
+        guard profile.hasOwnBadge || sharesAgent(profile, app: app) else { return nil }
+        return of(profile, app: app)
+    }
+
+    /// True when another signed-in account of the same agent is on, so a badge is needed to tell the two apart. An
+    /// account switched off still counts for itself, so an old session of it keeps its badge.
+    @MainActor
+    static func sharesAgent(_ profile: AgentProfile, app: AppModel) -> Bool {
+        app.linkedProfiles.filter { $0.kind == profile.kind && ($0.isEnabled || $0.id == profile.id) }.count > 1
     }
 }
 #endif

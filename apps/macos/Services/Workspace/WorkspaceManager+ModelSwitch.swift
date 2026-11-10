@@ -9,7 +9,7 @@ extension WorkspaceManager {
         let menu = modelMenu(for: run.provider, profileID: run.profileID)
         let model = run.autoModel == true ? nil : menu.name(run.model)
         return ModelSwitch.Endpoint(provider: run.provider.rawValue, agent: run.provider.displayName, model: model,
-                                    effort: run.effort)
+                                    effort: run.effort, profile: run.profileID, account: accountName(run.profileID))
     }
 
     /// Notes that the session now runs something else than `from`. A switch right after another one, with no message of
@@ -34,21 +34,5 @@ extension WorkspaceManager {
         var event = RunEvent(kind: .system, text: ModelSwitchText.plain(change), tool: "switch")
         event.change = change
         append(id, event)
-    }
-}
-
-/// The words of a switch, for search, copy and the handoff summary (the divider draws its own).
-enum ModelSwitchText {
-    static func side(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> String {
-        [model ? endpoint.model ?? "default" : nil, effort ? endpoint.effort : nil].compactMap { $0 }.joined(separator: " ")
-    }
-
-    static func plain(_ change: ModelSwitch) -> String {
-        if change.handoff {
-            return change.from.agent + " " + side(change.from, model: true, effort: change.from.effort != nil) + " → "
-                + change.to.agent + " " + side(change.to, model: true, effort: change.to.effort != nil)
-        }
-        let model = change.modelChanged, effort = change.effortChanged
-        return side(change.from, model: model, effort: effort) + " → " + side(change.to, model: model, effort: effort)
     }
 }
