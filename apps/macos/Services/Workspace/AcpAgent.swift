@@ -411,12 +411,17 @@ struct AcpSessionCapabilities: Equatable, Sendable {
     var resume = false
     /// The agent takes pictures in a prompt (`promptCapabilities.image`); otherwise they go as links to their files.
     var images = false
+    /// A session can be removed (`session/delete`) or ended (`session/close`).
+    var delete = false
+    var close = false
 
-    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false) {
+    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false, delete: Bool = false, close: Bool = false) {
         self.load = load
         self.list = list
         self.resume = resume
         self.images = images
+        self.delete = delete
+        self.close = close
     }
 
     init(initialize: [String: Any]) {
@@ -426,6 +431,8 @@ struct AcpSessionCapabilities: Equatable, Sendable {
         load = (agent["loadSession"] as? Bool) ?? false
         list = session["list"] is [String: Any]
         resume = session["resume"] is [String: Any]
+        delete = session["delete"] is [String: Any]
+        close = session["close"] is [String: Any]
         images = ((agent["promptCapabilities"] as? [String: Any])?["image"] as? Bool) ?? false
     }
 
@@ -433,6 +440,43 @@ struct AcpSessionCapabilities: Equatable, Sendable {
     var continues: Bool { load || resume }
     /// The method that continues one: `session/resume` when offered (no history replayed, Nook keeps it), else `session/load`.
     var continueMethod: String { resume ? "session/resume" : "session/load" }
+}
+
+/// Asking an ACP agent for its models outside a session (`WorkspaceManager.probeAcpModels`): most name them only in a
+/// session, so Nook opens one in an empty folder of its own and removes it again.
+enum AcpModelProbe {
+    enum SignIn: Equatable, Sendable {
+        /// Straight to `session/new`: the agent uses the sign-in it keeps itself, or answers that you need to sign in.
+        case direct
+        /// `authenticate` with the agent's own method first (`AntigravityAcp.authMethod`); it returns at once with the
+        /// saved sign-in.
+        case savedLogin
+        /// Not asked: signing in would open a sign-in page.
+        case skip
+    }
+
+    /// Antigravity always authenticates first, which opens Google's sign-in page unless its token is saved: then it is
+    /// asked only with that token. The others never `authenticate` for this.
+    static func signIn(_ provider: RunProvider, savedLogin: Bool) -> SignIn {
+        switch provider {
+        case .antigravity: return savedLogin ? .savedLogin : .skip
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: return .direct
+        }
+    }
+
+    /// How the session is taken away again: removed when the agent can, else ended; nil when it offers neither (the
+    /// session holds no message, and Nook leaves the probe folder out of the sessions it lists).
+    static func cleanup(_ capabilities: AcpSessionCapabilities) -> String? {
+        capabilities.delete ? "session/delete" : capabilities.close ? "session/close" : nil
+    }
+
+    /// A session in the probe folder is one of these probes, never one of yours.
+    static func isProbe(_ cwd: String, folder: String) -> Bool {
+        let clean = { (path: String) in path.hasSuffix("/") ? String(path.dropLast()) : path }
+        let path = clean(cwd)
+        let probe = clean(folder)
+        return path == probe || path == "/private" + probe || "/private" + path == probe
+    }
 }
 
 /// A session an ACP agent lists (`session/list`): its id, folder, title and when it last changed.

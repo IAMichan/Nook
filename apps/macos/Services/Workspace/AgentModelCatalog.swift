@@ -1,7 +1,7 @@
 import Foundation
 
-/// A model an agent offers itself: Codex from `model/list`, ACP agents from what
-/// `session/new` (or Grok's `initialize`) reports. Nook shows these instead of a fixed list once it has seen them.
+/// A model an agent offers itself: Claude Code from its `initialize` control request, Codex from `model/list`, ACP agents
+/// from what `session/new` (or Grok's `initialize`) reports. Nook shows these instead of a fixed list once it has seen them.
 struct AgentModel: Codable, Equatable, Hashable, Sendable {
     var id: String
     var name: String
@@ -32,6 +32,25 @@ enum AgentModelCatalog {
             afterDash = character == "-"
         }
         return result
+    }
+
+    /// The models Claude Code offers, from the reply to its `initialize` control request: `models`, each with the name it
+    /// takes (`value`, sometimes an alias such as "opus") and the model that stands for (`resolvedModel`). A model is kept
+    /// under its full id, so it reads as the model manifest's entry and a new one shows up the day Claude Code lists it.
+    /// The "default" entry is the agent's default, which the menu offers itself: it only marks its model as the default.
+    static func claude(_ reply: [String: Any]) -> [AgentModel] {
+        let entries = (reply["models"] as? [[String: Any]]) ?? []
+        let fallback = entries.first { ($0["value"] as? String) == "default" }.flatMap { nonEmpty($0["resolvedModel"]) }
+        var seen = Set<String>()
+        return entries.compactMap { entry -> AgentModel? in
+            guard let value = nonEmpty(entry["value"]), value != "default" else { return nil }
+            let resolved = nonEmpty(entry["resolvedModel"]).flatMap { ModelManifest.isValidID($0) ? $0 : nil }
+            let id = resolved ?? value
+            guard ModelManifest.isValidID(id), seen.insert(id.lowercased()).inserted else { return nil }
+            let shown = nonEmpty(entry["displayName"]) ?? id
+            let name = shown.lowercased().hasPrefix("claude") || shown == id ? shown : "Claude " + shown
+            return AgentModel(id: id, name: name, isDefault: id == fallback)
+        }
     }
 
     /// The models of an ACP session: the model config option (id or category "model", groups flattened), else
