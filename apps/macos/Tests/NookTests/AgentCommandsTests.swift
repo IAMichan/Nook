@@ -16,7 +16,8 @@ final class AgentCommandsTests: XCTestCase {
 
     func testOtherAgentsHaveNoPassThroughs() {
         for p in RunProvider.allCases where p != .claude && p != .codex {
-            XCTAssertFalse(names(p).contains("compact"))
+            // Pi compacts through its own command, but has no goal.
+            XCTAssertEqual(names(p).contains("compact"), p == .pi)
             XCTAssertFalse(names(p).contains("goal"))
         }
     }

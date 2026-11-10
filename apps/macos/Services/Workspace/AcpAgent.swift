@@ -14,7 +14,7 @@ enum AcpLaunch {
         // Grok decides on approvals itself with --always-approve; otherwise it asks Nook.
         case .grok: return permission == .bypass ? ["agent", "--always-approve", "stdio"] : ["agent", "stdio"]
         // Antigravity's server takes no arguments on the Mac; its account and harness come from the environment.
-        case .antigravity, .claude, .codex: return []
+        case .antigravity, .claude, .codex, .pi: return []
         // An ACP agent you added starts with its own command line (see CustomAgents).
         case .acp: return []
         }
@@ -460,7 +460,7 @@ enum AcpModelProbe {
     static func signIn(_ provider: RunProvider, savedLogin: Bool) -> SignIn {
         switch provider {
         case .antigravity: return savedLogin ? .savedLogin : .skip
-        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: return .direct
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp: return .direct
         }
     }
 

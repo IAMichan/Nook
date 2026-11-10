@@ -26,7 +26,7 @@ enum AgentSignInFailure {
     /// Whether Nook can start the agent's sign-in for you. ACP agents you add sign in themselves, in their next session.
     static func canSignInAgain(_ provider: RunProvider) -> Bool {
         switch provider {
-        case .claude, .codex, .gemini, .antigravity, .opencode, .cursor, .grok: return true
+        case .claude, .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi: return true
         case .acp: return false
         }
     }

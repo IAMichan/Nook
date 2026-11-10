@@ -59,7 +59,7 @@ extension WorkspaceManager {
             guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort,
                   let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
-        case .codex:
+        case .codex, .pi:
             break
         }
     }

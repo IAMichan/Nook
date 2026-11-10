@@ -31,8 +31,10 @@ enum AgentCommands {
         if surface == .chat {
             list.append(ComposerCommand(name: "new", insertion: "", action: .new))
         }
-        if hasProject, hasBuiltInCompactAndGoal(provider) {
+        if hasProject, hasBuiltInCompact(provider) {
             list.append(ComposerCommand(name: "compact", insertion: "/compact", action: .insert))
+        }
+        if hasProject, hasBuiltInGoal(provider) {
             list.append(ComposerCommand(name: "goal", insertion: "/goal ", action: .insert))
         }
         // The agent's own commands go to it as the text of a prompt; one with Nook's name stays Nook's.
@@ -48,16 +50,21 @@ enum AgentCommands {
     static func descriptionKey(for command: ComposerCommand) -> String { "composer.command.\(command.name).description" }
 
     /// Claude Code and Codex always take `/compact` and `/goal`; an ACP agent has the commands it announces.
-    static func hasBuiltInCompactAndGoal(_ provider: RunProvider) -> Bool {
+    static func hasBuiltInGoal(_ provider: RunProvider) -> Bool {
         switch provider {
         case .claude, .codex: return true
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return false
         }
+    }
+
+    /// Pi compacts through its own `compact` command, which Nook sends for `/compact` (`PiRPC.turnInput`).
+    static func hasBuiltInCompact(_ provider: RunProvider) -> Bool {
+        provider == .pi || hasBuiltInGoal(provider)
     }
 
     /// Whether the agent compacts its context on `/compact`: built in, or announced by the agent itself.
     static func canCompact(_ provider: RunProvider, offered: [AgentSlashCommand]) -> Bool {
-        hasBuiltInCompactAndGoal(provider) || offered.contains { $0.name == "compact" }
+        hasBuiltInCompact(provider) || offered.contains { $0.name == "compact" }
     }
 }
 

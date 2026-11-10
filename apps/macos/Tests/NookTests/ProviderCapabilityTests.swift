@@ -8,7 +8,7 @@ final class ProviderCapabilityTests: XCTestCase {
         XCTAssertTrue(claude.canForkFromTurn)
         XCTAssertFalse(RunProvider.codex.capabilities.canForkFromTurn)
         // A model picked during a turn reaches it at once, except where the agent cannot take it mid-turn.
-        XCTAssertEqual(RunProvider.allCases.filter { !$0.capabilities.liveSettings }, [.codex, .antigravity])
+        XCTAssertEqual(RunProvider.allCases.filter { !$0.capabilities.liveSettings }, [.codex, .antigravity, .pi])
         for provider in RunProvider.allCases {
             let caps = provider.capabilities
             XCTAssertFalse(caps.pendingRequestsSurviveRestart, "\(provider.rawValue): the process that asked is gone after a restart")

@@ -24,7 +24,7 @@ enum SpeedTiers {
         case .codex:
             let entry = model.flatMap { id in id.isEmpty ? nil : listed.first { $0.id == id } } ?? listed.first { $0.isDefault }
             return entry?.tiers ?? []
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return []
         }
     }

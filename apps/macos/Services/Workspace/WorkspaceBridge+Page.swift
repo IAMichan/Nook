@@ -4,15 +4,30 @@ import Foundation
 /// file next to Nook's other data, owner-only, and drawn in a sandbox; the call is in the audit log with its title and size.
 extension WorkspaceBridge {
     func renderPage(_ arguments: [String: Any], _ caller: BridgeCaller) -> BridgeRPC.ToolResult {
-        guard case .run(let runID) = caller.kind, let workspace = app?.workspace, workspace.run(runID) != nil else {
+        guard case .run(let runID) = caller.kind, let workspace = app?.workspace, let run = workspace.run(runID) else {
             return .error("render_page shows the page in a session Nook runs; this session runs outside Nook, so there is no timeline to show it in.")
         }
         if case .refuse(let reason) = verdict(.renderPage, caller) { return .error(Self.refusal(reason)) }
-        let request: RenderedPage.Request
+        var request: RenderedPage.Request
         switch RenderedPage.parse(arguments) {
         case .failure(let error): return .error(error.message)
         case .success(let value): request = value
         }
+        // A page from a file: read from the session's working directory, with its images and styles embedded.
+        var leftOut: [String] = []
+        if let path = request.path {
+            guard !run.isRemote else {
+                return .error("This session runs on another machine, so Nook cannot read its files: give the page as html.")
+            }
+            switch RenderedPageFile.load(path, workdir: run.workingDirectory) {
+            case .failure(let error): return .error(error.message)
+            case .success(let loaded):
+                request.html = loaded.html
+                request.title = request.title ?? loaded.name
+                leftOut = loaded.leftOut
+            }
+        }
+        let title = request.shownTitle
         let pageID = UUID()
         let file = RenderedPage.file(in: NookPaths.supportDirectory, run: runID, page: pageID)
         let kept = (try? FileManager.default.contentsOfDirectory(atPath: file.deletingLastPathComponent().path))?.count ?? 0
@@ -27,8 +42,9 @@ extension WorkspaceBridge {
         } catch {
             return .error("Nook could not keep the page: \(error.localizedDescription)")
         }
-        workspace.append(runID, RenderedPage.event(id: pageID, title: request.title, file: file.path, height: request.height))
-        audit(.renderPage, caller, request.title, "\(request.html.utf8.count) bytes")
-        return BridgeRPC.ToolResult(text: "Shown in your session's timeline as \"\(request.title)\", \(Int(request.height)) points high. It runs sandboxed: no network, no access to Nook or files, nothing it does comes back to you.")
+        workspace.append(runID, RenderedPage.event(id: pageID, title: title, file: file.path, height: request.height))
+        audit(.renderPage, caller, title, "\(request.html.utf8.count) bytes" + (request.path.map { " from " + $0 } ?? ""))
+        let missing = leftOut.isEmpty ? "" : " Left out: " + leftOut.prefix(12).joined(separator: ", ") + "."
+        return BridgeRPC.ToolResult(text: "Shown in your session's timeline as \"\(title)\", \(Int(request.height)) points high. It runs sandboxed: no network, no access to Nook or files, nothing it does comes back to you." + missing)
     }
 }
