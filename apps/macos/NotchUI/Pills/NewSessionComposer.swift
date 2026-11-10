@@ -228,7 +228,7 @@ struct NewSessionComposer: View {
                 .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 .onSubmit(clone)
             SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
@@ -260,7 +260,7 @@ struct NewSessionComposer: View {
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(minWidth: 140)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
         }
         .font(NookTheme.TextStyle.body)
@@ -295,7 +295,7 @@ struct NewSessionComposer: View {
         }
         .rich(composerModel, composerConfig)
         .images($images)
-        .trailing { ComposerMic(text: taskBinding) }
+        .dictating()
         // One step more or less effort without opening the picker.
         .keyCommands(["effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
     }

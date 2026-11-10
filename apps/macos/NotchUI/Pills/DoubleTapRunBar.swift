@@ -20,7 +20,7 @@ struct DoubleTapRunBar: View {
             content(run)
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.vertical, NookTheme.Spacing.md)
-                .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel, style: .continuous)
+                .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel)
                 .padding(.top, NookTheme.Spacing.md)
                 .transition(.opacity.combined(with: .offset(y: -4)))
                 .animation(NookTheme.reveal, value: run)

@@ -360,7 +360,7 @@ struct ChatMessagePicture: View {
                         .background(NookTheme.smoke)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .roundedClip(NookTheme.Radius.card)
         }
     }
 }
@@ -414,7 +414,7 @@ struct ComposerDropSlot: View {
     var side: CGFloat = 56
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.card)
     }
 
     var body: some View {
@@ -505,7 +505,7 @@ struct ImageAttachmentStrip: View {
             }
             .frame(width: 56, height: 56)
             .background(NookTheme.smoke)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .roundedClip(NookTheme.Radius.card)
         }
     }
 }
@@ -554,7 +554,7 @@ struct ComposerFileTile: View {
         }
         .frame(width: 56, height: 56)
         .background(NookTheme.smoke)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        .roundedClip(NookTheme.Radius.card)
         .help(label)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)

@@ -83,7 +83,7 @@ struct TurnChangesCard: View {
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
     }
 
     private func header(_ tree: ChangedFilesTree) -> some View {
@@ -163,8 +163,7 @@ private struct TurnChangesRow: View {
             .padding(.leading, NookTheme.Spacing.sm + CGFloat(row.depth) * 14)
             .padding(.trailing, NookTheme.Spacing.sm)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
+            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -307,7 +306,7 @@ struct TurnDiffPanel: View {
                 .foregroundStyle(NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
             } content: {
                 DropdownList(maxHeight: 420) {

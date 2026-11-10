@@ -175,6 +175,17 @@ final class PullRequestSync: ObservableObject {
         if changed { save() }
     }
 
+    /// The session's agent merged or closed a pull request from the shell (`PullRequestToolCall.closesPullRequest`): its
+    /// branch, earlier branches and the requests you linked are read again now, not at the next round.
+    func recheck(_ id: UUID, now: Date = Date()) {
+        checked[id] = nil
+        let session = id.uuidString
+        for link in (earlier[id] ?? []) + (added[session] ?? []) where link.state.isOpen {
+            earlierChecked[Self.folderKey(path: session, branch: link.id)] = nil
+        }
+        refresh(now: now)
+    }
+
     /// A pull request for the session's branch is being made where Nook cannot see it (GitHub's page in the browser):
     /// the tray above its composer shows it as soon as GitHub has it, not a minute later.
     func expect(_ id: UUID, now: Date = Date()) {

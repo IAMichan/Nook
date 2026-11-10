@@ -113,12 +113,17 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         case .comment(let body):
             try await note(body, number: number)
         case .review(let verdict, let body):
-            try await finish(verdict, body: body, number: number, head: detail.headSHA)
+            let requested = verdict == .requestChanges ? try await requestChanges(number) : false
+            try await finish(verdict, body: body, number: number, head: detail.headSHA, changesRequested: requested)
         case .reviewWithComments(let verdict, let body, _, let comments):
+            // Requesting changes goes first, so a GitLab that refuses it does so before any comment lands.
+            let requested = verdict == .requestChanges ? try await requestChanges(number) : false
             try await send(comments, number: number, detail: detail)
             // Line comments are words enough, so a remark with only those has no note of its own.
             let hasWords = !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if verdict == .approve || hasWords { try await finish(verdict, body: body, number: number, head: detail.headSHA) }
+            if verdict == .approve || hasWords {
+                try await finish(verdict, body: body, number: number, head: detail.headSHA, changesRequested: requested)
+            }
         case .reply(let id, let body):
             guard let thread = Self.thread(of: id, in: detail.events) else {
                 throw PullRequestForgeError.refused("GitLab did not say which discussion this comment is in.")
@@ -179,16 +184,78 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         _ = try await http.json(request(number) + "/notes", method: "POST", body: ["body": try Self.words(body)])
     }
 
-    /// An approval goes first: when GitLab refuses it, no note is left that reads as if it went through. Requesting
-    /// changes has no stable API across GitLab versions, so that is a note.
-    private func finish(_ verdict: PullRequestAction.Verdict, body: String, number: Int, head: String) async throws {
+    /// An approval goes first: when GitLab refuses it, no note is left that reads as if it went through. The words of a
+    /// review are a note; with changes requested (`requestChanges`) and no words, there is nothing more to post.
+    private func finish(_ verdict: PullRequestAction.Verdict, body: String, number: Int, head: String,
+                        changesRequested: Bool = false) async throws {
+        let silent = body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if verdict == .approve {
             // With the head, GitLab refuses an approval of commits the reviewer did not see.
             let pinned: [String: String] = head.isEmpty ? [:] : ["sha": head]
             _ = try await http.json(request(number) + "/approve", method: "POST", body: pinned)
-            if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
+            if silent { return }
         }
+        if changesRequested && silent { return }
         try await note(body, number: number)
+    }
+
+    /// Requests changes as GitLab's own verdict (GitLab 18.9 and later, GraphQL only): you join the
+    /// reviewers, since GitLab keeps the verdict on a reviewer, then `mergeRequestRequestChanges`. False when this
+    /// GitLab does not know the mutation (an older server): the review is then a note, as before. A refusal throws.
+    private func requestChanges(_ number: Int) async throws -> Bool {
+        guard http.base.hasSuffix("/v4") else { return false }
+        guard let user = try await http.json("/user") as? [String: Any], let name = user["username"] as? String, !name.isEmpty else {
+            throw PullRequestForgeError.refused("GitLab did not say who you are.")
+        }
+        let graphQL = ForgeHTTP(name: http.name, base: String(http.base.dropLast("/v4".count)), headers: http.headers)
+        let target: [String: Any] = ["projectPath": repo.path, "iid": String(number)]
+        let reviewers = try await graphQL.json("/graphql", method: "POST",
+                                               body: ["query": Self.setReviewerMutation, "variables": target.merging(["reviewers": [name]]) { $1 }])
+        switch Self.mutationOutcome(reviewers, field: "mergeRequestSetReviewers") {
+        case .unsupported: return false
+        case .refused(let reasons): throw PullRequestForgeError.refused("GitLab refused it: " + reasons.joined(separator: "; "))
+        case .done: break
+        }
+        let answer = try await graphQL.json("/graphql", method: "POST", body: ["query": Self.requestChangesMutation, "variables": target])
+        switch Self.mutationOutcome(answer, field: "mergeRequestRequestChanges") {
+        case .unsupported: return false
+        case .refused(let reasons): throw PullRequestForgeError.refused("GitLab refused it: " + reasons.joined(separator: "; "))
+        case .done: return true
+        }
+    }
+
+    static let setReviewerMutation = """
+        mutation($projectPath: ID!, $iid: String!, $reviewers: [String!]!) {
+          mergeRequestSetReviewers(input: { projectPath: $projectPath, iid: $iid, reviewerUsernames: $reviewers, operationMode: APPEND }) { errors }
+        }
+        """
+
+    static let requestChangesMutation = """
+        mutation($projectPath: ID!, $iid: String!) {
+          mergeRequestRequestChanges(input: { projectPath: $projectPath, iid: $iid }) { errors }
+        }
+        """
+
+    enum MutationOutcome: Equatable {
+        case done
+        /// The mutation went through GraphQL but GitLab said no (a locked merge request).
+        case refused([String])
+        /// This GitLab has no such mutation (or no such argument): it is older than the API.
+        case unsupported
+    }
+
+    /// What a GraphQL answer says about `field`: GitLab names a mutation it does not know in a top-level error and
+    /// gives no data for it; a mutation it ran lists its refusals in `errors`.
+    static func mutationOutcome(_ answer: Any, field: String) -> MutationOutcome {
+        let object = answer as? [String: Any] ?? [:]
+        let payload = (object["data"] as? [String: Any])?[field] as? [String: Any]
+        guard let payload else {
+            let messages = ((object["errors"] as? [[String: Any]]) ?? []).compactMap { $0["message"] as? String }
+            let unknown = messages.isEmpty || messages.contains { $0.contains("doesn't exist") || $0.contains("isn't defined") }
+            return unknown ? .unsupported : .refused(messages)
+        }
+        let reasons = (payload["errors"] as? [String]) ?? []
+        return reasons.isEmpty ? .done : .refused(reasons)
     }
 
     /// Each comment is a discussion of its own. GitLab pins them to the commits of `diff_refs`, which only a fresh read has.

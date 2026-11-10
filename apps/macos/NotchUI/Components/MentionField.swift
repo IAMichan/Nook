@@ -31,13 +31,15 @@ extension ComposerModel {
     /// Puts the chosen line in the text. A line that fills the text with something that has a list of its own ("@chat ")
     /// shows that list straight away.
     func choose(_ suggestion: ComposerSuggestion, text: Binding<String>, config: ComposerConfig) {
-        let value = accept(suggestion, in: text.wrappedValue, config)
+        let (value, caret) = accepting(suggestion, in: text.wrappedValue, config)
         if value != text.wrappedValue {
             applying = true
             text.wrappedValue = value
         }
+        // What went in sits where the trigger was typed: the caret goes right after it, also in the middle of the text.
+        if let caret { ComposerFieldStyle.placeCaret(caret, expecting: value) }
         if case .command(let command) = suggestion.payload, command.action == .insert {
-            update(for: value, config)
+            update(for: value, caret: caret, config)
         }
     }
 }
@@ -67,7 +69,7 @@ private struct MentionKeys: ViewModifier {
             model.applying = false
             return
         }
-        model.update(for: new, config)
+        model.update(for: new, caret: ComposerFieldStyle.focusedSelection(expecting: new)?.location, config)
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {

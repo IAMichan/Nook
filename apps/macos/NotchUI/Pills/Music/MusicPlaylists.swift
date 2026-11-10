@@ -313,8 +313,7 @@ struct MusicTrackRow: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .frame(height: MusicLayout.rowHeight)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

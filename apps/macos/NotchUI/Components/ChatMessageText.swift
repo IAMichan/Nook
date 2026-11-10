@@ -41,8 +41,7 @@ struct ChatMessageText: View {
                         .padding(.horizontal, NookTheme.Spacing.sm)
                         .padding(.vertical, NookTheme.Spacing.xs)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                            .fill(NookTheme.ink.opacity(0.4)))
+                        .roundedBackground(NookTheme.ink.opacity(0.4), radius: NookTheme.Radius.chip)
                 }
             }
         }

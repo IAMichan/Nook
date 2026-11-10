@@ -1,8 +1,9 @@
 import Foundation
 
 /// A turn that stopped on a usage limit: Nook remembers when the limit resets, shows it
-/// above the composer, and with "Resume at reset" sends "Continue where you left off." once it has. Any message of
-/// your own, archiving, or turning it off cancels that.
+/// above the composer, and with "Resume at reset" sends "Continue where you left off." once it has. When the limit
+/// stops it again (the reset came early, or was unknown) it keeps trying, further apart each time, until a turn ends
+/// normally. Any message of your own, archiving, or turning it off cancels the wait.
 extension WorkspaceManager {
     /// Claude Code reported a limit during the turn: a blocked window is noted (once, in the timeline).
     func noteClaudeLimit(_ id: UUID, _ event: UsageLimits.ClaudeEvent) {
@@ -20,20 +21,34 @@ extension WorkspaceManager {
     /// reset time), the session waits for the reset like a Claude Code turn stopped by its own limit event. One classifier
     /// for every agent (`FailureClassifier`), so "Resume at reset" works for each of them.
     func noteFailure(_ id: UUID, text: String?) {
-        guard limitedTurns[id] == nil, let text, !text.isEmpty else { return }
+        // A limit already noted without a reset (Codex's error code) still takes the reset this text names.
+        let noted = limitedTurns[id]
+        guard noted == nil || noted == .some(nil), let text, !text.isEmpty else { return }
         let evidence = FailureEvidence(isError: true, messageText: text)
-        if case .usageLimit(let resetAt) = FailureClassifier.classify(evidence) { limitedTurns[id] = .some(resetAt) }
+        if case .usageLimit(let resetAt) = FailureClassifier.classify(evidence), noted == nil || resetAt != nil {
+            limitedTurns[id] = .some(resetAt)
+        }
     }
 
     /// After a turn: did a usage limit stop it? Then the session waits for the reset (and goes on then, if set so).
+    /// A turn that ends without a limit ends a run of automatic resumes.
     func checkUsageLimit(_ id: UUID) {
-        guard let known = limitedTurns.removeValue(forKey: id) else { return }
+        guard let known = limitedTurns.removeValue(forKey: id) else {
+            if run(id)?.limitRetries != nil { update(id) { $0.limitRetries = nil } }
+            return
+        }
         guard let run = run(id), run.status == .failed else { return }
         onLimitReached?()
-        let reset = known ?? codexLimitSnapshots[id].flatMap { UsageLimits.codexReset($0.dictionary) }
-        let auto = settings.autoResumeLimited && reset != nil
+        let now = Date()
+        // The turn's own reset first, then what the account's limits say. A reset already past is no reset: the limit
+        // is evidently not free yet, so Nook tries again later instead of at once.
+        let reset = [known, codexLimitSnapshots[id].flatMap { UsageLimits.codexReset($0.dictionary) }, limitResetHint?(run)]
+            .lazy.compactMap { $0 }.first { $0 > now }
+        // On with the setting, and also when this limit came right after Nook went on by itself: "Resume at reset"
+        // stays on until a turn ends normally or you turn it off, whether or not the reset time is known.
+        let auto = settings.autoResumeLimited || run.limitRetries != nil
         update(id) {
-            $0.limitedAt = Date()
+            $0.limitedAt = now
             $0.limitResetAt = reset
             $0.autoResume = auto
         }
@@ -42,8 +57,11 @@ extension WorkspaceManager {
 
     /// "Resume at reset" on or off for this session.
     func setAutoResume(_ id: UUID, _ on: Bool) {
-        guard let run = run(id), run.limitedAt != nil, run.limitResetAt != nil else { return }
-        update(id) { $0.autoResume = on }
+        guard let run = run(id), run.limitedAt != nil else { return }
+        update(id) {
+            $0.autoResume = on
+            if !on { $0.limitRetries = nil }
+        }
         armLimitResume(id)
     }
 
@@ -58,11 +76,16 @@ extension WorkspaceManager {
         }
     }
 
+    /// When this session goes on by itself; nil when it does not.
+    func limitResumeDue(_ run: WorkspaceRun) -> Date? {
+        guard run.autoResume == true, let limitedAt = run.limitedAt else { return nil }
+        return UsageLimits.resumeDue(limitedAt: limitedAt, reset: run.limitResetAt,
+                                     retries: run.limitRetries.map { $0 + 1 } ?? 0)
+    }
+
     func armLimitResume(_ id: UUID) {
         limitResumes.removeValue(forKey: id)?.cancel()
-        guard let run = run(id), run.autoResume == true, let reset = run.limitResetAt else { return }
-        // A little after the reset, so the limit is really free again.
-        let due = reset.addingTimeInterval(20)
+        guard let run = run(id), let due = limitResumeDue(run) else { return }
         limitResumes[id] = Task { [weak self] in
             // Task.sleep stands still while the Mac sleeps, so one long sleep would fire hours late after a night
             // with the lid closed: wait in short steps against the wall clock instead.
@@ -80,13 +103,36 @@ extension WorkspaceManager {
     /// How often a waiting resume looks at the clock: at most this long late after the Mac wakes.
     static let limitResumeStep: TimeInterval = 30
 
-    /// Checked again right before sending: still waiting, still wanted, nothing pending, not archived.
+    /// Checked again right before sending: still waiting, still wanted, not archived. What only holds it up for now (a
+    /// turn still working, an approval or question open, a message that cannot go out yet) tries again a minute later
+    /// instead of dropping the resume.
     private func resumeAfterLimit(_ id: UUID) {
         limitResumes[id] = nil
-        guard let run = run(id), run.autoResume == true, run.limitedAt != nil, let reset = run.limitResetAt, reset <= Date(),
-              !run.archived, !run.status.isActive, (approvals[id] ?? []).isEmpty, (questions[id] ?? []).isEmpty else { return }
+        guard let run = run(id), run.autoResume == true, run.limitedAt != nil, !run.archived else { return }
+        // A reset unknown until now that the account's limits name meanwhile: wait for that one instead.
+        if run.limitResetAt == nil, let hint = limitResetHint?(run), hint > Date() {
+            update(id) { $0.limitResetAt = hint }
+            armLimitResume(id)
+            return
+        }
+        guard run.canContinue, processes[id] == nil, (approvals[id] ?? []).isEmpty, (questions[id] ?? []).isEmpty else {
+            return retryLimitResume(id)
+        }
+        let retries = (run.limitRetries ?? -1) + 1
+        update(id) { $0.limitRetries = retries }
         append(id, RunEvent(kind: .system, text: tr("ws.limit.resuming")))
-        send(id, text: UsageLimits.resumeMessage)
+        if !send(id, text: UsageLimits.resumeMessage) {
+            update(id) { $0.limitRetries = run.limitRetries }
+            retryLimitResume(id)
+        }
+    }
+
+    private func retryLimitResume(_ id: UUID) {
+        limitResumes[id] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.resumeAfterLimit(id)
+        }
     }
 
     /// "Waits for the limit, which resets in 2h 15m (14:30)."

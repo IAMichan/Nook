@@ -84,7 +84,7 @@ private struct QuoteChip: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...5)
                 .padding(NookTheme.Spacing.md)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 .onSubmit(save)
             HStack {
                 Spacer()

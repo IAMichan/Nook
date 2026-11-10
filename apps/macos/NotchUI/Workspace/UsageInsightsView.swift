@@ -379,7 +379,7 @@ struct UsageShareBar: View {
     private func legend(_ visible: [Segment]) -> some View {
         ForEach(visible) { segment in
             HStack(spacing: NookTheme.Spacing.xs) {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 3).fill(segment.color).frame(width: 7, height: 7)
+                NookTheme.shape(NookTheme.Radius.chip / 3).fill(segment.color).frame(width: 7, height: 7)
                 Text(segment.label).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
                 Text(format(segment.value)).foregroundStyle(NookTheme.paper).monospacedDigit().lineLimit(1)
             }
@@ -452,7 +452,7 @@ struct UsageModelRow: View {
                 }
                 .font(NookTheme.TextStyle.body.monospacedDigit())
                 .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : Color.clear))
+                .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.control)
                 NookDivider()
             }
             .contentShape(Rectangle())
@@ -487,7 +487,7 @@ struct UsageChatRow: View {
         if let target {
             Button { app.openUsageChat(target) } label: {
                 row(title: target.title)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : Color.clear))
+                    .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

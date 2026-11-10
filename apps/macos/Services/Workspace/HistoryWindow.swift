@@ -1,60 +1,56 @@
 import Foundation
 
-// Bounded history: a cold open renders only the tail
-// of the timeline and "Load earlier turns" widens it. A window always starts at a user message so no turn is cut in
-// half, except when one single turn alone exceeds the item cap: the hard cap wins then.
+// Bounded history opens a long thread from its latest segments: a conversation opens with only its latest
+// turns drawn, and "Show earlier messages" at the top widens that by a page of turns. The window always starts at a turn
+// (a message of yours), so no turn is cut in half. A few long turns open with fewer of them (`maxRows`), but always with
+// at least the last one.
+//
+// The window is kept as the index of its first turn, counted from the start of the conversation: new turns at the end
+// leave it where it is, so what you read does not move while the agent works. Find (⌘F), a mark on the rail or a jump to
+// an earlier event reveal the turn they need (`revealing`).
+//
+// Both conversation views use it: `AgentRunPanel` over its blocks per turn, `TranscriptConversation` over its rows per
+// turn. Foundation only, so the tests drive it without a view.
 
 enum HistoryWindow {
-    struct Window: Equatable, Sendable {
-        var startIndex: Int
-        var hasMore: Bool
+    /// Turns drawn when a conversation opens.
+    static let initialTurns = 20
+    /// Turns added by each "Show earlier messages".
+    static let pageTurns = 20
+    /// Rows at most when a conversation opens (folded turns are a few rows each; a turn still at work can be hundreds).
+    static let maxRows = 400
 
-        func loadedRange(count: Int) -> Range<Int> { min(startIndex, count)..<count }
-    }
-
-    static let maxBytes = 1_048_576
-
-    static func initial(events: [RunEvent], maxUserTurns: Int = 10, maxItems: Int = 75,
-                        maxBytes: Int = HistoryWindow.maxBytes) -> Window {
-        let count = events.count
-        guard count > 0 else { return Window(startIndex: 0, hasMore: false) }
-        let users = events.indices.filter { events[$0].kind == .user }
-        var start = users.count > max(1, maxUserTurns) ? users[users.count - max(1, maxUserTurns)] : 0
-
-        let itemFloor = count - max(1, maxItems)
-        if start < itemFloor {
-            start = users.first(where: { $0 >= itemFloor }) ?? itemFloor
+    /// The first turn drawn when a conversation opens, of `rowsPerTurn` (the rows of each turn, oldest first).
+    static func initialStart(rowsPerTurn: [Int], turns: Int = initialTurns, maxRows: Int = maxRows) -> Int {
+        let count = rowsPerTurn.count
+        guard count > 0 else { return 0 }
+        var start = count - 1
+        var rows = rowsPerTurn[start]
+        while start > 0, count - start < max(1, turns), rows + rowsPerTurn[start - 1] <= maxRows {
+            start -= 1
+            rows += rowsPerTurn[start]
         }
-
-        var bytes = bytesEstimate(events, in: Window(startIndex: start, hasMore: false))
-        while bytes > maxBytes, let next = users.first(where: { $0 > start }) {
-            bytes -= bytesEstimate(events, in: Window(startIndex: start, hasMore: false), upTo: next)
-            start = next
-        }
-        return Window(startIndex: start, hasMore: start > 0)
+        return start
     }
 
-    /// Widens a window by `userTurns` more user turns (no item cap: the reader asked for them).
-    static func earlier(events: [RunEvent], from startIndex: Int, userTurns: Int = 20) -> Window {
-        let from = min(max(0, startIndex), events.count)
-        let before = (0..<from).filter { events[$0].kind == .user }
-        let n = max(1, userTurns)
-        let start = before.count > n ? before[before.count - n] : 0
-        return Window(startIndex: start, hasMore: start > 0)
+    /// One page of turns earlier than `start`.
+    static func earlier(from start: Int, turns: Int = pageTurns) -> Int {
+        max(0, start - max(1, turns))
     }
 
-    private static func size(_ e: RunEvent) -> Int {
-        64 + e.text.utf8.count + (e.detail?.utf8.count ?? 0) + (e.output?.utf8.count ?? 0)
+    /// The window that also holds `turn` (find, a mark on the rail, a jump to an earlier event): never narrower.
+    static func revealing(_ turn: Int?, from start: Int) -> Int {
+        guard let turn else { return start }
+        return min(start, max(0, turn))
     }
 
-    /// Rough memory/wire size of a window, to keep it under `maxBytes`.
-    static func bytesEstimate(_ events: [RunEvent], in window: Window) -> Int {
-        bytesEstimate(events, in: window, upTo: events.count)
+    /// `start` within a conversation of `turnCount` turns (one that went back to an earlier message has fewer).
+    static func clamped(_ start: Int, turnCount: Int) -> Int {
+        min(max(0, start), max(0, turnCount - 1))
     }
 
-    private static func bytesEstimate(_ events: [RunEvent], in window: Window, upTo end: Int) -> Int {
-        let lo = min(window.startIndex, events.count), hi = min(end, events.count)
-        guard lo < hi else { return 0 }
-        return events[lo..<hi].reduce(0) { $0 + size($1) }
+    /// The index of the first row drawn: every row of the turns before `start`.
+    static func firstRow(rowsPerTurn: [Int], start: Int) -> Int {
+        rowsPerTurn.prefix(max(0, start)).reduce(0, +)
     }
 }

@@ -23,7 +23,8 @@ struct SessionDetailView: View {
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
 
-    private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
+    /// From the live list, or an older session opened from the settled ones or a search.
+    private var session: SessionDigest? { client.session(sessionID) }
     private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
 
     var body: some View {
@@ -311,7 +312,7 @@ private struct SessionHeader: View {
             }
         }
         .padding(Theme.Spacing.lg)
-        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        .roundedBackground(Theme.field, radius: Theme.Radius.panel)
         .padding(.top, Theme.Spacing.md)
     }
 }
@@ -407,7 +408,7 @@ struct ItemView: View {
                 Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary)
                     .padding(Theme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                    .roundedBackground(Theme.well, radius: Theme.Radius.control)
             }
             switch item.kind {
             case _ where !client.allows(.approve):
@@ -564,8 +565,7 @@ struct NewSessionView: View {
                                 Button { withAnimation(Theme.reveal) { plan.toggle() } } label: {
                                     ComposerPill(symbol: "list.bullet.clipboard", text: String(localized: "Plan first"),
                                                  tint: plan ? Theme.paper : nil, showsChevron: false)
-                                        .background(plan ? Theme.smoke : Color.clear,
-                                                    in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                        .roundedBackground(plan ? Theme.smoke : Color.clear, radius: Theme.Radius.control)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(plan ? .isSelected : [])
@@ -738,7 +738,7 @@ struct QuestionOptionRow: View {
                     .font(Theme.textFont(11, .semibold, design: .monospaced))
                     .foregroundStyle(Theme.textSecondary)
                     .frame(minWidth: 22, minHeight: 22)
-                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                    .roundedBackground(Theme.well, radius: Theme.Radius.chip)
                 Text(title)
                     .font(Theme.textFont(13, .semibold))
                     .foregroundStyle(Theme.paper)
@@ -749,8 +749,8 @@ struct QuestionOptionRow: View {
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.vertical, Theme.Spacing.md + 1)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card, style: .continuous)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card)
+            .roundedHitShape(Theme.Radius.card)
         }
         .buttonStyle(PressFade())
     }

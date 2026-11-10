@@ -119,7 +119,7 @@ private struct FooterIcon<Glyph: View>: View {
             .padding(.horizontal, showsLabel ? NookTheme.Spacing.sm : 0)
             // An icon gives up a little room in a narrow list, so the footer stays inside it.
             .frame(minWidth: showsLabel ? 32 : 24, idealWidth: 32, maxWidth: showsLabel ? nil : 32, minHeight: 30, maxHeight: 30)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

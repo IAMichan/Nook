@@ -366,8 +366,8 @@ enum Keybindings {
 
     /// Everything a rule can name, including commands without a default key (interrupt).
     static let commandIDs = [
-        "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
-        "composer.historyNext", "composer.access", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle", "session.new",
+        "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.dictate", "composer.historyPrevious",
+        "composer.historyNext", "composer.access", "composer.undo", "composer.redo", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle", "session.new",
         "session.previous", "session.next", "diff.toggle", "modelPicker.toggle", "session.settle", "session.pin",
         "session.undo", "session.interrupt", "panel.reopenClosed", "selection.quote", "selection.ask",
         "session.back", "session.forward", "session.rename", "session.openInEditor", "session.copyReference",
@@ -384,9 +384,13 @@ enum Keybindings {
         KeybindingRule(key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning"),
         KeybindingRule(key: "shift+enter", command: "composer.newline", when: "composerFocus"),
         KeybindingRule(key: "mod+s", command: "composer.stash", when: "composerFocus"),
+        KeybindingRule(key: "mod+shift+d", command: "composer.dictate", when: "composerFocus && !terminalFocus"),
         KeybindingRule(key: "alt+up", command: "composer.historyPrevious", when: "composerFocus"),
         KeybindingRule(key: "alt+down", command: "composer.historyNext", when: "composerFocus"),
         KeybindingRule(key: "shift+tab", command: "composer.access", when: "composerFocus"),
+        // The draft's own undo, so a deleted chip comes back whole (the list's undo below steps aside for it).
+        KeybindingRule(key: "mod+z", command: "composer.undo", when: "composerFocus"),
+        KeybindingRule(key: "mod+shift+z", command: "composer.redo", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+enter", command: "queue.steerFirst", when: "composerFocus && turnRunning"),
         KeybindingRule(key: "mod+f", command: "chat.find", when: "!terminalFocus"),
         KeybindingRule(key: "mod+k", command: "search.toggle", when: "!terminalFocus"),
@@ -401,7 +405,7 @@ enum Keybindings {
         KeybindingRule(key: "mod+shift+a", command: "permissionPicker.toggle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+s", command: "session.settle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+p", command: "session.pin", when: "!terminalFocus"),
-        KeybindingRule(key: "mod+z", command: "session.undo", when: "!terminalFocus && !editableFocus"),
+        KeybindingRule(key: "mod+z", command: "session.undo", when: "!terminalFocus && !editableFocus && !composerFocus"),
         KeybindingRule(key: "mod+shift+t", command: "panel.reopenClosed", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+l", command: "selection.quote", when: "!terminalFocus && !editableFocus"),
         KeybindingRule(key: "mod+l", command: "selection.ask", when: "!terminalFocus && !editableFocus"),

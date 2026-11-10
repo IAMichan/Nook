@@ -9,9 +9,11 @@ struct MusicHomeView: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject private var spotify = SpotifySignIn.shared
     let onOpen: (MusicSection) -> Void
+    var onPlayingCardVisible: (Bool) -> Void = { _ in }
 
     var body: some View {
-        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen)
+        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen,
+                         onPlayingCardVisible: onPlayingCardVisible)
     }
 }
 
@@ -22,6 +24,8 @@ struct MusicHomeContent: View {
     @EnvironmentObject private var app: AppModel
     let spotifyConnected: Bool
     let onOpen: (MusicSection) -> Void
+    /// Whether the playing card is on screen, so the page's player bar only comes up once it has scrolled away.
+    var onPlayingCardVisible: (Bool) -> Void = { _ in }
     @State private var week: MusicStats?
     @State private var allRecent = false
     @Environment(\.panelSidebar) private var sidebar
@@ -35,7 +39,13 @@ struct MusicHomeContent: View {
     }
 
     private var currentID: String? { info?.trackID }
-    private var recent: [MusicTrack] { service.recent.tracks }
+    /// Where you left off, without the track that plays now: the card above already shows it.
+    private var recent: [MusicTrack] {
+        guard let info else { return service.recent.tracks }
+        return service.recent.tracks.filter { track in
+            track.id.isEmpty || info.trackID.isEmpty ? !(track.title == info.title && track.artist == info.artist) : track.id != info.trackID
+        }
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -47,13 +57,15 @@ struct MusicHomeContent: View {
                         .foregroundStyle(NookTheme.paper)
                         .padding(.bottom, -NookTheme.Spacing.lg)
                 }
+                // First what to play (what plays, where you left off, your playlists), then how you listened.
                 if let info {
                     MusicPlayingCard(info: info, service: service, lyrics: lyrics) { onOpen(.nowPlaying) }
+                        .onScrollVisibilityChange(threshold: 0.25) { onPlayingCardVisible($0) }
                 }
                 if showsConnect { connectCard }
-                weekRow
                 if !recent.isEmpty { recentGroup }
                 if !service.playlists.isEmpty { playlistsGroup }
+                weekRow
                 if let week, week.topArtists.count >= 3 { artistsGroup(week) }
                 if recent.isEmpty, service.playlists.isEmpty, info == nil { emptyHint }
             }
@@ -111,7 +123,7 @@ struct MusicHomeContent: View {
             SmallGhostButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Groups
@@ -159,7 +171,7 @@ struct MusicHomeContent: View {
                     service.search(for: rank.name)
                     onOpen(.search)
                 }
-            }, service: service)
+            }, service: service, minimum: MusicLayout.artist)
         }
     }
 
@@ -185,7 +197,7 @@ private struct MusicPlayingCard: View {
     private static let cover: CGFloat = 148
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.sheet)
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
                 coverButton
@@ -336,7 +348,7 @@ private struct MusicWeekCard: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.panel)
         Button(action: onOpen) {
             HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -366,7 +378,7 @@ private struct MusicWeekCard: View {
                         .foregroundStyle(NookTheme.paper)
                     HStack(spacing: NookTheme.Spacing.xs) {
                         ForEach(0..<7, id: \.self) { day in
-                            RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+                            NookTheme.shape(NookTheme.Radius.chip / 2)
                                 .fill(day < stats.streak ? NookTheme.music : NookTheme.smoke)
                                 .frame(width: 9, height: 9)
                         }
@@ -396,7 +408,7 @@ private struct MusicWeekCard: View {
                 let today = index == buckets.count - 1
                 VStack(spacing: NookTheme.Spacing.xs) {
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.chip / 2, style: .continuous)
+                    NookTheme.shape(NookTheme.Radius.chip / 2)
                         .fill(NookTheme.music.opacity(today ? 1 : 0.7))
                         .frame(height: max(3, 34 * CGFloat(bucket.seconds) / CGFloat(most)))
                         .frame(maxWidth: 16)
@@ -421,7 +433,7 @@ private struct MusicSurpriseCard: View {
     @State private var picked: String?
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+        let shape = NookTheme.shape(NookTheme.Radius.panel)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("music.surprise.title"))
@@ -463,6 +475,8 @@ private struct MusicSurpriseCard: View {
 private struct MusicCoverRow: View {
     let items: [MusicCoverItem]
     let service: NowPlayingService
+    /// The narrowest a cover gets: artists' faces are smaller than covers, so more fit in a row.
+    var minimum: CGFloat = MusicLayout.cover
 
     private static let gap = NookTheme.Spacing.xl
 
@@ -473,7 +487,7 @@ private struct MusicCoverRow: View {
                     MusicCoverCard(item: item, service: service)
                         .containerRelativeFrame(.horizontal) { width, _ in
                             // One cover in a very narrow pane, so it never gets smaller than intended.
-                            let count = max(1, ((width + Self.gap) / (MusicLayout.cover + Self.gap)).rounded(.down))
+                            let count = max(1, ((width + Self.gap) / (minimum + Self.gap)).rounded(.down))
                             return (width - Self.gap * (count - 1)) / count
                         }
                 }
@@ -527,8 +541,8 @@ struct MusicTrackTile: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .padding(.vertical, filled ? MusicLayout.rowBleed : NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: filled ? NookTheme.surface : .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: filled ? NookTheme.surface : .clear),
+                               radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

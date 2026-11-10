@@ -63,7 +63,7 @@ struct ChatForwardPicker: View {
             }
             .padding(NookTheme.Spacing.xl)
             .frame(maxWidth: 420)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.surface))
+            .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.sheet)
             .padding(NookTheme.Spacing.xl)
         }
         .onAppear { searching = true }
@@ -129,8 +129,7 @@ private struct ChatForwardRow: View {
             }
             .padding(.vertical, NookTheme.Spacing.sm)
             .padding(.horizontal, NookTheme.Spacing.sm)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: chosen, hovering: hovering)))
+            .roundedBackground(NookTheme.rowFill(selected: chosen, hovering: hovering), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

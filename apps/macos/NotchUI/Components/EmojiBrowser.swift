@@ -102,8 +102,7 @@ private struct EmojiGroupTab: View {
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(selected ? NookTheme.paper : (hovering ? NookTheme.textStrong : NookTheme.textTertiary))
                 .frame(width: 30, height: 26)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+                .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -125,8 +124,8 @@ private struct EmojiCell: View {
             Text(emoji.character)
                 .font(NookTheme.font(22))
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(chosen ? NookTheme.mint.opacity(0.2) : (hovering ? NookTheme.smoke : Color.clear)))
+                .roundedBackground(chosen ? NookTheme.mint.opacity(0.2) : (hovering ? NookTheme.smoke : Color.clear),
+                                   radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

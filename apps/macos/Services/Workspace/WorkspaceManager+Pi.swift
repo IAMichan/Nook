@@ -42,9 +42,10 @@ extension WorkspaceManager {
         case .notice(let message):
             append(id, RunEvent(kind: .system, text: message))
         case .compactionStarted:
-            append(id, RunEvent(kind: .system, text: tr("pi.event.compacting")))
+            compactionStarted(id)
         case .compactionEnded(let failed):
-            if let failed { append(id, RunEvent(kind: .error, text: failed.isEmpty ? tr("ws.event.stopped") : failed)) }
+            // An aborted compaction (`failed` empty) is stopped, not an error.
+            if let failed { compactionFailed(id, message: failed.isEmpty ? nil : failed) } else { compactionFinished(id) }
         case .retrying(let reason):
             append(id, RunEvent(kind: .system, text: reason.isEmpty ? tr("pi.event.retrying") : reason))
         case .failed(let message):
