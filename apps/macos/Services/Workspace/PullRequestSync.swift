@@ -139,6 +139,11 @@ final class PullRequestSync: ObservableObject {
         return landed >= since
     }
 
+    /// What the session's requests say to the auto-settle rules (`PullRequestSettlement.autoSettleState`).
+    func autoSettleState(_ id: UUID, since: Date?) -> AutoSettlePolicy.PullRequestState {
+        PullRequestSettlement.autoSettleState(links: links[id] ?? [], since: since)
+    }
+
     /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
     /// settle it), and the new branch is asked about in the next round. They stay listed above its composer.
     func forget(_ id: UUID) {

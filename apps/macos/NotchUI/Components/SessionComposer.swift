@@ -202,7 +202,11 @@ struct SessionComposer<Controls: View>: View {
     private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }
     /// While dictating, Send may be pressed before any word is in: it sends once they have landed (and only if there are).
-    private var enabled: Bool { canSend && !sending && (!isEmpty || dictator.isActive) && encodingPictures == 0 }
+    private var enabled: Bool {
+        canSend && !sending && (!isEmpty || dictator.isActive) && encodingPictures == 0 && overLimit == nil
+    }
+    /// Characters past `PasteRule.messageLimit`: the draft stays in the box, with a notice, until it fits.
+    private var overLimit: Int? { PasteRule.overLimit(typedText) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -213,6 +217,11 @@ struct SessionComposer<Controls: View>: View {
                 if let scope = extras.config.secretScope {
                     ComposerSecretOfferSlot(model: extras.model) { keepSecrets(scope: scope) }
                 }
+            }
+            if let over = overLimit {
+                PanelNoticeBar(title: tr("compose.limit.title"),
+                               detail: tr("compose.limit.detail", PasteRule.messageLimit.formatted(), over.formatted()),
+                               symbol: "text.badge.xmark", tone: NookTheme.amber) { EmptyView() }
             }
             if choicesBelow {
                 // The box comes first in z-order so the tray runs on behind it (see ComposerTray).
@@ -317,6 +326,9 @@ struct SessionComposer<Controls: View>: View {
         }
         styleMarkdown()
         guard let extras else { return }
+        // ⇧⌘V asked for this change to stay text; it holds for this one change only.
+        let pastedAsText = extras.model.pastesAsText
+        extras.model.pastesAsText = false
         // The list, list items and big pastes look at the words in the box, not at the files attached after them.
         let old = ComposerAttachments.split(oldText).body, new = ComposerAttachments.split(newText).body
         if extras.model.applying {
@@ -354,7 +366,7 @@ struct SessionComposer<Controls: View>: View {
             extras.model.update(for: new, caret: caret(in: new), extras.config)
             return
         }
-        if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
+        if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new, asText: pastedAsText) {
             assign(ComposerAttachments.replacingBody(of: newText, with: kept))
             extras.model.close()
             return
@@ -433,7 +445,18 @@ struct SessionComposer<Controls: View>: View {
             // Undo and redo the draft itself, so a chip comes back whole; the field's own undo is off meanwhile.
             "composer.undo": { fieldSession.isAttached ? fieldSession.undo() : false },
             "composer.redo": { fieldSession.isAttached ? fieldSession.redo() : false },
+            "composer.pasteAsText": pasteAsText,
         ]
+    }
+
+    /// ⇧⌘V: pastes the clipboard's text into the box as text, also when it is big enough to become an attachment with ⌘V.
+    /// A paste that would push the message past `PasteRule.messageLimit` still goes aside.
+    private func pasteAsText() -> Bool {
+        guard !dictator.isActive, NSPasteboard.general.string(forType: .string) != nil else { return false }
+        extras?.model.pastesAsText = true
+        let pasted = NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: nil)
+        if !pasted { extras?.model.pastesAsText = false }
+        return pasted
     }
 
     private func walkHistory(_ delta: Int) -> Bool {
@@ -448,8 +471,8 @@ struct SessionComposer<Controls: View>: View {
     private func sendKey(alternate: Bool) -> Bool {
         if chooseSelected() { return true }
         if alternate {
-            if busy, !isEmpty, encodingPictures == 0, let flipAction { fire(flipAction) }
-        } else if !busy, let sendNowAction, !isEmpty, encodingPictures == 0 {
+            if busy, !isEmpty, encodingPictures == 0, overLimit == nil, let flipAction { fire(flipAction) }
+        } else if !busy, let sendNowAction, !isEmpty, encodingPictures == 0, overLimit == nil {
             fire(sendNowAction)
         } else if !busy, enabled {
             fire(onSend)
@@ -524,7 +547,7 @@ struct SessionComposer<Controls: View>: View {
         (focus ?? $ownFocus).wrappedValue = true
         dictator.start(body: words, selection: selection.map {
             ComposerChips.draftRange(display: $0.location..<NSMaxRange($0), in: words)
-        }) { spoken, caret in
+        }, folder: extras?.config.fileRoot) { spoken, caret in
             assign(ComposerAttachments.replacingBody(of: text, with: spoken))
             placeCaret(caret, inWords: spoken)
         }
@@ -637,7 +660,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private func submit() {
-        if busy, let queueAction, !isEmpty, encodingPictures == 0 {
+        if busy, let queueAction, !isEmpty, encodingPictures == 0, overLimit == nil {
             fire(queueAction)
         } else if !(busy && onStop != nil), enabled {
             // While busy with a stop button showing, Return must not send: the button is for stopping.
@@ -763,7 +786,7 @@ struct SessionComposer<Controls: View>: View {
             if let trailingAccessory { trailingAccessory }
             if dictates { ComposerDictationButton(dictator: dictator, toggle: toggleDictation) }
             if busy, let onStop {
-                if let queueAction, !isEmpty {
+                if let queueAction, !isEmpty, overLimit == nil {
                     roundButton(symbol: queueSymbol, label: queueLabel, active: encodingPictures == 0) { fire(queueAction) }
                         .disabled(encodingPictures > 0)
                 }

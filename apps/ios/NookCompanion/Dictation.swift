@@ -62,6 +62,7 @@ final class Dictation: ObservableObject {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.addsPunctuation = true
+        request.contextualStrings = Self.context
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
         self.request = request
         base = text.wrappedValue
@@ -89,6 +90,15 @@ final class Dictation: ObservableObject {
                 if done { self.stop() }
             }
         }
+    }
+
+    /// The words to expect, as on the Mac (`DictationContext`): the projects the Mac offers and the branches of its
+    /// sessions, newest first. The phone has no personal dictionary of its own.
+    private static var context: [String] {
+        let client = CompanionClient.shared
+        let branches = client.sessions.sorted { $0.updated > $1.updated }.compactMap(\.branch)
+        return DictationContext.strings(dictionary: [], projects: client.launchOptions?.projects.map(\.name) ?? [],
+                                        branches: Array(branches.prefix(40)))
     }
 
     /// The problem was read: back to rest.

@@ -65,8 +65,9 @@ final class KeyCommandCenter: ObservableObject {
         "session.interrupt", "session.back", "session.forward", "session.rename", "session.openInEditor",
         "session.copyReference", "composer.startInBackground", "sidebar.toggle", "terminal.toggle", "sidePanel.toggle",
         "sessionPanel.toggle", "tab.close", "terminal.splitRight", "terminal.splitDown", "focus.next", "focus.previous",
-        "effortPicker.toggle", "permissionPicker.toggle", "effort.increase", "effort.decrease",
-    ] + (1...SessionJump.count).map(SessionJump.command))
+        "effortPicker.toggle", "permissionPicker.toggle", "effort.increase", "effort.decrease", "composer.pasteAsText",
+        ModelPickerKeys.previousPlace, ModelPickerKeys.nextPlace,
+    ] + (1...SessionJump.count).map(SessionJump.command) + (1...ModelPickerKeys.count).map(ModelPickerKeys.command))
 
     /// The shortcut recorder in Settings is waiting for a key: no command takes it.
     var recording = false
