@@ -33,6 +33,12 @@ extension WorkspaceManager {
                                           temp: paths.temp.path)
     }
 
+    /// The account's Antigravity sign-in is saved in its profile folder, so `authenticate` returns without a sign-in page.
+    func hasAntigravityLogin(_ profileID: String) -> Bool {
+        let token = antigravityPaths.profile(profileID).appendingPathComponent("antigravity-acp/acp_token.json")
+        return FileManager.default.fileExists(atPath: token.path)
+    }
+
     /// The server printed its sign-in link: Google's page opens in your browser and the server's own loopback port
     /// receives the answer. Shown once per session in the timeline.
     func openAntigravitySignIn(_ id: UUID, _ url: URL) {
