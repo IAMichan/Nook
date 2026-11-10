@@ -177,7 +177,7 @@ struct BrowserImportSheet: View {
     private var footer: some View {
         Spacer()
         if case .done = phase {
-            Button(tr("button.done")) { dismiss() }
+            Button(tr("cookieImport.finish")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
