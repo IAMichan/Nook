@@ -66,6 +66,8 @@ extension ChatBubble {
         edited = message.isEdited
         deleted = message.isDeleted
         poll = message.poll
+        membership = message.membership
+        groupChange = message.groupChange
         reactions = (message.reactions ?? []).map {
             BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine, people: $0.people ?? [])
         }
@@ -846,5 +848,27 @@ struct ChatCallRow: View {
         }
         .fixedSize()
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A line about the group in the middle of the chat, as the apps show it: someone coming in or going ("Ruben added
+/// David", `ChatMembership`), or the group itself changing ("Anna changed the group name to …", `ChatGroupChange`), the
+/// same for every app. Its time shows on hover.
+struct ChatNoticeLine: View {
+    let text: String
+    let time: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textSecondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
+            .help(time)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, NookTheme.Spacing.xl)
+            .textSelection(.enabled)
     }
 }

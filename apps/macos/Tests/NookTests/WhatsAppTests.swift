@@ -40,6 +40,97 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[group]?.messages.map(\.id), ["2"])
     }
 
+    func testGatewaysTellWhoCameIntoAGroupOrWent() throws {
+        let group = "120363000000000001@g.us"
+        let gowa = Data(#"{"event":"group.participants","device_id":"31600000009@s.whatsapp.net","timestamp":"2026-11-10T10:00:00Z","payload":{"chat_id":"120363000000000001@g.us","type":"join","jids":["31600000002@s.whatsapp.net"]}}"#.utf8)
+        guard case .message(let joined)? = WAWebhook.parse(kind: .gowa, body: gowa) else { return XCTFail("a line in the group") }
+        XCTAssertEqual(joined.chat, group)
+        XCTAssertEqual(joined.membership, ChatMembership(.joined, people: ["31600000002@s.whatsapp.net"]),
+                       "GOWA does not say who added them")
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowa), WAWebhook.parse(kind: .gowa, body: gowa), "the same id twice")
+        let mine = Data(#"{"event":"group.participants","device_id":"31600000009@s.whatsapp.net","timestamp":"2026-11-10T10:00:00Z","payload":{"chat_id":"120363000000000001@g.us","type":"leave","jids":["31600000009@s.whatsapp.net"]}}"#.utf8)
+        guard case .message(let gone)? = WAWebhook.parse(kind: .gowa, body: mine) else { return XCTFail("a line in the group") }
+        XCTAssertEqual(gone.membership, ChatMembership(.gone, people: [ChatMembership.me]))
+        let promote = Data(#"{"event":"group.participants","payload":{"chat_id":"120363000000000001@g.us","type":"promote","jids":["31600000002@s.whatsapp.net"]}}"#.utf8)
+        guard case .message(let admin)? = WAWebhook.parse(kind: .gowa, body: promote) else { return XCTFail("a new admin is a line") }
+        XCTAssertEqual(admin.groupChange, ChatGroupChange(.promoted, people: ["31600000002@s.whatsapp.net"]))
+        XCTAssertNil(admin.membership)
+
+        let openwa = Data(#"{"event":"group.join","data":{"groupId":"120363000000000001@g.us","actorId":"31600000001@s.whatsapp.net","participantIds":["31600000002@s.whatsapp.net"],"timestamp":1800000000}}"#.utf8)
+        guard case .message(let added)? = WAWebhook.parse(kind: .openwa, body: openwa, me: "31600000009") else { return XCTFail("a line") }
+        XCTAssertEqual(added.membership, ChatMembership(.added, by: "31600000001@s.whatsapp.net", people: ["31600000002@s.whatsapp.net"]))
+        let left = Data(#"{"event":"group.leave","data":{"groupId":"120363000000000001@g.us","actorId":"31600000002@s.whatsapp.net","participantIds":["31600000002@s.whatsapp.net"],"timestamp":1800000060}}"#.utf8)
+        guard case .message(let leaving)? = WAWebhook.parse(kind: .openwa, body: left) else { return XCTFail("a line") }
+        XCTAssertEqual(leaving.membership?.change, .left)
+
+        // In the chat: no new message, no card, and everyone by their name.
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: group, from: "31600000001@s.whatsapp.net", name: "Anna"), filters: WAFilters())
+        XCTAssertEqual(inbox.add(added, filters: WAFilters()), .quiet)
+        let conversation = try XCTUnwrap(inbox.conversations[group])
+        XCTAssertEqual(conversation.unread, 1, "only the message counts")
+        var names = WAMemberIndex(conversation)
+        let shown = WhatsAppExport.message(try XCTUnwrap(conversation.messages.last), in: conversation, kind: .group,
+                                           names: &names, files: [:])
+        XCTAssertEqual(shown.membership?.change, .added)
+        XCTAssertEqual(shown.membership?.by, "Anna", "by the name they wrote under")
+        XCTAssertEqual(shown.membership?.people, [WAJID.displayNumber("31600000002@s.whatsapp.net")])
+        XCTAssertEqual(shown.sender, "")
+    }
+
+    func testGatewaysSayWhatAGroupAndAPersonAre() throws {
+        let group = "120363000000000001@g.us"
+        let info = Data(#"{"code":"SUCCESS","results":{"JID":"120363000000000001@g.us","Name":"Club","Topic":"Elke vrijdag","TopicSetBy":"31600000001@s.whatsapp.net","TopicSetAt":"2026-01-02T10:00:00Z","GroupCreated":"2025-05-01T09:00:00Z","OwnerJID":"31600000001@s.whatsapp.net","IsAnnounce":true,"IsLocked":false,"Participants":[{"JID":"31600000001@s.whatsapp.net","IsAdmin":true,"IsSuperAdmin":true,"DisplayName":"Anna"},{"JID":"31600000002@s.whatsapp.net","IsAdmin":false,"DisplayName":"David"}]}}"#.utf8)
+        let profile = WAGOWA.groupProfile(info)
+        XCTAssertEqual(profile.about, "Elke vrijdag")
+        XCTAssertEqual(profile.aboutBy, "31600000001@s.whatsapp.net")
+        XCTAssertEqual(profile.adminsOnly, true)
+        XCTAssertEqual(profile.locked, false)
+        XCTAssertNotNil(profile.created)
+        let members = WAGOWA.members(info)
+        XCTAssertEqual(members.map(\.admin), [true, false])
+        let openwa = WAOpenWA.groupProfile(["description": "Intern", "owner": "31600000001@c.us", "createdAt": 1_718_900_000,
+                                            "isAnnounce": false, "isReadOnly": true])
+        XCTAssertEqual(openwa.about, "Intern")
+        XCTAssertEqual(openwa.locked, true)
+        XCTAssertEqual(WAMembers.list([["id": "1@c.us", "isAdmin": true], ["id": "2@c.us", "admin": "superadmin"], ["id": "3@c.us"]]).map(\.admin),
+                       [true, true, false])
+
+        // Named in the chat as everyone else is.
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: group, from: "31600000002@s.whatsapp.net", name: "David"), filters: WAFilters())
+        XCTAssertTrue(inbox.setMembers(members, profile: profile, chat: group))
+        let conversation = try XCTUnwrap(inbox.conversations[group])
+        let chat = WhatsAppExport.chat(conversation, facts: WhatsAppExport.Facts(key: group), names: WANameBook())
+        XCTAssertEqual(chat.profile?.about, "Elke vrijdag")
+        XCTAssertEqual(chat.profile?.aboutBy, "Anna")
+        XCTAssertEqual(chat.profile?.createdBy, "Anna")
+        XCTAssertEqual(chat.profile?.admins, ["Anna"])
+
+        // A person: their "about" line, and a business's details.
+        let user = Data(#"{"code":"SUCCESS","results":{"verified_name":"Bakkerij Jansen","status":"Vers brood elke dag"}}"#.utf8)
+        let person = WAGOWA.person(user)
+        XCTAssertEqual(person.about, "Vers brood elke dag")
+        XCTAssertEqual(person.business, "Bakkerij Jansen")
+        let business = Data(#"{"code":"SUCCESS","results":{"email":"info@jansen.nl","address":"Dorpsstraat 1","categories":[{"id":"1","name":"Bakery"}]}}"#.utf8)
+        let full = WAGOWA.business(business, over: person)
+        XCTAssertEqual(full.email, "info@jansen.nl")
+        XCTAssertEqual(full.address, "Dorpsstraat 1")
+        XCTAssertEqual(full.category, "Bakery")
+
+        // A new name and a new admin on the webhook.
+        let renamed = Data(#"{"event":"group.info","timestamp":"2026-11-10T10:00:00Z","payload":{"chat_id":"120363000000000001@g.us","name":"Club 2","name_set_by":"31600000001@s.whatsapp.net"}}"#.utf8)
+        guard case .message(let line)? = WAWebhook.parse(kind: .gowa, body: renamed) else { return XCTFail("a line") }
+        XCTAssertEqual(line.groupChange, ChatGroupChange(.renamed, by: "31600000001@s.whatsapp.net", text: "Club 2"))
+        let promoted = Data(#"{"event":"group.participants","payload":{"chat_id":"120363000000000001@g.us","type":"promote","jids":["31600000002@s.whatsapp.net"]}}"#.utf8)
+        guard case .message(let admin)? = WAWebhook.parse(kind: .gowa, body: promoted) else { return XCTFail("a line") }
+        XCTAssertEqual(admin.groupChange?.kind, .promoted)
+        let update = Data(#"{"event":"group.update","data":{"groupId":"120363000000000001@g.us","actorId":"31600000001@s.whatsapp.net","changes":{"description":"Nieuw"},"timestamp":1800000000}}"#.utf8)
+        guard case .message(let described)? = WAWebhook.parse(kind: .openwa, body: update) else { return XCTFail("a line") }
+        XCTAssertEqual(described.groupChange?.kind, .described)
+        XCTAssertEqual(described.groupChange?.text, "Nieuw")
+    }
+
     func testAGOWAReactionSentAsAMessageGoesOnItsMessage() {
         let nested = Data(#"{"event":"message","payload":{"id":"R1","chat_id":"120363000000000001@g.us","from":"31633333333@s.whatsapp.net","is_from_me":false,"body":"","reaction":{"message":"🙏","id":"POST1"}}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: nested),

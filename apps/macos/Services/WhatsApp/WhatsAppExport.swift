@@ -45,7 +45,30 @@ enum WhatsAppExport {
         chat.activity = max(conversation.lastActivity, facts.activity ?? .distantPast)
         chat.waitsInApp = facts.waitsInApp
         chat.ephemeral = true
+        if group, let members = conversation.members { chat.profile = profile(conversation.profile, members: members, names: &names) }
+        if kind == .person {
+            // Their number (not for an @lid, which is no number), and what the gateway said of them.
+            var person = conversation.person ?? ChatProfile()
+            if !conversation.id.hasSuffix("@lid") { person.phone = WAJID.displayNumber(conversation.id) }
+            if person.ownName == conversation.name { person.ownName = nil }
+            chat.profile = person.isEmpty ? nil : person
+        }
         return chat
+    }
+
+    /// What the gateway says of a group, everyone by their name in it: its admins (you as yourself), who set the
+    /// description and who made it.
+    static func profile(_ group: WAGroupProfile?, members: [WAMember], names: inout WAMemberIndex) -> ChatProfile? {
+        var admins: [String] = []
+        // By the same names the member list shows (`WAMemberIndex.all`), so the list marks them.
+        for (member, name) in zip(members, names.all) where member.admin { admins.append(name) }
+        if group?.youAreAdmin == true { admins.append(ChatMembership.me) }
+        guard let group else { return admins.isEmpty ? nil : ChatProfile(admins: admins) }
+        var profile = ChatProfile(about: group.about, aboutSince: group.aboutSince, created: group.created,
+                                  admins: admins, adminsOnly: group.adminsOnly, locked: group.locked)
+        if let by = group.aboutBy { profile.aboutBy = names.name(by) }
+        if let by = group.createdBy { profile.createdBy = names.name(by) }
+        return profile
     }
 
     /// A chat the phone lists that wrote nothing Nook holds yet: its row, with when it last had a message.
@@ -80,6 +103,25 @@ enum WhatsAppExport {
         }
         inbox.mentionsMe = message.mentionsMe
         inbox.senderID = message.fromMe ? nil : WAJID.normalized(message.sender)
+        if let change = message.groupChange {
+            var people: [String] = []
+            for jid in change.people { people.append(jid == ChatMembership.me ? jid : names.name(jid)) }
+            var by = change.by
+            if let jid = by, jid != ChatMembership.me { by = names.name(jid) }
+            inbox.groupChange = ChatGroupChange(change.kind, by: by, text: change.text, people: people)
+            inbox.sender = ""
+            inbox.senderID = nil
+        }
+        if let membership = message.membership {
+            // Everyone by their name in the group, you as yourself; the line says who did it, not a sender above it.
+            var people: [String] = []
+            for jid in membership.people { people.append(jid == ChatMembership.me ? jid : names.name(jid)) }
+            var by = membership.by
+            if let jid = by, jid != ChatMembership.me { by = names.name(jid) }
+            inbox.membership = ChatMembership(membership.change, by: by, people: people)
+            inbox.sender = ""
+            inbox.senderID = nil
+        }
         if message.edited { inbox.edited = true }
         return message.deleted ? inbox.withdrawn() : inbox
     }
@@ -103,7 +145,8 @@ enum WhatsAppExport {
     static func deleted(before: BridgedChat?, now: BridgedChat) -> [String] {
         guard let before, let oldest = now.messages.first?.date else { return [] }
         let kept = Set(now.messages.map(\.id))
-        return before.messages.filter { !kept.contains($0.id) && $0.date >= oldest }.map(\.id)
+        // A change in who is in the group only ever came live: the history never has it.
+        return before.messages.filter { !kept.contains($0.id) && $0.date >= oldest && !$0.isNotice }.map(\.id)
     }
 
     /// The file that came with a message, the same for every app, from this Mac once the link fetched it (`path`).

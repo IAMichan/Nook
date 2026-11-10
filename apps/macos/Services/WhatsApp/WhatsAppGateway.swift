@@ -77,6 +77,12 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var edited = false
     /// Deleted for everyone: it keeps its place in the chat (`withdrawn()`).
     var deleted = false
+    /// People came into the group or went out of it, by their JIDs (`ChatMembership.me` for you): no message of its own,
+    /// a line in the chat once they are named (`WhatsAppExport.message`). Never counts as new.
+    var membership: ChatMembership? = nil
+    /// The group itself changed (a new name, description, setting, admin), people by their JIDs: a line like
+    /// `membership`.
+    var groupChange: ChatGroupChange? = nil
 
     /// What stays of it once it was deleted for everyone: someone else's keeps what it said, as for every chat app
     /// (`InboxMessage.withdrawn()`); your own keeps nothing of it.
@@ -99,7 +105,35 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     /// Nothing to show: no text, no attachment, no poll (a reaction or another protocol message the gateway passed on
     /// as a message). It never becomes a bubble of its own.
     var isBlank: Bool {
-        !deleted && ChatFormat.isBlank(text) && media == .none && poll == nil && pollVote == nil
+        !deleted && ChatFormat.isBlank(text) && media == .none && poll == nil && pollVote == nil && membership == nil && groupChange == nil
+    }
+
+    /// A change to group `chat` itself as a line in it: `by` and `people` by their JIDs, yours as `ChatMembership.me`.
+    /// Its id comes from what it says, so the same change delivered twice is one line.
+    static func groupChange(chat: String, _ kind: ChatGroupChange.Kind, by: String?, text: String? = nil,
+                            people: [String] = [], date: Date, me: String?) -> WAMessage {
+        func mine(_ jid: String) -> String { me.map { WAJID.sameUser(jid, $0) } == true ? ChatMembership.me : WAJID.normalized(jid) }
+        let change = ChatGroupChange(kind, by: by.map(mine), text: text, people: people.map(mine))
+        let who = change.people.sorted().joined(separator: ",")
+        let id = "group-\(Int(date.timeIntervalSince1970))-\(kind.rawValue)-\(who)-\((text ?? "").unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) ^ $1.value })"
+        var message = WAMessage(id: id, chat: chat, sender: by.map(WAJID.normalized) ?? chat, senderName: "", text: "", date: date,
+                                fromMe: change.by == ChatMembership.me)
+        message.groupChange = change
+        return message
+    }
+
+    /// A change in who is in group `chat` as a line in it: `by` and `people` by their JIDs, yours as
+    /// `ChatMembership.me`. Its id comes from what it says, so the same change delivered twice is one line.
+    static func membership(chat: String, _ change: ChatMembership.Change, by: String?, people: [String], date: Date,
+                           me: String?) -> WAMessage {
+        func mine(_ jid: String) -> String { me.map { WAJID.sameUser(jid, $0) } == true ? ChatMembership.me : WAJID.normalized(jid) }
+        let membership = ChatMembership(change, by: by.map(mine), people: people.map(mine))
+        let who = membership.people.map { $0 == ChatMembership.me ? "me" : $0 }.sorted().joined(separator: ",")
+        let id = "membership-\(Int(date.timeIntervalSince1970))-\(membership.change.rawValue)-\(who)"
+        var message = WAMessage(id: id, chat: chat, sender: by.map(WAJID.normalized) ?? chat, senderName: "", text: "", date: date,
+                                fromMe: membership.by == ChatMembership.me)
+        message.membership = membership
+        return message
     }
 }
 
@@ -422,6 +456,10 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var lastActivity: Date
     /// A group's other members (you left out), once the gateway was asked; nil while that is not known.
     var members: [WAMember]? = nil
+    /// What the gateway says about the group besides its people, once asked (`WAInbox.setMembers`).
+    var profile: WAGroupProfile? = nil
+    /// What the gateway says about the person of a private chat (their "about" line, business details), once asked.
+    var person: ChatProfile? = nil
     /// The newest emoji someone else put on one of your messages here (`person`: their id): the chat's line while
     /// nothing newer was written.
     var reaction: ChatReactionNote? = nil
@@ -546,10 +584,33 @@ struct WAMemberIndex {
 struct WAMember: Equatable, Sendable {
     var ids: [String]
     var name: String
+    /// An admin of the group (its owner too), when the gateway says.
+    var admin = false
 
     func matches(_ id: String) -> Bool {
         ids.contains { WAJID.sameReactor($0, id) || WAJID.normalized($0) == WAJID.normalized(id) }
     }
+}
+
+/// What the gateway says about a group besides its people, by JIDs as it gives them: the description, who set it and
+/// when, when the group was made and by whom, and who may write and edit. Named once the chat is shown
+/// (`WhatsAppExport.profile`).
+struct WAGroupProfile: Equatable, Sendable {
+    var about: String? = nil
+    var aboutBy: String? = nil
+    var aboutSince: Date? = nil
+    var created: Date? = nil
+    var createdBy: String? = nil
+    var adminsOnly: Bool? = nil
+    var locked: Bool? = nil
+    /// You are one of its admins.
+    var youAreAdmin = false
+}
+
+/// A group as the gateway describes it: its people and the rest (`WAGroupProfile`).
+struct WAGroupInfo: Equatable, Sendable {
+    var members: [WAMember]
+    var profile: WAGroupProfile? = nil
 }
 
 /// What one chat does when a message arrives, chosen per chat in Settings › WhatsApp.
@@ -861,7 +922,9 @@ struct WAInbox: Equatable, Sendable {
         conversation.lastActivity = max(conversation.lastActivity, message.date)
 
         let outcome: Outcome
-        if history || message.deleted || (!message.fromMe && quietBefore.map { message.date < $0 } == true) {
+        if history || message.deleted || message.membership != nil || message.groupChange != nil
+            || (!message.fromMe && quietBefore.map { message.date < $0 } == true) {
+            // A change in who is in a group is no news, as in WhatsApp itself.
             outcome = .quiet
         } else if message.fromMe {
             // You answered from the phone: it is read there.
@@ -1007,10 +1070,21 @@ struct WAInbox: Equatable, Sendable {
     /// A group's members as the gateway lists them (you left out): its info lists them, and the ticks of your messages
     /// that every member already has catch up. False when nothing changed.
     @discardableResult
-    mutating func setMembers(_ members: [WAMember], chat: String) -> Bool {
+    /// What the gateway says about the person of a private chat. True when the conversation changed.
+    mutating func setPerson(_ person: ChatProfile, chat: String) -> Bool {
         let key = WAJID.normalized(chat)
-        guard var conversation = conversations[key], conversation.members != members else { return false }
+        guard var conversation = conversations[key], conversation.person != person else { return false }
+        conversation.person = person
+        conversations[key] = conversation
+        return true
+    }
+
+    mutating func setMembers(_ members: [WAMember], profile: WAGroupProfile? = nil, chat: String) -> Bool {
+        let key = WAJID.normalized(chat)
+        guard var conversation = conversations[key],
+              conversation.members != members || (profile != nil && conversation.profile != profile) else { return false }
         conversation.members = members
+        if let profile { conversation.profile = profile }
         for index in conversation.messages.indices where conversation.messages[index].fromMe && !conversation.messages[index].readers.isEmpty {
             let message = conversation.messages[index]
             conversation.messages[index].receipt = ChatReceipts.overall(Array(message.readers.values), members: members.count,
@@ -1460,6 +1534,8 @@ enum WAWebhook {
         if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json, me: me ?? (json["device_id"] as? String)) }
         if json["event"] as? String == "message.reaction" { return parseGOWAReaction(json) }
         if json["event"] as? String == "chat_presence" { return parseGOWAPresence(json) }
+        if json["event"] as? String == "group.participants" { return parseGOWAMembers(json, me: me ?? (json["device_id"] as? String)) }
+        if json["event"] as? String == "group.info" { return parseGOWAGroupInfo(json, me: me ?? (json["device_id"] as? String)) }
         if ["message.edited", "message.revoked", "message.deleted"].contains(json["event"] as? String ?? "") {
             guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]) ?? nonEmpty(p["revoked_chat"]) else {
                 return .ignored
@@ -1516,6 +1592,37 @@ enum WAWebhook {
             return .edited(chat: chatID, message: target, text: text)
         }
         return nil
+    }
+
+    /// `{"event":"group.participants","timestamp","payload":{chat_id, type: "join"|"leave"|"promote"|"demote", jids}}`:
+    /// people came into a group (added, or through its link) or went out of it (left, or removed). GOWA says neither who
+    /// did it nor which of the two, so the line says only that they came or are gone. Promotions to admin are no line.
+    private static func parseGOWAMembers(_ json: [String: Any], me: String?) -> WAWebhookEvent {
+        guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]),
+              let type = p["type"] as? String else { return .ignored }
+        let jids = (p["jids"] as? [String] ?? []).filter { !$0.isEmpty }
+        guard !jids.isEmpty else { return .ignored }
+        let date = WADate.rfc3339(json["timestamp"] as? String) ?? WADate.rfc3339(p["timestamp"] as? String) ?? Date()
+        switch type {
+        case "join", "leave":
+            return .message(.membership(chat: chat, type == "join" ? .joined : .gone, by: nil, people: jids, date: date, me: me))
+        case "promote", "demote":
+            // Made admin or no longer: a line of its own, also without who did it.
+            return .message(.groupChange(chat: chat, type == "promote" ? .promoted : .demoted, by: nil, people: jids,
+                                         date: date, me: me))
+        default:
+            return .ignored
+        }
+    }
+
+    /// `{"event":"group.info","timestamp","payload":{chat_id, name, name_set_by}}`: the group got a new name, from
+    /// `name_set_by` when WhatsApp says.
+    private static func parseGOWAGroupInfo(_ json: [String: Any], me: String?) -> WAWebhookEvent {
+        guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]), let name = nonEmpty(p["name"]) else {
+            return .ignored
+        }
+        let date = WADate.rfc3339(json["timestamp"] as? String) ?? Date()
+        return .message(.groupChange(chat: chat, .renamed, by: nonEmpty(p["name_set_by"]), text: name, date: date, me: me))
     }
 
     /// `{"event":"chat_presence","payload":{from, sender_display_name, chat_id, state: "composing"|"paused", media: ""|"audio",
@@ -1599,6 +1706,8 @@ enum WAWebhook {
         if event == "message.ack" || event == "message.failed" || event == "message.receipt" { return parseOpenWAReceipt(json) }
         if event == "presence.update" { return parseOpenWAPresence(json) }
         if event == "message.reaction" { return parseOpenWAReaction(json, me: me) }
+        if event == "group.join" || event == "group.leave" { return parseOpenWAMembers(json, me: me) }
+        if event == "group.update" { return parseOpenWAGroupUpdate(json, me: me) }
         if let change = openwaChange(json) { return change }
         guard event == "message.received" || event == "message.sent",
               let d = json["data"] as? [String: Any],
@@ -1651,6 +1760,38 @@ enum WAWebhook {
             return .revoked(chat: chat, message: target)
         }
         return nil
+    }
+
+    /// `{"event":"group.join"|"group.leave","data":{groupId, actorId?, participantIds, timestamp}}`: people added to a
+    /// group or joining it, or leaving it or removed from it; `actorId` is the admin who added or removed them, when
+    /// OpenWA knows.
+    private static func parseOpenWAMembers(_ json: [String: Any], me: String?) -> WAWebhookEvent {
+        guard let d = json["data"] as? [String: Any], let chat = nonEmpty(d["groupId"]) ?? nonEmpty(d["chatId"]) else { return .ignored }
+        let people = (d["participantIds"] as? [String] ?? []).filter { !$0.isEmpty }
+        guard !people.isEmpty else { return .ignored }
+        let actor = nonEmpty(d["actorId"])
+        let joined = json["event"] as? String == "group.join"
+        let date = WADate.epoch(d["timestamp"]) ?? WADate.rfc3339(d["timestamp"] as? String) ?? Date()
+        return .message(.membership(chat: chat, joined ? .added : .removed, by: actor, people: people, date: date, me: me))
+    }
+
+    /// `{"event":"group.update","data":{groupId, actorId?, changes: {subject?, description?, announce?, locked?},
+    /// timestamp}}`: the group's name, description or settings changed. One line for the first change it names.
+    private static func parseOpenWAGroupUpdate(_ json: [String: Any], me: String?) -> WAWebhookEvent {
+        guard let d = json["data"] as? [String: Any], let chat = nonEmpty(d["groupId"]) ?? nonEmpty(d["chatId"]),
+              let changes = d["changes"] as? [String: Any] else { return .ignored }
+        let actor = nonEmpty(d["actorId"])
+        let date = WADate.epoch(d["timestamp"]) ?? WADate.rfc3339(d["timestamp"] as? String) ?? Date()
+        if let subject = nonEmpty(changes["subject"]) {
+            return .message(.groupChange(chat: chat, .renamed, by: actor, text: subject, date: date, me: me))
+        }
+        if let description = changes["description"] {
+            return .message(.groupChange(chat: chat, .described, by: actor, text: (description as? String) ?? "", date: date, me: me))
+        }
+        if let announce = changes["announce"] as? Bool {
+            return .message(.groupChange(chat: chat, announce ? .adminsOnly : .everyone, by: actor, date: date, me: me))
+        }
+        return .ignored
     }
 
     /// `{"event":"message.reaction","data":{messageId, chatId, reaction, senderId}}`; an empty `reaction` takes it back.
@@ -1874,6 +2015,47 @@ enum WAGOWA {
         return WAMembers.list(r["Participants"] ?? r["participants"])
     }
 
+    /// `GET /group/info` → whatsmeow's GroupInfo, its parts flattened (`Topic`, `TopicSetBy`, `TopicSetAt`,
+    /// `GroupCreated`, `OwnerJID`, `IsAnnounce`, `IsLocked`), under `results` or `results.data`: what it says besides
+    /// its people.
+    static func groupProfile(_ data: Data) -> WAGroupProfile {
+        guard var info = results(data) as? [String: Any] else { return WAGroupProfile() }
+        if let inner = info["data"] as? [String: Any] { info = inner }
+        func field(_ key: String) -> Any? { info[key] ?? info[key.lowercased()] }
+        func date(_ key: String) -> Date? {
+            // Go's zero time ("0001-01-01T00:00:00Z") means WhatsApp did not say.
+            WADate.rfc3339(field(key) as? String).flatMap { $0.timeIntervalSince1970 > 0 ? $0 : nil }
+        }
+        let topicDeleted = field("TopicDeleted") as? Bool == true
+        return WAGroupProfile(about: topicDeleted ? nil : ChatProfile.text(field("Topic") as? String),
+                              aboutBy: nonEmpty(field("TopicSetBy")), aboutSince: date("TopicSetAt"),
+                              created: date("GroupCreated"), createdBy: nonEmpty(field("OwnerJID")),
+                              adminsOnly: field("IsAnnounce") as? Bool, locked: field("IsLocked") as? Bool)
+    }
+
+    /// `GET /user/info?phone=` → `results: {verified_name, status, picture_id, devices}` (or a list of them under
+    /// `results.data`): their "about" line and, for a business, its verified name.
+    static func person(_ data: Data) -> ChatProfile {
+        var info = results(data) as? [String: Any] ?? [:]
+        if let list = info["data"] as? [[String: Any]], let first = list.first { info = first }
+        var profile = ChatProfile(about: ChatProfile.text(info["status"] as? String))
+        profile.business = ChatProfile.text(info["verified_name"] as? String)
+        return profile
+    }
+
+    /// `GET /user/business-profile?phone=` → `results: {email, address, categories: [{name}], business_hours, …}`: a
+    /// business's details over what `person` read.
+    static func business(_ data: Data, over profile: ChatProfile) -> ChatProfile {
+        guard let info = results(data) as? [String: Any] else { return profile }
+        var profile = profile
+        profile.email = ChatProfile.text(info["email"] as? String) ?? profile.email
+        profile.address = ChatProfile.text(info["address"] as? String) ?? profile.address
+        let categories = (info["categories"] as? [[String: Any]] ?? []).compactMap { ChatProfile.text($0["name"] as? String) }
+        if !categories.isEmpty { profile.category = categories.joined(separator: ", ") }
+        if let sites = info["websites"] as? [String], let site = sites.compactMap(ChatProfile.text).first { profile.website = site }
+        return profile
+    }
+
     /// `GET /user/my/groups` → `results: {data: [{JID, Name, LinkedParentJID, …}]}` (whatsmeow's GroupInfo). A
     /// community's announcement group without a name of its own takes its community's.
     static func groupNames(_ data: Data) -> [String: String] {
@@ -2058,6 +2240,22 @@ enum WAGOWARelease {
 }
 
 enum WAOpenWA {
+    /// `GET /contacts/{id}` → `{name, pushName, number, isMyContact, isBlocked}`: the name they gave themselves and
+    /// whether you blocked them.
+    static func person(_ obj: [String: Any]) -> ChatProfile {
+        var profile = ChatProfile()
+        profile.ownName = ChatProfile.text(obj["pushName"] as? String)
+        profile.blocked = obj["isBlocked"] as? Bool
+        return profile
+    }
+
+    /// `GET /groups/{id}` → `{description, owner, createdAt (epoch s), isAnnounce, isReadOnly, participants}`: what it
+    /// says of the group besides its people.
+    static func groupProfile(_ obj: [String: Any]) -> WAGroupProfile {
+        WAGroupProfile(about: ChatProfile.text(obj["description"] as? String), created: WADate.epoch(obj["createdAt"]),
+                       createdBy: nonEmpty(obj["owner"]), adminsOnly: obj["isAnnounce"] as? Bool, locked: obj["isReadOnly"] as? Bool)
+    }
+
     /// A session: `{id (uuid), name, status, phone, pushName, …}`.
     /// status: created|initializing|qr_ready|authenticating|ready|disconnected|action_required|failed.
     static func session(_ obj: Any?) -> (id: String, status: String, phone: String?)? {
@@ -2205,7 +2403,10 @@ enum WAMembers {
             let ids = [field("JID"), field("PhoneNumber"), field("LID"), field("Id"), serialized].compactMap { $0 }
             guard !ids.isEmpty else { return nil }
             let name = field("DisplayName") ?? field("FullName") ?? field("Name") ?? field("Pushname") ?? field("PushName") ?? ""
-            return WAMember(ids: ids, name: name.trimmingCharacters(in: .whitespaces))
+            // whatsmeow's `IsAdmin`/`IsSuperAdmin`, OpenWA's `isAdmin`/`isSuperAdmin`, Baileys' `admin: "admin"|"superadmin"`.
+            let admin = ["IsAdmin", "IsSuperAdmin", "isAdmin", "isSuperAdmin"].contains { p[$0] as? Bool == true }
+                || ["admin", "superadmin"].contains((p["admin"] as? String) ?? "")
+            return WAMember(ids: ids, name: name.trimmingCharacters(in: .whitespaces), admin: admin)
         }
     }
 
