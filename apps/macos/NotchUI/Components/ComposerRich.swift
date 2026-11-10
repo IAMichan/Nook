@@ -611,9 +611,12 @@ struct ComposerContextRing: View {
     }
 }
 
-/// How much of its subscription the session's account has used, among the choices of the composer, right after the effort: a
-/// small ring filled to the window that runs out first, with its percentage beside it, amber from 75 % and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
-/// the usage limits modal with every account (`UsageModal`). Every agent that reports limits gets it.
+/// How much of its subscription the session's account has used, among the choices of the composer, right after the effort:
+/// the short window (5 hours) and the long one (week) at once, as two rings in one (outer the short window, inner the long
+/// one) beside two small labelled lines ("5h 38%", "W 12%") that stack inside the chip's height, so it hardly grows wider
+/// than a single number. Each window takes its own tone: amber from 75 %, coral from 90 %. Click for every window as one
+/// line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits", the usage limits modal with every
+/// account (`UsageModal`). Every agent that reports limits gets it.
 ///
 /// Equatable, and without the app model of its own: composers redraw for every change of the workspace, and this one only
 /// has to when the limits do.
@@ -641,10 +644,7 @@ struct ComposerUsageRing: View, Equatable {
         }
     }
 
-    /// The fullest window: only shows 100 % once every window is full; otherwise the fullest one that is not (at most 99 %).
-    private var used: Int {
-        100 - LimitPool.left(UsageLimits.effectiveHighestPercent(limits.map(\.percent)))
-    }
+    private typealias Line = UsageLimits.ChipLine
 
     /// "Limits of Work: 5 hours: 38% used · Week: 12% used".
     private var help: String {
@@ -659,15 +659,32 @@ struct ComposerUsageRing: View, Equatable {
     }
 
     var body: some View {
-        let tint = UsageTone.fill(used: used, calm: NookTheme.textSecondary)
+        let lines = UsageLimits.chipLines(limits.map { ($0.duration, $0.percent, $0.window) })
         Button { open.toggle() } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
-                ring(tint: tint)
-                Text("\(used)%")
-                    .font(NookTheme.TextStyle.label.monospacedDigit())
-                    .foregroundStyle(UsageTone.level(used: used) == .calm ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(used: used))
+                rings(lines)
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(lines.indices, id: \.self) { index in
+                            Text(lines[index].short)
+                                .font(NookTheme.font(9.5, .semibold))
+                                .foregroundStyle(NookTheme.textTertiary)
+                        }
+                    }
+                    VStack(alignment: .trailing, spacing: 0) {
+                        ForEach(lines.indices, id: \.self) { index in
+                            let used = lines[index].used
+                            Text("\(used)%")
+                                .font(NookTheme.TextStyle.caption.monospacedDigit())
+                                .foregroundStyle(UsageTone.level(used: used) == .calm
+                                                 ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(used: used))
+                        }
+                    }
+                }
+                .lineLimit(1)
+                .fixedSize()
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                 .fill(hovering || open ? NookTheme.smoke : Color.clear))
@@ -681,14 +698,23 @@ struct ComposerUsageRing: View, Equatable {
         .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: shown, account: account, open: $open) }
     }
 
-    private func ring(tint: Color) -> some View {
+    /// The short window as the outer ring, the long one inside it, each filled from the top in its own tone.
+    private func rings(_ lines: [Line]) -> some View {
         ZStack {
-            Circle().stroke(NookTheme.line2, lineWidth: 2)
-            Circle().trim(from: 0, to: CGFloat(used) / 100)
-                .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+            ForEach(lines.indices, id: \.self) { index in
+                let used = lines[index].used
+                let size: CGFloat = index == 0 ? 16 : 9
+                ZStack {
+                    Circle().inset(by: 1).stroke(NookTheme.line2, lineWidth: 2)
+                    Circle().inset(by: 1).trim(from: 0, to: CGFloat(used) / 100)
+                        .stroke(UsageTone.fill(used: used, calm: NookTheme.textSecondary),
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: size, height: size)
+            }
         }
-        .frame(width: 11, height: 11)
+        .frame(width: 16, height: 16)
     }
 
 }
