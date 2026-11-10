@@ -89,6 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if AppUpdater.shared.restarting { AppUpdater.endProcess(after: AppUpdater.quitDeadline) }
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
+        // Secrets delivered to agents as private files never outlive Nook.
+        WorkspaceBridge.shared.removeAllSecrets()
         model.recap.flush()
         UpdateTrialRunner.cleanExit()
         AutocompleteController.shared.flush()

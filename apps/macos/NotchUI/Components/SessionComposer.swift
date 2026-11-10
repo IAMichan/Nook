@@ -182,6 +182,9 @@ struct SessionComposer<Controls: View>: View {
             // list redraws the list and not the conversation above it.
             if let extras {
                 ComposerSuggestionSlot(model: extras.model, tint: tint) { choose($0) }
+                if let scope = extras.config.secretScope {
+                    ComposerSecretOfferSlot(model: extras.model) { keepSecrets(scope: scope) }
+                }
             }
             if choicesBelow {
                 // The box comes first in z-order so the tray runs on behind it (see ComposerTray).
@@ -247,12 +250,25 @@ struct SessionComposer<Controls: View>: View {
             assign(ComposerAttachments.replacingBody(of: newText, with: continued))
             return
         }
+        // A pasted secret is offered to be kept out of the message first; the paste then stays in the box until you decide.
+        if extras.config.secretScope != nil, extras.model.noticeSecrets(old: old, new: new) {
+            extras.model.update(for: new, extras.config)
+            return
+        }
         if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: kept))
             extras.model.close()
             return
         }
         extras.model.update(for: new, extras.config)
+    }
+
+    /// The pasted secrets go to private files and the box keeps references to them.
+    private func keepSecrets(scope: String) {
+        guard let extras else { return }
+        let kept = extras.model.keepSecretsPrivate(in: typedText, scope: scope)
+        assign(ComposerAttachments.replacingBody(of: text, with: kept))
+        WorkspaceBridge.shared.scheduleSecretSweep()
     }
 
     /// Up and Down move in the list, or walk through earlier messages: plain arrows only from the edge of the text (see

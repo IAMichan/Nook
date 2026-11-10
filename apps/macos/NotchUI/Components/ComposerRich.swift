@@ -52,6 +52,9 @@ struct ComposerConfig {
     var openApp: () -> String? = { nil }
     /// Big pastes become a reference instead of filling the box.
     var keepsBigPastes = false
+    /// Where a pasted secret goes when you keep it out of the message (`SecretFiles` scope: the session's id, or
+    /// "composer" before there is one). Nil: no offer, as in a chat with people or a session on another machine.
+    var secretScope: String? = nil
 
     var referencesEnabled: Bool { fileRoot != nil || repository != nil || !skills.isEmpty }
 }
@@ -108,6 +111,7 @@ final class ComposerModel: ObservableObject {
         let sent = pictures.isEmpty ? projected : ImageAttachment.appendingPaths(of: pictures, to: projected)
         excerpts = [:]
         pictures = []
+        dismissSecretOffer()
         close()
         return Outgoing(send: sent)
     }
@@ -330,6 +334,57 @@ final class ComposerModel: ObservableObject {
         }
     }
 
+    // MARK: Pasted secrets
+
+    /// What looked like secrets in your last paste, until you keep them out of the message or leave them. The values stay
+    /// in memory only, here, and go when you decide.
+    struct SecretOffer: Equatable {
+        struct Item: Equatable {
+            var name: String
+            var value: String
+        }
+        var items: [Item]
+        var names: [String] { items.map(\.name) }
+    }
+
+    @Published private(set) var secretOffer: SecretOffer?
+
+    /// Looks at what a paste added (never at typing: under 16 characters nothing is checked) and offers to keep what looks
+    /// like a secret out of the message. True when it offered.
+    @discardableResult
+    func noticeSecrets(old: String, new: String) -> Bool {
+        guard new.utf8.count - old.utf8.count >= 16, let parts = PasteRule.split(old: old, new: new) else { return false }
+        let found = SecretPasteDetector.matches(in: parts.inserted)
+        guard !found.isEmpty else { return false }
+        var taken = Set(ContextRefs.find(in: old).filter { $0.kind == .secret }.map(\.label))
+        let items = found.map { match -> SecretOffer.Item in
+            let name = SecretPasteDetector.uniqueName(match.name, taken: taken)
+            taken.insert(name)
+            return SecretOffer.Item(name: name, value: String(parts.inserted[match.range]))
+        }
+        secretOffer = SecretOffer(items: items)
+        return true
+    }
+
+    /// Keeps the offered secrets out of `text`: each value goes to a private file (`SecretFiles`) and the message gets a
+    /// reference to it instead, so only the path reaches the agent. A value you edited away meanwhile is left alone.
+    func keepSecretsPrivate(in text: String, scope: String, files: SecretFiles = .standard) -> String {
+        guard let offer = secretOffer else { return text }
+        secretOffer = nil
+        var result = text
+        for item in offer.items {
+            guard let range = result.range(of: item.value),
+                  let url = try? files.write(item.value, name: item.name, scope: scope) else { continue }
+            result.replaceSubrange(range, with: ContextRefs.link(ContextRef(kind: .secret, id: url.path, label: item.name)))
+        }
+        return result
+    }
+
+    /// Leaves the paste as it is.
+    func dismissSecretOffer() {
+        if secretOffer != nil { secretOffer = nil }
+    }
+
     /// A paste that was too big for the box: keep it aside and put a reference in its place.
     func keepPaste(old: String, new: String) -> String? {
         guard new.utf8.count - old.utf8.count >= PasteRule.attachThreshold,
@@ -338,6 +393,23 @@ final class ComposerModel: ObservableObject {
         excerpts[id] = parts.inserted
         let ref = ContextRef(kind: .paste, id: id, label: PasteRule.fileName(for: parts.inserted))
         return parts.prefix + ContextRefs.link(ref) + parts.suffix
+    }
+}
+
+/// Above the box after you pasted what looks like a secret: keep it out of the message (it goes to a private file and the
+/// agent gets only the path) or leave it. Observes the model itself, so only this redraws.
+struct ComposerSecretOfferSlot: View {
+    @ObservedObject var model: ComposerModel
+    let keep: () -> Void
+
+    var body: some View {
+        if let offer = model.secretOffer {
+            PanelNoticeBar(title: tr("secrets.paste.title", offer.names.joined(separator: ", ")),
+                           detail: tr("secrets.paste.detail"), symbol: "key.fill", tone: NookTheme.amber) {
+                NookNoticeActions(primary: NookNoticeAction(tr("secrets.paste.keep")) { keep() },
+                                  secondary: NookNoticeAction(tr("secrets.paste.leave")) { model.dismissSecretOffer() })
+            }
+        }
     }
 }
 

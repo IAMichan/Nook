@@ -133,6 +133,7 @@ enum SettingsSearch {
         .init("settings.ws.terminal", .openIn),
         .init("sched.title", .automation),
         .init("settings.bridge.title", .automation),
+        .init("secrets.providers.title", .automation),
         .init("settings.devices.iphone", .iphone),
         .init("companion.enable", .iphone),
         .init("remote.title", .machines),
