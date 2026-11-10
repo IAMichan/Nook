@@ -624,7 +624,7 @@ private struct SheetBackButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: "chevron.left").font(NookTheme.font(11, .semibold))
+                Image(icon: "chevron.left").font(NookTheme.font(11, .semibold))
                 Text(tr("notch.back")).font(NookTheme.TextStyle.label)
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)

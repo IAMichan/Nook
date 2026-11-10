@@ -72,7 +72,7 @@ struct RunInspector: View {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Button(tr("ws.action.openEditor")) { workspace.openInEditor(run.workingDirectory) }
                 Button(tr("ws.action.openTerminal")) { workspace.openTerminal(run.workingDirectory) }
-                Button { workspace.revealInFinder(run.workingDirectory) } label: { Image(systemName: "folder") }
+                Button { workspace.revealInFinder(run.workingDirectory) } label: { Image(icon: "folder") }
                     .help(tr("ws.action.reveal"))
             }
             .controlSize(.small)
@@ -141,7 +141,7 @@ struct RunInspector: View {
                                 .disabled(run.status.isActive)
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(icon: "ellipsis.circle")
                     }
                     .menuStyle(.borderlessButton)
                     .help(tr("a11y.more"))

@@ -37,7 +37,8 @@ extension SettingsView {
                         let hex = swatch.hex
                         Button { settings.accentHex = hex } label: {
                             // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
-                            Circle().fill(Color(hex: hex)).frame(width: 22, height: 22)
+                            Circle().fill(hex == NookTheme.defaultAccentHex ? NookTheme.themeAccent : Color(hex: hex))
+                                .frame(width: 22, height: 22)
                                 .padding(NookTheme.Spacing.xs)
                                 .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
                                 .contentShape(Circle())
@@ -92,7 +93,8 @@ extension SettingsView {
         }
     }
 
-    /// The accent colors offered as swatches, each with the name VoiceOver reads.
+    /// The accent colors offered as swatches, each with the name VoiceOver reads. The first is the theme's own (white in
+    /// Nook's theme, near black in light), which follows the theme and the appearance.
     static let accentSwatches: [(hex: UInt32, name: String)] = [
         (NookTheme.defaultAccentHex, "settings.accent.white"), (0x8B7BFF, "settings.accent.violet"),
         (0x5AA9FF, "settings.accent.blue"), (0x5ED6A6, "settings.accent.mint"), (0xF2B866, "settings.accent.amber"),

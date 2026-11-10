@@ -78,7 +78,7 @@ private struct MusicSidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(13, .medium))
                     .foregroundStyle(selected ? NookTheme.paper : NookTheme.textTertiary)
                     .frame(width: PanelSidebarMetrics.mark)
@@ -89,7 +89,7 @@ private struct MusicSidebarRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if playing {
-                    Image(systemName: "waveform")
+                    Image(icon: "waveform")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.music)
                         .accessibilityLabel(tr("music.playingNow"))

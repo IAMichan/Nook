@@ -279,14 +279,14 @@ struct FolderGitButton: View {
             if model.working {
                 ProgressView().controlSize(.mini)
             } else if model.error != nil {
-                Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.coral)
+                Image(icon: "exclamationmark.triangle.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.coral)
             } else {
-                Image(systemName: icon).font(NookTheme.font(10, .medium))
+                Image(icon: icon).font(NookTheme.font(10, .medium))
             }
             // The branch truncates when a wide side panel leaves the header little room, instead of the button
             // keeping its width and running on under the panel.
             Text(text).lineLimit(1).truncationMode(.middle).frame(minWidth: 0, maxWidth: 150, alignment: .leading)
-            Image(systemName: "chevron.down").font(NookTheme.font(7.5, .bold)).opacity(0.5)
+            Image(icon: "chevron.down").font(NookTheme.font(7.5, .bold)).opacity(0.5)
         }
         .font(NookTheme.TextStyle.label)
         .foregroundStyle(NookTheme.textSecondary)

@@ -189,7 +189,7 @@ struct DropdownRow: View {
         if let favorite, favorite.wrappedValue || hovering {
             let starred = favorite.wrappedValue
             Button { favorite.wrappedValue.toggle() } label: {
-                Image(systemName: starred ? "star.fill" : "star")
+                Image(icon: starred ? "star.fill" : "star")
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(starred ? NookTheme.paper : NookTheme.textTertiary)
                     .frame(width: 22, height: 22)

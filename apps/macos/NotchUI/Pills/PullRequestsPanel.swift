@@ -299,7 +299,7 @@ struct PullRequestsPanel: View {
     /// A watched organization or repository GitHub would not search: a typo, or none of your accounts has access.
     private var unreadableNote: some View {
         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail)
+            Image(icon: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail)
             Text(tr("agents.pulls.unreadable", unreadable.joined(separator: ", ")))
                 .font(NookTheme.TextStyle.detail)
                 .fixedSize(horizontal: false, vertical: true)
@@ -321,7 +321,7 @@ struct PullRequestsPanel: View {
         if showName {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if account.login.isEmpty {
-                    Image(systemName: "person.crop.circle").font(NookTheme.font(14)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "person.crop.circle").font(NookTheme.font(14)).foregroundStyle(NookTheme.textTertiary)
                 } else {
                     GitHubAvatar(login: account.login, size: 16)
                 }
@@ -412,13 +412,13 @@ struct PullRequestsPanel: View {
             withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
         } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: symbol).font(NookTheme.TextStyle.detail).frame(width: 14)
+                Image(icon: symbol).font(NookTheme.TextStyle.detail).frame(width: 14)
                 Text(title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1).truncationMode(.middle)
                 Text("\(rows.count)").font(NookTheme.TextStyle.caption).monospacedDigit().foregroundStyle(NookTheme.textMuted)
                 if waiting > 0 { PullRequestTag(text: tr("agents.pulls.toReview", waiting), color: NookTheme.amber) }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Image(systemName: "chevron.down")
+                Image(icon: "chevron.down")
                     .font(NookTheme.font(8.5, .bold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .frame(width: 10)

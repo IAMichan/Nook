@@ -58,8 +58,8 @@ enum FileTypeGlyph {
         let key = "\(glyph.symbol)|\(size)|\(path.hasSuffix("/") ? "/" : (path as NSString).pathExtension.lowercased())" as NSString
         if let known = cache.object(forKey: key) { return known }
         let configuration = NSImage.SymbolConfiguration(pointSize: size, weight: .medium)
-        let symbol = (NSImage(systemSymbolName: glyph.symbol, accessibilityDescription: nil)
-                      ?? NSImage(systemSymbolName: "doc", accessibilityDescription: nil))?
+        let symbol = (NookIcon.nsImage(glyph.symbol, accessibilityDescription: nil)
+                      ?? NookIcon.nsImage("doc", accessibilityDescription: nil))?
             .withSymbolConfiguration(configuration)
         let bounds = symbol?.size ?? CGSize(width: size, height: size)
         let color = NSColor(glyph.color)

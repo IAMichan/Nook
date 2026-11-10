@@ -300,7 +300,7 @@ struct SharedFileTile: View {
                     NookDivider()
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
+                    Image(icon: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
                         .font(NookTheme.font(10.5, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(name)
@@ -390,7 +390,7 @@ struct TimelineProblemCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(tint)
                 .frame(width: TranscriptStyle.workIcon)
@@ -478,7 +478,7 @@ struct CodeBlock: View {
                 Button {
                     Pasteboard.copy(AnsiText.hasCodes(text) ? AnsiText.plain(text) : text)
                 } label: {
-                    Image(systemName: "doc.on.doc").font(NookTheme.font(10))
+                    Image(icon: "doc.on.doc").font(NookTheme.font(10))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(WS.tertiary)

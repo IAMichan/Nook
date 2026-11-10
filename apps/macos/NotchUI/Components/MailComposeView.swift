@@ -47,7 +47,7 @@ struct MailComposeView: View {
 
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "square.and.pencil")
+            Image(icon: "square.and.pencil")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
             Text(draft.subject.trimmingCharacters(in: .whitespaces).isEmpty ? tr("chats.mail.new") : draft.subject)

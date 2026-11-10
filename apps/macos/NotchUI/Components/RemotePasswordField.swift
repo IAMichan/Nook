@@ -15,7 +15,7 @@ struct RemotePasswordField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "key.fill").foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "key.fill").foregroundStyle(NookTheme.textTertiary)
                 SecureField(tr("remote.password.placeholder", machine.name), text: $password)
                     .textFieldStyle(.plain)
                     .font(NookTheme.TextStyle.body)

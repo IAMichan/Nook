@@ -59,7 +59,7 @@ struct PortfolioSettings: View {
                 Button {
                     portfolio.removeWallet(wallet)
                 } label: {
-                    Image(systemName: "minus.circle.fill")
+                    Image(icon: "minus.circle.fill")
                         .foregroundStyle(NookTheme.coral)
                 }
                 .buttonStyle(.borderless)

@@ -197,7 +197,7 @@ private struct MCPServerDetailSheet: View {
                         VStack(spacing: NookTheme.Spacing.md) {
                             ForEach(connector.tools, id: \.name) { tool in
                                 HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                                    Image(systemName: tool.kind == .read ? "eye.fill" : "bolt.fill")
+                                    Image(icon: tool.kind == .read ? "eye.fill" : "bolt.fill")
                                         .font(NookTheme.font(12))
                                         .foregroundStyle(tool.kind == .read ? NookTheme.mint : NookTheme.amber)
                                         .padding(.top, NookTheme.Spacing.xxs)

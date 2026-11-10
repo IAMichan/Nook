@@ -26,7 +26,7 @@ struct SideChatStrip: View {
                     if chat.status.isActive {
                         ProgressView().controlSize(.mini).frame(width: 12)
                     } else {
-                        Image(systemName: "bubble.left.and.bubble.right").font(NookTheme.font(11, .semibold))
+                        Image(icon: "bubble.left.and.bubble.right").font(NookTheme.font(11, .semibold))
                     }
                     Text(tr("ws.side.strip")).foregroundStyle(NookTheme.textTertiary)
                     Text(chat.task.isEmpty ? chat.title : chat.task)

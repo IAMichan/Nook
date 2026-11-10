@@ -149,7 +149,7 @@ struct InboxAvatar: View {
         // The Mac's `ChatsAvatar`: the initials in the person's own color, the app as a badge on the corner.
         ChatInitialsFace(name: name, initials: initials, size: size)
             .overlay(alignment: .bottomTrailing) {
-                Image(systemName: style.symbol)
+                Image(icon: style.symbol)
                     .font(Theme.font(size * 0.2, .bold))
                     .foregroundStyle(.white)
                     .frame(width: size * 0.42, height: size * 0.42)
@@ -269,7 +269,7 @@ struct InboxChatView: View {
                             }
                         }
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Image(icon: "ellipsis")
                     }
                     .accessibilityLabel("More")
                 }
@@ -310,7 +310,7 @@ struct InboxChatView: View {
                                 }
                                 Spacer(minLength: 0)
                                 Button { withAnimation(Theme.reveal) { self.replyingTo = nil } } label: {
-                                    Image(systemName: "xmark").font(Theme.font(11, .bold)).foregroundStyle(Theme.textTertiary)
+                                    Image(icon: "xmark").font(Theme.font(11, .bold)).foregroundStyle(Theme.textTertiary)
                                         .frame(width: 28, height: 28).contentShape(Rectangle())
                                 }
                                 .accessibilityLabel("Cancel reply")
@@ -337,7 +337,7 @@ struct InboxChatView: View {
                             .foregroundStyle(Theme.textTertiary)
                     }
                 } icon: {
-                    Image(systemName: "info.circle")
+                    Image(icon: "info.circle")
                 }
                 .font(Theme.TextStyle.detail)
                 .foregroundStyle(Theme.textSecondary)

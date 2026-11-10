@@ -81,7 +81,7 @@ private struct SidePanelTab<Value: Hashable>: View {
                     .opacity(hovering ? 0 : 1)
                     .accessibilityHidden(true)
                 Button(action: close) {
-                    Image(systemName: "xmark")
+                    Image(icon: "xmark")
                         .font(NookTheme.font(9, .bold))
                         .frame(width: 16, height: 16)
                         .contentShape(Rectangle())

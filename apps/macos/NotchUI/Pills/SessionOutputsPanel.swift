@@ -73,7 +73,7 @@ private struct OutputTab: View {
     var body: some View {
         Button(action: select) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: OutputText.symbol(output.kind))
+                Image(icon: OutputText.symbol(output.kind))
                     .font(NookTheme.font(10.5, .medium))
                     .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textTertiary)
                 Text(OutputText.title(output))

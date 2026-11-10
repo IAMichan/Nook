@@ -223,7 +223,7 @@ private struct ToolGlyph: View {
     let symbol: String
 
     var body: some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
     }
@@ -319,7 +319,7 @@ private final class TurningSymbolView: NSView {
         // The size and weight of `NookTheme.TextStyle.body`, which `ToolGlyph` draws its symbol in.
         let configuration = NSImage.SymbolConfiguration(pointSize: 13.5, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [shown.color]))
-        let image = NSImage(systemSymbolName: shown.symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        let image = NookIcon.nsImage(shown.symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
         let scale = window?.backingScaleFactor ?? 2
         CATransaction.begin()
         CATransaction.setDisableActions(true)

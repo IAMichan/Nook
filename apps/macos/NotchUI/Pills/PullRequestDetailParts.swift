@@ -29,7 +29,7 @@ struct PullRequestSummarySection<Content: View, Accessory: View>: View {
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         Text(title).font(NookTheme.TextStyle.label)
-                        Image(systemName: "chevron.right")
+                        Image(icon: "chevron.right")
                             .font(NookTheme.font(8.5, .bold))
                             .rotationEffect(.degrees(open ? 90 : 0))
                     }
@@ -128,7 +128,7 @@ struct PullRequestCommitEntry: View {
                     Button {
                         withAnimation(NookTheme.reveal) { expanded.toggle() }
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Image(icon: "ellipsis")
                             .font(NookTheme.font(9, .bold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .frame(width: 20, height: 14)
