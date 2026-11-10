@@ -114,7 +114,7 @@ final class LookThemesTests: XCTestCase {
     }
 
     func testVSCodeLightThemeWithoutTypeReadsTheBackground() throws {
-        let result = try VSCodeThemeImport.parse(#"{"colors": {"editor.background": "#ffffff", "editor.foreground": "#333333"}}"#,
+        let result = try VSCodeThemeImport.parse(##"{"colors": {"editor.background": "#ffffff", "editor.foreground": "#333333"}}"##,
                                                  fallbackName: "light-plus")
         XCTAssertFalse(result.palette.isDark)
         XCTAssertEqual(result.name, "light-plus")
@@ -131,7 +131,7 @@ final class LookThemesTests: XCTestCase {
     }
 
     func testCustomThemeKeepsItsAppearance() {
-        let custom = NookCustomTheme(id: "custom-1", name: "Mine", source: #"{"type":"light","colors":{"editor.background":"#fdf6e3"}}"#)
+        let custom = NookCustomTheme(id: "custom-1", name: "Mine", source: ##"{"type":"light","colors":{"editor.background":"#fdf6e3"}}"##)
         let theme = custom.theme
         XCTAssertNotNil(theme?.light)
         XCTAssertNil(theme?.dark)

@@ -85,7 +85,8 @@ struct NookPalette: Equatable, Sendable {
     }
 
     var readingSurfaces: [(name: String, hex: UInt32)] {
-        [("canvas", canvas), ("well", well), ("surface", surface), ("field", field), ("graphite", graphite), ("smoke", smoke)]
+        [("canvas", canvas), ("well", well), ("surface", surface), ("field", field), ("graphite", graphite), ("smoke", smoke),
+         ("rowSelected", rowSelected)]
     }
 
     /// A palette made from a few colors: the canvas, the text on it and an accent, with the surfaces stepped from the
