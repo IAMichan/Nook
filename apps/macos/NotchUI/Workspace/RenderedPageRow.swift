@@ -92,7 +92,7 @@ struct RenderedPageRow: View, Equatable {
     /// The page's file, only from the folder Nook keeps pages in; nil when it is missing or points elsewhere.
     private nonisolated static func html(_ path: String?, base: URL) -> String? {
         guard let path, RenderedPage.isOwnFile(path, base: base),
-              let data = FileManager.default.contents(atPath: path), data.count <= RenderedPage.maxHTMLBytes else { return nil }
+              let data = FileManager.default.contents(atPath: path), data.count <= RenderedPageFile.maxPageBytes else { return nil }
         return String(data: data, encoding: .utf8)
     }
 }

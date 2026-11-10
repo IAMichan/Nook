@@ -420,7 +420,7 @@ struct AgentModelPicker: View {
             if let local, picked.id == local.place.id { return local.list(query) }
             if picked == Self.autoPlace { return ModelPickerList(models: [autoRow()]) }
             return shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? ModelPickerList(models: [])
-        }        }
+        }
         // The picker's content only exists while it is open: opening it looks for newer models.
         .onAppear { app.modelPickerOpened() }
     }
