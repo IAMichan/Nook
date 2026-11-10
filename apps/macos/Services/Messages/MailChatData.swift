@@ -634,10 +634,14 @@ enum MailChatData {
             }
             // Newsletters and notifications are a channel: quiet unless you choose otherwise (`ChatNoticeRules`).
             let automated = incoming.map { isAutomated($0.person) } ?? false
-            return BridgedChat(app: app, name: name(person), messages: messages,
-                               unread: sorted.filter { !$0.fromMe && !$0.read }.count, chatID: id,
-                               account: named ? sorted.first?.account : nil, kind: automated ? .channel : .person,
-                               readKnown: true, hasOlder: false, activity: sorted.last?.date)
+            var chat = BridgedChat(app: app, name: name(person), messages: messages,
+                                   unread: sorted.filter { !$0.fromMe && !$0.read }.count, chatID: id,
+                                   account: named ? sorted.first?.account : nil, kind: automated ? .channel : .person,
+                                   readKnown: true, hasOlder: false, activity: sorted.last?.date)
+            // The address the conversation goes to: all mail says of the person.
+            let mailbox = address(person)
+            if !mailbox.isEmpty { chat.profile = ChatProfile(email: mailbox) }
+            return chat
         }.sorted { ($0.activity ?? .distantPast) > ($1.activity ?? .distantPast) }
     }
 

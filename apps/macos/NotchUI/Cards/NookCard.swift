@@ -90,6 +90,14 @@ struct ChatBubble: Equatable, Identifiable {
     /// Deleted for everyone: the bubble keeps its place and says so, and nothing can be done with it but hiding it.
     /// Someone else's still shows what it said, when Nook had it (`keepsDeleted`).
     var deleted = false
+    /// Someone came into the group or went out of it: a centred line in the chat instead of a bubble
+    /// (`ChatMembershipLine`), with nothing to answer, react to or change.
+    var membership: ChatMembership? = nil
+    /// The group itself changed (a new name, description, picture, admin): a centred line like `membership`.
+    var groupChange: ChatGroupChange? = nil
+
+    /// The line about the group this bubble is instead of a message, nil for a message.
+    var notice: String? { membership?.line ?? groupChange?.line }
 }
 
 /// The message a bubble answers, as a chat app shows it above the answer: who wrote it and the start of its text.
@@ -114,7 +122,7 @@ struct BubbleReaction: Equatable, Identifiable {
 
 extension ChatBubble {
     /// A call its app noted in the chat: it shows as a call row instead of its line.
-    var call: ChatCall? { attachment == nil && poll == nil && !deleted ? ChatFormat.call(text) : nil }
+    var call: ChatCall? { attachment == nil && poll == nil && notice == nil && !deleted ? ChatFormat.call(text) : nil }
 
     /// What a deleted message says in its place: who deleted it, as chat apps word it.
     var deletedLine: String { tr(fromMe ? "chat.message.deletedMine" : "chat.message.deleted") }
@@ -136,13 +144,16 @@ extension ChatBubble {
 
     /// The message's own text, or the file's name when it came without one.
     var copyText: String {
+        if let notice { return notice }
         if deleted, !keepsDeleted { return deletedLine }
         return text.isEmpty ? (attachment ?? "") : text
     }
 
     private func line(contact: String) -> String {
-        let name = fromMe ? tr("chat.you") : (sender.isEmpty ? contact : sender)
         let stamp = time.isEmpty ? "" : "[\(time)] "
+        // A change in who is in the group says who did it itself.
+        if notice != nil { return stamp + copyText }
+        let name = fromMe ? tr("chat.you") : (sender.isEmpty ? contact : sender)
         return name.isEmpty ? stamp + copyText : "\(stamp)\(name): \(copyText)"
     }
 }
