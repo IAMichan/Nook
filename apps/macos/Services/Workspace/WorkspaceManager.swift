@@ -2624,10 +2624,13 @@ final class WorkspaceManager: ObservableObject {
     func refreshWorktrees() {
         guard let git = gitService else { return }
         guard !worktreesLoading else { worktreesRefreshPending = true; return }
-        let repos = Array(Set(runs.compactMap { $0.repoRoot.flatMap { git.mainCheckout(of: $0) ?? $0 } })).sorted()
+        let roots = Set(runs.compactMap(\.repoRoot))
         let snapshot = runs
         worktreesLoading = true
         Task.detached(priority: .utility) {
+            // Resolving each root to its main checkout runs Git once per root: off the main thread, or every refresh
+            // froze the app for seconds with many sessions.
+            let repos = Array(Set(roots.map { git.mainCheckout(of: $0) ?? $0 })).sorted()
             var rows: [WorktreeRow] = []
             var seenPaths = Set<String>()
             for repo in repos where FileManager.default.fileExists(atPath: repo) {
