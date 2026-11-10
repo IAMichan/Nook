@@ -416,6 +416,7 @@ targets:
       - path: Services/Workspace/ComposerDrafts.swift
       - path: Services/Workspace/ComposerChips.swift
       - path: Services/Workspace/ComposerDictation.swift
+      - path: Services/Workspace/ComposerEditing.swift
       - path: Services/Workspace/AgentCommands.swift
       - path: Services/Workspace/EffortLevels.swift
       - path: Services/Workspace/AgentAdvice.swift

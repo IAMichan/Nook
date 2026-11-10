@@ -1,7 +1,7 @@
 import SwiftUI
 import Combine
 
-/// The composer's microphone (`SessionComposer.dictating()`): you speak, the words land after what you typed, and the box
+/// The composer's microphone (`SessionComposer.dictating()`): you speak, the words land at the caret, and the box
 /// stays read-only until they are in. Send while it listens finishes the recording and sends once the words have landed;
 /// Escape or the cross throws the recording away and leaves the draft as it was. The rules are `ComposerDictation`; this
 /// talks to the speech service, which the whole app shares.
@@ -15,22 +15,24 @@ final class ComposerDictator: ObservableObject {
 
     var isActive: Bool { state.isActive }
 
-    /// Starts listening on top of `body`. `apply` gets the box's words as they come in; `landed` runs once the last ones are.
-    func start(body: String, apply: @escaping (String) -> Void) {
+    /// Starts listening on top of `body`, the words going in at `selection` (UTF-16 in `body`, nil: at the end). `apply`
+    /// gets the box's words as they come in, and the caret after them.
+    func start(body: String, selection: Range<Int>? = nil, apply: @escaping (String, Int) -> Void) {
         guard !state.isActive else { return }
         let app = AppModel.shared
         Task { @MainActor in
-            guard await app.voice.requestPermissions(), !app.voice.isListening, self.state.begin(body: body) else { return }
+            guard await app.voice.requestPermissions(), !app.voice.isListening,
+                  self.state.begin(body: body, selection: selection) else { return }
             app.wake.stop()
             app.speech.stop()
             let partial: (String) -> Void = { [weak self] spoken in
                 guard let self, self.state.phase == .listening else { return }
-                apply(self.state.text(with: spoken))
+                apply(self.state.text(with: spoken), self.state.caret(with: spoken))
             }
             let finished: (String) -> Void = { [weak self] spoken in
                 guard let self, self.state.isActive else { return }
                 let landed = self.state.land(spoken)
-                apply(landed.text)
+                apply(landed.text, landed.caret)
                 let send = self.pendingSend
                 self.pendingSend = nil
                 app.updateWakeWord()

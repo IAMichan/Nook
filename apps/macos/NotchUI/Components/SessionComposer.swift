@@ -57,6 +57,8 @@ struct SessionComposer<Controls: View>: View {
     @FocusState private var ownFocus: Bool
     @StateObject private var dictator = ComposerDictator()
     @State private var editorLock = ComposerEditorLock()
+    /// Undo, redo, copy and cut over the draft while the field has the keyboard (`ComposerFieldSession`).
+    @State private var fieldSession = ComposerFieldSession()
     @State private var drop = ComposerDrop()
     @State private var pasteMonitor = PasteMonitor()
     /// Pasted pictures still being encoded: sending waits for them, or the message would go without the picture and the
@@ -270,17 +272,44 @@ struct SessionComposer<Controls: View>: View {
 
     private func choose(_ suggestion: ComposerSuggestion) {
         guard let extras else { return }
-        let value = extras.model.accept(suggestion, in: typedText, extras.config)
+        // What you chose goes where its `@`, `#` or `/` was typed, also in the middle of the text; the caret after it.
+        let (value, caret) = extras.model.accepting(suggestion, in: typedText, extras.config)
         assign(ComposerAttachments.replacingBody(of: text, with: value))
+        if let caret { placeCaret(caret, inWords: value) }
         // A line that fills the box can lead to a list of its own ("@chat " lists the chats): show it straight away.
         if case .command(let command) = suggestion.payload, command.action == .insert {
-            extras.model.update(for: value, extras.config)
+            extras.model.update(for: value, caret: caret, extras.config)
         }
         (focus ?? $ownFocus).wrappedValue = true
     }
 
+    /// Where the caret is in `words` (the draft's words, UTF-16) while the field shows them; nil without the keyboard.
+    private func caret(in words: String) -> Int? {
+        guard isFocused, let selection = ComposerFieldStyle.focusedSelection(expecting: ComposerChips.display(words)) else { return nil }
+        return ComposerChips.draftOffset(display: NSMaxRange(selection), in: words)
+    }
+
+    /// Puts the caret at `offset` (UTF-16 in `words`, the draft's words) once the field shows them.
+    private func placeCaret(_ offset: Int, inWords words: String) {
+        guard isFocused else { return }
+        let clamped = min(offset, words.utf16.count)
+        ComposerFieldStyle.placeCaret(ComposerChips.displayOffset(draft: clamped, in: words), expecting: ComposerChips.display(words))
+    }
+
+    /// Hands the field's undo, redo, copy and cut to `fieldSession` while it has the keyboard.
+    private func wireFieldSession() {
+        fieldSession.draft = { text }
+        fieldSession.words = { typedText }
+        fieldSession.restore = { value, caret in
+            assign(value)
+            placeCaret(caret, inWords: ComposerAttachments.split(value).body)
+        }
+        fieldSession.editable = { !dictator.isActive }
+    }
+
     private func textChanged(_ oldText: String, _ newText: String) {
         NookPresence.shared.typed(count: newText.count)
+        fieldSession.record(old: oldText, new: newText, separate: extras?.model.applying ?? false)
         // Typing dismisses the suggestion; taking it with Tab has already called `accept`.
         if let suggestion, oldText != newText {
             let body = ComposerAttachments.split(newText).body
@@ -295,6 +324,14 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         extras.model.history.stopWalking()
+        // Text with chips copied from a composer comes in as readable Markdown: it gets its chips back.
+        if new.utf16.count > old.utf16.count, let at = caret(in: new),
+           let restored = ComposerFieldSession.restoringPaste(in: new, caret: at) {
+            assign(ComposerAttachments.replacingBody(of: newText, with: restored.text))
+            placeCaret(restored.caret, inWords: restored.text)
+            extras.model.close()
+            return
+        }
         // A session link pasted or dropped into the text ("Copy session link", a dragged row) becomes its chip.
         if let linked = SessionLink.replacingPasted(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: linked))
@@ -314,7 +351,7 @@ struct SessionComposer<Controls: View>: View {
         }
         // A pasted secret is offered to be kept out of the message first; the paste then stays in the box until you decide.
         if extras.config.secretScope != nil, extras.model.noticeSecrets(old: old, new: new) {
-            extras.model.update(for: new, extras.config)
+            extras.model.update(for: new, caret: caret(in: new), extras.config)
             return
         }
         if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
@@ -322,7 +359,7 @@ struct SessionComposer<Controls: View>: View {
             extras.model.close()
             return
         }
-        extras.model.update(for: new, extras.config)
+        extras.model.update(for: new, caret: caret(in: new), extras.config)
     }
 
     /// The pasted secrets go to private files and the box keeps references to them.
@@ -393,6 +430,9 @@ struct SessionComposer<Controls: View>: View {
             "composer.stash": stashKey,
             "composer.historyPrevious": { walkHistory(-1) },
             "composer.historyNext": { walkHistory(1) },
+            // Undo and redo the draft itself, so a chip comes back whole; the field's own undo is off meanwhile.
+            "composer.undo": { fieldSession.isAttached ? fieldSession.undo() : false },
+            "composer.redo": { fieldSession.isAttached ? fieldSession.redo() : false },
         ]
     }
 
@@ -478,9 +518,15 @@ struct SessionComposer<Controls: View>: View {
             dictator.finish()
             return
         }
+        // The words go where the caret is, in place of what is selected.
+        let words = typedText
+        let selection = isFocused ? ComposerFieldStyle.focusedSelection(expecting: ComposerChips.display(words)) : nil
         (focus ?? $ownFocus).wrappedValue = true
-        dictator.start(body: typedText) { words in
-            assign(ComposerAttachments.replacingBody(of: text, with: words))
+        dictator.start(body: words, selection: selection.map {
+            ComposerChips.draftRange(display: $0.location..<NSMaxRange($0), in: words)
+        }) { spoken, caret in
+            assign(ComposerAttachments.replacingBody(of: text, with: spoken))
+            placeCaret(caret, inWords: spoken)
         }
     }
 
@@ -553,11 +599,15 @@ struct SessionComposer<Controls: View>: View {
                 if now {
                     Self.placeCaretAtEnd()
                     styleMarkdown()
+                    wireFieldSession()
+                    DispatchQueue.main.async { if isFocused { fieldSession.attach() } }
                     // With the keyboard the references turn from short names into chips: the field takes that text
                     // after this update, so draw the chips once more right after it.
                     if text.contains("nook-context:") {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { styleMarkdown() }
                     }
+                } else {
+                    fieldSession.detach()
                 }
             }
             .onChange(of: dictator.isActive) { _, active in dictationChanged(active) }
@@ -668,6 +718,7 @@ struct SessionComposer<Controls: View>: View {
         }
         .onDisappear {
             pasteMonitor.stop()
+            fieldSession.detach()
             // Leaving the box stops listening; the words that came in so far stay in the draft.
             dictator.discard { _ in }
         }

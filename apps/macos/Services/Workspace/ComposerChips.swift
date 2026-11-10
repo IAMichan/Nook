@@ -78,15 +78,18 @@ enum ComposerChips {
         // The chips in the changed stretch go back, in order, to the marks still in it (one change that typed on both
         // sides of a chip); the rest were taken out.
         var removed = before[head..<(before.count - tail)].filter(\.isChip).map(\.source)
-        var spares = spares
+        let incoming = after[head..<(after.count - tail)]
+        // Marks beyond the ones that stayed take the newest spares, in the order they were taken out.
+        let wanted = max(0, incoming.filter { $0 == mark }.count - removed.count)
+        var spares = Array(spares.suffix(wanted))
         var used = 0
         var middle = ""
-        for character in after[head..<(after.count - tail)] {
+        for character in incoming {
             if character == mark {
                 if !removed.isEmpty {
                     middle += removed.removeFirst()
-                } else if let link = spares.popLast() {
-                    middle += link
+                } else if !spares.isEmpty {
+                    middle += spares.removeFirst()
                     used += 1
                 }
             } else {
