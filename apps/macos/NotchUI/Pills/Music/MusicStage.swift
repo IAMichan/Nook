@@ -228,7 +228,8 @@ struct MusicUpNextView: View {
                         }
                     }
                 }
-                .padding(.horizontal, MusicLayout.edge)
+                // As the lyrics and About beside it in Now Playing's card: in line with the card's tabs.
+                .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.bottom, NookTheme.Spacing.xl)
             }
         } else if showsPlayerQueue, service.upNext == nil, service.libraryLoading {
@@ -639,7 +640,8 @@ struct MusicCoverCard: View {
                                 .opacity(hovering ? 1 : 0)
                         }
                     }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                // Under a round face the name is centred, as under a person; under a cover it starts at its edge.
+                VStack(alignment: item.round ? .center : .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(item.playing ? NookTheme.music : NookTheme.paper)
@@ -651,6 +653,7 @@ struct MusicCoverCard: View {
                             .lineLimit(1)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: item.round ? .center : .leading)
             }
             .contentShape(Rectangle())
         }
