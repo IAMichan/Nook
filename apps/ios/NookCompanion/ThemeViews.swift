@@ -79,7 +79,7 @@ struct StatusPill: View {
                 if attention == "working" {
                     PulseDot(color: color, size: 6)
                 } else {
-                    Image(systemName: Theme.symbol(attention))
+                    Image(icon: Theme.symbol(attention))
                 }
             }
             .foregroundStyle(color)
@@ -223,7 +223,7 @@ struct Banner: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
-            Image(systemName: symbol).foregroundStyle(color)
+            Image(icon: symbol).foregroundStyle(color)
             Text(text).foregroundStyle(Theme.textStrong).frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(Theme.TextStyle.detail)

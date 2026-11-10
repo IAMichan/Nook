@@ -191,7 +191,7 @@ struct NookList: View {
                         .fixedSize()
                     NookDivider()
                     // The shelf opens upwards: its chevron points up while closed, down while open.
-                    Image(systemName: "chevron.down")
+                    Image(icon: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(showArchived ? 0 : 180))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -338,7 +338,7 @@ private struct NookRow: View, Equatable {
                     .foregroundStyle(receded || conversation.archived ? NookTheme.textSecondary : NookTheme.paper)
                     .lineLimit(1)
                 if conversation.pinned {
-                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering ? 0 : 1)

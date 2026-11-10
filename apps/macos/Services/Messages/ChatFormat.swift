@@ -421,6 +421,268 @@ struct ChatCall: Equatable, Sendable {
     }
 }
 
+/// Someone coming into a group or going out of it, as its app notes it among the messages ("Ruben added David", "Anna
+/// left"). Every app's change is put in this shape by its bridge and shows as the same centred line in the chat; it
+/// counts as no new message and brings up no card (`InboxMessage.isIncoming`).
+struct ChatMembership: Codable, Equatable, Sendable {
+    enum Change: String, Codable, Sendable {
+        /// Someone (`by`) added them.
+        case added
+        /// Someone (`by`) removed them.
+        case removed
+        /// They came in: by themselves, or the app does not say who added them.
+        case joined
+        /// They left by themselves.
+        case left
+        /// They are no longer in it, and the app does not say whether they left or were removed.
+        case gone
+    }
+
+    var change: Change
+    /// Who added or removed them, by name (`ChatMembership.me` for you); nil when the app does not say.
+    var by: String?
+    /// Who came in or went, by name (`ChatMembership.me` for you).
+    var people: [String]
+
+    /// You, among `by` and `people`: the line says "You" or "you" in your language.
+    static let me = "\u{1}me"
+
+    /// What the app says, put plainly: someone who added or removed only themselves joined or left, and an addition or
+    /// removal without who did it is only a coming in or a going out. Names without letters are left out.
+    init(_ change: Change, by: String? = nil, people: [String]) {
+        let people = people.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var unique: [String] = []
+        for person in people where !unique.contains(person) { unique.append(person) }
+        let by = by.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+        self.people = unique
+        self.by = by
+        self.change = change
+        let byThemselves = by.map { unique == [$0] } ?? false
+        switch change {
+        case .added where by == nil || byThemselves:
+            self.change = .joined
+            self.by = nil
+        case .removed where byThemselves:
+            self.change = .left
+            self.by = nil
+        case .removed where by == nil:
+            self.change = .gone
+        default:
+            break
+        }
+    }
+
+    /// The line the chat shows, in your language: "Ruben added David and Anna", "You removed Jan", "Ruben added you",
+    /// "Anna left". A coming in or going out of several people is a sentence each, as some languages say it per person.
+    var line: String {
+        let names = people.isEmpty ? [tr("chat.member.someone")] : people
+        switch change {
+        case .added, .removed:
+            let key = change == .added ? "chat.member.added" : "chat.member.removed"
+            let by = self.by ?? tr("chat.member.someone")
+            if by == Self.me { return tr(key + "ByYou", Self.list(names)) }
+            if names == [Self.me] { return tr(key + "You", by) }
+            return tr(key, by, Self.list(names))
+        case .joined, .left, .gone:
+            let key = "chat.member." + change.rawValue
+            return names.map { $0 == Self.me ? tr(key + "You") : tr(key, $0) }.joined(separator: " · ")
+        }
+    }
+
+    /// "David", "David and Anna", "David, Anna and you".
+    static func list(_ names: [String]) -> String {
+        // You last, as a person says it.
+        let shown = names.filter { $0 != me } + (names.contains(me) ? [tr("chat.member.you")] : [])
+        guard shown.count > 1 else { return shown.first ?? "" }
+        return shown.dropLast().joined(separator: ", ") + tr("chat.member.and") + shown.last!
+    }
+}
+
+/// A change to a group itself, as its app notes it among the messages: a new name, description or picture, someone made
+/// admin or no longer, the group made, who may write. Every app's change is put in this shape by its bridge and shows as
+/// the same centred line as a change in who is in it (`ChatMembership`); it counts as no new message.
+struct ChatGroupChange: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        /// A new name (`text`).
+        case renamed
+        /// A new description (`text`, when the app gives it), or the description taken away (`text` empty).
+        case described
+        /// A new picture.
+        case photo
+        /// The picture taken away.
+        case photoRemoved
+        /// `people` made admin.
+        case promoted
+        /// `people` no longer admin.
+        case demoted
+        /// The group made (`text` its first name, when the app says).
+        case created
+        /// Only admins may write now.
+        case adminsOnly
+        /// Everyone may write again.
+        case everyone
+        /// A message pinned to the top of the chat (`text` the start of it, when the app says).
+        case pinned
+        /// Messages now disappear after `text` seconds; "0" (or nothing) turns that off.
+        case disappearing
+    }
+
+    var kind: Kind
+    /// Who did it, by name (`ChatMembership.me` for you); nil when the app does not say.
+    var by: String? = nil
+    /// The new name or description.
+    var text: String? = nil
+    /// Who was made admin or no longer, by name (`ChatMembership.me` for you).
+    var people: [String] = []
+
+    init(_ kind: Kind, by: String? = nil, text: String? = nil, people: [String] = []) {
+        self.kind = kind
+        self.by = by.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+        self.text = text.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        self.people = people.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+
+    /// The line the chat shows, in your language: "Ruben changed the group name to “Club”", "You changed the group
+    /// description", "Anna is now an admin".
+    var line: String {
+        let who: String? = by
+        func said(_ key: String, _ args: CVarArg...) -> String {
+            // "You …" has a sentence of its own in most languages; someone else's takes their name first.
+            if who == ChatMembership.me { return String(format: tr(key + "ByYou"), arguments: args) }
+            let name = who ?? tr("chat.member.someone")
+            return String(format: tr(key), arguments: [name] + args)
+        }
+        switch kind {
+        case .renamed: return said("chat.group.renamed", text ?? "")
+        case .described:
+            // No text: the app does not say what it says now. An empty one: it was taken away.
+            return text == "" ? said("chat.group.descriptionRemoved") : said("chat.group.described")
+        case .photo: return said("chat.group.photo")
+        case .photoRemoved: return said("chat.group.photoRemoved")
+        case .created:
+            guard let text, !text.isEmpty else { return said("chat.group.created") }
+            return said("chat.group.createdNamed", text)
+        case .adminsOnly: return said("chat.group.adminsOnly")
+        case .everyone: return said("chat.group.everyone")
+        case .pinned:
+            guard let text, !text.isEmpty else { return said("chat.group.pinned") }
+            return said("chat.group.pinnedText", String(text.prefix(60)))
+        case .disappearing:
+            let seconds = Double(text ?? "") ?? 0
+            guard seconds > 0 else { return said("chat.group.disappearingOff") }
+            return said("chat.group.disappearing", Self.duration(seconds))
+        case .promoted, .demoted:
+            let key = kind == .promoted ? "chat.group.promoted" : "chat.group.demoted"
+            let names = people.isEmpty ? [tr("chat.member.someone")] : people
+            return names.map { $0 == ChatMembership.me ? tr(key + "You") : tr(key, $0) }.joined(separator: " · ")
+        }
+    }
+}
+
+extension ChatGroupChange {
+    /// "7 days", "24 hours", "1 hour, 30 minutes", in your language.
+    static func duration(_ seconds: Double) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.maximumUnitCount = 2
+        formatter.allowedUnits = seconds >= 7 * 86_400 && seconds.truncatingRemainder(dividingBy: 7 * 86_400) == 0
+            ? [.weekOfMonth] : [.day, .hour, .minute, .second]
+        var calendar = Calendar.current
+        calendar.locale = Locale(identifier: NookDates.appLocale)
+        formatter.calendar = calendar
+        return formatter.string(from: seconds) ?? "\(Int(seconds)) s"
+    }
+}
+
+/// What a chat's app says about the chat itself besides its messages, shown in its info (`ChatInfoButton`): a group's
+/// description, its admins, when and by whom it was made, whether only admins write; a person's own line (bio, status),
+/// username, number, address and job title. Every field is nil while its app does not say it; names are as the chat shows
+/// them. A newer read keeps what it does not say again (`merged(over:)`).
+struct ChatProfile: Codable, Equatable, Sendable {
+    /// A group's description or topic; a person's bio, status or "about" line.
+    var about: String? = nil
+    /// Who set the description, and when.
+    var aboutBy: String? = nil
+    var aboutSince: Date? = nil
+    /// When the group was made, and by whom.
+    var created: Date? = nil
+    var createdBy: String? = nil
+    /// The group's admins (owners too) by name, `ChatMembership.me` for you.
+    var admins: [String]? = nil
+    /// Only admins may write in it.
+    var adminsOnly: Bool? = nil
+    /// Only admins may change its name, description and picture.
+    var locked: Bool? = nil
+    /// A person's username ("@anna"), phone number, address and job title, as their app shows them.
+    var username: String? = nil
+    var phone: String? = nil
+    var email: String? = nil
+    var title: String? = nil
+    /// How many people are in it, when the app counts them without listing them all (a large channel).
+    var memberCount: Int? = nil
+    /// The name a person gave themselves in the app (WhatsApp's push name, a display name), when it differs from how
+    /// the chat names them.
+    var ownName: String? = nil
+    /// A business: its verified name, kind, address and website.
+    var business: String? = nil
+    var category: String? = nil
+    var address: String? = nil
+    var website: String? = nil
+    /// Where they are and their own time zone, as their app says ("Amsterdam", "Europe/Amsterdam").
+    var location: String? = nil
+    var timeZone: String? = nil
+    /// You blocked them in the app.
+    var blocked: Bool? = nil
+    /// A bot or an app rather than a person.
+    var bot: Bool? = nil
+    /// Verified by the app (a blue check, a verified business).
+    var verified: Bool? = nil
+    /// A web address that opens the chat or invites to it (a public username's or group's link).
+    var link: String? = nil
+    /// Messages disappear after this many seconds; 0 when that is off.
+    var disappearAfter: Double? = nil
+
+    var isEmpty: Bool { self == ChatProfile() }
+
+    /// This read over what was known: what it says wins, what it leaves out stays.
+    func merged(over old: ChatProfile?) -> ChatProfile {
+        guard let old else { return self }
+        var merged = self
+        merged.about = about ?? old.about
+        merged.aboutBy = aboutBy ?? old.aboutBy
+        merged.aboutSince = aboutSince ?? old.aboutSince
+        merged.created = created ?? old.created
+        merged.createdBy = createdBy ?? old.createdBy
+        merged.admins = admins ?? old.admins
+        merged.adminsOnly = adminsOnly ?? old.adminsOnly
+        merged.locked = locked ?? old.locked
+        merged.username = username ?? old.username
+        merged.phone = phone ?? old.phone
+        merged.email = email ?? old.email
+        merged.title = title ?? old.title
+        merged.memberCount = memberCount ?? old.memberCount
+        merged.ownName = ownName ?? old.ownName
+        merged.business = business ?? old.business
+        merged.category = category ?? old.category
+        merged.address = address ?? old.address
+        merged.website = website ?? old.website
+        merged.location = location ?? old.location
+        merged.timeZone = timeZone ?? old.timeZone
+        merged.blocked = blocked ?? old.blocked
+        merged.bot = bot ?? old.bot
+        merged.verified = verified ?? old.verified
+        merged.link = link ?? old.link
+        merged.disappearAfter = disappearAfter ?? old.disappearAfter
+        return merged
+    }
+
+    /// Text without anything in it is no text: a blank description is none.
+    static func text(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return value
+    }
+}
+
 extension ChatFormat {
     /// A message that is a call: the line an app puts in the chat for one ("Incoming call", "Missed video call",
     /// "Gemiste spraakoproep", "Appel vocal (2:13)"), in English, Dutch, German, French and Spanish. Nil for anything

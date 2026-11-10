@@ -217,7 +217,7 @@ struct MusicPageView: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Text(tr("tab.music"))
                 .foregroundStyle(NookTheme.textTertiary)
-            Image(systemName: "chevron.right")
+            Image(icon: "chevron.right")
                 .font(NookTheme.font(10, .semibold))
                 .foregroundStyle(NookTheme.textTertiary)
                 .accessibilityHidden(true)

@@ -703,7 +703,7 @@ struct SessionComposer<Controls: View>: View {
                 if sending {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: symbol).font(NookTheme.font(12, .bold))
+                    Image(icon: symbol).font(NookTheme.font(12, .bold))
                 }
             }
             .foregroundStyle(active ? NookTheme.onIris : NookTheme.textTertiary)
@@ -796,13 +796,13 @@ struct ComposerPill: View {
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
-                Image(systemName: symbol).font(NookTheme.font(13, .medium))
+                Image(icon: symbol).font(NookTheme.font(13, .medium))
             }
             if !iconOnly {
                 Text(shown).lineLimit(1)
             }
             if showsChevron && density == .full {
-                Image(systemName: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
+                Image(icon: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
             }
         }
     }
@@ -884,7 +884,7 @@ struct ComposerIcon: View {
     @State private var hovering = false
 
     var body: some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.font(12, .semibold))
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .frame(width: 26, height: 26)

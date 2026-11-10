@@ -428,7 +428,7 @@ struct AgentInboxList: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: NookTheme.Spacing.xl)
                 } else {
-                    Image(systemName: open ? "folder" : "folder.fill")
+                    Image(icon: open ? "folder" : "folder.fill")
                         .font(NookTheme.font(13, .medium))
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: NookTheme.Spacing.xl)
@@ -453,7 +453,7 @@ struct AgentInboxList: View {
                 if canStart {
                     Color.clear.frame(width: Self.newSessionWidth - NookTheme.Spacing.md, height: 1)
                 }
-                Image(systemName: "chevron.down")
+                Image(icon: "chevron.down")
                     .font(NookTheme.font(10, .semibold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
@@ -822,7 +822,7 @@ struct AgentInboxList: View {
                     Button { store.undo() } label: {
                         ViewThatFits(in: .horizontal) {
                             Text(tr("inbox.undo")).lineLimit(1).fixedSize()
-                            Image(systemName: "arrow.uturn.backward")
+                            Image(icon: "arrow.uturn.backward")
                         }
                     }
                         .buttonStyle(.plain)
@@ -949,7 +949,7 @@ private extension View {
     func nested(_ depth: Int) -> some View {
         if depth > 0 {
             HStack(spacing: 0) {
-                Image(systemName: "arrow.turn.down.right")
+                Image(icon: "arrow.turn.down.right")
                     .font(NookTheme.font(9.5, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(width: NookTheme.Spacing.xl)

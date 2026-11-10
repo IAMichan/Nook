@@ -28,14 +28,15 @@ extension Color {
     }
 }
 
-/// Nook design system. Color consistently represents state:
-/// iris = Nook itself, mint = listening or done, amber = waiting on you, coral = error.
+/// Nook design system, after t3code's look: a true black canvas, 8 % white lines, neutral text, a white main action and
+/// Lucide icons (`NookIcon`). Color consistently represents state:
+/// iris = Nook itself and the main action, mint = listening or done, amber = waiting on you, coral = error.
 ///
 /// Calm by design: every surface sits on one neutral grey ramp, a step apart, so regions read by their fill and need
 /// almost no strokes; strokes are only a shade lighter than what they edge; state colors are a little softened so a
 /// badge informs without shouting. Change a token here and every panel, card and setting follows.
 ///
-/// The ramp is pure grey (no blue cast): a near-black canvas (#0A0A0A), raised
+/// The ramp is pure grey (no blue cast): a true black canvas (#000000), raised
 /// surfaces about 4–8 % lighter, separation by tonal steps and 4–8 % white fills instead of grey panels or heavy lines.
 /// Color is kept for state (a status mark and its word, errors, diff +/−) and for links; everything else is neutral.
 ///
@@ -116,7 +117,8 @@ enum NookTheme {
     /// hairline made of it shows in both.
     static let wash = adaptive { $0 ? 0xFFFFFF : 0x000000 }
 
-    /// Nook's own color. Soft white by default (near black in light); the user can pick another in Settings › Appearance.
+    /// Nook's own color. The theme's accent by default (soft white in Nook's theme, near black in light); the user can pick another in
+    /// Settings › Appearance. The value is a marker for "the theme's own", stored as it always was.
     static let defaultAccentHex: UInt32 = 0xF4F3F7
     /// Current accent (kept in sync by `AppSettings.accentHex`).
     nonisolated(unsafe) static var accentHex: UInt32 = defaultAccentHex
@@ -127,6 +129,18 @@ enum NookTheme {
     static let iris = adaptive { accent(dark: $0) }
     /// Text and symbols on an iris fill: dark on a light accent (the default soft white), white on a deep one.
     static let onIris = adaptive { relativeLuminance(accent(dark: $0)) > 0.45 ? 0x0B0B0D : 0xFFFFFF }
+
+    /// The theme's own accent, whatever the user picked (the first swatch in Settings › Appearance).
+    static let themeAccent = adaptive { palette(dark: $0).accent }
+
+    /// The main action of a card, a notice or a sheet, shaped as t3code's: a filled accent button (Nook's soft white by
+    /// default, where t3code has blue) with `onPrimary` text, a shade deeper under the pointer. Secondary actions stay quiet (ghost or outline).
+    static let primary = iris
+    static let primaryHover = adaptive { NookColor.mix(accent(dark: $0), palette(dark: $0).canvas, 0.12) }
+    static let onPrimary = onIris
+    /// The outline button's fill and edge (t3code's `outline` variant): a faint fill a step off the surface it is on.
+    static let outlineFill = themed(\.field)
+    static let outlineStroke = themed(\.fieldStroke)
 
     /// WCAG relative luminance of a 0xRRGGBB color, 0 (black) to 1 (white).
     static func relativeLuminance(_ hex: UInt32) -> Double { NookColor.luminance(hex) }

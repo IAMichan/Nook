@@ -171,7 +171,7 @@ private struct RowPullRequestSummary: View {
             }
             if let detail {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "doc.text")
+                    Image(icon: "doc.text")
                         .font(NookTheme.font(11, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 16)
@@ -206,7 +206,7 @@ private struct RowPullRequestSummary: View {
                          running > 0 ? tr("agents.pr.checks.running", running) : nil,
                          passed > 0 ? tr("agents.pr.checks.passed", passed) : nil].compactMap { $0 }
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: failing > 0 ? "xmark.circle.fill" : running > 0 ? "clock.fill" : "checkmark.circle.fill")
+                Image(icon: failing > 0 ? "xmark.circle.fill" : running > 0 ? "clock.fill" : "checkmark.circle.fill")
                     .font(NookTheme.font(11, .medium))
                     .foregroundStyle(failing > 0 ? NookTheme.coral : running > 0 ? NookTheme.amber : NookTheme.mint)
                     .frame(width: 16)

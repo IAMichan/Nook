@@ -549,7 +549,7 @@ struct ChatAttachMenu: View {
 
     var body: some View {
         ComposerDropdown(width: 224) {
-            Image(systemName: "plus")
+            Image(icon: "plus")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 26, height: 26)
@@ -838,7 +838,7 @@ private struct ChatAttachmentThumb: View {
                     if bin {
                         ZStack {
                             NookTheme.ink.opacity(0.6)
-                            Image(systemName: "trash")
+                            Image(icon: "trash")
                                 .font(NookTheme.font(16, .medium))
                                 .foregroundStyle(NookTheme.paper)
                         }
@@ -872,7 +872,7 @@ private struct ChatAttachmentThumb: View {
                 .overlay(alignment: .bottomLeading) {
                     // A still of a video looks like a photo without this.
                     if file.kind == .video || file.kind == .gif {
-                        Image(systemName: ChatAttachmentThumbnail.symbol(file.kind))
+                        Image(icon: ChatAttachmentThumbnail.symbol(file.kind))
                             .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(NookTheme.paper)
                             .padding(NookTheme.Spacing.xxs)
@@ -881,7 +881,7 @@ private struct ChatAttachmentThumb: View {
                     }
                 }
         } else {
-            Image(systemName: ChatAttachmentThumbnail.symbol(file.kind))
+            Image(icon: ChatAttachmentThumbnail.symbol(file.kind))
                 .font(NookTheme.font(16, .medium))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -907,7 +907,7 @@ struct ChatAttachmentKindMenu: View {
             } label: {
                 HStack(spacing: NookTheme.Spacing.xxs) {
                     Text(Self.title(file.kind))
-                    Image(systemName: "chevron.down").font(NookTheme.font(8, .bold))
+                    Image(icon: "chevron.down").font(NookTheme.font(8, .bold))
                 }
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -979,7 +979,7 @@ private struct ChatComposePanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .accessibilityHidden(true)
@@ -1170,7 +1170,7 @@ private struct ChatPickRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(16))
                     .foregroundStyle(NookTheme.textSecondary)
                     .accessibilityHidden(true)
@@ -1185,7 +1185,7 @@ private struct ChatPickRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Image(systemName: "arrow.up.circle.fill")
+                Image(icon: "arrow.up.circle.fill")
                     .font(NookTheme.font(15))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                     .accessibilityHidden(true)
@@ -1388,7 +1388,7 @@ private struct ChatStickerCell: View {
                 if let image = ChatMediaImages.image(url, side: side * 2) {
                     Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                 } else {
-                    Image(systemName: "play.square.stack")
+                    Image(icon: "play.square.stack")
                         .font(NookTheme.font(18))
                         .foregroundStyle(NookTheme.textSecondary)
                 }

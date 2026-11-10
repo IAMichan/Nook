@@ -120,6 +120,8 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
     /// The group chats among them, and their people (you left out) once asked, as Messages lists them.
     private var groups: Set<String> = []
     private var members: [String: [String]] = [:]
+    /// Each private chat's number or address in Messages (`chat_identifier`), by its row.
+    private var identifiers: [String: String] = [:]
     /// Your own newest messages by row, with their chat: their ticks are read again each time, as they move.
     private var mine: [Int64: (chat: String, message: InboxMessage)] = [:]
     private static let tracked = 200
@@ -262,7 +264,7 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
             let inbox = built.inbox
             let chat = message.chat
             names[chat] = unnamed[chat] ?? names[chat] ?? message.chatName
-            if (AppData.number(row["grp"]) ?? 0) != 0 { groups.insert(chat) }
+            if (AppData.number(row["grp"]) ?? 0) != 0 { groups.insert(chat) } else { identifiers[chat] = AppData.string(row["identifier"]) }
             active[chat] = max(active[chat] ?? .distantPast, message.date)
             remember(row, chat: chat, message: inbox)
             if message.fromMe {
@@ -363,6 +365,12 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
             merged.deleted += dropped[chat] ?? []
             merged.unread = (merged.unread ?? 0) + (unread[chat] ?? 0)
             if let people = members[chat], !people.isEmpty { merged.members = people }
+            // A person's chat: the number or address it goes to, all Messages says of them.
+            if let identifier = identifiers[chat].map(AppData.cleanHandle), !identifier.isEmpty {
+                var profile = merged.profile ?? ChatProfile()
+                if identifier.contains("@") { profile.email = identifier } else { profile.phone = identifier }
+                merged.profile = profile
+            }
             chats[name] = merged
         }
         return chats.values.map { chat in
@@ -380,12 +388,22 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
         let id = NotificationRecord.integer(row["id"]) ?? 0
         // An unsent message ("Undo Send") has nothing left to read: it is read with a placeholder, then shown as deleted.
         let unsent = extras.unsent.contains(id)
-        if media != nil || unsent, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
+        let membership = AppData.messagesMembership(row, contacts: contacts)
+        let change = AppData.messagesGroupChange(row, contacts: contacts)
+        if membership != nil || change != nil || ((media != nil || unsent) && AppData.messages([row], names: contacts).isEmpty) {
+            readable["text"] = Self.placeholder
+        }
         guard let message = AppData.messages([readable], names: contacts).first else { return nil }
         let group = (AppData.number(row["grp"]) ?? 0) != 0
         var inbox = InboxMessage(
             id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
             text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
+        if membership != nil || change != nil {
+            inbox.membership = membership
+            inbox.groupChange = change
+            inbox.sender = ""
+            return (message, inbox)
+        }
         if message.fromMe {
             inbox.receipt = Self.receipt(row)
             inbox.readers = Self.readers(row)
@@ -778,11 +796,14 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
            COALESCE(h.id, '') AS handle, m.is_from_me AS me, m.date AS date, m.text AS text, hex(m.attributedBody) AS body,
            CASE WHEN c.style = 43 THEN 1 ELSE 0 END AS grp, m.is_sent AS sent, m.is_delivered AS delivered,
            COALESCE(m.date_read, 0) AS readat, COALESCE(m.error, 0) AS error, COALESCE(m.guid, '') AS guid,
-           COALESCE(m.thread_originator_guid, '') AS origin, COALESCE(c.guid, '') AS chatguid
+           COALESCE(m.thread_originator_guid, '') AS origin, COALESCE(c.guid, '') AS chatguid,
+           COALESCE(m.item_type, 0) AS itemtype, COALESCE(m.group_action_type, 0) AS groupaction, COALESCE(o.id, '') AS other,
+           COALESCE(m.group_title, '') AS grouptitle, COALESCE(c.chat_identifier, '') AS identifier
     FROM message m
     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
     JOIN chat c ON c.ROWID = cmj.chat_id
     LEFT JOIN handle h ON h.ROWID = m.handle_id
+    LEFT JOIN handle o ON o.ROWID = m.other_handle
     """
 
     private func query(_ sql: String) async throws -> [[String: Any]] {
@@ -835,6 +856,9 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
     /// The group chats read so far, and their people (you left out) once asked.
     private var groups: Set<String> = []
     private var groupPeople: [String: [String]] = [:]
+    /// What the app keeps about each chat besides its people (a group's admins, maker and date; a person's own name,
+    /// number and whether you blocked them), by the chat's row, once read.
+    private var profiles: [String: ChatProfile] = [:]
     /// Your own newest messages by row, with their chat: their ticks are read again each time, as they move.
     private var mine: [Int64: (chat: String, message: InboxMessage)] = [:]
     private static let tracked = 200
@@ -883,8 +907,9 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
             names[chat] = name
             if group { groups.insert(chat) }
             guard let message = Self.message(row, contacts: contacts) else {
-                // Read again at the next look, until WhatsApp filled it in (see `waiting`).
-                if lastRow != nil, waiting[id] == nil, waiting.count < 200 { waiting[id] = Date() }
+                // Read again at the next look, until WhatsApp filled it in (see `waiting`); a group's notice is complete.
+                let notice = Int(AppData.number(row["type"]) ?? 0) == Self.groupEventType
+                if lastRow != nil, !notice, waiting[id] == nil, waiting.count < 200 { waiting[id] = Date() }
                 continue
             }
             waiting[id] = nil
@@ -911,6 +936,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
             }
         }
         await loadPeople(contacts: contacts)
+        await loadPersons()
         let known = names.keys.compactMap(Int.init).map(String.init).joined(separator: ",")
         var unread: [String: Int] = [:]
         if !known.isEmpty {
@@ -924,8 +950,10 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
         isWorking = true
         return names.map { chat, name in
             let people = groupPeople[chat] ?? []
-            return BridgedChat(app: app, name: name, messages: (messages[chat] ?? []).sorted { $0.date < $1.date },
-                               unread: unread[chat] ?? 0, members: people.isEmpty ? nil : people)
+            var bridged = BridgedChat(app: app, name: name, messages: (messages[chat] ?? []).sorted { $0.date < $1.date },
+                                      unread: unread[chat] ?? 0, members: people.isEmpty ? nil : people)
+            bridged.profile = profiles[chat]
+            return bridged
         }
     }
 
@@ -934,6 +962,20 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
         let id = NotificationRecord.integer(row["id"]) ?? 0
         let group = (AppData.number(row["kind"]) ?? 0) == 1
         let mine = (AppData.number(row["me"]) ?? 0) != 0
+        if Int(AppData.number(row["type"]) ?? 0) == groupEventType {
+            // A group's notice: who came in or went as a line in the chat. Its other notices (a new name, a new
+            // picture) keep only an id or a name in their text, which would read as a message: they are left out.
+            let date = AppData.appleDate(AppData.number(row["date"]) ?? 0)
+            if let change = AppData.whatsAppGroupChange(row, contacts: contacts) {
+                var line = InboxMessage(id: "wadesktop-\(id)", text: "", date: date, fromMe: change.by == ChatMembership.me)
+                line.groupChange = change
+                return line
+            }
+            guard let change = AppData.whatsAppMembership(row, contacts: contacts) else { return nil }
+            var line = InboxMessage(id: "wadesktop-\(id)", text: "", date: date, fromMe: change.by == ChatMembership.me)
+            line.membership = change
+            return line
+        }
         var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
         if ChatFormat.isBlank(text) { text = "" }
         let media = Self.media(row)
@@ -1024,22 +1066,83 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
         let rows: [[String: Any]]
         do {
             rows = try await query("""
-            SELECT ZCHATSESSION AS chat, COALESCE(ZCONTACTNAME, '') AS name, COALESCE(ZMEMBERJID, '') AS jid
+            SELECT ZCHATSESSION AS chat, COALESCE(ZCONTACTNAME, '') AS name, COALESCE(ZMEMBERJID, '') AS jid,
+                   COALESCE(ZISADMIN, 0) AS admin
             FROM ZWAGROUPMEMBER WHERE ZCHATSESSION IN (\(asked.sorted().map(String.init).joined(separator: ","))) AND COALESCE(ZISACTIVE, 1) = 1
             """)
         } catch {
             for id in asked.map(String.init) { groupPeople[id] = [] }
             return
         }
+        // The name each member gave themselves, for those neither the app nor Contacts names.
+        let jids = Set(rows.map { AppData.string($0["jid"]) }.filter { !$0.isEmpty })
+        let own = (try? await pushNames(jids)) ?? [:]
         var found: [String: Set<String>] = [:]
+        var admins: [String: Set<String>] = [:]
         for row in rows {
             let jid = AppData.string(row["jid"])
             var name = AppData.string(row["name"])
-            if name.isEmpty { name = contacts[AppData.key(jid)] ?? WAJID.displayNumber(jid) }
+            if name.isEmpty { name = contacts[AppData.key(jid)] ?? own[jid] ?? WAJID.displayNumber(jid) }
             guard !name.isEmpty else { continue }
-            found[AppData.string(row["chat"]), default: []].insert(name)
+            let chat = AppData.string(row["chat"])
+            found[chat, default: []].insert(name)
+            if (AppData.number(row["admin"]) ?? 0) != 0 { admins[chat, default: []].insert(name) }
         }
         for id in asked.map(String.init) { groupPeople[id] = (found[id] ?? []).sorted() }
+        // When the group was made and by whom (`ZWAGROUPINFO`); WhatsApp keeps no description on this Mac.
+        let made = (try? await query("""
+            SELECT i.ZCHATSESSION AS chat, COALESCE(i.ZCREATIONDATE, 0) AS created, COALESCE(i.ZCREATORJID, '') AS creator
+            FROM ZWAGROUPINFO i WHERE i.ZCHATSESSION IN (\(asked.sorted().map(String.init).joined(separator: ",")))
+            """)) ?? []
+        let creators = (try? await pushNames(Set(made.map { AppData.string($0["creator"]) }.filter { !$0.isEmpty }))) ?? [:]
+        var byChat: [String: [String: Any]] = [:]
+        for row in made { byChat[AppData.string(row["chat"])] = row }
+        for id in asked.map(String.init) {
+            var profile = ChatProfile()
+            if let list = admins[id] { profile.admins = list.sorted() } else if found[id] != nil { profile.admins = [] }
+            if let row = byChat[id] {
+                let created = AppData.number(row["created"]) ?? 0
+                if created > 0 { profile.created = AppData.appleDate(created) }
+                let creator = AppData.string(row["creator"])
+                if !creator.isEmpty { profile.createdBy = contacts[AppData.key(creator)] ?? creators[creator] ?? WAJID.displayNumber(creator) }
+            }
+            if !profile.isEmpty { profiles[id] = profile }
+        }
+    }
+
+    /// The names people gave themselves (`ZWAPROFILEPUSHNAME`), by their JID.
+    private func pushNames(_ jids: Set<String>) async throws -> [String: String] {
+        guard !jids.isEmpty else { return [:] }
+        let rows = try await query("""
+        SELECT ZJID AS jid, COALESCE(ZPUSHNAME, '') AS name FROM ZWAPROFILEPUSHNAME
+        WHERE ZJID IN (\(jids.sorted().map(AppData.literal).joined(separator: ",")))
+        """)
+        var names: [String: String] = [:]
+        for row in rows where !AppData.string(row["name"]).isEmpty { names[AppData.string(row["jid"])] = AppData.string(row["name"]) }
+        return names
+    }
+
+    /// What the app keeps about the person of each private chat read so far: their number, the name they gave
+    /// themselves and whether you blocked them (`ZWABLACKLISTITEM`).
+    private func loadPersons() async {
+        let asked = names.keys.filter { !groups.contains($0) && profiles[$0] == nil }.compactMap(Int.init)
+        guard !asked.isEmpty else { return }
+        guard let rows = try? await query("""
+            SELECT Z_PK AS chat, COALESCE(ZCONTACTJID, '') AS jid FROM ZWACHATSESSION
+            WHERE Z_PK IN (\(asked.sorted().map(String.init).joined(separator: ",")))
+            """) else { return }
+        let jids = Set(rows.map { AppData.string($0["jid"]) }.filter { !$0.isEmpty })
+        let own = (try? await pushNames(jids)) ?? [:]
+        let blocked = Set(((try? await query("SELECT COALESCE(ZJID, '') AS jid FROM ZWABLACKLISTITEM")) ?? []).map { AppData.string($0["jid"]) })
+        for row in rows {
+            let chat = AppData.string(row["chat"])
+            let jid = AppData.string(row["jid"])
+            var profile = ChatProfile()
+            if jid.hasSuffix("@s.whatsapp.net") { profile.phone = WAJID.displayNumber(jid) }
+            if let name = own[jid], name != names[chat] { profile.ownName = name }
+            if blocked.contains(jid) { profile.blocked = true }
+            profiles[chat] = profile
+        }
     }
 
     /// The file of a photo, video, voice message, sticker or document, where the app keeps it on this Mac.
@@ -1065,6 +1168,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
                    COALESCE(s.ZCONTACTJID, '') AS jid, s.ZSESSIONTYPE AS kind, m.ZISFROMME AS me, m.ZMESSAGEDATE AS date,
                    m.ZTEXT AS text, m.ZMESSAGETYPE AS type, COALESCE(m.ZMESSAGESTATUS, 0) AS status,
                    \(members ? "COALESCE(g.ZCONTACTNAME, '') AS sender, COALESCE(g.ZMEMBERJID, '') AS member" : "'' AS sender, '' AS member"),
+                   \(members ? Self.eventColumns : "0 AS event, '' AS membername, '' AS targetname"),
                    \(media ? "COALESCE(mi.ZMEDIALOCALPATH, '') AS file, COALESCE(mi.ZMOVIEDURATION, 0) AS seconds, COALESCE(mi.ZTITLE, '') AS title" : "'' AS file, 0 AS seconds, '' AS title")
             FROM ZWAMESSAGE m JOIN ZWACHATSESSION s ON s.Z_PK = m.ZCHATSESSION
             \(members ? "LEFT JOIN ZWAGROUPMEMBER g ON g.Z_PK = m.ZGROUPMEMBER" : "")
@@ -1090,6 +1194,17 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
         }
         return try await query(sql(false, false))
     }
+
+    /// A group's change in who is in it (`ZGROUPEVENTTYPE`), with the names WhatsApp keeps for who did it and for whom
+    /// (`ZWAPROFILEPUSHNAME`, the name they gave themselves): only read with the group member table.
+    private static let eventColumns = """
+    CASE WHEN m.ZMESSAGETYPE = 6 THEN COALESCE(m.ZGROUPEVENTTYPE, 0) ELSE 0 END AS event,
+    CASE WHEN m.ZMESSAGETYPE = 6 THEN COALESCE((SELECT p.ZPUSHNAME FROM ZWAPROFILEPUSHNAME p WHERE p.ZJID = g.ZMEMBERJID LIMIT 1), '') ELSE '' END AS membername,
+    CASE WHEN m.ZMESSAGETYPE = 6 THEN COALESCE((SELECT p.ZPUSHNAME FROM ZWAPROFILEPUSHNAME p WHERE p.ZJID = m.ZTEXT LIMIT 1), '') ELSE '' END AS targetname
+    """
+
+    /// WhatsApp's message type of a group's notice (someone added, a new name, a new picture…).
+    private static let groupEventType = AppData.whatsAppGroupEventType
 
     /// WhatsApp's message type of a poll.
     private static let pollType = 46
@@ -1254,8 +1369,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     if picture != nil { reportedPicture[chat.id] = chat.picture }
                 }
                 let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
-                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: reread ? chat.unread : nil,
-                                          avatar: picture, account: account))
+                var bridged = BridgedChat(app: chat.app, name: chat.title, messages: [], unread: reread ? chat.unread : nil,
+                                          avatar: picture, account: account)
+                bridged.profile = chat.profile
+                result.append(bridged)
             }
             // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
             // they never come again. The failed one stays stale and is read again at the next tick.
@@ -1317,8 +1434,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 let picture = read.picture
                 if picture != nil { reportedPicture[chat.id] = chat.picture }
                 let account = chat.account ?? ChatLinker.shared.accountName(for: chat.app)
-                result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
-                                          members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account))
+                var bridged = BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
+                                          members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account)
+                bridged.profile = chat.profile
+                result.append(bridged)
             }
             if let failure {
                 if result.isEmpty { throw failure }
@@ -1628,6 +1747,8 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     private var users: [String: String] = [:]
     /// Each person's profile picture address, and where it is on this Mac once fetched.
     private var avatars: [String: String] = [:]
+    /// What Slack says of each person (status, title, email…), by their id, from the same people list.
+    private var profiles: [String: ChatProfile] = [:]
     private var avatarFiles: [String: String] = [:]
     /// The picture each direct message was last handed with, so a changed photo reaches the list without a new message.
     private var handedAvatars: [String: String] = [:]
@@ -1685,6 +1806,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 let members = try await pages("users.list", ["limit": "200"], auth: auth, maxPages: 5)
                 users = members.reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
                 avatars = members.reduce(into: [:]) { $0.merge(SlackData.avatars($1)) { a, _ in a } }
+                profiles = members.reduce(into: [:]) { $0.merge(SlackData.people($1)) { a, _ in a } }
                 usersAt = Date()
             }
             if conversationsAt.map({ Date().timeIntervalSince($0) > 600 }) ?? true {
@@ -1766,9 +1888,11 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                 remember(messages, in: conversation.id)
                 handed.insert(conversation.id)
                 if let picture { handedAvatars[conversation.id] = picture }
-                chats.append(BridgedChat(app: app, name: shownName(conversation),
-                                         messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
-                                         members: members.isEmpty ? nil : members, deleted: deleted))
+                var bridged = BridgedChat(app: app, name: shownName(conversation),
+                                          messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
+                                          members: members.isEmpty ? nil : members, deleted: deleted)
+                bridged.profile = profile(of: conversation)
+                chats.append(bridged)
             }
             // A chat read (or marked unread) in Slack since, without a new message: its count follows.
             for conversation in conversations where !handed.contains(conversation.id) && recent[conversation.id] != nil
@@ -1803,6 +1927,15 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     private struct SlackRead {
         var listed: [[String: Any]]
         var messages: [InboxMessage]
+    }
+
+    /// What Slack says of a conversation: the person's status, title, email and the rest in a direct message; a group's
+    /// topic, maker and date.
+    private func profile(of conversation: SlackData.Conversation) -> ChatProfile? {
+        if let user = conversation.user, !conversation.isGroup { return profiles[user] }
+        let profile = ChatProfile(about: conversation.about, created: conversation.created,
+                                  createdBy: conversation.creator.map { $0 == me ? ChatMembership.me : users[$0] ?? $0 })
+        return profile.isEmpty ? nil : profile
     }
 
     /// How many conversations a read asks `conversations.info` at most, the busiest first.

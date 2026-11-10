@@ -85,7 +85,7 @@ private struct ChatLinkCard: View {
     }
 
     private var playMark: some View {
-        Image(systemName: "play.fill")
+        Image(icon: "play.fill")
             .font(NookTheme.font(16, .semibold))
             .foregroundStyle(NookTheme.paper)
             .frame(width: 42, height: 42)

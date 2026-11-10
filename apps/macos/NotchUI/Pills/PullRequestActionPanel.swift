@@ -128,7 +128,7 @@ struct PullRequestMoreMenu: View {
                 if loading {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "ellipsis")
+                    Image(icon: "ellipsis")
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -352,7 +352,7 @@ struct PullRequestActionPanel: View {
                         }
                     } label: {
                         HStack(spacing: NookTheme.Spacing.xs) {
-                            Image(systemName: Self.verdictSymbol(state.verdict))
+                            Image(icon: Self.verdictSymbol(state.verdict))
                                 .foregroundStyle(Self.verdictColor(state.verdict))
                             Text(tr(Self.verdictKey(state.verdict)))
                         }
@@ -398,7 +398,7 @@ struct PullRequestActionPanel: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 GitHubAvatar(login: login, size: 16)
                 Text(login).font(NookTheme.TextStyle.label)
-                if chosen { Image(systemName: "checkmark").font(NookTheme.font(9, .bold)) }
+                if chosen { Image(icon: "checkmark").font(NookTheme.font(9, .bold)) }
             }
             .foregroundStyle(chosen ? NookTheme.onIris : NookTheme.textStrong)
             .padding(.leading, NookTheme.Spacing.xxs)
@@ -440,7 +440,7 @@ struct PullRequestActionPanel: View {
                         } label: {
                             HStack(spacing: NookTheme.Spacing.xs) {
                                 LabelChip(name: label.name, color: label.color)
-                                if on { Image(systemName: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.paper) }
+                                if on { Image(icon: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.paper) }
                             }
                         }
                         .buttonStyle(.plain)

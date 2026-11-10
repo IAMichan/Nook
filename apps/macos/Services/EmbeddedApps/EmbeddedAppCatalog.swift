@@ -594,12 +594,10 @@ enum EmbeddedSplit {
 /// A side panel you make wider or narrower by dragging the line beside it (the Agents tab's list, a session's results
 /// or terminal, the chat's list): how wide it may be, so neither the panel nor what sits next to it gets too narrow.
 enum PanelSplit {
-    /// Where a centered column of width `column` starts in its room of width `room`. Beside panels it stays centered in
-    /// the whole `row` they share, so it does not move when one opens or closes; only a panel that would cover it pushes
-    /// it aside, by no more than it has to. Without a `row` it is centered in its room.
-    static func columnStart(column: CGFloat, room: CGFloat, row: CGFloat?) -> CGFloat {
-        guard let row, row > 0 else { return (room - column) / 2 }
-        return max(0, min((row - column) / 2, room - column))
+    /// Where a centered column of width `column` starts in its room of width `room`: centered in the room the panels
+    /// beside it leave, so it sits in the middle of what you see instead of keeping a wide margin on one side only.
+    static func columnStart(column: CGFloat, room: CGFloat) -> CGFloat {
+        max(0, (room - column) / 2)
     }
 
     /// Room the drag line takes beside the panel.

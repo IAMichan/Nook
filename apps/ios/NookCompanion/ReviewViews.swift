@@ -94,7 +94,7 @@ private struct DiffFileCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(Theme.font(10, .bold))
                         .foregroundStyle(Theme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))

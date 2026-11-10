@@ -170,8 +170,8 @@ struct MemorySettingsSection: View {
                 Text(caption(item)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
         } idle: {
-            if item.pinned { Image(systemName: "pin.fill").font(NookTheme.font(10)) }
-            if item.localOnly { Image(systemName: "lock.fill").font(NookTheme.font(10)) }
+            if item.pinned { Image(icon: "pin.fill").font(NookTheme.font(10)) }
+            if item.localOnly { Image(icon: "lock.fill").font(NookTheme.font(10)) }
         } actions: {
             Button {
                 if editing == item.id {
@@ -182,17 +182,17 @@ struct MemorySettingsSection: View {
                     editing = item.id
                 }
             } label: {
-                Image(systemName: editing == item.id ? "checkmark" : "pencil")
+                Image(icon: editing == item.id ? "checkmark" : "pencil")
             }
             .help(tr("memory.settings.edit"))
             .accessibilityLabel(tr("memory.settings.edit"))
             Button { app.memory.setPinned(item.id, !item.pinned) } label: {
-                Image(systemName: item.pinned ? "pin.fill" : "pin")
+                Image(icon: item.pinned ? "pin.fill" : "pin")
             }
             .help(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             .accessibilityLabel(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             Button { app.memory.setLocalOnly(item.id, !item.localOnly) } label: {
-                Image(systemName: item.localOnly ? "lock.fill" : "lock.open")
+                Image(icon: item.localOnly ? "lock.fill" : "lock.open")
             }
             .help(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             .accessibilityLabel(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))

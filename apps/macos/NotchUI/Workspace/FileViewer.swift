@@ -214,7 +214,7 @@ struct FileViewer: View {
     /// The file's name and folder, then its actions.
     private var bar: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: content == .preview ? "doc" : "doc.text")
+            Image(icon: content == .preview ? "doc" : "doc.text")
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
             Text(name)
@@ -478,7 +478,7 @@ private struct FileLineNumber: View {
         Group {
             if hovering, let comment {
                 Button { comment(number) } label: {
-                    Image(systemName: "plus.bubble").font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.paper)
+                    Image(icon: "plus.bubble").font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.paper)
                 }
                 .buttonStyle(.plain)
                 .help(tr("file.viewer.comment"))

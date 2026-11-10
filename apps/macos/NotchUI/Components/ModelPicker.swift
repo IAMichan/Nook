@@ -101,7 +101,7 @@ struct ModelPicker<Above: View>: View {
     @ViewBuilder
     private func icon(_ place: ModelPickerPlace) -> some View {
         if place.isLocal {
-            Image(systemName: "laptopcomputer")
+            Image(icon: "laptopcomputer")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(NookTheme.paper)
                 .frame(width: ModelPickerStyle.markSize, height: ModelPickerStyle.markSize)
@@ -195,7 +195,7 @@ private struct ModelPickerAddButton: View {
             close()
             add()
         } label: {
-            Image(systemName: "plus")
+            Image(icon: "plus")
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 32, height: 32)

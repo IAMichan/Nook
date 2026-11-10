@@ -124,7 +124,7 @@ struct ActionsRepoPicker: View {
     var body: some View {
         ComposerDropdown(width: 320) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "plus")
+                Image(icon: "plus")
                     .font(NookTheme.font(12, .semibold))
                 // Without tabs yet, the button says what it is for.
                 if store.recent.isEmpty {

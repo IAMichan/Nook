@@ -17,7 +17,7 @@ struct NookSymbol: View {
         if name.hasPrefix("nook.pr."), let glyph = PullRequestBadge.Glyph(rawValue: String(name.dropFirst("nook.pr.".count))) {
             PullRequestStateGlyph(glyph: glyph, size: size, lineWidth: size < 14 ? 1.6 : 1.4, nodeRadius: size < 14 ? 1.8 : 1.7)
         } else {
-            Image(systemName: name)
+            Image(icon: name)
         }
     }
 }

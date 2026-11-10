@@ -199,7 +199,7 @@ struct AccountBadge: View {
                 // Scaled to fit a square inside the circle, so wide and tall symbols alike stay in the middle.
                 // The margin around it is a whole point on each side: a fractional one is rounded to the pixel
                 // grid on one side only, which pushes the icon left on the small badges (an agent row's 8 pt).
-                Image(systemName: kind.symbol)
+                Image(icon: kind.symbol)
                     .resizable()
                     .scaledToFit()
                     .fontWeight(.bold)

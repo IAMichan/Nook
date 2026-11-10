@@ -161,7 +161,7 @@ struct AnswerOfferChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "arrow.turn.down.right")
+                Image(icon: "arrow.turn.down.right")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                 Text(text)
