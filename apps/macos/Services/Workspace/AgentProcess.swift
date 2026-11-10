@@ -64,6 +64,7 @@ enum AgentCommand {
     static func spec(_ input: Input) -> LaunchSpec {
         var environment = input.accountEnvironment
         environment["NOOK_RUN_ID"] = input.runID.uuidString
+        environment.merge(SudoAskpass.launchEnvironment()) { _, new in new }
         switch input.provider {
         case .claude:
             var arguments = [
@@ -142,6 +143,7 @@ enum AgentCommand {
     static func acpSpec(_ input: Input) -> LaunchSpec {
         var environment = input.accountEnvironment
         environment["NOOK_RUN_ID"] = input.runID.uuidString
+        environment.merge(SudoAskpass.launchEnvironment()) { _, new in new }
         // An ACP agent you added: your login shell runs its command line, so npx, uvx, nvm and asdf work as in Terminal.
         if input.provider == .acp, let agent = input.customAgent {
             environment.merge(agent.environment) { _, new in new }

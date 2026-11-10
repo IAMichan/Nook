@@ -273,6 +273,8 @@ struct NewSessionComposer: View {
         var rich = ComposerConfig()
         rich.fileRoot = config.projectPath.isEmpty ? nil : config.projectPath
         rich.keepsBigPastes = true
+        // The session has no id yet: its pasted secrets wait in the composer's own folder. Not for another machine.
+        rich.secretScope = remoteMachine == nil ? SecretFiles.composerScope : nil
         return rich
     }
 
