@@ -72,7 +72,7 @@ extension AppModel {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard FileText.isAllowed(url) else {
-            viewModel.show(.card(errorCard(tr("chat.attach.notAllowed"))))
+            attachmentError = tr("chat.attach.notAllowed")
             return
         }
         askAbout(url)
@@ -80,6 +80,7 @@ extension AppModel {
 
     func clearAttachment() {
         attachment = nil
+        attachmentError = nil
     }
 
     func sendMail(_ draft: MailDraft) {

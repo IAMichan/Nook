@@ -37,6 +37,11 @@ final class TabWindowController {
         entries[Self.key(tab)].map { $0.window.isVisible || $0.window.isMiniaturized } ?? false
     }
 
+    /// Whether `tab` has a window of its own that is in front now.
+    func isKey(_ tab: PanelTab) -> Bool {
+        entries[Self.key(tab)]?.window.isKeyWindow ?? false
+    }
+
     /// Opens `tab` in a window of its own, or brings that window forward. Split view stops showing it beside the main
     /// tab: it is in its own window now.
     func open(_ tab: PanelTab, app: AppModel, activate: Bool = true) {

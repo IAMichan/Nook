@@ -17,26 +17,42 @@ extension AppModel {
         chat.append(message)
     }
 
+    /// A file or folder for the chat to ask about. It is read off the main thread (a PDF or a zip can take a moment);
+    /// what goes wrong shows under the chat's box (`attachmentError`), where you attached it, not as a card in the notch.
     func askAbout(_ url: URL) {
+        attachmentError = nil
         if ChatImage.isImage(url) {
             askAboutImage(url, name: url.lastPathComponent)
             return
         }
-        do {
-            let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-            guard !isFolder || FileText.isAllowed(url) else {
-                viewModel.show(.card(errorCard(tr("chat.attach.notAllowed"))))
-                return
-            }
-            let text = isFolder ? try FileText.folder(url) : try FileText.read(url)
-            attachment = (url.lastPathComponent, text, Date())
-            var message = ChatMessage(role: .nook, text: tr("app.file.read", url.lastPathComponent))
-            message.sources = ["Bestand"]
-            chat.append(message)
-            showChat()
-        } catch {
-            viewModel.show(.card(errorCard(error.localizedDescription)))
+        let name = url.lastPathComponent
+        let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        guard !isFolder || FileText.isAllowed(url) else {
+            attachmentError = tr("chat.attach.notAllowed")
+            return
         }
+        Task { @MainActor [weak self] in
+            let read = await Task.detached(priority: .userInitiated) { () -> Result<String, Error> in
+                Result { isFolder ? try FileText.folder(url) : try FileText.read(url) }
+            }.value
+            guard let self else { return }
+            switch read {
+            case .success(let text):
+                self.attachment = (name, text, Date())
+                var message = ChatMessage(role: .nook, text: tr("app.file.read", name))
+                message.sources = ["Bestand"]
+                self.chat.append(message)
+                self.showChat()
+            case .failure(let error):
+                self.attachmentError = Self.attachProblem(error, name: name, isFolder: isFolder)
+            }
+        }
+    }
+
+    /// The words for a file the chat could not read: a zip says what was wrong with it, anything else what does work.
+    nonisolated static func attachProblem(_ error: Error, name: String, isFolder: Bool) -> String {
+        if let zip = error as? ZipText.Failure { return zip.localizedDescription }
+        return tr(isFolder ? "chat.attach.emptyFolder" : "chat.attach.unreadable", name)
     }
 
     /// An image: brains that can see get the picture itself, every brain gets the text Nook reads in it on the Mac.
@@ -46,7 +62,7 @@ extension AppModel {
             let loaded = await Task.detached(priority: .userInitiated) { ChatImage.load(url) }.value
             guard let self else { return }
             guard let loaded else {
-                self.viewModel.show(.card(self.errorCard(tr("chat.image.unreadable", name))))
+                self.attachmentError = tr("chat.image.unreadable", name)
                 return
             }
             self.showChat()

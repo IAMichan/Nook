@@ -576,16 +576,7 @@ struct AgentSessionDetail: View {
     @ViewBuilder
     private var errorLine: some View {
         if let actionError {
-            HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coral)
-                Text(actionError)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
+            ComposerErrorLine(message: actionError)
         }
     }
 

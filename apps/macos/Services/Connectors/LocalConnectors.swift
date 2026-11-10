@@ -1095,6 +1095,8 @@ final class BrowserConnector: ContextSource {
 /// Reads text from standard documents. Shared by the Shelf and file tools.
 enum FileText {
     static func read(_ url: URL, limit: Int = 5_000_000) throws -> String {
+        // A zip archive: its files, and what the readable ones inside say (read the same way as here).
+        if ZipText.isZip(url) { return try ZipText.read(url) { try read($0, limit: ZipText.fileLimit) } }
         let type = UTType(filenameExtension: url.pathExtension) ?? .data
         var text: String?
         if type.conforms(to: .pdf) {
@@ -1106,7 +1108,7 @@ enum FileText {
             if size < limit { text = try? String(contentsOf: url, encoding: .utf8) }
         }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw NookError("I cannot read text from \(url.lastPathComponent). Plain text, PDF, Word, and RTF work.")
+            throw NookError("I cannot read text from \(url.lastPathComponent). Plain text, PDF, Word, RTF, and zip work.")
         }
         return text
     }

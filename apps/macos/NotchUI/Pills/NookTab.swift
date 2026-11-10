@@ -182,6 +182,30 @@ struct NookChatView: View {
         }
         .composerFocusOnAppear($inputFocused)
         .onDisappear { NookTabDraft.images = images }
+        // An answer that finished while the chat was out of sight (another app or window in front, a sheet over it) is
+        // read once you are back on it: its row loses "done" without opening the conversation again. Once the chat is
+        // on screen, as Chats reads an open chat.
+        .task(id: activeUnread) {
+            try? await Task.sleep(for: NookTheme.tabSettle)
+            guard !Task.isCancelled else { return }
+            readOpenConversation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in readOpenConversation() }
+        .onChange(of: viewModel.isInSight(.chat)) { _, inSight in
+            if inSight { readOpenConversation() }
+        }
+    }
+
+    /// The open conversation, while Nook marked it as finished without you seeing it.
+    private var activeUnread: UUID? {
+        guard let id = chat.activeID, chat.conversation(id)?.unread == true else { return nil }
+        return id
+    }
+
+    /// Marks the open conversation as read when it is in sight: shown in place of the list, in a tab that is on screen.
+    private func readOpenConversation() {
+        guard let id = activeUnread, !(listOnly && PanelLayout.stacks(totalWidth)), viewModel.isInSight(.chat) else { return }
+        chat.setUnread(false, [id])
     }
 
     /// Shows the conversation and gives its box the keyboard, also when the list's search has it. An empty chat and a
@@ -531,6 +555,11 @@ struct NookChatView: View {
             if let name = app.attachmentName {
                 AttachmentChip(name: name, isImage: app.attachmentIsImage) { app.clearAttachment() }
             }
+            // A file that could not be read says so here, where you attached it, not as a card in the notch.
+            if let problem = app.attachmentError {
+                ComposerErrorLine(message: problem) { app.attachmentError = nil }
+                    .padding(.horizontal, NookTheme.Spacing.xxs)
+            }
             // Questions asked while Nook answers wait in a tray tucked above the box, as an agent's do.
             VStack(spacing: 0) {
                 queuedTray
@@ -608,6 +637,7 @@ struct NookChatView: View {
         let attached = images
         question = ""
         images = []
+        app.attachmentError = nil
         app.handleUserText(text, images: attached)
         inputFocused = true
     }
