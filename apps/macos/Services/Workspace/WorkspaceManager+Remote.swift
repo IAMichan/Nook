@@ -141,6 +141,7 @@ extension WorkspaceManager {
                     return
                 }
                 let name = config.branchName
+                let submodules = self.settings.sessionDefaults(for: root).submodules
                 do {
                     let created = try await Task.detached(priority: .userInitiated) { () throws -> (path: String, base: String) in
                         guard let home = RemoteShell.home(remote) else { throw GitError(tr("ws.remote.noHome")) }
@@ -151,6 +152,8 @@ extension WorkspaceManager {
                             slug: WorktreeNaming.directorySlug(branch: name),
                             exists: { RemoteShell.exists($0, on: remote) })
                         try git.addWorktree(repo: root, path: path, branch: name, base: base)
+                        // Same as on this Mac; a submodule that fails leaves the worktree usable.
+                        try? git.updateSubmodules(path, mode: submodules)
                         return (path, base)
                     }.value
                     guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }

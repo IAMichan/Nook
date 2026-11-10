@@ -290,6 +290,7 @@ extension WorkspaceManager {
                                                    projectPrefix: settings.sessionDefaults(for: repo).branchPrefix)
         let refreshBase = base.map { shouldRefreshRemoteBase(root: repo, base: $0) } ?? false
         let gone = tr("ws.error.folderGone", path)
+        let checkout = worktreeCheckout(git, root: repo)
         Task { [weak self] in
             let result: Result<WorktreeCleanup.Reopen, Error>
             do {
@@ -299,12 +300,17 @@ extension WorkspaceManager {
                     let onRemote = !exists && (branch.map { git.remoteBranchExists($0, in: repo) } ?? false)
                     let plan = WorktreeCleanup.reopen(branch: branch, branchExists: exists, remoteBranchExists: onRemote,
                                                       merged: merged, base: base, newBranch: newBranch)
+                    var cloned = false
                     switch plan {
                     case .branch(let name): try git.addWorktree(repo: repo, path: path, existingBranch: name)
                     case .remoteBranch(let name): try git.addWorktree(repo: repo, path: path, remoteBranch: name)
-                    case .newBranch(let name, let base): try git.addWorktree(repo: repo, path: path, branch: name, base: base, refreshBase: refreshBase)
+                    case .newBranch(let name, let base):
+                        cloned = try git.addWorktree(repo: repo, path: path, branch: name, base: base, refreshBase: refreshBase,
+                                                     checkoutCache: checkout.cache)
                     case .impossible: throw GitError(gone)
                     }
+                    // A submodule that fails to check out leaves the worktree usable; the agent sees the folder as it is.
+                    _ = Self.finishWorktree(git, checkout: checkout, root: repo, path: path, cloned: cloned)
                     return plan
                 }
                 result = .success(plan)

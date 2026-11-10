@@ -397,7 +397,7 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions whose removed worktree is being made again for a message (see `reopenWorktree`).
     var reopeningWorktrees: Set<UUID> = []
     /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
-    private var projectCache: [String: ProjectInfo] = [:]
+    var projectCache: [String: ProjectInfo] = [:]
     /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
     private var remoteBaseRefreshed: [String: Date] = [:]
     /// Next checkpoint index per session, claimed before async git work so concurrent checkpoints never share an index.
@@ -480,6 +480,8 @@ final class WorkspaceManager: ObservableObject {
                 guard let self else { return }
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()
+                // Opt-in per project; no project with it on costs nothing.
+                self.autoPullDefaultBranches()
                 self.sweepBuildLeftovers()
                 self.watchDiskSpace()
                 // Otherwise only opening another session frees one: sessions finish, and their timelines stay.
@@ -698,14 +700,6 @@ final class WorkspaceManager: ObservableObject {
         return info
     }
 
-    /// Clones a repository, then selects it as the active project.
-    func clone(url: String, into parent: String) async throws -> String {
-        guard let git = gitService else { throw StartError.noGit }
-        let path = try await Task.detached(priority: .userInitiated) { try git.clone(url: url, into: parent) }.value
-        settings.rememberProject(path)
-        return path
-    }
-
     // MARK: New Session
 
     enum StartError: LocalizedError {
@@ -845,11 +839,15 @@ final class WorkspaceManager: ObservableObject {
         let refreshBase = shouldRefreshRemoteBase(root: root, base: base)
         let repoKey = FolderLease.key(root)
         let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        let checkout = worktreeCheckout(git, root: root)
         prepareTasks[id]?.cancel()
         prepareTasks[id] = Task { [weak self] in
+            let submoduleProblem: String?
             do {
-                try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
-                    try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase)
+                submoduleProblem = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                    let cloned = try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase,
+                                                     checkoutCache: checkout.cache)
+                    return Self.finishWorktree(git, checkout: checkout, root: root, path: path, cloned: cloned)
                 }
             } catch {
                 guard let self, !Task.isCancelled, self.run(id) != nil else { return }
@@ -869,6 +867,7 @@ final class WorkspaceManager: ObservableObject {
                 $0.worktreePath = path
                 $0.branch = branch
             }
+            if let submoduleProblem { self.append(id, RunEvent(kind: .error, text: tr("sc.submodules.failed", submoduleProblem))) }
             self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
             let worktreeKey = FolderLease.key(path)

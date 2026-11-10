@@ -509,7 +509,9 @@ struct WorkspaceSettingsSection: View {
             } else {
                 Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
                     ForEach(choices, id: \.self) { path in
-                        Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
+                        let name = URL(fileURLWithPath: path).lastPathComponent
+                        Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
+                            .tag(path).help(AgentPathFormat.tilde(path))
                     }
                 } label: {
                     SettingText("settings.projects.project")
@@ -519,6 +521,7 @@ struct WorkspaceSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.scope.footer"))
         }
+        ArchivedProjectsSection(scope: $scope)
     }
 
     @ViewBuilder
@@ -630,6 +633,22 @@ struct WorkspaceSettingsSection: View {
                 .lineLimit(2...8)
                 .help(tr("settings.ws.agentInstructions.help"))
         }
+        inheritable(.submodules, path) {
+            Picker(tr("sc.submodules"), selection: Binding(
+                get: { resolved.submodules }, set: { ws.setOverride(.submodules, $0.rawValue, for: path) })) {
+                ForEach(SubmoduleMode.allCases) { Text(tr("sc.submodules." + $0.rawValue)).tag($0) }
+            }
+            .help(tr("sc.submodules.help"))
+        }
+        inheritable(.autoPull, path) {
+            Picker(tr("sc.autoPull"), selection: Binding(
+                get: { resolved.autoPull }, set: { ws.setOverride(.autoPull, $0 ? "on" : "off", for: path) })) {
+                Text(tr("sc.autoPull.on")).tag(true)
+                Text(tr("sc.autoPull.off")).tag(false)
+            }
+            .help(tr("sc.autoPull.help"))
+        }
+        ProjectSourceControlRows(path: path)
     }
 
     /// A per-project row: its control, then "Inherited" or the button that goes back to the value for all projects.
@@ -878,6 +897,7 @@ struct WorkspaceSettingsSection: View {
             } label: {
                 SettingText("settings.ws.branchPrefix")
             }
+            SourceControlGlobalRows()
         }
     }
 

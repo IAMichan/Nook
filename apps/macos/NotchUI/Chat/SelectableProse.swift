@@ -257,6 +257,9 @@ struct SelectableProse: NSViewRepresentable {
                 Task { @MainActor in AnswerCitation.open(number, in: references) }
                 return true
             }
+            if let url, MainActor.assumeIsolated({ MarkdownBlock.openCommitLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }) {
+                return true
+            }
             if let url, MarkdownBlock.isFileLink(url) {
                 let base = fileLinkBase, beside = pullRequestLinksBeside
                 Task { @MainActor in _ = MarkdownBlock.openFileLink(url, base: base, beside: beside) }
