@@ -244,6 +244,44 @@ extension CompanionServer {
         return response
     }
 
+    /// A piece of one file of a session's folder, for the phone to preview it (`CompanionOp.fileData`). The same rules
+    /// as `files` (inside the folder, no secrets, a regular file), and no file over `FileChunk.maxFileBytes`.
+    func fileData(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        guard let session = request.session, let folder = sessionFolder(session, app: app), !folder.isEmpty else {
+            return .failure(request.id, .unknownSession)
+        }
+        if let id = UUID(uuidString: session), app.workspace.run(id)?.isRemote == true { return .failure(request.id, .notAllowedFromPhone) }
+        let relative = request.item ?? ""
+        let offset = Int(request.text ?? "0") ?? -1
+        let read = await Task.detached(priority: .userInitiated) { () -> (FileChunk?, CompanionError?) in
+            guard !relative.isEmpty, let path = CompanionWorkspace.path(relative, in: folder) else { return (nil, .notAllowedFromPhone) }
+            let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+            // Opening a named pipe or a device would wait forever.
+            guard attributes?[.type] as? FileAttributeType == .typeRegular, let total = attributes?[.size] as? Int else {
+                return (nil, .notAllowedFromPhone)
+            }
+            guard let range = FileChunk.range(offset: offset, total: total) else { return (nil, .badRequest) }
+            guard let handle = FileHandle(forReadingAtPath: path) else { return (nil, .notAllowedFromPhone) }
+            defer { try? handle.close() }
+            do {
+                try handle.seek(toOffset: UInt64(range.lowerBound))
+                let data = try handle.read(upToCount: range.count) ?? Data()
+                return (FileChunk(path: relative, offset: range.lowerBound, total: total, data: data.base64EncodedString()), nil)
+            } catch {
+                return (nil, .failed)
+            }
+        }.value
+        guard let chunk = read.0 else {
+            let error = read.1 ?? .failed
+            // A file over the limit says so, so the phone can tell it from one it may not see.
+            return .failure(request.id, error, message: error == .badRequest ? "tooLarge" : nil)
+        }
+        if chunk.offset == 0 { audit("file_preview", relative) }
+        var response = CompanionResponse(id: request.id, ok: true)
+        response.fileChunk = chunk
+        return response
+    }
+
     private func sessionFolder(_ session: String, app: AppModel) -> String? {
         if let runID = UUID(uuidString: session), let run = app.workspace.run(runID) { return run.workingDirectory }
         guard CompanionAgents.handles(session) else { return nil }
