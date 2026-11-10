@@ -269,6 +269,14 @@ extension CompanionServer {
             if text.isEmpty { text = event.detail ?? "" }
             detail = event.tool
         case .error: kind = .error
+        case .system where CompactionProgress.isCompaction(event):
+            // A compaction reads as a terminal session's does on the phone; while it runs, or when it stopped, in words.
+            kind = .notice
+            switch event.state {
+            case .running?: text = tr("ws.activity.compacting"); detail = nil
+            case .failed?: text = tr("ws.event.compactionStopped"); detail = nil
+            default: detail = TimelineEntry.compacted
+            }
         case .system: kind = .notice
         case .page:
             // The phone draws no pages: it says which page the agent showed (the page itself stays on the Mac).
