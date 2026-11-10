@@ -133,6 +133,9 @@ final class WorkspaceManager: ObservableObject {
     @Published var approvals: [UUID: [PendingPermission]] = [:]
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
     @Published private(set) var queued: [UUID: MessageQueue] = [:]
+    /// Sessions whose next message of yours starts a new conversation (`/clear`, see `FreshConversation`). In memory only,
+    /// as a draft is: "Keep this conversation" takes it back.
+    @Published var freshArmed: Set<UUID> = []
     /// Questions an agent asked in a session and that wait for your answer.
     @Published var questions: [UUID: [PendingQuestion]] = [:]
     /// Connectors (MCP servers) each session's agent has but cannot use until you sign in (see ConnectorSignIn).
@@ -271,6 +274,13 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNow: [UUID: String] = [:]
     /// How the message in `pendingSendNow` came to interrupt the turn: it is marked so in the timeline once it goes out.
     var pendingSendNowSteer: [UUID: RunEvent.SteerKind] = [:]
+    /// The message in `pendingSendNow` starts a new conversation (`/clear`).
+    var pendingSendNowFresh: Set<UUID> = []
+    /// The words of the turn that went out last, to send them again in a new conversation when the agent lost the old one or
+    /// it no longer fits (`recoverConversation`).
+    var turnPrompts: [UUID: String] = [:]
+    /// Sessions whose running turn is that second try: when it fails too, it fails as it is.
+    var recoveringConversation: Set<UUID> = []
     /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
     /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
     var remoteHomes: [String: String] = [:]
@@ -826,19 +836,26 @@ final class WorkspaceManager: ObservableObject {
             run.autoModel = true
             run.model = ""
         }
+        // Ready and waiting for your first message: nothing to launch yet (a worktree is still made first).
+        let idle = config.startsIdle && config.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if idle, worktreePath == nil {
+            run.status = .completed
+            run.turnStartedAt = nil
+        }
         runs.insert(run, at: 0)
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
         selectedRunID = id
+        if let startedBy = config.startedBy, !startedBy.isEmpty { append(id, RunEvent(kind: .system, text: startedBy, tool: "origin")) }
         let shownTask = ContextRefs.timeline(config.task, folder: workingDirectory)
         if shownTask != config.task { displayPrompt[id] = shownTask }
         if let worktreePath, let root = repoRoot {
             append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeCreated", branch ?? "", AgentPathFormat.tilde(worktreePath))))
-            append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task)))
+            if !idle { append(id, RunEvent(kind: .user, text: shownPrompt(id, config.task))) }
             prepareWorktreeAndLaunch(id, root: root, path: worktreePath, branch: branch ?? "", base: config.baseBranch,
-                                     prompt: config.task, executable: executable)
+                                     prompt: idle ? "" : config.task, executable: executable)
         } else {
-            launchTurn(id, prompt: config.task, executable: executable)
+            if !idle { launchTurn(id, prompt: config.task, executable: executable) }
             prepareFolderSession(id, directory: workingDirectory, knownRoot: repoRoot, knownBranch: branch)
         }
         if title.isEmpty { generateTitle(id) }
@@ -882,7 +899,15 @@ final class WorkspaceManager: ObservableObject {
                 $0.branch = branch
             }
             if let submoduleProblem { self.append(id, RunEvent(kind: .error, text: tr("sc.submodules.failed", submoduleProblem))) }
-            self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+            if prompt.isEmpty {
+                // Started without a first message: the worktree is ready and the session waits for yours.
+                self.update(id) {
+                    $0.status = .completed
+                    $0.turnStartedAt = nil
+                }
+            } else {
+                self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+            }
             // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
             let worktreeKey = FolderLease.key(path)
             let made = (try? await FolderLease.shared.run(worktreeKey, priority: .userInitiated) {
@@ -1108,9 +1133,15 @@ final class WorkspaceManager: ObservableObject {
     func sendPendingNow(_ id: UUID) -> Bool {
         guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
         let mark = pendingSendNowSteer.removeValue(forKey: id)
+        let fresh = pendingSendNowFresh.remove(id) != nil
+        // A new conversation starts only between turns; while the snapshot is still being made it waits at the front.
+        if fresh, !clearConversation(id, quietly: true) {
+            queued[id, default: MessageQueue()].requeueFirst(next, fresh: true)
+            return true
+        }
         let before = timeline(id).last { $0.kind == .user }?.id
         if !send(id, text: next, shown: false) {
-            queued[id, default: MessageQueue()].requeueFirst(next)
+            queued[id, default: MessageQueue()].requeueFirst(next, fresh: fresh)
         } else if let mark, let sent = timeline(id).last(where: { $0.kind == .user }), sent.id != before {
             // It cut the turn off to go out: it reads as a steer, as a message taken into the turn does.
             mutateEvent(id, sent.id) { $0.steer = mark }
@@ -1185,6 +1216,7 @@ final class WorkspaceManager: ObservableObject {
                 return true
             }
             displayPrompt[id] = clean
+            turnPrompts[id] = clean
             launchTurn(id, prompt: ContextHandoff.compose(handoff: run.pendingHandoff, message: prompt), executable: executable, showPrompt: true)
             return true
         }
@@ -1195,6 +1227,7 @@ final class WorkspaceManager: ObservableObject {
         // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
         // other agent (Codex over `codex exec` too) ahead of the message.
         let appContext = usesCodexServer(run, executable) ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        turnPrompts[id] = clean
         launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
                    showPrompt: !shown)
         return true
@@ -1222,6 +1255,7 @@ final class WorkspaceManager: ObservableObject {
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
         noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
+        if run.status != .failed { recoveringConversation.remove(id) }
         if run.status == .completed {
             clearContinuations(id)
             if run.pendingHandoff != nil { update(id) { $0.pendingHandoff = nil } }
@@ -1231,6 +1265,13 @@ final class WorkspaceManager: ObservableObject {
         if idleCompacting.remove(id) != nil {
             sizeCompacting.remove(id)
             sendQueued(id)
+            return
+        }
+        // The agent lost this conversation, or it no longer fits: the same words go out once more in a new one, with the
+        // timeline so far as its summary (`FreshConversation`). The snapshot comes first, so the new turn waits for it.
+        if run.status == .failed, let recovery = conversationRecovery(id, error: run.statusDetail) {
+            captureCheckpoint(id)
+            recoverConversation(id, recovery)
             return
         }
         onTurnFinished?(run)
@@ -1299,22 +1340,70 @@ final class WorkspaceManager: ObservableObject {
     /// Busy covers more than a running status: the process of the turn that just ended can still be closing, its
     /// snapshot can still be made, or earlier messages can still be waiting; this one goes behind them. Nothing is
     /// dropped: a message that cannot go out waits in the queue. True when it went out now.
+    /// `fromYou`: typed by you (the composer, the phone). Then `/clear` on its own does not go to the agent: it sets your
+    /// next message to start a new conversation (`armFreshConversation`), and that message takes it. A message from
+    /// another agent, a guest or a schedule never takes your `/clear`. A fresh message (or one with `fresh`) starts the
+    /// new conversation right away when the agent is free, otherwise it waits in line marked so and never joins a turn.
     @discardableResult
-    func submit(_ id: UUID, text: String) -> Bool {
+    func submit(_ id: UUID, text: String, fresh: Bool = false, fromYou: Bool = false) -> Bool {
         guard let run = run(id) else { return false }
+        if fromYou, FreshConversation.isCommand(text) {
+            armFreshConversation(id)
+            return false
+        }
+        let fresh = (fromYou && takeFreshArm(id)) || fresh
         let waiting = queued[id].map { !$0.isEmpty && !$0.isHeld } ?? false
         let busy = run.status.isActive || processes[id] != nil || checkpointing.contains(id) || waiting
-        if !busy, send(id, text: text, shown: false) { return true }
-        enqueue(id, text: text)
+        var cleared = false
+        if !busy {
+            if fresh { cleared = clearConversation(id, quietly: true) }
+            if !fresh || cleared, send(id, text: text, shown: false) { return true }
+        }
+        enqueue(id, text: text, fresh: fresh && !cleared)
         sendQueued(id)
         return false
     }
 
+    enum Delivery: String, Sendable { case sent, queued, steered, restarted }
+
+    /// A message another agent sends (`session_send`), the way it asks for it (t3code's `t3_thread_send`): `auto` steers a
+    /// running turn the agent can take and otherwise goes as `submit`; `steer` only into the running turn (nil when it
+    /// cannot take it); `restart` stops the running turn and goes out right after; `queue` is `submit`. It never takes
+    /// your `/clear`, and never cuts into a turn that is starting a new conversation for you.
+    func deliver(_ id: UUID, text: String, mode: BridgeSessionArguments.SendMode) -> Delivery? {
+        guard let run = run(id) else { return nil }
+        let active = run.status.isActive
+        switch mode {
+        case .queue:
+            return submit(id, text: text) ? .sent : .queued
+        case .auto:
+            if active, canSteer(id), steer(id, text: text) { return .steered }
+            return submit(id, text: text) ? .sent : .queued
+        case .steer:
+            guard active else { return submit(id, text: text) ? .sent : .queued }
+            return canSteer(id) && steer(id, text: text) ? .steered : nil
+        case .restart:
+            guard active else { return submit(id, text: text) ? .sent : .queued }
+            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty else { return nil }
+            // A message already waits to go out when this turn ends (yours, sent now): this one goes after it.
+            guard pendingSendNow[id] == nil else {
+                enqueue(id, text: clean)
+                return .queued
+            }
+            pendingSendNow[id] = clean
+            pendingSendNowSteer[id] = .steer
+            pendingSendNowFresh.remove(id)
+            stop(id)
+            return .restarted
+        }
+    }
+
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
-    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil) {
+    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil, fresh: Bool = false) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
-        queue.enqueue(text, pullRequest: pullRequest)
+        queue.enqueue(text, pullRequest: pullRequest, fresh: fresh)
         queued[id] = queue.isEmpty ? nil : queue
     }
 
@@ -1333,8 +1422,10 @@ final class WorkspaceManager: ObservableObject {
     /// agent is idle (also after a stop or a failure). It stays queued when it cannot go out.
     func sendQueuedNow(_ id: UUID, message: UUID) {
         guard canSendQueuedNow(id), let run = run(id) else { return }
+        let fresh = queued[id]?.isFresh(message) == true
         if run.status.isActive {
-            if canSteer(id) {
+            // A new conversation is never taken into the running turn: the turn ends and it goes next.
+            if canSteer(id), !fresh {
                 guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
                 store(queue, for: id)
                 if steer(id, text: text, promoted: true) { return }
@@ -1345,14 +1436,19 @@ final class WorkspaceManager: ObservableObject {
             queue.resume()
             store(queue, for: id)
             pendingSendNow[id] = text
-            pendingSendNowSteer[id] = .promoted
+            pendingSendNowSteer[id] = fresh ? nil : .promoted
+            if fresh { pendingSendNowFresh.insert(id) } else { pendingSendNowFresh.remove(id) }
             stop(id)
             return
         }
         guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
         queue.resume()
         store(queue, for: id)
-        if !send(id, text: text, shown: false) { queued[id, default: MessageQueue()].requeueFirst(text) }
+        if fresh, !clearConversation(id, quietly: true) {
+            queued[id, default: MessageQueue()].requeueFirst(text, fresh: true)
+            return
+        }
+        if !send(id, text: text, shown: false) { queued[id, default: MessageQueue()].requeueFirst(text, fresh: fresh) }
     }
 
     /// ⌘Return: a message you send now, past anything waiting in line. It steers a running turn when the agent can take it,
@@ -1361,10 +1457,23 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     func sendNow(_ id: UUID, text: String) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, run(id) != nil else { return false }
-        if canSteer(id), steer(id, text: clean) { return true }
+        guard !clean.isEmpty, let run = run(id) else { return false }
+        if FreshConversation.isCommand(clean) {
+            armFreshConversation(id)
+            return false
+        }
+        // After `/clear` it starts a new conversation: right away when the agent is free, otherwise first in line, after
+        // the running turn (as t3code does, a new conversation never cuts a turn off).
+        let fresh = takeFreshArm(id)
+        if fresh, run.status.isActive {
+            var queue = queued[id] ?? MessageQueue()
+            queue.requeueFirst(clean, fresh: true)
+            store(queue, for: id)
+            return false
+        }
+        if !fresh, canSteer(id), steer(id, text: clean) { return true }
         var queue = queued[id] ?? MessageQueue()
-        queue.requeueFirst(clean)
+        queue.requeueFirst(clean, fresh: fresh)
         store(queue, for: id)
         guard let first = queued[id]?.messages.first, canSendQueuedNow(id) else { return false }
         sendQueuedNow(id, message: first.id)
@@ -1386,7 +1495,7 @@ final class WorkspaceManager: ObservableObject {
     /// Takes a queued message into the running turn now. It stays queued when the turn cannot
     /// take it.
     func steerQueued(_ id: UUID, message: UUID) {
-        guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+        guard var queue = queued[id], !queue.isFresh(message), let text = queue.promoteToSteer(message) else { return }
         store(queue, for: id)
         if !steer(id, text: text, promoted: true) { enqueue(id, text: text) }
     }
@@ -1440,6 +1549,8 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         store(queue, for: id)
+        // A message after `/clear`: the conversation so far ends here (sendQueued only runs between turns).
+        if next.fresh { clearConversation(id, quietly: true) }
         send(id, text: next.text)
     }
 
@@ -2361,6 +2472,10 @@ final class WorkspaceManager: ObservableObject {
         awaitingCheckpoint[id] = nil
         pendingSendNow[id] = nil
         pendingSendNowSteer[id] = nil
+        pendingSendNowFresh.remove(id)
+        freshArmed.remove(id)
+        turnPrompts[id] = nil
+        recoveringConversation.remove(id)
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)

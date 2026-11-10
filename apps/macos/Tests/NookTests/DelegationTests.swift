@@ -202,6 +202,18 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual((object?["tasks"] as? [Any])?.count, 2)
         XCTAssertEqual(BridgeTool.named("mcp__nook__task_wait"), .taskWait)
         XCTAssertEqual(BridgeTool.taskWait.effect, .read)
+        // session_wait: the same answer, named for sessions, with no branch to merge (you did not delegate them).
+        var worktree = snap("c", .completed)
+        worktree.worktree = "/wt"
+        worktree.branch = "nook/c"
+        let sessions = DelegatedTask.renderSessionWait([worktree, snap("d", .running)], waitTimedOut: false)
+        let read = try? JSONSerialization.jsonObject(with: Data(sessions.utf8)) as? [String: Any]
+        let first = (read?["sessions"] as? [[String: Any]])?.first
+        XCTAssertEqual(first?["sessionId"] as? String, "c")
+        XCTAssertNil(first?["taskId"])
+        XCTAssertNil(first?["merge"])
+        XCTAssertEqual(first?["branch"] as? String, "nook/c")
+        XCTAssertEqual(read?["settled"] as? [String], ["c"])
     }
 
     // MARK: Placement

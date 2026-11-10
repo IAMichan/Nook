@@ -164,6 +164,14 @@ struct QueuedMessagesStrip: View {
         let parts = ImageAttachment.splittingPaths(from: message.text)
         return HStack(spacing: NookTheme.Spacing.md) {
             position(index, editing: isEditing)
+            // After `/clear`: this one starts a new conversation once the turn ends.
+            if message.fresh {
+                Image(systemName: "eraser")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .help(tr("ws.fresh.queued"))
+                    .accessibilityLabel(tr("ws.fresh.queued"))
+            }
             if !parts.images.isEmpty {
                 HStack(spacing: NookTheme.Spacing.xxs) {
                     ForEach(parts.images, id: \.self) { QueuedPictureThumbnail(url: $0) }

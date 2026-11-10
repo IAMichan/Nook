@@ -10,55 +10,164 @@ extension WorkspaceBridge {
 
     // MARK: Start
 
-    /// A new session, for a script (`nook start`) or an agent. It asks like any other session: you raise its rights yourself.
+    /// New sessions, for a script (`nook start`) or an agent: one, or up to 20 in one call, as t3code's `create_threads`
+    /// and `t3_thread_launch`. Without a folder they work beside the caller in its own folder or worktree; `worktree` or
+    /// `base` gives each a worktree of its own, `scratch` a folder without a project; without a task one starts idle.
+    /// They ask like any other session (you raise their rights yourself), and their timeline says who started them.
     func sessionStart(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
         guard let app else { return .error("Nook is not ready.") }
         let workspace = app.workspace
-        let task = ((arguments["task"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !task.isEmpty else { return .error("Give the first message.") }
-        let folder = WorkspacePathPolicy.normalize((arguments["folder"] as? String) ?? "")
-        guard !folder.isEmpty, WorkspacePathPolicy.verdict(for: folder) == .ok else { return .error("That folder cannot be used: \(folder)") }
-        let defaults = workspace.settings.sessionDefaults(for: folder)
-        let name = ((arguments["agent"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let provider = name.isEmpty ? defaults.provider
-            : RunProvider.allCases.first { $0.rawValue == name || $0.displayName.lowercased() == name }
-        guard let provider else { return .error("Unknown agent \"\(name)\". Call orchestrator_capabilities for the list.") }
-        guard workspace.executable(provider) != nil else { return .error("\(provider.displayName) is not installed.") }
-        if case .refuse(let reason) = verdict(.sessionStart, caller) { return .error(Self.refusal(reason)) }
-        if case .ask = verdict(.sessionStart, caller) {
-            let allowed = await ask(caller, tool: .sessionStart, title: tr("bridge.approval.start", caller.agent, provider.displayName),
-                                    detail: AgentPathFormat.tilde(folder) + "\n\n" + task, note: tr("bridge.approval.delegateNote"),
-                                    danger: false, connection: context.connection)
-            guard allowed else {
-                audit(.sessionStart, caller, task, "niet toegestaan")
-                return .error(Self.refusal(.delegation))
-            }
+        let plan: BridgeSessionArguments.Start
+        switch BridgeSessionArguments.start(arguments, callerFolder: caller.kind == .external ? "" : caller.directory) {
+        case .success(let value): plan = value
+        case .failure(let error): return .error(error.message)
         }
+        var folder = ""
+        if let path = plan.folderPath {
+            folder = WorkspacePathPolicy.normalize((path as NSString).expandingTildeInPath)
+            guard !folder.isEmpty, WorkspacePathPolicy.verdict(for: folder) == .ok else { return .error("That folder cannot be used: \(path)") }
+        }
+        let defaults = workspace.settings.sessionDefaults(for: folder)
+        var providers: [RunProvider] = []
+        for session in plan.sessions {
+            let name = session.agent.lowercased()
+            guard let provider = name.isEmpty ? defaults.provider
+                    : RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) else {
+                return .error("Unknown agent \"\(session.agent)\". Call orchestrator_capabilities for the list.")
+            }
+            guard workspace.executable(provider) != nil else { return .error("\(provider.displayName) is not installed.") }
+            providers.append(provider)
+        }
+        if case .refuse(let reason) = verdict(.sessionStart, caller) { return .error(Self.refusal(reason)) }
+        do {
+            return try await once(.sessionStart, arguments, caller) {
+                if case .ask = verdict(.sessionStart, caller) {
+                    let names = Array(Set(providers.map(\.displayName))).sorted().joined(separator: ", ")
+                    let title = plan.sessions.count == 1 ? tr("bridge.approval.start", caller.agent, providers[0].displayName)
+                        : tr("bridge.approval.startMany", caller.agent, plan.sessions.count, names)
+                    let items = plan.sessions.map { session in
+                        "- " + (session.task.isEmpty ? session.title + " " + tr("bridge.approval.startIdle") : session.task)
+                    }
+                    let allowed = await ask(caller, tool: .sessionStart, title: title,
+                                            detail: Self.placeLine(plan.place, folder: folder) + "\n\n" + items.joined(separator: "\n"),
+                                            note: tr("bridge.approval.delegateNote"), danger: false, connection: context.connection)
+                    guard allowed else {
+                        audit(.sessionStart, caller, plan.sessions.map { $0.task.isEmpty ? $0.title : $0.task }.joined(separator: " · "), "niet toegestaan")
+                        return .error(Self.refusal(.delegation))
+                    }
+                }
+                var started: [[String: Any]] = []
+                for (session, provider) in zip(plan.sessions, providers) {
+                    started.append(await startOne(session, provider: provider, place: plan.place, folder: folder, caller: caller, app: app))
+                }
+                let ok = started.contains { $0["sessionId"] != nil }
+                let data = try? JSONSerialization.data(withJSONObject: ["sessions": started],
+                                                       options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+                let text = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                return ok ? BridgeRPC.ToolResult(text: text) : .error(text)
+            }
+        } catch {
+            return .error(error.localizedDescription)
+        }
+    }
+
+    /// One session of a `session_start` call: its answer, with the id and link, or the error why it did not start.
+    private func startOne(_ session: BridgeSessionArguments.Start.Session, provider: RunProvider,
+                          place: BridgeSessionArguments.Start.Place, folder: String, caller: BridgeCaller,
+                          app: AppModel) async -> [String: Any] {
+        let workspace = app.workspace
+        let name = session.task.isEmpty ? session.title : session.task
         var config = NewRunConfig()
-        config.task = task
+        config.task = session.task
+        config.title = session.title
+        config.startsIdle = session.task.isEmpty
         config.provider = provider
         config.profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
-        let model = ((arguments["model"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        config.model = model.isEmpty ? defaults.model(for: provider) : model
         config.permission = provider.capabilities.policies.contains(.ask) ? .ask : (provider.capabilities.policies.first ?? .ask)
-        if let worktree = arguments["worktree"] as? Bool {
-            config.isolation = worktree ? .worktree : .folder
-        } else {
-            config.isolation = defaults.isolation
+        config.mode = session.plan && provider.capabilities.planMode ? .plan : .agent
+        config.startedBy = Self.startedBy(caller)
+        var projectPath = folder
+        switch place {
+        case .yours, .folder(_, worktree: false):
+            config.isolation = .folder
+        case .folder(_, worktree: nil):
+            config.isolation = workspace.settings.sessionDefaults(for: folder).isolation
+        case .folder(_, worktree: .some(true)), .worktree:
+            config.isolation = .worktree
+        case .scratch:
+            config.isolation = .folder
+            guard let made = try? ScratchProjects.create(prompt: name) else { return ["title": name, "error": "Nook could not make a folder for it."] }
+            projectPath = made
         }
-        config.projectPath = folder
+        config.projectPath = projectPath
+        let defaults = workspace.settings.sessionDefaults(for: projectPath)
+        config.model = session.model.isEmpty ? defaults.model(for: provider) : session.model
         if config.isolation == .worktree {
-            config.branchName = WorktreeNaming.branchName(task: task, id: UUID())
-            let git = workspace.gitService
-            config.baseBranch = await Task.detached(priority: .userInitiated) { git?.currentBranch(folder) ?? "" }.value
+            config.branchName = WorktreeNaming.branchName(task: name, id: UUID())
+            if case .worktree(_, let base?) = place {
+                config.baseBranch = base
+            } else {
+                let git = workspace.gitService
+                config.baseBranch = await Task.detached(priority: .userInitiated) { git?.currentBranch(projectPath) ?? "" }.value
+            }
         }
         do {
-            let id = try await workspace.start(config)
-            audit(.sessionStart, caller, "\(provider.displayName) · \(task)", id.uuidString.lowercased())
-            return BridgeRPC.ToolResult(text: id.uuidString)
+            // The caller asked for this place, and you approved it: a second agent in a folder is the point here.
+            let id = try await workspace.start(config, allowSharedFolder: true)
+            let run = workspace.run(id)
+            audit(.sessionStart, caller, "\(provider.displayName) · \(name)", id.uuidString.lowercased())
+            var answer: [String: Any] = ["sessionId": id.uuidString.lowercased(), "title": run?.title ?? name,
+                                         "agent": provider.displayName, "status": run?.status.rawValue ?? "preparing",
+                                         "folder": run?.workingDirectory ?? projectPath]
+            if let link = SessionLink.build(id: id.uuidString, title: run?.title ?? name) { answer["link"] = link.absoluteString }
+            if let branch = run?.branch, config.isolation == .worktree { answer["branch"] = branch }
+            return answer
         } catch {
-            audit(.sessionStart, caller, task, "mislukt: \(error.localizedDescription)")
-            return .error("Nook could not start the session: \(error.localizedDescription)")
+            audit(.sessionStart, caller, name, "mislukt: \(error.localizedDescription)")
+            return ["title": name, "agent": provider.displayName, "error": "Nook could not start it: \(error.localizedDescription)"]
+        }
+    }
+
+    /// The first line of a session another agent or a script started.
+    static func startedBy(_ caller: BridgeCaller) -> String {
+        switch caller.kind {
+        case .run: return caller.title.isEmpty ? tr("ws.event.startedBy", caller.agent) : tr("ws.event.startedByIn", caller.agent, caller.title)
+        case .external: return tr("ws.event.startedBy", caller.agent)
+        }
+    }
+
+    /// Where the sessions of an approval card will work.
+    static func placeLine(_ place: BridgeSessionArguments.Start.Place, folder: String) -> String {
+        switch place {
+        case .yours: return tr("bridge.approval.placeYours", AgentPathFormat.tilde(folder))
+        case .folder: return AgentPathFormat.tilde(folder)
+        case .worktree(_, let base): return tr("bridge.approval.placeWorktree", AgentPathFormat.tilde(folder), base ?? "HEAD")
+        case .scratch: return tr("bridge.approval.placeScratch")
+        }
+    }
+
+    // MARK: Wait
+
+    /// `session_wait`: until one (or all) of these sessions is done with its turn or asks you something, at most the
+    /// timeout. Any session may be waited for: reading a session's state is a read, as `session_read` is.
+    func sessionWait(_ arguments: [String: Any]) async -> BridgeRPC.ToolResult {
+        guard let workspace = app?.workspace else { return .error("Nook is not ready.") }
+        let ids: [UUID]
+        switch BridgeSessionArguments.waitSessions(arguments["session_ids"]) {
+        case .success(let value): ids = value
+        case .failure(let error): return .error(error.message)
+        }
+        guard ids.allSatisfy({ workspace.run($0) != nil }) else { return .error("No such session among these ids. Use ids from session_list or session_start.") }
+        let mode = DelegatedTask.WaitMode(rawValue: (arguments["mode"] as? String) ?? "") ?? .any
+        let requested = BridgeArgs.int(arguments["timeout_seconds"]) ?? Self.defaultWait
+        let deadline = Date().addingTimeInterval(TimeInterval(min(max(requested, 1), Self.maxWait)))
+        while true {
+            let snapshots = ids.compactMap { workspace.run($0).map(workspace.snapshot(of:)) }
+            let over = DelegatedTask.waitIsOver(snapshots, mode: mode)
+            if over || Date() >= deadline || Task.isCancelled {
+                return BridgeRPC.ToolResult(text: DelegatedTask.renderSessionWait(snapshots, waitTimedOut: !over))
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 

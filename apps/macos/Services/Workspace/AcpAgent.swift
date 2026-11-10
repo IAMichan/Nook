@@ -514,8 +514,46 @@ enum AgentErrorText {
     static func sessionGone(_ message: String) -> Bool {
         let text = message.lowercased()
         guard ["session", "thread", "conversation", "rollout"].contains(where: { text.contains($0) }) else { return false }
-        return ["not found", "no such", "does not exist", "doesn't exist", "unknown", "no rollout", "invalid", "missing"]
+        // Claude Code says "No conversation found with session ID: …" when `--resume` names one it does not have.
+        return ["not found", "no such", "does not exist", "doesn't exist", "unknown", "no rollout", "invalid", "missing",
+                "no conversation found"]
             .contains { text.contains($0) }
+    }
+
+    /// The conversation no longer fits the model's context window (Claude Code's "Prompt is too long", OpenAI's
+    /// `context_length_exceeded`, Gemini's token limit).
+    static func contextFull(_ message: String) -> Bool {
+        let text = message.lowercased()
+        return ["prompt is too long", "context_length_exceeded", "context length exceeded", "exceeds the context window",
+                "maximum context length", "context window exceeded", "exceeds the maximum number of tokens",
+                "input is too long", "too many input tokens"].contains { text.contains($0) }
+    }
+}
+
+/// What decides whether a message starts a new conversation, and which failures one recovers from (for every agent, see
+/// `WorkspaceManager+FreshConversation`).
+enum FreshConversation {
+    /// `/clear` on its own, the way you type or send it.
+    static func isCommand(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "/clear"
+    }
+
+    enum Recovery: Equatable, Sendable {
+        /// The agent no longer has the conversation to continue (deleted, made on another machine, or by an older version).
+        case gone
+        /// The conversation no longer fits the model's context window.
+        case full
+    }
+
+    /// The failure a new conversation fixes, read from the agent's error; nil for every other failure.
+    /// Stricter than `AgentErrorText.sessionGone`, which reads only the answer to a resume: this reads any failed turn's
+    /// error, and a wrong guess would cost the agent a conversation it still has.
+    static func recovery(for error: String) -> Recovery? {
+        if AgentErrorText.contextFull(error) { return .full }
+        let text = error.lowercased()
+        let gone = ["no conversation found", "conversation not found", "session not found", "thread not found",
+                    "no rollout found", "unknown session", "session does not exist", "no such session"]
+        return gone.contains { text.contains($0) } ? .gone : nil
     }
 }
 
