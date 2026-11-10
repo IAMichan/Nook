@@ -35,6 +35,28 @@ enum ComposerFieldStyle {
         return editor
     }
 
+    /// The selection (UTF-16) of the focused field editor while it shows `text`; nil when it shows something else.
+    static func focusedSelection(expecting text: String) -> NSRange? {
+        focusedEditor(expecting: text)?.selectedRange()
+    }
+
+    /// Puts the caret at `offset` (UTF-16) once the focused field shows `text`: the field takes a new value after this
+    /// update, so this waits for the next turn of the run loop.
+    static func placeCaret(_ offset: Int, expecting text: String) {
+        DispatchQueue.main.async {
+            guard let editor = focusedEditor(expecting: text) else { return }
+            editor.setSelectedRange(NSRange(location: min(max(offset, 0), (text as NSString).length), length: 0))
+            editor.scrollRangeToVisible(editor.selectedRange())
+        }
+    }
+
+    /// The field editor that has the keyboard in the key window, whatever it shows.
+    static func focusedFieldEditor() -> NSTextView? {
+        guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView,
+              editor.isFieldEditor, editor.delegate is NSTextField else { return nil }
+        return editor
+    }
+
     /// The field editor of the composer that has the keyboard, for Tab on a list item.
     static func focusedEditor(expecting text: String) -> NSTextView? {
         guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView,
