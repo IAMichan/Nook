@@ -51,7 +51,7 @@ final class PullRequestReviewGuideTests: XCTestCase {
     }
 
     func testGuidesAreKeptPerPullRequest() {
-        let defaults = UserDefaults(suiteName: "guide-tests-\(UUID().uuidString)")!
+        let defaults = scratchDefaults("guide-tests")
         let guide = PullRequestReviewGuide(headSHA: "a", written: Date(), stops: [])
         PullRequestReviewGuides.save(guide, for: "acme/web#1", defaults: defaults)
         XCTAssertEqual(PullRequestReviewGuides.load("acme/web#1", defaults: defaults), guide)

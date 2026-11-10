@@ -339,7 +339,7 @@ final class ChatComposeTests: XCTestCase {
         let kept = folder.appendingPathComponent("kept", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "ChatComposeTests-\(UUID().uuidString)"))
+        let defaults = scratchDefaults("ChatComposeTests")
         let cat = source.appendingPathComponent("cat.webp")
         let party = source.appendingPathComponent("party.gif")
         try Data("cat".utf8).write(to: cat)

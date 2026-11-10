@@ -104,8 +104,8 @@ enum SlackData {
             let profile = member["profile"] as? [String: Any] ?? [:]
             var person = ChatProfile()
             if let status = ChatProfile.text(profile["status_text"] as? String) {
-                let emoji = (profile["status_emoji"] as? String).flatMap { emoji(shortcode: $0) }
-                person.about = [emoji, status].compactMap { $0 }.joined(separator: " ")
+                let statusEmoji = (profile["status_emoji"] as? String).flatMap { Self.emoji(shortcode: $0) }
+                person.about = [statusEmoji, status].compactMap { $0 }.joined(separator: " ")
             }
             person.title = ChatProfile.text(profile["title"] as? String)
             person.email = ChatProfile.text(profile["email"] as? String)

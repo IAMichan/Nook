@@ -205,6 +205,11 @@ final class WorkspaceManager: ObservableObject {
     private var worktreesRefreshPending = false
     /// The pending refresh measures every worktree's size again (the list's refresh button), not from the cache.
     private var worktreesRefreshForced = false
+    /// Whether a Worktrees list is on screen (`worktreesShown(_:)`). Its rows are refreshed only then: a removal or a
+    /// cleanup with nobody looking walked every worktree and its build (minutes of a core with a hundred of them).
+    private(set) var worktreesListShown = 0
+    /// Read off the main thread by a running refresh, which stops once the list is closed.
+    nonisolated let worktreesListOpen = WorktreeListFlag()
     @Published private(set) var gitAvailable: Bool?
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
@@ -2754,6 +2759,8 @@ final class WorkspaceManager: ObservableObject {
     /// Sizes come from `DiskUsage.cachedAllocatedSize` unless `force` (the list's refresh button) measures them again.
     func refreshWorktrees(force: Bool = false) {
         guard let git = gitService else { return }
+        // Nobody looks at the rows: the list refreshes when it opens.
+        guard worktreesListShown > 0 else { return }
         guard !worktreesLoading else {
             worktreesRefreshPending = true
             if force { worktreesRefreshForced = true }
@@ -2762,6 +2769,7 @@ final class WorkspaceManager: ObservableObject {
         let sizeAge = force ? 0 : DiskUsage.cachedSizeAge
         let roots = Set(runs.compactMap(\.repoRoot))
         let snapshot = runs
+        let listOpen = worktreesListOpen
         worktreesLoading = true
         Task.detached(priority: .utility) {
             // Resolving each root to its main checkout runs Git once per root: off the main thread, or every refresh
@@ -2769,31 +2777,37 @@ final class WorkspaceManager: ObservableObject {
             let repos = Array(Set(roots.map { git.mainCheckout(of: $0) ?? $0 })).sorted()
             var rows: [WorktreeRow] = []
             var seenPaths = Set<String>()
-            for repo in repos where FileManager.default.fileExists(atPath: repo) {
+            // Closed meanwhile: the rest is for no one. The list keeps the rows it had; opening it again refreshes in full.
+            var stopped = false
+            repositories: for repo in repos where FileManager.default.fileExists(atPath: repo) {
+                guard listOpen.isOpen else { stopped = true; break }
                 guard let list = try? git.worktrees(repo) else { continue }
-                for worktree in list { autoreleasepool {
-                    let path = WorkspacePathPolicy.normalize(worktree.path)
-                    guard seenPaths.insert(path).inserted else { return }
-                    let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
-                    // Only show root workspace if a session is actively using it.
-                    if worktree.isMain && linked.isEmpty { return }
-                    var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
-                    if FileManager.default.fileExists(atPath: worktree.path) {
-                        row.changedFiles = git.changedFileCount(worktree.path)
-                        if !worktree.isMain { row.bytes = DiskUsage.cachedAllocatedSize(of: worktree.path, maxAge: sizeAge) }
-                        let base = linked.compactMap(\.baseBranch).first
-                        row.baseBranch = base
-                        if let base, let divergence = git.divergence(worktree.path, base: base) {
-                            row.ahead = divergence.ahead
-                            row.behind = divergence.behind
+                for worktree in list {
+                    guard listOpen.isOpen else { stopped = true; break repositories }
+                    autoreleasepool {
+                        let path = WorkspacePathPolicy.normalize(worktree.path)
+                        guard seenPaths.insert(path).inserted else { return }
+                        let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
+                        // Only show root workspace if a session is actively using it.
+                        if worktree.isMain && linked.isEmpty { return }
+                        var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
+                        if FileManager.default.fileExists(atPath: worktree.path) {
+                            row.changedFiles = git.changedFileCount(worktree.path)
+                            if !worktree.isMain { row.bytes = DiskUsage.cachedAllocatedSize(of: worktree.path, maxAge: sizeAge) { listOpen.isOpen } }
+                            let base = linked.compactMap(\.baseBranch).first
+                            row.baseBranch = base
+                            if let base, let divergence = git.divergence(worktree.path, base: base) {
+                                row.ahead = divergence.ahead
+                                row.behind = divergence.behind
+                            }
                         }
+                        rows.append(row)
                     }
-                    rows.append(row)
-                } }
+                }
             }
-            await MainActor.run { [weak self, rows] in
+            await MainActor.run { [weak self, rows, stopped] in
                 guard let self else { return }
-                self.worktreeRows = rows
+                if !stopped { self.worktreeRows = rows }
                 self.worktreesLoading = false
                 if self.worktreesRefreshPending {
                     let forced = self.worktreesRefreshForced
@@ -2803,6 +2817,14 @@ final class WorkspaceManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// A Worktrees list opened (`true`) or closed. Opening refreshes its rows; with every list closed, a refresh under way
+    /// stops at the next worktree and later changes wait for the next opening.
+    func worktreesShown(_ shown: Bool) {
+        worktreesListShown = max(0, worktreesListShown + (shown ? 1 : -1))
+        worktreesListOpen.isOpen = worktreesListShown > 0
+        if shown { refreshWorktrees() }
     }
 
     /// The worktree deleting this session would leave unused (`WorktreeCleanup`), offered to remove along with it.
