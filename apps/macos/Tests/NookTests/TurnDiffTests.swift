@@ -96,6 +96,32 @@ final class TurnDiffTests: XCTestCase {
         XCTAssertTrue(all[1].isEmpty)
     }
 
+    func testACachedCollectGivesTheSameTurnsAndReadsAChangedTurnAgain() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let edit = #"{"file_path":"/p/A.swift","old_string":"a","new_string":"b"}"#
+        var events = [
+            RunEvent(kind: .user, text: "Change A", date: t0),
+            RunEvent(kind: .tool, text: "Edit", tool: "Edit", detail: edit, state: .done, date: t0.addingTimeInterval(1)),
+            RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(2)),
+            RunEvent(kind: .user, text: "Again", date: t0.addingTimeInterval(3)),
+            RunEvent(kind: .tool, text: "Edit", tool: "Edit", detail: edit, state: .running, date: t0.addingTimeInterval(4)),
+        ]
+        var cache = TurnDiffCache()
+        XCTAssertEqual(TurnDiff.collect(events: events, keepEmpty: true, cache: &cache), TurnDiff.collect(events: events, keepEmpty: true))
+        XCTAssertEqual(cache.entries.count, 1, "only the finished turn is kept")
+
+        // The second turn finishes; the first is read from the cache and the result still matches a fresh read.
+        events.append(RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(5)))
+        XCTAssertEqual(TurnDiff.collect(events: events, keepEmpty: true, cache: &cache), TurnDiff.collect(events: events, keepEmpty: true))
+        XCTAssertEqual(cache.entries.count, 2)
+
+        // An event of a finished turn changes (its edit failed): that turn is read again.
+        events[1].state = .failed
+        let again = TurnDiff.collect(events: events, keepEmpty: true, cache: &cache)
+        XCTAssertEqual(again, TurnDiff.collect(events: events, keepEmpty: true))
+        XCTAssertTrue(again[0].isEmpty)
+    }
+
     func testGitAddsTheFilesATurnChangedWithoutAnEditTool() {
         let turn = TurnDiff(id: "t", number: 1, files: [TurnDiff.File(path: "/p/A.swift", lines: EditLines(added: 1, removed: 1)),
                                                          TurnDiff.File(path: "/elsewhere/settings.json")])
