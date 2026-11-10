@@ -2967,6 +2967,9 @@ final class WorkspaceManager: ObservableObject {
         // A turn starts: the suggestion for the one before it no longer fits.
         if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(id) }
         run.updatedAt = max(run.updatedAt, runs[index].updatedAt)
+        // A summary Nook runs on its own is no activity of yours: the session keeps its place in the list, its "last
+        // active" and its read state, instead of jumping up while it runs and landing first among the idle ones after.
+        if idleCompacting.contains(id) { run.updatedAt = runs[index].updatedAt }
         runs[index] = run
         if save { scheduleSave() }
         // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.

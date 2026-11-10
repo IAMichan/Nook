@@ -683,7 +683,7 @@ extension TaskRingItem {
         for run in app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace) {
             let id = "run:" + run.id.uuidString
             let key = FinishedSessions.key(run: run)
-            let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen(id, run.updatedAt))
+            let attention = app.workspace.attention(run, unseen: unseen(id, run.updatedAt))
             let kind: TaskRingItem.Kind
             let status: AgentStatus
             switch attention {
