@@ -77,3 +77,41 @@ final class CompanionCompatibilityTests: XCTestCase {
         XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.requestUpdate))
     }
 }
+
+/// The gentle notice when both work together but one speaks an older protocol (`CompanionCompatibility.notice`).
+final class CompanionVersionNoticeTests: XCTestCase {
+    func testTheSameVersionSaysNothing() {
+        XCTAssertNil(CompanionCompatibility.notice(macVersion: CompanionProtocol.version))
+    }
+
+    func testAnOlderMacIsBehind() {
+        XCTAssertEqual(CompanionCompatibility.notice(macVersion: 2, phoneVersion: 3), .macBehind)
+        XCTAssertEqual(CompanionCompatibility.notice(macVersion: nil, phoneVersion: 3), .macBehind, "a Mac before versions is version 1")
+    }
+
+    func testANewerMacMeansThePhoneIsBehind() {
+        XCTAssertEqual(CompanionCompatibility.notice(macVersion: 4, phoneVersion: 3), .phoneBehind)
+    }
+
+    func testNoNoticeWhenTheyCannotWorkTogetherAtAll() {
+        XCTAssertNil(CompanionCompatibility.notice(macVersion: 1, phoneVersion: 4, oldestMac: 2), "that is macTooOld, said louder")
+        XCTAssertNil(CompanionCompatibility.notice(macVersion: 5, oldestPhone: 4, phoneVersion: 3))
+    }
+
+    func testTheNoticeReadsFromAnAnswer() {
+        var response = CompanionResponse(id: "1", ok: true)
+        response.protocolVersion = CompanionProtocol.version - 1
+        XCTAssertEqual(CompanionCompatibility.notice(response), .macBehind)
+    }
+
+    func testTheMacSeesAPhoneBehind() {
+        XCTAssertTrue(CompanionCompatibility.phoneBehind(2, macVersion: 3))
+        XCTAssertTrue(CompanionCompatibility.phoneBehind(nil, macVersion: 3))
+        XCTAssertFalse(CompanionCompatibility.phoneBehind(3, macVersion: 3))
+        XCTAssertFalse(CompanionCompatibility.phoneBehind(0, macVersion: 3), "one that is not supported is outdated, not behind")
+    }
+
+    func testThisBuildSpeaksVersionThree() {
+        XCTAssertGreaterThanOrEqual(CompanionProtocol.version, 3, "pull requests, files and snoozing to a moment came with 3")
+    }
+}
