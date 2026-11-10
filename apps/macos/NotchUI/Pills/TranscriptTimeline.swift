@@ -598,13 +598,18 @@ struct TranscriptPromptRail: View {
     private static let width: CGFloat = 20
     /// The height each mark takes, and so the distance between two marks, while they fit.
     private static let pitch: CGFloat = NookTheme.Spacing.md
+
     var body: some View {
         GeometryReader { geometry in
             let layout = TranscriptPresentation.railLayout(count: marks.count, height: geometry.size.height, pitch: Self.pitch)
+            let shown = Array(marks.suffix(layout.fit))
+            let lit = hovered.flatMap { id in shown.firstIndex { $0.id == id } }
             VStack(spacing: 0) {
                 // One message needs no map: the rail shows from the second on.
                 if marks.count > 1 {
-                    ForEach(marks.suffix(layout.fit)) { mark in markButton(mark, pitch: layout.pitch) }
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, mark in
+                        markButton(mark, pitch: layout.pitch, distance: lit.map { abs($0 - index) })
+                    }
                 }
             }
             .frame(width: Self.width, height: geometry.size.height)
@@ -613,19 +618,30 @@ struct TranscriptPromptRail: View {
         .animation(NookTheme.hover, value: hovered)
     }
 
-    private func markButton(_ mark: PromptMark, pitch: CGFloat) -> some View {
-        let lit = hovered == mark.id
+    /// A mark grows under the pointer, as icons in the Dock do: the one you are on most, its neighbours a little.
+    /// `distance` is how many marks away the pointer is, nil when it is not on the rail.
+    private static func size(_ distance: Int?) -> CGSize {
+        switch distance {
+        case 0: CGSize(width: 14, height: 3)
+        case 1: CGSize(width: 11, height: 2)
+        default: CGSize(width: 8, height: 1.5)
+        }
+    }
+
+    private func markButton(_ mark: PromptMark, pitch: CGFloat, distance: Int?) -> some View {
+        let size = Self.size(distance)
         return Button { onSelect(mark) } label: {
             Capsule()
-                .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
-                .frame(width: lit ? 12 : 8, height: pitch < 6 ? 1 : 1.5)
+                .fill(distance == 0 ? NookTheme.paper : NookTheme.textTertiary)
+                // Marks drawn close together stay thin, so neighbours never run into each other.
+                .frame(width: size.width, height: min(size.height, max(1, pitch - 2)))
                 .padding(.leading, NookTheme.Spacing.xs)
                 .frame(width: Self.width, height: pitch, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(width: Self.width, height: pitch)
-        .hoverCard { PromptCard(text: Self.prompt(mark.text), answer: mark.answer.map(Self.answer)) }
+        .hoverCard(instant: true) { PromptCard(text: Self.prompt(mark.text), answer: mark.answer.map(Self.answer)) }
         .onHover { inside in
             if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
         }

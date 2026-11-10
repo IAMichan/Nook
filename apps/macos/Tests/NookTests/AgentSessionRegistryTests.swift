@@ -100,15 +100,18 @@ final class AgentSessionRegistryTests: XCTestCase {
         XCTAssertFalse(AgentProcessEnvironment.isNookOwned("9 claude PATH=/usr/bin"))
     }
 
-    /// The desktop app's chat you continued in Nook is the Nook session now: listed once. A copy Nook made (another id)
-    /// and a chat that works in its app again stay.
+    /// The desktop app's chat you continued in Nook is the Nook session now: listed once, also while its app works on it
+    /// again. A copy Nook made (another id) and a chat that waits for you
+    /// in its app stay.
     func testAChatContinuedInNookIsListedOnce() {
         let runs: [(agent: String, conversations: Set<String>)] = [(agent: "Claude Code", conversations: ["abc", "older"])]
-        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "abc", busy: false, runs: runs))
-        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: "older", busy: false, runs: runs))
-        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "copy", busy: false, runs: runs))
-        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "abc", busy: true, runs: runs))
-        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Codex", conversation: "abc", busy: false, runs: runs))
-        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: nil, busy: false, runs: runs))
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "abc", needsYou: false, runs: runs))
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: "older", needsYou: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "copy", needsYou: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "abc", needsYou: true, runs: runs))
+        // Working in its own app is not a second chat: the hook reports the same conversation the Nook session runs.
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: "abc", needsYou: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Codex", conversation: "abc", needsYou: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: nil, needsYou: false, runs: runs))
     }
 }
