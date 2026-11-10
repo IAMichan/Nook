@@ -830,6 +830,12 @@ private struct ComposerDensityFit<Content: View>: View {
     let minGap: CGFloat
 
     var body: some View {
+        // `ViewThatFits` builds every density it tries again each time it is measured, and the box is measured again on
+        // every key as the text grows: in the new session's box that was several builds of every menu per key.
+        MeasuredOnce { fits }
+    }
+
+    private var fits: some View {
         ViewThatFits(in: .horizontal) {
             row.environment(\.composerDensity, .full)
             row.environment(\.composerDensity, .short)
@@ -848,6 +854,37 @@ private struct ComposerDensityFit<Content: View>: View {
             content
             Spacer(minLength: minGap)
         }
+    }
+}
+
+/// Lays out its one view as is, but asks its size only once per proposal until the view changes: SwiftUI resets the
+/// cache (`updateCache`) whenever something inside it needs a new layout, such as a menu showing another model.
+private struct MeasuredOnce: Layout {
+    struct Cache {
+        var sizes: [ProposalKey: CGSize] = [:]
+    }
+
+    struct ProposalKey: Hashable {
+        let width: CGFloat?
+        let height: CGFloat?
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache = Cache()
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let key = ProposalKey(width: proposal.width, height: proposal.height)
+        if let size = cache.sizes[key] { return size }
+        let size = subviews.first?.sizeThatFits(proposal) ?? .zero
+        cache.sizes[key] = size
+        return size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }
 
