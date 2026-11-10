@@ -19,12 +19,12 @@ struct NookPrimaryButton: View {
                 if let symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
                 Text(title).font(NookTheme.textFont(14, .semibold))
             }
-            .foregroundStyle(NookTheme.ink)
+            .foregroundStyle(NookTheme.onPaper)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, symbol == nil ? 18 : 16)
             .frame(height: SharedMetrics.buttonHeight)
-            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
+            .background(Capsule().fill(hovering ? NookTheme.paperHover : NookTheme.paper))
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -79,7 +79,7 @@ struct NookIconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(NookTheme.font(size * 0.42, .semibold))
-                .foregroundStyle(filled ? NookTheme.ink : (hovering ? NookTheme.paper : NookTheme.textSecondary))
+                .foregroundStyle(filled ? NookTheme.onPaper : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: size, height: size)
                 .background(
                     Circle().fill(filled ? NookTheme.paper : (hovering ? NookTheme.smoke : Color.clear))

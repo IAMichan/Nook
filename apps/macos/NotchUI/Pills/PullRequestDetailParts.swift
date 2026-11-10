@@ -93,7 +93,7 @@ struct PullRequestTimelineMarker: View {
             .font(NookTheme.font(10.5, .medium))
             .foregroundStyle(color)
             .frame(width: 28, height: 28)
-            .background(Circle().fill(NookTheme.notch))
+            .background(Circle().fill(NookTheme.canvas))
     }
 }
 

@@ -480,7 +480,7 @@ struct NookChatView: View {
             // A soft fade under the header, so text scrolls away instead of being cut off. A strip in the canvas's color
             // on top, not a mask: a mask renders the whole scrolling conversation offscreen again on every frame.
             .overlay(alignment: .top) {
-                LinearGradient(colors: [NookTheme.notch, NookTheme.notch.opacity(0)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [NookTheme.canvas, NookTheme.canvas.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: 10)
                     .allowsHitTesting(false)
             }

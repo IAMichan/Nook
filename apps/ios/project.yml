@@ -38,6 +38,9 @@ targets:
       - path: ../macos/NotchUI/Theme/NookTheme.swift
         group: Shared from the Mac
         createIntermediateGroups: false
+      - path: ../macos/NotchUI/Theme/NookPalette.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
       # The components both apps share: buttons, badges, list parts, agent logos and rows, chat rows and bubbles, your
       # messages and the time under them.
       - path: ../macos/NotchUI/Shared
@@ -92,6 +95,9 @@ targets:
       - path: NookActivity
       - path: Shared
       - path: ../macos/NotchUI/Theme/NookTheme.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      - path: ../macos/NotchUI/Theme/NookPalette.swift
         group: Shared from the Mac
         createIntermediateGroups: false
       - path: NookCompanion/Theme.swift

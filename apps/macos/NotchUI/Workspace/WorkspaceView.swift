@@ -39,7 +39,7 @@ struct WorkspaceView: View {
                 .frame(maxWidth: .infinity)
                 .ignoresSafeArea(edges: .top)
         }
-        .background(NookTheme.notch.ignoresSafeArea())
+        .background(NookTheme.canvas.ignoresSafeArea())
         .chatMediaStage(mediaStage)
         .background {
             // ⌘1, ⌘2, ⌘3 switch tabs.
@@ -64,7 +64,7 @@ struct WorkspaceView: View {
             }
         }
         .tint(NookTheme.iris)
-        .id(app.settings.accentHex)
+        .id("\(app.settings.accentHex)-\(app.settings.themeRevision)")
         .frame(minWidth: 900, minHeight: 580)
     }
 

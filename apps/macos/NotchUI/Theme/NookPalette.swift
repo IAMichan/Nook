@@ -1,0 +1,394 @@
+import Foundation
+
+// The colors behind `NookTheme`, as plain numbers: which palette a theme has for dark and for light, which one shows
+// (System / Light / Dark), how a VS Code color theme becomes one, and whether its text stays readable (WCAG). No SwiftUI
+// here, so NookTests and the portable core tests check it; `NookTheme` turns the chosen palette into colors that follow
+// the window's appearance. Shared with the iPhone companion (apps/ios/project.yml), which stays dark.
+
+/// Every named color of Nook's design, as 0xRRGGBB. The names are `NookTheme`'s: change a palette and every view that
+/// takes its colors from `NookTheme` follows. State colors (mint, amber, coral, violet) keep their meaning in every
+/// palette; a light palette only darkens them so they read on a light surface.
+struct NookPalette: Equatable, Sendable {
+    var isDark: Bool
+
+    // Surfaces, from the window's canvas up.
+    var canvas: UInt32
+    var well: UInt32
+    var surface: UInt32
+    var field: UInt32
+    var graphite: UInt32
+    var smoke: UInt32
+    var rowRest: UInt32
+    var rowHover: UInt32
+    var rowSelected: UInt32
+    var bubble: UInt32
+    var chatMine: UInt32
+    var chatTheirs: UInt32
+
+    // Lines.
+    var line: UInt32
+    var line2: UInt32
+    var hairline: UInt32
+    var border: UInt32
+    var separator: UInt32
+    var fieldStroke: UInt32
+
+    // Text, strongest first.
+    var paper: UInt32
+    var textStrong: UInt32
+    var textSecondary: UInt32
+    var textMuted: UInt32
+    var textTertiary: UInt32
+    var chatStamp: UInt32
+
+    // Links and state.
+    var blue: UInt32
+    var mint: UInt32
+    var mintSoft: UInt32
+    var amber: UInt32
+    var coral: UInt32
+    var coralSoft: UInt32
+    var violet: UInt32
+    var music: UInt32
+
+    /// Nook's color when the user kept the default accent: soft white on dark, near black on light.
+    var accent: UInt32
+
+    /// Nook's own dark look: the near-black, pure grey ramp it always had.
+    static let nookDark = NookPalette(
+        isDark: true,
+        canvas: 0x000000, well: 0x080808, surface: 0x121212, field: 0x111111, graphite: 0x1A1A1A, smoke: 0x242424,
+        rowRest: 0x0A0A0A, rowHover: 0x181818, rowSelected: 0x242424, bubble: 0x1C1C1C, chatMine: 0x17493A, chatTheirs: 0x232525,
+        line: 0x1E1E1E, line2: 0x2C2C2C, hairline: 0x1E1E1E, border: 0x1F1F1F, separator: 0x262626, fieldStroke: 0x282828,
+        paper: 0xF5F5F5, textStrong: 0xDADADA, textSecondary: 0xA8A8A8, textMuted: 0x999999, textTertiary: 0x949494,
+        chatStamp: 0xA3B0AB,
+        blue: 0x8FB3F0, mint: 0x5ED6A6, mintSoft: 0x74DDB3, amber: 0xF2B866, coral: 0xEF7B73, coralSoft: 0xF29A92,
+        violet: 0xAE94F2, music: 0xF0936A,
+        accent: 0xF4F3F7)
+
+    /// Nook in light: the same calm grey ramp, turned around. Every text color reads at 4.5:1 or more up to `smoke`.
+    static let nookLight = NookPalette(
+        isDark: false,
+        canvas: 0xFAFAFA, well: 0xF1F1F1, surface: 0xFFFFFF, field: 0xF4F4F4, graphite: 0xEEEEEE, smoke: 0xE6E6E6,
+        rowRest: 0xF6F6F6, rowHover: 0xEEEEEE, rowSelected: 0xE4E4E4, bubble: 0xEEEEEE, chatMine: 0xD2EFE2, chatTheirs: 0xECEEEE,
+        line: 0xE8E8E8, line2: 0xDADADA, hairline: 0xE8E8E8, border: 0xE4E4E4, separator: 0xDDDDDD, fieldStroke: 0xD4D4D4,
+        paper: 0x141414, textStrong: 0x272727, textSecondary: 0x4F4F4F, textMuted: 0x575757, textTertiary: 0x5C5C5C,
+        chatStamp: 0x4E5A55,
+        blue: 0x2B59A8, mint: 0x157A52, mintSoft: 0x1A7F57, amber: 0x8A5A00, coral: 0xB8352C, coralSoft: 0xA63F37,
+        violet: 0x6B3FC4, music: 0xA84A18,
+        accent: 0x1E1E22)
+
+    /// The text colors and what they must stay readable on, for the contrast check.
+    var textTokens: [(name: String, hex: UInt32)] {
+        [("paper", paper), ("textStrong", textStrong), ("textSecondary", textSecondary), ("textMuted", textMuted),
+         ("textTertiary", textTertiary)]
+    }
+
+    var readingSurfaces: [(name: String, hex: UInt32)] {
+        [("canvas", canvas), ("well", well), ("surface", surface), ("field", field), ("graphite", graphite), ("smoke", smoke),
+         ("rowSelected", rowSelected)]
+    }
+
+    /// A palette made from a few colors: the canvas, the text on it and an accent, with the surfaces stepped from the
+    /// canvas toward the text, as Nook's own ramp is. State colors are Nook's for that appearance. Used by the built-in
+    /// themes and as the base a VS Code theme is mapped onto.
+    static func generated(dark: Bool, canvas: UInt32, text: UInt32, accent: UInt32, link: UInt32? = nil) -> NookPalette {
+        let base = dark ? nookDark : nookLight
+        func step(_ amount: Double) -> UInt32 { NookColor.mix(canvas, text, amount) }
+        var palette = base
+        palette.canvas = canvas
+        palette.well = dark ? step(0.025) : NookColor.mix(canvas, 0x000000, 0.035)
+        palette.surface = dark ? step(0.06) : NookColor.mix(canvas, 0xFFFFFF, 0.6)
+        palette.field = dark ? step(0.05) : NookColor.mix(canvas, 0x000000, 0.02)
+        palette.graphite = step(dark ? 0.09 : 0.05)
+        palette.smoke = step(dark ? 0.13 : 0.085)
+        palette.rowRest = step(dark ? 0.03 : 0.025)
+        palette.rowHover = step(dark ? 0.08 : 0.05)
+        palette.rowSelected = step(dark ? 0.13 : 0.09)
+        palette.bubble = step(dark ? 0.1 : 0.055)
+        palette.chatTheirs = step(dark ? 0.12 : 0.06)
+        palette.line = step(dark ? 0.1 : 0.08)
+        palette.line2 = step(dark ? 0.16 : 0.14)
+        palette.hairline = palette.line
+        palette.border = step(dark ? 0.11 : 0.1)
+        palette.separator = step(dark ? 0.14 : 0.12)
+        palette.fieldStroke = step(dark ? 0.15 : 0.16)
+        palette.paper = text
+        palette.textStrong = step(0.88)
+        palette.textSecondary = step(0.68)
+        palette.textMuted = step(0.64)
+        palette.textTertiary = step(0.62)
+        palette.chatStamp = step(0.66)
+        palette.accent = accent
+        if let link { palette.blue = link }
+        return palette.readable()
+    }
+
+    /// The same palette with every text color moved toward `paper` until it reads at WCAG AA (4.5:1) on every surface up
+    /// to `smoke`; colors that already do stay as they are. An imported theme often has a quiet grey that does not.
+    func readable(minimum: Double = NookColor.minimumTextContrast) -> NookPalette {
+        var palette = self
+        func fix(_ hex: UInt32) -> UInt32 {
+            var value = hex
+            var amount = 0.0
+            while amount < 1, palette.readingSurfaces.contains(where: { NookColor.contrast(value, $0.hex) < minimum }) {
+                amount += 0.05
+                value = NookColor.mix(hex, palette.paper, amount)
+            }
+            return value
+        }
+        palette.textStrong = fix(textStrong)
+        palette.textSecondary = fix(textSecondary)
+        palette.textMuted = fix(textMuted)
+        palette.textTertiary = fix(textTertiary)
+        return palette
+    }
+
+    /// The lowest contrast of any text color on any reading surface, with the pair that has it.
+    var weakestText: (text: String, surface: String, ratio: Double) {
+        var worst = (text: "", surface: "", ratio: Double.infinity)
+        for text in textTokens {
+            for surface in readingSurfaces {
+                let ratio = NookColor.contrast(text.hex, surface.hex)
+                if ratio < worst.ratio { worst = (text.name, surface.name, ratio) }
+            }
+        }
+        return worst
+    }
+}
+
+/// Color arithmetic on 0xRRGGBB values.
+enum NookColor {
+    /// WCAG AA for normal text.
+    static let minimumTextContrast = 4.5
+
+    static func components(_ hex: UInt32) -> (r: Double, g: Double, b: Double) {
+        (Double((hex >> 16) & 0xFF) / 255, Double((hex >> 8) & 0xFF) / 255, Double(hex & 0xFF) / 255)
+    }
+
+    static func hex(r: Double, g: Double, b: Double) -> UInt32 {
+        func byte(_ v: Double) -> UInt32 { UInt32((min(1, max(0, v)) * 255).rounded()) }
+        return byte(r) << 16 | byte(g) << 8 | byte(b)
+    }
+
+    /// `from` moved `amount` (0…1) of the way to `to`.
+    static func mix(_ from: UInt32, _ to: UInt32, _ amount: Double) -> UInt32 {
+        let a = components(from), b = components(to)
+        return hex(r: a.r + (b.r - a.r) * amount, g: a.g + (b.g - a.g) * amount, b: a.b + (b.b - a.b) * amount)
+    }
+
+    /// WCAG relative luminance, 0 (black) to 1 (white).
+    static func luminance(_ hex: UInt32) -> Double {
+        func channel(_ c: Double) -> Double { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        let c = components(hex)
+        return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+    }
+
+    /// WCAG contrast ratio of two colors, 1 to 21.
+    static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// "#RGB", "#RRGGBB" or "#RRGGBBAA" (VS Code writes all three); a color with alpha is laid over `background`.
+    static func parse(_ text: String?, over background: UInt32? = nil) -> UInt32? {
+        guard var text = text?.trimmingCharacters(in: .whitespaces), text.hasPrefix("#") else { return nil }
+        text.removeFirst()
+        if text.count == 3 || text.count == 4 { text = text.map { "\($0)\($0)" }.joined() }
+        guard text.count == 6 || text.count == 8, let value = UInt64(text, radix: 16) else { return nil }
+        guard text.count == 8 else { return UInt32(value) }
+        let rgb = UInt32(value >> 8), alpha = Double(value & 0xFF) / 255
+        guard alpha < 1 else { return rgb }
+        return mix(background ?? rgb, rgb, alpha)
+    }
+
+    static func string(_ hex: UInt32) -> String { String(format: "#%06X", hex) }
+}
+
+/// Which appearance Nook's windows take.
+enum NookAppearanceMode: String, CaseIterable, Identifiable, Sendable {
+    case system, light, dark
+    var id: String { rawValue }
+
+    /// Whether the dark palette shows, given whether macOS is dark right now.
+    func isDark(systemIsDark: Bool) -> Bool {
+        switch self {
+        case .system: return systemIsDark
+        case .light: return false
+        case .dark: return true
+        }
+    }
+}
+
+/// A theme: a name and a palette for dark, for light, or both. Built-in ones have both; an imported VS Code theme has the
+/// one its `type` says.
+struct NookColorTheme: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    var dark: NookPalette?
+    var light: NookPalette?
+    /// Imported by the user (can be removed); built-in themes cannot.
+    var custom = false
+
+    /// The look Nook always had, and the default for both appearances.
+    static let nook = NookColorTheme(id: "nook", name: "Nook", dark: .nookDark, light: .nookLight)
+    /// Cool and deep: a blue-black night and a pale blue-grey day.
+    static let midnight = NookColorTheme(
+        id: "midnight", name: "Midnight",
+        dark: .generated(dark: true, canvas: 0x0B0E14, text: 0xE6EAF2, accent: 0x8AA8F8, link: 0x8AB4F8),
+        light: .generated(dark: false, canvas: 0xF4F6FA, text: 0x111827, accent: 0x2F5BD3, link: 0x2457C5))
+    /// Warm, like paper under a lamp.
+    static let paper = NookColorTheme(
+        id: "paper", name: "Paper",
+        dark: .generated(dark: true, canvas: 0x15130F, text: 0xEFE8DC, accent: 0xE3B56F, link: 0xA8C0E8),
+        light: .generated(dark: false, canvas: 0xF7F3EA, text: 0x1F1A12, accent: 0x7A4E12, link: 0x2E5A9E))
+    /// The most contrast: pure black and white, and every grey a step brighter.
+    static let contrast = NookColorTheme(
+        id: "contrast", name: "High contrast",
+        dark: .generated(dark: true, canvas: 0x000000, text: 0xFFFFFF, accent: 0xFFFFFF, link: 0x9CC2FF).raised(by: 0.12),
+        light: .generated(dark: false, canvas: 0xFFFFFF, text: 0x000000, accent: 0x000000, link: 0x1747A6).raised(by: 0.12))
+
+    static let builtIn: [NookColorTheme] = [.nook, .midnight, .paper, .contrast]
+
+    func palette(dark: Bool) -> NookPalette? { dark ? self.dark : light }
+}
+
+extension NookPalette {
+    /// Every grey text moved `amount` closer to `paper`: for the high-contrast theme.
+    func raised(by amount: Double) -> NookPalette {
+        var palette = self
+        palette.textStrong = NookColor.mix(textStrong, paper, amount * 2)
+        palette.textSecondary = NookColor.mix(textSecondary, paper, amount * 2)
+        palette.textMuted = NookColor.mix(textMuted, paper, amount * 2)
+        palette.textTertiary = NookColor.mix(textTertiary, paper, amount * 2)
+        palette.border = NookColor.mix(border, paper, amount)
+        palette.separator = NookColor.mix(separator, paper, amount)
+        palette.fieldStroke = NookColor.mix(fieldStroke, paper, amount)
+        return palette
+    }
+}
+
+/// What the user chose: the appearance, and which theme shows in dark and which in light.
+struct NookThemeChoice: Equatable, Sendable {
+    var mode: NookAppearanceMode = .dark
+    var darkTheme: String = NookColorTheme.nook.id
+    var lightTheme: String = NookColorTheme.nook.id
+
+    /// The palette that shows: the chosen theme's for the appearance in effect; Nook's own when that theme is gone or has
+    /// no palette for it (a dark-only VS Code theme picked for light).
+    func palette(systemIsDark: Bool, themes: [NookColorTheme]) -> NookPalette {
+        let dark = mode.isDark(systemIsDark: systemIsDark)
+        return palette(dark: dark, themes: themes)
+    }
+
+    func palette(dark: Bool, themes: [NookColorTheme]) -> NookPalette {
+        let id = dark ? darkTheme : lightTheme
+        return themes.first { $0.id == id }?.palette(dark: dark) ?? (dark ? .nookDark : .nookLight)
+    }
+}
+
+/// A VS Code color theme (the JSON a theme extension ships, comments and trailing commas allowed) as a Nook theme: the
+/// editor's background is the canvas, the side bar the lifted surface, its inputs the fields, its lists the rows, its
+/// foregrounds the text, its button or focus color the accent, and the terminal's ANSI colors the state colors.
+enum VSCodeThemeImport {
+    enum Failure: Error, Equatable { case notJSON, noColors }
+
+    struct Result: Equatable {
+        var name: String
+        var palette: NookPalette
+    }
+
+    static func parse(_ source: String, fallbackName: String = "Imported") throws -> Result {
+        guard let data = stripComments(source).data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw Failure.notJSON }
+        guard let colors = object["colors"] as? [String: Any], !colors.isEmpty else { throw Failure.noColors }
+        let type = (object["type"] as? String)?.lowercased() ?? ""
+        func raw(_ keys: String...) -> String? { keys.lazy.compactMap { colors[$0] as? String }.first }
+        // The editor first: everything else is laid over it.
+        let editorBackground = NookColor.parse(raw("editor.background"))
+        let dark: Bool = {
+            if type.contains("light") { return false }
+            if type.contains("dark") || type == "hc" { return true }
+            return NookColor.luminance(editorBackground ?? 0) < 0.4
+        }()
+        let base = dark ? NookPalette.nookDark : NookPalette.nookLight
+        let canvas = editorBackground ?? base.canvas
+        func color(_ keys: String...) -> UInt32? {
+            keys.lazy.compactMap { NookColor.parse(colors[$0] as? String, over: canvas) }.first
+        }
+        let text = color("editor.foreground", "foreground") ?? base.paper
+        let accent = color("button.background", "focusBorder", "activityBarBadge.background", "textLink.foreground") ?? base.accent
+        var palette = NookPalette.generated(dark: dark, canvas: canvas, text: text, accent: accent,
+                                            link: color("textLink.foreground"))
+        if let value = color("sideBar.background", "panel.background") { palette.surface = value }
+        if let value = color("editorWidget.background", "dropdown.background") { palette.graphite = value }
+        if let value = color("input.background") { palette.field = value }
+        if let value = color("input.border") { palette.fieldStroke = value }
+        if let value = color("sideBar.border", "panel.border", "editorGroup.border") { palette.border = value }
+        if let value = color("list.hoverBackground") { palette.rowHover = value }
+        if let value = color("list.activeSelectionBackground", "list.inactiveSelectionBackground") {
+            palette.rowSelected = value
+            palette.smoke = value
+        }
+        if let value = color("sideBar.foreground") { palette.textStrong = value }
+        if let value = color("descriptionForeground") { palette.textSecondary = value }
+        if let value = color("terminal.ansiGreen", "gitDecoration.addedResourceForeground") { palette.mint = value; palette.mintSoft = value }
+        if let value = color("terminal.ansiYellow", "editorWarning.foreground") { palette.amber = value }
+        if let value = color("terminal.ansiRed", "errorForeground", "editorError.foreground") { palette.coral = value; palette.coralSoft = value }
+        if let value = color("terminal.ansiMagenta") { palette.violet = value }
+        let name = (object["name"] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? fallbackName
+        return Result(name: name, palette: palette.readable())
+    }
+
+    /// JSON with comments (`//`, `/* */`) and trailing commas, as VS Code allows, made strict. Strings stay untouched.
+    static func stripComments(_ source: String) -> String {
+        var out = ""
+        var chars = Array(source)
+        var i = 0
+        var inString = false
+        while i < chars.count {
+            let c = chars[i]
+            if inString {
+                out.append(c)
+                if c == "\\", i + 1 < chars.count { out.append(chars[i + 1]); i += 2; continue }
+                if c == "\"" { inString = false }
+                i += 1
+                continue
+            }
+            if c == "\"" { inString = true; out.append(c); i += 1; continue }
+            if c == "/", i + 1 < chars.count, chars[i + 1] == "/" {
+                while i < chars.count, chars[i] != "\n" { i += 1 }
+                continue
+            }
+            if c == "/", i + 1 < chars.count, chars[i + 1] == "*" {
+                i += 2
+                while i + 1 < chars.count, !(chars[i] == "*" && chars[i + 1] == "/") { i += 1 }
+                i += 2
+                continue
+            }
+            if c == "," {
+                // A comma before a closing bracket (after whitespace) is dropped.
+                var j = i + 1
+                while j < chars.count, chars[j].isWhitespace { j += 1 }
+                if j < chars.count, chars[j] == "}" || chars[j] == "]" { i += 1; continue }
+            }
+            out.append(c)
+            i += 1
+        }
+        chars.removeAll()
+        return out
+    }
+}
+
+/// A theme the user imported, kept as the file it came from, so a newer Nook maps it again with what it knows then.
+struct NookCustomTheme: Codable, Equatable, Sendable {
+    var id: String
+    var name: String
+    var source: String
+
+    var theme: NookColorTheme? {
+        guard let result = try? VSCodeThemeImport.parse(source, fallbackName: name) else { return nil }
+        return NookColorTheme(id: id, name: name, dark: result.palette.isDark ? result.palette : nil,
+                              light: result.palette.isDark ? nil : result.palette, custom: true)
+    }
+}

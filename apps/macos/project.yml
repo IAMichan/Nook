@@ -64,6 +64,10 @@ targets:
       - path: Resources/mermaid
         type: folder
         buildPhase: resources
+      # KaTeX's script, style and fonts, so math typesets without asking a server (see THIRD-PARTY-NOTICES.md).
+      - path: Resources/katex
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
@@ -258,6 +262,7 @@ targets:
       - path: Core/I18n+AgentTools.swift
       - path: Core/I18n+SessionControls.swift
       - path: Core/I18n+Secrets.swift
+      - path: Core/I18n+LookThemes.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -325,6 +330,7 @@ targets:
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
       - path: Core/NookLook.swift
+      - path: NotchUI/Theme/NookPalette.swift
       - path: Core/NookMonthDay.swift
       - path: Services/BuddyMoments.swift
       - path: Services/QuietMode.swift
@@ -504,6 +510,7 @@ targets:
       - path: Services/Workspace/DiskUsage.swift
       - path: Services/Workspace/BuildLeftovers.swift
       - path: Services/Workspace/ComposerLists.swift
+      - path: Services/Workspace/ComposerMarkdownStyle.swift
       - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/RemoteHostDiscovery.swift
       - path: Services/Workspace/ResourceUsage.swift
@@ -545,6 +552,7 @@ targets:
       - path: Services/AntigravityClient.swift
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
+      - path: Brain/MathText.swift
       - path: Brain/ChartRescue.swift
       - path: Brain/IncrementalMarkdown.swift
       - path: Brain/Weather.swift
