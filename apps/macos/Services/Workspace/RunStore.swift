@@ -62,7 +62,8 @@ final class RunStore: @unchecked Sendable {
         guard let runs = SafeStorage.load(LossyArray<WorkspaceRun>.self, from: runsURL, decoder: Self.decoder, skipped: { $0.skipped })
             .value?.elements else { return [] }
         return runs.map { run in
-            guard run.status.isActive else { return run }
+            // Its keeper may hold it still: `reattachKeptRuns` looks.
+            guard run.status.isActive, run.kept == nil else { return run }
             var recovered = run
             recovered.interruptedWhileWaiting = run.status == .waitingApproval ? true : nil
             recovered.status = run.status.afterRelaunch

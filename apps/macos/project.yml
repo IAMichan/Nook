@@ -209,6 +209,7 @@ targets:
       - path: Core/I18n+DiffReview.swift
       - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
+      - path: Core/I18n+Remote.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
@@ -420,6 +421,9 @@ targets:
       - path: Services/Workspace/SessionGoal.swift
       - path: Services/Workspace/WebhookRelay.swift
       - path: Services/Workspace/NookTriage.swift
+      - path: Services/Workspace/SessionKeeper.swift
+      - path: Services/Workspace/KeptTransport.swift
+      - path: Services/Workspace/KeptRuns.swift
       - path: Services/Workspace/AndroidDevices.swift
       - path: Services/Workspace/RemoteBridge.swift
       - path: Services/Workspace/NookCommandLine.swift

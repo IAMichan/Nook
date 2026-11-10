@@ -53,6 +53,7 @@ if [ "$(uname)" != "Darwin" ]; then
 fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
+  "SessionKeeperTests"
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
   "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"
