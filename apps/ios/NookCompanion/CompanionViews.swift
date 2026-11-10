@@ -153,6 +153,7 @@ struct PairingView: View {
             VStack(spacing: Theme.Spacing.xxl) {
                 VStack(spacing: Theme.Spacing.lg) {
                     NookMark(size: 72)
+                        .background(NookAura(size: 240))
                         .padding(.bottom, Theme.Spacing.md)
                     Text("Nook on your iPhone")
                         .font(Theme.TextStyle.display).foregroundStyle(Theme.paper).multilineTextAlignment(.center)
@@ -167,10 +168,10 @@ struct PairingView: View {
                            symbol: "xmark.shield.fill", color: Theme.coral)
                 }
 
-                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                VStack(alignment: .leading, spacing: 0) {
                     PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
                     PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
-                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.")
+                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.", last: true)
                 }
                 .card()
 
@@ -203,6 +204,17 @@ struct PairingView: View {
             }
             .padding(.horizontal, Theme.Spacing.xxl)
             .padding(.bottom, Theme.Spacing.xxl)
+
+            Label {
+                Text("Everything between your iPhone and your Mac is encrypted end to end.")
+            } icon: {
+                Image(icon: "lock.shield")
+            }
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.xxl)
+                .padding(.bottom, Theme.Spacing.xxl)
         }
         .screen()
         .sheet(isPresented: $scanning) {
@@ -218,6 +230,8 @@ struct PairingView: View {
 private struct PairingStep: View {
     let number: Int
     let text: LocalizedStringKey
+    /// The last step has no line down to a next one.
+    var last = false
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.lg) {
@@ -233,7 +247,20 @@ private struct PairingStep: View {
                 .font(Theme.TextStyle.body)
                 .foregroundStyle(Theme.textStrong)
                 .lineSpacing(2)
+                .padding(.top, Theme.Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.bottom, last ? 0 : Theme.Spacing.xl)
+        // The steps hang on one thin line, from under this number down to the next.
+        .overlay(alignment: .topLeading) {
+            if !last {
+                Rectangle()
+                    .fill(Theme.line2)
+                    .frame(width: 1)
+                    .padding(.top, 28 + Theme.Spacing.xs)
+                    .padding(.bottom, Theme.Spacing.xs)
+                    .padding(.leading, 13.5)
+            }
         }
     }
 }
@@ -370,6 +397,7 @@ struct SessionListView: View {
         }
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
+        .animation(Theme.reveal, value: client.sessions)
         .refreshable { await client.refresh() }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
@@ -750,6 +778,11 @@ struct SessionNotice: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [Theme.color(session.attention).opacity(0.10), Theme.color(session.attention).opacity(0)],
+                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.6)),
+            in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+        )
         .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel,
                         style: .continuous)
     }

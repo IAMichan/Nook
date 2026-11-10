@@ -21,6 +21,7 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   ThemeViews.swift       cards, section headers, status pills and banners, built on the parts shared with the Mac
   PanelComponents.swift  the panel's header and tabs, the search field, the composer and starters
   CompanionViews.swift   root (Nook, Agents, Chats), pairing, session overview
+  OverviewViews.swift    the calm overview on the Nook tab: what waits on you, what works, what is unread
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer
   InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
