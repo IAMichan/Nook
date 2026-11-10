@@ -26,9 +26,9 @@ extension AppModel {
             return (run.provider.displayName, Set([current] + run.earlierConversations))
         }
         let hooked = runs.isEmpty ? hub.sessions : hub.sessions.filter { session in
-            let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
+            let needsYou = session.status == .waiting || session.approvalID != nil
             return !AgentSessionRegistry.isContinuedInNook(agent: session.name, conversation: session.ownConversationID,
-                                                           busy: busy, runs: runs)
+                                                           needsYou: needsYou, runs: runs)
         }
         return hooked + hub.detected
     }
