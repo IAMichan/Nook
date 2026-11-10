@@ -420,6 +420,7 @@ struct WorkspaceSettingsSection: View {
         case .sessions:
             defaults
             behavior
+            TextGenerationSection()
             sessionTidying
         case .projects: projects
         case .openIn: openIn

@@ -150,6 +150,23 @@ final class WorkspaceSettings: ObservableObject {
     @Published var titleInstructions: String {
         didSet { defaults.set(titleInstructions, forKey: "ws.titleInstructions") }
     }
+    /// Who writes each kind of text (`TextTask.rawValue` → `TextGenerator.stored`); absent: the agent's CLI.
+    @Published var textGenerators: [String: String] {
+        didSet { defaults.set(textGenerators, forKey: "ws.textGenerators") }
+    }
+    /// After an agent's turn the empty composer shows the message you will likely send next (`NextPromptSuggestion`).
+    /// Off by default: each suggestion is one more request.
+    @Published var suggestNextPrompt: Bool {
+        didSet { defaults.set(suggestNextPrompt, forKey: "ws.suggestNextPrompt") }
+    }
+
+    func textGenerator(for task: TextTask) -> TextGenerator { TextGenerator(stored: textGenerators[task.rawValue]) }
+
+    func setTextGenerator(_ generator: TextGenerator, for task: TextTask) {
+        let stored: String? = generator == .agent ? nil : generator.stored
+        guard textGenerators[task.rawValue] != stored else { return }
+        textGenerators[task.rawValue] = stored
+    }
     /// At most this many sessions work at once; a turn past it waits for a free place (`SessionCapacity`). 0: no limit.
     @Published var maxWorkingSessions: Int {
         didSet { defaults.set(maxWorkingSessions, forKey: "ws.maxWorkingSessions") }
@@ -254,6 +271,8 @@ final class WorkspaceSettings: ObservableObject {
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
+        textGenerators = defaults.dictionary(forKey: "ws.textGenerators") as? [String: String] ?? [:]
+        suggestNextPrompt = defaults.bool(forKey: "ws.suggestNextPrompt")
         agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
         maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard

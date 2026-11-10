@@ -248,7 +248,7 @@ extension WorkspaceManager {
             let branch = await Task.detached { git.currentBranch(directory) }.value
             let style = await commitStyleRules(git, directory: directory, pullRequest: false)
             let answer = await generateText(TextGeneration.commitPrompt(branch: branch, files: context.files, patch: context.patch, style: style),
-                                            schema: TextGeneration.commitSchema, prefer: target.provider, profileID: target.profileID,
+                                            schema: TextGeneration.commitSchema, task: .gitText, prefer: target.provider, profileID: target.profileID,
                                             cwd: target.isRemote ? NSHomeDirectory() : directory)
             message = (TextGeneration.commitSubject((answer?["subject"] as? String) ?? ""), (answer?["body"] as? String) ?? "")
         }
@@ -321,7 +321,7 @@ extension WorkspaceManager {
         let style = await commitStyleRules(git, directory: directory, pullRequest: true)
         let answer = await generateText(TextGeneration.pullRequestPrompt(base: base, head: branch, commits: facts.commits, stat: facts.stat,
                                                                         patch: facts.patch, template: facts.template, style: style),
-                                        schema: TextGeneration.pullRequestSchema, prefer: target.provider, profileID: target.profileID,
+                                        schema: TextGeneration.pullRequestSchema, task: .gitText, prefer: target.provider, profileID: target.profileID,
                                         cwd: target.isRemote ? NSHomeDirectory() : directory)
         let title = TextGeneration.pullRequestTitle((answer?["title"] as? String) ?? (facts.commits.split(separator: "\n").first.map {
             String($0.drop { $0 != " " }.dropFirst())
