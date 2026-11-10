@@ -22,8 +22,6 @@ struct SessionDetailView: View {
     @State private var images: [CompanionImage] = []
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
-    /// When a light tick plays while the answer streams in (`StreamCadence`).
-    @State private var cadence = StreamCadence(openedAt: Date())
 
     private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
     private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
@@ -53,9 +51,7 @@ struct SessionDetailView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: entries.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
                 // A light texture while the agent's answer comes in, at most every 320 ms (streaming haptics).
-                .onChange(of: entries.last) { _, _ in
-                    if cadence.tick(working: session.attention == "working", now: Date()) { Haptics.stream() }
-                }
+                .modifier(StreamTicks(last: entries.last, working: session.attention == "working"))
                 .onChange(of: session.items.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
                 .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                 .defaultScrollAnchor(.bottom)
@@ -270,6 +266,19 @@ struct SessionDetailView: View {
 }
 
 /// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
+/// Plays `Haptics.stream` as the conversation grows while the agent works, as often as `StreamCadence` allows.
+private struct StreamTicks: ViewModifier {
+    let last: TimelineEntry?
+    let working: Bool
+    @State private var cadence = StreamCadence(openedAt: Date())
+
+    func body(content: Content) -> some View {
+        content.onChange(of: last) { _, _ in
+            if cadence.tick(working: working, now: Date()) { Haptics.stream() }
+        }
+    }
+}
+
 private struct ScrollEndTracker: ViewModifier {
     @Binding var atEnd: Bool
 
