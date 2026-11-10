@@ -122,6 +122,8 @@ struct SessionPanel: View {
     @State private var askingGitInit = false
     @State private var registered = false
     @ObservedObject private var pullRequestSync = PullRequestSync.shared
+    /// The newest state of each pull request, so a merged one shows as merged before the next sync round.
+    @ObservedObject private var pullRequestStatus = PullRequestStatusStore.shared
     /// The rows you turned off, by name; right-click the panel to choose.
     @AppStorage("agents.panel.hidden") private var hiddenRaw = ""
     /// The session's pull requests past the first few.
@@ -166,12 +168,11 @@ struct SessionPanel: View {
         hiddenRaw = hidden.sorted().joined(separator: ",")
     }
 
-    /// The session's own pull requests: every one it linked, open ones first.
+    /// The session's own pull requests, the same list as above its composer: its branch's, those of the branches it
+    /// worked on before and the ones you linked, minus the ones you took off, open chains first, each with its newest
+    /// status. Only the current branch's would drop a pull request as soon as the session moved on to a new branch.
     private var pullRequests: [PullRequestLink] {
-        // A session Nook runs has its own list; one it only sees has the list of its folder and branch.
-        let links = runID.flatMap { pullRequestSync.links[$0] }
-            ?? model.status?.branch.flatMap { pullRequestSync.folderLinks[PullRequestSync.folderKey(path: directory, branch: $0)] } ?? []
-        return links.filter(\.state.isOpen) + links.filter { !$0.state.isOpen }
+        pullRequestSync.linked(run: runID, directory: directory, branch: model.status?.branch).map(\.link)
     }
 
     @ViewBuilder
