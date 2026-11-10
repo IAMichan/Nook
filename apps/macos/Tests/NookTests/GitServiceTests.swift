@@ -180,6 +180,23 @@ final class GitServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(git.branchPoint(repo, base: "main"), git.mergeBase(repo, base: "main"), "the base branch itself")
     }
 
+    /// The session's row and the Changes panel count from this one point: committed work still counts, next to what is
+    /// not committed yet, and what main did meanwhile does not.
+    func testBranchComparisonCountsCommittedAndUncommittedWork() throws {
+        let branch = root + "/worktrees/repo/telling"
+        try git.addWorktree(repo: repo, path: branch, branch: "nook/telling", base: "main")
+        try commit("gecommit.txt", in: branch)
+        try "nieuw\n".write(toFile: branch + "/los.txt", atomically: true, encoding: .utf8)
+        try commit("van-main.txt", in: repo)
+
+        let status = try git.status(branch)
+        XCTAssertEqual(status.files.map(\.path), ["los.txt"], "git status alone misses the commit")
+        let comparison = git.branchComparison(branch, status: status, remotes: git.remotes(branch))
+        XCTAssertEqual(comparison.base, "main", "no remote: the local default branch")
+        let point = try XCTUnwrap(comparison.point)
+        XCTAssertEqual(try git.changes(branch, since: point, status: status).map(\.path).sorted(), ["gecommit.txt", "los.txt"])
+    }
+
     func testWorktreeLifecycle() throws {
         let path = root + "/worktrees/repo/taak-a"
         try git.addWorktree(repo: repo, path: path, branch: "nook/taak-a", base: "main")
