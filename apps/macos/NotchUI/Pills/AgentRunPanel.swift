@@ -767,6 +767,18 @@ struct AgentRunPanel: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor((run.status.isActive || landsOnLoad) && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
+            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
+                if overflows, !finding, !memo.marks.isEmpty {
+                    TranscriptPromptRail(marks: memo.marks) { mark in
+                        scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                    }
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+                }
+            }
             // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
             .composerInset {
                 VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
@@ -819,18 +831,6 @@ struct AgentRunPanel: View {
                                     close: closeFind)
                         .padding(.horizontal, NookTheme.Spacing.xs)
                         .padding(.top, NookTheme.Spacing.xs)
-                }
-            }
-            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
-            .overlay(alignment: .leading) {
-                if overflows, !finding, !memo.marks.isEmpty {
-                    TranscriptPromptRail(marks: memo.marks) { mark in
-                        scroll.userScrolled()
-                        guard let id = UUID(uuidString: mark.row) else { return }
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                    }
-                    .padding(.vertical, NookTheme.Spacing.md)
-                    .transition(.opacity)
                 }
             }
             .keyCommand("chat.find") { openFind() }
