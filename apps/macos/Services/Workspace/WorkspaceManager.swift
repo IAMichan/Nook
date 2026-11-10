@@ -312,6 +312,8 @@ final class WorkspaceManager: ObservableObject {
     }
     /// The folder an account keeps its login in; two accounts with the same folder share conversations.
     var accountHome: (String) -> String? = { $0 }
+    /// An account's name as Nook shows it ("Work"), by profile id; nil when it is unknown. Configured by AppModel.
+    var accountName: (String) -> String? = { _ in nil }
     /// The usage windows of an account, for "Auto" to pick a model by (see `AutoModel`); configured by AppModel.
     var usageWindows: (String) -> [AutoModel.Window] = { _ in [] }
     /// The connected agents with their accounts, for "Auto" to pick among (see `AutoModel`); configured by AppModel.
