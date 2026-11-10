@@ -150,7 +150,7 @@ extension WorkspaceManager {
             let remotes = root.map { git.remotes($0) } ?? []
             guard RepositoryPublish.canPublish(isRepository: root != nil, remotes: remotes) else { return nil }
             let path = root ?? folder
-            return PublishPlan(folder: path, name: RepositoryPublish.suggestedName(URL(fileURLWithPath: path).lastPathComponent),
+            return PublishPlan(folder: path, name: RepositoryPublish.suggestedName((path as NSString).lastPathComponent),
                                needsRepository: root == nil, needsFirstCommit: !git.hasCommits(path))
         }.value
     }

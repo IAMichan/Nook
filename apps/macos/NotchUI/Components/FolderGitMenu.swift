@@ -236,7 +236,7 @@ struct FolderGitButton: View {
                         if model.isRepository {
                             label(icon: "arrow.triangle.branch", text: model.status?.branch ?? tr("agents.git.detached"))
                         } else {
-                            label(icon: "folder", text: URL(fileURLWithPath: model.directory).lastPathComponent)
+                            label(icon: "folder", text: (model.directory as NSString).lastPathComponent)
                         }
                     }
                     .buttonStyle(.plain)

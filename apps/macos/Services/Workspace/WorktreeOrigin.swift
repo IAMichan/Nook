@@ -47,7 +47,7 @@ enum WorktreeOrigin {
         let paths = paths.filter { !$0.isEmpty }
         for path in paths {
             let checkout = checkoutPath(of: path)
-            if URL(fileURLWithPath: checkout).lastPathComponent == name, isDirectory(checkout) { return checkout }
+            if (checkout as NSString).lastPathComponent == name, isDirectory(checkout) { return checkout }
         }
         for path in paths {
             var dir = URL(fileURLWithPath: path).standardizedFileURL.deletingLastPathComponent()
@@ -56,7 +56,7 @@ enum WorktreeOrigin {
                 dir = dir.deletingLastPathComponent()
             }
         }
-        return known.first { URL(fileURLWithPath: $0).lastPathComponent == name && isDirectory($0) }
+        return known.first { ($0 as NSString).lastPathComponent == name && isDirectory($0) }
     }
 
     private static func isDirectory(_ path: String) -> Bool {

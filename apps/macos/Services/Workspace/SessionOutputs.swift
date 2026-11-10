@@ -60,7 +60,7 @@ enum SessionOutputs {
         func add(_ raw: String, at date: Date) {
             let path = resolve(raw, in: directory)
             guard !path.isEmpty, let kind = kind(path: path) else { return }
-            let output = SessionOutput(id: "file:" + path, kind: kind, title: URL(fileURLWithPath: path).lastPathComponent,
+            let output = SessionOutput(id: "file:" + path, kind: kind, title: (path as NSString).lastPathComponent,
                                        path: path, date: date)
             if let index = files[path] { outputs[index] = output } else { files[path] = outputs.count; outputs.append(output) }
         }

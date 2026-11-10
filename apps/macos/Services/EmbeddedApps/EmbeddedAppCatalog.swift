@@ -548,7 +548,7 @@ enum InstalledMacApps {
     static func make(paths: [String]) -> [EmbeddedApp] {
         var seen = Set<String>()
         return paths.compactMap { path in
-            let title = String(URL(fileURLWithPath: path).lastPathComponent.dropLast(4))
+            let title = String((path as NSString).lastPathComponent.dropLast(4))
             let name = EmbeddedAppCatalog.key(title)
             guard !name.isEmpty, name != "nook", seen.insert(name).inserted else { return nil }
             // By title or alias, not by id: Apple's Calendar is not Google Calendar (id "calendar").

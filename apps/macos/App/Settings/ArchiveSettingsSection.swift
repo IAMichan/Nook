@@ -31,7 +31,7 @@ private struct ArchiveLists: View {
             }
             ForEach(sessions) { run in
                 ArchiveRow(title: run.title.isEmpty ? run.task : run.title,
-                           detail: URL(fileURLWithPath: run.projectPath).lastPathComponent,
+                           detail: (run.projectPath as NSString).lastPathComponent,
                            date: run.updatedAt,
                            agent: run.provider.kind,
                            unarchive: { workspace.setArchived(run.id, false) },

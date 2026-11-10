@@ -32,7 +32,7 @@ extension AppModel {
         let reserved = Set(workspace.runs.compactMap(\.worktreePath))
         let path: String = try await Task.detached(priority: .userInitiated) {
             let root = git.repositoryRoot(for: folder) ?? folder
-            let path = WorktreeNaming.worktreePath(root: parent, repoName: URL(fileURLWithPath: root).lastPathComponent, slug: WorktreeNaming.directorySlug(branch: plan.branch, prefix: ""),
+            let path = WorktreeNaming.worktreePath(root: parent, repoName: (root as NSString).lastPathComponent, slug: WorktreeNaming.directorySlug(branch: plan.branch, prefix: ""),
                                                    exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
             try git.fetchPullRequest(plan, in: root)
             try git.addWorktree(repo: root, path: path, existingBranch: plan.branch)
