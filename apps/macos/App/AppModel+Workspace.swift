@@ -257,6 +257,7 @@ extension AppModel {
         }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
         workspace.onAudit = { [weak self] tool, args, result in self?.store.audit(tool: tool, args: args, result: result) }
+        startAgentUpdates()
         workspace.onQuestion = { [weak self] run, pending in
             CompanionNotifier.shared.question(run, pending)
             self?.workspaceQuestion(run)

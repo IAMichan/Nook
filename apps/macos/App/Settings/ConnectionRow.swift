@@ -201,6 +201,8 @@ struct ConnectionListHeader: View {
     let title: String
     var info: String? = nil
     var add: (title: String, action: () -> Void)? = nil
+    /// The button's symbol: "+" to add, another for an action on the whole list ("Update all").
+    var symbol = "plus"
 
     var body: some View {
         HStack {
@@ -208,7 +210,7 @@ struct ConnectionListHeader: View {
             Spacer()
             if let add {
                 Button(action: add.action) {
-                    Label(add.title, systemImage: "plus")
+                    Label(add.title, systemImage: symbol)
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
