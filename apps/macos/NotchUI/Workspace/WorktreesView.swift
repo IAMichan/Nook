@@ -24,7 +24,7 @@ struct WorktreesView: View {
                         .fixedSize()
                 }
                 // Only the arrow, so the title keeps the room in a narrow tab.
-                Button { workspace.refreshWorktrees() } label: { Image(systemName: "arrow.clockwise") }
+                Button { workspace.refreshWorktrees(force: true) } label: { Image(systemName: "arrow.clockwise") }
                     .help(tr("ws.git.refresh"))
                     .accessibilityLabel(tr("ws.git.refresh"))
                     .keyboardShortcut("r", modifiers: .command)
