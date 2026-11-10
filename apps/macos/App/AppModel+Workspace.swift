@@ -385,7 +385,7 @@ extension AppModel {
         case .external:
             open = nil
         }
-        let folder = URL(fileURLWithPath: request.caller.directory).lastPathComponent
+        let folder = (request.caller.directory as NSString).lastPathComponent
         let context = request.caller.title.isEmpty ? "\(request.caller.agent) · \(folder)"
             : "\(request.caller.agent) · \(AgentFormat.title(request.caller.title))"
         presentApprovalCard(ApprovalCenter.make(request), context: context, open: open)

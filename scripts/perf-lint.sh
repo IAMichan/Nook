@@ -21,6 +21,9 @@
 #      is a SwiftUI animation: measured offscreen, a single repeating symbol lays out its window 100 times a second, as
 #      `.repeatForever` does, and that window can hold a long chat. A one-shot effect (`.bounce`, `value:`) says so on
 #      the line above: `// perf: <why>`.
+#   6. A name taken from a path is `(path as NSString).lastPathComponent`, not `URL(fileURLWithPath: path).lastPathComponent`:
+#      without `isDirectory:` that URL asks the disk whether the path is a folder (a `stat`, ~5 µs against ~1 µs), and
+#      these run per event of a transcript, per session of a scan and per row of a redraw.
 set -uo pipefail
 cd "$(dirname "$0")/../apps/macos"
 
@@ -79,5 +82,7 @@ report "symbols that loop are a LayerSymbol; a .symbolEffect says why not (// pe
     { prev = $0 }
   ' "$file"
 done)
+
+report "a name from a path is (path as NSString).lastPathComponent (no URL(fileURLWithPath:) stat for it)" < <(grep -rnE 'URL\(fileURLWithPath: [^()]+\)\.lastPathComponent' Core Services NotchUI App --include='*.swift')
 
 exit $status

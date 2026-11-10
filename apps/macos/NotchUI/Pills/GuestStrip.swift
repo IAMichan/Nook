@@ -26,7 +26,7 @@ struct GuestStrip: View {
                                 Text(message.text).foregroundStyle(NookTheme.paper).lineLimit(6)
                             }
                             if !message.files.isEmpty {
-                                Text(message.files.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", "))
+                                Text(message.files.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))
                                     .foregroundStyle(NookTheme.textTertiary).lineLimit(2)
                             }
                         }

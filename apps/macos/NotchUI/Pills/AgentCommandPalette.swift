@@ -236,7 +236,7 @@ struct AgentCommandPalette: View {
         let paths = (settings.favoriteProjects + settings.recentProjects)
             .filter { seen.insert($0).inserted && !settings.isArchivedProject($0) }
         return paths.map { path in
-            Entry(id: "p:" + path, group: .projects, symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent,
+            Entry(id: "p:" + path, group: .projects, symbol: "folder", title: (path as NSString).lastPathComponent,
                   detail: AgentPathFormat.tilde(path)) {
                 PromptLinkInbox.shared.requestProject(path)
                 viewModel.selectedAgentID = "new"

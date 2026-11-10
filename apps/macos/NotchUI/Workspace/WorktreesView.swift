@@ -42,7 +42,7 @@ struct WorktreesView: View {
                 Table(workspace.worktreeRows) {
                     TableColumn(tr("ws.worktrees.col.worktree")) { row in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                            Text(URL(fileURLWithPath: row.worktree.path).lastPathComponent).font(NookTheme.TextStyle.body)
+                            Text((row.worktree.path as NSString).lastPathComponent).font(NookTheme.TextStyle.body)
                             Text(AgentPathFormat.tilde(row.worktree.path)).font(NookTheme.mono(10.5)).foregroundStyle(WS.tertiary)
                                 .lineLimit(1).truncationMode(.middle)
                         }

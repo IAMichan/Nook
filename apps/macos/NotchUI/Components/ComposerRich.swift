@@ -192,9 +192,9 @@ final class ComposerModel: ObservableObject {
                 let files = await Task.detached(priority: .userInitiated) { FileSearch.rank(all, query: query) }.value
                 guard !Task.isCancelled, let self else { return }
                 let rows = files.map { path in
-                    ComposerSuggestion(id: "file:" + path, title: URL(fileURLWithPath: path).lastPathComponent, detail: path,
+                    ComposerSuggestion(id: "file:" + path, title: (path as NSString).lastPathComponent, detail: path,
                                        symbol: "doc", payload: .ref(ContextRef(kind: .file, id: path,
-                                                                                label: URL(fileURLWithPath: path).lastPathComponent)))
+                                                                                label: (path as NSString).lastPathComponent)))
                 }
                 self.publish(people + models + rows + sessions)
             }

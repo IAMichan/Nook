@@ -72,7 +72,33 @@ final class RunEventLog {
             return nil
         }
         // The search index is extra: a SQLite without FTS5 or its trigram tokenizer only means search scans instead.
-        searchAvailable = exec(Self.searchSchema)
+        dropSearchWithText()
+        searchAvailable = exec(Self.searchSchema(contentless: true)) || exec(Self.searchSchema(contentless: false))
+    }
+
+    /// An index that kept its own copy of every event's text (as built before 2026-11-10) is dropped, with its keys:
+    /// searching only matches, so the copy (a fifth of the file) was never read. `RunStore` builds it anew.
+    @discardableResult
+    private func dropSearchWithText() -> Bool {
+        // An older SQLite cannot build the contentless index: it keeps the one it has (dropping it would repeat each launch).
+        guard sqlite3_libversion_number() >= 3_043_000 else { return false }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT sql FROM sqlite_master WHERE name = 'run_search'", -1, &stmt, nil) == SQLITE_OK,
+              sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0),
+              !String(cString: text).contains("content") else { return false }
+        sqlite3_finalize(stmt)
+        stmt = nil
+        return exec("DROP TABLE IF EXISTS run_search; DROP TABLE IF EXISTS run_search_keys;")
+    }
+
+    /// Gives free room inside the file back to the disk when there is a lot of it, as a dropped index leaves (`VACUUM`
+    /// rewrites the whole file, so not for a little). Returns whether it did.
+    @discardableResult
+    func compact(over bytes: Int64 = 64 << 20) -> Bool {
+        guard let pages = ids("PRAGMA freelist_count", [])?.first, let size = ids("PRAGMA page_size", [])?.first,
+              pages * size > bytes else { return false }
+        return exec("VACUUM;")
     }
 
     // MARK: Search index
@@ -84,8 +110,12 @@ final class RunEventLog {
     /// Which session and event a row belongs to lives in `run_search_keys`, whose `id` is the row's rowid in `run_search`:
     /// FTS5 cannot look up its own columns, so finding an event's row there scans the whole index. Through the keys every
     /// replacement is a lookup by rowid, however large the index grows.
-    private static let searchSchema = """
-        CREATE VIRTUAL TABLE IF NOT EXISTS run_search USING fts5(body, tokenize = 'trigram');
+    ///
+    /// Contentless: a search only matches and joins the rowids, so FTS5 keeps no copy of the text (a fifth of the file
+    /// on one Mac). `contentless_delete` (SQLite 3.43) lets a row be replaced; without it the index keeps the text.
+    private static func searchSchema(contentless: Bool) -> String {
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS run_search USING fts5(body, tokenize = 'trigram'\(contentless ? ", content = '', contentless_delete = 1" : ""));
         CREATE TABLE IF NOT EXISTS run_search_keys (
             id INTEGER PRIMARY KEY,
             run_id TEXT NOT NULL,
@@ -93,6 +123,7 @@ final class RunEventLog {
             UNIQUE (run_id, event_id)
         );
         """
+    }
 
     /// The index can be used (FTS5 with the trigram tokenizer is there).
     private(set) var searchAvailable = false

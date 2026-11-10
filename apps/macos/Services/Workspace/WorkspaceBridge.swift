@@ -148,7 +148,7 @@ final class WorkspaceBridge: ObservableObject {
     private func expire(_ id: String) {
         guard let request = pending.first(where: { $0.id == id }) else { return }
         let entry = ApprovalAudit.expired(agent: request.caller.agent,
-                                                project: URL(fileURLWithPath: request.caller.directory).lastPathComponent,
+                                                project: (request.caller.directory as NSString).lastPathComponent,
                                                 tool: request.tool.rawValue, asked: request.detail)
         app?.store.audit(tool: entry.tool, args: entry.args, result: entry.result)
         finish(id, allowed: false)
