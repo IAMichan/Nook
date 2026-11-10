@@ -390,6 +390,17 @@ struct AgentRunPanel: View {
         if workspace.canRestartAgent(runID) {
             DropdownRow(symbol: "arrow.triangle.2.circlepath", title: tr("agents.restartAgent")) { workspace.restartAgent(runID) }
         }
+        // A guest link: someone follows this session in a browser; what they write waits for you (GuestShares).
+        if GuestShares.shared.shared[runID] != nil {
+            DropdownRow(symbol: "person.crop.circle.badge.xmark", title: tr("guest.stop")) { GuestShares.shared.stop(runID) }
+        } else if GuestShares.shared.canShare, !run.archived {
+            DropdownRow(symbol: "person.crop.circle.badge.plus", title: tr("guest.share"), detail: tr("guest.share.help")) {
+                if let link = GuestShares.shared.share(runID) {
+                    Pasteboard.copy(link)
+                    ToastCenter.shared.success(tr("guest.shared"), detail: tr("guest.shared.detail"))
+                }
+            }
+        }
         // PR watch: CI, reviews and comments on the session's pull request wake the agent.
         if run.prWatch != nil {
             DropdownRow(symbol: "eye.slash", title: tr("ws.prwatch.stop")) { workspace.watchPullRequest(runID, url: nil) }
@@ -1365,6 +1376,7 @@ struct AgentRunPanel: View {
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)
             if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }
+            GuestStrip(id: runID, shares: GuestShares.shared)
             if let goal = run.goal {
                 GoalStrip(goal: goal, canPause: workspace.takesGoalOutsideTurns(runID)) { workspace.goalControl(runID, $0) }
             }

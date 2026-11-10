@@ -510,6 +510,8 @@ final class WorkspaceManager: ObservableObject {
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
         reattachKeptRuns()
+        // Guest links that still work connect again (within their 24 hours).
+        GuestShares.shared.start(workspace: self)
         if !started.isEmpty { scheduleSave() }
     }
 
@@ -2717,6 +2719,7 @@ final class WorkspaceManager: ObservableObject {
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
         let kept = detachKeptRuns()
+        GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
         for id in Array(acpClients.keys) { closeAcpClient(id) }

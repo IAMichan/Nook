@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { isRoom } from "./mux.js";
+import { guestResponse } from "./guest.js";
 import { HookLogic, isHook, mayListen, readLimited } from "./hooks.js";
 import { admit, handlePush } from "./push.js";
 import { RoomLogic } from "./room.js";
@@ -11,6 +12,7 @@ import { RoomLogic } from "./room.js";
 //
 //   GET /v1/rooms/<32 hex>?role=mac|phone   (WebSocket)
 //   POST /v1/push                            (opt-in, push.js: needs the APNS_* secrets)
+//   GET /v1/guest                            (a guest link's page, guest.js: it talks to the Mac through a room, sealed)
 //   GET /v1/hooks/<32 hex>/listen            (WebSocket, hooks.js: the Mac, with its token as bearer)
 //   POST /v1/hooks/<32 hex>/<task id>        (a webhook for a scheduled task; not sealed, see hooks.js)
 
@@ -20,6 +22,7 @@ export default {
     if (url.pathname === "/" || url.pathname === "/health") {
       return new Response("Nook relay\n", { headers: { "content-type": "text/plain" } });
     }
+    if (url.pathname === "/v1/guest") return guestResponse(request);
     if (url.pathname === "/v1/push") {
       return handlePush(request, env, {
         fetch: (input, init) => fetch(input, init),
