@@ -155,6 +155,15 @@ struct PromptHistory: Sendable {
 
     var isWalking: Bool { position != nil }
 
+    /// The history of one session: the messages you sent it, oldest first, so ArrowUp after a relaunch or a switch walks
+    /// through what you wrote there rather than in another session.
+    mutating func seed(_ sent: [String]) {
+        entries = []
+        position = nil
+        draft = ""
+        for text in sent.suffix(Self.limit * 2) { record(text) }
+    }
+
     mutating func stopWalking() { position = nil }
 }
 

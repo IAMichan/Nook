@@ -72,6 +72,21 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertFalse(history.isWalking)
     }
 
+    func testHistorySeedsFromASessionsMessages() {
+        var history = PromptHistory()
+        history.record("from another session")
+        history.seed(["first", "first", "  ", "second"])
+        XCTAssertEqual(history.entries, ["first", "second"])
+        XCTAssertEqual(history.previous(current: "typing"), "second")
+        XCTAssertEqual(history.previous(current: ""), "first")
+        XCTAssertNil(history.previous(current: ""))
+        XCTAssertEqual(history.next(), "second")
+        XCTAssertEqual(history.next(), "typing")
+        history.seed(Array(repeating: "x", count: 3) + (0..<200).map(String.init))
+        XCTAssertEqual(history.entries.count, PromptHistory.limit)
+        XCTAssertEqual(history.entries.last, "199")
+    }
+
     func testHistorySkipsEmptyAndRepeats() {
         var history = PromptHistory()
         history.record("  ")

@@ -6,7 +6,9 @@ enum MarkdownBlock: Equatable {
     case paragraph(String)
     /// A bulleted or numbered list; nested items keep their depth.
     case list([MarkdownListItem])
-    case code(language: String, code: String)
+    /// A fenced code block: its language (lowercased, "" when none) and the file it names in its fence
+    /// (```` ```ts title="App.tsx" ```` or ```` ```App.tsx ````), nil when it names none.
+    case code(language: String, code: String, title: String?)
     case chart(ChatChart)
     /// A question from the answer with options to pick from (a ```question block).
     case question(text: String, options: [String])
@@ -17,6 +19,10 @@ enum MarkdownBlock: Equatable {
     case pullRequest(URL)
     /// A display formula in TeX: a ```math block, or `$$…$$` / `\[…\]` on lines of their own (`MathText`).
     case math(String)
+    /// A folded passage the answer wrote as `<details><summary>…</summary>…</details>`: its summary and its Markdown.
+    case details(summary: String, body: String)
+    /// An image on a line of its own (`![alt](https://…/a.png)` or a path on this Mac).
+    case image(alt: String, source: String)
 
     private static let brRegex = try? NSRegularExpression(pattern: #"<br\s*/?>"#, options: [.caseInsensitive])
     private static let headingRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s"#)
@@ -180,6 +186,78 @@ enum MarkdownBlock: Equatable {
         return result
     }
 
+    private static let fenceTitleRegex = try? NSRegularExpression(
+        pattern: #"(?:^|\s)(?:title|file(?:name)?)=(?:"([^"]+)"|'([^']+)'|(\S+))"#, options: [.caseInsensitive])
+    private static let fenceFileRegex = try? NSRegularExpression(pattern: #"^[\w@][\w@./-]*\.[A-Za-z0-9]+$"#)
+
+    /// The language and file name in the text after a code fence's backticks: ```` ```ts title="a.ts" ```` gives
+    /// ("ts", "a.ts"), ```` ```src/App.tsx ```` gives ("tsx", "src/App.tsx"), ```` ```swift ```` gives ("swift", nil).
+    static func fence(_ info: String) -> (language: String, title: String?) {
+        let words = info.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let first = words.first else { return ("", nil) }
+        var title: String?
+        if let rx = fenceTitleRegex, let match = rx.firstMatch(in: info, range: NSRange(info.startIndex..., in: info)) {
+            title = (1...3).lazy.compactMap { Range(match.range(at: $0), in: info).map { String(info[$0]) } }.first
+        }
+        if title == nil { title = words.first { matches($0, fenceFileRegex) && !$0.contains("=") } }
+        // A fence that opens with a file name and no language: the language is the file's extension.
+        if matches(first, fenceFileRegex), !first.contains("=") {
+            return ((first as NSString).pathExtension.lowercased(), title)
+        }
+        return (first.contains("=") ? "" : first.lowercased(), title)
+    }
+
+    private static let imageLineRegex = try? NSRegularExpression(pattern: #"^!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)$"#)
+
+    /// The alt text and source of a line that is only an image, when the source is a web address or a path on this Mac.
+    static func imageLine(_ line: String) -> (alt: String, source: String)? {
+        guard line.hasPrefix("!["), let rx = imageLineRegex,
+              let match = rx.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              let alt = Range(match.range(at: 1), in: line), let source = Range(match.range(at: 2), in: line) else { return nil }
+        let src = String(line[source])
+        let lower = src.lowercased()
+        guard lower.hasPrefix("https://") || lower.hasPrefix("http://") || lower.hasPrefix("file://")
+                || src.hasPrefix("/") || src.hasPrefix("~/") || src.hasPrefix("./") || !src.contains(":") else { return nil }
+        return (String(line[alt]), src)
+    }
+
+    /// A `<details>` passage from line `index` on: its summary, its body and the line after it. An unclosed one (still
+    /// streaming) runs to the end of the answer. Nested passages stay inside the body.
+    static func detailsBlock(_ lines: [String], from index: Int) -> (summary: String, body: String, next: Int)? {
+        let first = lines[index].trimmingCharacters(in: .whitespaces)
+        guard first.lowercased().hasPrefix("<details") else { return nil }
+        var depth = 0
+        var collected: [String] = []
+        var end = index
+        while end < lines.count {
+            let lower = lines[end].lowercased()
+            depth += lower.components(separatedBy: "<details").count - 1
+            depth -= lower.components(separatedBy: "</details>").count - 1
+            collected.append(lines[end])
+            end += 1
+            if depth <= 0 { break }
+        }
+        var text = collected.joined(separator: "\n")
+        // The outer tags come off; inner ones stay for the body's own parse.
+        if let open = text.range(of: #"^\s*<details[^>]*>"#, options: [.regularExpression, .caseInsensitive]) {
+            text.removeSubrange(open)
+        }
+        if depth <= 0, let close = text.range(of: "</details>", options: [.caseInsensitive, .backwards]) {
+            text.removeSubrange(close.lowerBound..<text.endIndex)
+        }
+        var summary = ""
+        if let start = text.range(of: #"^\s*<summary[^>]*>"#, options: [.regularExpression, .caseInsensitive]) {
+            let rest = text[start.upperBound...]
+            if let stop = rest.range(of: "</summary>", options: .caseInsensitive) {
+                summary = String(rest[..<stop.lowerBound])
+                text = String(rest[stop.upperBound...])
+            }
+        }
+        summary = summary.replacingOccurrences(of: #"</?[a-zA-Z][^>]*>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (summary, text.trimmingCharacters(in: .whitespacesAndNewlines), end)
+    }
+
     static func parse(_ raw: String) -> [MarkdownBlock] {
         // Agents' tags come off every line outside a code block, except a pull request link of its own (a card below).
         var inCode = false
@@ -217,7 +295,7 @@ enum MarkdownBlock: Equatable {
             // Code block
             if trimmed.hasPrefix("```") {
                 flush()
-                let language = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased()
+                let (language, title) = fence(String(trimmed.dropFirst(3)))
                 var code: [String] = []
                 index += 1
                 while index < lines.count, !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
@@ -233,8 +311,20 @@ enum MarkdownBlock: Equatable {
                 } else if chartLanguages.contains(language), let chart = ChartRescue.chart(fromCode: body, language: language, title: "") {
                     blocks.append(.chart(chart))
                 } else {
-                    blocks.append(.code(language: language, code: body))
+                    blocks.append(.code(language: language, code: body, title: title))
                 }
+                continue
+            }
+            if let details = detailsBlock(lines, from: index) {
+                flush()
+                blocks.append(.details(summary: details.summary, body: details.body))
+                index = details.next
+                continue
+            }
+            if let image = imageLine(trimmed) {
+                flush()
+                blocks.append(.image(alt: image.alt, source: image.source))
+                index += 1
                 continue
             }
             // Display math: `$$` or `\[` opening a line, up to the line that closes it.

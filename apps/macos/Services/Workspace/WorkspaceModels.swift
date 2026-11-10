@@ -782,6 +782,20 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// A command the agent left running in the background (`BackgroundCommands`): it outlives its turn and settles with
     /// its own end. Nil for every other event.
     var background: Bool? = nil
+    /// For a message of yours that went into a turn while it ran: whether you steered it, or a queued message was taken
+    /// into it. Nil for a message that started a turn, and for every other event.
+    var steer: SteerKind? = nil
+    /// For a switch of agent, model or effort (a `.system` event with tool "switch"): what the session ran before and
+    /// after it. Nil for every other event.
+    var change: ModelSwitch? = nil
+
+    /// How a message of yours reached a turn that was running.
+    enum SteerKind: String, Codable, Sendable {
+        /// Sent into the running turn (Steer).
+        case steer
+        /// Queued first, then taken into the running turn.
+        case promoted
+    }
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
          output: String? = nil, state: State? = nil, date: Date = Date(), id: UUID = UUID()) {
@@ -1274,4 +1288,33 @@ enum ToolSummary {
               let text = String(data: data, encoding: .utf8) else { return "\(object)" }
         return text
     }
+}
+
+
+/// A switch of the agent, model or effort a session runs, as the timeline marks it between two turns:
+/// "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5 (High)" when the agent changes, "Sonnet 5.5 → Opus 5.5 high"
+/// when only the model or effort does.
+struct ModelSwitch: Codable, Equatable, Sendable {
+    struct Endpoint: Codable, Equatable, Sendable {
+        /// `RunProvider.rawValue`, for the agent's logo and color.
+        var provider: String
+        /// The agent's name ("Claude Code", "Codex").
+        var agent: String
+        /// The model's name as the menu shows it; nil for the agent's default model.
+        var model: String?
+        /// The reasoning effort's id ("high"); nil for the default.
+        var effort: String?
+
+        func sameSetting(_ other: Endpoint) -> Bool { model == other.model && effort == other.effort }
+    }
+
+    var from: Endpoint
+    var to: Endpoint
+
+    /// Another agent (or another account of it) takes over the conversation: the context is handed over.
+    var handoff: Bool { from.provider != to.provider || from.agent != to.agent }
+    /// Nothing changed after all (you went back to what it was before sending).
+    var isNoChange: Bool { !handoff && from.sameSetting(to) }
+    var modelChanged: Bool { from.model != to.model }
+    var effortChanged: Bool { from.effort != to.effort }
 }
