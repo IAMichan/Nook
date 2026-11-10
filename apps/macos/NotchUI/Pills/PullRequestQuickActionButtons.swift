@@ -28,6 +28,7 @@ struct PullRequestQuickActionButtons: View {
     let accountID: String
     @ObservedObject private var shift = ShiftKeyMonitor.shared
     @ObservedObject private var sweep = PullRequestCloseSweep.shared
+    @ObservedObject private var tracker = PullRequestCloseSweep.shared.tracker
     @State private var armed: PullRequestQuickAction?
     @State private var running: PullRequestQuickAction?
 
@@ -41,9 +42,8 @@ struct PullRequestQuickActionButtons: View {
             }
             .padding(.trailing, NookTheme.Spacing.sm)
             .transition(.opacity)
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                sweep.rows[item.id] = PullRequestCloseSweep.Row(frame: frame, item: item, account: accountID)
-            }
+            .sweepRow(tracker, id: item.id)
+            .onAppear { sweep.rows[item.id] = PullRequestCloseSweep.Row(item: item, account: accountID) }
             .onDisappear { sweep.rows[item.id] = nil }
             .task(id: armed) {
                 // An armed action waits a few seconds for its second click, then lets go.
@@ -55,7 +55,7 @@ struct PullRequestQuickActionButtons: View {
     }
 
     private func button(_ action: PullRequestQuickAction) -> some View {
-        let confirming = armed == action || (action == .close && sweep.swept.contains(item.id))
+        let confirming = armed == action || (action == .close && sweep.isSwept(item.id))
         let tint = confirming ? (action == .close ? NookTheme.coral : NookTheme.amber) : NookTheme.textSecondary
         return Button {
             if confirming {
@@ -83,10 +83,8 @@ struct PullRequestQuickActionButtons: View {
         .buttonStyle(.plain)
         .disabled(running != nil)
         .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
-        // Close, dragged over other rows, takes those along.
-        .simultaneousGesture(action == .close ? DragGesture(minimumDistance: 6, coordinateSpace: .global)
-            .onChanged { value in sweep.drag(from: item.id, at: value.location) }
-            .onEnded { _ in sweep.finish() } : nil)
+        // Close, dragged up or down over other rows, takes those along.
+        .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
     }
 
     private func run(_ action: PullRequestQuickAction) {
@@ -208,43 +206,37 @@ enum PullRequestQuickRunner {
     }
 }
 
-/// Closing several pull requests in one drag: Close on one row, dragged over the others. The rows swept over light up,
-/// and a bar over the list asks before anything goes to GitHub.
+/// Closing several pull requests in one drag: Close on one row, dragged up or down over the others (`RowSweep`, the same
+/// sweep as Settle in the Agents list). The rows swept over light up, and a bar over the list asks before anything goes
+/// to GitHub.
 @MainActor
 final class PullRequestCloseSweep: ObservableObject {
     static let shared = PullRequestCloseSweep()
 
     struct Row {
-        let frame: CGRect
         let item: PullRequestItem
         let account: String
     }
 
-    /// The rows showing their quick actions now, by id: only those can be swept over. Not published: every scroll sets it.
+    /// The drag itself; the rows showing their quick actions now are the ones it can take.
+    let tracker = RowSweep<String>()
+    /// Those rows' requests, by id. Not published: every scroll sets it.
     var rows: [String: Row] = [:]
-    @Published private(set) var swept: [String] = []
     @Published private(set) var confirming: [Row] = []
     @Published private(set) var closing = false
 
-    func drag(from origin: String, at point: CGPoint) {
-        var next = swept
-        if next.isEmpty { next = [origin] }
-        if let row = rows.first(where: { point.y >= $0.value.frame.minY - 12 && point.y <= $0.value.frame.maxY + 12 })?.key,
-           !next.contains(row) {
-            next.append(row)
-        }
-        if next != swept { swept = next }
+    /// Whether a request is swept now or waits in the bar.
+    func isSwept(_ id: String) -> Bool {
+        tracker.swept.contains(id) || confirming.contains { $0.item.id == id }
     }
 
-    func finish() {
-        // One row is the button's own click.
-        confirming = swept.count > 1 ? swept.compactMap { rows[$0] } : []
-        if confirming.isEmpty { swept = [] }
+    /// The drag ended over these rows: the bar asks to close them.
+    func finish(_ ids: [String]) {
+        confirming = ids.compactMap { rows[$0] }
     }
 
     func cancel() {
         confirming = []
-        swept = []
     }
 
     func close(app: AppModel) {

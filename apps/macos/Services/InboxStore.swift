@@ -20,6 +20,16 @@ final class InboxStore: ObservableObject {
     @Published var collapsedProjects: Set<String> { didSet { save() } }
     /// The shelves folded at the foot of the list.
     @Published private(set) var collapsedShelves: Set<InboxSection.Kind>
+    /// The choices of the snooze menus (Settings › Sessions › Snooze options). Kept under a key of their own, so an option
+    /// a later Nook adds and this one cannot read never costs the rest of the list's state.
+    @Published var snoozeOptions: [SnoozeOption] {
+        didSet {
+            let cleaned = SnoozeOption.cleaned(snoozeOptions)
+            if cleaned != snoozeOptions { snoozeOptions = cleaned; return }
+            defaults.set(try? JSONEncoder().encode(snoozeOptions), forKey: Self.snoozeOptionsKey)
+        }
+    }
+    private static let snoozeOptionsKey = "agents.snoozeOptions.v1"
 
     /// Undo of what only the workspace can reverse: a snooze, an archive. They get the ids that were recorded.
     var undoSnooze: (([String]) -> Void)?
@@ -53,6 +63,8 @@ final class InboxStore: ObservableObject {
         groupByProject = stored?.groupByProject ?? true
         collapsedProjects = stored?.collapsedProjects ?? []
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
+        snoozeOptions = SnoozeOption.cleaned(defaults.data(forKey: Self.snoozeOptionsKey)
+            .flatMap { try? JSONDecoder().decode([SnoozeOption].self, from: $0) } ?? SnoozeOption.defaults)
         // The choice is kept, so a later launch reads it instead of guessing again.
         if stored?.autoSettle == nil { save() }
     }
@@ -161,10 +173,13 @@ final class InboxStore: ObservableObject {
     // MARK: Auto-settle
 
     /// The sessions that settle by themselves right now (never one that runs, waits for you, is pinned or snoozed).
-    func autoSettleCandidates(rows: [InboxRow], prMerged: (String) -> Bool, now: Date = Date()) -> [String] {
+    func autoSettleCandidates(rows: [InboxRow], pullRequest: (String) -> AutoSettlePolicy.PullRequestState,
+                              now: Date = Date()) -> [String] {
         guard autoSettle.enabled else { return [] }
         return rows.compactMap { row in
-            if case .settle = AutoSettlePolicy.decide(row: row, prMerged: prMerged(row.id), settings: autoSettle, now: now) { return row.id }
+            if case .settle = AutoSettlePolicy.decide(row: row, pullRequest: pullRequest(row.id), settings: autoSettle, now: now) {
+                return row.id
+            }
             return nil
         }
     }

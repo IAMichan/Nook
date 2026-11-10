@@ -142,6 +142,105 @@ enum SnoozePolicy {
     }
 }
 
+/// One choice of the snooze menu, set in Settings › Sessions › Snooze options (as t3code): a duration ("3 hours") or a
+/// time on a day ("21:00 tomorrow", "09:00 Monday"). A weekday means the next one after today; a today option hides once
+/// its time has passed. The menus list them soonest first.
+struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable { case duration, time }
+
+    /// The day of a time option. A weekday is the next one after today, so "Monday" on a Monday is a week ahead.
+    enum Day: String, Codable, CaseIterable, Sendable {
+        case today, tomorrow, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+
+        /// `Calendar`'s weekday number (Sunday 1 … Saturday 7); nil for today and tomorrow.
+        var weekday: Int? {
+            switch self {
+            case .today, .tomorrow: return nil
+            case .sunday: return 1
+            case .monday: return 2
+            case .tuesday: return 3
+            case .wednesday: return 4
+            case .thursday: return 5
+            case .friday: return 6
+            case .saturday: return 7
+            }
+        }
+    }
+
+    var kind: Kind
+    /// A duration's length in minutes.
+    var minutes: Int = 60
+    /// A time option's day and clock time.
+    var day: Day = .tomorrow
+    var hour: Int = 9
+    var minute: Int = 0
+
+    var id: String {
+        switch kind {
+        case .duration: return "d\(minutes)"
+        case .time: return "t-\(day.rawValue)-\(hour)-\(minute)"
+        }
+    }
+
+    static func duration(minutes: Int) -> SnoozeOption { SnoozeOption(kind: .duration, minutes: minutes) }
+    static func time(_ day: Day, hour: Int, minute: Int = 0) -> SnoozeOption {
+        SnoozeOption(kind: .time, day: day, hour: hour, minute: minute)
+    }
+
+    /// What the menu offered before the options could be set: an hour, this evening, tomorrow morning.
+    static let defaults: [SnoozeOption] = [.duration(minutes: 60), .time(.today, hour: 18), .time(.tomorrow, hour: 9)]
+    /// The longest duration an option can hold: a month, as a custom snooze (`SnoozePolicy.maxCustom`).
+    static let maxMinutes = Int(SnoozePolicy.maxCustom / 60)
+    /// How many options the menu holds at most.
+    static let maxCount = 8
+
+    /// When the snooze ends if chosen at `now`; nil for a today option whose time has passed (the menu hides it).
+    func end(from now: Date, calendar: Calendar = .current) -> Date? {
+        switch kind {
+        case .duration:
+            guard minutes > 0 else { return nil }
+            return now.addingTimeInterval(TimeInterval(min(minutes, Self.maxMinutes)) * 60)
+        case .time:
+            let start = calendar.startOfDay(for: now)
+            let date: Date?
+            switch day {
+            case .today:
+                date = start
+            case .tomorrow:
+                date = calendar.date(byAdding: .day, value: 1, to: start)
+            default:
+                let today = calendar.component(.weekday, from: now)
+                let ahead = ((day.weekday ?? today) - today + 7) % 7
+                date = calendar.date(byAdding: .day, value: ahead == 0 ? 7 : ahead, to: start)
+            }
+            guard let date, let end = calendar.date(bySettingHour: min(max(hour, 0), 23), minute: min(max(minute, 0), 59),
+                                                    second: 0, of: date), end > now else { return nil }
+            return end
+        }
+    }
+
+    /// The options the menu shows at `now`: the ones still ahead, soonest first, each end once.
+    static func menu(_ options: [SnoozeOption], now: Date, calendar: Calendar = .current) -> [(option: SnoozeOption, end: Date)] {
+        var seen = Set<Date>()
+        return options.compactMap { option in option.end(from: now, calendar: calendar).map { (option, $0) } }
+            .sorted { $0.1 < $1.1 }
+            .filter { seen.insert($0.1).inserted }
+    }
+
+    /// The options as saved: valid ones only, each once, at most `maxCount`; none left falls back to the defaults.
+    static func cleaned(_ options: [SnoozeOption]) -> [SnoozeOption] {
+        var seen = Set<String>()
+        let valid = options.filter { option in
+            switch option.kind {
+            case .duration: return (1...maxMinutes).contains(option.minutes)
+            case .time: return (0...23).contains(option.hour) && (0...59).contains(option.minute)
+            }
+        }
+        .filter { seen.insert($0.id).inserted }
+        return valid.isEmpty ? defaults : Array(valid.prefix(maxCount))
+    }
+}
+
 /// Goes on with a session that a restart cut off: one "Continue where you left off.",
 /// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {

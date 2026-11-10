@@ -110,6 +110,39 @@ enum SessionJump {
     }
 }
 
+/// The open model picker's keys (as t3code): ⌘1–⌘9 pick the nth model the shown place lists, ⇧⌘↑ and ⇧⌘↓ show the
+/// place before or after it in the rail.
+enum ModelPickerKeys {
+    static let count = 9
+    static let previousPlace = "modelPicker.previousPlace"
+    static let nextPlace = "modelPicker.nextPlace"
+
+    /// The command id of ⌘`number` in the picker: `modelPicker.pick1` … `modelPicker.pick9`.
+    static func command(_ number: Int) -> String { "modelPicker.pick\(number)" }
+
+    /// The number a pick command stands for; nil for any other command.
+    static func number(of command: String) -> Int? {
+        guard command.hasPrefix("modelPicker.pick"), let n = Int(command.dropFirst("modelPicker.pick".count)), (1...count).contains(n)
+        else { return nil }
+        return n
+    }
+
+    /// The row ⌘`number` picks: the nth model that can be picked, counted over the rows as shown (a disabled one keeps
+    /// its number, so the numbers do not shift); nil past the end or on a disabled row.
+    static func row(_ number: Int, enabled: [Bool]) -> Int? {
+        guard (1...count).contains(number), enabled.indices.contains(number - 1), enabled[number - 1] else { return nil }
+        return number - 1
+    }
+
+    /// The place `offset` steps from `current` (1 next, -1 previous), wrapping around the ends; nil with fewer than two.
+    static func step<Place: Equatable>(from current: Place, by offset: Int, in places: [Place]) -> Place? {
+        guard places.count > 1 else { return nil }
+        guard let index = places.firstIndex(of: current) else { return places.first }
+        let next = ((index + offset) % places.count + places.count) % places.count
+        return places[next]
+    }
+}
+
 /// The row the arrow keys are on in a list where some rows cannot be picked (the model picker's disabled models).
 enum ListHighlight {
     /// `index` if that row can be picked, else the first row from there on that can, else the last one before it; nil

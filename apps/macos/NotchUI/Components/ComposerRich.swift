@@ -400,10 +400,15 @@ final class ComposerModel: ObservableObject {
         if secretOffer != nil { secretOffer = nil }
     }
 
-    /// A paste that was too big for the box: keep it aside and put a reference in its place.
-    func keepPaste(old: String, new: String) -> String? {
-        guard new.utf8.count - old.utf8.count >= PasteRule.attachThreshold,
-              let parts = PasteRule.split(old: old, new: new), PasteRule.shouldAttach(parts.inserted) else { return nil }
+    /// The next paste stays editable text however big it is (⇧⌘V), unless it would push the message past its limit. The
+    /// composer reads and clears it on the next change of the text.
+    var pastesAsText = false
+
+    /// A paste that was too big for the box, or that would make the message too long: keep it aside and put a reference
+    /// in its place. `asText` (⇧⌘V) keeps a big paste as text. Typing never counts: under 16 characters nothing is kept aside.
+    func keepPaste(old: String, new: String, asText: Bool = false) -> String? {
+        guard new.utf8.count - old.utf8.count >= 16, let parts = PasteRule.split(old: old, new: new),
+              PasteRule.attaches(parts.inserted, result: new, asText: asText) else { return nil }
         let id = String(UUID().uuidString.prefix(8)).lowercased()
         excerpts[id] = parts.inserted
         let ref = ContextRef(kind: .paste, id: id, label: PasteRule.fileName(for: parts.inserted))

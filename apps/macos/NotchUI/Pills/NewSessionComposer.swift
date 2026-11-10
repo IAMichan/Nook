@@ -48,6 +48,8 @@ struct NewSessionComposer: View {
     @State private var composerModel = ComposerModel()
     @ObservedObject private var promptLinks = PromptLinkInbox.shared
     @State private var linkNotice: String?
+    /// A pull request link's branch is being checked out (`promptLinks.pendingCheckout`).
+    @State private var checkingOut = false
     /// Set once the session started: what is left in the box then is not worth bringing back.
     @State private var started = false
     /// The other models the prompt also goes to, each in a session and worktree of its own (`ModelComparison`).
@@ -535,7 +537,19 @@ struct NewSessionComposer: View {
     /// One line, only when something needs saying: why you cannot start yet, or what went wrong.
     @ViewBuilder
     private var notice: some View {
-        if let error {
+        if let link = promptLinks.pendingCheckout, let pull = link.pullRequest {
+            // A pull request link no session works on: the checkout waits for you, as it runs the project's setup.
+            PanelNoticeBar(title: tr("promptLink.pr.title", "\(pull.repository)#\(pull.number)"),
+                           detail: tr("promptLink.pr.detail"), symbol: PullRequestIcon.generic, tone: NookTheme.amber) {
+                if checkingOut {
+                    ProgressView().controlSize(.small)
+                } else {
+                    NookNoticeActions(primary: NookNoticeAction(tr("promptLink.pr.checkout")) { checkOutLinkedPullRequest(link, pull) },
+                                      secondary: NookNoticeAction(tr("button.cancel")) { promptLinks.pendingCheckout = nil })
+                }
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+        } else if let error {
             Text(error)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coralSoft)
@@ -687,6 +701,28 @@ struct NewSessionComposer: View {
             if let model = link.model { config.model = model }
         }
         linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
+    }
+
+    /// "Check out" on a pull request link: the branch in a worktree of its own, the composer on it with the link's words
+    /// as the draft (nothing is sent), and the checkout in the action log.
+    private func checkOutLinkedPullRequest(_ link: PromptLink, _ pull: PromptLink.PullRequest) {
+        checkingOut = true
+        Task {
+            let label = "\(pull.repository)#\(pull.number)"
+            do {
+                let path = try await app.pullRequestLinkWorktree(pull)
+                app.store.audit(tool: "prompt_link_pr_checkout", args: label, result: path)
+                promptLinks.pendingCheckout = nil
+                var draft = link
+                draft.pullRequest = nil
+                if !draft.text.isEmpty { promptLinks.pending = draft }
+                promptLinks.requestProject(path)
+            } catch {
+                app.store.audit(tool: "prompt_link_pr_checkout", args: label, result: "error: " + error.localizedDescription)
+                ToastCenter.shared.error(error, title: tr("agents.pr.checkout.failed"))
+            }
+            checkingOut = false
+        }
     }
 
     /// A project's "+" in the Agents list opens the composer on that folder.

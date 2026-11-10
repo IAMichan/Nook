@@ -18,6 +18,24 @@ extension AppModel {
         }.value
     }
 
+    /// The project on this Mac whose GitHub remote is `repository` (`owner/name`), for a prompt link's `repo=`: a favorite
+    /// or a recent project. Nil when you do not have it here.
+    func projectFolder(repository: String) async -> String? {
+        await localFolder(repo: repository, preferred: nil)
+    }
+
+    /// A prompt link's `pr=`, confirmed: the pull request read from GitHub, its branch checked out in a worktree of its
+    /// own, and that worktree's path for the new-session composer.
+    func pullRequestLinkWorktree(_ pull: PromptLink.PullRequest) async throws -> String {
+        guard let reader = PullReader(app: self, address: pull.url) else {
+            throw NookError(tr("promptLink.pr.unreadable", "\(pull.repository)#\(pull.number)"))
+        }
+        let detail = try await reader.read()
+        let plan = PullRequestCheckoutPlan(host: .github, repository: detail.repo, number: detail.number,
+                                           headBranch: detail.headBranch, fork: detail.headOwner != nil)
+        return try await pullRequestWorktree(plan, preferred: nil)
+    }
+
     /// A worktree of its own on the pull request's branch; the new-session composer opens in it.
     func checkOutInWorktree(_ plan: PullRequestCheckoutPlan, preferred: String?) async throws {
         openNewSession(in: try await pullRequestWorktree(plan, preferred: preferred))
