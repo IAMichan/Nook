@@ -180,6 +180,10 @@ private struct TaskRow: View {
         if let last = task.lastRun { parts.append(tr("sched.last", ScheduledTaskText.date(last))) }
         if task.enabled, let next = task.nextRun, !running { parts.append(tr("sched.next", ScheduledTaskText.date(next))) }
         if task.enabled, task.rule.isWebhook { parts.append(tr("sched.waitingWebhook")) }
+        if task.isDone { parts.append(tr("automation.sched.done")) }
+        if task.target.sessionID != nil {
+            parts.append(tr(task.target.freshConversation ? "automation.sched.fresh" : "automation.sched.continue"))
+        }
         return parts.joined(separator: " · ")
     }
 }
@@ -217,6 +221,8 @@ enum ScheduledTaskText {
             return tr("sched.rule.weekly", days, at)
         case .webhook:
             return tr("sched.rule.webhook")
+        case .once(let at):
+            return tr("automation.sched.rule.once", date(at))
         }
     }
 
@@ -227,6 +233,18 @@ enum ScheduledTaskText {
         if error == ScheduledTask.interruptedReason { return tr("sched.error.interrupted") }
         if error.hasPrefix("sched.") { return tr(error) }
         return error
+    }
+
+    /// Why a delivery came out as it did, for the Deliveries log.
+    static func deliveryDetail(_ record: WebhookDeliveryRecord) -> String {
+        let detail = record.detail ?? ""
+        switch record.outcome {
+        case .accepted: return detail.isEmpty ? tr("automation.hook.detail.accepted") : tr("automation.hook.detail.window", detail)
+        case .filtered: return tr("automation.hook.detail.filtered", detail)
+        case .duplicate: return tr("automation.hook.detail.duplicate", detail)
+        case .coalesced: return tr("automation.hook.detail.coalesced", detail)
+        case .queueFull: return tr("automation.hook.detail.queueFull")
+        }
     }
 
     static func color(_ status: ScheduledRunStatus) -> Color {
@@ -247,7 +265,13 @@ private struct ScheduledTaskEditor: View {
     @ObservedObject private var settings = WorkspaceSettings.shared
 
     private enum Kind: String, CaseIterable, Identifiable {
-        case interval, time, webhook
+        case interval, time, once, webhook
+        var id: String { rawValue }
+    }
+
+    /// Where the runs go: each one a new session in a project, or all of them into one session.
+    private enum Destination: String, CaseIterable, Identifiable {
+        case newSession, session
         var id: String { rawValue }
     }
 
@@ -266,6 +290,12 @@ private struct ScheduledTaskEditor: View {
     @State private var time: Date
     @State private var weekdays: Set<Int>
     @State private var permission: PermissionPolicy
+    @State private var onceAt: Date
+    @State private var destination: Destination
+    @State private var sessionID: UUID?
+    @State private var fresh: Bool
+    @State private var rules: WebhookRules
+    @State private var showsDeliveries = false
     @StateObject private var secretCopied = CopiedMoment()
 
     init(existing: ScheduledTask?, onDone: @escaping () -> Void) {
@@ -278,9 +308,20 @@ private struct ScheduledTaskEditor: View {
             path = p
             provider = RunProvider(rawValue: name) ?? .claude
         }
+        var destination = Destination.newSession, sessionID: UUID?, fresh = false
+        if case .existingSession(let id, let isFresh)? = existing?.target {
+            destination = .session; sessionID = id; fresh = isFresh
+        }
+        _destination = State(initialValue: destination)
+        _sessionID = State(initialValue: sessionID)
+        _fresh = State(initialValue: fresh)
         _path = State(initialValue: path)
         _provider = State(initialValue: provider)
+        _rules = State(initialValue: existing.map { ScheduledTaskStore.shared.webhookRules(for: $0.id) } ?? WebhookRules())
         var kind = Kind.interval, minutes = 60, hour = 9, minute = 0, days: Set<Int> = []
+        // A new once-task starts at the next whole hour.
+        var onceAt = Calendar.current.nextDate(after: Date(), matching: DateComponents(minute: 0), matchingPolicy: .nextTime)
+            ?? Date().addingTimeInterval(3600)
         switch existing?.rule {
         case .interval(let seconds)?:
             minutes = max(1, seconds / 60)
@@ -288,6 +329,8 @@ private struct ScheduledTaskEditor: View {
             kind = .time; hour = h; minute = m; days = d.filter { (1...7).contains($0) }
         case .webhook?:
             kind = .webhook
+        case .once(let at)?:
+            kind = .once; onceAt = at
         case nil:
             break
         }
@@ -295,6 +338,7 @@ private struct ScheduledTaskEditor: View {
         _minutes = State(initialValue: minutes)
         _time = State(initialValue: Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date())
         _weekdays = State(initialValue: days)
+        _onceAt = State(initialValue: onceAt)
         _permission = State(initialValue: existing.map { ScheduledTaskStore.shared.permission(for: $0.id) } ?? .ask)
     }
 
@@ -316,6 +360,8 @@ private struct ScheduledTaskEditor: View {
                             .padding(NookTheme.Spacing.sm)
                             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                     }
+                    field(tr("automation.sched.destination")) { destinationPicker }
+                    if destination == .newSession {
                     field(tr("sched.field.project")) {
                         HStack(spacing: NookTheme.Spacing.md) {
                             Text(path.isEmpty ? tr("sched.field.noProject") : AgentPathFormat.tilde(path))
@@ -335,9 +381,14 @@ private struct ScheduledTaskEditor: View {
                         .labelsHidden()
                         .frame(maxWidth: 240, alignment: .leading)
                     }
+                    } else {
+                        sessionPicker
+                    }
                     field(tr("sched.field.schedule")) { scheduleEditor }
                     if kind == .webhook {
                         webhookInfo
+                        webhookRulesEditor
+                        if let existing { deliveriesLog(existing.id) }
                         Text(tr("sched.permission.webhookNote"))
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
@@ -380,6 +431,7 @@ private struct ScheduledTaskEditor: View {
             Picker("", selection: $kind) {
                 Text(tr("sched.kind.interval")).tag(Kind.interval)
                 Text(tr("sched.kind.time")).tag(Kind.time)
+                Text(tr("automation.sched.kind.once")).tag(Kind.once)
                 Text(tr("sched.kind.webhook")).tag(Kind.webhook)
             }
             .pickerStyle(.segmented)
@@ -419,9 +471,183 @@ private struct ScheduledTaskEditor: View {
                     }
                 }
                 Text(tr("sched.weekdays.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            case .once:
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Text(tr("sched.time.at")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                    DatePicker("", selection: $onceAt, in: Date()..., displayedComponents: [.date, .hourAndMinute]).labelsHidden()
+                }
+                Text(tr("automation.sched.once.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             case .webhook:
                 EmptyView()
             }
+        }
+    }
+
+    // MARK: Destination
+
+    /// The sessions a task can post into: this Mac's sessions that are not archived, newest first.
+    private var sessions: [WorkspaceRun] {
+        app.workspace.runs.filter { !$0.archived && !$0.isRemote }
+    }
+
+    private var destinationPicker: some View {
+        Picker("", selection: $destination) {
+            Text(tr("automation.sched.destination.new")).tag(Destination.newSession)
+            Text(tr("automation.sched.destination.session")).tag(Destination.session)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 360, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var sessionPicker: some View {
+        field(tr("automation.sched.session")) {
+            Picker("", selection: $sessionID) {
+                Text(tr("automation.sched.session.choose")).tag(UUID?.none)
+                ForEach(sessions) { run in
+                    Text(run.title.isEmpty ? AgentPathFormat.tilde(run.workingDirectory) : run.title).tag(UUID?.some(run.id))
+                }
+                // A task whose session is gone keeps showing where it went, so saving does not move it by surprise.
+                if let sessionID, !sessions.contains(where: { $0.id == sessionID }) {
+                    Text(tr("automation.sched.session.gone")).tag(UUID?.some(sessionID))
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 360, alignment: .leading)
+        }
+        field(tr("automation.sched.conversation")) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Picker("", selection: $fresh) {
+                    Text(tr("automation.sched.continue")).tag(false)
+                    Text(tr("automation.sched.fresh")).tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 360, alignment: .leading)
+                Text(tr(fresh ? "automation.sched.fresh.hint" : "automation.sched.continue.hint"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: Webhook rules
+
+    private var webhookRulesEditor: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Text(tr("automation.hook.placeholders"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            field(tr("automation.hook.filters")) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    ForEach($rules.filters) { $filter in
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            TextField(tr("automation.hook.filter.field"), text: $filter.field)
+                                .textFieldStyle(.plain)
+                                .modifier(FieldBox())
+                            Picker("", selection: $filter.test) {
+                                Text(tr("automation.hook.test.equals")).tag(WebhookFilter.Test.equals)
+                                Text(tr("automation.hook.test.oneOf")).tag(WebhookFilter.Test.oneOf)
+                                Text(tr("automation.hook.test.exists")).tag(WebhookFilter.Test.exists)
+                            }
+                            .labelsHidden()
+                            .frame(width: 110)
+                            if filter.test != .exists {
+                                TextField(filter.test == .oneOf ? tr("automation.hook.filter.choices") : tr("automation.hook.filter.value"),
+                                          text: $filter.value)
+                                    .textFieldStyle(.plain)
+                                    .modifier(FieldBox())
+                            }
+                            NookIconButton(systemName: "minus.circle", label: tr("automation.hook.filter.remove"), size: 24) {
+                                rules.filters.removeAll { $0.id == filter.id }
+                            }
+                        }
+                    }
+                    SmallGhostButton(title: tr("automation.hook.filter.add")) {
+                        rules.filters.append(WebhookFilter(field: "body.action", test: .equals))
+                    }
+                    Text(tr("automation.hook.filters.hint"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            field(tr("automation.hook.duplicateKey")) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    TextField("{{headers.x-github-delivery}}", text: $rules.duplicateKey)
+                        .textFieldStyle(.plain)
+                        .modifier(FieldBox())
+                    Text(tr("automation.hook.duplicateKey.hint"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            field(tr("automation.hook.coalesce")) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        Toggle(tr("automation.hook.coalesce.on"), isOn: Binding(
+                            get: { rules.coalesceSeconds > 0 },
+                            set: { rules.coalesceSeconds = $0 ? 120 : 0 }))
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                        if rules.coalesceSeconds > 0 {
+                            TextField("", value: $rules.coalesceSeconds, format: .number)
+                                .textFieldStyle(.plain)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 60)
+                                .modifier(FieldBox())
+                            Stepper("", value: $rules.coalesceSeconds, in: WebhookRules.coalesceRange, step: 10).labelsHidden()
+                            Text(tr("automation.hook.coalesce.seconds")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                        }
+                    }
+                    Text(tr("automation.hook.coalesce.hint"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// The latest deliveries of a saved webhook task: when, and what came of each.
+    @ViewBuilder
+    private func deliveriesLog(_ id: UUID) -> some View {
+        let records = store.deliveries[id] ?? []
+        DisclosureGroup(isExpanded: $showsDeliveries) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                if records.isEmpty {
+                    Text(tr("automation.hook.deliveries.empty"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                ForEach(records) { record in
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                        Text(ScheduledTaskText.date(record.receivedAt))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .frame(width: 130, alignment: .leading)
+                        Text(tr("automation.hook.outcome." + record.outcome.rawValue))
+                            .font(NookTheme.TextStyle.label)
+                            .foregroundStyle(record.outcome == .accepted ? NookTheme.mint : NookTheme.textSecondary)
+                            .frame(width: 90, alignment: .leading)
+                        Text(ScheduledTaskText.deliveryDetail(record))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(2)
+                            .help(record.deliveryID)
+                    }
+                }
+            }
+            .padding(.top, NookTheme.Spacing.sm)
+        } label: {
+            Text(tr("automation.hook.deliveries", records.count))
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.textTertiary)
         }
     }
 
@@ -494,7 +720,17 @@ private struct ScheduledTaskEditor: View {
 
     private var problem: String? {
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return tr("sched.invalid.prompt") }
-        if path.isEmpty || !FileManager.default.fileExists(atPath: path) { return tr("sched.invalid.project") }
+        switch destination {
+        case .newSession:
+            if path.isEmpty || !FileManager.default.fileExists(atPath: path) { return tr("sched.invalid.project") }
+        case .session:
+            if sessionID == nil { return tr("automation.sched.invalid.session") }
+        }
+        // A once-task whose moment passed is fine when it is unchanged (it ran, or runs when the Mac wakes).
+        if kind == .once, onceAt <= Date(), existing?.rule != .once(at: onceAt) { return tr("automation.sched.invalid.past") }
+        if kind == .webhook, rules.filters.contains(where: { $0.field.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            return tr("automation.hook.invalid.filter")
+        }
         if kind == .interval, minutes < 1 { return tr("sched.invalid.interval") }
         return nil
     }
@@ -522,6 +758,8 @@ private struct ScheduledTaskEditor: View {
             rule = .fixedTime(hour: parts.hour ?? 9, minute: parts.minute ?? 0, weekdays: weekdays)
         case .webhook:
             rule = .webhook
+        case .once:
+            rule = .once(at: onceAt)
         }
         var profileID: String?
         if case .newSession(_, let name, let id)? = existing?.target, name == provider.rawValue { profileID = id }
@@ -532,12 +770,25 @@ private struct ScheduledTaskEditor: View {
             title: name.isEmpty ? firstLine : name,
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
             rule: rule,
-            target: .newSession(projectPath: path, provider: provider.rawValue, profileID: profileID),
+            target: target(profileID: profileID),
             enabled: existing?.enabled ?? true,
             createdAt: existing?.createdAt ?? Date()
         )
-        store.save(task, permission: kind == .webhook ? .ask : permission)
+        var cleaned = rules
+        cleaned.filters = rules.filters.map { var f = $0; f.field = f.field.trimmingCharacters(in: .whitespaces); return f }
+        cleaned.duplicateKey = rules.duplicateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.coalesceSeconds > 0 {
+            cleaned.coalesceSeconds = min(max(cleaned.coalesceSeconds, WebhookRules.coalesceRange.lowerBound), WebhookRules.coalesceRange.upperBound)
+        }
+        store.save(task, permission: kind == .webhook ? .ask : permission, webhook: kind == .webhook ? cleaned : WebhookRules())
         onDone()
+    }
+
+    private func target(profileID: String?) -> ScheduledTaskTarget {
+        switch destination {
+        case .newSession: return .newSession(projectPath: path, provider: provider.rawValue, profileID: profileID)
+        case .session: return .existingSession(id: sessionID ?? UUID(), fresh: fresh)
+        }
     }
 }
 

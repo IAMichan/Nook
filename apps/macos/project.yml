@@ -214,6 +214,7 @@ targets:
       - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+AgentLifecycle.swift
       - path: Core/I18n+WorktreeCleanup.swift
+      - path: Core/I18n+Automation.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
@@ -414,6 +415,7 @@ targets:
       - path: Services/Workspace/WorktreeOrigin.swift
       - path: ../../packages/protocol/Sources/WebhookSecurity.swift
       - path: Services/Workspace/WebhookHTTP.swift
+      - path: Services/Workspace/WebhookRules.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/ProjectSettings.swift
       - path: Services/Workspace/AgentReadiness.swift
@@ -465,6 +467,8 @@ targets:
       - path: Services/Workspace/RemoteMachines.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
+      - path: Services/Workspace/SettleActions.swift
+      - path: Services/Workspace/ProcessTree.swift
       - path: Services/Workspace/TerminalTitle.swift
       - path: Services/Workspace/FileLinks.swift
       - path: Services/Workspace/FileViewing.swift

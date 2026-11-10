@@ -560,6 +560,14 @@ struct AgentRunPanel: View {
         return config
     }
 
+    /// A file dropped on the session's row: a reference in the draft, relative to the session's folder when it is inside it.
+    private func attachDropped(_ url: URL, root: String) {
+        let path = url.standardizedFileURL.path
+        let base = URL(fileURLWithPath: root, isDirectory: true).standardizedFileURL.path
+        let id = path.hasPrefix(base + "/") ? String(path.dropFirst(base.count + 1)) : path
+        draft = ComposerAttachments.appending(ContextRef(kind: .file, id: id, label: url.lastPathComponent), to: draft)
+    }
+
     /// The draft you left in this session, the drafts set aside, and the agent's skills.
     private func loadComposerState(_ run: WorkspaceRun) {
         let store = ComposerDraftStore.shared
@@ -1472,6 +1480,14 @@ struct AgentRunPanel: View {
                 // Asked for only while this composer is on screen and empty: a finished turn, once.
                 .onChange(of: run.status, initial: true) { _, _ in
                     workspace.requestNextPrompt(runID, composerEmpty: composerState.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                // Files dropped on this session's row in the list: pictures as pictures, other files as references.
+                .onReceive(app.viewModel.$filesToAttach) { drop in
+                    guard let drop, drop.session == runID else { return }
+                    app.viewModel.filesToAttach = nil
+                    for url in drop.urls {
+                        ImageAttachment.take(url, images: { composerState.images += $0 }, file: { attachDropped($0, root: run.workingDirectory) })
+                    }
                 }
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.

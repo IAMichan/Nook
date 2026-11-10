@@ -68,6 +68,35 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         running = false
     }
 
+    /// Called once when its shell ends, with the exit code (a cleanup script's terminal closes when it succeeds).
+    var onExit: ((Int32?) -> Void)?
+
+    /// The shell's process id, 0 before it started.
+    var shellPID: Int32 { view.process?.shellPid ?? 0 }
+
+    /// The shell waits for input: nothing runs in it, in the foreground or in the background. A terminal still busy
+    /// with its startup command (a dev server) has that command as a child, so it is not idle.
+    var idleAtPrompt: Bool {
+        let shell = shellPID
+        guard running, shell > 0, ProcessTree.children(of: shell).isEmpty else { return false }
+        let terminal = view.process?.childfd ?? -1
+        return terminal < 0 || tcgetpgrp(terminal) == shell
+    }
+
+    /// Stops what runs in the terminal, with everything it started: each process group below the shell, or only the
+    /// process where that group must live on (Nook's, an agent's). Then the shell ends.
+    func stopProcesses() {
+        let shell = shellPID
+        guard running, shell > 0 else { return close() }
+        let protected = ProcessTree.protectedGroups()
+        var stopped: Set<ProcessTree.StopTarget> = []
+        for pid in ProcessTree.descendants(of: shell, children: ProcessTree.children(of:)).reversed() {
+            let target = ProcessTree.stopTarget(pid: pid, group: ProcessTree.group(of: pid), protectedGroups: protected)
+            if stopped.insert(target).inserted { ProcessTree.stop(target) }
+        }
+        close()
+    }
+
     /// The last `lines` lines on screen and in the scrollback, for an agent to read.
     func output(lines: Int) -> String {
         let data = view.getTerminal().getBufferAsData()
@@ -98,6 +127,9 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         Task { @MainActor in
             self.running = false
             self.exitCode = exitCode
+            let exit = self.onExit
+            self.onExit = nil
+            exit?(exitCode)
         }
     }
 }
@@ -215,6 +247,21 @@ final class TerminalStore: ObservableObject {
     private static func normalized(_ path: String) -> String {
         let standard = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
         return standard.count > 1 && standard.hasSuffix("/") ? String(standard.dropLast()) : standard
+    }
+
+    /// Stops what runs in a terminal (and what that started), then takes it away like `close`.
+    func stop(_ id: UUID) {
+        sessions.first { $0.id == id }?.stopProcesses()
+        close(id)
+    }
+
+    /// Opens a terminal that goes away by itself when its command succeeds; when it fails it stays, with the error.
+    @discardableResult
+    func openClosingOnSuccess(in directory: String, command: String, title: String) -> TerminalSession {
+        let session = open(in: directory, command: command, title: title)
+        let id = session.id
+        session.onExit = { [weak self] code in if code == 0 { self?.close(id) } }
+        return session
     }
 
     /// Ends a terminal's shell and takes it away. When it was the active one, the next of its split takes over, so the

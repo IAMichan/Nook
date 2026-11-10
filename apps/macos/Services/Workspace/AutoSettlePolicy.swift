@@ -28,6 +28,21 @@ enum AutoSettlePolicy {
         }
     }
 
+    /// What a new install starts with: quiet sessions settle after a week, and so do sessions whose pull request merged or
+    /// closed. Existing installs keep what they had (`initial`).
+    static let newInstallDefaults = Settings(enabled: true, inactivityDays: 7, settleOnMergedPullRequest: true)
+
+    /// How long after Nook first remembered anything a launch still counts as the first one.
+    static let firstLaunchWindow: TimeInterval = 10 * 60
+
+    /// The settings at launch: what is stored wins. Without any, a Mac that used Nook before (`usedSince`, the first trace
+    /// Nook left, older than `firstLaunchWindow`) keeps the old default (off), and a new install gets `newInstallDefaults`.
+    static func initial(stored: Settings?, usedSince: Date?, now: Date = Date()) -> Settings {
+        if let stored { return stored }
+        if let usedSince, now.timeIntervalSince(usedSince) > firstLaunchWindow { return Settings() }
+        return newInstallDefaults
+    }
+
     enum SettleReason: String, Equatable, Sendable { case mergedPullRequest, inactivity }
 
     enum KeepReason: String, Equatable, Sendable {
@@ -51,7 +66,7 @@ enum AutoSettlePolicy {
         if row.hasQueued { return .keep(.queuedMessages) }
         // A snooze that already woke does not block.
         if SnoozePolicy.isSnoozed(until: row.snoozedUntil, since: row.snoozedAt, attention: row.attention,
-                                  finishedAt: row.lastActivity, now: now) {
+                                  finishedAt: row.lastActivity, limitedAt: row.limitedAt, now: now) {
             return .keep(.snoozed)
         }
         if prMerged && settings.settleOnMergedPullRequest { return .settle(.mergedPullRequest) }
