@@ -47,7 +47,7 @@ extension NSMenu {
         for entry in entries {
             if entry.separated { addItem(.separator()) }
             let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
-            if let symbol = entry.symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+            if let symbol = entry.symbol { item.image = NookIcon.nsImage(symbol, accessibilityDescription: nil) }
             if entry.children.isEmpty, let action = entry.action {
                 let target = NookMenuAction(action)
                 item.target = target

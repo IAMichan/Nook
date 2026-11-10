@@ -13,6 +13,9 @@ copying it again.
 | `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
+| `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action it: button shape filled with Nook's accent (soft white by default, where has blue) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
+| `NookTheme.outlineFill`, `outlineStroke` | outline button: a faint fill and an input-colored edge |
+| `Image(icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (set, custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
@@ -24,7 +27,7 @@ copying it again.
 
 Appearance and themes (Settings › Appearance): `NookTheme`'s named colors resolve through the `NookPalette` of the theme
 in effect (`NookPalette.swift`): `NookAppearanceMode` (System / Light / Dark) picks light or dark, `NookColorTheme` is a
-built-in theme (the default "Nook" is the original dark look; Midnight, Paper and High contrast come with it) and
+built-in theme (the default "Nook" follows: a true black canvas, 8 % white lines, neutral text and Nook's white accent; Midnight, Paper and High contrast come with it) and
 `VSCodeThemeImport` turns a VS Code color theme JSON into a `NookCustomTheme` (editor, sidebar and accent colors).
 State colors keep their meaning in every theme. A file that must draw its own colors takes them from the palette or
 stays on the allow-list with a reason. The notch stays dark in every theme. The tests check text contrast (WCAG AA) of
@@ -40,11 +43,12 @@ almost no strokes; a stroke is only a shade lighter than what it edges; state co
 informs without shouting; motion settles without overshoot. When you add a view:
 
 - Group with space and fill, not with lines: a `panelCard()` for rows that belong together, `NookDivider` between them.
-- One accent per view at most. Buttons in a header are the same quiet round `NookIconButton`; only a notice's main
-  action is filled.
+- One accent per view at most. Buttons in a header are the same quiet `NookIconButton` or `ToolbarIconButton` (a ghost
+  that lights on hover); only the main action is filled with `NookTheme.primary`. Buttons sit on the control radius
+  (8 pt), not in a capsule.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-The dark theme reads calm because it uses so little: a pure grey ramp (a pure black canvas `#000000`, raised surfaces about 4–8 % lighter, no blue cast), separation by tonal steps,
+The dark theme reads calm because it uses so little: ramp (a true black canvas `#000000`, cards and menus about 3 % white over it, lines of 8 % white), separation by tonal steps,
 faint white fills and one light grey `border` between columns instead of grey panels, and color only where it carries meaning. Calm never costs
 clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
 and a selected row stands a full step above a hovered one. In practice:

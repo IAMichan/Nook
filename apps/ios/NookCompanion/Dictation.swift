@@ -174,7 +174,7 @@ struct DictationButton: View {
         let listening = dictation.state == .listening
         return ZStack {
             Circle().fill(listening ? Theme.coral.opacity(0.22) : Color.clear)
-            Image(systemName: listening ? "waveform" : "mic")
+            Image(icon: listening ? "waveform" : "mic")
                 .font(Theme.font(15, .semibold))
                 .foregroundStyle(listening ? Theme.coral : Theme.textSecondary)
         }

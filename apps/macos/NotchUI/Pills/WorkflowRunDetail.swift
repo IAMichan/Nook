@@ -115,7 +115,7 @@ struct WorkflowRunDetail: View {
 
     private func fact(symbol: String, text: String, mono: Bool = false) -> some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
             Text(text).font(mono ? NookTheme.mono(11) : NookTheme.TextStyle.caption)
         }
     }
@@ -340,7 +340,7 @@ private struct WorkflowJobRow: View {
                 Spacer(minLength: NookTheme.Spacing.sm)
                 CICheckStatusText(check: check)
                     .fixedSize()
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)

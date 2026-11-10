@@ -54,28 +54,31 @@ struct NookPalette: Equatable, Sendable {
     /// Nook's color when the user kept the default accent: soft white on dark, near black on light.
     var accent: UInt32
 
-    /// Nook's own dark look: the near-black, pure grey ramp it always had.
+    /// Nook's own dark look: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
+    /// white over it, and separation by 8 % white lines and hover fills rather than grey panels. Text is neutral-100
+    /// with neutral-400 for what is quieter; state colors are Tailwind's 400 shades. Nook's accent (the main action) is soft white where has blue.
     static let nookDark = NookPalette(
         isDark: true,
-        canvas: 0x000000, well: 0x080808, surface: 0x121212, field: 0x111111, graphite: 0x1A1A1A, smoke: 0x242424,
-        rowRest: 0x0A0A0A, rowHover: 0x181818, rowSelected: 0x242424, bubble: 0x1C1C1C, chatMine: 0x17493A, chatTheirs: 0x232525,
-        line: 0x1E1E1E, line2: 0x2C2C2C, hairline: 0x1E1E1E, border: 0x1F1F1F, separator: 0x262626, fieldStroke: 0x282828,
-        paper: 0xF5F5F5, textStrong: 0xDADADA, textSecondary: 0xA8A8A8, textMuted: 0x999999, textTertiary: 0x949494,
+        canvas: 0x000000, well: 0x0A0A0A, surface: 0x111111, field: 0x0D0D0D, graphite: 0x191A1D, smoke: 0x242424,
+        rowRest: 0x0A0A0A, rowHover: 0x141415, rowSelected: 0x1C1C1E, bubble: 0x1E1E1E, chatMine: 0x17493A, chatTheirs: 0x1E1E1E,
+        line: 0x1A1A1A, line2: 0x262626, hairline: 0x171717, border: 0x1A1A1A, separator: 0x1F1F1F, fieldStroke: 0x262626,
+        paper: 0xF5F5F5, textStrong: 0xE5E5E5, textSecondary: 0xA1A1A1, textMuted: 0x8F8F8F, textTertiary: 0x8F8F8F,
         chatStamp: 0xA3B0AB,
-        blue: 0x8FB3F0, mint: 0x5ED6A6, mintSoft: 0x74DDB3, amber: 0xF2B866, coral: 0xEF7B73, coralSoft: 0xF29A92,
-        violet: 0xAE94F2, music: 0xF0936A,
+        blue: 0x51A2FF, mint: 0x00D492, mintSoft: 0x5EE9B5, amber: 0xFFB900, coral: 0xFF6467, coralSoft: 0xFCA5A5,
+        violet: 0xA684FF, music: 0xF0936A,
         accent: 0xF4F3F7)
 
-    /// Nook in light: the same calm grey ramp, turned around. Every text color reads at 4.5:1 or more up to `smoke`.
+    /// Nook in light: an off-white canvas (zinc-25), white cards, zinc lines and zinc-900 text, with the
+    /// state colors a few shades deeper so they read on white, and a near-black accent. Every text color reads at 4.5:1 or more up to `smoke`.
     static let nookLight = NookPalette(
         isDark: false,
-        canvas: 0xFAFAFA, well: 0xF1F1F1, surface: 0xFFFFFF, field: 0xF4F4F4, graphite: 0xEEEEEE, smoke: 0xE6E6E6,
-        rowRest: 0xF6F6F6, rowHover: 0xEEEEEE, rowSelected: 0xE4E4E4, bubble: 0xEEEEEE, chatMine: 0xD2EFE2, chatTheirs: 0xECEEEE,
-        line: 0xE8E8E8, line2: 0xDADADA, hairline: 0xE8E8E8, border: 0xE4E4E4, separator: 0xDDDDDD, fieldStroke: 0xD4D4D4,
-        paper: 0x141414, textStrong: 0x272727, textSecondary: 0x4F4F4F, textMuted: 0x575757, textTertiary: 0x5C5C5C,
+        canvas: 0xFCFCFC, well: 0xFAFAFA, surface: 0xFFFFFF, field: 0xFFFFFF, graphite: 0xF4F4F5, smoke: 0xE4E4E7,
+        rowRest: 0xFAFAFA, rowHover: 0xF4F4F5, rowSelected: 0xEBEBED, bubble: 0xEBEBED, chatMine: 0xD2EFE2, chatTheirs: 0xF0F0F2,
+        line: 0xE4E4E7, line2: 0xD4D4D8, hairline: 0xEDEDEF, border: 0xE4E4E7, separator: 0xE4E4E7, fieldStroke: 0xD4D4D8,
+        paper: 0x18181B, textStrong: 0x27272A, textSecondary: 0x52525C, textMuted: 0x5C5C66, textTertiary: 0x62626C,
         chatStamp: 0x4E5A55,
-        blue: 0x2B59A8, mint: 0x157A52, mintSoft: 0x1A7F57, amber: 0x8A5A00, coral: 0xB8352C, coralSoft: 0xA63F37,
-        violet: 0x6B3FC4, music: 0xA84A18,
+        blue: 0x1447E6, mint: 0x006E4D, mintSoft: 0x007A55, amber: 0x973C00, coral: 0xC10007, coralSoft: 0xB91C1C,
+        violet: 0x7008E7, music: 0xA84A18,
         accent: 0x1E1E22)
 
     /// The text colors and what they must stay readable on, for the contrast check.
@@ -230,7 +233,7 @@ struct NookColorTheme: Identifiable, Equatable, Sendable {
     /// Imported by the user (can be removed); built-in themes cannot.
     var custom = false
 
-    /// The look Nook always had, and the default for both appearances.
+    /// Nook's own look (black and lines, with Nook's white accent), and the default for both appearances.
     static let nook = NookColorTheme(id: "nook", name: "Nook", dark: .nookDark, light: .nookLight)
     /// Cool and deep: a blue-black night and a pale blue-grey day.
     static let midnight = NookColorTheme(

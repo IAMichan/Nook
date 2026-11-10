@@ -294,7 +294,7 @@ struct AgentRunPanel: View {
                 // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
                 // whenever the running session redrew the header.
                 ComposerDropdown(width: 248) {
-                    Image(systemName: "chevron.down")
+                    Image(icon: "chevron.down")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .frame(width: 20, height: 20)
@@ -1111,7 +1111,7 @@ struct AgentRunPanel: View {
     private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
         AdaptiveActionRow(spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
+                Image(icon: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
                     .foregroundStyle(run.status.color)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
@@ -1635,7 +1635,7 @@ struct AgentRunPanel: View {
                 withAnimation(NookTheme.reveal) { showsOlderBranches.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "chevron.up")
+                    Image(icon: "chevron.up")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(showsOlderBranches ? 180 : 0))
                     Text(showsOlderBranches ? tr("ws.branches.hideOlder")

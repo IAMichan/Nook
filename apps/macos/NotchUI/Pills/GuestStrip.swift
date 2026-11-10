@@ -11,7 +11,7 @@ struct GuestStrip: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 AdaptiveActionRow {
                     HStack(spacing: NookTheme.Spacing.md) {
-                        Image(systemName: "person.badge.shield.checkmark").font(NookTheme.font(11, .semibold))
+                        Image(icon: "person.badge.shield.checkmark").font(NookTheme.font(11, .semibold))
                         Text(status(until)).foregroundStyle(NookTheme.textSecondary).lineLimit(2)
                     }
                 } actions: {

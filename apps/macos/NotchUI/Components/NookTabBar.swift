@@ -43,7 +43,7 @@ struct NookTabBar<Value: Hashable>: View {
                     onSelect(item.value)
                 } label: {
                     HStack(spacing: 5) {
-                        if let symbol = item.symbol { Image(systemName: symbol).font(NookTheme.font(11, .medium)) }
+                        if let symbol = item.symbol { Image(icon: symbol).font(NookTheme.font(11, .medium)) }
                         Text(item.title).lineLimit(1)
                         if item.count > 0 {
                             NookCountBadge(count: item.count)
@@ -82,7 +82,7 @@ struct NookTabBar<Value: Hashable>: View {
                 .overlay(alignment: .trailing) {
                     if let onClose, item.value == selected || hovered == item.value {
                         Button { onClose(item.value) } label: {
-                            Image(systemName: "xmark")
+                            Image(icon: "xmark")
                                 .font(NookTheme.font(8, .bold))
                                 .foregroundStyle(NookTheme.textSecondary)
                                 // A bigger target than the glyph, centered where the glyph is.

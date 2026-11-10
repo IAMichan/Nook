@@ -60,7 +60,7 @@ struct TimelineFindBar: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
+            Image(icon: "magnifyingglass").font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
             TextField(tr("timeline.search.placeholder"), text: $query)
                 .textFieldStyle(.plain)
@@ -112,7 +112,7 @@ struct TimelineToEndPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.down").font(NookTheme.font(10, .bold))
+                Image(icon: "arrow.down").font(NookTheme.font(10, .bold))
                 Text(tr("timeline.toEnd")).font(NookTheme.TextStyle.label)
             }
             .foregroundStyle(NookTheme.paper)

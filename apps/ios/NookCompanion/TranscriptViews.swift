@@ -248,7 +248,7 @@ struct TranscriptWorkLine: View {
 
     var body: some View {
         let content = HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: failed ? "exclamationmark.circle" : symbol)
+            Image(icon: failed ? "exclamationmark.circle" : symbol)
                 .font(Theme.TextStyle.body)
                 .foregroundStyle(failed ? Theme.coral.opacity(0.6) : Theme.textTertiary)
                 .frame(width: 24)
@@ -257,13 +257,13 @@ struct TranscriptWorkLine: View {
                 .truncationMode(.tail)
                 .opacity(live && dim ? 0.45 : 1)
             if let open {
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(Theme.font(10, .bold))
                     .foregroundStyle(Theme.textTertiary.opacity(0.7))
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
             if failed {
-                Image(systemName: "xmark").font(Theme.font(10, .bold)).foregroundStyle(Theme.coral.opacity(0.6))
+                Image(icon: "xmark").font(Theme.font(10, .bold)).foregroundStyle(Theme.coral.opacity(0.6))
             }
             Spacer(minLength: 0)
         }
@@ -296,7 +296,7 @@ struct TranscriptNotice: View {
             TranscriptWorkLine(symbol: "info.circle", label: entry.text)
         } else if entry.kind == .error {
             HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(Theme.coral)
+                Image(icon: "exclamationmark.octagon.fill").foregroundStyle(Theme.coral)
                 Text(verbatim: entry.text)
                     .font(Theme.TextStyle.body)
                     .foregroundStyle(Theme.coral)
@@ -309,7 +309,7 @@ struct TranscriptNotice: View {
             .padding(.vertical, Theme.Spacing.xs)
         } else {
             HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                Image(icon: "arrow.down.right.and.arrow.up.left")
                 Text(verbatim: entry.text).lineLimit(1)
             }
             .font(Theme.TextStyle.caption)
@@ -331,7 +331,7 @@ struct TranscriptFoldLine: View {
         Button(action: action) {
             HStack(spacing: Theme.Spacing.sm) {
                 Text(verbatim: text)
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(Theme.font(10, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                 Spacer(minLength: 0)
@@ -566,7 +566,7 @@ struct FloatingWorkingControl: View {
                             Text("Working")
                         }
                     } else {
-                        Image(systemName: "moon.zzz.fill").foregroundStyle(Theme.textSecondary)
+                        Image(icon: "moon.zzz.fill").foregroundStyle(Theme.textSecondary)
                         Text("Snoozed")
                         if let onWake {
                             Button(action: onWake) {
@@ -589,7 +589,7 @@ struct FloatingWorkingControl: View {
             }
             if showScrollToEnd {
                 Button(action: onScrollToEnd) {
-                    Image(systemName: "arrow.down")
+                    Image(icon: "arrow.down")
                         .font(Theme.font(14, .semibold))
                         .foregroundStyle(Theme.paper)
                         .frame(width: 40, height: 40)

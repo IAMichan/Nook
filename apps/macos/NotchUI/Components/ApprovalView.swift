@@ -126,15 +126,15 @@ struct ApprovalView: View {
             NookSymbol(PullRequestIcon.generic, size: 14)
                 .foregroundStyle(NookTheme.amber)
         } else if !approval.diff.isEmpty {
-            Image(systemName: "pencil.line")
+            Image(icon: "pencil.line")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.amber)
         } else if approval.danger {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(icon: "exclamationmark.triangle.fill")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.coral)
         } else {
-            Image(systemName: "terminal.fill")
+            Image(icon: "terminal.fill")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.amber)
         }
@@ -146,7 +146,7 @@ struct ApprovalView: View {
         if let name = approval.secretName, onSecret != nil {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "key.fill").foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "key.fill").foregroundStyle(NookTheme.textTertiary)
                     SecureField(approval.secretKeepable ? tr("bridge.approval.secretField", name) : tr("secrets.sudo.field"),
                                 text: $secretValue)
                         .textFieldStyle(.plain)
@@ -171,7 +171,7 @@ struct ApprovalView: View {
     private var reasonField: some View {
         if writingReason, onDenyWithReason != nil {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: "text.bubble").foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "text.bubble").foregroundStyle(NookTheme.textTertiary)
                 TextField(tr("approval.denyReason.placeholder"), text: $reason, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(NookTheme.TextStyle.body)
@@ -299,7 +299,7 @@ struct ApprovalView: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 if !pr.repository.isEmpty {
                     HStack(spacing: 4) {
-                        Image(systemName: "shippingbox.fill")
+                        Image(icon: "shippingbox.fill")
                             .font(NookTheme.font(10, .medium))
                             .foregroundStyle(NookTheme.textTertiary)
                         Text(pr.repository)
@@ -312,13 +312,13 @@ struct ApprovalView: View {
                 }
 
                 HStack(spacing: 5) {
-                    Image(systemName: "arrow.triangle.branch")
+                    Image(icon: "arrow.triangle.branch")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.amber)
                     Text(pr.sourceBranch)
                         .font(NookTheme.mono(11, .medium))
                         .foregroundStyle(NookTheme.paper)
-                    Image(systemName: "arrow.right")
+                    Image(icon: "arrow.right")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(pr.targetBranch)

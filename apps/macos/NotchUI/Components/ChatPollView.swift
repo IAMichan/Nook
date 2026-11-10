@@ -22,7 +22,7 @@ struct ChatPollView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                Image(systemName: "chart.bar.fill")
+                Image(icon: "chart.bar.fill")
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .accessibilityHidden(true)
@@ -83,7 +83,7 @@ struct ChatPollView: View {
         } label: {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: option.chosen ? "checkmark.circle.fill" : (shown.multiple ? "square" : "circle"))
+                    Image(icon: option.chosen ? "checkmark.circle.fill" : (shown.multiple ? "square" : "circle"))
                         .font(NookTheme.font(13))
                         .foregroundStyle(option.chosen ? NookTheme.mint : NookTheme.textSecondary)
                     Text(option.text)

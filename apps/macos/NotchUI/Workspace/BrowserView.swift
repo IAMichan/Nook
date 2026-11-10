@@ -727,7 +727,7 @@ struct BrowserView: View {
                     }
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
+                    Image(icon: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
                         .font(NookTheme.font(9.5, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                     TextField(tr("workbench.browser.address"), text: $store.address)
@@ -828,7 +828,7 @@ struct BrowserView: View {
             ForEach(servers) { server in
                 Button { store.go(server.address) } label: {
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: "server.rack").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                        Image(icon: "server.rack").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                         Text(verbatim: "localhost:\(server.port)").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
                         Spacer(minLength: NookTheme.Spacing.sm)
                         Text(verbatim: server.process).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
@@ -877,7 +877,7 @@ struct BrowserView: View {
     /// What you want to say about the element, before it goes to the session's composer.
     private func pickBar(_ element: PickedElement) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             TextField(tr("browser.annotate.note"), text: $pickNote)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.detail)
@@ -985,7 +985,7 @@ private struct BrowserPopupView: View {
                 if let agent = store.openedBy {
                     AgentMark(agent: agent, account: nil, size: 14, ring: .clear)
                 } else {
-                    Image(systemName: "safari")
+                    Image(icon: "safari")
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -1001,10 +1001,10 @@ private struct BrowserPopupView: View {
                 }
                 Spacer(minLength: 0)
                 if store.loading { ProgressView().controlSize(.small) }
-                Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
+                Button { store.openInDefaultBrowser() } label: { Image(icon: "arrow.up.forward.app") }
                     .help(DefaultBrowser.openOutsideTitle)
                     .disabled(store.webView.url == nil)
-                Button(action: expand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                Button(action: expand) { Image(icon: "arrow.up.left.and.arrow.down.right") }
                     .help(tr("browser.popup.expand"))
             }
             .buttonStyle(.borderless)
@@ -1181,7 +1181,7 @@ struct SessionBrowserCard: View {
                 if let agent = store.openedBy {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
                 } else {
-                    Image(systemName: "safari")
+                    Image(icon: "safari")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Compact white button for use in chat.
+/// Compact main action for use in chat: filled with the accent.
 struct SmallPrimaryButton: View {
     let title: String
     var systemName: String? = nil
@@ -15,10 +15,10 @@ struct SmallPrimaryButton: View {
                 // One line in its 30 pt capsule: the text beside the button gives way, not the button's title.
                 Text(title).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
             }
-            .foregroundStyle(NookTheme.onPaper)
-            .padding(.horizontal, 14)
+            .foregroundStyle(NookTheme.onPrimary)
+            .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(Capsule().fill(hovering ? NookTheme.paperHover : NookTheme.paper))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
         }
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.45)
@@ -26,7 +26,7 @@ struct SmallPrimaryButton: View {
     }
 }
 
-/// The "OK" that closes a notice at once: the white main button of a notice. With `countdown` set, a ring in it runs
+/// The "OK" that closes a notice at once: the main (accent) button of a notice. With `countdown` set, a ring in it runs
 /// out in that many seconds, as the notice closes by itself; it stands still while `paused` (the pointer is on the notch).
 struct NookAcknowledgeButton: View {
     let title: String
@@ -44,14 +44,14 @@ struct NookAcknowledgeButton: View {
                 if let countdown { CountdownRing(duration: countdown, paused: paused, size: compact ? 16 : 18) }
                 Text(title).font(NookTheme.font(compact ? 13 : 14, .semibold))
             }
-            .foregroundStyle(NookTheme.onPaper)
+            .foregroundStyle(NookTheme.onPrimary)
             .lineLimit(1)
             .fixedSize()
-            .padding(.leading, countdown == nil ? (compact ? 14 : 18) : (compact ? 7 : 9))
-            .padding(.trailing, compact ? 14 : 18)
+            .padding(.leading, countdown == nil ? (compact ? 12 : 16) : (compact ? 7 : 9))
+            .padding(.trailing, compact ? 12 : 16)
             .frame(height: height ?? (compact ? 30 : 38))
-            .background(Capsule().fill(hovering ? NookTheme.paperHover : NookTheme.paper))
-            .contentShape(Capsule())
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -145,7 +145,7 @@ private struct NookActionBarItem: View {
         Button(action: action.perform) {
             HStack(spacing: 6) {
                 if let symbol = action.symbol {
-                    Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold))
+                    Image(icon: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold))
                 }
                 Text(action.label).font(NookTheme.font(compact ? 13 : 13.5, .semibold))
             }
@@ -192,13 +192,13 @@ struct ToolbarIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(symbolSize, .medium))
                 .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5)
                                  : (hovering || selected ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: width, height: height)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(hovering && enabled ? NookTheme.smoke : (selected ? NookTheme.rowSelected : Color.clear)))
+                    .fill(hovering && enabled ? NookTheme.graphite : (selected ? NookTheme.rowSelected : Color.clear)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -322,7 +322,7 @@ struct SmallGhostButton: View {
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.graphite : Color.clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
