@@ -44,7 +44,7 @@ struct OnboardingAgentsStep: View {
                 SmallGhostButton(title: tr("onboarding.agents.signIn")) { app.connect(kind) }
             case .none:
                 if state == .ready {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                    Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                         .accessibilityLabel(tr("onboarding.agents.ready"))
                 } else {
                     ProgressView().controlSize(.small)
@@ -66,7 +66,7 @@ struct OnboardingAgentsStep: View {
 
     private func acpRow(_ agent: CustomAgent) -> some View {
         row(agent: "ACP", title: agent.name, detail: tr("onboarding.agents.acpAdded"), failed: false) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+            Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                 .accessibilityLabel(tr("onboarding.agents.ready"))
         }
     }
@@ -116,7 +116,7 @@ struct OnboardingAgentsStep: View {
     private func projectRow(_ candidate: AgentReadiness.ProjectCandidate) -> some View {
         let added = candidate.added || ws.recentProjects.contains(candidate.path) || ws.isFavoriteProject(candidate.path)
         return HStack(spacing: NookTheme.Spacing.lg) {
-            Image(systemName: "folder").foregroundStyle(NookTheme.textSecondary).frame(width: 20)
+            Image(icon: "folder").foregroundStyle(NookTheme.textSecondary).frame(width: 20)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(candidate.name).font(NookTheme.TextStyle.strong)
                 Text(AgentPathFormat.tilde(candidate.parent) + " · " + tr("onboarding.projects.sessions", candidate.sessions))

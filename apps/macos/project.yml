@@ -68,6 +68,8 @@ targets:
       - path: Resources/katex
         type: folder
         buildPhase: resources
+      # Lucide's icons as custom symbols (NookIcon, scripts/lucide-icons.sh; see THIRD-PARTY-NOTICES.md).
+      - path: Resources/Lucide.xcassets
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM

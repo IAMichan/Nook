@@ -108,7 +108,7 @@ struct PullRequestRow: View, Equatable {
     /// The row's ⋯, under the pointer only: copy, open, watch, and take it off the list.
     private var moreMenu: some View {
         ComposerDropdown(width: 220) {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22, height: 18)
@@ -156,7 +156,7 @@ struct PullRequestRow: View, Equatable {
                         .help(item.title)
                     HStack(spacing: NookTheme.Spacing.xs) {
                         if linked?.watching == true, item.state == .open {
-                            Image(systemName: "eye")
+                            Image(icon: "eye")
                                 .font(NookTheme.font(10, .medium))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .help(tr("agents.pr.linked.watching"))

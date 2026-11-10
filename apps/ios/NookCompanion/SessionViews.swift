@@ -256,7 +256,7 @@ struct SessionDetailView: View {
                 Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
             }
         } label: {
-            Image(systemName: "ellipsis").foregroundStyle(Theme.paper)
+            Image(icon: "ellipsis").foregroundStyle(Theme.paper)
         }
         .accessibilityLabel("More")
     }
@@ -323,7 +323,7 @@ private struct MetaChip: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Image(systemName: symbol).foregroundStyle(Theme.textTertiary)
+            Image(icon: symbol).foregroundStyle(Theme.textTertiary)
             Text(text).foregroundStyle(Theme.textSecondary)
         }
         .font(Theme.TextStyle.label)
@@ -343,7 +343,7 @@ private struct RejectedMessageCard: View {
             Label {
                 Text("Not sent").foregroundStyle(Theme.paper)
             } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.coral)
+                Image(icon: "exclamationmark.triangle.fill").foregroundStyle(Theme.coral)
             }
             .font(Theme.TextStyle.label)
             Text(verbatim: message.reason).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
@@ -399,7 +399,7 @@ struct ItemView: View {
             Label {
                 Text(heading).foregroundStyle(Theme.paper)
             } icon: {
-                Image(systemName: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
+                Image(icon: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
             }
             .font(Theme.TextStyle.label)
             Text(item.title).font(Theme.TextStyle.body).foregroundStyle(Theme.paper).textSelection(.enabled)

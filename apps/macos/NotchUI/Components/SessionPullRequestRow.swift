@@ -53,7 +53,7 @@ struct SessionPullRequestRow: View {
                                 CheckOutcomeGlyph(outcome: outcome).help(tr("agents.pulls.status." + outcome.rawValue))
                             }
                             if watching {
-                                Image(systemName: "eye")
+                                Image(icon: "eye")
                                     .font(NookTheme.font(10, .medium))
                                     .foregroundStyle(NookTheme.textTertiary)
                                     .help(tr("agents.pr.linked.watching"))

@@ -453,7 +453,7 @@ private struct RecentSearchChip: View {
         HStack(spacing: NookTheme.Spacing.xs) {
             Button(action: onPick) {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "clock.arrow.circlepath").font(NookTheme.font(10, .semibold))
+                    Image(icon: "clock.arrow.circlepath").font(NookTheme.font(10, .semibold))
                     Text(text).font(NookTheme.TextStyle.label).lineLimit(1)
                 }
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -496,7 +496,7 @@ private struct MusicBestMatch: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "play.fill")
+                Image(icon: "play.fill")
                     .font(NookTheme.font(13, .bold))
                     .foregroundStyle(NookTheme.onPaper)
                     .frame(width: 36, height: 36)
@@ -620,7 +620,7 @@ struct MusicCoverCard: View {
                         (item.round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)))
                             .fill(Color.black.opacity(0.25))
                             .overlay(alignment: item.round ? .center : .bottomTrailing) {
-                                Image(systemName: item.hoverSymbol)
+                                Image(icon: item.hoverSymbol)
                                     .font(NookTheme.font(13, .bold))
                                     .foregroundStyle(NookTheme.onPaper)
                                     .frame(width: 36, height: 36)
@@ -693,7 +693,7 @@ struct MusicPlaceholder<Actions: View>: View {
             if loading {
                 ProgressView().controlSize(.small)
             } else {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(26, .light))
                     .foregroundStyle(NookTheme.textTertiary)
             }

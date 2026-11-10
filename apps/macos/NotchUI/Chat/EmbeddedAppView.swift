@@ -349,7 +349,7 @@ struct EmbeddedAppPane: View {
         if let current = store.current, current.isMacApp || store.webView != nil {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Image(systemName: current.symbol)
+                    Image(icon: current.symbol)
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                     Text(current.title)
@@ -372,7 +372,7 @@ struct EmbeddedAppPane: View {
                         Menu {
                             Button(tr("embedded.forget", current.title), role: .destructive) { forgetting = current }
                         } label: {
-                            Image(systemName: "ellipsis")
+                            Image(icon: "ellipsis")
                                 .font(NookTheme.font(12, .semibold))
                                 .foregroundStyle(NookTheme.textSecondary)
                                 .frame(width: 28, height: 28)

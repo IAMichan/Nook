@@ -68,23 +68,24 @@ struct NookSplitButton: View {
         HStack(spacing: 0) {
             Button(action: primary.perform) {
                 HStack(spacing: 7) {
-                    if let symbol = primary.symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
+                    if let symbol = primary.symbol { Image(icon: symbol).font(NookTheme.font(12, .bold)) }
                     Text(primary.label).font(NookTheme.textFont(14, .semibold))
                 }
-                .foregroundStyle(NookTheme.onPaper)
+                .foregroundStyle(NookTheme.onPrimary)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, primary.symbol == nil ? 18 : 16)
                 .frame(maxHeight: .infinity)
-                .background(Capsule().fill(hoveringPrimary ? NookTheme.paperHover : NookTheme.paper))
-                .contentShape(Capsule())
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                    .fill(hoveringPrimary ? NookTheme.primaryHover : NookTheme.primary))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { hoveringPrimary = $0 }
 
             Button(action: secondary.perform) {
                 HStack(spacing: 6) {
-                    if let symbol = secondary.symbol { Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
+                    if let symbol = secondary.symbol { Image(icon: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold)) }
                     Text(secondary.label).font(NookTheme.textFont(compact ? 13 : 14, .semibold))
                 }
                 .foregroundStyle(hoveringSecondary ? NookTheme.paper : NookTheme.textSecondary)
@@ -100,7 +101,7 @@ struct NookSplitButton: View {
         }
         .padding(3)
         .frame(height: SharedMetrics.buttonHeight)
-        .background(Capsule().fill(NookTheme.smoke))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
         .hoverLift(hoveringPrimary || hoveringSecondary)
     }
 }
@@ -119,7 +120,7 @@ struct NookMoreMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.font(size * 0.42, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: size, height: size)

@@ -71,7 +71,7 @@ private struct SelectionBarButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(11, .semibold))
                     .foregroundStyle(accent ? NookTheme.iris : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 Text(title)
@@ -143,7 +143,7 @@ struct SelectionAskCard: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: "text.quote")
+            Image(icon: "text.quote")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.iris)
                 .padding(.top, NookTheme.Spacing.xxs)

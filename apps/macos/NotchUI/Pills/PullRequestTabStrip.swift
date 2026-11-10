@@ -61,7 +61,7 @@ private struct PullRequestTab: View {
             Button(action: close) {
                 Group {
                     if hovering {
-                        Image(systemName: "xmark").font(NookTheme.font(8.5, .bold)).foregroundStyle(NookTheme.textSecondary)
+                        Image(icon: "xmark").font(NookTheme.font(8.5, .bold)).foregroundStyle(NookTheme.textSecondary)
                     } else {
                         PullRequestStateIcon(glyph: tab.item.stateGlyph)
                     }

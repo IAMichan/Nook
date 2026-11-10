@@ -279,7 +279,7 @@ struct ChatLineView: View {
                         Label {
                             Text("Nook made a plan, draft or chart: see it on your Mac.").foregroundStyle(Theme.textStrong)
                         } icon: {
-                            Image(systemName: "laptopcomputer").foregroundStyle(Theme.amber)
+                            Image(icon: "laptopcomputer").foregroundStyle(Theme.amber)
                         }
                         .font(Theme.TextStyle.detail)
                         .card(padding: Theme.Spacing.lg)

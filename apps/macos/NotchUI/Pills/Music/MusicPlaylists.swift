@@ -186,7 +186,7 @@ private struct MusicPlaylistDetailView: View {
             Divider()
             Button(tr("music.playlists.delete"), role: .destructive) { onDelete(playlist) }
         } label: {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 32, height: 32)
@@ -340,7 +340,7 @@ struct MusicTrackRow: View {
     @ViewBuilder
     private func marker(number: Int?) -> some View {
         if hovering {
-            Image(systemName: "play.fill")
+            Image(icon: "play.fill")
                 .font(NookTheme.font(10, .bold))
                 .foregroundStyle(NookTheme.paper)
         } else if playing {
@@ -409,7 +409,7 @@ struct MusicAddToPlaylistButton: View {
             Menu {
                 MusicAddToPlaylistItems(track: track, service: service)
             } label: {
-                Image(systemName: "text.badge.plus")
+                Image(icon: "text.badge.plus")
                     .font(NookTheme.font(size * 0.42, .semibold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                     .frame(width: size, height: size)

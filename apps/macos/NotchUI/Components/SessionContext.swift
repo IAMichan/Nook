@@ -121,7 +121,7 @@ struct PullRequestDescription: View {
                 case .task(let line, let checked, let text):
                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                         Button { setChecked(line, !checked) } label: {
-                            Image(systemName: checked ? "checkmark.square.fill" : "square")
+                            Image(icon: checked ? "checkmark.square.fill" : "square")
                                 .font(NookTheme.TextStyle.body)
                                 .foregroundStyle(checked ? NookTheme.mint : NookTheme.textTertiary)
                         }

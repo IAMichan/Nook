@@ -360,7 +360,7 @@ struct SearchPanel: View {
 
     private func askRow(_ typed: String, selected: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "sparkles")
+            Image(icon: "sparkles")
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(NookTheme.iris)
                 .frame(width: 18)
@@ -395,7 +395,7 @@ struct SearchPanel: View {
                     ForEach(center.recent, id: \.self) { recent in
                         Button { text = recent } label: {
                             HStack(spacing: NookTheme.Spacing.md) {
-                                Image(systemName: "clock.arrow.circlepath").font(NookTheme.font(12, .medium))
+                                Image(icon: "clock.arrow.circlepath").font(NookTheme.font(12, .medium))
                                     .foregroundStyle(NookTheme.textTertiary).frame(width: 18)
                                 Text(recent).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).lineLimit(1)
                                 Spacer(minLength: 0)

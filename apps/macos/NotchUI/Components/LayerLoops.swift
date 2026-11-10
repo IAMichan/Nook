@@ -199,7 +199,7 @@ struct LayerSymbol: View {
     var body: some View {
         // The plain symbol keeps the size; the turning one lies over it, and the plain one is hidden meanwhile.
         let turning = active && visible && !reduceMotion
-        Image(systemName: name)
+        Image(icon: name)
             .font(NookTheme.font(size, weight))
             .foregroundStyle(color)
             .opacity(turning ? 0 : 1)
@@ -295,7 +295,7 @@ final class SymbolLayerView: NSView {
         let scale = window?.backingScaleFactor ?? 2
         let configuration = NSImage.SymbolConfiguration(pointSize: spec.size, weight: Self.weight(spec.weight))
             .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor(cgColor: LayerLoopTiming.resolve(spec.color, in: self)) ?? .white]))
-        guard let image = NSImage(systemSymbolName: spec.name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        guard let image = NookIcon.nsImage(spec.name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
         else { return }
         let picture = CALayer()
         picture.contentsScale = image.recommendedLayerContentsScale(scale)

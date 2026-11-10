@@ -49,7 +49,7 @@ struct OpenInTarget: Identifiable, Hashable {
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
         } else {
-            Image(systemName: "terminal").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
+            Image(icon: "terminal").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
         }
     }
 }
@@ -761,7 +761,7 @@ private struct PanelRow: View {
     }
 
     private var chevron: some View {
-        Image(systemName: menuSymbol)
+        Image(icon: menuSymbol)
             .font(NookTheme.font(menuSymbol == "chevron.down" ? 10 : 12, menuSymbol == "chevron.down" ? .semibold : .medium))
             .foregroundStyle(NookTheme.textSecondary)
     }

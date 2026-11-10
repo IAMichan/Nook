@@ -17,7 +17,7 @@ struct ResetCreditRow: View {
             AdaptiveActionRow {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: "arrow.counterclockwise.circle")
+                        Image(icon: "arrow.counterclockwise.circle")
                             .font(NookTheme.font(12, .semibold))
                             .foregroundStyle(NookTheme.textSecondary)
                         Text(tr("agents.reset.credits", credits.available))

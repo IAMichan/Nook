@@ -449,7 +449,7 @@ private struct CalloutBlock: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: callout.kind.symbol)
+            Image(icon: callout.kind.symbol)
                 .font(NookTheme.font(size - 1, .medium))
                 .foregroundStyle(callout.kind.color)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -498,7 +498,7 @@ private struct MarkdownCodeBlock: View {
             // The file (or else the language) on the left, the actions as quiet symbol buttons on the right.
             HStack(spacing: NookTheme.Spacing.xxs) {
                 if let title {
-                    Image(systemName: "doc.text")
+                    Image(icon: "doc.text")
                         .font(NookTheme.font(10, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(title)
@@ -681,7 +681,7 @@ private struct ChoiceRow: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Image(systemName: "arrow.up.right")
+                Image(icon: "arrow.up.right")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)

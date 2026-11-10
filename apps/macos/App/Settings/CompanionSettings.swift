@@ -99,7 +99,7 @@ struct CompanionSettingsRows: View {
                 ToastCenter.shared.success(tr("connection.removed", device.name))
             }
         ) {
-            Image(systemName: "iphone")
+            Image(icon: "iphone")
                 .font(NookTheme.font(16))
                 .foregroundStyle(NookTheme.textSecondary)
         } expanded: {

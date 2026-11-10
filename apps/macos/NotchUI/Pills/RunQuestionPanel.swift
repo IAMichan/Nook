@@ -40,7 +40,7 @@ struct RunQuestionPanel: View {
         if let item {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
+                    Image(icon: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
                     Text(item.header.isEmpty ? tr("ws.question.title", agent) : item.header)
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.textSecondary)
@@ -185,7 +185,7 @@ struct RunQuestionPanel: View {
 
     private func ownAnswerField(_ item: RunQuestion) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "pencil.line")
+            Image(icon: "pencil.line")
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(ownFocused ? NookTheme.amber : NookTheme.textTertiary)
 
@@ -208,7 +208,7 @@ struct RunQuestionPanel: View {
                     HStack(spacing: 4) {
                         Text(isLast ? tr("ws.question.send") : tr("ws.question.next"))
                             .font(NookTheme.font(12, .semibold))
-                        Image(systemName: "return")
+                        Image(icon: "return")
                             .font(NookTheme.font(10, .bold))
                     }
                     .foregroundStyle(NookTheme.paper)
@@ -405,12 +405,12 @@ private struct QuestionOptionRow: View {
     @ViewBuilder
     private var trailingIndicator: some View {
         if multiSelect {
-            Image(systemName: isPicked ? "checkmark.square.fill" : "square")
+            Image(icon: isPicked ? "checkmark.square.fill" : "square")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(isPicked ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
                 .padding(.top, 2)
         } else {
-            Image(systemName: isHovered ? "arrow.right.circle.fill" : "circle")
+            Image(icon: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(isHovered ? NookTheme.amber : NookTheme.wash.opacity(0.08))
                 .opacity(isHovered ? 1 : 0.4)
