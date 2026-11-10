@@ -75,6 +75,8 @@ struct AgentRunPanel: View {
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    /// For how much of the work the timeline shows (`TimelineDetail`), when the session follows Settings.
+    @ObservedObject private var workspaceSettings = WorkspaceSettings.shared
     /// The pull requests of the session's branches, for the tray above the box.
     @ObservedObject private var pullRequestSync = PullRequestSync.shared
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
@@ -109,7 +111,7 @@ struct AgentRunPanel: View {
 
     var body: some View {
         if let run = workspace.run(runID) {
-            let _ = derived.update(workspace.timeline(runID), run: run)
+            let _ = derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run))
             let outputs = derived.outputs
             let signatures = derived.outputSignatures
             VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -344,6 +346,12 @@ struct AgentRunPanel: View {
         }
     }
 
+    /// How much of the work the timeline shows: the session's choice or the one in Settings, and everything while the
+    /// find bar is open, so a match is never hidden.
+    private func timelineDetail(_ run: WorkspaceRun) -> TimelineDetail {
+        finding ? .everything : TimelineDetail.resolve(session: run.timelineDetail, global: workspaceSettings.timelineDetail)
+    }
+
     /// Everything you can do with this session itself: retry, rename, fork, export, archive, delete. Rows that do not
     /// apply to this session are left out; the ones that wait for the agent to stop say so.
     @ViewBuilder
@@ -407,6 +415,15 @@ struct AgentRunPanel: View {
                             disabledReason: connector.waiting ? tr("ws.connector.waitingHelp") : nil) {
                     workspace.signInConnector(runID, name: connector.name)
                 }
+            }
+        }
+        DropdownDivider()
+        // How much of the agent's work the timeline shows, for this session only (Settings has the default).
+        DropdownHeader(title: tr("ws.detail.menu"))
+        let shown = TimelineDetail.resolve(session: run.timelineDetail, global: workspaceSettings.timelineDetail)
+        ForEach(TimelineDetail.allCases) { detail in
+            DropdownRow(symbol: detail.symbol, title: tr(detail.titleKey), chosen: detail == shown) {
+                workspace.setTimelineDetail(runID, detail == workspaceSettings.timelineDetail ? nil : detail)
             }
         }
         DropdownDivider()
@@ -518,6 +535,13 @@ struct AgentRunPanel: View {
         config.sessions = { [workspace, runID] in
             workspace.runs.filter { $0.id != runID && !$0.archived }.map { ($0.id.uuidString.lowercased(), $0.title) }
         }
+        // `@opus`: a model of any connected agent, named for a subagent or a delegated task (`ModelMention`).
+        config.models = { [workspace, app] in
+            ModelMention.candidates(app.connectedProviders) { provider in
+                workspace.modelMenu(for: provider).choices.filter { !$0.isLegacy && $0.requiredVersion == nil }
+                    .map { (id: $0.id, name: $0.name) }
+            }
+        }
         // Only the commands this agent really has (see AgentCommands).
         config.commands = AgentCommands.commands(for: run.provider, hasProject: true, surface: .agent,
                                                  offered: workspace.acpCommands[runID] ?? [])
@@ -529,6 +553,7 @@ struct AgentRunPanel: View {
             case .plan: workspace.configure(runID, mode: .plan)
             case .fork:
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
+            case .clear: workspace.clearConversation(runID)
             case .insert, .compact, .new: break
             }
         }
@@ -549,45 +574,64 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The reasoning effort for the next turns, only for agents that have it.
+    /// The reasoning effort for the next turns, only for agents that have it. ⇧⌘E opens it (`effortPicker.toggle`).
     @ViewBuilder
     private func effortMenu(_ run: WorkspaceRun) -> some View {
         let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
         if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
             // An agent that lists one model per thinking level: the level picks the model of that family.
+            let familyLevels = family.members.map(\.level)
             ComposerDivider()
-            Menu {
-                ForEach(family.members, id: \.self) { member in
-                    Button { _ = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: member.id) } label: {
-                        let title = tr(EffortLevels.label(variant: member.level))
-                        if member.id == run.model { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            } label: {
+            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
                 let current = family.members.first { $0.id == run.model }?.level ?? ""
                 ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(variant: current)))
+            } content: {
+                DropdownHeader(title: tr("compose.effort"))
+                ForEach(family.members, id: \.self) { member in
+                    DropdownRow(symbol: member.level.isEmpty ? "circle.dashed" : EffortSymbol.symbol(member.level, in: familyLevels),
+                                title: tr(EffortLevels.label(variant: member.level)), chosen: member.id == run.model) {
+                        _ = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: member.id)
+                    }
+                }
             }
-            .composerMenu()
             .help(tr("compose.effort.help"))
         } else if !levels.isEmpty {
             ComposerDivider()
-            Menu {
-                Button { workspace.setEffort(runID, nil) } label: {
-                    if run.effort == nil { Label(tr(EffortLevels.label(nil)), systemImage: "checkmark") } else { Text(tr(EffortLevels.label(nil))) }
-                }
-                ForEach(levels, id: \.self) { level in
-                    Button { workspace.setEffort(runID, level) } label: {
-                        let title = workspace.effortTitle(level, for: run.provider, profileID: run.profileID)
-                        if run.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            } label: {
+            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
                 ComposerPill(symbol: "gauge.with.dots.needle.33percent",
                              text: workspace.effortTitle(run.effort, for: run.provider, profileID: run.profileID))
+            } content: {
+                DropdownHeader(title: tr("compose.effort"))
+                DropdownRow(symbol: "circle.dashed", title: tr(EffortLevels.label(nil)), chosen: run.effort == nil) {
+                    workspace.setEffort(runID, nil)
+                }
+                ForEach(levels, id: \.self) { level in
+                    DropdownRow(symbol: EffortSymbol.symbol(level, in: levels),
+                                title: workspace.effortTitle(level, for: run.provider, profileID: run.profileID),
+                                chosen: run.effort == level) {
+                        workspace.setEffort(runID, level)
+                    }
+                }
             }
-            .composerMenu()
             .help(tr("compose.effort.help"))
         }
+    }
+
+    /// `effort.increase` / `effort.decrease`: one level up or down without opening the picker (`EffortStep`); for an
+    /// agent that lists one model per level, the next model of that family. False when the agent has no levels.
+    private func stepEffort(_ direction: EffortStep.Direction) -> Bool {
+        guard let run = workspace.run(runID) else { return false }
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
+            let ids = family.members.map(\.id)
+            guard let index = ids.firstIndex(of: run.model) else { return false }
+            let next = direction == .up ? min(index + 1, ids.count - 1) : max(index - 1, 0)
+            if next != index { _ = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: ids[next]) }
+            return true
+        }
+        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
+        guard !levels.isEmpty else { return false }
+        workspace.setEffort(runID, EffortStep.next(current: run.effort, levels: levels, direction: direction))
+        return true
     }
 
     /// The context ring once the window starts to fill, and the microphone next to it.
@@ -609,7 +653,7 @@ struct AgentRunPanel: View {
 
     /// The finished turns that changed files, with the files and lines git counted where it did.
     private func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
-        derived.update(workspace.timeline(runID), run: run).turns
+        derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run)).turns
             .map { counted($0, run: run) }
             .filter { !$0.isEmpty }
     }
@@ -676,7 +720,7 @@ struct AgentRunPanel: View {
     }
 
     private func timeline(_ run: WorkspaceRun) -> some View {
-        let memo = derived.update(workspace.timeline(runID), run: run)
+        let memo = derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run))
         let events = memo.events
         let blocks = memo.blocks
         let cards = memo.cards
@@ -926,7 +970,7 @@ struct AgentRunPanel: View {
     /// The timeline's blocks in order with their times, as `timeline(_:)` shows them (already made as it opens).
     private var visitRows: [TimelineLanding.Row] {
         guard let run = workspace.run(runID) else { return [] }
-        return derived.update(workspace.timeline(runID), run: run).blocks.map { ($0.id.uuidString, $0.visitDate) }
+        return derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run)).blocks.map { ($0.id.uuidString, $0.visitDate) }
     }
 
     /// The very end of the session, with what came in since your last visit under its line.
@@ -1250,7 +1294,8 @@ struct AgentRunPanel: View {
     private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
         let request = ApprovalCenter.make(pending, run: run)
         return ApprovalView(approval: request, more: more, inline: true, onDecide: { app.approvals.decide(request, $0) },
-                            onSecret: { app.approvals.allow(request, secret: $0) })
+                            onSecret: { app.approvals.allow(request, secret: $0) },
+                            onDenyWithReason: { app.approvals.decide(request, .deny, reason: $0) })
     }
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.
@@ -1405,6 +1450,9 @@ struct AgentRunPanel: View {
                     ComposerDivider()
                     permissionMenu(run)
                     effortMenu(run)
+                    ComposerSpeedTier(tiers: workspace.speedTiers(for: run), chosen: workspace.speedTier(run)) {
+                        workspace.setSpeedTier(runID, $0)
+                    }
                     ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
@@ -1427,7 +1475,8 @@ struct AgentRunPanel: View {
                 }
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
-            .keyCommands(["queue.steerFirst": { steerFirstQueued() }])
+            .keyCommands(["queue.steerFirst": { steerFirstQueued() },
+                          "effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.TextStyle.detail)
@@ -1576,7 +1625,8 @@ struct AgentRunPanel: View {
     }
 
     private func permissionMenu(_ run: WorkspaceRun) -> some View {
-        ComposerDropdown(width: 300) {
+        // ⇧⌘A opens it (`permissionPicker.toggle`).
+        ComposerDropdown(width: 300, command: "permissionPicker.toggle") {
             ComposerPill(symbol: run.mode == .plan ? "lock" : run.permission.symbol,
                          text: run.mode == .plan ? tr("compose.readOnly") : run.permission.label,
                          tint: run.permission == .bypass && run.mode != .plan ? NookTheme.coralSoft : nil)
@@ -1700,7 +1750,7 @@ struct RunComposerHost<Content: View>: View, Equatable {
 /// the same storage.
 @MainActor
 private final class RunTimelineDerived {
-    private var key: (all: [RunEvent], active: Bool, tasks: [RunTaskStep]?, directory: String)?
+    private var key: (all: [RunEvent], active: Bool, tasks: [RunTaskStep]?, directory: String, detail: TimelineDetail)?
     private(set) var events: [RunEvent] = []
     private(set) var blocks: [TimelineBlock] = []
     private(set) var turns: [TurnDiff] = []
@@ -1748,16 +1798,19 @@ private final class RunTimelineDerived {
     }
 
     @discardableResult
-    func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
+    func update(_ all: [RunEvent], run: WorkspaceRun, detail: TimelineDetail) -> RunTimelineDerived {
         let active = run.status.isActive
-        let sameRun = key.map { $0.active == active && $0.directory == run.workingDirectory && $0.tasks == run.tasks } ?? false
+        let sameRun = key.map {
+            $0.active == active && $0.directory == run.workingDirectory && $0.tasks == run.tasks && $0.detail == detail
+        } ?? false
         if sameRun, let key, key.all == all { return self }
         // While the agent writes, only the text of its last answer grows, many times a second. The blocks show that text;
         // the turns, outputs, running command and earlier links do not read it, and each walks the whole session (an edit's
         // diff, every tool's input as JSON), so they stay as they are.
         let streamed = sameRun && key.map { Self.onlyStreamed(from: $0.all, to: all) } == true
-        key = (all, active, run.tasks, run.workingDirectory)
-        events = all.filter { !($0.kind == .system && $0.tool == "launch") }
+        key = (all, active, run.tasks, run.workingDirectory, detail)
+        // Only what is shown is filtered: the turns, outputs and subagents below still read every event.
+        events = detail.filter(all.filter { !($0.kind == .system && $0.tool == "launch") })
         blocks = TimelinePresentation.blocks(events, active: active, cache: &blockCache)
         if streamed, let last = all.last {
             createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast

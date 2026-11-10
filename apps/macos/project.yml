@@ -242,6 +242,7 @@ targets:
       - path: Core/I18n+ConnectionsAgents.swift
       - path: Core/I18n+ConnectionsDevices.swift
       - path: Core/I18n+AgentTools.swift
+      - path: Core/I18n+SessionControls.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -479,6 +480,7 @@ targets:
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
+      - path: Services/Workspace/SpeedTiers.swift
       - path: Services/AccountVariable.swift
       - path: Services/Workspace/AgentModelMenu.swift
       - path: Services/Workspace/AutoModel.swift

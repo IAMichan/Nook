@@ -48,6 +48,9 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | The chat above or below on Chats; the repository tab on the left or right on the Actions page |
 | ⌘D | `diff.toggle` | `!terminalFocus` | The Changes tab on the latest turn (or the branch), and again to close it |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Opens the model picker of the composer on screen (↑ ↓ move over the models, Return picks, Escape closes) |
+| ⇧⌘E | `effortPicker.toggle` | `!terminalFocus` | Opens the effort picker of the composer on screen, when its agent has levels |
+| ⇧⌘A | `permissionPicker.toggle` | `!terminalFocus` | Opens the access picker of the composer on screen |
+| — | `effort.increase` / `effort.decrease` | | Unbound on purpose: one effort level up or down in the composer on screen without opening the picker (`EffortStep`; for an agent that lists a model per level, the next model of that family) |
 | ⇧⌘S | `session.settle` | `!terminalFocus` | Settles the open session, or brings a settled one back |
 | ⇧⌘P | `session.pin` | `!terminalFocus` | Pins the open session, or unpins it |
 | — | `session.interrupt` | | Unbound on purpose: stops the open session's turn (a session Nook runs); also in the command palette |

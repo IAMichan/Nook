@@ -130,24 +130,26 @@ final class ApprovalCenter {
     }
 
     /// Decides a request of a session Nook runs by its ids (the timeline's own buttons, the phone).
-    func decide(run runID: UUID, requestID: String, _ decision: ApprovalDecision, source: ApprovalSource = .app) {
+    func decide(run runID: UUID, requestID: String, _ decision: ApprovalDecision, source: ApprovalSource = .app,
+                reason: String = "") {
         guard let run = workspace.run(runID), let request = workspace.approvals[runID]?.first(where: { $0.id == requestID }) else {
             return
         }
-        decide(Self.make(request, run: run), decision, source: source)
+        decide(Self.make(request, run: run), decision, source: source, reason: reason)
     }
 
-    func decide(_ approval: AgentApproval, _ decision: ApprovalDecision, source: ApprovalSource = .app) {
+    /// `reason`: what you told the agent with a denial (see `WorkspaceManager.decide`, `AgentHub.decide`).
+    func decide(_ approval: AgentApproval, _ decision: ApprovalDecision, source: ApprovalSource = .app, reason: String = "") {
         let entry = Self.auditEntry(approval, decision, source: source)
         audit(entry.tool, entry.args, entry.result)
         switch approval.origin {
         case .hook(let request):
-            hub.decide(request, decision)
+            hub.decide(request, decision, reason: reason)
         case .run(let runID, let request):
             switch decision {
             case .allow: workspace.decide(runID, requestID: request, .allow)
             case .always: workspace.decide(runID, requestID: request, .always)
-            case .deny, .terminal: workspace.decide(runID, requestID: request, .deny)
+            case .deny, .terminal: workspace.decide(runID, requestID: request, .deny, reason: reason)
             }
         case .bridge(let request):
             bridge.decide(request, allow: decision == .allow || decision == .always)

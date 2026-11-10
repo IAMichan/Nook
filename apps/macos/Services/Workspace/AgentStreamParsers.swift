@@ -367,7 +367,8 @@ enum ClaudeStreamParser {
             decision = ["behavior": "allow", "updatedInput": input.object]
             if let rules { decision["updatedPermissions"] = rules.object }
         } else {
-            decision = ["behavior": "deny", "message": message.isEmpty ? "Denied by user in Nook." : message]
+            // The reason the user typed with the denial goes to the agent with it (`ProviderCapabilities.denyReason`).
+            decision = ["behavior": "deny", "message": message.isEmpty ? "Denied by user in Nook." : "Denied by user in Nook: " + message]
         }
         return line(["type": "control_response",
                      "response": ["subtype": "success", "request_id": requestID, "response": decision]])

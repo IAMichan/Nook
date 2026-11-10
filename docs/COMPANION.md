@@ -4,7 +4,9 @@
 
 The phone sees two kinds of sessions:
 
-- **Sessions Nook runs (Workspace):** approve or deny, answer questions, send messages, and stop them.
+- **Sessions Nook runs (Workspace):** approve or deny, answer questions, send messages, and stop them. Under an
+  approval, what you type denies it and tells the agent why (`decide` with `text`; the Mac passes it on the way the agent
+  takes it, see *Deny with a Reason* in `docs/AGENTS.md`). An older Mac ignores the text and only denies.
 - **Agents running in a terminal on your Mac** (through their hooks, e.g. Claude Code in Terminal or iTerm) and requests through Nook's workspace bridge: they appear in the list and send push notifications for approvals, questions, and finished or failed turns. Approvals can be denied, and low-risk ones allowed, from the phone or straight from the notification; questions and messages are answered in the terminal (`apps/macos/Services/Companion/CompanionAgents.swift`).
 
 ## Starting from the phone

@@ -262,11 +262,14 @@ struct NewSessionComposer: View {
             ComposerDivider()
             permissionMenu
             effortMenu
+            ComposerSpeedTier(tiers: speedTiers, chosen: config.speedTier) { config.speedTier = $0 }
             usageLimits
         }
         .rich(composerModel, composerConfig)
         .images($images)
         .trailing { ComposerMic(text: $config.task) }
+        // One step more or less effort without opening the picker.
+        .keyCommands(["effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
     }
 
     private var composerConfig: ComposerConfig {
@@ -324,7 +327,7 @@ struct NewSessionComposer: View {
     }
 
     private var permissionMenu: some View {
-        ComposerDropdown(width: 300) {
+        ComposerDropdown(width: 300, command: "permissionPicker.toggle") {
             ComposerPill(symbol: config.mode == .plan ? "lock" : config.permission.symbol,
                  dot: nil,
                  text: config.mode == .plan ? tr("compose.readOnly") : config.permission.label,
@@ -352,7 +355,7 @@ struct NewSessionComposer: View {
             levelMenu(family)
         } else if !levels.isEmpty {
             ComposerDivider()
-            ComposerDropdown(width: 220) {
+            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
                 ComposerPill(symbol: "gauge.with.dots.needle.33percent",
                              text: workspace.effortTitle(config.effort, for: config.provider, profileID: config.profileID))
             } content: {
@@ -386,7 +389,7 @@ struct NewSessionComposer: View {
         let current = family.members.first { $0.id == config.model }?.level ?? ""
         return Group {
             ComposerDivider()
-            ComposerDropdown(width: 220) {
+            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
                 ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(variant: current)))
             } content: {
                 DropdownHeader(title: tr("compose.effort"))
@@ -404,10 +407,31 @@ struct NewSessionComposer: View {
 
     /// The gauge fills up with the level.
     private static func effortSymbol(_ level: String, in levels: [String]) -> String {
-        let index = levels.firstIndex(of: level) ?? 0
-        if index == 0 { return "gauge.with.dots.needle.0percent" }
-        if index == levels.count - 1 { return "gauge.with.dots.needle.100percent" }
-        return index * 2 < levels.count ? "gauge.with.dots.needle.33percent" : "gauge.with.dots.needle.67percent"
+        EffortSymbol.symbol(level, in: levels)
+    }
+
+    /// The faster tiers the chosen agent offers for the chosen model (`SpeedTiers`).
+    private var speedTiers: [SpeedTier] {
+        SpeedTiers.tiers(for: config.provider, model: config.model,
+                         listed: workspace.offeredModels(config.provider, profileID: config.profileID))
+    }
+
+    /// `effort.increase` / `effort.decrease`: the next level up or down (`EffortStep`). An agent that lists one model per
+    /// level steps through that family's models instead. False when the agent has no levels, so the key goes on.
+    private func stepEffort(_ direction: EffortStep.Direction) -> Bool {
+        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
+            let ids = family.members.map(\.id)
+            guard let index = ids.firstIndex(of: config.model) else { return false }
+            let next = direction == .up ? min(index + 1, ids.count - 1) : max(index - 1, 0)
+            config.model = ids[next]
+        } else {
+            let levels = workspace.effortLevels(for: config.provider, profileID: config.profileID,
+                                                model: config.model.isEmpty ? nil : config.model)
+            guard !levels.isEmpty else { return false }
+            config.effort = EffortStep.next(current: config.effort, levels: levels, direction: direction)
+        }
+        remember()
+        return true
     }
 
     // MARK: Below the box
@@ -680,6 +704,7 @@ struct NewSessionComposer: View {
             let defaults = settings.composerDefaults(for: config.projectPath)
             config.model = defaults.model(for: provider)
             config.effort = defaults.effort(for: provider)
+            config.speedTier = nil
             config.permission = config.permission.steppedDown(within: provider.capabilities.policies)
         }
         config.profileID = account

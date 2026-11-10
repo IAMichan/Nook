@@ -528,7 +528,9 @@ final class CompanionServer: ObservableObject {
             // An agent in a terminal on the Mac, or a request through the workspace bridge.
             if let session = request.session, CompanionAgents.handles(session) {
                 let allow = request.allow == true
-                if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow) {
+                // On a denial the request's text is the reason you gave with it.
+                if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow,
+                                                      reason: allow ? "" : request.text ?? "") {
                     return .failure(request.id, error)
                 }
                 return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
@@ -541,7 +543,8 @@ final class CompanionServer: ObservableObject {
             }
             let allow = request.allow == true
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
-            app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone)
+            app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone,
+                                 reason: allow ? "" : request.text ?? "")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {

@@ -10950,6 +10950,34 @@
           }
         }
       }
+    },
+    "Or deny with a reason" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oder mit Begründung ablehnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O deniega con un motivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ou refusez avec une raison"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Of weiger met een reden"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

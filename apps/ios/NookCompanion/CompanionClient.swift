@@ -819,8 +819,10 @@ final class CompanionClient: ObservableObject {
         return response.message ?? "nopush"
     }
 
-    func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool) async {
-        await perform(CompanionRequest(op: .decide, session: session.id, item: item.id, allow: allow))
+    /// `reason`: with a denial, what the agent is told (the Mac passes it on; an older Mac only denies).
+    func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool, reason: String = "") async {
+        await perform(CompanionRequest(op: .decide, session: session.id, item: item.id,
+                                       text: allow || reason.isEmpty ? nil : reason, allow: allow))
     }
 
     func answer(_ session: SessionDigest, item: SessionDigest.Item, text: String) async {

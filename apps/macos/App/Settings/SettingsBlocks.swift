@@ -822,6 +822,12 @@ struct WorkspaceSettingsSection: View {
                 .lineLimit(2...8)
                 .help(tr("settings.ws.agentInstructions.help"))
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+            // A session can choose for itself in its menu.
+            Picker(selection: $ws.timelineDetail) {
+                ForEach(TimelineDetail.allCases) { detail in Text(tr(detail.titleKey)).tag(detail) }
+            } label: {
+                SettingLabel(tr("settings.ws.timelineDetail"), hint: tr("settings.ws.timelineDetail.help"))
+            }
             Picker(tr("settings.ws.maxWorking"), selection: $ws.maxWorkingSessions) {
                 ForEach(SessionCapacity.choices, id: \.self) { count in
                     Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)
