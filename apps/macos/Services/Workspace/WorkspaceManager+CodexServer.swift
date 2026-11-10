@@ -125,6 +125,7 @@ extension WorkspaceManager {
         var params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
                                               mode: run.mode, permission: run.permission, planModel: planModel,
                                               effort: run.effort)
+        params.merge(SpeedTiers.codexTurnParam(tier: run.speedTier, offered: speedTiers(for: run))) { $1 }
         // What MCP apps told the agent: text an MCP server wrote, so it goes in as untrusted context.
         let appContexts = takeMcpAppContexts(id)
         if !appContexts.isEmpty {

@@ -40,13 +40,14 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
                                         canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
-                                        reportsPromptCacheLifetime: true)
+                                        reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true)
+                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true,
+                                        speedTiers: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -125,6 +126,18 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// idle session before the cache expires (`IdleCompaction`). Codex and the ACP agents report cached tokens but not
     /// the cache's lifetime.
     var reportsPromptCacheLifetime = false
+    /// How the reason you give with a denial reaches the agent: in the answer to its request (Claude Code's
+    /// `control_response` carries a `message`), or as a message of its own right after it (Codex's decline and ACP's
+    /// reject outcome have no text, so the reason goes in as a steer, or as the next prompt).
+    var denyReason: DenyReasonDelivery = .followUpMessage
+    /// A faster tier of the same model beside the effort (`SpeedTiers`): Codex's service tiers, Claude Code's fast mode.
+    /// The ACP agents (Gemini CLI, Antigravity, OpenCode, Cursor, Grok, the ones you add) offer none over ACP.
+    var speedTiers = false
+}
+
+/// See `ProviderCapabilities.denyReason`.
+enum DenyReasonDelivery: String, Sendable {
+    case inResponse, followUpMessage
 }
 
 enum PastSessionSource: Equatable, Sendable {
@@ -378,6 +391,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lineage: RunLineage? = nil
     /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
     var effort: String? = nil
+    /// The speed tier for the next turns (`SpeedTiers`); nil is the agent's standard speed.
+    var speedTier: String? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
     /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
@@ -396,6 +411,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var remote: RemoteTarget? = nil
     /// Claude Code: how long the prompt cache of the session's last request stays warm (see `IdleCompaction`).
     var promptCache: PromptCacheWindow? = nil
+    /// How much of the work this session's timeline shows; nil follows Settings (`WorkspaceSettings.timelineDetail`).
+    var timelineDetail: TimelineDetail? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -847,6 +864,9 @@ struct NewRunConfig: Equatable, Sendable {
     var permission: PermissionPolicy = .acceptEdits
     /// Reasoning effort for the session; nil is the agent's own default.
     var effort: String? = nil
+    /// The speed tier for the session (`SpeedTiers`); nil is the agent's standard speed. Not remembered for the next
+    /// session: a faster tier costs more.
+    var speedTier: String? = nil
     var isolation: IsolationMode = .folder
     var projectPath = ""
     var baseBranch = ""

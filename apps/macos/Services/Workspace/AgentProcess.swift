@@ -55,6 +55,8 @@ enum AgentCommand {
         var tuning = AgentTuning.Applied()
         /// Claude Code's reasoning effort (`--effort`); nil leaves the agent's own default.
         var effort: String? = nil
+        /// The speed tier (`SpeedTiers`): Claude Code's fast mode in its settings, Codex's `service_tier`; nil is standard.
+        var speedTier: String? = nil
         /// An ACP agent you added: its command, run by `executable` (your login shell).
         var customAgent: CustomAgent? = nil
         /// Settings › Agents: no agent credits in commits and pull requests (`AgentCredits.commitsKey`).
@@ -79,7 +81,8 @@ enum AgentCommand {
                 // Co-Authored-By trailer or "Generated with" line in commits and pull requests.
                 "--settings", AgentCredits.claudeSettings(omit: input.omitAgentCredits,
                                                           env: input.toolSearch.map { ["ENABLE_TOOL_SEARCH": $0] } ?? [:],
-                                                          extra: input.tuning.claudeSettings)
+                                                          extra: input.tuning.claudeSettings
+                                                              .merging(SpeedTiers.claudeSettings(tier: input.speedTier)) { $1 })
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
@@ -104,6 +107,7 @@ enum AgentCommand {
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             // Detailed reasoning summaries: the timeline shows how Codex thinks, not only what it did.
             arguments += ["-c", "model_reasoning_summary=\"detailed\""]
+            arguments += SpeedTiers.codexExecArguments(tier: input.speedTier)
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
             let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note,

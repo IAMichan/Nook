@@ -279,7 +279,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return object([
                 "task": ["type": "string", "description": "The complete brief for the other agent. It sees nothing of this conversation."],
                 "agent": ["type": "string", "description": "Which agent: claude, codex, gemini, opencode, cursor, grok or antigravity. Defaults to your own."],
-                "model": ["type": "string", "description": "Model name for that agent. Defaults to your own model when it is the same agent, otherwise the agent's default."],
+                "model": ["type": "string", "description": "Model name for that agent. Defaults to your own model when it is the same agent, otherwise the agent's default. A model the user names with @ arrives as a <nook_context> record of kind model with id <agent>/<model>: pass those two as agent and model."],
                 "title": ["type": "string", "description": "Short title for the session. Defaults to the first line of the task."],
                 "role": ["type": "string", "enum": DelegationRole.allCases.map(\.rawValue),
                          "description": "What the task is for. research, review and design run in Plan mode (read-only) unless you pass plan: false."],

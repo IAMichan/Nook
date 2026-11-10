@@ -6,6 +6,8 @@ struct AgentModel: Codable, Equatable, Hashable, Sendable {
     var id: String
     var name: String
     var isDefault: Bool = false
+    /// Codex: the faster tiers this model can be served in (`SpeedTiers.codexTiers`); nil for none.
+    var tiers: [SpeedTier]? = nil
 }
 
 enum AgentModelCatalog {
@@ -16,7 +18,7 @@ enum AgentModelCatalog {
             guard (item["hidden"] as? Bool) != true,
                   let slug = nonEmpty(item["model"]) ?? nonEmpty(item["id"]) else { return nil }
             return AgentModel(id: slug, name: codexName(nonEmpty(item["displayName"]) ?? slug),
-                              isDefault: (item["isDefault"] as? Bool) ?? false)
+                              isDefault: (item["isDefault"] as? Bool) ?? false, tiers: SpeedTiers.codexTiers(item))
         }
         return (models, nonEmpty(response["nextCursor"]))
     }

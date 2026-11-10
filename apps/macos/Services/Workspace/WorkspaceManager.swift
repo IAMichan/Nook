@@ -789,6 +789,7 @@ final class WorkspaceManager: ObservableObject {
             delegation: config.delegation
         )
         run.effort = config.effort
+        run.speedTier = config.speedTier
         run.lineage = config.lineage
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
@@ -1527,7 +1528,8 @@ final class WorkspaceManager: ObservableObject {
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
-            effort: run.provider == .claude ? run.effort : nil
+            effort: run.provider == .claude ? run.effort : nil,
+            speedTier: speedTier(run)
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
         if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
@@ -1586,7 +1588,7 @@ final class WorkspaceManager: ObservableObject {
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
-                effort: run.effort)), for: run)
+                effort: run.effort, speedTier: speedTier(run))), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -1979,9 +1981,12 @@ final class WorkspaceManager: ObservableObject {
 
     enum Decision { case allow, always, deny }
 
-    func decide(_ runID: UUID, requestID: String, _ decision: Decision) {
-        if decideCodex(runID, requestID: requestID, decision) { return }
-        if decideAcp(runID, requestID: requestID, decision) { return }
+    /// `reason`: what you told the agent with a denial. It reaches the agent the way its app takes it
+    /// (`ProviderCapabilities.denyReason`); with an allow it is ignored.
+    func decide(_ runID: UUID, requestID: String, _ decision: Decision, reason: String = "") {
+        let reason = decision == .deny ? reason.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        if decideCodex(runID, requestID: requestID, decision) { deliverDenyReason(runID, reason); return }
+        if decideAcp(runID, requestID: requestID, decision) { deliverDenyReason(runID, reason); return }
         guard let pending = approvals[runID]?.first(where: { $0.id == requestID }), let process = processes[runID] else {
             expireApproval(runID, requestID: requestID)
             return
@@ -1994,7 +1999,7 @@ final class WorkspaceManager: ObservableObject {
             line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input,
                                                          rules: pending.canAlways ? pending.suggestions : nil)
         case .deny:
-            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: false, input: pending.input)
+            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: false, input: pending.input, message: reason)
         }
         process.send(line)
         approvals[runID]?.removeAll { $0.id == requestID }
@@ -2002,6 +2007,22 @@ final class WorkspaceManager: ObservableObject {
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
         if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
+        if !reason.isEmpty { append(runID, RunEvent(kind: .system, text: tr("ws.approval.deniedBecause", reason))) }
+    }
+
+    /// The reason for a denial, for an agent whose answer to a request carries no text: steered into the running turn
+    /// (Codex `turn/steer`; an ACP agent is interrupted and gets it as the next prompt). While more requests wait on you
+    /// the turn cannot be steered, so it waits in the queue for the end of the turn.
+    func deliverDenyReason(_ id: UUID, _ reason: String) {
+        guard !reason.isEmpty, let run = run(id) else { return }
+        switch run.provider.capabilities.denyReason {
+        case .inResponse:
+            return
+        case .followUpMessage:
+            let message = tr("ws.approval.denyMessage", reason)
+            if (approvals[id]?.isEmpty ?? true), steer(id, text: message) { return }
+            enqueue(id, text: message)
+        }
     }
 
     func expireApproval(_ runID: UUID, requestID: String) {

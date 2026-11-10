@@ -98,6 +98,10 @@ struct EventRow: View {
                 }
             }
 
+        case .system where event.tool == "clear":
+            // `/clear`: the agent starts a new conversation here and remembers nothing above the line.
+            TimelineNewDivider(label: event.text)
+
         case .system where event.tool == "wake":
             // The agent picks up what it left running in the background: a turn of its own starts here.
             TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)

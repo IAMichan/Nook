@@ -113,6 +113,10 @@ final class WorkspaceSettings: ObservableObject {
         guard let repo, !sessionDefaults(for: repo).worktreeCleanup else { return worktreeCleanupRules }
         return WorktreeCleanup.Rules(keepWhen: worktreeKeepWhen)
     }
+    /// How much of the agent's work a session's timeline shows, unless the session chose for itself (`TimelineDetail`).
+    @Published var timelineDetail: TimelineDetail {
+        didSet { defaults.set(timelineDetail.rawValue, forKey: "ws.timelineDetail") }
+    }
     /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
@@ -248,6 +252,7 @@ final class WorkspaceSettings: ObservableObject {
         worktreeKeepWhen = WorktreeCleanup.KeepWhen(rawValue: defaults.string(forKey: "ws.worktreeKeepWhen") ?? "") ?? .uncommittedChanges
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
+        timelineDetail = TimelineDetail(rawValue: defaults.string(forKey: "ws.timelineDetail") ?? "") ?? .everything
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
