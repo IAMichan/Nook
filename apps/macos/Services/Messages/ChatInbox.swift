@@ -1543,9 +1543,6 @@ enum ChatTimeline {
         }
     }
 
-    /// Messages by one author further apart than this start a new run.
-    static let runGap: TimeInterval = 5 * 60
-
     static func entries(_ items: [Item], now: Date = Date(), calendar: Calendar = .current,
                         locale: Locale = .current) -> [Entry] {
         var entries: [Entry] = []
@@ -1577,10 +1574,10 @@ enum ChatTimeline {
         return entries
     }
 
+    /// One author's messages in a row stay one run however far apart they were sent, as in WhatsApp: only another
+    /// author or a new day (its own line) starts a new one.
     private static func together(_ a: Item, _ b: Item) -> Bool {
-        guard a.author == b.author else { return false }
-        guard let first = a.date, let second = b.date else { return true }
-        return abs(second.timeIntervalSince(first)) <= runGap
+        a.author == b.author
     }
 
     /// "Today", "Yesterday", the weekday within the last week, else the date (with the year when it is another year).
