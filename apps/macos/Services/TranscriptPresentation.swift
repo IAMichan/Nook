@@ -34,6 +34,9 @@ enum TranscriptRow: Identifiable, Equatable {
     case live(AgentToolStep?, thought: AgentChatMessage?)
     /// At the end of a turn you stopped: "You stopped after 12s", after the message `id` it stopped at.
     case interrupted(id: String, seconds: Double?)
+    /// The work a message you sent while the agent worked steered it away from: "Superseded attempt · Cut off by a
+    /// steer", folded, right above that message.
+    case superseded(id: String, rows: [TranscriptRow])
 
     var id: String {
         switch self {
@@ -46,6 +49,7 @@ enum TranscriptRow: Identifiable, Equatable {
         case .working: return "working"
         case .live: return "live"
         case .interrupted(let id, _): return "interrupted:" + id
+        case .superseded(let id, _): return "superseded:" + id
         }
     }
 }
@@ -166,6 +170,13 @@ enum TranscriptPresentation {
         var rows: [TranscriptRow] = [.user(first)]
         for (index, segment) in segments.enumerated() {
             if let steer = segment.steer { rows.append(.user(steer)) }
+            // Work a later message of yours steered away from: one "Superseded attempt", its notices still in sight.
+            if index < segments.count - 1 {
+                let work = segment.messages.filter { !$0.isNotice }
+                if let firstWork = work.first { rows.append(.superseded(id: firstWork.id, rows: group(work, finalID: nil))) }
+                rows += segment.messages.filter(\.isNotice).map { .notice($0) }
+                continue
+            }
             let work = segment.messages.filter { $0.id != answer.id && !$0.isNotice }
             if let firstWork = work.first {
                 // Files it handed you stay in view next to its answer: they are what the work made, not part of it.
@@ -173,7 +184,7 @@ enum TranscriptPresentation {
                 let shared = grouped.filter(isShare)
                 let inner = grouped.filter { !isShare($0) }
                 if !inner.isEmpty {
-                    rows.append(index == 0 ? .fold(id: firstWork.id, seconds: seconds(turn), rows: inner)
+                    rows.append(segments.count == 1 ? .fold(id: firstWork.id, seconds: seconds(turn), rows: inner)
                                            : .continued(id: firstWork.id, seconds: seconds(from: segment.steer?.date, segment.messages),
                                                         rows: inner))
                 }
@@ -201,6 +212,20 @@ enum TranscriptPresentation {
             work.removeFirst()
         }
         rows.append(.working(since: turn.first?.fromUser == true ? turn.first?.date : nil))
+        // What the agent did before each message you sent into this turn folds under "Superseded attempt", and the
+        // message follows; the work since the last one is the turn as it goes on.
+        if let lastSteer = work.lastIndex(where: \.fromUser) {
+            var segment: [AgentChatMessage] = []
+            for message in work[...lastSteer] {
+                guard message.fromUser else { segment.append(message); continue }
+                let superseded = segment.filter { !$0.isNotice }
+                if let firstWork = superseded.first { rows.append(.superseded(id: firstWork.id, rows: group(superseded, finalID: nil))) }
+                rows += segment.filter(\.isNotice).map { .notice($0) }
+                rows.append(.user(message))
+                segment = []
+            }
+            work = Array(work[(lastSteer + 1)...])
+        }
         var current: AgentToolStep?
         if var last = work.last, last.isTools, let step = last.steps.last, step.state == .running {
             current = step
@@ -297,7 +322,7 @@ enum TranscriptPresentation {
             switch row {
             case .step(let step): return [step]
             case .group(_, let steps, _): return steps
-            case .fold(_, _, let inner), .continued(_, _, let inner): return self.steps(inner)
+            case .fold(_, _, let inner), .continued(_, _, let inner), .superseded(_, let inner): return self.steps(inner)
             case .live(let step, _): return step.map { [$0] } ?? []
             default: return []
             }

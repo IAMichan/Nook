@@ -71,7 +71,7 @@ extension TranscriptRow {
     var visitDate: Date? {
         switch self {
         case .user(let message), .thinking(let message), .notice(let message), .assistant(let message, _): return message.date
-        case .fold(_, _, let rows), .continued(_, _, let rows): return rows.lazy.compactMap(\.visitDate).first
+        case .fold(_, _, let rows), .continued(_, _, let rows), .superseded(_, let rows): return rows.lazy.compactMap(\.visitDate).first
         case .step, .group, .working, .live, .interrupted: return nil
         }
     }
@@ -83,7 +83,7 @@ extension TimelineBlock {
         switch self {
         case .event(let event): return event.date
         case .tools(_, let events, _): return events.first?.date
-        case .fold(_, _, let blocks, _): return blocks.lazy.compactMap(\.visitDate).first
+        case .fold(_, _, let blocks, _), .superseded(_, let blocks): return blocks.lazy.compactMap(\.visitDate).first
         }
     }
 }

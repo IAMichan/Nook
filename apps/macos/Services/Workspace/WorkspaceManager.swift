@@ -267,6 +267,8 @@ final class WorkspaceManager: ObservableObject {
     var awaitingCheckpoint: [UUID: String] = [:]
     /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
     var pendingSendNow: [UUID: String] = [:]
+    /// How the message in `pendingSendNow` came to interrupt the turn: it is marked so in the timeline once it goes out.
+    var pendingSendNowSteer: [UUID: RunEvent.SteerKind] = [:]
     /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
     /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
     var remoteHomes: [String: String] = [:]
@@ -1028,6 +1030,7 @@ final class WorkspaceManager: ObservableObject {
     /// the requests already waiting included.
     func configure(_ id: UUID, mode: ExecutionMode? = nil, permission: PermissionPolicy? = nil, model: String? = nil) {
         guard let run = run(id) else { return }
+        let before = model == nil ? nil : switchEndpoint(run)
         update(id) {
             if let mode { $0.mode = mode }
             if let permission, run.provider.capabilities.policies.contains(permission) {
@@ -1041,6 +1044,7 @@ final class WorkspaceManager: ObservableObject {
                 if clean != AutoModel.id { $0.model = clean }
             }
         }
+        if let before { noteModelSwitch(id, from: before) }
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
         if let updated = self.run(id), updated.permission != run.permission || updated.mode != run.mode { allowCovered(id) }
         if !run.status.isActive { refreshWarmSession(id) }
@@ -1099,8 +1103,13 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     func sendPendingNow(_ id: UUID) -> Bool {
         guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
+        let mark = pendingSendNowSteer.removeValue(forKey: id)
+        let before = timeline(id).last { $0.kind == .user }?.id
         if !send(id, text: next, shown: false) {
             queued[id, default: MessageQueue()].requeueFirst(next)
+        } else if let mark, let sent = timeline(id).last(where: { $0.kind == .user }), sent.id != before {
+            // It cut the turn off to go out: it reads as a steer, as a message taken into the turn does.
+            mutateEvent(id, sent.id) { $0.steer = mark }
         }
         return true
     }
@@ -1324,7 +1333,7 @@ final class WorkspaceManager: ObservableObject {
             if canSteer(id) {
                 guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
                 store(queue, for: id)
-                if steer(id, text: text) { return }
+                if steer(id, text: text, promoted: true) { return }
                 queue.requeueFirst(text)
                 store(queue, for: id)
             }
@@ -1332,6 +1341,7 @@ final class WorkspaceManager: ObservableObject {
             queue.resume()
             store(queue, for: id)
             pendingSendNow[id] = text
+            pendingSendNowSteer[id] = .promoted
             stop(id)
             return
         }
@@ -1374,7 +1384,7 @@ final class WorkspaceManager: ObservableObject {
     func steerQueued(_ id: UUID, message: UUID) {
         guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
         store(queue, for: id)
-        if !steer(id, text: text) { enqueue(id, text: text) }
+        if !steer(id, text: text, promoted: true) { enqueue(id, text: text) }
     }
 
     /// The text of a queued message for the composer; the draft you had is kept for `endEditQueued`.
@@ -2346,6 +2356,7 @@ final class WorkspaceManager: ObservableObject {
         warmPrompts[id] = nil
         awaitingCheckpoint[id] = nil
         pendingSendNow[id] = nil
+        pendingSendNowSteer[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)

@@ -170,12 +170,16 @@ enum TimelineBlock: Identifiable, Equatable {
     /// A finished turn's work between your message and the answer, the `seconds` it took, and the tests and builds it
     /// ran (worked out once here, not on every redraw of the timeline).
     case fold(id: UUID, seconds: Double, blocks: [TimelineBlock], checks: [VerificationCheck])
+    /// The work of a turn you steered away from: a message of yours went into it while it ran, so what it did before
+    /// folds under "Superseded attempt · Cut off by a steer".
+    case superseded(id: UUID, blocks: [TimelineBlock])
 
     var id: UUID {
         switch self {
         case .event(let event): return event.id
         case .tools(let id, _, _): return id
         case .fold(let id, _, _, _): return id
+        case .superseded(let id, _): return id
         }
     }
 }
@@ -186,6 +190,8 @@ struct TimelineBlockCache {
         var events: [RunEvent]
         var open: Bool
         var blocks: [TimelineBlock]
+        /// A steer that came after it superseded its work.
+        var superseded = false
     }
 
     fileprivate(set) var turns: [Turn] = []
@@ -220,15 +226,18 @@ enum TimelinePresentation {
         var blocks: [TimelineBlock] = []
         for (index, turn) in turns.enumerated() {
             let open = index == turns.count - 1 && active
-            if index < cache.turns.count, cache.turns[index].open == open, cache.turns[index].events == turn {
+            let superseded = index + 1 < turns.count && turns[index + 1].first?.steer != nil
+            if index < cache.turns.count, cache.turns[index].open == open, cache.turns[index].superseded == superseded,
+               cache.turns[index].events == turn {
                 kept.append(cache.turns[index])
             } else {
                 let tallies = cache.tallies
-                let made = present(visible(turn: turn, hidingRunning: open), open: open) { run in
+                let shown = visible(turn: turn, hidingRunning: open)
+                let made = superseded ? supersede(shown) : present(shown, open: open) { run in
                     if let known = tallies[run[0].id], known.events == run { return known.tally }
                     return ToolTally(run)
                 }
-                kept.append(TimelineBlockCache.Turn(events: turn, open: open, blocks: made))
+                kept.append(TimelineBlockCache.Turn(events: turn, open: open, blocks: made, superseded: superseded))
             }
             blocks += kept[index].blocks
         }
@@ -286,6 +295,7 @@ enum TimelinePresentation {
             case .event(let event): return [event]
             case .tools(_, let events, _): return events
             case .fold(_, _, let inner, _): return events(inner)
+            case .superseded(_, let inner): return events(inner)
             }
         }
     }
@@ -345,6 +355,19 @@ enum TimelinePresentation {
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.
         return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work), checks: Verification.checks(work))]
             + shared.map { .event($0) } + [.event(turn[answer]), .event(finished)]
+    }
+
+    /// A turn a steer cut off: the message that started it stays, its work folds into one "Superseded attempt" block.
+    /// Errors and approvals still waiting on you stay in sight next to it.
+    static func supersede(_ turn: [RunEvent]) -> [TimelineBlock] {
+        guard let first = turn.first else { return [] }
+        let starts = first.kind == .user
+        let rest = starts ? Array(turn.dropFirst()) : turn
+        let pinned: (RunEvent) -> Bool = { $0.kind == .error || $0.kind == .approval && $0.state == .pending }
+        let work = rest.filter { !pinned($0) && $0.kind != .result }
+        guard let anchor = work.first else { return group(turn) }
+        return (starts ? [.event(first)] : []) + [.superseded(id: anchor.id, blocks: group(work))]
+            + rest.filter(pinned).map { .event($0) }
     }
 
     /// Two or more tool calls in a row become one block, also across the agent's thinking between them and its notes
