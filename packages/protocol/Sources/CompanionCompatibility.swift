@@ -11,8 +11,8 @@ import Foundation
 // version 1, the protocol as it was before versions existed.
 
 enum CompanionProtocol {
-    /// The protocol this build speaks.
-    static let version = 2
+    /// The protocol this build speaks. 3: pull requests, files with a message, snoozing to a moment, `limitResetsAt`.
+    static let version = 3
     /// The oldest Mac this phone still works with.
     static let oldestMac = 1
     /// The oldest phone this Mac still works with; the Mac sends it as `CompanionResponse.oldestPhone`.
@@ -63,8 +63,39 @@ enum CompanionCompatibility: Equatable, Sendable {
         check(macVersion: response.protocolVersion, oldestPhone: response.oldestPhone, phoneVersion: phoneVersion, oldestMac: oldestMac)
     }
 
+    /// Both work together, but one speaks an older protocol than the other, so some of what the newer one offers is
+    /// missing: which one to update for it. Nil when both speak the same, or when they cannot work together at all (that
+    /// is `check`'s to say).
+    static func notice(macVersion: Int?, oldestPhone: Int? = nil, phoneVersion: Int = CompanionProtocol.version,
+                       oldestMac: Int = CompanionProtocol.oldestMac) -> CompanionVersionNotice? {
+        guard check(macVersion: macVersion, oldestPhone: oldestPhone, phoneVersion: phoneVersion, oldestMac: oldestMac) == .ok else { return nil }
+        let mac = macVersion ?? CompanionProtocol.unversioned
+        if mac < phoneVersion { return .macBehind }
+        if mac > phoneVersion { return .phoneBehind }
+        return nil
+    }
+
+    /// The same, from an answer to `hello`, `list` or `subscribe`.
+    static func notice(_ response: CompanionResponse, phoneVersion: Int = CompanionProtocol.version) -> CompanionVersionNotice? {
+        notice(macVersion: response.protocolVersion, oldestPhone: response.oldestPhone, phoneVersion: phoneVersion)
+    }
+
+    /// Seen from the Mac: a phone that works, but speaks an older protocol than this Mac (nil: a phone that predates
+    /// versions, which is version 1).
+    static func phoneBehind(_ phoneVersion: Int?, macVersion: Int = CompanionProtocol.version) -> Bool {
+        phoneSupported(phoneVersion) && (phoneVersion ?? CompanionProtocol.unversioned) < macVersion
+    }
+
     /// The same, seen from the Mac for a phone that sent `phoneVersion` (nil: a phone that predates versions).
     static func phoneSupported(_ phoneVersion: Int?, oldestPhone: Int = CompanionProtocol.oldestPhone) -> Bool {
         (phoneVersion ?? CompanionProtocol.unversioned) >= oldestPhone
     }
+}
+
+/// A gentle word when the Mac and the phone work together but one of them is behind (`CompanionCompatibility.notice`).
+enum CompanionVersionNotice: Equatable, Sendable {
+    /// Update Nook on the Mac to use everything this app offers.
+    case macBehind
+    /// Update the app to use everything Nook on the Mac offers.
+    case phoneBehind
 }

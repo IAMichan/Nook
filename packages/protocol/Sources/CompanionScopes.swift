@@ -36,9 +36,12 @@ enum CompanionScopes {
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
         .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
         .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
+        .pulls: .scope(.read), .pull: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),
         .send: .scope(.operate), .stop: .scope(.operate), .options: .scope(.operate), .start: .scope(.operate),
         .manage: .scope(.operate),
+        // Reviewing, merging and working on a pull request act for you, as sending and starting do.
+        .pullAct: .scope(.operate), .pullWork: .scope(.operate),
         // What a project holds goes further than a session's own changes.
         .terminals: .scope(.operate), .files: .scope(.operate),
         .inbox: .scope(.chats), .inboxChat: .scope(.chats), .inboxSend: .scope(.chats), .inboxMark: .scope(.chats),
@@ -51,7 +54,7 @@ enum CompanionScopes {
         CompanionFeature.start: .operate, CompanionFeature.manage: .operate, CompanionFeature.workspace: .operate, CompanionFeature.steer: .operate,
         CompanionFeature.images: .operate, CompanionFeature.liveTimeline: .read, CompanionFeature.resume: .read, CompanionFeature.diff: .read,
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
-        CompanionFeature.liveActivity: .read,
+        CompanionFeature.liveActivity: .read, CompanionFeature.pullRequests: .read, CompanionFeature.attachments: .operate,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
     ]
 
@@ -84,6 +87,8 @@ enum CompanionScopes {
             response.timeline = nil
             response.home = nil
             response.usage = nil
+            response.pulls = nil
+            response.pull = nil
         }
         if !granted.contains(.operate) {
             response.launch = nil
