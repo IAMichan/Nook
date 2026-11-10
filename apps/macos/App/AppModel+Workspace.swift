@@ -61,7 +61,7 @@ final class WorkspaceWindowController {
     /// `screen`: the window moves there first when it is on another one (the screen an update was started from).
     func show(app: AppModel, activate: Bool = true, on screen: NSScreen? = nil) {
         if window == nil {
-            let root = WindowContent(presence: presence, background: NookTheme.notch, minSize: CGSize(width: 900, height: 580)) {
+            let root = WindowContent(presence: presence, background: NookTheme.canvas, minSize: CGSize(width: 900, height: 580)) {
                 WorkspaceView()
             }
                 .nookAttention()
@@ -76,10 +76,11 @@ final class WorkspaceWindowController {
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered, defer: false)
             window.contentView = host
-            // Dark for the window and everything presented from it (sheets inherit the window's appearance). Asking for it
-            // with `.preferredColorScheme` inside the window and inside each sheet makes the sheets re-negotiate it on every
-            // layout pass, which loops ("needing another Update Constraints in Window pass").
-            window.appearance = NSAppearance(named: .darkAqua)
+            // The appearance from Settings › Appearance for the window and everything presented from it (sheets inherit
+            // the window's appearance). Asking for it with `.preferredColorScheme` inside the window and inside each sheet
+            // makes the sheets re-negotiate it on every layout pass, which loops ("needing another Update Constraints in
+            // Window pass").
+            NookWindowLook.adopt(window)
             window.title = tr("ws.windowTitle")
             // The panel runs up under the traffic lights, as the open notch runs up under the camera; the title is in the
             // Dock and ⌘Tab.
@@ -91,8 +92,6 @@ final class WorkspaceWindowController {
             window.toolbar = NSToolbar(identifier: "NookWorkspace")
             window.toolbarStyle = .unified
             window.titlebarSeparatorStyle = .none
-            // Black, as the notch.
-            window.backgroundColor = .black
             window.setContentSize(NSSize(width: 1240, height: 800))
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
