@@ -41,6 +41,8 @@ final class CompanionServer: ObservableObject {
     private var timelinePushRunning = false
     private var timelinePushAgain = false
     private var endpointCache: (at: Date, port: UInt16, list: [CompanionEndpoint])?
+    /// Phones that read compressed answers (`CompanionRequest.accepts`, `CompanionDeflate`), as they last said.
+    private var readsDeflate: Set<String> = []
 
     func attach(app: AppModel) {
         self.app = app
@@ -222,8 +224,10 @@ final class CompanionServer: ObservableObject {
     private func send(_ response: CompanionResponse, key: Data, deviceID: String, on transport: CompanionTransport) {
         // Only what this phone may see, and only the features it may use (`CompanionScopes`).
         let response = CompanionScopes.redact(response, granted: scopes(of: deviceID))
+        // Large answers compressed for a phone that reads them (`CompanionFeature.deflate`).
         guard let json = try? JSONEncoder().encode(response),
-              let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: deviceID, direction: .response),
+              let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: deviceID, direction: .response,
+                                                   compress: readsDeflate.contains(deviceID)),
               let framed = CompanionFrameReader.frame(sealed) else { return }
         transport.send(framed)
     }
@@ -243,6 +247,22 @@ final class CompanionServer: ObservableObject {
               let request = try? JSONDecoder().decode(CompanionRequest.self, from: plain) else {
             connection.cancel()
             return
+        }
+        // A phone that bound its device key signs every request with it (`CompanionDeviceKey`): without a valid signature
+        // the pairing key alone (a copy of it) is not enough.
+        if !pairing, CompanionDeviceKey.needsSignature(request.op), let deviceKey = store.deviceKey(of: claimed),
+           !CompanionDeviceKey.verify(envelope: frame, publicKey: deviceKey) {
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "signature", "device": claimed])
+            send(.failure(request.id, .notAllowedFromPhone, message: "signature"), key: key, deviceID: claimed, on: connection)
+            return
+        }
+        // What the phone reads besides plain JSON; a request that says nothing about it changes nothing.
+        if let accepts = request.accepts {
+            if accepts.contains(CompanionDeflate.name), CompanionDeflate.isAvailable {
+                readsDeflate.insert(claimed)
+            } else {
+                readsDeflate.remove(claimed)
+            }
         }
         peer.lastHeard = Date()
         // What this phone may do is decided on the Mac (Settings › Connections › iPhone); anything else is refused before it runs.
@@ -531,6 +551,7 @@ final class CompanionServer: ObservableObject {
                 let allow = request.allow == true
                 // On a denial the request's text is the reason you gave with it.
                 if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow,
+                                                      always: allow && request.always == true,
                                                       reason: allow ? "" : request.text ?? "") {
                     return .failure(request.id, error)
                 }
@@ -544,7 +565,10 @@ final class CompanionServer: ObservableObject {
             }
             let allow = request.allow == true
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
-            app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone,
+            // "Always" only where the request offers it, as on the Mac (`ApprovalRequest.canAlways`).
+            let always = allow && request.always == true
+            if always, !pending.canAlways { return .failure(request.id, .notAllowedFromPhone) }
+            app.approvals.decide(run: runID, requestID: pending.id, allow ? (always ? .always : .allow) : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
@@ -642,6 +666,12 @@ final class CompanionServer: ObservableObject {
             return await pullAct(request, app: app)
         case .pullWork:
             return await pullWork(request, app: app)
+        case .bindKey:
+            guard let text = request.text, let publicKey = Data(base64Encoded: text),
+                  CompanionDeviceKey.isValidPublicKey(publicKey) else { return .failure(request.id, .badRequest) }
+            let bound = CompanionStore.shared.bindKey(device: deviceID, publicKey: publicKey)
+            if bound { audit("device_key", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "") }
+            return CompanionResponse(id: request.id, ok: true, message: bound ? "bound" : "other")
         }
     }
 
@@ -689,8 +719,10 @@ final class CompanionServer: ObservableObject {
         return runs.map { run in
             var items: [SessionDigest.Item] = []
             for pending in workspace.approvals[run.id] ?? [] {
+                let allowed = canAllow(pending)
                 items.append(.init(id: pending.id, kind: .approval, title: CompanionPolicy.excerpt(pending.summary),
-                                   detail: CompanionPolicy.excerpt(pending.tool), canAllow: canAllow(pending), options: []))
+                                   detail: CompanionPolicy.excerpt(pending.tool), canAllow: allowed, options: [],
+                                   canAlways: allowed && pending.canAlways))
             }
             for question in workspace.questions[run.id] ?? [] {
                 let first = question.questions.first

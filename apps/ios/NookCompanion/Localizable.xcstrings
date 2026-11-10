@@ -1323,6 +1323,34 @@
         }
       }
     },
+    "Allow once" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einmal erlauben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir una vez"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser une fois"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eenmalig toestaan"
+          }
+        }
+      }
+    },
     "Allow the microphone and speech recognition for Nook Companion in Settings to dictate." : {
       "localizations" : {
         "nl" : {
@@ -1375,6 +1403,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ya fusionada."
+          }
+        }
+      }
+    },
+    "Always allow" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immer erlauben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir siempre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours autoriser"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altijd toestaan"
           }
         }
       }
@@ -1460,6 +1516,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toestemming"
+          }
+        }
+      }
+    },
+    "Approval needed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freigabe nötig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita aprobación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorisation requise"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toestemming nodig"
           }
         }
       }
@@ -2537,6 +2621,34 @@
         }
       }
     },
+    "Connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden"
+          }
+        }
+      }
+    },
     "Connected over Tailscale" : {
       "localizations" : {
         "de" : {
@@ -2956,6 +3068,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dag"
+          }
+        }
+      }
+    },
+    "Decline" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ablehnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechazar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refuser"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weigeren"
           }
         }
       }
@@ -3868,6 +4008,34 @@
         }
       }
     },
+    "How" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comment"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoe"
+          }
+        }
+      }
+    },
     "How much of each agent's limits you used, and when they reset." : {
       "localizations" : {
         "nl" : {
@@ -3950,6 +4118,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In een aparte worktree"
+          }
+        }
+      }
+    },
+    "Input" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pregunta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Question"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vraag"
           }
         }
       }
@@ -4268,6 +4464,34 @@
         }
       }
     },
+    "Live" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En vivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En direct"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live"
+          }
+        }
+      }
+    },
     "Live Activities" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4350,6 +4574,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zoeken naar je Mac…"
+          }
+        }
+      }
+    },
+    "Low risk: you can allow it from your iPhone." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geringes Risiko: Du kannst es auf deinem iPhone erlauben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riesgo bajo: puedes permitirlo desde tu iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Risque faible : tu peux l’autoriser depuis ton iPhone."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laag risico: je kunt het vanaf je iPhone toestaan."
           }
         }
       }
@@ -5831,6 +6083,62 @@
         }
       }
     },
+    "Not connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet verbonden"
+          }
+        }
+      }
+    },
+    "Not connected · from %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden · Stand %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión · de las %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté · état de %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet verbonden · van %@"
+          }
+        }
+      }
+    },
     "Not now" : {
       "localizations" : {
         "de" : {
@@ -6284,6 +6592,34 @@
         }
       }
     },
+    "Only on your Mac" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur auf deinem Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en tu Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uniquement sur ton Mac"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alleen op je Mac"
+          }
+        }
+      }
+    },
     "Only on your Mac: this one is risky or unknown." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6454,6 +6790,34 @@
         }
       }
     },
+    "Or decline with a reason" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oder mit Begründung ablehnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O rechaza con un motivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ou refuse avec une raison"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Of weiger met een reden"
+          }
+        }
+      }
+    },
     "Out of date" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6508,6 +6872,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eigen branch"
+          }
+        }
+      }
+    },
+    "Own branch (worktree)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eigener Branch (Worktree)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rama propia (worktree)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Branche à part (worktree)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eigen branch (worktree)"
           }
         }
       }
@@ -6824,6 +7216,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vorig nummer"
+          }
+        }
+      }
+    },
+    "Project" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projekt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proyecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project"
           }
         }
       }
@@ -7679,6 +8099,34 @@
         }
       }
     },
+    "Search" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoeken"
+          }
+        }
+      }
+    },
     "Search chats" : {
       "localizations" : {
         "de" : {
@@ -8045,6 +8493,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sessies van je coding-agents op je Mac verschijnen hier."
+          }
+        }
+      }
+    },
+    "Settled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erledigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminées"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afgerond"
           }
         }
       }
@@ -10236,6 +10712,34 @@
         }
       }
     },
+    "Updated %lld min ago" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor %lld Min. aktualisiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizado hace %lld min"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mis à jour il y a %lld min"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld min geleden bijgewerkt"
+          }
+        }
+      }
+    },
     "Updated the task list" : {
       "localizations" : {
         "de" : {
@@ -10859,6 +11363,34 @@
         }
       }
     },
+    "Where and who" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wo und wer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dónde y quién"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Où et qui"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waar en wie"
+          }
+        }
+      }
+    },
     "Why can't I connect?" : {
       "localizations" : {
         "de" : {
@@ -11337,6 +11869,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Je Mac antwoordt niet. Staat de metgezel aan, en zit je op hetzelfde wifi?"
+          }
+        }
+      }
+    },
+    "Your Mac knows another key for this iPhone. Pair again in Nook › Settings › iPhone." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Mac kennt einen anderen Schlüssel für dieses iPhone. Kopple es neu unter Nook › Einstellungen › iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Mac conoce otra clave para este iPhone. Vuelve a vincularlo en Nook › Ajustes › iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton Mac connaît une autre clé pour cet iPhone. Associe-le à nouveau dans Nook › Réglages › iPhone."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je Mac kent een andere sleutel voor deze iPhone. Koppel opnieuw via Nook › Instellingen › iPhone."
           }
         }
       }

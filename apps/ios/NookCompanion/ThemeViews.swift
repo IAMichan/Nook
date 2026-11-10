@@ -7,17 +7,11 @@ import UIKit
 // MARK: Surfaces
 
 extension View {
-    /// What belongs together on one card, the Mac's `panelCard`: the field fill and the panel's corners, no stroke. With
-    /// `tint` (something that waits on you, an error) it is a notice, as the Mac's `PanelNoticeBar`: `surface` with a
-    /// faint edge in that color.
-    @ViewBuilder
+    /// What belongs together on one card, card: the surface a step above the screen, its 20 pt corners and a
+    /// faint edge. With `tint` (something that waits on you, an error) the edge takes that color.
     func card(padding: CGFloat = Theme.Spacing.xl, tint: Color? = nil) -> some View {
-        let content = self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
-        if let tint {
-            content.cardBackground(Theme.surface, stroke: tint.opacity(0.35), radius: Theme.Radius.panel, style: .continuous)
-        } else {
-            content.panelCard()
-        }
+        self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
+            .cardBackground(Theme.surface, stroke: tint?.opacity(0.32) ?? Theme.line, radius: PhoneRadius.card, style: .continuous)
     }
 
     /// The dark canvas behind a whole screen, with matching bars.
@@ -29,39 +23,84 @@ extension View {
     }
 }
 
-/// A group's name above it ("Recent", "On MacBook"), the Mac's `NookSectionLabel`, with a count: amber
-/// (`NookCountBadge`) for what waits on you, else a quiet number. With `expanded` it is a shelf that folds, the Mac's
-/// `NookShelfHeader`: "Working (3)", a line, and a chevron.
+/// A group's name above its rows ("Needs you", "On MacBook"), section label: small, bold capitals with wide
+/// spacing, amber when what it holds waits on you, with a count. With `expanded` it is a shelf that folds ("Working",
+/// "Settled (6)" while folded) with a chevron.
 struct SectionHeader: View {
     let title: String
     var count: Int? = nil
-    /// Amber count for what waits on you; otherwise the count is a quiet number.
+    /// Amber for what waits on you; otherwise quiet.
     var urgent = false
     var expanded: Binding<Bool>? = nil
 
     var body: some View {
         if let expanded {
-            NookShelfHeader(title: title, count: count, open: expanded.wrappedValue) {
+            Button {
                 Haptics.tap()
                 withAnimation(Theme.reveal) { expanded.wrappedValue.toggle() }
+            } label: {
+                label(open: expanded.wrappedValue).contentShape(Rectangle())
             }
-            .padding(.top, Theme.Spacing.md)
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityValue(expanded.wrappedValue ? Text("Expanded") : Text("Collapsed"))
         } else {
-            HStack(spacing: Theme.Spacing.sm) {
-                NookSectionLabel(title, inset: 0)
-                if let count {
-                    if urgent {
-                        NookCountBadge(count: count)
-                    } else {
-                        Text(count, format: .number).font(Theme.TextStyle.caption).monospacedDigit().foregroundStyle(Theme.textTertiary)
-                    }
-                }
-                Spacer()
-            }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.xl)
-            .padding(.bottom, Theme.Spacing.xs)
+            label(open: true).accessibilityAddTraits(.isHeader)
         }
+    }
+
+    private func label(open: Bool) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(verbatim: shownTitle(open: open))
+                .font(Theme.TextStyle.section)
+                .tracking(1.1)
+                .textCase(.uppercase)
+                .foregroundStyle(urgent ? Theme.amber : Theme.textTertiary)
+                .lineLimit(1)
+            if expanded != nil {
+                Image(icon: "chevron.down")
+                    .font(Theme.font(9, .bold))
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.top, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.sm)
+    }
+
+    /// "Settled (6)" while a shelf is folded or the count is what waits, "Working" while open.
+    private func shownTitle(open: Bool) -> String {
+        guard let count, count > 0, !open || urgent || expanded == nil else { return title }
+        return "\(title) (\(count))"
+    }
+}
+
+/// A session's state in a row's corner: its mark and one word in the state's color (Approval,
+/// Input, Failed, Limit), the mark alone with "Working" while it works, and how long ago for the rest.
+struct PhoneStatusLabel: View {
+    let session: SessionDigest
+
+    var body: some View {
+        let attention = session.attention
+        Group {
+            if Theme.needsYou(attention) || attention == "working" || attention == "ready" {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(icon: Theme.symbol(attention))
+                    Text(verbatim: Theme.shortWord(attention))
+                }
+                .font(Theme.textFont(11.5, .bold))
+                .foregroundStyle(Theme.color(attention))
+            } else {
+                Text(verbatim: AgentRow.age(Date().timeIntervalSince1970 - session.updated))
+                    .font(Theme.TextStyle.detail)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(Theme.word(attention)))
     }
 }
 
@@ -229,7 +268,8 @@ struct Banner: View {
         .font(Theme.TextStyle.detail)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
-        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.panel, style: .continuous)
+        // notice: a wash of its color with an edge of it, so a warning reads as one at a glance.
+        .cardBackground(color.opacity(0.1), stroke: color.opacity(0.32), radius: PhoneRadius.row + Theme.Spacing.xxs, style: .continuous)
     }
 }
 
@@ -238,4 +278,6 @@ enum Haptics {
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
     static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    /// The faint tick while an answer streams in (`StreamCadence` decides when).
+    static func stream() { UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.45) }
 }

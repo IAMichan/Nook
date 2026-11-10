@@ -33,13 +33,16 @@ enum CompanionAgents {
         return CompanionPolicy.canAllow(tool: approval.tool, commandIsSafe: CommandRisk.assess(approval.command).level == .safe)
     }
 
-    /// The phone allows or denies a request; nil when it was decided, else why not.
-    static func decide(_ app: AppModel, session: String, item: String, allow: Bool, reason: String = "") -> CompanionError? {
+    /// The phone allows (for good with `always`, where the request offers it, as the Mac's "Always") or denies a request;
+    /// nil when it was decided, else why not.
+    static func decide(_ app: AppModel, session: String, item: String, allow: Bool, always: Bool = false,
+                       reason: String = "") -> CompanionError? {
         guard let approval = app.approvals.pending.first(where: { $0.id == item && sessionID($0, hub: app.hub) == session }) else {
             return .unknownItem
         }
         if allow, !canAllow(approval) { return .notAllowedFromPhone }
-        app.approvals.decide(approval, allow ? .allow : .deny, source: .phone, reason: reason)
+        if always, !approval.canAlways { return .notAllowedFromPhone }
+        app.approvals.decide(approval, allow ? (always ? .always : .allow) : .deny, source: .phone, reason: reason)
         return nil
     }
 
@@ -151,8 +154,10 @@ enum CompanionAgents {
     }
 
     private static func item(_ approval: AgentApproval) -> SessionDigest.Item {
-        SessionDigest.Item(id: approval.id, kind: .approval, title: CompanionPolicy.excerpt(approval.command),
-                           detail: CompanionPolicy.excerpt(approval.tool), canAllow: canAllow(approval), options: [])
+        let allowed = canAllow(approval)
+        return SessionDigest.Item(id: approval.id, kind: .approval, title: CompanionPolicy.excerpt(approval.command),
+                                  detail: CompanionPolicy.excerpt(approval.tool), canAllow: allowed, options: [],
+                                  canAlways: allowed && approval.canAlways)
     }
 
     /// `AgentAttention`'s words, which the phone shows.

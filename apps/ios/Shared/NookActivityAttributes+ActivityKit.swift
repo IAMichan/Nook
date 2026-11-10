@@ -9,10 +9,10 @@ extension NookActivityAttributes: ActivityAttributes {
 }
 
 extension LiveActivityPhase {
-    /// Colors keep their meaning: iris = working, amber = waiting on you, mint = done, coral = failed.
+    /// Colors keep their meaning: sky = working, amber = waiting on you, mint = done, coral = failed.
     var color: Color {
         switch self {
-        case .working: return Theme.blue
+        case .working: return Theme.sky
         case .waiting: return Theme.amber
         case .done: return Theme.mint
         case .failed: return Theme.coral

@@ -294,13 +294,30 @@ enum NookTheme {
 
     /// A size of the type scale: as written on the Mac; on the phone a step larger and following the text size you chose
     /// (Dynamic Type), so the two apps keep the same proportions.
+    ///
+    /// On the phone running text is DM Sans iPhone app (bundled with the app, apps/ios/Fonts); code stays
+    /// SF Mono, and a target without the font files (an extension) falls back to SF Pro by itself.
     static func textFont(_ size: CGFloat, _ weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
         #if os(macOS)
         .system(size: size, weight: weight, design: design)
         #else
-        .system(size: UIFontMetrics.default.scaledValue(for: size * phoneTextScale), weight: weight, design: design)
+        let scaled = UIFontMetrics.default.scaledValue(for: size * phoneTextScale)
+        guard design == .default else { return .system(size: scaled, weight: weight, design: design) }
+        return .custom(phoneFontName(weight), fixedSize: scaled)
         #endif
     }
+
+    #if !os(macOS)
+    /// The DM Sans face for a weight: the four the app bundles (Regular, Medium, SemiBold, Bold).
+    static func phoneFontName(_ weight: Font.Weight) -> String {
+        switch weight {
+        case .medium: return "DMSans-Medium"
+        case .semibold: return "DMSans-SemiBold"
+        case .bold, .heavy, .black: return "DMSans-Bold"
+        default: return "DMSans-Regular"
+        }
+    }
+    #endif
 
     // Typography: SF Pro for text, SF Mono for code and paths.
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {

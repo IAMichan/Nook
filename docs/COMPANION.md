@@ -11,11 +11,24 @@ The phone sees two kinds of sessions:
 
 ## Starting from the phone
 
-The app is laid out as Nook's panel on the Mac: three tabs, **Nook**, **Agents** and **Chats**, switched in one
-quiet capsule at the top of every tab (`PanelHeader`, `PanelTabBar`), with what waits for you as an amber count on each.
-There is no tab bar along the bottom. Nook's orb on the left of that row opens the menu with the paired Macs, how the
-phone reaches the Mac, checking the connection, Live Activities and unpairing (`MacMenu`); a small amber dot on the orb
-means the Mac cannot be reached.
+The app follows iPhone app in look and layout: its dark palette (a #0a0a0a screen, #111111 cards, #191919
+lines, blue for links and the chosen tab; `NookPalette.companionDark`), DM Sans for text (`NookTheme.textFont`,
+bundled in `apps/ios/NookCompanion/Fonts`), its rounder shapes (`PhoneRadius`) and Liquid Glass for what floats
+(`floatingGlass`). Three tabs, **Nook**, **Agents** and **Chats**, sit in one glass bar at the bottom (`PhoneTabBar`),
+with what waits for you as a count on each (amber for what you act on, blue for unread chats); the bar steps aside
+while a tab shows a session or a chat. Every tab starts with the same header (`PanelHeader`): Nook's orb on the left
+opens the menu with the paired Macs, how the phone reaches the Mac, checking the connection, Live Activities and
+unpairing (`MacMenu`; a small amber dot on the orb means the Mac cannot be reached), the tab's title in the middle with
+how current what it shows is under it (`FreshnessLine`, see *Staying Connected*), and the tab's round buttons on the right.
+
+The **Agents** list reads: a search field and a filter per project (`ProjectChips`), then
+**Needs you**, **Working** and **Settled** (the last two fold; "Settled (6)" while folded). Each session is one row edge
+to edge (`PhoneSessionRow`): its agent's mark and title, its state as a mark and a word in the state's color (amber
+*Approval*, indigo *Input*, sky while it works, coral *Failed*), what it asks under it, and its branch, agent and
+folder. A session that waits on you answers right in its row: **Allow once** and **Decline**, or **Answer**.
+
+The **Nook** tab shows **Today** from the Mac's home (`CompanionOp.home`, `TodaySection`): what waits for you, the next
+meetings, and what plays with play/pause.
 
 The **Nook** tab asks Nook something straight from its composer at the bottom (a new chat); the **Agents** tab's round
 button opens the New session sheet. The quick actions on the app's icon start a session, ask Nook or open Chats. An
@@ -88,7 +101,9 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 - **Diagrams and math:** a message with a Mermaid fence or math (`$…$`, `$$…$$`, a `math` fence) draws like on the Mac, from the same bundled `mermaid` and `katex` files (no network; the page's policy allows none). Touch and hold a diagram to save it to Photos (add-only permission).
 - **Snooze:** besides an hour, this evening and tomorrow morning, *Pick a time…* snoozes to any moment up to a month ahead (`snoozeUntil`) and *Until the limit resets* to when the usage limit that stopped the session resets (`snoozeLimitReset`, offered while the Mac knows that moment, `SessionDigest.limitResetsAt`).
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`,
+`allowAlways`, `deflate`, `deviceKey`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only. The Tauri app (`apps/tauri`) does not list `allowAlways`, `deflate` or `deviceKey` yet: with it the phone
+offers Allow once and Decline, reads plain answers and sends its requests unsigned, as before.
 
 ## Versions
 
@@ -108,6 +123,14 @@ Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/S
 
 ## Security Architecture
 
+- **Device key:** with a Mac that lists `deviceKey`, the phone makes a P-256 signing key of its own for that pairing, in
+  the Secure Enclave where the phone has one (`DeviceKeyStore`; a software key in the simulator), and tells the Mac its
+  public half once, right after pairing (`CompanionOp.bindKey`). From the Mac's "bound" on, every request carries a
+  signature over its sealed bytes (envelope field `g`, `CompanionDeviceKey`), and the Mac refuses an unsigned or wrongly
+  signed request from that phone (`notAllowedFromPhone`, message `signature`), except `ping`. A copy of the pairing key
+  alone (a backup, a leaked file) can then no longer act. The first key a Mac hears for a pairing is the one it keeps;
+  a phone that lost its own is told to pair again. Unpairing forgets the key on both sides.
+
 - **Out-of-band key exchange:** The 32-byte random key is transferred exclusively via the QR code and never sent over the network.
 - **End-to-end authenticated encryption:** Every message is sealed with **ChaCha20-Poly1305** (keys derived via HKDF from the pairing key, with device ID and direction bound in the associated data). Anyone on the same Wi-Fi network cannot read session titles or commands, nor modify or forge requests.
 - **Replay & rate protection (`RequestGuard`):** Every request carries a timestamp (max 60 s skew; a phone whose clock is further off corrects for it, see *When the Mac is out of reach*) and a unique nonce. The Mac rejects stale or replayed requests and enforces a limit of 120 requests/minute per device, up to 8 concurrent connections, 256 KB max message size, and a 30 s connection timeout.
@@ -126,6 +149,17 @@ The phone keeps one live connection to the Mac while the app is in front, modele
 - **Reconnecting:** one supervisor owns retries: exponential backoff with jitter from 1 second up to a minute, reset after a connection stayed up for 30 seconds (`RetryBackoff`). Coming back to the app after 10 seconds or more replaces the connection at once (iOS can kill a suspended socket without a word); after a shorter glance a 3-second probe is enough (`CompanionWakeup`). A change of network (Wi-Fi to cellular, another Wi-Fi network) probes the connection and ends any wait.
 - **Moving back to a better route:** while connected over a later route (Tailscale), the phone checks the earlier ones every minute and on a network change, and moves over as soon as one answers. A route that answered but then failed to connect is left alone for 5 minutes (`RouteCooldowns`), so a flaky network cannot bounce the connection.
 - **Outbox and retries:** with a Mac that lists `retry`, what you write goes through an outbox on the phone (`CompanionOutbox`, a protected file): a message to a session, a new session, a question to Nook and a message to a chat. Each shows where it belongs as waiting (in its session; *New session · waiting for your Mac* at the top of the Agents list; *New chat · waiting for your Mac* in the Nook tab, or dimmed in its chat; dimmed in a chat of the Chats tab; a long press lets it go), goes as soon as the Mac answers, and keeps its request id. A new chat whose first question waited becomes that chat once the Mac took it. The Mac remembers its answer to every request that changes something (`CommandReceipts`: messages, approvals, answers, stops, starts, questions to Nook, chat messages and marks, the player, session management and token registrations), so a repeat of the same id (a lost answer, a message sent again from the outbox) gets that answer and is never carried out twice; a repeat that arrives while the first is still running waits for its answer. The repeat must still be fresh and within the rate. The Mac keeps at most 256 answers per phone, the least recently asked for dropped first, each for at most 25 hours (longer than a message may wait in the outbox). A message to a session that waited more than a day is dropped; a new session, a question to Nook or a chat message after an hour, since started or sent much later it would surprise more than help (`CompanionOutbox.maxAge(for:)`). A refusal that will not pass (a folder another session works in, no brain on the Mac) takes a new session, a question or a chat message out of the outbox with why, so it never holds up what waits behind it; only a busy session keeps a message waiting (`CompanionOutbox.waitsAfter`). Approvals, answers and stops never wait in the outbox: they mean something only now (a button on a notification is the one exception, see below).
+
+- **Probe deadline per route:** coming back to the app, the connection is checked with a ping that may take 3 seconds on
+  the local network and 15 over Tailscale, a VPN, the internet or the relay (`CompanionTiming.probeTimeout(for:)`), as
+  app does: a phone on mobile data easily needs longer for one round trip, and that is not a dead connection.
+- **Fresh apart from connected:** the header says how current what shows is (`CompanionFreshness`): *Live* with a live
+  connection (every change comes the moment it happens), *Connected* while answers come, *Updated 3 min ago* when they
+  stopped coming, and *Not connected · from 14:02* while the Mac cannot be reached.
+- **Compressed answers:** every request says the phone reads compressed answers (`CompanionRequest.accepts`); a Mac
+  that lists `deflate` compresses answers of 2 KB and more before sealing them (`CompanionDeflate`, raw DEFLATE; envelope
+  field `z`, which is authenticated with the rest). A conversation or a session's changes shrink to a fraction, which
+  matters on mobile data and through the relay. The phone refuses a message that would grow beyond 8 MB.
 
 ## When the Mac is out of reach
 

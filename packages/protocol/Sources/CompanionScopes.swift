@@ -34,7 +34,7 @@ enum CompanionScopes {
     /// The one table of what each op needs. Every `CompanionOp` has an entry (`CompanionScopesTests`).
     static let table: [CompanionOp: Requirement] = [
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
-        .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
+        .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always, .bindKey: .always,
         .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
         .pulls: .scope(.read), .pull: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),
@@ -56,6 +56,7 @@ enum CompanionScopes {
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
         CompanionFeature.liveActivity: .read, CompanionFeature.pullRequests: .read, CompanionFeature.attachments: .operate,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
+        CompanionFeature.allowAlways: .approve,
     ]
 
     /// Whether `granted` allows `op`. An op missing from the table is refused: a new op must be given its scope.

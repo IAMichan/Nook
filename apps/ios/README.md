@@ -17,9 +17,13 @@ Select an iPhone simulator (or, for a physical device, put your Apple Developer 
 
 ```text
 NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs push notifications
-  Theme.swift            `Theme` = the Mac's `NookTheme`, plus how a session's state reads and the system bars
+  Theme.swift `Theme` = the Mac's `NookTheme`, with the phone's own palette iPhone app
+                         (`NookPalette.companionDark`), its shapes (`PhoneRadius`), state colors and the system bars
+  Fonts/ DM Sans (SIL OFL 1.1, `OFL.txt`), the phone's type iPhone app
+  DeviceKeyStore.swift   the phone's own signing key per Mac, in the Secure Enclave (docs/COMPANION.md, "Device key")
   ThemeViews.swift       cards, section headers, status pills and banners, built on the parts shared with the Mac
-  PanelComponents.swift  the panel's header and tabs, the search field, the composer and starters
+  PanelComponents.swift the header, the glass tab bar at the bottom, buttons and chips, the search field, the
+                         composer, grouped sheet rows and starters
   CompanionViews.swift   root (Nook, Agents, Chats), pairing, session overview
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer

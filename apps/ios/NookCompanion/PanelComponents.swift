@@ -51,6 +51,15 @@ enum CompanionTab: Hashable, CaseIterable {
         case .chats: return "Chats"
         }
     }
+
+    /// Its icon in the tab bar.
+    var symbol: String {
+        switch self {
+        case .nook: return "sparkles"
+        case .agents: return "terminal"
+        case .chats: return "bubble.left"
+        }
+    }
 }
 
 /// Which tab shows: shared, so the header every tab starts with can switch.
@@ -70,22 +79,31 @@ final class TabRouter: ObservableObject {
     }
 }
 
-/// The row on top of every tab, the Mac's panel header: Nook's orb (its menu holds the Mac, the connection and Live
-/// Activities), the tabs in one quiet capsule, and the tab's own round button on the right. Every tab starts with this
-/// same row, so it stays put when you switch.
+/// The row on top of every tab iPhone app: Nook's orb on the left (its menu holds the Mac, the connection
+/// and Live Activities), the tab's title in the middle with how current what it shows is under it (`FreshnessLine`), and
+/// the tab's own round buttons on the right. The tabs themselves are at the bottom (`PhoneTabBar`).
 struct PanelHeader<Trailing: View>: View {
+    @EnvironmentObject private var router: TabRouter
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             MacMenu()
-            PanelTabBar()
             Spacer(minLength: 0)
-            trailing()
+            HStack(spacing: Theme.Spacing.sm) { trailing() }
+        }
+        .frame(minHeight: 44)
+        .overlay {
+            VStack(spacing: 0) {
+                Text(router.tab.title).font(Theme.TextStyle.screenTitle).foregroundStyle(Theme.paper).lineLimit(1)
+                FreshnessLine()
+            }
+            .padding(.horizontal, 96)
+            .allowsHitTesting(false)
         }
         .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.top, Theme.Spacing.md)
-        .padding(.bottom, Theme.Spacing.lg)
+        .padding(.top, Theme.Spacing.xs)
+        .padding(.bottom, Theme.Spacing.md)
     }
 }
 
@@ -93,44 +111,130 @@ extension PanelHeader where Trailing == EmptyView {
     init() { self.init { EmptyView() } }
 }
 
-/// The panel's tabs as the Mac's `NookTabBar`: plain words in a quiet capsule, the selected one on a raised capsule
-/// that slides to the next; what waits for you as an amber count.
-struct PanelTabBar: View {
+/// A round button in a header,: an icon on floating glass, 40 pt, so it reads as one with the orb beside it.
+struct HeaderButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(icon: symbol)
+                .font(Theme.font(16, .semibold))
+                .foregroundStyle(Theme.paper)
+                .frame(width: 40, height: 40)
+                .floatingGlass(Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressFade())
+        .accessibilityLabel(label)
+    }
+}
+
+/// Under a tab's title: which Mac, and how current what shows is (`CompanionFreshness`), apart from whether it is
+/// connected: "Live" with a live connection, "Updated 3 min ago" when answers stopped coming, "Not connected" when the Mac
+/// cannot be reached. A dot carries the state: mint when current, amber when not.
+struct FreshnessLine: View {
+    @EnvironmentObject private var client: CompanionClient
+
+    var body: some View {
+        let freshness = client.freshness
+        HStack(spacing: Theme.Spacing.xs) {
+            Circle().fill(Self.current(freshness) ? Theme.mint : Theme.amber).frame(width: 6, height: 6)
+            Text(verbatim: text(freshness)).lineLimit(1).truncationMode(.middle)
+        }
+        .font(Theme.TextStyle.caption)
+        .foregroundStyle(Theme.textTertiary)
+        .accessibilityElement(children: .combine)
+    }
+
+    static func current(_ freshness: CompanionFreshness) -> Bool {
+        switch freshness {
+        case .live, .current: return true
+        case .behind, .offline: return false
+        }
+    }
+
+    private func text(_ freshness: CompanionFreshness) -> String {
+        let state: String
+        switch freshness {
+        case .live: state = String(localized: "Live")
+        case .current: state = String(localized: "Connected")
+        case .behind(let minutes): state = String(localized: "Updated \(minutes) min ago")
+        case .offline(let since):
+            state = since.map { String(localized: "Not connected · from \($0.formatted(date: .omitted, time: .shortened))") }
+                ?? String(localized: "Not connected")
+        }
+        return client.macName.isEmpty ? state : client.macName + " · " + state
+    }
+}
+
+/// The tabs, at the bottom iPhone app: one glass bar over the content, an icon and a word per tab, the
+/// chosen one lit in blue on a raised pill that slides to the next; what waits for you as a count on its icon (amber for
+/// what you have to act on, blue for unread chats). Hidden while a tab shows a pushed screen (a session, a chat).
+struct PhoneTabBar: View {
     @EnvironmentObject private var client: CompanionClient
     @EnvironmentObject private var router: TabRouter
     @Namespace private var selection
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.xxs) {
+        HStack(spacing: Theme.Spacing.xs) {
             ForEach(router.available(client), id: \.self) { tab in
-                let selected = router.tab == tab
-                Button {
-                    guard !selected else { return }
-                    Haptics.tap()
-                    withAnimation(Theme.reveal) { router.tab = tab }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Text(tab.title).lineLimit(1)
-                        NookCountBadge(count: count(tab))
-                    }
-                    .font(Theme.TextStyle.tab)
-                    .foregroundStyle(selected ? Theme.paper : Theme.textTertiary)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .frame(height: 32)
-                    .background {
-                        if selected {
-                            Capsule().fill(Theme.smoke).matchedGeometryEffect(id: "selection", in: selection)
-                        }
-                    }
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
+                item(tab)
             }
         }
-        .padding(Theme.Spacing.xxs)
-        .background(Theme.surface, in: Capsule())
-        .fixedSize()
+        .padding(Theme.Spacing.xs)
+        .frame(height: 62)
+        .floatingGlass(RoundedRectangle(cornerRadius: PhoneRadius.glass, style: .continuous))
+        .padding(.horizontal, Theme.Spacing.xxl)
+        .padding(.bottom, Theme.Spacing.xs)
+    }
+
+    private func item(_ tab: CompanionTab) -> some View {
+        let selected = router.tab == tab
+        return Button {
+            guard !selected else { return }
+            Haptics.tap()
+            withAnimation(Theme.reveal) { router.tab = tab }
+        } label: {
+            VStack(spacing: Theme.Spacing.xxs) {
+                Image(icon: tab.symbol)
+                    .font(Theme.font(19, selected ? .semibold : .regular))
+                    .frame(height: 24)
+                    .overlay(alignment: .topTrailing) { badge(tab).offset(x: 12, y: -6) }
+                Text(tab.title).font(Theme.TextStyle.tabBar).lineLimit(1)
+            }
+            .foregroundStyle(selected ? Theme.blue : Theme.textTertiary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: PhoneRadius.glass - Theme.Spacing.xs, style: .continuous)
+                        .fill(Theme.paper.opacity(0.1))
+                        .matchedGeometryEffect(id: "selection", in: selection)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(count(tab) > 0 ? Text("\(count(tab))") : Text(""))
+    }
+
+    @ViewBuilder
+    private func badge(_ tab: CompanionTab) -> some View {
+        let count = count(tab)
+        if count > 0 {
+            Text(count, format: .number)
+                .font(Theme.textFont(9, .bold))
+                .monospacedDigit()
+                .foregroundStyle(tab == .chats ? Theme.paper : Theme.ink)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .frame(minWidth: 16, minHeight: 16)
+                .background(Capsule().fill(tab == .chats ? Theme.blue : Theme.amber))
+        }
     }
 
     private func count(_ tab: CompanionTab) -> Int {
@@ -202,14 +306,16 @@ struct MacMenu: View {
                 Button("Unpair from this Mac", role: .destructive) { client.unpair() }
             }
         } label: {
-            NookMark(size: 30)
+            // On a glass disc, so the orb and the buttons across from it read as one row.
+            NookMark(size: 26)
+                .frame(width: 40, height: 40)
+                .floatingGlass(Circle())
                 .overlay(alignment: .bottomTrailing) {
                     if offline {
                         Circle().fill(Theme.amber).frame(width: 9, height: 9)
                             .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: 2))
                     }
                 }
-                .frame(width: 36, height: 36)
                 .contentShape(Circle())
         }
         .accessibilityLabel("Nook and your Mac")
@@ -247,7 +353,7 @@ struct PressFade: ButtonStyle {
 
 /// A list row: lit with `rowHover` while your finger is on it, as the Mac lights the row under the pointer.
 struct RowPress: ButtonStyle {
-    var radius = Theme.Radius.card
+    var radius = PhoneRadius.row
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -269,7 +375,7 @@ struct NookSearchField: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(icon: "magnifyingglass")
-                .font(Theme.textFont(11, .medium))
+                .font(Theme.font(14, .medium))
                 .foregroundStyle(Theme.textTertiary)
             TextField(prompt, text: $text)
                 .font(Theme.TextStyle.body)
@@ -292,10 +398,12 @@ struct NookSearchField: View {
                 .accessibilityLabel("Clear")
             }
         }
-        .padding(.leading, Theme.Spacing.md)
+        .padding(.leading, Theme.Spacing.lg)
         .padding(.trailing, Theme.Spacing.xxs)
-        .frame(minHeight: 38)
-        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .frame(minHeight: 40)
+        // input: the field a step above the screen with a faint edge.
+        .background(Theme.field, in: RoundedRectangle(cornerRadius: PhoneRadius.row, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: PhoneRadius.row, style: .continuous).strokeBorder(Theme.fieldStroke, lineWidth: 1))
     }
 }
 
@@ -351,16 +459,19 @@ struct SessionComposer<Controls: View>: View {
         .padding(.trailing, Theme.Spacing.md)
         .padding(.top, hasControls ? Theme.Spacing.xl : Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.md)
-        .background(shape.fill(Theme.surface))
-        .overlay(shape.strokeBorder(focused.wrappedValue ? Theme.iris.opacity(0.28) : Theme.fieldStroke, lineWidth: 1))
-        .overlay(shape.strokeBorder(LinearGradient(colors: [Theme.paper.opacity(0.06), Theme.paper.opacity(0)],
-                                                   startPoint: .top, endPoint: .center), lineWidth: 1).allowsHitTesting(false))
+        // composer: a grouped surface at 90 % over a blur, so the conversation shows faintly through it.
+        .background(.ultraThinMaterial, in: shape)
+        .background(shape.fill(Theme.graphite.opacity(0.9)))
+        .overlay(shape.strokeBorder(focused.wrappedValue ? Theme.blue.opacity(0.42) : Theme.paper.opacity(0.06), lineWidth: 1))
         .animation(Theme.reveal, value: focused.wrappedValue)
         .contentShape(shape)
         .onTapGesture { focused.wrappedValue = true }
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous) }
+    /// 27 pt for one line; a box with choices under its text is a card (`PhoneRadius.card`).
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: hasControls ? PhoneRadius.card : PhoneRadius.composer, style: .continuous)
+    }
 
     private func field(_ focused: FocusState<Bool>.Binding) -> some View {
         TextField(prompt, text: $text, axis: .vertical)
@@ -390,15 +501,15 @@ struct SessionComposer<Controls: View>: View {
         } label: {
             // The Mac's round button (`SessionComposer.roundButton`): Nook's color when it can go, `smoke` when not.
             ZStack {
-                Circle().fill(active ? Theme.iris : Theme.smoke)
+                Circle().fill(active ? Theme.primary : Theme.smoke)
                 if sending {
-                    ProgressView().controlSize(.small).tint(Theme.onIris)
+                    ProgressView().controlSize(.small).tint(Theme.onPrimary)
                 } else {
-                    Image(icon: symbol).font(Theme.font(13, .bold))
-                        .foregroundStyle(active ? Theme.onIris : Theme.textTertiary)
+                    Image(icon: symbol).font(Theme.font(14, .bold))
+                        .foregroundStyle(active ? Theme.onPrimary : Theme.textTertiary)
                 }
             }
-            .frame(width: 34, height: 34)
+            .frame(width: 38, height: 38)
             .contentShape(Circle())
         }
         .buttonStyle(PressFade())
@@ -527,5 +638,159 @@ struct SuggestionGrid: View {
                 .buttonStyle(RowPress(radius: Theme.Radius.panel))
             }
         }
+    }
+}
+
+// MARK: buttons and chips
+
+/// A full-width or compact button in three kinds: `prominent` (the main action, white on dark), `secondary`
+/// (a step above the surface, with an edge) and `danger` (coral on a dark coral wash). A card that asks something stacks
+/// them full width, a row puts them side by side (`compact`).
+struct PhoneActionButton: View {
+    enum Style { case prominent, secondary, danger }
+
+    let title: String
+    var symbol: String? = nil
+    var style: Style = .secondary
+    var compact = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.sm) {
+                if let symbol { Image(icon: symbol).font(Theme.font(compact ? 12 : 14, .bold)) }
+                Text(title).lineLimit(1)
+            }
+            .font(Theme.textFont(compact ? 13 : 14, style == .secondary ? .medium : .bold))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, compact ? Theme.Spacing.xl : Theme.Spacing.lg)
+            .frame(maxWidth: compact ? nil : .infinity)
+            .frame(height: compact ? 34 : 46)
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().strokeBorder(edge, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressFade())
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .prominent: return Theme.onPrimary
+        case .secondary: return Theme.paper
+        case .danger: return Theme.coral
+        }
+    }
+
+    private var fill: Color {
+        switch style {
+        case .prominent: return Theme.primary
+        case .secondary: return Theme.graphite
+        case .danger: return Theme.coral.opacity(0.14)
+        }
+    }
+
+    private var edge: Color {
+        switch style {
+        case .prominent: return .clear
+        case .secondary: return Theme.line2
+        case .danger: return Theme.coral.opacity(0.32)
+        }
+    }
+}
+
+/// The project filter above the Agents list: "All" and each folder the sessions work in, one row that
+/// scrolls sideways; the chosen chip is white.
+struct ProjectChips: View {
+    let projects: [String]
+    @Binding var chosen: String?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                chip(String(localized: "All"), selected: chosen == nil) { chosen = nil }
+                ForEach(projects, id: \.self) { project in
+                    chip(project, selected: chosen == project) { chosen = chosen == project ? nil : project }
+                }
+            }
+        }
+        .scrollClipDisabled()
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            withAnimation(Theme.reveal) { action() }
+        } label: {
+            Text(verbatim: title)
+                .font(Theme.textFont(12, selected ? .bold : .medium))
+                .foregroundStyle(selected ? Theme.onPrimary : Theme.paper)
+                .lineLimit(1)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .frame(height: 30)
+                .background(Capsule().fill(selected ? Theme.primary : Theme.surface))
+                .overlay(Capsule().strokeBorder(selected ? Color.clear : Theme.line, lineWidth: 1))
+        }
+        .buttonStyle(PressFade())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+// MARK: Grouped sections (sheets)
+
+/// Rows that belong together in a sheet: one surface with 24 pt corners, the rows on it
+/// separated by inset hairlines (`SheetDivider`).
+struct SheetGroup<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: PhoneRadius.group, style: .continuous))
+    }
+}
+
+/// The hairline between two rows of a `SheetGroup`, inset to their text.
+struct SheetDivider: View {
+    var body: some View {
+        NookDivider(inset: Theme.Spacing.xl, tint: Theme.separator)
+    }
+}
+
+/// A choice in a `SheetGroup`: its name, the value chosen (an agent with its mark) and a chevron; a tap opens the menu.
+struct SheetMenuRow<Items: View>: View {
+    let title: String
+    let value: String
+    var agent: String? = nil
+    @ViewBuilder let items: () -> Items
+
+    var body: some View {
+        Menu(content: items) {
+            HStack(spacing: Theme.Spacing.md) {
+                Text(verbatim: title).font(Theme.TextStyle.rowTitle).foregroundStyle(Theme.paper)
+                Spacer(minLength: Theme.Spacing.md)
+                if let agent { AgentMark(agent: agent, size: 16) }
+                Text(verbatim: value).font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Image(icon: "chevron.up.chevron.down").font(Theme.font(11, .semibold)).foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .frame(minHeight: 50)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "\(title), \(value)"))
+    }
+}
+
+/// A switch in a `SheetGroup`, in blue when on.
+struct SheetToggleRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Text(verbatim: title).font(Theme.TextStyle.rowTitle).foregroundStyle(Theme.paper)
+        }
+        .tint(Theme.blue)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .frame(minHeight: 50)
     }
 }
