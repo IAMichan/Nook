@@ -306,7 +306,7 @@ struct AgentCommandPalette: View {
         // As wide as a narrow tab allows, never wider than the usual 480.
         .frame(maxWidth: .infinity)
         .frame(maxWidth: 480)
-        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
+        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
@@ -340,7 +340,7 @@ struct AgentCommandPalette: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
+        .roundedBackground(selected ? NookTheme.smoke : .clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
     }
 

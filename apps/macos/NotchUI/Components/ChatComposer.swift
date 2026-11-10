@@ -828,7 +828,7 @@ private struct ChatAttachmentThumb: View {
     @State private var binReady = false
 
     private var bin: Bool { shown && hovering && binReady }
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous) }
+    private var shape: RoundedRectangle { NookTheme.shape(NookTheme.Radius.chip) }
 
     var body: some View {
         Button(action: bin ? remove : select) {
@@ -1015,7 +1015,7 @@ private struct ChatPanelField: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .frame(minHeight: 28)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
     }
 
     private var field: some View {
@@ -1192,8 +1192,7 @@ private struct ChatPickRow: View {
             }
             .padding(.vertical, NookTheme.Spacing.sm)
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1353,7 +1352,7 @@ private struct ChatGIFCell: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.card)
                     .fill(hovering ? NookTheme.smoke : NookTheme.graphite)
                 if let preview {
                     AnimatedPicture(url: preview)
@@ -1363,7 +1362,7 @@ private struct ChatGIFCell: View {
                 }
             }
             .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .roundedClip(NookTheme.Radius.card)
             .hoverLift(hovering, scale: 1.04)
             .contentShape(Rectangle())
         }
@@ -1394,8 +1393,7 @@ private struct ChatStickerCell: View {
                 }
             }
             .frame(width: side, height: side)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(hovering ? NookTheme.smoke : NookTheme.graphite))
+            .roundedBackground(hovering ? NookTheme.smoke : NookTheme.graphite, radius: NookTheme.Radius.card)
             .hoverLift(hovering, scale: 1.04)
             .contentShape(Rectangle())
         }

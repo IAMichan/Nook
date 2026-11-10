@@ -462,14 +462,14 @@ struct ComposerSuggestionList: View {
                     }
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(index == model.selection ? NookTheme.smoke : Color.clear))
+                    .roundedBackground(index == model.selection ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(NookTheme.Spacing.sm)
-        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
+        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
         .accessibilityElement(children: .contain)
     }
 }
@@ -686,8 +686,7 @@ struct ComposerUsageRing: View, Equatable {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(hovering || open ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
         }

@@ -430,8 +430,8 @@ private struct PullFileCard: View {
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.card, style: .continuous)
+        .roundedClip(Theme.Radius.card)
+        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.card)
     }
 }
 

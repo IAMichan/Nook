@@ -186,7 +186,7 @@ struct PairingView: View {
                                 .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(1...4)
                                 .font(Theme.TextStyle.code)
                                 .padding(Theme.Spacing.lg)
-                                .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                .roundedBackground(Theme.well, radius: Theme.Radius.control)
                             NookPrimaryButton(title: String(localized: "Pair")) { client.pair(link: text) }
                                 .disabled(text.isEmpty || client.phase == .pairing)
                         }
@@ -736,11 +736,8 @@ struct SessionNotice: View {
                         Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary).lineLimit(2)
                             .padding(Theme.Spacing.md)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                    .strokeBorder(Theme.hairline, lineWidth: 0.5)
-                            )
+                            .roundedBackground(Theme.well, radius: Theme.Radius.control)
+                            .roundedStrokeBorder(Theme.hairline, radius: Theme.Radius.control, lineWidth: 0.5)
                     }
                 }
                 actions(item)
@@ -750,8 +747,7 @@ struct SessionNotice: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel,
-                        style: .continuous)
+        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel)
     }
 
     @ViewBuilder

@@ -97,8 +97,7 @@ private struct MusicSidebarRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -133,8 +132,7 @@ private struct MusicSidebarPlaylistRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -53,10 +53,10 @@ struct McpAppBlock: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: session.height)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+                .roundedClip(NookTheme.Radius.control)
                 .overlay {
                     if session.reference.prefersBorder != false {
-                        RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).stroke(NookTheme.line2, lineWidth: 1)
+                        NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1)
                     }
                 }
             }

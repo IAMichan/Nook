@@ -305,7 +305,7 @@ struct TranscriptNotice: View {
             }
             .padding(Theme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .roundedBackground(Theme.surface, radius: Theme.Radius.card)
             .padding(.vertical, Theme.Spacing.xs)
         } else {
             HStack(spacing: Theme.Spacing.sm) {

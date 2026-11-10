@@ -484,8 +484,7 @@ private struct TerminalGroupHeader: View {
             .foregroundStyle(active || hovering ? NookTheme.textStrong : NookTheme.textTertiary)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: TerminalMetrics.groupHeader)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
+            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -534,8 +533,7 @@ private struct TerminalRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: TerminalMetrics.row)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -598,9 +596,8 @@ struct TerminalActionBar: View {
             }
         }
         .frame(height: TerminalMetrics.action.height)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-            .strokeBorder(NookTheme.border, lineWidth: 1))
+        .roundedClip(NookTheme.Radius.control)
+        .roundedStrokeBorder(NookTheme.border, radius: NookTheme.Radius.control)
         .fixedSize()
         .confirmCloseTerminal($closing)
     }

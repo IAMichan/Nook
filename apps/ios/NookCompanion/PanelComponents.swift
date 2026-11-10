@@ -26,7 +26,7 @@ struct HomeLogo: View {
             }
         }
         .frame(width: size, height: size)
-        .background(tileFill, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        .roundedBackground(tileFill, radius: size * 0.28)
         .accessibilityHidden(true)
     }
 
@@ -251,8 +251,7 @@ struct RowPress: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(configuration.isPressed ? Theme.rowHover : Color.clear,
-                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .roundedBackground(configuration.isPressed ? Theme.rowHover : Color.clear, radius: radius)
             .animation(Theme.hover, value: configuration.isPressed)
     }
 }
@@ -295,7 +294,7 @@ struct NookSearchField: View {
         .padding(.leading, Theme.Spacing.md)
         .padding(.trailing, Theme.Spacing.xxs)
         .frame(minHeight: 38)
-        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .roundedBackground(Theme.field, radius: Theme.Radius.control)
     }
 }
 
@@ -360,7 +359,7 @@ struct SessionComposer<Controls: View>: View {
         .onTapGesture { focused.wrappedValue = true }
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous) }
+    private var shape: RoundedRectangle { Theme.shape(Theme.Radius.composer) }
 
     private func field(_ focused: FocusState<Bool>.Binding) -> some View {
         TextField(prompt, text: $text, axis: .vertical)
@@ -521,8 +520,8 @@ struct SuggestionGrid: View {
                     }
                     .padding(Theme.Spacing.md)
                     .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+                    .roundedBackground(Theme.field, radius: Theme.Radius.panel)
+                    .roundedHitShape(Theme.Radius.panel)
                 }
                 .buttonStyle(RowPress(radius: Theme.Radius.panel))
             }

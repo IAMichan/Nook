@@ -728,7 +728,7 @@ private struct PanelRow: View {
                 content.opacity(enabled ? 1 : 0.55)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
+        .roundedBackground(hovering && enabled ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.card)
         .onHover { hovering = $0 }
         .help(disabledReason ?? help ?? "")
     }

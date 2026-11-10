@@ -344,11 +344,9 @@ struct ChatReplyField: View {
         .padding(.vertical, NookTheme.Spacing.sm)
         // A soft, round field that stands out a little from the panel, and a little more while you type in it; Nook's
         // draft gives it Nook's color, so it is clear whose words are about to go out.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
-            .fill(focus.wrappedValue ? NookTheme.surface : NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
-            .strokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45)
-                          : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke), lineWidth: 1))
+        .roundedBackground(focus.wrappedValue ? NookTheme.surface : NookTheme.field, radius: NookTheme.Radius.composer)
+        .roundedStrokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45) : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke),
+                             radius: NookTheme.Radius.composer)
         .animation(NookTheme.hover, value: focus.wrappedValue)
     }
 
@@ -701,8 +699,7 @@ private struct DraftPanel: View {
                 .transition(.opacity)
             }
         }
-        .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet,
-                        style: .continuous)
+        .cardBackground(NookTheme.iris.opacity(0.06), stroke: NookTheme.iris.opacity(0.2), radius: NookTheme.Radius.sheet)
         .help(writing ? "" : readyNotice)
         .animation(NookTheme.reveal, value: lookups)
         .animation(NookTheme.reveal, value: writing)
@@ -808,7 +805,7 @@ private struct DraftPanel: View {
         }
         .padding(NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
         .transition(.opacity)
     }
 
@@ -858,7 +855,7 @@ private struct DraftPanel: View {
         .padding(.trailing, NookTheme.Spacing.xxs)
         .frame(minHeight: 30)
         .cardBackground(NookTheme.field, stroke: steerFocused.wrappedValue ? NookTheme.iris.opacity(0.4) : NookTheme.fieldStroke,
-                        radius: NookTheme.Radius.control, style: .continuous)
+                        radius: NookTheme.Radius.control)
         .animation(NookTheme.hover, value: steer.isEmpty)
         .animation(NookTheme.hover, value: steerFocused.wrappedValue)
     }
@@ -929,7 +926,7 @@ private struct DraftActions: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
     }
 
     @ViewBuilder private var footer: some View {
@@ -1279,7 +1276,7 @@ private struct ReplyingBar: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
+        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.card)
         .accessibilityElement(children: .contain)
     }
 }

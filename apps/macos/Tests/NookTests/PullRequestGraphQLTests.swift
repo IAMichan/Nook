@@ -32,6 +32,51 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertFalse(closed.query.contains("  mine: search("))
     }
 
+    func testYourOwnPullRequestsAreAlsoListedStraightFromYourAccount() throws {
+        func query(_ closed: Bool) throws -> String {
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.body(closed: closed)) as? [String: Any])
+            return try XCTUnwrap(body["query"] as? String)
+        }
+        XCTAssertTrue(try query(false).contains("mineListed: viewer { pullRequests(states: OPEN"), "not only the search, which lags")
+        XCTAssertFalse(try query(false).contains("mineClosedListed"))
+        XCTAssertTrue(try query(true).contains("mineClosedListed: viewer { pullRequests(states: [CLOSED, MERGED]"))
+
+        // #3 was opened a moment ago: the search does not have it yet, the account's own list does. #9 is archived.
+        let answer = #"""
+        {"data":{"viewer":{"login":"ada"},
+          "mine":{"nodes":[{"number":1,"title":"Old","isDraft":false,"updatedAt":"2026-10-10T10:00:00Z","author":{"login":"ada"},
+            "repository":{"nameWithOwner":"a/b"}}]},
+          "reviews":{"nodes":[]},
+          "mineListed":{"pullRequests":{"nodes":[
+            {"number":3,"title":"New","isDraft":false,"updatedAt":"2026-10-18T10:00:00Z","author":{"login":"ada"},
+              "repository":{"nameWithOwner":"a/b","isArchived":false}},
+            {"number":1,"title":"Old","isDraft":false,"updatedAt":"2026-10-10T10:00:00Z","author":{"login":"ada"},
+              "repository":{"nameWithOwner":"a/b","isArchived":false}},
+            {"number":9,"title":"Gone","isDraft":false,"updatedAt":"2026-10-19T10:00:00Z","author":{"login":"ada"},
+              "repository":{"nameWithOwner":"a/old","isArchived":true}}]}}}}
+        """#
+        let list = try PullRequestGraphQL.parse(Data(answer.utf8))
+        XCTAssertEqual(list.mine.map(\.id), ["a/b#3", "a/b#1"], "the one the search missed, newest first, each once, no archived ones")
+    }
+
+    func testAWatchedSearchThatDidNotGetThroughKeepsOnlyItsOwnRows() {
+        func item(_ repo: String, _ number: Int) -> PullRequestItem {
+            PullRequestItem(repo: repo, number: number, title: "", url: nil, draft: false, updated: nil, author: "")
+        }
+        XCTAssertTrue(PullRequestWatchList.covers("Acme", repo: "acme/web"))
+        XCTAssertTrue(PullRequestWatchList.covers("acme/web", repo: "acme/web"))
+        XCTAssertFalse(PullRequestWatchList.covers("acme/web", repo: "acme/api"))
+        XCTAssertTrue(PullRequestWatchList.covers("user:ada", repo: "ada/notes"))
+        XCTAssertFalse(PullRequestWatchList.covers("acme", repo: "acmeco/web"))
+
+        let shown = AccountPullRequests(id: "github", name: "", login: "", mine: [], reviews: [], error: nil,
+                                        watched: [item("acme/web", 1), item("globex/api", 2)])
+        // The part with "globex" timed out; the "acme" part found a new pull request and no longer #1.
+        let found = WatchedPullRequests(items: [item("acme/web", 5)], unreadable: [], failed: ["globex"])
+        let next = AccountPullRequests.attaching(["github": found], to: [shown])[0]
+        XCTAssertEqual(next.watched.map(\.id), ["acme/web#5", "globex/api#2"], "new rows come in; the timed-out entry keeps its rows")
+    }
+
     func testAQuickRefreshKeepsTheClosedRowsUntilTheyAreReadAgain() {
         func item(_ number: Int, _ state: PullRequestItem.State = .open) -> PullRequestItem {
             PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)

@@ -97,7 +97,7 @@ struct RunInspector: View {
                     Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
                 } else if snapshot == nil || (snapshot?.loading == true && snapshot?.status == nil) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 4).fill(WS.subtle).frame(height: 14)
+                        NookTheme.shape(4).fill(WS.subtle).frame(height: 14)
                     }
                 } else if files.isEmpty {
                     Text(tr("ws.inspector.clean")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
