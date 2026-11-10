@@ -243,6 +243,7 @@ targets:
       - path: Core/I18n+BrowserCapture.swift
       - path: Core/I18n+RelayPush.swift
       - path: Core/I18n+ChatTimeline.swift
+      - path: Core/I18n+Transcript.swift
       - path: Core/I18n+Limits.swift
       - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
