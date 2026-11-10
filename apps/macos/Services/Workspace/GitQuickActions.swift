@@ -182,6 +182,17 @@ extension GitService {
         refExists("refs/remotes/\(remote)/\(base)", in: directory) ? "\(remote)/\(base)" : base
     }
 
+    /// What a branch's changes are counted against, the same for every place that shows them (a session's row, its
+    /// hover card and the Changes panel): `base` is the remote's default branch ("origin/main"), else the local one;
+    /// `point` is where the branch left it (else its upstream), so committed and merged work still counts. `point` is nil
+    /// when only the working tree counts.
+    func branchComparison(_ directory: String, status: GitStatus, remotes: [String]) -> (base: String?, point: String?) {
+        let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+        let base = defaultBranch(directory, remote: remote).map { comparisonBase(directory, base: $0, remote: remote) }
+        let point = [base, status.upstream].compactMap { $0 }.lazy.compactMap { self.branchPoint(directory, base: $0) }.first
+        return (base, point)
+    }
+
     /// Commits, diff stat and patch since `base`, for a pull request.
     func pullRequestContext(_ directory: String, base: String) throws -> (commits: String, stat: String, patch: String) {
         let commits = try run(["log", "--oneline", base + "..HEAD"], in: directory)
