@@ -13,8 +13,10 @@ failed only after you sent the task.
 - A **newer bundle wins by `updatedAt`**, so a release can correct model data before the next successful fetch. Fetch
   time cannot tell which copy holds the newer edit; `updatedAt` can, so it is bumped on every change.
 - Entries set `adapter.<agent>.minVersion`. A model above the installed CLI is reported as **update required**, and the
-  picker says which update unlocks it. Codex still lists its own models (`model/list`), which cannot name models
-  released after the installed build, so the manifest adds exactly those.
+  picker says which update unlocks it. Every agent is also asked for its own models (Claude Code's `initialize` control
+  request, Codex `model/list`, the ACP agents' `initialize` or a session opened and removed for it,
+  `WorkspaceManager.refreshAgentModels`), so a new model shows up as soon as the installed agent offers it, before the
+  manifest is edited. An agent cannot name models released after its build, so the manifest adds exactly those.
 - `status: current | legacy` classifies models, `aliases` map short names, `badge: "new"` marks new ones.
 - Tests use **synthetic model names**, so adding a model is a JSON edit that never needs a test change.
 
@@ -27,7 +29,7 @@ failed only after you sent the task.
 | The cache keeps the last valid copy | `ModelManifest.accepting(_:over:)` returns nil for an invalid or older copy; `ModelManifestStore` stores only accepted bytes (`~/Library/Application Support/Nook/workspace/model-manifest.json`) |
 | A newer bundle wins | `ModelManifest.preferred(bundled:cached:)` |
 | `minVersion` against the CLI | `CLIVersion` parses `claude --version` ("2.1.280 (Claude Code)") and `codex --version` ("codex-cli 0.153.0"), numeric parts and pre-releases; `ModelManifest.requiredVersion` says "update" only when both versions are known |
-| The agent's own list plus the manifest | `ModelChoice.list`: the agent's own list first, in its order, classified by the manifest; then the manifest models it did not list (all of them for Claude, only the update-required ones when the agent lists its own) |
+| The agent's own list plus the manifest | `ModelChoice.list`: the agent's own list first, in its order, classified by the manifest; then the manifest models it did not list (all of them while the agent has listed none yet, else only the update-required ones) |
 | Order | `ModelOrdering.sorted`: the agent default on top, then favorites, then the rest, each in the given order |
 | Custom model ids | `ModelPreferences.customID` / `remembering`: type an id in the model search and pick "Use “…”"; the last eight per agent are kept |
 

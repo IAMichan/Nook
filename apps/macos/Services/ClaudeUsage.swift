@@ -97,8 +97,23 @@ final class ClaudeUsage {
 
     // MARK: Background work
 
-    /// Starts `claude` in stream-json mode, sends `get_usage` and reads the reply. Gives up after 20 seconds.
+    /// Asks `claude` for `get_usage` and reads the reply. Gives up after 20 seconds.
     private nonisolated static func read(executable: String, environment extra: [String: String]) -> [UsageLimits.PlanReading]? {
+        ClaudeControl.ask(["subtype": "get_usage", "skip_behaviors": true], executable: executable, environment: extra)
+            .flatMap(UsageLimits.claudeUsageReply)
+    }
+}
+
+/// One control request to the `claude` CLI outside a session: `get_usage` for the limits, `initialize` for the models it
+/// offers. Claude Code starts in stream-json mode in an empty folder with only project settings, so no hooks fire, no
+/// session is kept and no prompt is sent: a question costs no usage.
+enum ClaudeControl {
+    /// The body of the reply to `request`, nil when Claude Code does not answer it with success within `timeout` seconds.
+    nonisolated static func ask(_ request: [String: Any], executable: String, environment extra: [String: String],
+                                timeout: TimeInterval = 20) -> [String: Any]? {
+        let requestID = "nook-" + UUID().uuidString.prefix(8).lowercased()
+        let message: [String: Any] = ["type": "control_request", "request_id": requestID, "request": request]
+        guard let line = try? JSONSerialization.data(withJSONObject: message) else { return nil }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
@@ -117,12 +132,11 @@ final class ClaudeUsage {
         defer { if process.isRunning { process.terminate() } }
 
         // Terminating closes stdout, which ends the read loop.
-        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 20, execute: timeout)
-        defer { timeout.cancel() }
+        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
+        defer { stop.cancel() }
 
-        let request = #"{"type":"control_request","request_id":"nook-usage","request":{"subtype":"get_usage","skip_behaviors":true}}"#
-        input.fileHandleForWriting.write(Data((request + "\n").utf8))
+        input.fileHandleForWriting.write(line + Data("\n".utf8))
         // Claude Code answers pending control requests and then exits once its input ends.
         try? input.fileHandleForWriting.close()
 
@@ -137,10 +151,9 @@ final class ClaudeUsage {
                 guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                       (object["type"] as? String) == "control_response",
                       let response = object["response"] as? [String: Any],
-                      (response["request_id"] as? String) == "nook-usage" else { continue }
-                guard (response["subtype"] as? String) == "success",
-                      let body = response["response"] as? [String: Any] else { return nil }
-                return UsageLimits.claudeUsageReply(body)
+                      (response["request_id"] as? String) == requestID else { continue }
+                guard (response["subtype"] as? String) == "success" else { return nil }
+                return response["response"] as? [String: Any]
             }
         }
     }

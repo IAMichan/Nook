@@ -107,8 +107,10 @@ extension AppModel {
     /// Asks the connected agents which models they offer (at most every five minutes each), reads their versions, and
     /// looks for a newer model manifest when one is due.
     func refreshAgentModels() {
-        workspace.refreshAgentModels(connectedProviders.compactMap { provider in
-            connectedProfiles(for: provider).first.map { (provider: provider, profileID: $0.id) }
+        // An ACP agent you added keeps its own models: every one is asked, the other agents by their first account.
+        workspace.refreshAgentModels(connectedProviders.flatMap { provider in
+            let profiles = connectedProfiles(for: provider)
+            return (provider == .acp ? profiles : Array(profiles.prefix(1))).map { (provider: provider, profileID: $0.id) }
         })
         workspace.readAgentVersions(connectedProviders)
         workspace.refreshModelManifest()

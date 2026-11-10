@@ -227,7 +227,7 @@ final class WorkspaceManager: ObservableObject {
     var codexSubagents: [UUID: [String: UUID]] = [:]
     /// Comments on a session's diff, waiting to go to the agent together.
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
-    var modelsRefreshed: [RunProvider: Date] = [:]
+    var modelsRefreshed: [String: Date] = [:]
     /// When each agent account was last asked for its sessions (see `listAgentSessions`).
     var sessionsListed: [String: Date] = [:]
     /// The model manifest in use: the bundled one, or a newer valid copy from Nook's repository (see
