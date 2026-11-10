@@ -1,9 +1,11 @@
 import Foundation
 
 /// Builds that coding agents leave behind: Xcode build folders (`-derivedDataPath`) and `scripts/core-tests.sh`
-/// packages in temporary folders, agent scratchpads, and a worktree's `.scratch/`, and Xcode DerivedData of worktrees
-/// that no longer exist. Each is several hundred MB to 5 GB, and nothing else removes them: macOS leaves `/private/tmp`,
-/// scratchpads and DerivedData alone, and a worktree's `.scratch/` lives as long as the worktree, which can be weeks.
+/// packages in temporary folders, agent scratchpads, a worktree's `.scratch/` and `.build/` (where `scripts/xcode.sh`
+/// builds), and Xcode DerivedData of worktrees that no longer exist. Each is several hundred MB to 5 GB, and nothing else
+/// removes them: macOS leaves `/private/tmp`, scratchpads and DerivedData alone, and a worktree's `.scratch/` and
+/// `.build/` live as long as the worktree, which is for good while the cleanup rules are off (137 worktrees with a
+/// 3.7 GB `.build/xcode` each filled a 1 TB disk).
 /// Settings › Workspace can turn this off.
 enum BuildLeftovers {
     /// Untouched this long, a build in a temporary folder belongs to nobody any more.
@@ -12,7 +14,7 @@ enum BuildLeftovers {
     enum Kind: String, Equatable {
         /// A package `scripts/core-tests.sh` built.
         case testPackage
-        /// An Xcode build folder in a temporary folder, scratchpad, or `.scratch/`.
+        /// An Xcode build folder in a temporary folder, scratchpad, or a worktree's `.scratch/` or `.build/`.
         case xcodeBuild
         /// Xcode's own DerivedData for a worktree that is gone.
         case orphanedDerivedData
@@ -30,7 +32,7 @@ enum BuildLeftovers {
         var scratchpadParents: [URL]
         /// Xcode's DerivedData folder.
         var derivedData: URL
-        /// Worktrees whose `.scratch/` is looked at (only things that went untouched, as everywhere else).
+        /// Worktrees whose `.scratch/` and `.build/` are looked at (only things that went untouched, as everywhere else).
         var worktrees: [URL] = []
 
         static func standard(worktrees: [URL]) -> Roots {
@@ -52,7 +54,8 @@ enum BuildLeftovers {
                 for session in children(project) { scratchpads.append(session.appendingPathComponent("scratchpad")) }
             }
         }
-        let worktreeScratch = roots.worktrees.map { $0.appendingPathComponent(".scratch") }
+        // `.build/` is git-ignored output: `scripts/xcode.sh` builds into `.build/xcode`, and the next build makes it again.
+        let worktreeScratch = roots.worktrees.flatMap { [$0.appendingPathComponent(".scratch"), $0.appendingPathComponent(".build")] }
         for folder in roots.temporary + scratchpads + worktreeScratch {
             for entry in children(folder) where isStale(entry, now: now) {
                 if isTestPackage(entry) {
