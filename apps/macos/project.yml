@@ -64,6 +64,10 @@ targets:
       - path: Resources/mermaid
         type: folder
         buildPhase: resources
+      # KaTeX's script, style and fonts, so math typesets without asking a server (see THIRD-PARTY-NOTICES.md).
+      - path: Resources/katex
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
