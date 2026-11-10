@@ -45,6 +45,7 @@ enum CompanionScopes {
         // What a project holds goes further than a session's own changes.
         .terminals: .scope(.operate), .files: .scope(.operate),
         .inbox: .scope(.chats), .inboxChat: .scope(.chats), .inboxSend: .scope(.chats), .inboxMark: .scope(.chats),
+        .watchChat: .scope(.chats), .avatars: .scope(.chats),
         .music: .scope(.music),
         .chats: .scope(.nookChat), .chat: .scope(.nookChat), .ask: .scope(.nookChat), .chatStop: .scope(.nookChat),
     ]
@@ -56,6 +57,7 @@ enum CompanionScopes {
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
         CompanionFeature.liveActivity: .read, CompanionFeature.pullRequests: .read, CompanionFeature.attachments: .operate,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
+        CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats,
     ]
 
     /// Whether `granted` allows `op`. An op missing from the table is refused: a new op must be given its scope.
@@ -99,6 +101,8 @@ enum CompanionScopes {
             response.inbox = nil
             response.inboxLines = nil
             response.inboxTyping = nil
+            response.inboxChat = nil
+            response.avatars = nil
         }
         if !granted.contains(.nookChat) {
             response.conversations = nil

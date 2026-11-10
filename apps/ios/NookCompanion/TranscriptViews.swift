@@ -202,11 +202,26 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// "Ran npm test": what the agent did, then what it did that to, as on the Mac.
+    /// "Ran npm test": what the agent did, then what it did that to, as on the Mac. A step that gave something back (a
+    /// command's output, a search's results, an edit's patch) opens to it, as a click opens it on the Mac.
+    @ViewBuilder
     private func stepLine(_ step: TimelineEntry) -> some View {
         let text = TranscriptStepText.parts(step)
-        return TranscriptWorkLine(symbol: step.kind == .change ? "square.and.pencil" : TranscriptSymbols.symbol(step.detail ?? ""),
-                                  label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed)
+        let symbol = step.kind == .change ? "square.and.pencil" : TranscriptSymbols.symbol(step.detail ?? "")
+        if let output = step.output {
+            let key = "step:" + step.id
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                TranscriptWorkLine(symbol: symbol, label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed,
+                                   open: open.contains(key)) { toggle(key) }
+                if open.contains(key) {
+                    TranscriptStepOutput(text: output, failed: step.failed)
+                        .padding(.leading, 24 + Theme.Spacing.sm)
+                        .transition(.opacity)
+                }
+            }
+        } else {
+            TranscriptWorkLine(symbol: symbol, label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed)
+        }
     }
 
     private func toggle(_ key: String) {
@@ -282,6 +297,42 @@ struct TranscriptWorkLine: View {
         } else {
             content
         }
+    }
+}
+
+/// What a step gave back, opened under its line: the end of it in the code font on the well, a patch's lines in their
+/// colors, as the Mac shows a step's result. Scrolls sideways for long lines; selectable to copy.
+struct TranscriptStepOutput: View {
+    let text: String
+    var failed = false
+
+    private var isPatch: Bool { text.contains("\n@@") || text.hasPrefix("@@") || text.hasPrefix("--- ") }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(text.split(separator: "\n", omittingEmptySubsequences: false).prefix(60).enumerated()), id: \.offset) { _, line in
+                    Text(verbatim: line.isEmpty ? " " : String(line))
+                        .foregroundStyle(color(line))
+                        .fixedSize()
+                }
+            }
+            .font(Theme.TextStyle.code)
+            .textSelection(.enabled)
+            .padding(Theme.Spacing.md)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+            .strokeBorder(failed ? Theme.coral.opacity(0.35) : Theme.hairline, lineWidth: 0.5))
+    }
+
+    private func color(_ line: Substring) -> Color {
+        guard isPatch else { return Theme.textSecondary }
+        if line.hasPrefix("+"), !line.hasPrefix("+++") { return Theme.mint }
+        if line.hasPrefix("-"), !line.hasPrefix("---") { return Theme.coral }
+        if line.hasPrefix("@@") { return Theme.textTertiary }
+        return Theme.textSecondary
     }
 }
 

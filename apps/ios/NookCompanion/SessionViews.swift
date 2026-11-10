@@ -160,12 +160,15 @@ struct SessionDetailView: View {
             // While the session is on screen its conversation stays current: live from a Mac that sends it by itself
             // (`watchSession`), else asked for every few seconds. Leaving the screen ends the loop.
             .task {
-                let live = await client.watchSession(sessionID)
+                var live = await client.watchSession(sessionID)
                 while !Task.isCancelled {
+                    // Opened while the Mac could not be reached: once it is back, follow live from then on.
+                    if !live, client.timelineIsLive { live = await client.watchSession(sessionID) }
                     let following = live && client.timelineIsLive
                     if !following { await client.loadTimeline(sessionID) }
                     let working = client.sessions.first { $0.id == sessionID }?.attention == "working"
-                    try? await Task.sleep(for: .seconds(following ? 30 : (working ? 2 : 5)))
+                    // Following live costs nothing here; the short wait only notices a dropped connection quickly.
+                    try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
                 }
             }
         } else {

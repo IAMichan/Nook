@@ -89,9 +89,10 @@ struct ChatListView: View {
         }
         .screen()
         .task {
+            // A Mac that sends Nook's conversations by itself (`liveChats`) needs one look; otherwise every few seconds.
             while !Task.isCancelled {
                 await client.loadChats()
-                try? await Task.sleep(for: .seconds(5))
+                repeat { try? await Task.sleep(for: .seconds(5)) } while !Task.isCancelled && client.chatsAreLive
             }
         }
     }

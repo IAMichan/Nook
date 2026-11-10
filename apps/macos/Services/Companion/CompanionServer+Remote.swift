@@ -279,8 +279,10 @@ extension CompanionServer {
         let clipped = CompanionPolicy.clip(text)
         // A step can be about nothing in particular (a task list): its tool alone says what it was.
         guard !clipped.isEmpty || kind == .tool else { return nil }
+        // A step opens to what it gave back on the phone, as on the Mac: the end of it, which says how it went.
+        let output = kind == .tool || kind == .change ? TimelineEntry.outputTail(event.output) : nil
         return TimelineEntry(id: event.id.uuidString, kind: kind, text: clipped, detail: detail.map { CompanionPolicy.clip($0, limit: 120) },
-                             date: event.date.timeIntervalSince1970, failed: event.state == .failed)
+                             date: event.date.timeIntervalSince1970, failed: event.state == .failed, output: output)
     }
 
     // MARK: Managing a session

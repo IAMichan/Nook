@@ -111,6 +111,7 @@ struct InboxListView: View {
 /// and its app's mark, and the count of what is unread.
 struct InboxRow: View {
     let chat: InboxChatDigest
+    @ObservedObject private var pictures = ChatPictures.shared
 
     private var when: String {
         let date = Date(timeIntervalSince1970: chat.last)
@@ -122,7 +123,7 @@ struct InboxRow: View {
                            unread: chat.unread > 0, ticks: MessageTicks(chat.ticks),
                            // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's list.
                            typing: InboxTyping.text(chat.typing ?? [])) {
-            InboxAvatar(name: chat.name, app: chat.app, size: SharedMetrics.avatar)
+            InboxAvatar(name: chat.name, app: chat.app, size: SharedMetrics.avatar, picture: pictures.image(for: chat))
         } trailing: {
             NookCountBadge(count: chat.unread)
                 .accessibilityLabel(Text("\(chat.unread) unread"))
@@ -136,6 +137,8 @@ struct InboxAvatar: View {
     let name: String
     let app: String
     var size: CGFloat = 40
+    /// The chat's own picture from the Mac (`ChatPictures`); the initials while there is none.
+    var picture: UIImage? = nil
 
     private var initials: String { Self.initials(name) }
 
@@ -149,7 +152,7 @@ struct InboxAvatar: View {
     var body: some View {
         let style = Self.style(app)
         // The Mac's `ChatsAvatar`: the initials in the person's own color, the app as a badge on the corner.
-        ChatInitialsFace(name: name, initials: initials, size: size)
+        face
             .overlay(alignment: .bottomTrailing) {
                 Image(icon: style.symbol)
                     .font(Theme.font(size * 0.2, .bold))
@@ -161,6 +164,22 @@ struct InboxAvatar: View {
                     .offset(x: Theme.Spacing.xs, y: Theme.Spacing.xxs)
             }
             .accessibilityHidden(true)
+    }
+
+    /// The photo when the Mac sent one, cut to a circle; else the initials in the person's own color.
+    @ViewBuilder
+    private var face: some View {
+        if let picture {
+            Image(uiImage: picture)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5))
+                .transition(.opacity)
+        } else {
+            ChatInitialsFace(name: name, initials: initials, size: size)
+        }
     }
 
     /// Each app in its own color, so a list of many apps reads at a glance.
@@ -198,6 +217,7 @@ struct InboxChatView: View {
     /// Your message whose info is open: who has it and who read it.
     @State private var info: InboxLine?
 
+    @ObservedObject private var pictures = ChatPictures.shared
     private var chat: InboxChatDigest? { client.inbox.first { $0.id == chatID } }
     private var lines: [InboxLine] { client.inboxLines[chatID] ?? [] }
     /// Who is typing here now, as the Mac says it.
@@ -251,7 +271,15 @@ struct InboxChatView: View {
         .safeAreaInset(edge: .bottom) { footer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) { SheetTitle(title: chat?.name ?? "", subtitle: chat?.appName) }
+            ToolbarItem(placement: .principal) {
+                // The chat's face beside its name, as a messaging app's header.
+                HStack(spacing: Theme.Spacing.md) {
+                    if let chat {
+                        InboxAvatar(name: chat.name, app: chat.app, size: 30, picture: pictures.image(for: chat))
+                    }
+                    SheetTitle(title: chat?.name ?? "", subtitle: chat?.appName)
+                }
+            }
             if let chat {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -283,12 +311,19 @@ struct InboxChatView: View {
                 .presentationDetents([.medium, .large])
         }
         .task(id: chatID) {
+            // Live from a Mac that sends the open chat by itself (`liveChats`): new messages and typing show at once.
+            // Otherwise, or while the connection is down, asked for every few seconds.
             while !Task.isCancelled {
+                if client.chatsAreLive, await client.watchChat(chatID) {
+                    while !Task.isCancelled, client.chatsAreLive { try? await Task.sleep(for: .seconds(2)) }
+                    continue
+                }
                 await client.loadInboxChat(chatID)
                 // While someone types, sooner: their words and the end of their typing show without a long wait.
                 try? await Task.sleep(for: .seconds(typing == nil ? 4 : 1.5))
             }
         }
+        .onDisappear { Task { await client.unwatchChat(chatID) } }
     }
 
     private static let bottom = "bottom"
