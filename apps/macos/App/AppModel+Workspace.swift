@@ -309,6 +309,7 @@ extension AppModel {
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
         workspace.openTerminalFolders = { TerminalStore.shared.sessions.map(\.directory) }
+        workspace.onLowDiskSpace = { [weak self] free, freed, worktrees in self?.warnLowDiskSpace(free: free, freed: freed, worktrees: worktrees) }
         BrowserProfiles.project = { [weak self] key in
             guard let self else { return nil }
             let settings = self.workspace.settings
@@ -686,6 +687,23 @@ extension AppModel {
             openTerminal(in: folder, command: command, title: title)
         } else {
             try TerminalLauncher.run(command: command, in: folder, name: name)
+        }
+    }
+}
+
+extension AppModel {
+    /// The startup disk runs low (`WorkspaceManager.watchDiskSpace`, after it freed what it could): how much is free and
+    /// what the agents' worktrees take, with the way to Settings › Worktrees. A macOS notification that reaches you
+    /// wherever you are; without permission for one, a warning in Nook.
+    func warnLowDiskSpace(free: Int64, freed: Int64, worktrees: Int64?) {
+        var body = worktrees.map { tr("disk.low.body", DiskUsage.format(free), DiskUsage.format($0)) }
+            ?? tr("disk.low.bodyNoSize", DiskUsage.format(free))
+        if freed > 0 { body += " " + tr("disk.low.freed", DiskUsage.format(freed)) }
+        let open: () -> Void = { [weak self] in self?.openSettings(section: .worktrees) }
+        SystemNotifier.shared.notice(id: "disk-low", title: tr("disk.low.title"), body: body,
+                                     banner: NoticeBanner(level: .timeSensitive), open: open) {
+            ToastCenter.shared.warning(tr("disk.low.title"), detail: body,
+                                       action: NookToastAction(title: tr("disk.low.open"), perform: open))
         }
     }
 }

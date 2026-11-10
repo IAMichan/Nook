@@ -238,10 +238,12 @@ final class WorkspaceSettings: ObservableObject {
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
-        // Every cleanup rule is off until you switch it on: a worktree is where you go on talking to its agent after a
-        // merge. Builds left behind are swept separately (`buildLeftoverCleanup`), and Settings shows what is kept.
-        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? false
-        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 0
+        // On by default: after its pull request merged, and a week after its session settled. With every rule off,
+        // 137 worktrees stayed for good and filled a 1 TB disk (2026-11-09). Nothing is lost: a worktree with local
+        // changes or unpushed commits stays, the branch stays, and the session's next message makes the worktree again.
+        // Builds left behind are swept separately (`buildLeftoverCleanup`), and Settings shows what is kept.
+        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? true
+        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 7
         worktreeCleanupInactiveDays = defaults.object(forKey: "ws.worktreeCleanupInactiveDays") as? Int ?? 0
         worktreeCleanupUnchanged = defaults.object(forKey: "ws.worktreeCleanupUnchanged") as? Bool ?? false
         worktreeCleanupOnDelete = defaults.object(forKey: "ws.worktreeCleanupOnDelete") as? Bool ?? false
