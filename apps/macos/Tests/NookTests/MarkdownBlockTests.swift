@@ -8,9 +8,63 @@ final class MarkdownBlockTests: XCTestCase {
     }
 
     func testPlainCodeKeepsItsLanguage() {
-        guard case .code(let language, let code) = MarkdownBlock.parse("```swift\nlet a = 1\n```").first else { return XCTFail("no code") }
+        guard case .code(let language, let code, _) = MarkdownBlock.parse("```swift\nlet a = 1\n```").first else { return XCTFail("no code") }
         XCTAssertEqual(language, "swift")
         XCTAssertEqual(code, "let a = 1")
+    }
+
+    func testFenceNamesItsFile() {
+        XCTAssertEqual(MarkdownBlock.fence("swift").language, "swift")
+        XCTAssertNil(MarkdownBlock.fence("swift").title)
+        XCTAssertEqual(MarkdownBlock.fence(#"ts title="src/App.tsx""#).title, "src/App.tsx")
+        XCTAssertEqual(MarkdownBlock.fence(#"ts title="src/App.tsx""#).language, "ts")
+        XCTAssertEqual(MarkdownBlock.fence("python file=run.py").title, "run.py")
+        let bare = MarkdownBlock.fence("Sources/App.swift")
+        XCTAssertEqual(bare.language, "swift")
+        XCTAssertEqual(bare.title, "Sources/App.swift")
+        XCTAssertEqual(MarkdownBlock.fence("").language, "")
+        guard case .code(let language, _, let title) = MarkdownBlock.parse("```TS title='Main.ts'\nlet a = 1\n```").first else {
+            return XCTFail("no code")
+        }
+        XCTAssertEqual(language, "ts")
+        XCTAssertEqual(title, "Main.ts", "the file name keeps its case")
+    }
+
+    func testDetailsFold() {
+        let text = "Before\n\n<details>\n<summary>Full log</summary>\n\n- one\n- two\n</details>\n\nAfter"
+        let blocks = MarkdownBlock.parse(text)
+        XCTAssertEqual(blocks.count, 3)
+        guard case .details(let summary, let body) = blocks[1] else { return XCTFail("no details") }
+        XCTAssertEqual(summary, "Full log")
+        XCTAssertEqual(body, "- one\n- two")
+        guard case .paragraph("After") = blocks[2] else { return XCTFail("text after the fold is lost") }
+        guard case .details(let one, let inner) = MarkdownBlock.parse("<details><summary>A</summary>x</details>").first else {
+            return XCTFail("one line")
+        }
+        XCTAssertEqual(one, "A")
+        XCTAssertEqual(inner, "x")
+        // Still streaming: the fold holds what came so far.
+        guard case .details(_, let partial) = MarkdownBlock.parse("<details>\n<summary>S</summary>\nhalf").first else {
+            return XCTFail("open fold")
+        }
+        XCTAssertEqual(partial, "half")
+        // A nested fold stays in the body.
+        let nested = "<details>\n<summary>Out</summary>\n<details>\n<summary>In</summary>\nx\n</details>\n</details>\nend"
+        let parsed = MarkdownBlock.parse(nested)
+        guard case .details("Out", let outerBody) = parsed.first else { return XCTFail("nested") }
+        XCTAssertTrue(outerBody.contains("<summary>In</summary>"))
+        XCTAssertEqual(parsed.count, 2)
+    }
+
+    func testImageOnItsOwnLine() {
+        guard case .image(let alt, let source) = MarkdownBlock.parse("![Shot](https://example.com/a.png)").first else {
+            return XCTFail("no image")
+        }
+        XCTAssertEqual(alt, "Shot")
+        XCTAssertEqual(source, "https://example.com/a.png")
+        guard case .image(_, "/tmp/x.png") = MarkdownBlock.parse(#"![](/tmp/x.png "title")"#).first else { return XCTFail("path") }
+        guard case .paragraph = MarkdownBlock.parse("![x](javascript:alert(1))").first else { return XCTFail("unsafe scheme") }
+        guard case .paragraph = MarkdownBlock.parse("See ![x](https://e.com/a.png) here").first else { return XCTFail("inline") }
     }
 
     func testQuestionBlock() {
@@ -62,7 +116,7 @@ final class MarkdownBlockTests: XCTestCase {
     func testAgentTagsComeOffInlineButNotInCodeOrHTML() {
         XCTAssertEqual(MarkdownBlock.untag("Zie <pr-created>https://example.com/x</pr-created>."), "Zie <https://example.com/x>.")
         XCTAssertEqual(MarkdownBlock.untag("Druk op <kbd>Cmd</kbd>"), "Druk op <kbd>Cmd</kbd>")
-        guard case .code(_, let code) = MarkdownBlock.parse("```html\n<my-tag>x</my-tag>\n```").first else { return XCTFail("no code") }
+        guard case .code(_, let code, _) = MarkdownBlock.parse("```html\n<my-tag>x</my-tag>\n```").first else { return XCTFail("no code") }
         XCTAssertEqual(code, "<my-tag>x</my-tag>")
     }
 

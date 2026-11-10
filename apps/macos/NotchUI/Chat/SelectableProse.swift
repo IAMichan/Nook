@@ -462,7 +462,11 @@ struct SelectableProse: NSViewRepresentable {
             }
             if intent.contains(.emphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-            if let link = run.link { attributes[.link] = link }
+            if let link = run.link {
+                attributes[.link] = link
+                // The whole address under the pointer, as a browser shows it, so a link says where it goes before a click.
+                if run[CitationMark.self] == nil, MarkdownBlock.isSafeLink(link) { attributes[.toolTip] = link.absoluteString }
+            }
             attributes[.font] = font
             // A link takes the link blue here, a citation keeps its own grey (the view sets no color for links).
             let linkColor = run.link != nil && run[CitationMark.self] == nil ? NookTheme.blue : nil
