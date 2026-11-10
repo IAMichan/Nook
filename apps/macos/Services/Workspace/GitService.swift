@@ -30,11 +30,20 @@ enum ProcessRunner {
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
 
+        defer {
+            try? out.fileHandleForReading.close()
+            try? out.fileHandleForWriting.close()
+            try? err.fileHandleForReading.close()
+            try? err.fileHandleForWriting.close()
+        }
+
         // Drain both pipes concurrently, otherwise a process with heavy output deadlocks.
         let outData = DataBox()
         let errData = DataBox()
         let group = DispatchGroup()
         try process.run()
+        try? out.fileHandleForWriting.close()
+        try? err.fileHandleForWriting.close()
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             outData.data = out.fileHandleForReading.readDataToEndOfFile()
@@ -52,12 +61,6 @@ enum ProcessRunner {
             _ = group.wait(timeout: .now() + 5)
         }
         process.waitUntilExit()
-        // Close the read ends now rather than whenever the handles are freed. Only when both readers finished: a
-        // grandchild that kept the pipe open can leave a reader blocked, and closing under it would race.
-        if group.wait(timeout: .now()) == .success {
-            try? out.fileHandleForReading.close()
-            try? err.fileHandleForReading.close()
-        }
         return Output(status: process.terminationStatus,
                       stdout: String(decoding: outData.data, as: UTF8.self),
                       stderr: String(decoding: errData.data, as: UTF8.self),

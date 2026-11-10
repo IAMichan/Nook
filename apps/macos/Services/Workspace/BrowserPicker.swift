@@ -116,6 +116,10 @@ enum LocalServers {
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = FileHandle.nullDevice
+            defer {
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
+            }
             guard (try? process.run()) != nil else { return [] }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()

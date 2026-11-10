@@ -305,6 +305,10 @@ extension AppModel {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = output
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         do { try process.run() } catch { return tr("app.connect.browserLoginFailed", error.localizedDescription) }
         let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 15 * 60, execute: timeout)

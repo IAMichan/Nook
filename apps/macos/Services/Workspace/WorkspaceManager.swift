@@ -2624,15 +2624,17 @@ final class WorkspaceManager: ObservableObject {
     func refreshWorktrees() {
         guard let git = gitService else { return }
         guard !worktreesLoading else { worktreesRefreshPending = true; return }
-        let repos = Array(Set(runs.compactMap(\.repoRoot))).sorted()
+        let repos = Array(Set(runs.compactMap { $0.repoRoot.flatMap { git.mainCheckout(of: $0) ?? $0 } })).sorted()
         let snapshot = runs
         worktreesLoading = true
         Task.detached(priority: .utility) {
             var rows: [WorktreeRow] = []
+            var seenPaths = Set<String>()
             for repo in repos where FileManager.default.fileExists(atPath: repo) {
                 guard let list = try? git.worktrees(repo) else { continue }
                 for worktree in list { autoreleasepool {
                     let path = WorkspacePathPolicy.normalize(worktree.path)
+                    guard seenPaths.insert(path).inserted else { return }
                     let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
                     // Only show root workspace if a session is actively using it.
                     if worktree.isMain && linked.isEmpty { return }
