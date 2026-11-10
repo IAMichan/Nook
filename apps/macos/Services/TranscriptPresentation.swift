@@ -387,6 +387,28 @@ enum TranscriptPresentation {
         return marks
     }
 
+    // MARK: Turns, for the window of a long conversation (`HistoryWindow`)
+
+    /// The rows of each turn, oldest first: a turn starts at each message of yours (anything before the first is a turn
+    /// of its own).
+    static func rowsPerTurn(_ rows: [TranscriptRow]) -> [Int] {
+        var counts: [Int] = []
+        for row in rows {
+            if case .user = row { counts.append(1) } else if counts.isEmpty { counts.append(1) } else { counts[counts.count - 1] += 1 }
+        }
+        return counts
+    }
+
+    /// The turn of a row, by the row's id; nil for a row that is not there.
+    static func turn(ofRow id: String, in rows: [TranscriptRow]) -> Int? {
+        var turn = -1
+        for row in rows {
+            if case .user = row { turn += 1 } else if turn < 0 { turn = 0 }
+            if row.id == id { return turn }
+        }
+        return nil
+    }
+
     /// The closest the rail's marks sit when there are many: past that the newest ones show.
     static let railMinPitch: CGFloat = 4
 

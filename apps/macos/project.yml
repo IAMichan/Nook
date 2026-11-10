@@ -410,6 +410,7 @@ targets:
       - path: Services/Workspace/ScrollModel.swift
       - path: Services/Workspace/TimelineVisits.swift
       - path: Services/Workspace/HistoryWindow.swift
+      - path: Services/Workspace/CompactionProgress.swift
       - path: Services/Workspace/TimelineHandles.swift
       - path: Services/Workspace/SkillIndex.swift
       - path: Services/Workspace/ComposerDrafts.swift
