@@ -561,7 +561,14 @@ final class AppUpdater: ObservableObject {
             .map { URL(fileURLWithPath: $0).deletingLastPathComponent().deletingLastPathComponent() }
             .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
+        let pbxproj = (project as NSString).appendingPathComponent("project.pbxproj")
+        let age = (try? FileManager.default.attributesOfItem(atPath: pbxproj)[.modificationDate] as? Date)
+            .map { Date().timeIntervalSince($0) } ?? .infinity
+        // When xcodegen just rewrote project.pbxproj (files were added or removed), an already-open Xcode reloads it
+        // after ~1.5 s; starting a build during that reload cancels the PIF dependency graph request.
+        let settle = max(0, 3.0 - age)
         Task.detached(priority: .userInitiated) {
+            if settle > 0 { try? await Task.sleep(for: .seconds(settle)) }
             let target = xcode.map { "application \(AppleScriptText.literal($0.path))" } ?? "application id \"com.apple.dt.Xcode\""
             let script = """
             tell \(target)
@@ -778,7 +785,9 @@ final class AppUpdater: ObservableObject {
         enter(.generate)
         let project = job.source.projectDirectory
         guard let xcodegen = locate("xcodegen", environment: job.environment) else { throw InstallError.missingTool("xcodegen") }
-        try installation.run(xcodegen, ["generate"], in: project, environment: job.environment, timeout: 600)
+        // --use-cache skips rewriting Nook.xcodeproj when no files were added or removed, so an open Xcode does not
+        // reload the project and abort its in-flight dependency graph request.
+        try installation.run(xcodegen, ["generate", "--use-cache"], in: project, environment: job.environment, timeout: 600)
         if job.buildInXcode { return target }
 
         enter(.build)

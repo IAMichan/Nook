@@ -13,8 +13,9 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO/apps/macos"
-# Always: the project is generated, and a stale one misses files added since.
-xcodegen >/dev/null
+# Always: the project is generated, and a stale one misses files added since. --use-cache skips rewriting
+# Nook.xcodeproj when the spec and source file list are unchanged, so an open Xcode does not reload it mid-build.
+xcodegen --use-cache >/dev/null
 
 ACTION="${1:-build}"
 [ $# -gt 0 ] && shift
