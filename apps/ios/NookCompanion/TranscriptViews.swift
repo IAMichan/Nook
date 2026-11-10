@@ -132,7 +132,7 @@ struct TranscriptConversation: View {
         switch row {
         case .user(let entry):
             // Each turn starts as a block of its own, as on the Mac.
-            TranscriptUserMessage(text: entry.text)
+            TranscriptUserMessage(text: entry.text, date: Date(timeIntervalSince1970: entry.date))
                 .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
                 .padding(.bottom, Theme.Spacing.xxs)
         case .answer(let entry, let isFinal):

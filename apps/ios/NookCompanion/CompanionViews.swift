@@ -679,9 +679,10 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, the Mac's `AgentListRow` in the same shared layout (`AgentRowLayout`): the folder with the
-/// status (or how long ago) on the right, the session's name, and its branch with the agent's logo at the end. A row
-/// that asks nothing of you recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
+/// A session in a list, laid out as a card row the way t3code's iPhone app lists threads, in Nook's colors: the agent's
+/// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
+/// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
+/// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
 struct AgentRow: View {
     let session: SessionDigest
 
@@ -693,24 +694,49 @@ struct AgentRow: View {
     }
 
     var body: some View {
-        AgentRowLayout(folder: session.folder, hasMeta: branch != nil) {
-            slot
-        } title: {
-            AgentRowTitle(title: session.title, receded: receded)
-        } logo: {
-            AgentMark(agent: session.agent, size: 14, quiet: receded && session.attention != "working")
-        } meta: {
-            if let branch {
-                AgentRowBranch(branch: branch)
-                    .font(Theme.TextStyle.detail)
-                    .foregroundStyle(Theme.textTertiary)
-                Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: Theme.Spacing.md + Theme.Spacing.xxs) {
+            AgentMark(agent: session.agent, size: 20, quiet: receded && session.attention != "working")
+                .frame(width: 22, height: 22)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                    Text(session.title)
+                        .font(Theme.TextStyle.strong)
+                        .foregroundStyle(receded ? Theme.textStrong : Theme.paper)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    slot
+                }
+                meta
             }
         }
         .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
         .padding(.vertical, SharedMetrics.rowVertical)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    /// Where it works: the folder, then its branch in the code font, quiet and on one line; the newest words of an
+    /// answer instead when the session waits on you without a question to show.
+    private var meta: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Label {
+                Text(session.folder).lineLimit(1)
+            } icon: {
+                Image(icon: "folder").font(Theme.font(10, .medium))
+            }
+            .labelStyle(.titleAndIcon)
+            .layoutPriority(1)
+            if let branch {
+                Text(verbatim: "·")
+                AgentRowBranch(branch: branch)
+                    .font(Theme.TextStyle.code)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
     }
 
     /// The status where it says something (working, waiting, failed, ready), otherwise how long ago.
@@ -804,11 +830,13 @@ struct SessionNotice: View {
                 ApproveOffLabel()
             case .approval:
                 if item.canAllow {
-                    NookSplitButton(primary: NookNoticeAction(String(localized: "Allow"), symbol: "checkmark") {
-                        Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                    }, secondary: NookNoticeAction(String(localized: "Deny")) {
+                    // The same two thumb-sized buttons as on the session's own screen (`DecisionButton`).
+                    DecisionButton(title: String(localized: "Deny"), symbol: "xmark", role: .deny) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
-                    })
+                    }
+                    DecisionButton(title: String(localized: "Allow"), symbol: "checkmark", role: .allow) {
+                        Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
+                    }
                 } else {
                     NookGhostButton(title: String(localized: "Deny")) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }

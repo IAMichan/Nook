@@ -1492,6 +1492,34 @@
         }
       }
     },
+    "Approval needed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freigabe nötig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita aprobación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approbation requise"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goedkeuring nodig"
+          }
+        }
+      }
+    },
     "Approve" : {
       "localizations" : {
         "nl" : {
@@ -10515,6 +10543,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wacht op jou"
+          }
+        }
+      }
+    },
+    "Waiting for your answer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf deine Antwort"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espera tu respuesta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attend votre réponse"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wacht op je antwoord"
           }
         }
       }
