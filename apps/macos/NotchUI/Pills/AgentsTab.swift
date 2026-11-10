@@ -532,7 +532,8 @@ struct AgentsTab: View {
             switch session.status {
             case .running: status = .working
             case .failed: status = .failed
-            default: status = .idle
+            // Compacting between turns (your /compact): it works, though no turn runs.
+            default: status = session.compactingSince != nil ? .working : .idle
             }
         }
         let conversation = app.conversationID(for: session)
@@ -550,7 +551,7 @@ struct AgentsTab: View {
             status: status,
             // Busy: how long this turn runs, not how long ago the session started.
             started: status == .idle ? (session.updated ?? session.started ?? known?.started)
-                : (session.turnStarted ?? session.started ?? known?.started),
+                : (session.turnStarted ?? session.compactingSince ?? session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(session: session),
             unseen: session.status == .done && unseen(session.id, session.updated),
@@ -1128,7 +1129,8 @@ struct AgentConversation: View {
     var body: some View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
-                               working: session.status == .running, fallback: fallback, onReply: onReply,
+                               working: session.status == .running, compactingSince: session.compactingSince,
+                               fallback: fallback, onReply: onReply,
                                bottomBar: bottomBar, directory: session.cwd)
             .id(session.id)
     }
