@@ -558,6 +558,8 @@ struct AgentInboxList: View {
             .nested(entry.depth)
             // Read the session's timeline while the pointer rests on it, so the click opens it without a hitch.
             .onHover { inside in if inside, let id = runID(item) { app.workspace.prefetchTimeline(id) } }
+            // Dragged onto an agent's composer, the row becomes that session's chip (`SessionLink`).
+            .sessionLinkDrag(id: runID(item)?.uuidString, title: item.title)
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
@@ -715,6 +717,10 @@ struct AgentInboxList: View {
             Button(tr("inbox.copy.path")) { Pasteboard.copy(item.path) }
             if let branch = item.branch { Button(tr("inbox.copy.branch")) { Pasteboard.copy(branch) } }
             Button(tr("inbox.copy.id")) { Pasteboard.copy(item.id) }
+            if let id = runID(item), let link = SessionLink.build(id: id.uuidString, title: item.title) {
+                // Pasted into an agent's composer it becomes this session's chip; elsewhere it opens the session.
+                Button(tr("sessionLink.copy")) { Pasteboard.copy(link.absoluteString) }
+            }
         }
         if let id = runID(item) {
             Button(tr("agents.run.archive")) {

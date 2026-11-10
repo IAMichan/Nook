@@ -51,6 +51,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘E | `effortPicker.toggle` | `!terminalFocus` | Opens the effort picker of the composer on screen, when its agent has levels |
 | ⇧⌘A | `permissionPicker.toggle` | `!terminalFocus` | Opens the access picker of the composer on screen |
 | — | `effort.increase` / `effort.decrease` | | Unbound on purpose: one effort level up or down in the composer on screen without opening the picker (`EffortStep`; for an agent that lists a model per level, the next model of that family) |
+| ⌥⌘5 | window capture (Settings › Shortcuts) | | Captures the front window: its picture and its text (Accessibility, else read from the picture) go to the composer of the session you work in, or to the Nook chat (Settings › Shortcuts chooses). Needs Screen Recording |
 | ⇧⌘S | `session.settle` | `!terminalFocus` | Settles the open session, or brings a settled one back |
 | ⇧⌘P | `session.pin` | `!terminalFocus` | Pins the open session, or unpins it |
 | — | `session.interrupt` | | Unbound on purpose: stops the open session's turn (a session Nook runs); also in the command palette |

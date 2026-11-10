@@ -32,3 +32,16 @@ that itself once the entitlement is present, so Nook needs no bridge.
 
 3. Run `xcodegen` in `apps/macos` and build with that team's signing identity. Builds signed ad hoc or by a team
    without the grant fail to sign with this key, so leave it out for those.
+
+## Default browser, imported sign-ins and session links
+
+- **Default browser.** Nook registers for `http`, `https` and `.html` documents; Settings › Browser has a button that
+  asks macOS to make Nook the default (the system shows its own confirmation). Incoming links open in the session's
+  browser or in Nook's own browser (a setting), with an "Open in <previous default browser>" escape. `nook://` links
+  stay Nook's own (`IncomingLinkRoute`).
+- **Import sign-ins.** Settings › Browser › Import sign-ins copies cookies once from Chrome, Arc, Brave, Edge, Safari or
+  Firefox, per profile and per domain you pick, into Nook's browser storage. Chromium browsers need their "Safe Storage"
+  password from your Keychain (macOS asks); Safari's `Cookies.binarycookies` needs Full Disk Access, which Nook explains.
+  The parsers are pure Swift (`BrowserCookieImport`) and tested with fixture files only.
+- **Session links.** "Copy session link" in a session's menu copies a `nook://` link that pastes as a session chip in a
+  composer; session rows can also be dragged into a composer (`SessionLink`, `SessionLinkDrag`).
