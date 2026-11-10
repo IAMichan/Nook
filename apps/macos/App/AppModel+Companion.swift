@@ -309,6 +309,7 @@ extension AppModel {
         case .lookAtScreen: lookAtScreen(manual: true)
         case .screenPart: captureScreenPart()
         case .recordCall: NoteTaker.shared.toggle()
+        case .captureWindow: captureFrontWindow()
         }
     }
 
@@ -364,18 +365,8 @@ extension AppModel {
         }
     }
 
+    /// The window you dropped Nook on: to the Nook chat or the session's composer, as Settings › Shortcuts says.
     func attachWindow(_ cg: CGImage, target: WindowAttach.Target) {
-        guard let image = ChatImage.encode(cg) else { return }
-        let name = target.title.isEmpty ? target.app : "\(target.app) — \(target.title)"
-        showChat()
-        Task { @MainActor [weak self] in
-            let recognized = (try? await ScreenReader.recognize(cg)) ?? ""
-            guard let self else { return }
-            self.attachment = (name, ChatImage.describe(name: name, recognized: recognized), Date())
-            self.attachmentImages = [image]
-            var message = ChatMessage(role: .nook, text: tr("attach.window.done", name))
-            message.sources = [target.app]
-            self.chat.append(message)
-        }
+        deliverCapture(cg, target: target, pid: Self.ownerPID(of: target.windowID))
     }
 }

@@ -144,7 +144,7 @@ extension AppModel {
     }
 
     /// Keeps the ten newest captures.
-    private static func pruneCaptures(in folder: URL) {
+    static func pruneCaptures(in folder: URL) {
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
         let dated = files.map { ($0, (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) }
         for (old, _) in dated.sorted(by: { $0.1 > $1.1 }).dropFirst(10) { try? FileManager.default.removeItem(at: old) }

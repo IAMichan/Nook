@@ -472,8 +472,9 @@ struct AgentRunPanel: View {
     }
 
     private func takeFromSidePanel() {
-        guard let text = ComposerInbox.shared.take(run: runID, directory: workspace.run(runID)?.workingDirectory ?? "") else { return }
-        draft = SessionPrompts.merging(text, into: draft)
+        guard let delivery = ComposerInbox.shared.take(run: runID, directory: workspace.run(runID)?.workingDirectory ?? "") else { return }
+        draft = delivery.merged(into: draft)
+        composerState.images += delivery.images
         focused = true
     }
 
