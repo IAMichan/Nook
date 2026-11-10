@@ -627,7 +627,7 @@ extension AppModel {
         if SelectionAskController.shared.shows(id) { return }
         // Asked from the notch (the Double Tap field, a notice's field): you wait for it there.
         let followed = NotchFollow.shared.conversations.remove(id) != nil
-        let watching = viewModel.isShowing(.chat) && chat.activeID == id
+        let watching = viewModel.isInSight(.chat) && chat.activeID == id
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
