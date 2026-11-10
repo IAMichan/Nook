@@ -396,6 +396,12 @@ final class WorkspaceManager: ObservableObject {
     /// The folders terminals in Nook are open in; configured by AppModel. A worktree with one stays.
     var openTerminalFolders: (() -> [String])?
     var buildLeftoversAt: Date?
+    /// When the free disk space was last read, and whether it counted as low then (see `watchDiskSpace`).
+    var diskSpaceCheckedAt: Date?
+    var diskSpaceLow = false
+    /// The startup disk runs low: free bytes after Nook freed what it could, the bytes it freed, and what Nook's
+    /// worktrees take; configured by AppModel.
+    var onLowDiskSpace: ((Int64, Int64, Int64?) -> Void)?
     /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
     var onAudit: ((String, String, String) -> Void)?
     var sessionApprovals: [UUID: SessionApprovals] = [:]
@@ -460,6 +466,7 @@ final class WorkspaceManager: ObservableObject {
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()
                 self.sweepBuildLeftovers()
+                self.watchDiskSpace()
                 // Otherwise only opening another session frees one: sessions finish, and their timelines stay.
                 self.evictTimelines()
             }

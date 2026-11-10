@@ -37,3 +37,23 @@ enum DiskUsage {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
+
+/// Whether the startup disk runs out of room. On 2026-11-09 agent worktrees filled a 1 TB disk to the last byte and
+/// nothing said so; now Nook says it in time, and first frees what is safe to free (`WorkspaceManager.watchDiskSpace`).
+enum DiskSpace {
+    /// Below this much free space Nook warns.
+    static let lowBytes: Int64 = 25_000_000_000
+    /// It warns again only after the free space came back above this, so a disk hovering at the limit says it once.
+    static let recoveredBytes: Int64 = 40_000_000_000
+
+    /// Free space on the volume of `url` as macOS counts it for things you need (purgeable space included).
+    static func available(at url: URL = FileManager.default.homeDirectoryForCurrentUser) -> Int64? {
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+        return values?.volumeAvailableCapacityForImportantUsage ?? values?.volumeAvailableCapacity.map(Int64.init)
+    }
+
+    /// Whether the disk counts as low now, given whether it did before (`recoveredBytes` gives the margin).
+    static func isLow(available: Int64, wasLow: Bool) -> Bool {
+        wasLow ? available < recoveredBytes : available < lowBytes
+    }
+}

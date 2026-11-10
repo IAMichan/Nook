@@ -898,7 +898,8 @@ struct WorkspaceSettingsSection: View {
     /// The worktrees keep themselves tidy; one in use or with uncommitted changes always stays.
     @ViewBuilder
     private var worktreeCleanup: some View {
-        // Worktrees: every rule off until you switch it on, as in t3code; what the latest cleanup did is under them.
+        // Worktrees: after a merge and a week after settling by default (`WorkspaceSettings`); what the latest cleanup
+        // did is under them.
         Section {
             Toggle(tr("settings.ws.worktreeCleanupMerged"), isOn: $ws.worktreeCleanupOnMerge)
             daysPicker(tr("settings.ws.worktreeCleanupSettled"), $ws.worktreeCleanupDays)
