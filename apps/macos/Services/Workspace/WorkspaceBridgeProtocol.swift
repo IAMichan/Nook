@@ -211,11 +211,11 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .browserWaitFor:
             return "Waits until the page in Nook's browser shows some text or an element (or until it is gone), at most timeout_seconds (default 10, at most 30). Use it after browser_click or browser_type when the page loads or changes."
         case .scheduleTask:
-            return "Proposes a scheduled task: a prompt Nook runs on a schedule (every N minutes, or at a time on chosen weekdays) in a new session in a folder, or as a message to this session. The user approves it in Nook first and can change or remove it in Settings. Tasks run with ask or acceptEdits rights, never more than yours, and only while the user has scheduled tasks switched on. Pass client_request_id so a retry does not propose a second task."
+            return "Proposes a scheduled task: a prompt Nook runs on a schedule (every N minutes, at a time on chosen weekdays, or once) in a new session in a folder, or as a message to this or another session. The user approves it in Nook first and can change or remove it in Settings. Tasks run with ask or acceptEdits rights, never more than yours, and only while the user has scheduled tasks switched on. Pass client_request_id so a retry does not propose a second task."
         case .listScheduledTasks:
             return "Lists Nook's scheduled tasks for your folder or session (all: true for every task): id, title, schedule, where it runs, whether it is on, its next and last run, and the start of its prompt."
         case .updateScheduledTask:
-            return "Proposes a change to a scheduled task (from list_scheduled_tasks): its title, prompt, schedule, rights, or switching it on or off. The user approves the change in Nook first."
+            return "Proposes a change to a scheduled task (from list_scheduled_tasks): its title, prompt, schedule, rights, where it runs (target, conversation), or switching it on or off. The user approves the change in Nook first."
         case .runScheduledTaskNow:
             return "Runs a scheduled task once now, with its own prompt, after the user's approval. Returns started, busy (it is running already) or not available (scheduled tasks are switched off). Pass client_request_id so a retry does not run it twice."
         case .watchPullRequest:
@@ -382,8 +382,6 @@ enum BridgeTool: String, CaseIterable, Sendable {
             var properties = BridgeScheduleArguments.scheduleProperties
             properties["title"] = ["type": "string", "description": "Short title for the task."]
             properties["prompt"] = ["type": "string", "description": "The complete prompt the session gets each time; it sees nothing of this conversation."]
-            properties["target"] = ["type": "string", "enum": ["new_session", "this_session"],
-                                    "description": "new_session (default): each run starts a new session in project_path. this_session: each run sends the prompt to this session."]
             properties["project_path"] = ["type": "string", "description": "With new_session: the folder to run in. Defaults to your folder."]
             properties["agent"] = ["type": "string", "description": "With new_session: claude, codex, gemini, opencode, cursor, grok or antigravity. Defaults to your own."]
             properties["client_request_id"] = ["type": "string", "description": "Makes a retry of this call return the same task instead of proposing a second one."]
@@ -395,6 +393,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             properties["task_id"] = ["type": "string", "description": "The task id from list_scheduled_tasks."]
             properties["title"] = ["type": "string", "description": "New title."]
             properties["prompt"] = ["type": "string", "description": "New prompt."]
+            properties["project_path"] = ["type": "string", "description": "With new_session: the folder."]
+            properties["agent"] = ["type": "string", "description": "With new_session: the agent."]
             return object(properties, required: ["task_id"])
         case .runScheduledTaskNow:
             return object([
