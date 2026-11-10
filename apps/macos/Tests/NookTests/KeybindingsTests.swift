@@ -180,6 +180,10 @@ final class KeybindingsTests: XCTestCase {
         XCTAssertEqual(Keybindings.match(chord("cmd+z"), context: [:], rules: d), "session.undo")
         XCTAssertNil(Keybindings.match(chord("cmd+z"), context: ["editableFocus": true], rules: d))
         XCTAssertNil(Keybindings.match(chord("cmd+k"), context: ["terminalFocus": true], rules: d))
+        // A composer undoes its own draft, chips included, also while dictation keeps it read-only.
+        XCTAssertEqual(Keybindings.match(chord("cmd+z"), context: ["composerFocus": true, "editableFocus": true], rules: d), "composer.undo")
+        XCTAssertEqual(Keybindings.match(chord("cmd+z"), context: ["composerFocus": true], rules: d), "composer.undo")
+        XCTAssertEqual(Keybindings.match(chord("cmd+shift+z"), context: ["composerFocus": true], rules: d), "composer.redo")
     }
 
     // MARK: Pressed keys
