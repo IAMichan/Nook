@@ -77,6 +77,11 @@ extension AppModel {
         workspace.modelChoice(model, for: provider)?.requiredVersion.map { tr("compose.modelNeedsUpdate", provider.displayName, $0) }
     }
 
+    /// The agent version a model needs when the installed one is older ("2.1.300"), nil when it runs.
+    func modelUpdateVersion(_ model: String, for provider: RunProvider) -> String? {
+        workspace.modelChoice(model, for: provider)?.requiredVersion
+    }
+
     /// The tooltip of such a model: which update unlocks it, and the version installed now.
     func modelUpdateHelp(_ model: String, for provider: RunProvider) -> String? {
         guard let required = workspace.modelChoice(model, for: provider)?.requiredVersion else { return nil }
@@ -115,6 +120,12 @@ extension AppModel {
         workspace.readAgentVersions(connectedProviders)
         workspace.refreshModelManifest()
         refreshListedSessions()
+    }
+
+    /// A model picker opened: looks for a newer model manifest when the last fetch is more than a few minutes old. The
+    /// fetch does not block the picker; it redraws when a newer list lands.
+    func modelPickerOpened() {
+        workspace.refreshModelManifest(every: ModelManifestRefresh.pickerInterval)
     }
 
     /// Asks the agents whose earlier sessions come from themselves (OpenCode, Cursor, Grok, the ACP agents you added) for

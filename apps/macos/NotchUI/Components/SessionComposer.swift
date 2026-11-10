@@ -38,6 +38,9 @@ struct SessionComposer<Controls: View>: View {
     private var extras: (model: ComposerModel, config: ComposerConfig)?
     /// The choices sit in a tray under the box, tucked behind it, and the box holds the text with send on its row.
     private var choicesBelow = false
+    /// The message you will likely send next (`NextPromptSuggestion`), shown in place of the placeholder while the box is
+    /// empty; Tab takes it, typing or Escape dismisses it.
+    private var suggestion: (text: String, accept: () -> Void, dismiss: () -> Void)?
     /// The composer's own color: the send button, the focus ring and a trace in the surface.
     private var tint: Color = NookTheme.iris
 
@@ -63,6 +66,14 @@ struct SessionComposer<Controls: View>: View {
         copy.flipAction = alternate
         copy.queueLabel = label
         copy.queueSymbol = symbol
+        return copy
+    }
+
+    /// The same composer with a suggested next message as ghost text: Tab puts it in the box (and calls `onAccept`),
+    /// typing anything else or Escape calls `onDismiss`. Nil shows the placeholder as before.
+    func suggesting(_ text: String?, onAccept: @escaping () -> Void, onDismiss: @escaping () -> Void) -> Self {
+        var copy = self
+        copy.suggestion = text.map { ($0, onAccept, onDismiss) }
         return copy
     }
 
@@ -182,6 +193,9 @@ struct SessionComposer<Controls: View>: View {
             // list redraws the list and not the conversation above it.
             if let extras {
                 ComposerSuggestionSlot(model: extras.model, tint: tint) { choose($0) }
+                if let scope = extras.config.secretScope {
+                    ComposerSecretOfferSlot(model: extras.model) { keepSecrets(scope: scope) }
+                }
             }
             if choicesBelow {
                 // The box comes first in z-order so the tray runs on behind it (see ComposerTray).
@@ -228,6 +242,12 @@ struct SessionComposer<Controls: View>: View {
 
     private func textChanged(_ oldText: String, _ newText: String) {
         NookPresence.shared.typed(count: newText.count)
+        // Typing dismisses the suggestion; taking it with Tab has already called `accept`.
+        if let suggestion, oldText != newText {
+            let body = ComposerAttachments.split(newText).body
+            if !body.isEmpty, body != suggestion.text { suggestion.dismiss() }
+        }
+        styleMarkdown()
         guard let extras else { return }
         // The list, list items and big pastes look at the words in the box, not at the files attached after them.
         let old = ComposerAttachments.split(oldText).body, new = ComposerAttachments.split(newText).body
@@ -236,6 +256,12 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         extras.model.history.stopWalking()
+        // A session link pasted or dropped into the text ("Copy session link", a dragged row) becomes its chip.
+        if let linked = SessionLink.replacingPasted(old: old, new: new) {
+            assign(ComposerAttachments.replacingBody(of: newText, with: linked))
+            extras.model.close()
+            return
+        }
         if imagesBinding != nil, let found = PastedPaths.attaching(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: found.body))
             extras.model.close()
@@ -247,12 +273,25 @@ struct SessionComposer<Controls: View>: View {
             assign(ComposerAttachments.replacingBody(of: newText, with: continued))
             return
         }
+        // A pasted secret is offered to be kept out of the message first; the paste then stays in the box until you decide.
+        if extras.config.secretScope != nil, extras.model.noticeSecrets(old: old, new: new) {
+            extras.model.update(for: new, extras.config)
+            return
+        }
         if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: kept))
             extras.model.close()
             return
         }
         extras.model.update(for: new, extras.config)
+    }
+
+    /// The pasted secrets go to private files and the box keeps references to them.
+    private func keepSecrets(scope: String) {
+        guard let extras else { return }
+        let kept = extras.model.keepSecretsPrivate(in: typedText, scope: scope)
+        assign(ComposerAttachments.replacingBody(of: text, with: kept))
+        WorkspaceBridge.shared.scheduleSecretSweep()
     }
 
     /// Up and Down move in the list, or walk through earlier messages: plain arrows only from the edge of the text (see
@@ -339,13 +378,48 @@ struct SessionComposer<Controls: View>: View {
         return true
     }
 
-    private func tabKey() -> KeyPress.Result {
-        guard let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) else { return .ignored }
-        choose(extras.model.suggestions[extras.model.selection])
-        return .handled
+    private func tabKey(_ press: KeyPress) -> KeyPress.Result {
+        let outdent = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        if !outdent, let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
+            bodyBinding.wrappedValue = suggestion.text
+            suggestion.accept()
+            Self.placeCaretAtEnd()
+            return .handled
+        }
+        if !outdent, let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) {
+            choose(extras.model.suggestions[extras.model.selection])
+            return .handled
+        }
+        return nestListItem(outdent: outdent) ? .handled : .ignored
+    }
+
+    /// Tab and Shift+Tab on a list item move it in under the one above, or back out (`ComposerLists.nest`); the caret
+    /// moves along. False anywhere else, so Tab keeps its usual meaning.
+    private func nestListItem(outdent: Bool) -> Bool {
+        let body = typedText
+        guard let editor = ComposerFieldStyle.focusedEditor(expecting: body),
+              let nested = ComposerLists.nest(body, selection: editor.selectedRange(), outdent: outdent) else { return false }
+        guard nested.text != body else { return true }
+        bodyBinding.wrappedValue = nested.text
+        DispatchQueue.main.async {
+            guard let editor = ComposerFieldStyle.focusedEditor(expecting: nested.text) else { return }
+            editor.setSelectedRange(nested.selection)
+        }
+        return true
+    }
+
+    /// The draft's Markdown styled in the field (Settings › Appearance › Style Markdown as you type), right after the
+    /// field took the change.
+    private func styleMarkdown() {
+        guard AppSettings.shared.richComposer else { return }
+        DispatchQueue.main.async { [typedText] in ComposerFieldStyle.restyleFocusedEditor(expecting: typedText) }
     }
 
     private func escapeKey() -> KeyPress.Result {
+        if let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
+            suggestion.dismiss()
+            return .handled
+        }
         guard let extras, extras.model.isOpen else { return .ignored }
         extras.model.close()
         return .handled
@@ -363,7 +437,18 @@ struct SessionComposer<Controls: View>: View {
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
             .background(alignment: .topLeading) {
-                if typedText.isEmpty {
+                if typedText.isEmpty, let suggestion {
+                    // The suggestion in the ghost text's quiet grey, with the key that takes it.
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                        Text(suggestion.text)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(lines.upperBound)
+                        NookKeyHint(text: tr("textgen.next.tab"))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                } else if typedText.isEmpty {
                     Text(prompt)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -374,8 +459,14 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             .accessibilityLabel(prompt)
+            .accessibilityHint(suggestion.map { tr("textgen.next.accessibility", $0.text) } ?? "")
             .focused(focused)
-            .onChange(of: focused.wrappedValue) { _, now in if now { Self.placeCaretAtEnd() } }
+            .onChange(of: focused.wrappedValue) { _, now in
+                if now {
+                    Self.placeCaretAtEnd()
+                    styleMarkdown()
+                }
+            }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
             // In the non-activating notch and ask panels the binding can lag behind the field until Return commits it,
@@ -395,7 +486,7 @@ struct SessionComposer<Controls: View>: View {
         view
             .onKeyPress(.upArrow) { () -> KeyPress.Result in arrow(-1) }
             .onKeyPress(.downArrow) { () -> KeyPress.Result in arrow(1) }
-            .onKeyPress(.tab) { () -> KeyPress.Result in tabKey() }
+            .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { (press: KeyPress) -> KeyPress.Result in tabKey(press) }
             .onKeyPress(.escape) { () -> KeyPress.Result in escapeKey() }
             .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
             .keyCommands(keyHandlers, context: keyContext, enabled: focused)
@@ -463,7 +554,12 @@ struct SessionComposer<Controls: View>: View {
         }
         .animation(NookTheme.reveal, value: focused.wrappedValue)
         .animation(NookTheme.reveal, value: drop)
-        .composerDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], $drop) { providers in
+        .composerDrop(of: (imagesBinding == nil ? [] : [UTType.fileURL, UTType.image]) + (extras == nil ? [] : SessionLinkDrag.types),
+                      $drop) { providers in
+            // A session row from the Agents list: its chip, like picking it after `@`.
+            if extras != nil, SessionLinkDrag.receive(providers, add: { link in
+                assign(SessionLink.inserting(link, into: text))
+            }) { return true }
             guard let imagesBinding else { return false }
             return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in
                 dropFile(url)

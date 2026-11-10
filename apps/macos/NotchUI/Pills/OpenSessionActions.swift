@@ -108,6 +108,20 @@ struct OpenSessionActions {
     /// Snoozing is for sessions Nook runs that are not working.
     var canSnooze: Bool { runID != nil && !item.isBusy }
 
+    /// While a usage limit holds the session: when it resets.
+    var limitResetsAt: Date? {
+        guard let runID, let run = app.workspace.run(runID) else { return nil }
+        return SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt)
+    }
+
+    func snooze(until end: Date) {
+        guard let runID else { return }
+        withAnimation(NookTheme.reveal) {
+            app.workspace.snooze(runID, until: end)
+            store.note(.snoozed, ids: [item.id])
+        }
+    }
+
     func snooze(_ choice: SnoozePolicy.Choice) {
         guard let runID else { return }
         withAnimation(NookTheme.reveal) {

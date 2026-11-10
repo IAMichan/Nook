@@ -1,7 +1,7 @@
 import Foundation
 
 // The `/` list per agent: only commands the agent really has. Sources:
-// - plan, fork, new, btw, side: Nook's own (btw and side open a side chat, see `SideChat`).
+// - plan, fork, clear, new, btw, side: Nook's own (btw and side open a side chat, see `SideChat`).
 // - compact: context compaction command for Claude and Codex.
 // - goal: Codex and Claude.
 // - the agent's own: what an ACP agent announces in `available_commands_update` (`offered`).
@@ -18,6 +18,10 @@ enum AgentCommands {
         if hasProject {
             list.append(ComposerCommand(name: "fork", insertion: "", action: .fork))
         }
+        // Every agent: Nook forgets its conversation and the next message starts a new one (see `clearConversation`).
+        if hasProject, surface == .agent {
+            list.append(ComposerCommand(name: "clear", insertion: "", action: .clear))
+        }
         // A side chat beside the session (`SideChat`): the question typed after it goes to a session of its own.
         if hasProject, surface == .agent {
             for name in SideChat.commands {
@@ -27,8 +31,10 @@ enum AgentCommands {
         if surface == .chat {
             list.append(ComposerCommand(name: "new", insertion: "", action: .new))
         }
-        if hasProject, hasBuiltInCompactAndGoal(provider) {
+        if hasProject, hasBuiltInCompact(provider) {
             list.append(ComposerCommand(name: "compact", insertion: "/compact", action: .insert))
+        }
+        if hasProject, hasBuiltInGoal(provider) {
             list.append(ComposerCommand(name: "goal", insertion: "/goal ", action: .insert))
         }
         // The agent's own commands go to it as the text of a prompt; one with Nook's name stays Nook's.
@@ -44,16 +50,21 @@ enum AgentCommands {
     static func descriptionKey(for command: ComposerCommand) -> String { "composer.command.\(command.name).description" }
 
     /// Claude Code and Codex always take `/compact` and `/goal`; an ACP agent has the commands it announces.
-    static func hasBuiltInCompactAndGoal(_ provider: RunProvider) -> Bool {
+    static func hasBuiltInGoal(_ provider: RunProvider) -> Bool {
         switch provider {
         case .claude, .codex: return true
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return false
         }
+    }
+
+    /// Pi compacts through its own `compact` command, which Nook sends for `/compact` (`PiRPC.turnInput`).
+    static func hasBuiltInCompact(_ provider: RunProvider) -> Bool {
+        provider == .pi || hasBuiltInGoal(provider)
     }
 
     /// Whether the agent compacts its context on `/compact`: built in, or announced by the agent itself.
     static func canCompact(_ provider: RunProvider, offered: [AgentSlashCommand]) -> Bool {
-        hasBuiltInCompactAndGoal(provider) || offered.contains { $0.name == "compact" }
+        hasBuiltInCompact(provider) || offered.contains { $0.name == "compact" }
     }
 }
 

@@ -43,82 +43,139 @@ extension Color {
 /// quietest metadata (`textTertiary`) is legible at a glance, and a selected row stands a full step above a hovered one,
 /// so where you are never depends on a shade you can barely see.
 enum NookTheme {
-    // Colors: the surface ramp, darkest to lightest.
-    static let notch = Color.black
-    static let graphite = Color(hex: 0x1A1A1A)
-    static let smoke = Color(hex: 0x242424)
-    static let field = Color(hex: 0x111111)
-    static let line = Color(hex: 0x1E1E1E)
-    static let line2 = Color(hex: 0x2C2C2C)
+    // The palettes in effect: the chosen theme's for dark and for light (`NookThemeChoice`, kept in sync by
+    // `AppSettings`). Every named color below reads them when it is drawn, in the appearance of the window it is drawn
+    // in, so a view that takes its colors from here follows System / Light / Dark and the theme without knowing either.
+    nonisolated(unsafe) static var darkPalette = NookPalette.nookDark
+    nonisolated(unsafe) static var lightPalette = NookPalette.nookLight
+    /// Goes up whenever a palette changes, so caches of drawn text (`SelectableProse`) and the roots that rebuild on a
+    /// change (`.id`) can key on it.
+    nonisolated(unsafe) static var revision = 0
 
-    static let paper = Color(hex: 0xF5F5F5)
+    static func palette(dark: Bool) -> NookPalette { dark ? darkPalette : lightPalette }
+
+    /// Sets the palettes; true when something changed.
+    @discardableResult
+    static func apply(dark: NookPalette, light: NookPalette) -> Bool {
+        guard dark != darkPalette || light != lightPalette else { return false }
+        darkPalette = dark
+        lightPalette = light
+        revision += 1
+        return true
+    }
+
+    /// A color of the palette in effect, resolved for the appearance it is drawn in.
+    static func themed(_ token: KeyPath<NookPalette, UInt32>) -> Color {
+        adaptive { palette(dark: $0)[keyPath: token] }
+    }
+
+    /// A color that is worked out per appearance (dark true or false) each time it is drawn.
+    static func adaptive(_ hex: @escaping (Bool) -> UInt32) -> Color {
+        #if os(macOS)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            platformColor(hex(appearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua))
+        })
+        #else
+        Color(uiColor: UIColor { traits in platformColor(hex(traits.userInterfaceStyle != .light)) })
+        #endif
+    }
+
+    #if os(macOS)
+    static func platformColor(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+    }
+    #else
+    static func platformColor(_ hex: UInt32, alpha: CGFloat = 1) -> UIColor {
+        UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+    }
+    #endif
+
+    // Colors: the surface ramp, darkest to lightest.
+    /// The notch itself: always black, in every theme, as the hardware it grows out of. Also the color of shadows.
+    static let notch = Color.black
+    static let graphite = themed(\.graphite)
+    static let smoke = themed(\.smoke)
+    static let field = themed(\.field)
+    static let line = themed(\.line)
+    static let line2 = themed(\.line2)
+
+    /// The strongest text: near white on dark, near black on light.
+    static let paper = themed(\.paper)
+    /// Dark ink, in every appearance: text on a light fill (a light accent) and the scrim over pictures and video.
     static let ink = Color(hex: 0x0B0B0D)
     static let eyeInk = Color(hex: 0x050507)
-    static let textSecondary = Color(hex: 0xA8A8A8)
-    static let textTertiary = Color(hex: 0x949494)
+    static let textSecondary = themed(\.textSecondary)
+    static let textTertiary = themed(\.textTertiary)
+    /// A `paper` fill (Nook's main button) and the text on it: `onPaper` is dark on dark windows, white on light ones.
+    static let onPaper = adaptive { $0 ? 0x0B0B0D : 0xFFFFFF }
+    /// `paper` under the pointer: a step brighter on dark, a step deeper on light.
+    static let paperHover = adaptive { $0 ? 0xFFFFFF : 0x000000 }
+    /// The color of a faint wash over a surface (`wash.opacity(0.06)`): white on dark, black on light, so a hover or a
+    /// hairline made of it shows in both.
+    static let wash = adaptive { $0 ? 0xFFFFFF : 0x000000 }
 
-    /// Nook's own color. Soft white by default; the user can pick another in Settings › Appearance.
+    /// Nook's own color. Soft white by default (near black in light); the user can pick another in Settings › Appearance.
     static let defaultAccentHex: UInt32 = 0xF4F3F7
     /// Current accent (kept in sync by `AppSettings.accentHex`).
-    static var accentHex: UInt32 = defaultAccentHex
-    static var iris: Color { Color(hex: accentHex) }
+    nonisolated(unsafe) static var accentHex: UInt32 = defaultAccentHex
+    /// The accent as drawn: the user's color, or the theme's own when they kept the default.
+    static func accent(dark: Bool) -> UInt32 {
+        accentHex == defaultAccentHex ? palette(dark: dark).accent : accentHex
+    }
+    static let iris = adaptive { accent(dark: $0) }
     /// Text and symbols on an iris fill: dark on a light accent (the default soft white), white on a deep one.
-    static var onIris: Color { relativeLuminance(accentHex) > 0.45 ? ink : .white }
+    static let onIris = adaptive { relativeLuminance(accent(dark: $0)) > 0.45 ? 0x0B0B0D : 0xFFFFFF }
 
     /// WCAG relative luminance of a 0xRRGGBB color, 0 (black) to 1 (white).
-    static func relativeLuminance(_ hex: UInt32) -> Double {
-        func channel(_ value: UInt32) -> Double {
-            let c = Double(value & 0xFF) / 255
-            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * channel(hex >> 16) + 0.7152 * channel(hex >> 8) + 0.0722 * channel(hex)
-    }
-    static let mint = Color(hex: 0x5ED6A6)
-    static let amber = Color(hex: 0xF2B866)
-    static let coral = Color(hex: 0xEF7B73)
-    static let coralSoft = Color(hex: 0xF29A92)
+    static func relativeLuminance(_ hex: UInt32) -> Double { NookColor.luminance(hex) }
+    static let mint = themed(\.mint)
+    static let amber = themed(\.amber)
+    static let coral = themed(\.coral)
+    static let coralSoft = themed(\.coralSoft)
     /// A merged pull request, as forges show it.
-    static let violet = Color(hex: 0xAE94F2)
-    static let mintSoft = Color(hex: 0x74DDB3)
-    static let music = Color(hex: 0xF0936A)
+    static let violet = themed(\.violet)
+    static let mintSoft = themed(\.mintSoft)
+    static let music = themed(\.music)
 
-    /// The canvas behind every window: the Workspace, Settings, and the Today window share it. Pure black, as the
-    /// notch, so cards and borders carry the structure.
-    static let canvas = Color(hex: 0x000000)
+    /// The canvas behind every window: the Workspace, Settings, and the Today window share it. Pure black in Nook's dark
+    /// theme, as the notch, so cards and borders carry the structure.
+    static let canvas = themed(\.canvas)
     /// A sunken well inside a card: code, logs, and the composer tray.
-    static let well = Color(hex: 0x080808)
+    static let well = themed(\.well)
     /// A lifted surface: sidebars, menus, the composer.
-    static let surface = Color(hex: 0x121212)
+    static let surface = themed(\.surface)
     /// The faintest divider between regions of a panel.
-    static let hairline = Color(hex: 0x1E1E1E)
+    static let hairline = themed(\.hairline)
     /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a hairline that
     /// is there when you look for it and gone when you don't, so regions read by their layout rather than their frames.
-    static let border = Color(hex: 0x1F1F1F)
+    static let border = themed(\.border)
     /// The line between the items of a list (a chat in the Chats tab): a step brighter than `border`, so
     /// each item reads as its own.
-    static let separator = Color(hex: 0x262626)
+    static let separator = themed(\.separator)
     /// The stroke of a text field or tray at rest.
-    static let fieldStroke = Color(hex: 0x282828)
+    static let fieldStroke = themed(\.fieldStroke)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
-    static let textStrong = Color(hex: 0xDADADA)
+    static let textStrong = themed(\.textStrong)
     /// Muted text that shimmers or sits in a disabled control.
-    static let textMuted = Color(hex: 0x999999)
+    static let textMuted = themed(\.textMuted)
     /// Links, renamed files, and diff hunk headers.
-    static let blue = Color(hex: 0x8FB3F0)
+    static let blue = themed(\.blue)
 
-    /// Your own message in a conversation: a soft fill about 4 % lighter than the canvas, no edge (the agent's answer has
-    /// no bubble at all).
-    static let bubble = Color(hex: 0x1C1C1C)
+    /// Your own message in a conversation: a soft fill a step off the canvas, no edge (the agent's answer has no bubble
+    /// at all).
+    static let bubble = themed(\.bubble)
     /// A chat app's message bubbles in the Chats tab and chat cards: yours a deep green of Nook's mint, theirs a grey a
     /// step above the canvas. Solid, so who said what reads at a glance, as in the chat apps themselves.
-    static let chatMine = Color(hex: 0x17493A)
-    static let chatTheirs = Color(hex: 0x232525)
+    static let chatMine = themed(\.chatMine)
+    static let chatTheirs = themed(\.chatTheirs)
     /// The time and grey ticks inside those bubbles: soft, yet readable on both fills.
-    static let chatStamp = Color(hex: 0xA3B0AB)
+    static let chatStamp = themed(\.chatStamp)
 
     /// Syntax colors for code in diffs (`SyntaxToken.Kind`). Muted on purpose: the diff's own + and − tints stay the
-    /// loudest thing, and plain code keeps `textStrong`. Each has a dark and a light value; Nook's windows are dark, so the
-    /// light one only shows where a surface follows a light appearance.
+    /// loudest thing, and plain code keeps `textStrong`. Each has a dark and a light value, picked by the appearance of the
+    /// window they are drawn in (Settings › Appearance).
     enum Syntax {
         static let keyword = adaptive(dark: 0xC3A6EE, light: 0x7A45B5)
         static let string = adaptive(dark: 0xA8CF96, light: 0x3D7A2E)
@@ -130,26 +187,14 @@ enum NookTheme {
         static let attribute = adaptive(dark: 0xD9C27E, light: 0x86690F)
 
         private static func adaptive(dark: UInt32, light: UInt32) -> Color {
-            #if os(macOS)
-            Color(nsColor: NSColor(name: nil) { appearance in
-                let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? light : dark
-                return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                               blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-            })
-            #else
-            Color(uiColor: UIColor { traits in
-                let hex = traits.userInterfaceStyle == .light ? light : dark
-                return UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                               blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-            })
-            #endif
+            NookTheme.adaptive { $0 ? dark : light }
         }
     }
 
     // List rows and cards: at rest, under the pointer, and selected.
-    static let rowRest = Color(hex: 0x0A0A0A)
-    static let rowHover = Color(hex: 0x181818)
-    static let rowSelected = Color(hex: 0x242424)
+    static let rowRest = themed(\.rowRest)
+    static let rowHover = themed(\.rowHover)
+    static let rowSelected = themed(\.rowSelected)
 
     /// The fill of a list row: `rowSelected` when selected, `rowHover` under the pointer, `rest` otherwise.
     static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
@@ -324,6 +369,56 @@ extension AnyTransition {
                 .animation(.spring(duration: 0.28, bounce: 0).delay(0.04)),
             removal: .opacity.animation(.spring(duration: 0.14, bounce: 0))
         )
+    }
+}
+#endif
+
+#if os(macOS)
+/// Nook's windows and Settings › Appearance: the appearance they take (System / Light / Dark) and the theme's palettes.
+/// The notch is not one of them: it grows out of the black hardware notch, so it stays dark in every theme.
+@MainActor
+enum NookWindowLook {
+    /// The mode in effect (kept in sync by `AppSettings.appearanceMode`).
+    static var mode: NookAppearanceMode = .dark
+
+    /// The appearance a window of Nook takes: nil follows macOS.
+    static var appearance: NSAppearance? {
+        switch mode {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+
+    /// The canvas as an AppKit color, for a window's own background behind its content.
+    static let canvas = NSColor(name: nil) { appearance in
+        NookTheme.platformColor(NookTheme.palette(dark: appearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua).canvas)
+    }
+
+    private static let adopted = NSHashTable<NSWindow>.weakObjects()
+
+    /// Gives a window Nook's appearance and canvas, now and whenever they change. Sheets and popovers presented from it
+    /// inherit the appearance, so they follow too.
+    static func adopt(_ window: NSWindow, background: Bool = true) {
+        window.appearance = appearance
+        if background { window.backgroundColor = canvas }
+        adopted.add(window)
+    }
+
+    /// After a change of mode or palette: every adopted window takes the appearance again, which redraws its colors
+    /// (a dynamic color is resolved again when the appearance is set, also to the same one).
+    static func refresh() {
+        for window in adopted.allObjects {
+            window.appearance = window.appearance === appearance ? nil : window.appearance
+            window.appearance = appearance
+            window.contentView?.needsDisplay = true
+            window.invalidateShadow()
+        }
+    }
+
+    /// Whether macOS itself is dark right now (for the preview of System).
+    static var systemIsDark: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 }
 #endif

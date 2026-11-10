@@ -21,6 +21,9 @@ enum EffortLevels {
             return ["low", "medium", "high"]
         case .claude:
             return ["low", "medium", "high"]
+        // Pi: its thinking levels (`--thinking`); a model that does not reason ignores it.
+        case .pi:
+            return PiRPC.thinkingLevels.filter { $0 != "off" }
         case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
             var seen = Set<String>()
             return (advertised ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }

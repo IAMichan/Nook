@@ -474,13 +474,14 @@ final class AgentHub: ObservableObject {
         pendingApprovals[id]?.request
     }
 
-    func decide(_ id: String, _ decision: ApprovalDecision) {
+    /// `reason`: what you told the agent with a denial; the hook's answer carries it (`permissionDecisionReason`, `message`).
+    func decide(_ id: String, _ decision: ApprovalDecision, reason: String = "") {
         guard let pending = pendingApprovals[id] else { return }
         if case .appPrompt(let bundleIDs) = pending.kind, decision != .terminal {
             answerAppPrompt(id, bundleIDs: bundleIDs, allow: decision != .deny)
             return
         }
-        let response = Self.response(for: decision, kind: pending.kind)
+        let response = Self.response(for: decision, kind: pending.kind, reason: reason)
         switch decision {
         case .allow:
             recap?.decision(allowed: true)
@@ -971,7 +972,9 @@ final class AgentHub: ObservableObject {
         onApprovalGone?(id, message)
     }
 
-    private static func response(for decision: ApprovalDecision, kind: PendingKind) -> Data? {
+    private static func response(for decision: ApprovalDecision, kind: PendingKind, reason: String = "") -> Data? {
+        let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let denied = reason.isEmpty ? "Denied via Nook" : "Denied via Nook: " + reason
         let payload: [String: Any]
         switch kind {
         case .preToolUse:
@@ -985,7 +988,7 @@ final class AgentHub: ObservableObject {
                 "hookSpecificOutput": [
                     "hookEventName": "PreToolUse",
                     "permissionDecision": value,
-                    "permissionDecisionReason": value == "allow" ? "Approved via Nook" : "Denied via Nook"
+                    "permissionDecisionReason": value == "allow" ? "Approved via Nook" : denied
                 ]
             ]
         case .appPrompt:
@@ -1002,7 +1005,7 @@ final class AgentHub: ObservableObject {
                     result["updatedPermissions"] = suggestions
                 }
             case .deny:
-                result = ["behavior": "deny", "message": "Denied via Nook"]
+                result = ["behavior": "deny", "message": denied]
             case .terminal:
                 return nil
             }

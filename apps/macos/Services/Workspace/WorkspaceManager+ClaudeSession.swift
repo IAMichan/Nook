@@ -8,7 +8,7 @@ extension WorkspaceManager {
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
-        [run.model, run.mode.rawValue, run.permission.rawValue, launchInstructions(run), bridge(for: run.id) == nil ? "" : "bridge", run.effort ?? "",
+        [run.model, run.mode.rawValue, run.permission.rawValue, launchInstructions(run), bridge(for: run.id) == nil ? "" : "bridge", run.effort ?? "", run.speedTier ?? "",
          AgentCredits.omitsFromCommits ? "no-credits" : ""]
             .joined(separator: "|")
     }
@@ -59,7 +59,7 @@ extension WorkspaceManager {
             guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort,
                   let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
-        case .codex:
+        case .codex, .pi:
             break
         }
     }

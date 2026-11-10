@@ -140,6 +140,11 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions whose title is being written again on request (`regenerateTitle`): a second request waits for the first.
     /// Not published: nothing draws it.
     var regeneratingTitles: Set<UUID> = []
+    /// The message you will likely send next, per session, shown as ghost text in its empty composer
+    /// (`NextPromptSuggestion`, WorkspaceManager+NextPrompt).
+    @Published var nextPrompts: [UUID: NextPromptState] = [:]
+    /// The request writing a session's suggestion; cancelled when you type or a turn starts.
+    var nextPromptTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]
@@ -392,7 +397,7 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions whose removed worktree is being made again for a message (see `reopenWorktree`).
     var reopeningWorktrees: Set<UUID> = []
     /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
-    private var projectCache: [String: ProjectInfo] = [:]
+    var projectCache: [String: ProjectInfo] = [:]
     /// When a repository's remote-tracking base (`repo\nbase`) was last fetched, so starting does not fetch again right away.
     private var remoteBaseRefreshed: [String: Date] = [:]
     /// Next checkpoint index per session, claimed before async git work so concurrent checkpoints never share an index.
@@ -430,6 +435,9 @@ final class WorkspaceManager: ObservableObject {
         /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
+        /// Pi: tokens and cost of the turn so far, and when its older end-of-run event came (see `handlePi`).
+        var piUsage = TurnUsage()
+        var piEndedAt: Date?
         /// ACP: the session's cost so far, as the agent reports it.
         var acpCost: Double?
         /// ACP: whether the agent wrote any text this turn, its tool calls, and how often Nook asked it to carry on.
@@ -475,6 +483,8 @@ final class WorkspaceManager: ObservableObject {
                 guard let self else { return }
                 self.checkPullRequestWatches()
                 self.applyWorktreeCleanup()
+                // Opt-in per project; no project with it on costs nothing.
+                self.autoPullDefaultBranches()
                 self.sweepBuildLeftovers()
                 self.watchDiskSpace()
                 // Otherwise only opening another session frees one: sessions finish, and their timelines stay.
@@ -509,6 +519,9 @@ final class WorkspaceManager: ObservableObject {
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
+        reattachKeptRuns()
+        // Guest links that still work connect again (within their 24 hours).
+        GuestShares.shared.start(workspace: self)
         if !started.isEmpty { scheduleSave() }
     }
 
@@ -693,14 +706,6 @@ final class WorkspaceManager: ObservableObject {
         return info
     }
 
-    /// Clones a repository, then selects it as the active project.
-    func clone(url: String, into parent: String) async throws -> String {
-        guard let git = gitService else { throw StartError.noGit }
-        let path = try await Task.detached(priority: .userInitiated) { try git.clone(url: url, into: parent) }.value
-        settings.rememberProject(path)
-        return path
-    }
-
     // MARK: New Session
 
     enum StartError: LocalizedError {
@@ -806,6 +811,7 @@ final class WorkspaceManager: ObservableObject {
             delegation: config.delegation
         )
         run.effort = config.effort
+        run.speedTier = config.speedTier
         run.lineage = config.lineage
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
@@ -839,11 +845,15 @@ final class WorkspaceManager: ObservableObject {
         let refreshBase = shouldRefreshRemoteBase(root: root, base: base)
         let repoKey = FolderLease.key(root)
         let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
+        let checkout = worktreeCheckout(git, root: root)
         prepareTasks[id]?.cancel()
         prepareTasks[id] = Task { [weak self] in
+            let submoduleProblem: String?
             do {
-                try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
-                    try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase)
+                submoduleProblem = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                    let cloned = try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase,
+                                                     checkoutCache: checkout.cache)
+                    return Self.finishWorktree(git, checkout: checkout, root: root, path: path, cloned: cloned)
                 }
             } catch {
                 guard let self, !Task.isCancelled, self.run(id) != nil else { return }
@@ -863,6 +873,7 @@ final class WorkspaceManager: ObservableObject {
                 $0.worktreePath = path
                 $0.branch = branch
             }
+            if let submoduleProblem { self.append(id, RunEvent(kind: .error, text: tr("sc.submodules.failed", submoduleProblem))) }
             self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
             let worktreeKey = FolderLease.key(path)
@@ -1043,6 +1054,8 @@ final class WorkspaceManager: ObservableObject {
             prewarm(id)
         case .codex:
             break
+        case .pi:
+            break
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
             guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
@@ -1094,7 +1107,7 @@ final class WorkspaceManager: ObservableObject {
     func usesCodexServer(_ run: WorkspaceRun, _ executable: String) -> Bool {
         switch run.provider {
         case .codex: return settings.codexAppServer && !codexExecOnly.contains(executable)
-        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return false
         }
     }
 
@@ -1476,7 +1489,16 @@ final class WorkspaceManager: ObservableObject {
         // Pressing Stop again changes nothing: the first one is still on its way.
         if turns[id]?.stopping == true { return }
         turns[id]?.stopping = true
-        if run(id)?.provider == .claude {
+        if run(id)?.provider == .pi {
+            // Pi stops its run on `abort`; if it never answers, its input closes and then the process ends.
+            process.send(PiRPC.abort())
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard let self, self.processes[id] === process else { return }
+                process.closeInput()
+                process.stop()
+            }
+        } else if run(id)?.provider == .claude {
             process.send(ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8)))
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -1544,7 +1566,8 @@ final class WorkspaceManager: ObservableObject {
             thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
-            effort: run.provider == .claude ? run.effort : nil
+            effort: run.provider == .claude || run.provider == .pi ? run.effort : nil,
+            speedTier: speedTier(run)
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
         if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
@@ -1552,18 +1575,7 @@ final class WorkspaceManager: ObservableObject {
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
         turns[id] = TurnState()
-        let provider = run.provider
-        process.onLines = { [weak self] lines in
-            // Parsed here, on the process's own queue: the main thread only applies the events.
-            let parsed = ParsedStreamLine.parse(lines, provider: provider)
-            Task { @MainActor in
-                guard let self else { return }
-                for line in parsed { self.handle(parsed: line, for: id) }
-            }
-        }
-        process.onExit = { [weak self, weak process] status, stderr in
-            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
-        }
+        bindTurn(process, id, provider: run.provider)
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         do {
             try process.start()
@@ -1582,6 +1594,23 @@ final class WorkspaceManager: ObservableObject {
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
+    }
+
+    /// A turn's process tells this session what it writes and when it ends.
+    func bindTurn(_ process: AgentProcess, _ id: UUID, provider: RunProvider) {
+        process.onLines = { [weak self, weak process] lines in
+            let end = process?.consumed ?? 0
+            // Parsed here, on the process's own queue: the main thread only applies the events.
+            let parsed = ParsedStreamLine.parse(lines, provider: provider)
+            Task { @MainActor in
+                guard let self else { return }
+                for line in parsed { self.handle(parsed: line, for: id) }
+                process?.markHandled(end)
+            }
+        }
+        process.onExit = { [weak self, weak process] status, stderr in
+            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
+        }
     }
 
     /// Opens the agent's connection when you open an idle session (an existing conversation), so your first message goes
@@ -1603,7 +1632,7 @@ final class WorkspaceManager: ObservableObject {
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
-                effort: run.effort)), for: run)
+                effort: run.effort, speedTier: speedTier(run))), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -1624,6 +1653,8 @@ final class WorkspaceManager: ObservableObject {
         case .codex:
             guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
             connectCodexServer(id, executable: executable, prompt: nil)
+        case .pi:
+            return
         case .gemini, .opencode, .cursor, .grok, .acp:
             guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
             connectAcp(id, executable: executable, prompt: nil)
@@ -1646,6 +1677,8 @@ final class WorkspaceManager: ObservableObject {
             for event in events { handleCodex(event, id: id) }
         case .gemini(let events):
             for event in events { handleGemini(event, id: id) }
+        case .pi(let events):
+            for event in events { handlePi(event, id: id) }
         case .none:
             break // ACP sessions read their own messages (WorkspaceManager+Acp).
         }
@@ -1996,14 +2029,27 @@ final class WorkspaceManager: ObservableObject {
 
     enum Decision { case allow, always, deny }
 
-    func decide(_ runID: UUID, requestID: String, _ decision: Decision) {
-        if decideCodex(runID, requestID: requestID, decision) { return }
-        if decideAcp(runID, requestID: requestID, decision) { return }
+    /// `reason`: what you told the agent with a denial. It reaches the agent the way its app takes it
+    /// (`ProviderCapabilities.denyReason`); with an allow it is ignored.
+    func decide(_ runID: UUID, requestID: String, _ decision: Decision, reason: String = "") {
+        let reason = decision == .deny ? reason.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        if decideCodex(runID, requestID: requestID, decision) { deliverDenyReason(runID, reason); return }
+        if decideAcp(runID, requestID: requestID, decision) { deliverDenyReason(runID, reason); return }
         guard let pending = approvals[runID]?.first(where: { $0.id == requestID }), let process = processes[runID] else {
             expireApproval(runID, requestID: requestID)
             return
         }
         let line: String
+        if run(runID)?.provider == .pi {
+            // Pi's `confirm` dialog has no "always"; Nook remembers nothing for it.
+            process.send(PiRPC.confirmResponse(requestID: requestID, confirmed: decision != .deny))
+            approvals[runID]?.removeAll { $0.id == requestID }
+            recap?.decision(allowed: decision != .deny)
+            mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
+            if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+            onApprovalGone?(requestID)
+            return
+        }
         switch decision {
         case .allow:
             line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input)
@@ -2011,7 +2057,7 @@ final class WorkspaceManager: ObservableObject {
             line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input,
                                                          rules: pending.canAlways ? pending.suggestions : nil)
         case .deny:
-            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: false, input: pending.input)
+            line = ClaudeStreamParser.permissionResponse(requestID: requestID, allow: false, input: pending.input, message: reason)
         }
         process.send(line)
         approvals[runID]?.removeAll { $0.id == requestID }
@@ -2019,6 +2065,22 @@ final class WorkspaceManager: ObservableObject {
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
         if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
+        if !reason.isEmpty { append(runID, RunEvent(kind: .system, text: tr("ws.approval.deniedBecause", reason))) }
+    }
+
+    /// The reason for a denial, for an agent whose answer to a request carries no text: steered into the running turn
+    /// (Codex `turn/steer`; an ACP agent is interrupted and gets it as the next prompt). While more requests wait on you
+    /// the turn cannot be steered, so it waits in the queue for the end of the turn.
+    func deliverDenyReason(_ id: UUID, _ reason: String) {
+        guard !reason.isEmpty, let run = run(id) else { return }
+        switch run.provider.capabilities.denyReason {
+        case .inResponse:
+            return
+        case .followUpMessage:
+            let message = tr("ws.approval.denyMessage", reason)
+            if (approvals[id]?.isEmpty ?? true), steer(id, text: message) { return }
+            enqueue(id, text: message)
+        }
     }
 
     func expireApproval(_ runID: UUID, requestID: String) {
@@ -2044,6 +2106,7 @@ final class WorkspaceManager: ObservableObject {
     func setArchived(_ id: UUID, _ archived: Bool) {
         guard let run = run(id), !(archived && run.status.isActive) else { return }
         update(id) { $0.archived = archived }
+        if archived { WorkspaceBridge.shared.forgetSecrets(run: id) }
     }
 
     func markReviewed(_ id: UUID) {
@@ -2191,6 +2254,7 @@ final class WorkspaceManager: ObservableObject {
         }
         runs.removeAll { $0.id == id }
         SessionBrowsers.shared.discard(run: id)
+        WorkspaceBridge.shared.forgetSecrets(run: id)
         forgetSessionState(id)
         store.deleteEvents(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
@@ -2303,6 +2367,7 @@ final class WorkspaceManager: ObservableObject {
         // State that only lives during a turn or while the session is open.
         turns[id] = nil
         regeneratingTitles.remove(id)
+        dropNextPrompt(id)
         checkpointing.remove(id)
         acpCommands[id] = nil
         queueLooks.remove(id)
@@ -2709,6 +2774,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
+        let kept = detachKeptRuns()
+        GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
         for id in Array(acpClients.keys) { closeAcpClient(id) }
@@ -2717,7 +2784,7 @@ final class WorkspaceManager: ObservableObject {
             process.closeInput()
             process.stop(grace: 1)
         }
-        for index in runs.indices where runs[index].status.isActive {
+        for index in runs.indices where runs[index].status.isActive && !kept.contains(runs[index].id) {
             runs[index].interruptedWhileWaiting = runs[index].status == .waitingApproval ? true : nil
             runs[index].status = .stopped
             runs[index].statusDetail = "interrupted"
@@ -2733,6 +2800,7 @@ final class WorkspaceManager: ObservableObject {
 
     func replace(_ run: WorkspaceRun) {
         guard let index = runIndex(run.id) else { return }
+        if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(run.id) }
         runs[index] = run
         scheduleSave()
     }
@@ -2743,6 +2811,8 @@ final class WorkspaceManager: ObservableObject {
         change(&run)
         guard run != runs[index] else { return }
         let freedPlace = runs[index].status.isActive && !run.status.isActive
+        // A turn starts: the suggestion for the one before it no longer fits.
+        if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(id) }
         run.updatedAt = max(run.updatedAt, runs[index].updatedAt)
         runs[index] = run
         if save { scheduleSave() }

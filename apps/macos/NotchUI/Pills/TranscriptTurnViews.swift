@@ -364,6 +364,13 @@ struct TurnDiffPanel: View {
                 .help(commit.date.map { "\(commit.author) · " + $0.formatted(date: .abbreviated, time: .shortened) } ?? commit.author)
             }
         }
+        // An older commit an agent's answer linked to.
+        if let linked = git.linked, !git.commits.contains(where: { $0.id == linked.id }) {
+            DropdownHeader(title: tr("sc.diff.linkedCommit"))
+            DropdownRow(title: linked.subject, trailing: linked.shortID, chosen: selection.source == .commit(linked.id)) {
+                selection = .commit(linked.id)
+            }
+        }
     }
 
     /// "Branch vs origin/main", or "Branch changes" when there is no base to name.

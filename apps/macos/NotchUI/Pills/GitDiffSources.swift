@@ -11,6 +11,10 @@ final class GitDiffSources: ObservableObject {
     /// The files of the commits read so far, by hash.
     @Published private(set) var commitFiles: [String: [GitFileChange]] = [:]
     @Published private(set) var loaded = false
+    /// A commit opened from a link that is older than the newest `commitLimit`: shown on its own under them.
+    @Published private(set) var linked: GitCommitSummary?
+    /// The newest commits the choices list, one at a time.
+    nonisolated static let commitLimit = 100
 
     nonisolated static func make(directory: String) -> GitDiffSources {
         MainActor.assumeIsolated { GitDiffSources(directory: directory) }
@@ -36,7 +40,9 @@ final class GitDiffSources: ObservableObject {
             loaded = true
             return
         }
-        let fresh = await Task.detached(priority: .utility) { GitService.shared?.commits(root) ?? [] }.value
+        let fresh = await Task.detached(priority: .utility) {
+            GitService.shared?.commits(root, count: GitDiffSources.commitLimit) ?? []
+        }.value
         if fresh != commits { commits = fresh }
         loaded = true
     }
@@ -51,11 +57,17 @@ final class GitDiffSources: ObservableObject {
         }
     }
 
-    func commit(_ id: String) -> GitCommitSummary? { commits.first { $0.id == id } }
+    func commit(_ id: String) -> GitCommitSummary? { commits.first { $0.id == id } ?? (linked?.id == id ? linked : nil) }
 
-    /// Reads which files a commit changed, once.
+    /// Reads which files a commit changed, once. A commit beyond the newest ones (opened from a link) is read first.
     func loadCommit(_ id: String) async {
-        guard commitFiles[id] == nil, let root = folder.root, let commit = commit(id) else { return }
+        guard commitFiles[id] == nil else { return }
+        if folder.root == nil { await folder.refresh() }
+        guard let root = folder.root else { return }
+        if commit(id) == nil {
+            linked = await Task.detached(priority: .userInitiated) { GitService.shared?.commit(root, named: id) }.value
+        }
+        guard let commit = commit(id) else { return }
         let files = await Task.detached(priority: .userInitiated) {
             (try? GitService.shared?.changes(root, commit: commit)) ?? []
         }.value

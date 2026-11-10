@@ -76,12 +76,50 @@ struct AttentionLedger: Sendable {
 /// Snooze: a session out of the way until a time, back earlier when something needs you.
 enum SnoozePolicy {
     /// Still hidden at `now`? A snooze ends at its time, or earlier when the session needs you, failed, or finished
-    /// something after the snooze began.
-    static func isSnoozed(until: Date?, since: Date?, attention: AgentAttention, finishedAt: Date?, now: Date = Date()) -> Bool {
+    /// something after the snooze began. A usage limit wakes it too, unless the limit was there already when you snoozed
+    /// (`limitedAt` before `since`): that is what "until the limit resets" is for.
+    static func isSnoozed(until: Date?, since: Date?, attention: AgentAttention, finishedAt: Date?, limitedAt: Date? = nil,
+                          now: Date = Date()) -> Bool {
         guard let until, until > now else { return false }
-        if attention.needsYou || attention == .failed || attention == .limited { return false }
+        if attention == .limited {
+            guard let limitedAt, let since, limitedAt <= since else { return false }
+        }
+        if attention.needsYou || attention == .failed { return false }
         if let since, let finishedAt, finishedAt > since, attention == .ready { return false }
         return true
+    }
+
+    /// The end of "until the usage limit resets": the session's reset time, while a limit stopped it and that time is
+    /// still ahead. Nil when no limit holds it or Nook does not know when it resets.
+    static func limitResetEnd(limitedAt: Date?, resetAt: Date?, now: Date = Date()) -> Date? {
+        guard limitedAt != nil, let resetAt, resetAt > now else { return nil }
+        return resetAt
+    }
+
+    /// The longest custom snooze: a month. Anything longer is settling, not snoozing.
+    static let maxCustom: TimeInterval = 31 * 24 * 3600
+
+    /// A custom end, from a moment you picked: nil when it is not ahead of `now`, pulled in to `maxCustom`.
+    static func customEnd(_ date: Date, now: Date = Date()) -> Date? {
+        guard date > now.addingTimeInterval(30) else { return nil }
+        return min(date, now.addingTimeInterval(maxCustom))
+    }
+
+    /// A custom end, from a duration (`amount` of `unit`).
+    static func customEnd(amount: Int, unit: DurationUnit, now: Date = Date()) -> Date? {
+        guard amount > 0 else { return nil }
+        return customEnd(now.addingTimeInterval(TimeInterval(amount) * unit.seconds), now: now)
+    }
+
+    enum DurationUnit: String, CaseIterable, Sendable {
+        case minutes, hours, days
+        var seconds: TimeInterval {
+            switch self {
+            case .minutes: return 60
+            case .hours: return 3600
+            case .days: return 86_400
+            }
+        }
     }
 
     /// The snooze choices of the menu: an hour, this evening (18:00, or tomorrow when it is later), tomorrow morning (09:00).

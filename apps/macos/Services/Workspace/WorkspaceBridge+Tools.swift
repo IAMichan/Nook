@@ -49,7 +49,7 @@ extension WorkspaceBridge {
             if all { return true }
             switch task.target {
             case .newSession(let path, _, _): return !folder.isEmpty && WorkspacePathPolicy.normalize(path) == folder
-            case .existingSession(let id): return id == session
+            case .existingSession(let id, _): return id == session
             }
         }
         var lines = [store.isEnabled ? "Scheduled tasks are switched on."
@@ -71,26 +71,9 @@ extension WorkspaceBridge {
         case .success(let value): draft = value
         }
         let target: ScheduledTaskTarget
-        switch draft.target {
-        case .thisSession:
-            guard let id = runID(caller) else {
-                return .error("target this_session only works in a session Nook started; use new_session with project_path.")
-            }
-            target = .existingSession(id: id)
-        case .newSession(let path, let agent):
-            let folder = try resolveFolder(path ?? "", caller)
-            let own = runID(caller).flatMap { app?.workspace.run($0) }
-            let provider: RunProvider
-            if let agent {
-                guard let found = RunProvider.allCases.first(where: { $0.rawValue == agent || $0.displayName.lowercased() == agent }) else {
-                    return .error("Unknown agent \"\(agent)\". Use claude, codex, gemini, opencode, cursor, grok or antigravity.")
-                }
-                provider = found
-            } else {
-                provider = own?.provider ?? .claude
-            }
-            target = .newSession(projectPath: folder, provider: provider.rawValue,
-                                 profileID: own?.provider == provider ? own?.profileID : nil)
+        switch try scheduleTarget(draft.target, fresh: draft.fresh, caller) {
+        case .failure(let error): return .error(error.message)
+        case .success(let value): target = value
         }
         return try await once(.scheduleTask, arguments, caller) {
             let store = ScheduledTaskStore.shared
@@ -115,6 +98,38 @@ extension WorkspaceBridge {
         }
     }
 
+    /// Where a task's runs go, from what the agent asked: a new session in a folder, its own session, or another session
+    /// of the user's that Nook knows.
+    private func scheduleTarget(_ wanted: BridgeScheduleDraft.Target, fresh: Bool,
+                                _ caller: BridgeCaller) throws -> Result<ScheduledTaskTarget, BridgeArgumentError> {
+        switch wanted {
+        case .thisSession:
+            guard let id = runID(caller) else {
+                return .failure(BridgeArgumentError("target this_session only works in a session Nook started; use new_session with project_path."))
+            }
+            return .success(.existingSession(id: id, fresh: fresh))
+        case .session(let id):
+            guard let run = app?.workspace.run(id), !run.archived else {
+                return .failure(BridgeArgumentError("No such session in Nook. Use an id from session_list."))
+            }
+            return .success(.existingSession(id: id, fresh: fresh))
+        case .newSession(let path, let agent):
+            let folder = try resolveFolder(path ?? "", caller)
+            let own = runID(caller).flatMap { app?.workspace.run($0) }
+            let provider: RunProvider
+            if let agent {
+                guard let found = RunProvider.allCases.first(where: { $0.rawValue == agent || $0.displayName.lowercased() == agent }) else {
+                    return .failure(BridgeArgumentError("Unknown agent \"\(agent)\". Use claude, codex, gemini, opencode, cursor, grok or antigravity."))
+                }
+                provider = found
+            } else {
+                provider = own?.provider ?? .claude
+            }
+            return .success(.newSession(projectPath: folder, provider: provider.rawValue,
+                                        profileID: own?.provider == provider ? own?.profileID : nil))
+        }
+    }
+
     func updateScheduledTask(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
         if case .refuse(let reason) = verdict(.updateScheduledTask, caller) { return .error(Self.refusal(reason)) }
         let change: BridgeScheduleChange
@@ -127,7 +142,23 @@ extension WorkspaceBridge {
         if change.rule != nil, task.rule.isWebhook {
             return .error("This task runs on a webhook; its schedule can only be changed in Nook's settings.")
         }
-        let updated = change.applied(to: task)
+        var updated = change.applied(to: task)
+        if let wanted = change.target {
+            let fresh = change.fresh ?? (task.target.freshConversation)
+            do {
+                switch try scheduleTarget(wanted, fresh: fresh, caller) {
+                case .failure(let error): return .error(error.message)
+                case .success(let value): updated.target = value
+                }
+            } catch {
+                return .error(error.localizedDescription)
+            }
+        } else if let fresh = change.fresh {
+            guard case .existingSession(let id, _) = task.target else {
+                return .error("conversation only applies to a task that posts into a session.")
+            }
+            updated.target = .existingSession(id: id, fresh: fresh)
+        }
         let permission = change.permission ?? store.permission(for: task.id)
         let allowed = await ask(caller, tool: .updateScheduledTask, title: tr("bridge.approval.scheduleChange", caller.agent),
                                 detail: Self.scheduleDetail(updated, permission: permission),
@@ -182,8 +213,9 @@ extension WorkspaceBridge {
         switch task.target {
         case .newSession(let path, let provider, _):
             place = tr("bridge.schedule.newSession", RunProvider(rawValue: provider)?.displayName ?? provider, AgentPathFormat.tilde(path))
-        case .existingSession:
-            place = tr("bridge.schedule.thisSession")
+        case .existingSession(let id, let fresh):
+            place = tr("bridge.schedule.thisSession") + " (" + id.uuidString.prefix(8).lowercased() + ", "
+                + tr(fresh ? "automation.sched.fresh" : "automation.sched.continue") + ")"
         }
         return [scheduleText(task.rule), place, permission.rawValue, tr(task.enabled ? "bridge.schedule.on" : "bridge.schedule.off")]
             .joined(separator: " · ")
@@ -202,6 +234,8 @@ extension WorkspaceBridge {
                 : tr("bridge.schedule.days", time, days.joined(separator: ", "))
         case .webhook:
             return tr("bridge.schedule.webhook")
+        case .once(let at):
+            return tr("automation.sched.rule.once", ScheduledTaskText.date(at))
         }
     }
 
@@ -388,48 +422,88 @@ extension WorkspaceBridge {
 
     // MARK: Secrets
 
-    /// A secret by name, after the user allowed it: the value kept for agents in Nook's keychain, or one the user pastes
-    /// (and may keep there). It goes back over this call's own connection only; the audit log gets the name.
+    /// A secret by name, after the user allowed it: the value kept for agents in Nook's keychain (or the 1Password item
+    /// it refers to), or one the user pastes (and may keep there). By default it goes to a private file and the agent gets
+    /// only the path (`SecretFiles`), so the value never enters its transcript; with `delivery: "value"` it comes back in
+    /// this call's output, and the card says so. The audit log gets the name, never the value.
     func requestSecret(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {
         guard let name = BridgeSecret.name(arguments["name"]) else {
             return .error("name must be 1 to 64 letters, digits, dots, dashes or underscores, such as STRIPE_TEST_KEY.")
         }
         guard let reason = BridgeArgs.string(arguments["reason"]) else { return .error("Say in one sentence why you need it.") }
+        guard let delivery = BridgeSecret.delivery(arguments["delivery"]) else {
+            return .error("delivery must be \"file\" (the default: you get a path) or \"value\".")
+        }
+        if arguments["url"] != nil, BridgeSecret.signInURL(arguments["url"]) == nil {
+            return .error("url must be an http or https address of the page where the user finds the secret.")
+        }
+        let signIn = BridgeSecret.signInURL(arguments["url"])
         if case .refuse(let why) = verdict(.requestSecret, caller) { return .error(Self.refusal(why)) }
         let account = BridgeSecret.account(name)
         let stored = SecretStore.read(account) != nil
+        var note = tr(stored ? "bridge.approval.secretStored" : "bridge.approval.secretPaste")
+        if delivery == .value { note += " " + tr("secrets.approval.valueWarning") }
         let (allowed, typed) = await ask(caller, tool: .requestSecret, title: tr("bridge.approval.secret", caller.agent, name),
-                                         detail: "\(name)\n\n\(String(reason.prefix(500)))",
-                                         note: tr(stored ? "bridge.approval.secretStored" : "bridge.approval.secretPaste"),
-                                         danger: false, connection: context.connection, secretName: stored ? nil : name)
+                                         detail: "\(name)\n\n\(String(reason.prefix(500)))", note: note,
+                                         danger: delivery == .value, connection: context.connection,
+                                         secretName: stored ? nil : name, signInURL: signIn)
         guard allowed else {
             audit(.requestSecret, caller, name, "niet toegestaan")
             return .error(Self.refusal(.secret))
         }
-        var value = SecretStore.read(account)
+        var given = SecretStore.read(account)
         // Typed on the request itself; a request allowed elsewhere (a card, the phone) still asks for it next.
-        if value == nil, let typed {
+        if given == nil, let typed {
             if typed.remember { SecretStore.write(typed.value, account: account) }
-            value = typed.value
+            given = typed.value
         }
-        if value == nil {
+        if given == nil {
             guard let pasted = BridgeSecretPrompt.ask(name: name, agent: caller.agent) else {
                 audit(.requestSecret, caller, name, "geannuleerd")
                 return .error("The user did not give a value for \(name).")
             }
             if pasted.remember { SecretStore.write(pasted.value, account: account) }
-            value = pasted.value
+            given = pasted.value
         }
-        guard let value, !value.isEmpty else { return .error("The user did not give a value for \(name).") }
-        audit(.requestSecret, caller, name, stored ? "uit sleutelhanger" : "geplakt")
-        return BridgeRPC.ToolResult(text: BridgeSecret.envelope(name: name, value: value))
+        guard let given, !given.isEmpty else { return .error("The user did not give a value for \(name).") }
+        // A 1Password reference is read now, kept in memory only for this call.
+        let value: String
+        do {
+            value = try await SecretProviders.resolve(given)
+        } catch {
+            audit(.requestSecret, caller, name, "1Password: niet gelezen")
+            return .error("Nook could not read \(name) from 1Password: " + ((error as? OnePassword.Failure)?.message ?? "unknown error."))
+        }
+        let source = SecretReference.isReference(given) ? "1Password" : stored ? "uit sleutelhanger" : "geplakt"
+        switch delivery {
+        case .value:
+            audit(.requestSecret, caller, name, source + " · waarde")
+            return BridgeRPC.ToolResult(text: BridgeSecret.envelope(name: name, value: value))
+        case .file:
+            let files = SecretFiles.standard
+            do {
+                let url = try files.write(value, name: name, scope: Self.secretScope(caller))
+                scheduleSecretSweep()
+                audit(.requestSecret, caller, name, source + " · bestand")
+                return BridgeRPC.ToolResult(text: SecretFiles.instructions(name: name, path: url.path))
+            } catch {
+                audit(.requestSecret, caller, name, "bestand mislukt")
+                return .error("Nook could not write the private file for \(name). Ask the user to check Nook's support folder.")
+            }
+        }
+    }
+
+    /// The folder of a caller's secret files: the session Nook runs, or the folder an agent you started works in.
+    static func secretScope(_ caller: BridgeCaller) -> String {
+        if case .run(let id) = caller.kind { return id.uuidString }
+        return SecretFiles.folderScope(caller.directory)
     }
 }
 
 /// Where you paste a secret an agent asked for and Nook does not keep yet: a secure field, never shown, never logged.
 @MainActor
 enum BridgeSecretPrompt {
-    static func ask(name: String, agent: String) -> (value: String, remember: Bool)? {
+    static func ask(name: String, agent: String, keepable: Bool = true) -> (value: String, remember: Bool)? {
         let alert = NSAlert()
         alert.messageText = tr("bridge.secret.prompt.title", name)
         alert.informativeText = tr("bridge.secret.prompt.detail", agent)
@@ -438,7 +512,7 @@ enum BridgeSecretPrompt {
         alert.accessoryView = field
         alert.addButton(withTitle: tr("bridge.secret.prompt.give"))
         alert.addButton(withTitle: tr("button.cancel"))
-        alert.showsSuppressionButton = true
+        alert.showsSuppressionButton = keepable
         alert.suppressionButton?.title = tr("bridge.secret.prompt.remember")
         alert.suppressionButton?.state = .off
         alert.window.initialFirstResponder = field
@@ -446,6 +520,6 @@ enum BridgeSecretPrompt {
         guard alert.runAboveNotch() == .alertFirstButtonReturn else { return nil }
         let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return nil }
-        return (value, alert.suppressionButton?.state == .on)
+        return (value, keepable && alert.suppressionButton?.state == .on)
     }
 }

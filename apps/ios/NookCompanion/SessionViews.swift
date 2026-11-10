@@ -246,6 +246,7 @@ struct SessionDetailView: View {
                     Button("One hour") { manage(session, .snoozeHour) }
                     Button("This evening") { manage(session, .snoozeEvening) }
                     Button("Tomorrow morning") { manage(session, .snoozeTomorrow) }
+                    SnoozeCustomItems(session: session, actions: actions) { manage(session, $0) }
                 } label: { Label("Snooze", systemImage: "clock") }
             }
             if actions.contains(.rename) {
@@ -426,6 +427,13 @@ struct ItemView: View {
                 if !item.canAllow {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
+                }
+                // What you type denies it and tells the agent why, or what to do instead.
+                SessionComposer(text: $text, prompt: "Or deny with a reason") {
+                    let reason = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    text = ""
+                    Haptics.warning()
+                    Task { await client.decide(session, item: item, allow: false, reason: reason) }
                 }
             case .question:
                 if item.canAllow {

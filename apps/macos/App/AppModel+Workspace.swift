@@ -11,6 +11,7 @@ extension RunProvider {
         case .cursor: return .cursor
         case .grok: return .grok
         case .antigravity: return .antigravity
+        case .pi: return .pi
         case .acp: return .acp
         }
     }
@@ -26,6 +27,7 @@ extension RunProvider {
         case .cursor: self = .cursor
         case .grok: self = .grok
         case .antigravity: self = .antigravity
+        case .pi: self = .pi
         case .acp: self = .acp
         }
     }
@@ -59,7 +61,7 @@ final class WorkspaceWindowController {
     /// `screen`: the window moves there first when it is on another one (the screen an update was started from).
     func show(app: AppModel, activate: Bool = true, on screen: NSScreen? = nil) {
         if window == nil {
-            let root = WindowContent(presence: presence, background: NookTheme.notch, minSize: CGSize(width: 900, height: 580)) {
+            let root = WindowContent(presence: presence, background: NookTheme.canvas, minSize: CGSize(width: 900, height: 580)) {
                 WorkspaceView()
             }
                 .nookAttention()
@@ -74,10 +76,11 @@ final class WorkspaceWindowController {
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered, defer: false)
             window.contentView = host
-            // Dark for the window and everything presented from it (sheets inherit the window's appearance). Asking for it
-            // with `.preferredColorScheme` inside the window and inside each sheet makes the sheets re-negotiate it on every
-            // layout pass, which loops ("needing another Update Constraints in Window pass").
-            window.appearance = NSAppearance(named: .darkAqua)
+            // The appearance from Settings › Appearance for the window and everything presented from it (sheets inherit
+            // the window's appearance). Asking for it with `.preferredColorScheme` inside the window and inside each sheet
+            // makes the sheets re-negotiate it on every layout pass, which loops ("needing another Update Constraints in
+            // Window pass").
+            NookWindowLook.adopt(window)
             window.title = tr("ws.windowTitle")
             // The panel runs up under the traffic lights, as the open notch runs up under the camera; the title is in the
             // Dock and ⌘Tab.
@@ -89,8 +92,6 @@ final class WorkspaceWindowController {
             window.toolbar = NSToolbar(identifier: "NookWorkspace")
             window.toolbarStyle = .unified
             window.titlebarSeparatorStyle = .none
-            // Black, as the notch.
-            window.backgroundColor = .black
             window.setContentSize(NSSize(width: 1240, height: 800))
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
@@ -257,6 +258,7 @@ extension AppModel {
         }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
         workspace.onAudit = { [weak self] tool, args, result in self?.store.audit(tool: tool, args: args, result: result) }
+        startAgentUpdates()
         workspace.onQuestion = { [weak self] run, pending in
             CompanionNotifier.shared.question(run, pending)
             self?.workspaceQuestion(run)
@@ -362,6 +364,8 @@ extension AppModel {
             self?.viewModel.dismissCard(id: "bridge-" + id)
         }
         bridge.start()
+        RemoteMCPServer.shared.bridge = bridge
+        RemoteMCPServer.shared.set(wanted: WorkspaceSettings.shared.remoteMCPEnabled)
         workspace.bridgeLaunch = { WorkspaceBridge.shared.launch }
     }
 
@@ -457,7 +461,7 @@ extension AppModel {
         case .codex: codex.refreshNow()
         case .antigravity: antigravityUsage.refreshNow()
         // These agents report no subscription limits (see QuotaService).
-        case .gemini, .opencode, .cursor, .grok, .acp: break
+        case .gemini, .opencode, .cursor, .grok, .pi, .acp: break
         }
         let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
@@ -496,7 +500,7 @@ extension AppModel {
         case .antigravity:
             if agentConnect[profile.id]?.isBusy != true { connectAntigravity(profile, fresh: true) }
             return
-        case .opencode, .cursor, .grok: command = profile.kind.loginCommand
+        case .opencode, .cursor, .grok, .pi: command = profile.kind.loginCommand
         // ACP agents sign in themselves, in their first session.
         case .acp: return
         }
@@ -536,7 +540,7 @@ extension AppModel {
         switch profile.kind {
         case .claude: command = profile.environmentPrefixOnly + "claude /logout"
         case .codex: command = profile.environmentPrefixOnly + "codex logout"
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return
         }
         do {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
@@ -579,7 +583,7 @@ extension AppModel {
                 try Self.pipeKey(clean, to: executable, arguments: ["login", "--with-api-key"], environment: environment)
             }.value
             profiles.setAuth(profile.id, .apiKey)
-        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp:
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
             return
         }
         history.refresh(minimumInterval: 0)

@@ -15,10 +15,10 @@ struct SmallPrimaryButton: View {
                 // One line in its 30 pt capsule: the text beside the button gives way, not the button's title.
                 Text(title).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
             }
-            .foregroundStyle(NookTheme.ink)
+            .foregroundStyle(NookTheme.onPaper)
             .padding(.horizontal, 14)
             .frame(height: 30)
-            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
+            .background(Capsule().fill(hovering ? NookTheme.paperHover : NookTheme.paper))
         }
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.45)
@@ -44,13 +44,13 @@ struct NookAcknowledgeButton: View {
                 if let countdown { CountdownRing(duration: countdown, paused: paused, size: compact ? 16 : 18) }
                 Text(title).font(NookTheme.font(compact ? 13 : 14, .semibold))
             }
-            .foregroundStyle(NookTheme.ink)
+            .foregroundStyle(NookTheme.onPaper)
             .lineLimit(1)
             .fixedSize()
             .padding(.leading, countdown == nil ? (compact ? 14 : 18) : (compact ? 7 : 9))
             .padding(.trailing, compact ? 14 : 18)
             .frame(height: height ?? (compact ? 30 : 38))
-            .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
+            .background(Capsule().fill(hovering ? NookTheme.paperHover : NookTheme.paper))
             .contentShape(Capsule())
             .hoverLift(hovering)
         }

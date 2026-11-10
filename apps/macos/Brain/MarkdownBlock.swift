@@ -15,6 +15,8 @@ enum MarkdownBlock: Equatable {
     case rule
     /// A pull request an agent reports on a line of its own (`<pr-created>https://…/pull/12</pr-created>`).
     case pullRequest(URL)
+    /// A display formula in TeX: a ```math block, or `$$…$$` / `\[…\]` on lines of their own (`MathText`).
+    case math(String)
 
     private static let brRegex = try? NSRegularExpression(pattern: #"<br\s*/?>"#, options: [.caseInsensitive])
     private static let headingRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s"#)
@@ -224,13 +226,22 @@ enum MarkdownBlock: Equatable {
                 }
                 index += 1
                 let body = code.joined(separator: "\n")
-                if language == "question", let block = question(from: body) {
+                if language == "math" {
+                    blocks.append(.math(body.trimmingCharacters(in: .whitespacesAndNewlines)))
+                } else if language == "question", let block = question(from: body) {
                     blocks.append(block)
                 } else if chartLanguages.contains(language), let chart = ChartRescue.chart(fromCode: body, language: language, title: "") {
                     blocks.append(.chart(chart))
                 } else {
                     blocks.append(.code(language: language, code: body))
                 }
+                continue
+            }
+            // Display math: `$$` or `\[` opening a line, up to the line that closes it.
+            if let (tex, next) = displayMath(lines, from: index) {
+                flush()
+                blocks.append(.math(tex))
+                index = next
                 continue
             }
             // Heading
@@ -292,6 +303,27 @@ enum MarkdownBlock: Equatable {
         }
         flush()
         return blocks
+    }
+
+    /// A display formula that starts on line `index` (`$$…$$` or `\[…\]`, on one line or several) and the line after it;
+    /// nil when the line does not open one or it is never closed (yet: the answer may still be streaming).
+    static func displayMath(_ lines: [String], from index: Int) -> (String, Int)? {
+        let first = lines[index].trimmingCharacters(in: .whitespaces)
+        let (open, close): (String, String)
+        if first.hasPrefix("$$") { (open, close) = ("$$", "$$") } else if first.hasPrefix("\\[") { (open, close) = ("\\[", "\\]") } else { return nil }
+        var body = String(first.dropFirst(open.count))
+        var end = index
+        while true {
+            if let range = body.range(of: close) {
+                // Only the formula on its lines: text after the closing marker makes it a paragraph instead.
+                guard body[range.upperBound...].trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+                let tex = String(body[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return tex.isEmpty ? nil : (tex, end + 1)
+            }
+            end += 1
+            guard end < lines.count, end - index <= 200 else { return nil }
+            body += "\n" + lines[end]
+        }
     }
 
     static func isSafeLink(_ url: URL) -> Bool {

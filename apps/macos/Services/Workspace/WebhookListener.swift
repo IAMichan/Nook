@@ -111,11 +111,20 @@ final class WebhookListener: ObservableObject {
         var log = logs[taskID] ?? DeliveryLog()
         guard !log.contains(deliveryID) else { return (409, "duplicate delivery") }
 
-        switch store.acceptWebhook(taskID: taskID, deliveryID: deliveryID, payload: request.body, now: now) {
+        switch store.acceptWebhook(taskID: taskID, deliveryID: deliveryID, payload: request.body, headers: request.headers, now: now) {
         case .accepted:
             _ = log.record(deliveryID)
             logs[taskID] = log
             return (202, "accepted")
+        case .filtered:
+            // Received and understood, so the sender does not retry; the task's Deliveries log says which filter failed.
+            _ = log.record(deliveryID)
+            logs[taskID] = log
+            return (202, "filtered: nothing runs")
+        case .duplicate:
+            _ = log.record(deliveryID)
+            logs[taskID] = log
+            return (202, "duplicate key: nothing runs")
         case .queueFull:
             return (429, "queue full")
         case .unknownTask:

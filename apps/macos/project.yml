@@ -64,6 +64,10 @@ targets:
       - path: Resources/mermaid
         type: folder
         buildPhase: resources
+      # KaTeX's script, style and fonts, so math typesets without asking a server (see THIRD-PARTY-NOTICES.md).
+      - path: Resources/katex
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
@@ -110,9 +114,19 @@ targets:
         # Nook's own relay for the iPhone companion away from home (apps/relay, deployed by relay-deploy.yml): set the
         # build setting NOOK_RELAY_URL; while it is empty, Settings offers only a relay on the user's own account.
         NookRelayURL: "$(NOOK_RELAY_URL)"
+        # nook:// is Nook's own and stays first. http/https and web pages only make Nook one of the browsers macOS offers:
+        # it becomes the default only when you choose it (Settings › Browser, IncomingLinkRoute).
         CFBundleURLTypes:
           - CFBundleURLName: app.nook.link
             CFBundleURLSchemes: [nook]
+          - CFBundleURLName: app.nook.web
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes: [http, https]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Web page
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.html, public.xhtml]
         LSMinimumSystemVersion: "15.0"
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
         NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.
@@ -186,6 +200,7 @@ targets:
       - path: Core/I18n+MusicPage.swift
       - path: Core/I18n+MusicRedesign.swift
       - path: Core/I18n+Permissions.swift
+      - path: Core/I18n+Phone.swift
       - path: Core/I18n+Redesign.swift
       - path: Core/I18n+Selection.swift
       - path: Core/I18n+SettingsLayout.swift
@@ -207,13 +222,17 @@ targets:
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+DiffReview.swift
+      - path: Core/I18n+AgentMaintenance.swift
       - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
+      - path: Core/I18n+SourceControl.swift
+      - path: Core/I18n+Remote.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+AgentLifecycle.swift
       - path: Core/I18n+WorktreeCleanup.swift
+      - path: Core/I18n+Automation.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
@@ -221,12 +240,14 @@ targets:
       - path: Core/I18n+Releases.swift
       - path: Core/I18n+Actions.swift
       - path: Core/I18n+SessionContext.swift
+      - path: Core/I18n+BrowserCapture.swift
       - path: Core/I18n+RelayPush.swift
       - path: Core/I18n+ChatTimeline.swift
       - path: Core/I18n+Limits.swift
       - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
       - path: Core/I18n+ProviderTraffic.swift
+      - path: Core/I18n+TextGen.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
       - path: Core/I18n+Mail.swift
@@ -241,6 +262,9 @@ targets:
       - path: Core/I18n+ConnectionsAgents.swift
       - path: Core/I18n+ConnectionsDevices.swift
       - path: Core/I18n+AgentTools.swift
+      - path: Core/I18n+SessionControls.swift
+      - path: Core/I18n+Secrets.swift
+      - path: Core/I18n+LookThemes.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -308,6 +332,7 @@ targets:
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
       - path: Core/NookLook.swift
+      - path: NotchUI/Theme/NookPalette.swift
       - path: Core/NookMonthDay.swift
       - path: Services/BuddyMoments.swift
       - path: Services/QuietMode.swift
@@ -366,6 +391,10 @@ targets:
       - path: Services/Workspace/Delegation.swift
       - path: Services/Workspace/ContextHandoff.swift
       - path: Services/Workspace/ComposerCore.swift
+      - path: Services/Workspace/SessionLink.swift
+      - path: Services/Workspace/IncomingLinkRoute.swift
+      - path: Services/Workspace/BrowserCookieImport.swift
+      - path: Services/WindowCaptureText.swift
       - path: Services/Workspace/AgentStatusStyle.swift
       - path: Services/Workspace/TimelineCopy.swift
       - path: Services/Workspace/InboxLayout.swift
@@ -400,8 +429,23 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionPairings.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosticsLog.swift
       - path: ../../packages/protocol/Sources/CompanionResilience.swift
+      - path: ../../packages/protocol/Sources/CompanionPullRequests.swift
+      - path: ../../packages/protocol/Sources/CompanionShare.swift
+      - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
+      # The phone's Foundation-only logic: dictation languages, diagrams and math, comment positions in a diff.
+      - path: ../ios/Core/DictationText.swift
+        group: Shared from the iPhone
+        createIntermediateGroups: false
+      - path: ../ios/Core/MessageSegments.swift
+        group: Shared from the iPhone
+        createIntermediateGroups: false
+      - path: ../ios/Core/PatchPositions.swift
+        group: Shared from the iPhone
+        createIntermediateGroups: false
       # CryptoKit: on the Mac only (scripts/core-tests.sh leaves it out); CompanionFixturesTests checks the sealed vectors.
       - path: ../../packages/protocol/Sources/CompanionSeal.swift
+      - path: ../../packages/protocol/Sources/GuestLinkSeal.swift
+      - path: ../../packages/protocol/Sources/GuestLinkRoom.swift
       - path: Services/Companion/CloudflareRelaySetup.swift
       - path: Services/Companion/KeepAwakePolicy.swift
       - path: Services/Workspace/GitLabAPI.swift
@@ -412,6 +456,7 @@ targets:
       - path: Services/Workspace/WorktreeOrigin.swift
       - path: ../../packages/protocol/Sources/WebhookSecurity.swift
       - path: Services/Workspace/WebhookHTTP.swift
+      - path: Services/Workspace/WebhookRules.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/ProjectSettings.swift
       - path: Services/Workspace/AgentReadiness.swift
@@ -420,6 +465,13 @@ targets:
       - path: Services/Workspace/SessionGoal.swift
       - path: Services/Workspace/WebhookRelay.swift
       - path: Services/Workspace/NookTriage.swift
+      - path: Services/Workspace/SessionKeeper.swift
+      - path: Services/Workspace/KeptTransport.swift
+      - path: Services/Workspace/KeptRuns.swift
+      - path: Services/Workspace/GuestLink.swift
+      - path: Services/Workspace/RemoteMCP.swift
+      - path: Services/Workspace/RemoteMCPHTTP.swift
+      - path: Services/Workspace/RemoteMCPTunnel.swift
       - path: Services/Workspace/AndroidDevices.swift
       - path: Services/Workspace/RemoteBridge.swift
       - path: Services/Workspace/NookCommandLine.swift
@@ -435,9 +487,17 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/Workspace/SecretFiles.swift
+      - path: Services/Workspace/SudoAskpass.swift
+      - path: Services/Workspace/OnePassword.swift
+      - path: Services/Workspace/SecretPasteDetector.swift
       - path: Services/Workspace/BrowserSession.swift
       - path: Services/Workspace/WorkspaceBridgeSessions.swift
       - path: Services/Workspace/RenderedPage.swift
+      - path: Services/Workspace/RenderedPageFile.swift
+      - path: Services/Workspace/AgentUpdates.swift
+      - path: Services/Workspace/PiRPC.swift
+      - path: Services/Workspace/PiExtension.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift
@@ -463,6 +523,8 @@ targets:
       - path: Services/Workspace/RemoteMachines.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
+      - path: Services/Workspace/SettleActions.swift
+      - path: Services/Workspace/ProcessTree.swift
       - path: Services/Workspace/TerminalTitle.swift
       - path: Services/Workspace/FileLinks.swift
       - path: Services/Workspace/FileViewing.swift
@@ -472,17 +534,20 @@ targets:
       - path: Services/Workspace/DiskUsage.swift
       - path: Services/Workspace/BuildLeftovers.swift
       - path: Services/Workspace/ComposerLists.swift
+      - path: Services/Workspace/ComposerMarkdownStyle.swift
       - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/RemoteHostDiscovery.swift
       - path: Services/Workspace/ResourceUsage.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
+      - path: Services/Workspace/SpeedTiers.swift
       - path: Services/AccountVariable.swift
       - path: Services/Workspace/AgentModelMenu.swift
       - path: Services/Workspace/AutoModel.swift
       - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
+      - path: Services/Workspace/TextGenerators.swift
       - path: Services/Workspace/GitCheckpoints.swift
       - path: Services/Workspace/ConversationRollback.swift
       - path: Services/Workspace/TranscriptFollow.swift
@@ -494,6 +559,10 @@ targets:
       - path: Services/Workspace/ConnectorSignIn.swift
       - path: Services/Workspace/AgentTimeline.swift
       - path: Services/Workspace/GitService.swift
+      - path: Services/Workspace/GitIndexStat.swift
+      - path: Services/Workspace/WorktreeCheckoutCache.swift
+      - path: Services/Workspace/SourceControl.swift
+      - path: Services/Workspace/GitService+SourceControl.swift
       - path: Services/Connectors/ZipText.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/RunEventLog.swift
@@ -508,6 +577,7 @@ targets:
       - path: Services/AntigravityClient.swift
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
+      - path: Brain/MathText.swift
       - path: Brain/ChartRescue.swift
       - path: Brain/IncrementalMarkdown.swift
       - path: Brain/Weather.swift

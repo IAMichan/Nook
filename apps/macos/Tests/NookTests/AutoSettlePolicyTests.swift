@@ -21,6 +21,23 @@ final class AutoSettlePolicyTests: XCTestCase {
         XCTAssertEqual(s.inactivityDays, 3)
     }
 
+    func testInitialSettingsForNewAndExistingInstalls() {
+        let fresh = AutoSettlePolicy.newInstallDefaults
+        XCTAssertTrue(fresh.enabled)
+        XCTAssertEqual(fresh.inactivityDays, 7)
+        XCTAssertTrue(fresh.settleOnMergedPullRequest)
+        // Nothing stored and no trace of an earlier Nook: a new install.
+        XCTAssertEqual(AutoSettlePolicy.initial(stored: nil, usedSince: nil, now: now), fresh)
+        // The trace was just written by this very launch: still a new install.
+        XCTAssertEqual(AutoSettlePolicy.initial(stored: nil, usedSince: now.addingTimeInterval(-60), now: now), fresh)
+        // Nook ran here before: keep the old default (off).
+        XCTAssertEqual(AutoSettlePolicy.initial(stored: nil, usedSince: now.addingTimeInterval(-86_400), now: now),
+                       AutoSettlePolicy.Settings())
+        // What is stored always wins.
+        let stored = AutoSettlePolicy.Settings(enabled: false, inactivityDays: 2)
+        XCTAssertEqual(AutoSettlePolicy.initial(stored: stored, usedSince: nil, now: now), stored)
+    }
+
     func testInactivityAndRecentActivity() {
         XCTAssertEqual(decide(row(ageDays: 5)), .settle(.inactivity))
         XCTAssertEqual(decide(row(ageDays: 1)), .keep(.recentActivity))

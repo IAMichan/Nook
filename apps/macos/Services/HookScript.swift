@@ -6,11 +6,11 @@ import AppKit
 /// If Nook is not running or takes too long, it exits cleanly and the agent continues uninterrupted.
 enum HookScript {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 5
+    static let version = 6
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook hook (version 5): delivers an agent event to Nook locally via Unix domain socket.
+    # Nook hook (version 6): delivers an agent event to Nook locally via Unix domain socket.
     # If Nook is not running or times out, this script exits cleanly: the agent proceeds normally.
     #   --agent <name>   identifies sender (claude-code, codex, gemini, cursor, copilot, …)
     #                    Without --agent, "nook_agent" JSON field is used (a-z, 0-9, - and _, max 32 chars).
@@ -126,8 +126,18 @@ enum HookScript {
         my ($out) = @_;
         my $behavior = nook_behavior($out);
         return '{"permissionDecision":"allow","permissionDecisionReason":"Approved via Nook"}' if $behavior eq 'allow';
-        return '{"permissionDecision":"deny","permissionDecisionReason":"Denied via Nook"}' if $behavior eq 'deny';
+        return encode_json({ permissionDecision => 'deny', permissionDecisionReason => nook_reason($out) }) if $behavior eq 'deny';
         return '{}';
+    }
+
+    # The reason Nook gave with a denial (what you typed with it), whichever shape the answer has.
+    sub nook_reason {
+        my ($out) = @_;
+        my $answer = eval { decode_json($out) };
+        my $specific = ref($answer) eq 'HASH' && ref($answer->{hookSpecificOutput}) eq 'HASH' ? $answer->{hookSpecificOutput} : {};
+        my $reason = ref($specific->{decision}) eq 'HASH' ? first_text($specific->{decision}{message})
+                                                          : first_text($specific->{permissionDecisionReason});
+        return defined $reason && $reason ne '' ? $reason : 'Denied via Nook';
     }
 
     # Nook's answer, whichever shape it has (PermissionRequest or PreToolUse): "allow", "deny", or "" for no answer.

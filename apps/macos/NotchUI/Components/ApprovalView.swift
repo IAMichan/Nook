@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// A permission request from an agent: what it wants (the whole command or the whole change), how risky that looks, and
 /// the buttons to decide. The notch and the Agents list show it as a card; a conversation as a row of its timeline
@@ -14,8 +15,14 @@ struct ApprovalView: View {
     let onDecide: (ApprovalDecision) -> Void
     /// Allow with the secret typed in the field (only for a secret Nook does not keep yet).
     var onSecret: ((BridgeSecretAnswer) -> Void)? = nil
+    /// Deny and tell the agent why, or what to do instead (see `ProviderCapabilities.denyReason`). Nil where the
+    /// request has nobody to read a reason.
+    var onDenyWithReason: ((String) -> Void)? = nil
     @State private var secretValue = ""
     @State private var rememberSecret = false
+    @State private var writingReason = false
+    @State private var reason = ""
+    @FocusState private var reasonFocused: Bool
 
     private var prPreview: PullRequestApprovalPreview? {
         PullRequestApprovalPreview.parse(approval.command)
@@ -41,6 +48,8 @@ struct ApprovalView: View {
         .onChange(of: approval.id) {
             secretValue = ""
             rememberSecret = false
+            writingReason = false
+            reason = ""
         }
     }
 
@@ -50,6 +59,7 @@ struct ApprovalView: View {
             Group {
                 content
                 secretField
+                reasonField
                 AdaptiveActionRow {
                     Label(AgentDisplayState.approval.longWord, systemImage: "shield")
                         .font(NookTheme.TextStyle.detail)
@@ -77,6 +87,7 @@ struct ApprovalView: View {
             }
             content
             secretField
+            reasonField
         }
         .padding(NookTheme.Spacing.lg)
         .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
@@ -136,7 +147,8 @@ struct ApprovalView: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "key.fill").foregroundStyle(NookTheme.textTertiary)
-                    SecureField(tr("bridge.approval.secretField", name), text: $secretValue)
+                    SecureField(approval.secretKeepable ? tr("bridge.approval.secretField", name) : tr("secrets.sudo.field"),
+                                text: $secretValue)
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.body)
                         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
@@ -145,10 +157,49 @@ struct ApprovalView: View {
                         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
                         .onSubmit(allow)
                 }
-                Toggle(tr("bridge.secret.prompt.remember"), isOn: $rememberSecret)
-                    .toggleStyle(.checkbox)
-                    .font(NookTheme.TextStyle.caption)
+                if approval.secretKeepable {
+                    Toggle(tr("bridge.secret.prompt.remember"), isOn: $rememberSecret)
+                        .toggleStyle(.checkbox)
+                        .font(NookTheme.TextStyle.caption)
+                }
             }
+        }
+    }
+
+    /// Where the reason for a denial is typed: Return denies with it, Escape closes it again.
+    @ViewBuilder
+    private var reasonField: some View {
+        if writingReason, onDenyWithReason != nil {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(systemName: "text.bubble").foregroundStyle(NookTheme.textTertiary)
+                TextField(tr("approval.denyReason.placeholder"), text: $reason, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(NookTheme.TextStyle.body)
+                    .lineLimit(1...4)
+                    .focused($reasonFocused)
+                    .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                    .padding(.vertical, NookTheme.Spacing.xs + NookTheme.Spacing.xxs)
+                    .frame(minWidth: 160, minHeight: 30)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                    .onSubmit(deny)
+                    .onExitCommand {
+                        writingReason = false
+                        reason = ""
+                    }
+            }
+            .onAppear { reasonFocused = true }
+        }
+    }
+
+    /// Deny: with the typed reason when there is one.
+    private func deny() {
+        let text = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if writingReason, let onDenyWithReason, !text.isEmpty {
+            reason = ""
+            writingReason = false
+            onDenyWithReason(text)
+        } else {
+            onDecide(.deny)
         }
     }
 
@@ -157,7 +208,7 @@ struct ApprovalView: View {
         let value = secretValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if approval.secretName != nil, let onSecret, !value.isEmpty {
             secretValue = ""
-            onSecret(BridgeSecretAnswer(value: value, remember: rememberSecret))
+            onSecret(BridgeSecretAnswer(value: value, remember: approval.secretKeepable && rememberSecret))
         } else {
             onDecide(.allow)
         }
@@ -166,9 +217,13 @@ struct ApprovalView: View {
     private var actions: some View {
         NookNoticeActions(
             primary: NookNoticeAction(tr("button.allow")) { allow() },
-            secondary: NookNoticeAction(tr("button.deny")) { onDecide(.deny) },
+            secondary: NookNoticeAction(tr("button.deny")) { deny() },
             extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
+                + (onDenyWithReason != nil && !writingReason
+                    ? [NookNoticeAction(tr("approval.denyReason")) { writingReason = true }] : [])
                 + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
+                // The page where the secret is found or made, as the agent named it (http or https only).
+                + (approval.signInURL.map { url in [NookNoticeAction(tr("secrets.signIn.open")) { NSWorkspace.shared.open(url) }] } ?? [])
         )
     }
 
@@ -189,7 +244,7 @@ struct ApprovalView: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
             .overlay(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
             )
         } else if approval.diff.isEmpty {
             // The whole command: scrolled, never cut off.
@@ -212,7 +267,7 @@ struct ApprovalView: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
             .overlay(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
             )
         } else {
             ScrollView(showsIndicators: true) {
@@ -233,7 +288,7 @@ struct ApprovalView: View {
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
             .overlay(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
             )
         }
     }
@@ -308,7 +363,7 @@ struct ApprovalView: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
         .overlay(
             RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(NookTheme.wash.opacity(0.06), lineWidth: 1)
         )
     }
 }

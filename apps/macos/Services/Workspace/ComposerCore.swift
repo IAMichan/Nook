@@ -79,6 +79,8 @@ struct ComposerCommand: Equatable, Sendable, Identifiable {
         case compact
         case new
         case fork
+        /// Start a new conversation with the same agent in this session (`WorkspaceManager.clearConversation`).
+        case clear
     }
 
     static func filter(_ commands: [ComposerCommand], query: String) -> [ComposerCommand] {
@@ -204,6 +206,12 @@ struct ContextRef: Codable, Equatable, Hashable, Sendable {
         case skill
         /// A big paste kept out of the box: it goes to the agent whole (up to `ContextRefs.pasteLimit`).
         case paste
+        /// A model, named for the agent to use (for a subagent or a delegated task); it does not change the session's
+        /// own model. Its id is "agent/model" (`ModelMention.id`).
+        case model
+        /// A secret you pasted, kept out of the message: the id is the private file that holds it (`SecretFiles`), the
+        /// label its name. The agent gets the path and how to use it, never the value.
+        case secret
     }
 
     var kind: Kind
@@ -242,7 +250,7 @@ enum ContextRefs {
         case .file: return ref.id
         case .pullRequest: return "#" + ref.label
         case .skill: return "$" + ref.label
-        case .session, .excerpt, .source, .paste: return ref.label
+        case .session, .excerpt, .source, .paste, .model, .secret: return ref.label
         }
     }
 
@@ -291,7 +299,9 @@ enum ContextRefs {
             let key = "\(item.kind.rawValue)|\(item.id)"
             guard seen.insert(key).inserted else { continue }
             var record = "<ref kind=\"\(item.kind.rawValue)\" id=\"\(escape(item.id))\""
-            if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
+            if item.kind == .secret {
+                record += ">\n\(escape(SecretFiles.instructions(name: item.label, path: item.id)))\n</ref>"
+            } else if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
                 let limit = item.kind == .paste ? pasteLimit : excerptLimit
                 let clipped = content.count > limit ? String(content.prefix(limit)) + "\n…" : content
                 record += ">\n\(escape(clipped))\n</ref>"
@@ -309,8 +319,9 @@ enum ContextRefs {
         case .session: return "[session: " + item.label + "]"
         case .pullRequest: return "#" + item.label
         case .skill: return "$" + item.label
-        case .excerpt, .paste: return "[" + item.label + "]"
+        case .excerpt, .paste, .secret: return "[" + item.label + "]"
         case .source: return "[" + item.label + "]"
+        case .model: return "[model: " + item.label + "]"
         }
     }
 
@@ -600,5 +611,57 @@ actor FileIndex {
         known = known.filter { now.timeIntervalSince($0.value.made) < Self.lifetime }
         known[root] = (paths, Date())
         return paths
+    }
+}
+
+// MARK: Model mentions
+
+/// `@` and part of a model or agent name ("@opus", "@gpt-5", "@opus:claude") names a model for the agent, for a subagent
+/// or a task it delegates; the session keeps its own model. The words of the query (split on `:`, `/`, `-` and spaces)
+/// must each appear in the model's name, its id or its agent's name.
+enum ModelMention {
+    struct Candidate: Equatable, Sendable {
+        /// The agent's id (`RunProvider.rawValue`, or the profile of an agent you added).
+        var agent: String
+        var agentName: String
+        var model: String
+        var name: String
+    }
+
+    /// Every connected agent's models as candidates, in the agents' order. The agents you added yourself (ACP) are left
+    /// out: `delegate_task` cannot start them.
+    static func candidates(_ providers: [RunProvider], models: (RunProvider) -> [(id: String, name: String)]) -> [Candidate] {
+        providers.flatMap { provider -> [Candidate] in
+            switch provider {
+            case .acp: return []
+            case .claude, .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi:
+                return models(provider).map { Candidate(agent: provider.rawValue, agentName: provider.displayName,
+                                                        model: $0.id, name: $0.name) }
+            }
+        }
+    }
+
+    /// The reference's id: the agent and the model it runs, so the agent knows where to send the task.
+    static func id(agent: String, model: String) -> String { agent + "/" + model }
+
+    /// The reference for a candidate; its label reads "Opus 4.6 · Claude Code".
+    static func ref(_ candidate: Candidate) -> ContextRef {
+        ContextRef(kind: .model, id: id(agent: candidate.agent, model: candidate.model),
+                   label: candidate.name + " · " + candidate.agentName)
+    }
+
+    static func words(_ query: String) -> [String] {
+        query.lowercased().split(whereSeparator: { $0 == ":" || $0 == "/" || $0 == "-" || $0.isWhitespace }).map(String.init)
+    }
+
+    /// The candidates the query names, in their order; none for an empty query, so a bare `@` lists files and sessions.
+    static func matches(_ query: String, in candidates: [Candidate], limit: Int = 4) -> [Candidate] {
+        let words = words(query)
+        guard !words.isEmpty else { return [] }
+        var seen = Set<String>()
+        return Array(candidates.filter { candidate in
+            let haystack = [candidate.name, candidate.model, candidate.agentName, candidate.agent].joined(separator: " ").lowercased()
+            return words.allSatisfy { haystack.contains($0) } && seen.insert(id(agent: candidate.agent, model: candidate.model)).inserted
+        }.prefix(limit))
     }
 }

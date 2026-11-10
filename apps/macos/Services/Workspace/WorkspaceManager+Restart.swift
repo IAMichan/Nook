@@ -38,7 +38,7 @@ extension WorkspaceManager {
     /// `initialize` answer, known while it runs; before that Nook does not know (nil).
     private func canResumeNatively(_ id: UUID, _ run: WorkspaceRun) -> Bool? {
         switch run.provider {
-        case .claude, .codex:
+        case .claude, .codex, .pi:
             return AgentRestart.resumesNatively(run.provider)
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
             // Its capabilities are in once a session is open on it.

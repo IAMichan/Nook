@@ -36,11 +36,16 @@ extension WorkspaceManager {
         guard let run = run(id) else { return }
         var environment = accountEnvironment(run.profileID)
         environment["NOOK_RUN_ID"] = id.uuidString
+        environment.merge(SudoAskpass.launchEnvironment()) { _, new in new }
         let spec = placed(LaunchSpec(executable: executable, arguments: ["app-server"], extraEnvironment: environment,
                                      workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
-            Task { @MainActor in self?.handleCodexServer(id, client, message, events) }
+            let end = client.process.consumed
+            Task { @MainActor in
+                self?.handleCodexServer(id, client, message, events)
+                client.process.markHandled(end)
+            }
         }
         client.onExit = { [weak self] status, stderr in
             Task { @MainActor in
@@ -125,6 +130,7 @@ extension WorkspaceManager {
         var params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: run.workingDirectory, model: run.model,
                                               mode: run.mode, permission: run.permission, planModel: planModel,
                                               effort: run.effort)
+        params.merge(SpeedTiers.codexTurnParam(tier: run.speedTier, offered: speedTiers(for: run))) { $1 }
         // What MCP apps told the agent: text an MCP server wrote, so it goes in as untrusted context.
         let appContexts = takeMcpAppContexts(id)
         if !appContexts.isEmpty {
@@ -182,6 +188,11 @@ extension WorkspaceManager {
             process.send(ClaudeStreamParser.userMessage(clean, steer: true))
             return true
         }
+        if let process = processes[id], run(id)?.provider == .pi {
+            append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
+            process.send(PiRPC.prompt(clean, steer: true))
+            return true
+        }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
         append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
@@ -199,7 +210,7 @@ extension WorkspaceManager {
 
     func steerRoute(_ id: UUID) -> SteerRoute {
         guard let run = run(id) else { return .unavailable }
-        let nativeReady = run.provider == .claude
+        let nativeReady = run.provider == .claude || run.provider == .pi
             ? processes[id]?.isRunning == true && questions[id] == nil
             : codexServers[id]?.turnID != nil
         return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive && turns[id] != nil,
@@ -288,7 +299,7 @@ extension WorkspaceManager {
 
     // MARK: Messages
 
-    private func handleCodexServer(_ id: UUID, _ client: CodexAppServerClient, _ message: CodexRPCMessage, _ events: [CodexStreamEvent]) {
+    func handleCodexServer(_ id: UUID, _ client: CodexAppServerClient, _ message: CodexRPCMessage, _ events: [CodexStreamEvent]) {
         guard codexServers[id] === client else { return }
         for event in events {
             switch event {
@@ -534,7 +545,7 @@ extension WorkspaceManager {
         launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
     }
 
-    private func codexServerExited(_ id: UUID, _ client: CodexAppServerClient, status: Int32, stderr: String, prompt: String, executable: String) {
+    func codexServerExited(_ id: UUID, _ client: CodexAppServerClient, status: Int32, stderr: String, prompt: String, executable: String) {
         guard codexServers[id] === client else { return }
         codexServers[id] = nil
         codexIdleClose[id]?.cancel()

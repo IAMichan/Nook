@@ -14,7 +14,7 @@ enum AcpLaunch {
         // Grok decides on approvals itself with --always-approve; otherwise it asks Nook.
         case .grok: return permission == .bypass ? ["agent", "--always-approve", "stdio"] : ["agent", "stdio"]
         // Antigravity's server takes no arguments on the Mac; its account and harness come from the environment.
-        case .antigravity, .claude, .codex: return []
+        case .antigravity, .claude, .codex, .pi: return []
         // An ACP agent you added starts with its own command line (see CustomAgents).
         case .acp: return []
         }
@@ -460,7 +460,7 @@ enum AcpModelProbe {
     static func signIn(_ provider: RunProvider, savedLogin: Bool) -> SignIn {
         switch provider {
         case .antigravity: return savedLogin ? .savedLogin : .skip
-        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: return .direct
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp: return .direct
         }
     }
 
@@ -741,7 +741,11 @@ final class AcpClient: @unchecked Sendable {
 
     init(spec: LaunchSpec) {
         process = AgentProcess(spec: spec)
+        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
     }
+
+    /// An answer to a request of an earlier Nook (see `SessionKeeper`): how a kept turn ends, since its request went with it.
+    var onOrphanAnswer: (@Sendable (JSONBox) -> Void)?
 
     var isRunning: Bool { process.isRunning }
 
@@ -799,6 +803,7 @@ final class AcpClient: @unchecked Sendable {
         }
         if case .response(let id, let result, let error) = message {
             let completion = lock.withLock { pending.removeValue(forKey: id) }
+            if completion == nil, error == nil, let result { onOrphanAnswer?(result) }
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }
             return
         }

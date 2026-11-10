@@ -246,6 +246,9 @@ final class NotchViewModel: ObservableObject {
     /// and clears it.
     @Published var sessionDiffToOpen: TurnDiffSelection?
 
+    /// Files dropped on a session's row in the list: that session's composer takes them once and clears this.
+    @Published var filesToAttach: SessionFileDrop?
+
     /// The Pull request tabs of the side panel: each shows one pull request, or (no request) the list to pick one. A pull
     /// request opened from a link or from the list takes the list tab in view, else a tab of its own, so the ones you
     /// have open stay. Not kept across launches.
@@ -1311,4 +1314,12 @@ enum DoneTone: Equatable {
         case .failed: return .worry
         }
     }
+}
+
+/// Files dropped on a session's row, on their way to its composer (`AgentRunPanel` takes them).
+struct SessionFileDrop: Equatable {
+    var id = UUID()
+    /// The run id of the session.
+    var session: UUID
+    var urls: [URL]
 }

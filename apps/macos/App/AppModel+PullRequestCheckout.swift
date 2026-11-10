@@ -20,6 +20,12 @@ extension AppModel {
 
     /// A worktree of its own on the pull request's branch; the new-session composer opens in it.
     func checkOutInWorktree(_ plan: PullRequestCheckoutPlan, preferred: String?) async throws {
+        openNewSession(in: try await pullRequestWorktree(plan, preferred: preferred))
+    }
+
+    /// Makes a worktree of its own on the pull request's branch, in the folder where this Mac has its repository, and
+    /// returns its path (the composer's "Check out in a worktree", and "Work on this pull request" from the phone).
+    func pullRequestWorktree(_ plan: PullRequestCheckoutPlan, preferred: String?) async throws -> String {
         guard let folder = await localFolder(repo: plan.repository, preferred: preferred) else { throw NookError(tr("agents.pr.checkout.noFolder", plan.repository)) }
         guard let git = GitService.shared else { throw NookError(tr("agents.pr.checkout.noGit")) }
         let parent = (workspace.settings.worktreeRoot as NSString).expandingTildeInPath
@@ -32,7 +38,7 @@ extension AppModel {
             try git.addWorktree(repo: root, path: path, existingBranch: plan.branch)
             return path
         }.value
-        openNewSession(in: path)
+        return path
     }
 
     /// The pull request's branch in the folder itself. Refuses with changes in it, so nothing of yours gets mixed in.

@@ -5,7 +5,7 @@ import Foundation
 
 /// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini, opencode, cursor, grok, antigravity, acp
+    case claude, codex, gemini, opencode, cursor, grok, antigravity, pi, acp
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .cursor: return "Cursor"
         case .grok: return "Grok"
         case .antigravity: return "Antigravity"
+        case .pi: return "Pi"
         // An ACP agent you added; its own name is the account's (see CustomAgents).
         case .acp: return "ACP"
         }
@@ -27,7 +28,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     var usesACP: Bool {
         switch self {
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return true
-        case .claude, .codex: return false
+        // Pi speaks its own JSON lines over stdio (`PiRPC`).
+        case .claude, .codex, .pi: return false
         }
     }
 
@@ -40,13 +42,14 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
                                         canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
-                                        reportsPromptCacheLifetime: true)
+                                        reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true)
+                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true,
+                                        speedTiers: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -63,6 +66,14 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+        case .pi:
+            // Pi's RPC mode (`PiRPC`): streamed text and thoughts, `abort`, a prompt sent mid-turn steers it, usage with cost
+            // per message. Approvals come from the extension Nook loads into Pi (`PiExtension`), through Pi's blocking
+            // tool_call hook and its confirm dialog; Pi has no plan mode and no reviewer of its own, so no "auto". Its
+            // sessions are files it resumes with `--session`.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: false,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
         case .opencode, .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
@@ -83,7 +94,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .codex: return ["", "gpt-5-codex", "gpt-5"]
         case .gemini: return ["", "gemini-2.5-pro", "gemini-2.5-flash"]
         // These agents choose their model in their own settings; Nook passes a name only when you type one.
-        case .opencode, .cursor, .grok, .antigravity, .acp: return [""]
+        // Pi lists its own models ("provider/model", `get_available_models`).
+        case .opencode, .cursor, .grok, .antigravity, .pi, .acp: return [""]
         }
     }
 }
@@ -125,6 +137,18 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// idle session before the cache expires (`IdleCompaction`). Codex and the ACP agents report cached tokens but not
     /// the cache's lifetime.
     var reportsPromptCacheLifetime = false
+    /// How the reason you give with a denial reaches the agent: in the answer to its request (Claude Code's
+    /// `control_response` carries a `message`), or as a message of its own right after it (Codex's decline and ACP's
+    /// reject outcome have no text, so the reason goes in as a steer, or as the next prompt).
+    var denyReason: DenyReasonDelivery = .followUpMessage
+    /// A faster tier of the same model beside the effort (`SpeedTiers`): Codex's service tiers, Claude Code's fast mode.
+    /// The ACP agents (Gemini CLI, Antigravity, OpenCode, Cursor, Grok, the ones you add) offer none over ACP.
+    var speedTiers = false
+}
+
+/// See `ProviderCapabilities.denyReason`.
+enum DenyReasonDelivery: String, Sendable {
+    case inResponse, followUpMessage
 }
 
 enum PastSessionSource: Equatable, Sendable {
@@ -292,6 +316,16 @@ struct TurnUsage: Equatable, Sendable {
 }
 
 /// A single session in the workspace. Stored in `RunStore`, persisted across restarts.
+/// Where a session's agent lives while Nook is away, and how far Nook read it.
+struct KeptSession: Codable, Equatable, Sendable {
+    /// The keeper's folder, under `NookPaths.keeperDirectory`.
+    var folder: String
+    /// How much of its output Nook handled; nil after a crash, when that was not saved.
+    var offset: UInt64? = nil
+    /// Codex: the turn that was running.
+    var turnID: String? = nil
+}
+
 struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
@@ -378,6 +412,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var lineage: RunLineage? = nil
     /// Reasoning effort for the next turns ("low", "medium", "high"); nil is the agent's own default.
     var effort: String? = nil
+    /// The speed tier for the next turns (`SpeedTiers`); nil is the agent's standard speed.
+    var speedTier: String? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
     /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
@@ -386,6 +422,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var tasks: [RunTaskStep]? = nil
     /// The goal the agent works toward, as it reported it (see `SessionGoals`).
     var goal: SessionGoal? = nil
+    /// Its agent runs through a keeper and can outlive Nook (see `SessionKeeper`).
+    var kept: KeptSession? = nil
     /// The pull request this session watches: what it last saw, so only news wakes it.
     var prWatch: PullRequestWatch? = nil
     /// The pull requests watched besides `prWatch`, which stays the one the composer's tray shows.
@@ -396,6 +434,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var remote: RemoteTarget? = nil
     /// Claude Code: how long the prompt cache of the session's last request stays warm (see `IdleCompaction`).
     var promptCache: PromptCacheWindow? = nil
+    /// How much of the work this session's timeline shows; nil follows Settings (`WorkspaceSettings.timelineDetail`).
+    var timelineDetail: TimelineDetail? = nil
 
     var projectName: String {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
@@ -847,6 +887,9 @@ struct NewRunConfig: Equatable, Sendable {
     var permission: PermissionPolicy = .acceptEdits
     /// Reasoning effort for the session; nil is the agent's own default.
     var effort: String? = nil
+    /// The speed tier for the session (`SpeedTiers`); nil is the agent's standard speed. Not remembered for the next
+    /// session: a faster tier costs more.
+    var speedTier: String? = nil
     var isolation: IsolationMode = .folder
     var projectPath = ""
     var baseBranch = ""

@@ -76,6 +76,10 @@ extension WorkspaceManager {
     /// The launch as this session needs it: unchanged here, through ssh for a session on another machine. An ACP agent
     /// you added takes its own variables along; local account folders stay here.
     func placed(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
+        keptWhenAsked(onMachine(spec, for: run), run)
+    }
+
+    private func onMachine(_ spec: LaunchSpec, for run: WorkspaceRun) -> LaunchSpec {
         // The arguments the account adds go on every launch of its agent, here or over ssh.
         var spec = spec
         spec.arguments += accountArguments(run.profileID)
@@ -110,6 +114,7 @@ extension WorkspaceManager {
         target.directory = directory
         run.remote = target
         run.effort = config.effort
+        run.speedTier = config.speedTier
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
             run.autoModel = true
@@ -140,6 +145,7 @@ extension WorkspaceManager {
                     return
                 }
                 let name = config.branchName
+                let submodules = self.settings.sessionDefaults(for: root).submodules
                 do {
                     let created = try await Task.detached(priority: .userInitiated) { () throws -> (path: String, base: String) in
                         guard let home = RemoteShell.home(remote) else { throw GitError(tr("ws.remote.noHome")) }
@@ -150,6 +156,8 @@ extension WorkspaceManager {
                             slug: WorktreeNaming.directorySlug(branch: name),
                             exists: { RemoteShell.exists($0, on: remote) })
                         try git.addWorktree(repo: root, path: path, branch: name, base: base)
+                        // Same as on this Mac; a submodule that fails leaves the worktree usable.
+                        try? git.updateSubmodules(path, mode: submodules)
                         return (path, base)
                     }.value
                     guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }

@@ -71,12 +71,12 @@ struct NookSplitButton: View {
                     if let symbol = primary.symbol { Image(systemName: symbol).font(NookTheme.font(12, .bold)) }
                     Text(primary.label).font(NookTheme.textFont(14, .semibold))
                 }
-                .foregroundStyle(NookTheme.ink)
+                .foregroundStyle(NookTheme.onPaper)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, primary.symbol == nil ? 18 : 16)
                 .frame(maxHeight: .infinity)
-                .background(Capsule().fill(hoveringPrimary ? Color.white : NookTheme.paper))
+                .background(Capsule().fill(hoveringPrimary ? NookTheme.paperHover : NookTheme.paper))
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)

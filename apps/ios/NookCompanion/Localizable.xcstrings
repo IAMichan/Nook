@@ -57,6 +57,62 @@
         }
       }
     },
+    "%@ approved" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ keurde goed"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat genehmigt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a approuvé"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ aprobó"
+          }
+        }
+      }
+    },
+    "%@ asked for changes" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vroeg om wijzigingen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat Änderungen angefordert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a demandé des changements"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ pidió cambios"
+          }
+        }
+      }
+    },
     "%@ asks this iPhone to slow down." : {
       "localizations" : {
         "de" : {
@@ -169,6 +225,34 @@
         }
       }
     },
+    "%@ into %@, at the head you see now." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ in %2$@, op de kop die je nu ziet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ in %2$@, auf dem Stand, den du jetzt siehst."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ dans %2$@, à la tête que tu vois maintenant."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ en %2$@, en la cabeza que ves ahora."
+          }
+        }
+      }
+    },
     "%@ is recording audio…" : {
       "localizations" : {
         "de" : {
@@ -221,6 +305,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ stuurt een bestand…"
+          }
+        }
+      }
+    },
+    "%@ is too big to send through your iPhone (at most 150 KB). Share it on your Mac instead." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is te groot om via je iPhone te versturen (maximaal 150 KB). Deel het in plaats daarvan op je Mac."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist zu groß, um über dein iPhone gesendet zu werden (höchstens 150 KB). Teile es stattdessen auf deinem Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est trop gros pour être envoyé via ton iPhone (150 Ko au maximum). Partage-le plutôt sur ton Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ es demasiado grande para enviarlo desde tu iPhone (150 KB como máximo). Compártelo mejor en tu Mac."
           }
         }
       }
@@ -317,6 +429,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ werd bereikt maar antwoordde niet op tijd."
+          }
+        }
+      }
+    },
+    "%lld comments" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld opmerkingen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Kommentare"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld commentaires"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld comentarios"
           }
         }
       }
@@ -440,6 +580,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld van %2$lld hebben het gelezen"
+          }
+        }
+      }
+    },
+    "%lld of %lld viewed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld van %2$lld bekeken"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld angesehen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur %2$lld vus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld vistos"
           }
         }
       }
@@ -786,6 +954,34 @@
         }
       }
     },
+    "A draft: mark it ready on your Mac or the forge first." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een concept: markeer het eerst als klaar op je Mac of de forge."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Entwurf: Markiere ihn zuerst auf deinem Mac oder der Forge als fertig."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un brouillon : marque-le d'abord comme prêt sur ton Mac ou la forge."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un borrador: márcalo primero como listo en tu Mac o en la forja."
+          }
+        }
+      }
+    },
     "A message that waited more than a day for your Mac was not sent." : {
       "localizations" : {
         "de" : {
@@ -810,6 +1006,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Een bericht dat langer dan een dag op je Mac wachtte, is niet verstuurd."
+          }
+        }
+      }
+    },
+    "A picture could not be read." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een afbeelding kon niet worden gelezen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Bild konnte nicht gelesen werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une image n'a pas pu être lue."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer una imagen."
           }
         }
       }
@@ -839,6 +1063,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Activiteit"
+          }
+        }
+      }
+    },
+    "Add to review" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan review toevoegen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zur Prüfung hinzufügen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter à la relecture"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a la revisión"
           }
         }
       }
@@ -1043,6 +1295,90 @@
         }
       }
     },
+    "Allow Nook Companion to add photos in Settings to save it." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sta Nook Companion toe foto's toe te voegen in Instellingen om het te bewaren."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlaube Nook Companion in den Einstellungen, Fotos hinzuzufügen, um es zu sichern."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorise Nook Companion à ajouter des photos dans Réglages pour l'enregistrer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite que Nook Companion añada fotos en Ajustes para guardarlo."
+          }
+        }
+      }
+    },
+    "Allow the microphone and speech recognition for Nook Companion in Settings to dictate." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sta de microfoon en spraakherkenning voor Nook Companion toe in Instellingen om te dicteren."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlaube Nook Companion in den Einstellungen Mikrofon und Spracherkennung, um zu diktieren."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorise le micro et la reconnaissance vocale pour Nook Companion dans Réglages pour dicter."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite el micrófono y el reconocimiento de voz para Nook Companion en Ajustes para dictar."
+          }
+        }
+      }
+    },
+    "Already merged." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al samengevoegd."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereits zusammengeführt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déjà fusionnée."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya fusionada."
+          }
+        }
+      }
+    },
     "Answer" : {
       "localizations" : {
         "de" : {
@@ -1128,6 +1464,34 @@
         }
       }
     },
+    "Approve" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goedkeuren"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genehmigen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approuver"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobar"
+          }
+        }
+      }
+    },
     "Approving is turned off for this iPhone in Nook on your Mac." : {
       "localizations" : {
         "de" : {
@@ -1208,6 +1572,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze sessie archiveren?"
+          }
+        }
+      }
+    },
+    "As of %@ · not connected" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per %@ · niet verbonden"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stand %@ · nicht verbunden"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au %@ · non connecté"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A las %@ · sin conexión"
           }
         }
       }
@@ -1441,6 +1833,62 @@
         }
       }
     },
+    "Cannot be merged from your iPhone now." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan nu niet vanaf je iPhone worden samengevoegd."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kann jetzt nicht von deinem iPhone zusammengeführt werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne peut pas être fusionnée depuis ton iPhone pour l'instant."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede fusionar desde tu iPhone ahora."
+          }
+        }
+      }
+    },
+    "Changed since viewed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewijzigd sinds bekeken"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seit dem Ansehen geändert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifié depuis la consultation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiado desde que se vio"
+          }
+        }
+      }
+    },
     "Chats" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1611,6 +2059,174 @@
         }
       }
     },
+    "Checks %lld" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks %lld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks %lld"
+          }
+        }
+      }
+    },
+    "Checks fail" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks mislukken"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks fehlgeschlagen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks en échec"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks fallidos"
+          }
+        }
+      }
+    },
+    "Checks fail: merge it on your Mac if you are sure." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks mislukken: voeg het samen op je Mac als je het zeker weet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks schlagen fehl: Führe es auf deinem Mac zusammen, wenn du sicher bist."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les checks échouent : fusionne-la sur ton Mac si tu es sûr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los checks fallan: fusiónala en tu Mac si estás seguro."
+          }
+        }
+      }
+    },
+    "Checks pass" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks geslaagd"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks bestanden"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks réussis"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks superados"
+          }
+        }
+      }
+    },
+    "Checks run" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks lopen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks laufen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks en cours"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks en curso"
+          }
+        }
+      }
+    },
+    "Choose where it goes." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies waar het heen gaat."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle, wohin es geht."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisis où ça va."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige adónde va."
+          }
+        }
+      }
+    },
     "Choose ‘Keep this Mac awake’ in the same place, so it stays reachable while you are away." : {
       "localizations" : {
         "de" : {
@@ -1696,6 +2312,146 @@
         }
       }
     },
+    "Closed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesloten"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschlossen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermée"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrada"
+          }
+        }
+      }
+    },
+    "Closed without merging." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesloten zonder samenvoegen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ohne Zusammenführen geschlossen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermée sans fusion."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrada sin fusionar."
+          }
+        }
+      }
+    },
+    "Comments on lines" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opmerkingen bij regels"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kommentare zu Zeilen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commentaires sur des lignes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comentarios en líneas"
+          }
+        }
+      }
+    },
+    "Conflict" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conflict"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konflikt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conflit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conflicto"
+          }
+        }
+      }
+    },
+    "Conflicts with its base branch." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conflicteert met de basisbranch."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konflikt mit dem Basis-Branch."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En conflit avec sa branche de base."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiene conflictos con su rama base."
+          }
+        }
+      }
+    },
     "Connect one in Nook › Settings › Agents." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1749,6 +2505,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verbind deze iPhone met wifi of mobiele data. Nook Companion maakt vanzelf weer verbinding."
+          }
+        }
+      }
+    },
+    "Connect to your Mac to review or merge." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbind met je Mac om te reviewen of samen te voegen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich mit deinem Mac, um zu prüfen oder zusammenzuführen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecte-toi à ton Mac pour relire ou fusionner."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a tu Mac para revisar o fusionar."
           }
         }
       }
@@ -2003,6 +2787,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kosten"
+          }
+        }
+      }
+    },
+    "Could not make a picture of it." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kon er geen afbeelding van maken."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es konnte kein Bild davon erstellt werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'en faire une image."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo crear una imagen."
+          }
+        }
+      }
+    },
+    "Could not save it: %@" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kon het niet bewaren: %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht gesichert werden: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de l'enregistrer : %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar: %@"
           }
         }
       }
@@ -2291,6 +3131,118 @@
         }
       }
     },
+    "Diagram" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagram"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagramm"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagramme"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagrama"
+          }
+        }
+      }
+    },
+    "Dictate" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicteren"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictar"
+          }
+        }
+      }
+    },
+    "Dictation is not available right now." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicteren is nu niet beschikbaar."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktieren ist gerade nicht verfügbar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dictée n'est pas disponible pour le moment."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado no está disponible ahora."
+          }
+        }
+      }
+    },
+    "Dictation language" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicteertaal"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktiersprache"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Langue de dictée"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de dictado"
+          }
+        }
+      }
+    },
     "Done" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2344,6 +3296,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niet versturen"
+          }
+        }
+      }
+    },
+    "Draft" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Concept"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entwurf"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brouillon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrador"
           }
         }
       }
@@ -2488,6 +3468,90 @@
         }
       }
     },
+    "Files" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestanden"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichiers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos"
+          }
+        }
+      }
+    },
+    "Files %lld" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestanden %lld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichiers %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos %lld"
+          }
+        }
+      }
+    },
+    "Files, terminals and pull requests" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestanden, terminals en pull requests"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien, Terminals und Pull Requests"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichiers, terminaux et pull requests"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos, terminales y pull requests"
+          }
+        }
+      }
+    },
     "Finished" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2599,6 +3663,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voor jou"
+          }
+        }
+      }
+    },
+    "For your review" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ter review voor jou"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zur Prüfung durch dich"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À relire par toi"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para tu revisión"
+          }
+        }
+      }
+    },
+    "Goes to %@ the next time Nook Companion opens, and waits there while your Mac is away." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gaat naar %@ zodra Nook Companion weer opent en wacht daar zolang je Mac weg is."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geht an %@, sobald Nook Companion das nächste Mal geöffnet wird, und wartet dort, solange dein Mac nicht erreichbar ist."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part vers %@ à la prochaine ouverture de Nook Companion et y attend tant que ton Mac est absent."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía a %@ la próxima vez que se abra Nook Companion y espera allí mientras tu Mac no está."
           }
         }
       }
@@ -2748,6 +3868,34 @@
         }
       }
     },
+    "How much of each agent's limits you used, and when they reset." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoeveel je van de limieten van elke agent gebruikte en wanneer ze resetten."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie viel du von den Limits jedes Agenten genutzt hast und wann sie zurückgesetzt werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Combien tu as utilisé des limites de chaque agent, et quand elles se réinitialisent."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuánto has usado de los límites de cada agente y cuándo se restablecen."
+          }
+        }
+      }
+    },
     "Idle" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2831,6 +3979,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Staat de companion aan, en zit je op hetzelfde wifi?"
+          }
+        }
+      }
+    },
+    "It waits with your review and goes when you send it." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het wacht bij je review en gaat mee als je die verstuurt."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er wartet bei deiner Prüfung und geht mit, wenn du sie sendest."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il attend avec ta relecture et part quand tu l'envoies."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espera con tu revisión y se envía cuando la envías."
           }
         }
       }
@@ -3234,6 +4410,34 @@
         }
       }
     },
+    "Mark as not viewed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markeer als niet bekeken"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als nicht angesehen markieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marquer comme non vu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marcar como no visto"
+          }
+        }
+      }
+    },
     "Mark as read" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3288,6 +4492,146 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Markeer als ongelezen"
+          }
+        }
+      }
+    },
+    "Mark as viewed" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markeer als bekeken"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als angesehen markieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marquer comme vu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marcar como visto"
+          }
+        }
+      }
+    },
+    "Merge" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samenvoegen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenführen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionner"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionar"
+          }
+        }
+      }
+    },
+    "Merge commit" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge-commit"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge-Commit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commit de fusion"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commit de fusión"
+          }
+        }
+      }
+    },
+    "Merged" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samengevoegd"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammengeführt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionnée"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionada"
+          }
+        }
+      }
+    },
+    "Merged." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samengevoegd."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammengeführt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionnée."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionada."
           }
         }
       }
@@ -3806,6 +5150,62 @@
         }
       }
     },
+    "No checks on this head." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen checks op deze kop."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Checks auf diesem Stand."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun check sur cette tête."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin checks en esta cabeza."
+          }
+        }
+      }
+    },
+    "No description." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen beschrijving."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Beschreibung."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas de description."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin descripción."
+          }
+        }
+      }
+    },
     "No folders yet." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3831,6 +5231,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog geen mappen."
+          }
+        }
+      }
+    },
+    "No pull requests" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen pull requests"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Pull Requests"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune pull request"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin pull requests"
           }
         }
       }
@@ -4003,6 +5431,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nook kan de meldingen op je Mac niet lezen: geef het Volledige schijftoegang in Systeeminstellingen."
+          }
+        }
+      }
+    },
+    "Nook checks out %@ in a worktree of its own, where your Mac has %@, and starts the agent there. It asks before anything risky, as every session started from your iPhone." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook haalt %1$@ uit in een eigen worktree, waar je Mac %2$@ heeft, en start daar de agent. Het vraagt eerst bij alles wat riskant is, zoals elke sessie vanaf je iPhone."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook checkt %1$@ in einem eigenen Worktree aus, wo dein Mac %2$@ hat, und startet dort den Agenten. Bei allem Riskanten fragt er zuerst, wie jede Sitzung von deinem iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook extrait %1$@ dans un worktree dédié, là où ton Mac a %2$@, et y lance l'agent. Il demande avant tout ce qui est risqué, comme chaque session lancée depuis ton iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook extrae %1$@ en un worktree propio, donde tu Mac tiene %2$@, y inicia allí al agente. Pregunta antes de cualquier cosa arriesgada, como cada sesión iniciada desde tu iPhone."
           }
         }
       }
@@ -4234,6 +5690,62 @@
         }
       }
     },
+    "Nook on your Mac is a version behind this app. Update it to use everything the app offers." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac loopt een versie achter op deze app. Werk het bij om alles te gebruiken wat de app biedt."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac ist eine Version hinter dieser App. Aktualisiere es, um alles zu nutzen, was die App bietet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur ton Mac a une version de retard sur cette app. Mets-le à jour pour profiter de tout ce que l'app offre."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac va una versión por detrás de esta app. Actualízalo para usar todo lo que ofrece la app."
+          }
+        }
+      }
+    },
+    "Nook on your Mac is too old to take files." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac is te oud om bestanden te ontvangen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac ist zu alt, um Dateien anzunehmen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur ton Mac est trop ancien pour recevoir des fichiers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac es demasiado antiguo para recibir archivos."
+          }
+        }
+      }
+    },
     "Nook uses your account, model and permissions for this agent. Anything risky still waits for your approval." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4259,6 +5771,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nook gebruikt je account, model en rechten voor deze agent. Alles wat riskant is wacht nog steeds op je goedkeuring."
+          }
+        }
+      }
+    },
+    "Nook's chat takes words only: pictures and files go to a session." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De chat met Nook neemt alleen woorden: afbeeldingen en bestanden gaan naar een sessie."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Chat mit Nook nimmt nur Text: Bilder und Dateien gehen an eine Sitzung."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chat avec Nook ne prend que du texte : images et fichiers vont dans une session."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El chat con Nook solo admite texto: las imágenes y los archivos van a una sesión."
           }
         }
       }
@@ -4401,6 +5941,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nog niet"
+          }
+        }
+      }
+    },
+    "Nothing to save yet." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog niets om te bewaren."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nichts zu sichern."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien à enregistrer pour l'instant."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay nada que guardar."
           }
         }
       }
@@ -4631,6 +6199,34 @@
         }
       }
     },
+    "On its own branch" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Op een eigen branch"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf eigenem Branch"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur sa propre branche"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En su propia rama"
+          }
+        }
+      }
+    },
     "On your Mac, open Nook › Settings › iPhone companion and turn it on." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4713,6 +6309,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alleen op je Mac: dit is riskant of onbekend."
+          }
+        }
+      }
+    },
+    "Only one file goes with a message." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er gaat maar één bestand mee met een bericht."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro Nachricht kann nur eine Datei mitgehen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un seul fichier peut accompagner un message."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo un archivo acompaña a un mensaje."
+          }
+        }
+      }
+    },
+    "Open" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouverte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abierta"
+          }
+        }
+      }
+    },
+    "Open Nook Companion and pair it with Nook on your Mac first." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open eerst Nook Companion en koppel het met Nook op je Mac."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffne zuerst Nook Companion und koppele es mit Nook auf deinem Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre d'abord Nook Companion et associe-le à Nook sur ton Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre primero Nook Companion y vincúlalo con Nook en tu Mac."
+          }
+        }
+      }
+    },
+    "Open Nook Companion to see your limits." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Nook Companion om je limieten te zien."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffne Nook Companion, um deine Limits zu sehen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre Nook Companion pour voir tes limites."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Nook Companion para ver tus límites."
           }
         }
       }
@@ -4976,6 +6684,34 @@
         }
       }
     },
+    "Pick a time…" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies een moment…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeitpunkt wählen …"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir un moment…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir un momento…"
+          }
+        }
+      }
+    },
     "Plan first" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5116,6 +6852,90 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stelde een plan voor"
+          }
+        }
+      }
+    },
+    "Pull request" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull request"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull Request"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull request"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull request"
+          }
+        }
+      }
+    },
+    "Pull requests" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull requests"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull Requests"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull requests"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull requests"
+          }
+        }
+      }
+    },
+    "Pull requests from your accounts in Nook on your Mac show up here." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull requests van je accounts in Nook op je Mac verschijnen hier."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull Requests deiner Konten in Nook auf deinem Mac erscheinen hier."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les pull requests de tes comptes dans Nook sur ton Mac apparaissent ici."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las pull requests de tus cuentas en Nook en tu Mac aparecen aquí."
           }
         }
       }
@@ -5350,6 +7170,34 @@
         }
       }
     },
+    "Rebase and merge" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rebase en samenvoegen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rebase und zusammenführen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rebase et fusionner"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rebase y fusionar"
+          }
+        }
+      }
+    },
     "Recent" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5403,6 +7251,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Relay"
+          }
+        }
+      }
+    },
+    "Remove comment" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwijder opmerking"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kommentar entfernen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer le commentaire"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar comentario"
           }
         }
       }
@@ -5464,6 +7340,62 @@
         }
       }
     },
+    "Request changes" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wijzigingen vragen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen anfordern"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demander des changements"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pedir cambios"
+          }
+        }
+      }
+    },
+    "Reset" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurückgesetzt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réinitialisé"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restablecido"
+          }
+        }
+      }
+    },
     "Resets %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5493,6 +7425,90 @@
         }
       }
     },
+    "Review" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relire"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisar"
+          }
+        }
+      }
+    },
+    "Review (%lld)" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review (%lld)"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfen (%lld)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relire (%lld)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisar (%lld)"
+          }
+        }
+      }
+    },
+    "Reviewing and merging are turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reviewen en samenvoegen staan voor deze iPhone uit in Nook op je Mac."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfen und Zusammenführen sind für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La relecture et la fusion sont désactivées pour cet iPhone dans Nook sur ton Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisar y fusionar están desactivados para este iPhone en Nook en tu Mac."
+          }
+        }
+      }
+    },
     "Save" : {
       "localizations" : {
         "de" : {
@@ -5517,6 +7533,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bewaar"
+          }
+        }
+      }
+    },
+    "Save to Photos" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewaar in Foto's"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Fotos sichern"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer dans Photos"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar en Fotos"
+          }
+        }
+      }
+    },
+    "Saved to Photos." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewaard in Foto's."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Fotos gesichert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistré dans Photos."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardado en Fotos."
           }
         }
       }
@@ -5748,6 +7820,34 @@
         }
       }
     },
+    "Send to" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versturen naar"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senden an"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer à"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar a"
+          }
+        }
+      }
+    },
     "Sending" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5830,6 +7930,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verstuurd"
+          }
+        }
+      }
+    },
+    "Session" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sessie"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitzung"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sesión"
           }
         }
       }
@@ -6148,6 +8276,34 @@
         }
       }
     },
+    "Some of what you shared could not wait for your Mac: the queue is full." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een deel van wat je deelde kon niet op je Mac wachten: de wachtrij is vol."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Teil dessen, was du geteilt hast, konnte nicht auf deinen Mac warten: Die Warteschlange ist voll."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une partie de ce que tu as partagé n'a pas pu attendre ton Mac : la file est pleine."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parte de lo que compartiste no pudo esperar a tu Mac: la cola está llena."
+          }
+        }
+      }
+    },
     "Something else answers at the address of %@." : {
       "localizations" : {
         "de" : {
@@ -6172,6 +8328,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Op het adres van %@ antwoordt iets anders."
+          }
+        }
+      }
+    },
+    "Squash and merge" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Squash en samenvoegen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Squash und zusammenführen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Squash et fusionner"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Squash y fusionar"
           }
         }
       }
@@ -6321,6 +8505,34 @@
         }
       }
     },
+    "Stop dictation" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop dicteren"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktat beenden"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter la dictée"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el dictado"
+          }
+        }
+      }
+    },
     "Stop the session" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6408,6 +8620,34 @@
         }
       }
     },
+    "Summary" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samenvatting"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammenfassung"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Résumé"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen"
+          }
+        }
+      }
+    },
     "Tailscale" : {
       "localizations" : {
         "de" : {
@@ -6461,6 +8701,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Taak"
+          }
+        }
+      }
+    },
+    "Terminals" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminals"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminals"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminaux"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminales"
           }
         }
       }
@@ -6637,6 +8905,34 @@
         }
       }
     },
+    "The file could not be read." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het bestand kon niet worden gelezen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei konnte nicht gelesen werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le fichier n'a pas pu être lu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer el archivo."
+          }
+        }
+      }
+    },
     "The key could not be saved." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6718,6 +9014,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De relay werkt, maar %@ is er niet mee verbonden."
+          }
+        }
+      }
+    },
+    "The review goes to the forge from your Mac, with its account, only at the head you see now." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De review gaat vanaf je Mac met zijn account naar de forge, alleen op de kop die je nu ziet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Prüfung geht von deinem Mac mit dessen Konto an die Forge, nur auf dem Stand, den du jetzt siehst."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La relecture part vers la forge depuis ton Mac, avec son compte, seulement sur la tête que tu vois maintenant."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La revisión llega a la forja desde tu Mac, con su cuenta, solo en la cabeza que ves ahora."
           }
         }
       }
@@ -6832,6 +9156,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze agent draait in een terminal op je Mac; beantwoord hem daar."
+          }
+        }
+      }
+    },
+    "This app is a version behind Nook on your Mac. Update it to use everything Nook offers." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze app loopt een versie achter op Nook op je Mac. Werk de app bij om alles van Nook te gebruiken."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese App ist eine Version hinter Nook auf deinem Mac. Aktualisiere sie, um alles zu nutzen, was Nook bietet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette app a une version de retard sur Nook sur ton Mac. Mets-la à jour pour profiter de tout ce que Nook offre."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta app va una versión por detrás de Nook en tu Mac. Actualízala para usar todo lo que ofrece Nook."
           }
         }
       }
@@ -7062,6 +9414,62 @@
         }
       }
     },
+    "This language is heard by Apple's dictation service, not on this iPhone." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze taal wordt herkend door Apples dicteerservice, niet op deze iPhone."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Sprache wird vom Diktierdienst von Apple erkannt, nicht auf diesem iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette langue est reconnue par le service de dictée d'Apple, pas sur cet iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este idioma lo reconoce el servicio de dictado de Apple, no este iPhone."
+          }
+        }
+      }
+    },
+    "This session has no pull request linked yet." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan deze sessie is nog geen pull request gekoppeld."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit dieser Sitzung ist noch keine Pull Request verknüpft."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune pull request n'est encore liée à cette session."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta sesión aún no tiene ninguna pull request vinculada."
+          }
+        }
+      }
+    },
     "This session is gone." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7204,6 +9612,34 @@
         }
       }
     },
+    "Together this is too big for one message." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samen is dit te groot voor één bericht."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusammen ist das zu groß für eine Nachricht."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ensemble, c'est trop gros pour un seul message."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Junto es demasiado grande para un solo mensaje."
+          }
+        }
+      }
+    },
     "Tokens" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7285,6 +9721,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Morgenochtend"
+          }
+        }
+      }
+    },
+    "Too much waits for Nook Companion already. Open it to send what waits." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er wacht al te veel op Nook Companion. Open de app om te versturen wat wacht."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bei Nook Companion wartet schon zu viel. Öffne die App, um Wartendes zu senden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop de choses attendent déjà Nook Companion. Ouvre l'app pour envoyer ce qui attend."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay demasiado esperando a Nook Companion. Ábrela para enviar lo pendiente."
           }
         }
       }
@@ -7427,6 +9891,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Onbegrijpelijk antwoord van je Mac."
+          }
+        }
+      }
+    },
+    "Until the limit resets" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tot de limiet reset"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bis das Limit zurückgesetzt wird"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jusqu'à la réinitialisation de la limite"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hasta que se restablezca el límite"
+          }
+        }
+      }
+    },
+    "Until the limit resets (%@)" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tot de limiet reset (%@)"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bis das Limit zurückgesetzt wird (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jusqu'à la réinitialisation de la limite (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hasta que se restablezca el límite (%@)"
           }
         }
       }
@@ -7801,6 +10321,34 @@
         }
       }
     },
+    "Verdict" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oordeel"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Urteil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verdict"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veredicto"
+          }
+        }
+      }
+    },
     "Wait a minute; Nook Companion tries again by itself." : {
       "localizations" : {
         "de" : {
@@ -8000,6 +10548,62 @@
         }
       }
     },
+    "Wake at" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wakker om"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aufwecken um"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réveil à"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Despertar a las"
+          }
+        }
+      }
+    },
+    "Watched" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gevolgd"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beobachtet"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suivies"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vigiladas"
+          }
+        }
+      }
+    },
     "Week" : {
       "localizations" : {
         "de" : {
@@ -8082,6 +10686,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wat moet de agent doen?"
+          }
+        }
+      }
+    },
+    "What should the agent do? (empty: get to know it)" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wat moet de agent doen? (leeg: leer het kennen)"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was soll der Agent tun? (leer: kennenlernen)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Que doit faire l'agent ? (vide : le découvrir)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Qué debe hacer el agente? (vacío: conocerlo)"
           }
         }
       }
@@ -8170,6 +10802,34 @@
         }
       }
     },
+    "What you shared waited too long for your Mac and was not sent." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wat je deelde wachtte te lang op je Mac en is niet verstuurd."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was du geteilt hast, hat zu lange auf deinen Mac gewartet und wurde nicht gesendet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que tu as partagé a trop attendu ton Mac et n'a pas été envoyé."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que compartiste esperó demasiado a tu Mac y no se envió."
+          }
+        }
+      }
+    },
     "What’s on my calendar today?" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8252,6 +10912,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zonder iets te veranderen"
+          }
+        }
+      }
+    },
+    "Work on this" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hieraan werken"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daran arbeiten"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travailler dessus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trabajar en esto"
           }
         }
       }
@@ -8397,6 +11085,34 @@
         }
       }
     },
+    "Write what the agent should do." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schrijf wat de agent moet doen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schreibe, was der Agent tun soll."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écris ce que l'agent doit faire."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe lo que debe hacer el agente."
+          }
+        }
+      }
+    },
     "Writing…" : {
       "localizations" : {
         "de" : {
@@ -8478,6 +11194,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jij"
+          }
+        }
+      }
+    },
+    "Your account cannot merge into this repository." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je account kan niet samenvoegen in deze repository."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Konto kann in dieses Repository nicht zusammenführen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton compte ne peut pas fusionner dans ce dépôt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu cuenta no puede fusionar en este repositorio."
           }
         }
       }
@@ -8651,6 +11395,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Je Mac weigerde dit."
+          }
+        }
+      }
+    },
+    "Your Mac reports no plan limits." : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je Mac meldt geen abonnementslimieten."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Mac meldet keine Tarif-Limits."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton Mac ne signale aucune limite d'abonnement."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Mac no informa de límites del plan."
           }
         }
       }
@@ -10947,6 +13719,90 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "uitgeklapt"
+          }
+        }
+      }
+    },
+    "Your review" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je review"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Prüfung"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta relecture"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu revisión"
+          }
+        }
+      }
+    },
+    "Yours" : {
+      "localizations" : {
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Van jou"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les tiennes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tuyas"
+          }
+        }
+      }
+    },
+    "Or deny with a reason" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oder mit Begründung ablehnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O deniega con un motivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ou refusez avec une raison"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Of weiger met een reden"
           }
         }
       }

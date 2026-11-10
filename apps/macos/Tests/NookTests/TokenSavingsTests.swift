@@ -163,8 +163,9 @@ final class TokenSavingsTests: XCTestCase {
         XCTAssertLessThanOrEqual(RemoteBridge.instructions.utf8.count, 700, "the note for another machine")
         let tools = try JSONSerialization.data(withJSONObject: BridgeTool.allCases.map(\.definition), options: [.sortedKeys])
         // 33,741 bytes for 43 tools on 2026-11-07. Claude Code defers them behind tool search; Codex and the ACP agents
-        // send them with every request.
-        XCTAssertLessThanOrEqual(tools.count, 36_000, "the tool list")
+        // send them with every request. 36,195 bytes on 2026-11-10 after the parity packages: render_page takes a
+        // file path, request_secret a url and a delivery, scheduled tasks a target and a conversation, delegate_task `@` models.
+        XCTAssertLessThanOrEqual(tools.count, 37_000, "the tool list")
     }
 
     private func size(_ setting: Int = 350_000, tokens: Int?, window: Int? = 1_000_000, can: Bool = true, completed: Bool = true,

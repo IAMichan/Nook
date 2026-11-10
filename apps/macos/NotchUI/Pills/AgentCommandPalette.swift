@@ -103,6 +103,12 @@ struct AgentCommandPalette: View {
                     actions.snooze(choice); return false
                 })
             }
+            if let reset = actions.limitResetsAt {
+                out.append(Entry(id: "s:snooze:limitReset", group: .session, symbol: "clock",
+                                 title: tr("agents.snooze.menu") + ": " + SnoozeText.untilReset(reset)) {
+                    actions.snooze(until: reset); return false
+                })
+            }
         }
         if actions.canRename {
             out.append(Entry(id: "s:rename", group: .session, symbol: "pencil", title: tr("palette.rename"),
@@ -227,7 +233,8 @@ struct AgentCommandPalette: View {
     private var projectEntries: [Entry] {
         let settings = app.workspace.settings
         var seen = Set<String>()
-        let paths = (settings.favoriteProjects + settings.recentProjects).filter { seen.insert($0).inserted }
+        let paths = (settings.favoriteProjects + settings.recentProjects)
+            .filter { seen.insert($0).inserted && !settings.isArchivedProject($0) }
         return paths.map { path in
             Entry(id: "p:" + path, group: .projects, symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent,
                   detail: AgentPathFormat.tilde(path)) {

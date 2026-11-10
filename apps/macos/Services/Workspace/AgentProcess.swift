@@ -1,6 +1,13 @@
 import Foundation
 
 /// How Nook launches an agent: executable, arguments (as list, never via a shell), environment, and directory.
+/// Where a kept agent lives. `offset`: attach to the keeper there, from that much of its output; nil starts a new one.
+struct KeeperPlacement: Equatable, Sendable {
+    var folder: String
+    var script: String
+    var offset: UInt64? = nil
+}
+
 struct LaunchSpec: Equatable, Sendable {
     var executable: String
     var arguments: [String]
@@ -13,6 +20,8 @@ struct LaunchSpec: Equatable, Sendable {
     var keepsInputOpen: Bool
     /// Variables of your environment the agent must not see (Antigravity: other Google accounts and projects).
     var removedEnvironment: [String] = []
+    /// Runs through a keeper, so it outlives Nook (`SessionKeeper`).
+    var keeper: KeeperPlacement? = nil
 
     /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
@@ -55,6 +64,8 @@ enum AgentCommand {
         var tuning = AgentTuning.Applied()
         /// Claude Code's reasoning effort (`--effort`); nil leaves the agent's own default.
         var effort: String? = nil
+        /// The speed tier (`SpeedTiers`): Claude Code's fast mode in its settings, Codex's `service_tier`; nil is standard.
+        var speedTier: String? = nil
         /// An ACP agent you added: its command, run by `executable` (your login shell).
         var customAgent: CustomAgent? = nil
         /// Settings › Agents: no agent credits in commits and pull requests (`AgentCredits.commitsKey`).
@@ -64,6 +75,7 @@ enum AgentCommand {
     static func spec(_ input: Input) -> LaunchSpec {
         var environment = input.accountEnvironment
         environment["NOOK_RUN_ID"] = input.runID.uuidString
+        environment.merge(SudoAskpass.launchEnvironment()) { _, new in new }
         switch input.provider {
         case .claude:
             var arguments = [
@@ -79,7 +91,8 @@ enum AgentCommand {
                 // Co-Authored-By trailer or "Generated with" line in commits and pull requests.
                 "--settings", AgentCredits.claudeSettings(omit: input.omitAgentCredits,
                                                           env: input.toolSearch.map { ["ENABLE_TOOL_SEARCH": $0] } ?? [:],
-                                                          extra: input.tuning.claudeSettings)
+                                                          extra: input.tuning.claudeSettings
+                                                              .merging(SpeedTiers.claudeSettings(tier: input.speedTier)) { $1 })
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
@@ -104,6 +117,7 @@ enum AgentCommand {
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             // Detailed reasoning summaries: the timeline shows how Codex thinks, not only what it did.
             arguments += ["-c", "model_reasoning_summary=\"detailed\""]
+            arguments += SpeedTiers.codexExecArguments(tier: input.speedTier)
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
             let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note,
@@ -133,15 +147,46 @@ enum AgentCommand {
             return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                               workingDirectory: input.workingDirectory, initialInput: [], keepsInputOpen: false)
 
+        case .pi:
+            return piSpec(input, environment: environment)
+
         case .opencode, .cursor, .grok, .antigravity, .acp:
             return acpSpec(input)
         }
+    }
+
+    /// Pi in RPC mode, one process per turn: it resumes the conversation from its session file, loads Nook's extension
+    /// (approvals and the workspace bridge) and starts with the turn's commands on stdin (`PiRPC.turnInput`).
+    static func piSpec(_ input: Input, environment base: [String: String]) -> LaunchSpec {
+        var environment = base
+        var arguments = ["--mode", "rpc"]
+        if let resume = input.resumeSessionID, !resume.isEmpty { arguments += ["--session", resume] }
+        if !input.model.isEmpty {
+            if let model = PiRPC.splitModel(input.model) {
+                arguments += ["--provider", model.provider, "--model", model.modelID]
+            } else {
+                arguments += ["--model", input.model]
+            }
+        }
+        if let effort = input.effort, PiRPC.thinkingLevels.contains(effort) { arguments += ["--thinking", effort] }
+        let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note, omit: input.omitAgentCredits)
+        if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
+        arguments += ["--extension", PiExtension.fileURL.path]
+        environment[PiExtension.permissionVariable] = PiExtension.permissionValue(input.permission)
+        if let bridge = input.bridge {
+            environment.merge(bridge.environment(runID: input.runID)) { _, new in new }
+            environment[PiExtension.bridgeVariable] = bridge.script
+        }
+        return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
+                          workingDirectory: input.workingDirectory, initialInput: PiRPC.turnInput(for: input.prompt),
+                          keepsInputOpen: true)
     }
 
     /// The ACP server command of an agent that only runs over ACP (see AcpAgent).
     static func acpSpec(_ input: Input) -> LaunchSpec {
         var environment = input.accountEnvironment
         environment["NOOK_RUN_ID"] = input.runID.uuidString
+        environment.merge(SudoAskpass.launchEnvironment()) { _, new in new }
         // An ACP agent you added: your login shell runs its command line, so npx, uvx, nvm and asdf work as in Terminal.
         if input.provider == .acp, let agent = input.customAgent {
             environment.merge(agent.environment) { _, new in new }
@@ -221,12 +266,30 @@ final class AgentProcess: @unchecked Sendable {
     /// The process has exited: exit code and the last lines of stderr.
     var onExit: (@Sendable (Int32, String) -> Void)?
 
-    init(spec: LaunchSpec, transport: ProviderTransport = SpawnedProcess(), scheduler: ProcessScheduler = DispatchProcessScheduler(),
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler(),
          trafficLog: ProviderTrafficLog? = nil) {
         self.spec = spec
-        self.process = transport
+        self.process = transport ?? spec.keeper.map {
+            KeptTransport(folder: URL(fileURLWithPath: $0.folder), script: $0.script, offset: $0.offset)
+        } ?? SpawnedProcess()
+        consumed = spec.keeper?.offset ?? 0
+        handled = consumed
         self.scheduler = scheduler
         self.trafficLog = trafficLog ?? ProviderTrafficLog.forLaunch(spec)
+    }
+
+    /// Stdout bytes taken as complete lines so far; on the output queue. Inside `onLines` it says where that batch ends.
+    private(set) var consumed: UInt64 = 0
+    private var handled: UInt64 = 0
+    /// The output Nook has really handled: where another Nook goes on.
+    var handledOffset: UInt64 { lock.withLock { handled } }
+    func markHandled(_ offset: UInt64) { lock.withLock { handled = max(handled, offset) } }
+    var isKept: Bool { process is KeptTransport }
+
+    /// Nook goes and the agent stays: only for an agent with a keeper. It reports no exit after this.
+    func detach() {
+        onExit = nil
+        (process as? KeptTransport)?.detach()
     }
 
     var pid: Int32 { process.pid }
@@ -297,6 +360,12 @@ final class AgentProcess: @unchecked Sendable {
         stopping = true
         lock.unlock()
         guard first, process.isRunning else { return }
+        // The keeper sees it through, also when Nook quits right after this.
+        if let kept = process as? KeptTransport {
+            trafficLog?.signal(SIGINT)
+            kept.stopForGood()
+            return
+        }
         // An exited leader stays unreaped until the last signal, so its group id cannot be given to another program.
         process.hold()
         trafficLog?.signal(SIGINT)
@@ -333,6 +402,7 @@ final class AgentProcess: @unchecked Sendable {
             start = newline + 1
             from = start
         }
+        consumed += UInt64(buffer.distance(from: buffer.startIndex, to: start))
         if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         guard !batch.isEmpty else { return }
         if let trafficLog { for line in batch { trafficLog.inbound(line) } }

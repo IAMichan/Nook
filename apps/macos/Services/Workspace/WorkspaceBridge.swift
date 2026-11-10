@@ -17,6 +17,10 @@ struct BridgeRequest: Identifiable, Equatable {
     let connection: String
     /// A secret Nook does not keep yet: the request carries a field to type or paste its value in.
     var secretName: String? = nil
+    /// Where the user can find or make the secret: a button on the card.
+    var signInURL: URL? = nil
+    /// Whether the typed value may be kept in Nook's keychain (never for a sudo password).
+    var secretKeepable = true
 }
 
 /// A secret's value typed on the request itself, and whether to keep it in Nook's keychain.
@@ -63,6 +67,10 @@ final class WorkspaceBridge: ObservableObject {
     var screenExpiry: Task<Void, Never>?
     private var installed = false
     private var started = false
+    /// Removes delivered secrets when the next one runs out (one sleeping task at most; none while there are none).
+    private var secretSweep: Task<Void, Never>?
+    /// Whether the `sudo -A` helper is in place (`SudoAskpass`).
+    private(set) var askpassInstalled = false
 
     /// How long a request waits for you before the agent hears "not approved".
     private static let approvalTimeout: UInt64 = 600
@@ -74,6 +82,9 @@ final class WorkspaceBridge: ObservableObject {
         started = true
         installed = (try? WorkspaceBridgeScript.install()) != nil
         _ = try? NookCommandLine.install()
+        askpassInstalled = (try? SudoAskpass.install()) != nil
+        // Secrets delivered before the last quit (or crash) never outlive it.
+        SecretFiles.standard.removeAll()
         server.onMessage = { [weak self] data, connection in
             Task { @MainActor in
                 if let self { self.handle(data, connection, remote: false) } else { connection.reply(nil) }
@@ -96,6 +107,31 @@ final class WorkspaceBridge: ObservableObject {
     var launch: BridgeLaunch? {
         guard installed, WorkspaceSettings.shared.agentTools else { return nil }
         return BridgeLaunch(script: NookPaths.bridgeScriptURL.path)
+    }
+
+    // MARK: Secret files
+
+    /// Plans the removal of the next delivered secret that runs out. Called after each delivery.
+    func scheduleSecretSweep() {
+        secretSweep?.cancel()
+        secretSweep = Task.detached(priority: .utility) {
+            while !Task.isCancelled {
+                guard let next = SecretFiles.standard.sweep() else { return }
+                let wait = max(1, next.timeIntervalSinceNow)
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            }
+        }
+    }
+
+    /// A session was archived or deleted: its delivered secrets go now.
+    func forgetSecrets(run id: UUID) {
+        SecretFiles.standard.remove(scope: id.uuidString)
+    }
+
+    /// Nook quits: no delivered secret outlives it.
+    func removeAllSecrets() {
+        secretSweep?.cancel()
+        SecretFiles.standard.removeAll()
     }
 
     // MARK: Decisions
@@ -133,10 +169,12 @@ final class WorkspaceBridge: ObservableObject {
 
     /// As `ask`, for a secret: with `secretName` the request shows a field, and what was typed there comes back.
     func ask(_ caller: BridgeCaller, tool: BridgeTool, title: String, detail: String, note: String, danger: Bool,
-             connection: String, secretName: String?) async -> (allowed: Bool, secret: BridgeSecretAnswer?) {
+             connection: String, secretName: String?, signInURL: URL? = nil,
+             keepable: Bool = true) async -> (allowed: Bool, secret: BridgeSecretAnswer?) {
         let id = String(UUID().uuidString.prefix(8)).lowercased()
         let request = BridgeRequest(id: id, caller: caller, tool: tool, title: title, detail: detail, note: note,
-                                    danger: danger, created: Date(), connection: connection, secretName: secretName)
+                                    danger: danger, created: Date(), connection: connection, secretName: secretName,
+                                    signInURL: signInURL, secretKeepable: keepable)
         let allowed = await wait(request)
         return (allowed, secretAnswers.removeValue(forKey: id))
     }
@@ -188,9 +226,39 @@ final class WorkspaceBridge: ObservableObject {
         let connection: String
         /// It came through a session on another machine: nothing it says about itself counts without that session's token.
         var remote = false
+        /// A cloud assistant (Claude.ai, ChatGPT) that signed in through the relay (`RemoteMCPServer`), and what it may use.
+        var assistant: (name: String, level: RemoteAccessLevel)? = nil
+    }
+
+    /// One MCP message from an assistant outside this Mac. It has no folder and no session: it gets the tools of its level
+    /// only, and everything that is not a read still asks you, as for every agent that is not in Nook.
+    func answer(assistant message: [String: Any], name: String, level: RemoteAccessLevel) async -> [String: Any]? {
+        let context = Context(agentID: "assistant", cwd: "", env: [:], connection: UUID().uuidString, assistant: (name, level))
+        let instructions = "You are an assistant outside Nook; the user's Nook on their Mac answers you. Only the tools listed are available; a tool that changes something asks the user in Nook first and may be refused or take minutes."
+        // The relay stops waiting after a few minutes: an approval still open by then is withdrawn, so the call ends as refused.
+        let connection = context.connection
+        let withdraw = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 270 * 1_000_000_000)
+            if !Task.isCancelled { self?.connectionClosed(connection) }
+        }
+        defer {
+            withdraw.cancel()
+            connectionClosed(connection)
+        }
+        return await BridgeRPC.response(to: message, instructions: instructions, offered: level.offered) { tool, arguments in
+            let outcome = await self.call(tool, arguments, context)
+            self.audit(tool, BridgeCaller(kind: .external, agent: name, title: "", directory: "", mode: nil, permission: nil),
+                       Self.summary(arguments), outcome.isError ? "remote assistant: refused or failed" : "remote assistant: done")
+            return outcome
+        }
     }
 
     private func handle(_ data: Data, _ connection: HookConnection, remote: Bool) {
+        // `sudo -A` on this Mac asks for the password (SudoAskpass); never over the socket for other machines.
+        if !remote, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let request = SudoAskpass.request(in: object) {
+            return askpass(request, object, connection)
+        }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let message = object["message"] as? [String: Any] else {
             connection.reply(nil)
@@ -216,11 +284,69 @@ final class WorkspaceBridge: ObservableObject {
         }
     }
 
+    /// sudo wants a password for an agent's command: a private card with the command and a password field. What you
+    /// type goes back to the helper, which hands it to sudo; the agent, the timeline and the action log never see it.
+    private func askpass(_ request: SudoAskpass.Request, _ object: [String: Any], _ connection: HookConnection) {
+        let context = Context(agentID: SudoAskpass.agentID, cwd: (object["cwd"] as? String) ?? "",
+                              env: (object["env"] as? [String: Any]) ?? [:], connection: UUID().uuidString)
+        connection.onPeerClosed { [weak self] in
+            Task { @MainActor in self?.connectionClosed(context.connection) }
+        }
+        Task { @MainActor [weak self] in
+            guard let self, let caller = self.askpassCaller(context) else {
+                connection.reply(SudoAskpass.reply(nil))
+                return
+            }
+            // Secrets switched off for this agent (Settings › Automation › Tools per agent) covers sudo too.
+            let agentKey: String? = {
+                if case .run(let id) = caller.kind { return self.app?.workspace.run(id)?.provider.rawValue }
+                return nil
+            }()
+            if let agentKey, !WorkspaceSettings.shared.bridgeAccess.allows(.requestSecret, agent: agentKey) {
+                self.audit(.requestSecret, caller, "sudo", "geweigerd: tools off for this agent")
+                connection.reply(SudoAskpass.reply(nil))
+                return
+            }
+            if case .refuse = self.verdict(.requestSecret, caller) {
+                self.audit(.requestSecret, caller, "sudo", "geweigerd")
+                connection.reply(SudoAskpass.reply(nil))
+                return
+            }
+            let command = request.command.isEmpty ? "sudo" : request.command
+            let detail = command + (request.prompt.isEmpty ? "" : "\n\n" + request.prompt)
+            let (allowed, typed) = await self.ask(caller, tool: .requestSecret, title: tr("secrets.sudo.title", caller.agent),
+                                                  detail: detail, note: tr("secrets.sudo.note"), danger: true,
+                                                  connection: context.connection, secretName: "sudo", keepable: false)
+            guard allowed else {
+                self.audit(.requestSecret, caller, "sudo", "niet toegestaan")
+                connection.reply(SudoAskpass.reply(nil))
+                return
+            }
+            // Allowed where no field was (the phone): the Mac asks for it now.
+            let value = typed?.value ?? BridgeSecretPrompt.ask(name: tr("secrets.sudo.field"), agent: caller.agent,
+                                                               keepable: false)?.value
+            self.audit(.requestSecret, caller, "sudo", value == nil ? "geannuleerd" : "gegeven")
+            connection.reply(SudoAskpass.reply(value))
+        }
+    }
+
+    /// Who runs sudo: the session Nook started (by its run id and token), or an agent in that folder. The helper never
+    /// takes a session's rights; it only decides whose name is on the card.
+    private func askpassCaller(_ context: Context) -> BridgeCaller? {
+        if let caller = caller(context) { return caller }
+        let folder = WorkspacePathPolicy.normalize(context.cwd)
+        return BridgeCaller(kind: .external, agent: "sudo", title: "", directory: folder.isEmpty ? NSHomeDirectory() : folder,
+                            mode: nil, permission: nil)
+    }
+
     /// The session behind a call: the run Nook started (its id is in the environment), a run working in that folder,
     /// or an agent you started in a terminal that linked the bridge itself.
     private func caller(_ context: Context) -> BridgeCaller? {
         guard let app else { return nil }
         let workspace = app.workspace
+        if let assistant = context.assistant {
+            return BridgeCaller(kind: .external, agent: assistant.name, title: "", directory: "", mode: nil, permission: nil)
+        }
         if context.remote {
             guard let id = BridgeIdentity.run(env: context.env, accepts: workspace.acceptsRemoteBridge),
                   let run = workspace.run(id) else { return nil }
@@ -263,6 +389,10 @@ final class WorkspaceBridge: ObservableObject {
     private func call(_ tool: BridgeTool, _ arguments: [String: Any], _ context: Context) async -> BridgeRPC.ToolResult {
         guard let caller = self.caller(context) else {
             return .error("Nook could not tell which session this is. Start the agent from a project folder.")
+        }
+        if let assistant = context.assistant, !assistant.level.allows(tool) {
+            audit(tool, caller, Self.summary(arguments), "geweigerd: outside the access level")
+            return .error("This sign-in does not include this tool. The user can raise its access level in Nook (Settings › Automation).")
         }
         if caller.remote, !RemoteBridge.allows(tool) { return .error(RemoteBridge.refusal) }
         if caller.remote, tool == .sessionRead, case .run(let own) = caller.kind,

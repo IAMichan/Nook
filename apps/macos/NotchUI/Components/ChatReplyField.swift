@@ -1065,7 +1065,7 @@ private struct ChatSendButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(NookTheme.font(13, .bold))
-                .foregroundStyle(ready ? NookTheme.ink : NookTheme.textTertiary)
+                .foregroundStyle(ready ? NookTheme.onPaper : NookTheme.textTertiary)
                 .frame(width: ChatReplyField.buttonSide, height: ChatReplyField.buttonSide)
                 .background(Circle().fill(ready ? tint : NookTheme.smoke))
                 .hoverLift(hovering && ready, scale: 1.05)
