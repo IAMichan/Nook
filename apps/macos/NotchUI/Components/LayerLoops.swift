@@ -21,6 +21,9 @@ struct LayerLoop: NSViewRepresentable {
         /// `count` dots in a row that rise by `rise` and brighten from `low` to `high` opacity in turn, as a wave.
         case wave(count: Int, diameter: CGFloat, spacing: CGFloat, rise: CGFloat, low: Double, high: Double, period: Double,
                   lag: Double)
+        /// A light along every edge of the view, `thickness` deep, fading inward, with a thin line on the edge itself; it
+        /// breathes between `low` and `high` opacity. The glow over a browser an agent drives (`BrowserTakeoverOverlay`).
+        case edgeGlow(thickness: CGFloat, low: Double, high: Double, period: Double)
     }
 
     let shape: Shape
@@ -158,6 +161,39 @@ final class LoopLayerView: NSView {
                 LayerLoopTiming.add([opacity, lift], to: dot, period: period, timing: nil, fps: fps,
                                     lag: Double(index) * lag)
             }
+        case .edgeGlow(let thickness, let low, let high, let period):
+            // One layer holds the four lights and the line, so a single opacity animation makes them breathe together.
+            let glow = CALayer()
+            glow.frame = bounds
+            glow.opacity = Float(high)
+            let clear = cgColor.copy(alpha: 0) ?? cgColor
+            let depth = min(thickness, bounds.width / 2, bounds.height / 2)
+            // Each light runs from its edge (start) inward (end); flipped geometry, so y 0 is the top.
+            let edges: [(CGRect, CGPoint, CGPoint)] = [
+                (CGRect(x: 0, y: 0, width: bounds.width, height: depth), CGPoint(x: 0.5, y: 0), CGPoint(x: 0.5, y: 1)),
+                (CGRect(x: 0, y: bounds.height - depth, width: bounds.width, height: depth), CGPoint(x: 0.5, y: 1), CGPoint(x: 0.5, y: 0)),
+                (CGRect(x: 0, y: 0, width: depth, height: bounds.height), CGPoint(x: 0, y: 0.5), CGPoint(x: 1, y: 0.5)),
+                (CGRect(x: bounds.width - depth, y: 0, width: depth, height: bounds.height), CGPoint(x: 1, y: 0.5), CGPoint(x: 0, y: 0.5))
+            ]
+            for (frame, start, end) in edges {
+                let light = CAGradientLayer()
+                light.frame = frame
+                light.colors = [cgColor.copy(alpha: 0.55) ?? cgColor, cgColor.copy(alpha: 0.12) ?? cgColor, clear]
+                light.locations = [0, 0.35, 1]
+                light.startPoint = start
+                light.endPoint = end
+                glow.addSublayer(light)
+            }
+            let line = CALayer()
+            line.frame = bounds
+            line.borderColor = cgColor
+            line.borderWidth = 2
+            glow.addSublayer(line)
+            layer.addSublayer(glow)
+            let breathe = CAKeyframeAnimation(keyPath: "opacity")
+            breathe.values = [high, low, high]
+            breathe.keyTimes = [0, 0.5, 1]
+            LayerLoopTiming.add([breathe], to: glow, period: period, timing: CAMediaTimingFunction(name: .easeInEaseOut), fps: fps)
         }
     }
 }
