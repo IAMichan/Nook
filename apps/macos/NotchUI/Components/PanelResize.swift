@@ -261,17 +261,28 @@ extension EnvironmentValues {
     /// The width of the row a conversation shares with the panels on its right, so its column keeps its place when one
     /// opens or closes (`PanelSplit.columnStart`); nil for a conversation without such panels.
     @Entry var chatColumnRow: CGFloat?
+    /// Whether a view is already inside a conversation's column (`chatColumn()`).
+    @Entry var insideChatColumn = false
 }
 
 private struct ChatColumn: ViewModifier {
     @Environment(\.chatColumnSlide) private var slide
     @Environment(\.chatColumnRow) private var row
+    @Environment(\.insideChatColumn) private var inside
 
     func body(content: Content) -> some View {
-        ChatColumnPlacement(row: row) {
-            content.frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
+        // A column inside a column (the composer keeps to it on its own, and its host does too) is the outer one again:
+        // placing it twice slid it twice as far, and measured the composer several times over on every keystroke.
+        if inside {
+            content
+        } else {
+            ChatColumnPlacement(row: row) {
+                content
+                    .frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
+                    .environment(\.insideChatColumn, true)
+            }
+            .offset(x: slide)
         }
-        .offset(x: slide)
     }
 }
 
@@ -286,6 +297,14 @@ private struct ChatColumnPlacement: Layout {
         let size = column.sizeThatFits(proposal)
         return CGSize(width: proposal.width ?? size.width, height: size.height)
     }
+
+    // The column's own alignment guides would be at the wrong place once it is moved within the row, and asking the
+    // column for them measured it again on every layout pass (every keystroke in the composer): the edges stand in.
+    func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout Void) -> CGFloat? { nil }
+
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout Void) -> CGFloat? { nil }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
         guard let column = subviews.first else { return }
