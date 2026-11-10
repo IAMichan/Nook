@@ -72,6 +72,9 @@ Keys that are not commands stay with their view: Return, Tab, Escape and the pla
 ⌘1–⌘3 for the main window's tabs outside the Agents tab, ⇧⌘F for search everything (besides ⌘K), and a sheet's
 `.cancelAction` / `.defaultAction`.
 
+In a session composer that shows a suggested next prompt (ghost text after a finished turn, Settings › Sessions ›
+Text generation), Tab puts the suggestion in the box and Escape dismisses it; typing anything dismisses it too.
+
 ## Keys in the Agents list and the pickers
 
 - After F6 the Agents list has the keyboard: ↑ ↓ move the lit row without opening it, Return opens it, ← folds its
