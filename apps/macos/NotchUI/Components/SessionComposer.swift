@@ -573,7 +573,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.composer)
     }
 
     /// The faint light along the top edge of the box, fading out before its middle.
@@ -781,7 +781,7 @@ struct ComposerPill: View {
         .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.smoke : Color.clear))
+        .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -888,7 +888,7 @@ struct ComposerIcon: View {
             .font(NookTheme.font(12, .semibold))
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
     }

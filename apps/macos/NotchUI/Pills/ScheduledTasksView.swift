@@ -86,7 +86,7 @@ struct ScheduledTasksView: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
     private func run(_ task: ScheduledTask) {
@@ -358,7 +358,7 @@ private struct ScheduledTaskEditor: View {
                             .mentions(mentionModel, text: $prompt, config: mentionConfig)
                             .frame(minHeight: 90)
                             .padding(NookTheme.Spacing.sm)
-                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+                            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                     }
                     field(tr("automation.sched.destination")) { destinationPicker }
                     if destination == .newSession {
@@ -800,6 +800,6 @@ private struct FieldBox: ViewModifier {
             .foregroundStyle(NookTheme.paper)
             .padding(.horizontal, 10)
             .frame(minHeight: 30)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
     }
 }

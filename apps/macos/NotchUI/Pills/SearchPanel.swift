@@ -91,11 +91,11 @@ struct SearchPanel: View {
         // As wide as a narrow tab (split view, a small window) allows, never wider than the usual 640.
         .frame(maxWidth: .infinity)
         .frame(maxWidth: 640)
-        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
+        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
         // The shadow of the card's shape only: on the whole panel it was drawn again from its content on every keystroke
         // and every frame of the reveal.
         .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.sheet)
                 .fill(NookTheme.graphite)
                 .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         )
@@ -302,7 +302,7 @@ struct SearchPanel: View {
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
+        .roundedBackground(selected ? NookTheme.smoke : .clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -370,7 +370,7 @@ struct SearchPanel: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 34)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
+        .roundedBackground(selected ? NookTheme.smoke : .clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .accessibilityAddTraits(.isButton)
     }
@@ -548,8 +548,7 @@ private struct SearchHoverFill: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .onHover { hovering = $0 }
             .animation(NookTheme.hover, value: hovering)
     }

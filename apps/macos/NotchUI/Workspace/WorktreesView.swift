@@ -83,7 +83,8 @@ struct WorktreesView: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
             }
         }
-        .onAppear { workspace.refreshWorktrees() }
+        .onAppear { workspace.worktreesShown(true) }
+        .onDisappear { workspace.worktreesShown(false) }
         .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
                             presenting: confirm) { row in
             if (row.changedFiles ?? 0) > 0 {

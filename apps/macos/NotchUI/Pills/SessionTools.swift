@@ -1133,8 +1133,8 @@ struct ToolSurface<Content: View>: View {
     var body: some View {
         content()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.field))
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedClip(NookTheme.Radius.panel)
     }
 }
 

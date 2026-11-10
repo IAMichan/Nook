@@ -217,7 +217,9 @@ enum TextGenerationRunner {
     /// The scratch folder of one of these calls: transcripts Claude Code saved there before `--no-session-persistence`
     /// are Nook's own, not sessions of the user.
     static func isScratchFolder(_ path: String) -> Bool {
-        URL(fileURLWithPath: path).lastPathComponent.hasPrefix(folderPrefix)
+        // The name from the text alone: `URL(fileURLWithPath:)` asks the disk whether it is a folder, and the history scan
+        // asks this for every session it lists.
+        (path as NSString).lastPathComponent.hasPrefix(folderPrefix)
     }
 
     private final class Output: @unchecked Sendable {

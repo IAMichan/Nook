@@ -36,7 +36,7 @@ private struct SettingsAnchor: ViewModifier {
     func body(content: Content) -> some View {
         content
             // A wash just around the row's own text, so lighting it never moves anything.
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .background(NookTheme.shape(NookTheme.Radius.chip)
                 .fill(NookTheme.iris.opacity(lit ? 0.22 : 0))
                 .padding(.horizontal, -NookTheme.Spacing.sm)
                 .padding(.vertical, -NookTheme.Spacing.xs))

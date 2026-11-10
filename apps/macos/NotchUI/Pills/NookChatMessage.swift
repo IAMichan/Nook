@@ -177,13 +177,13 @@ private struct ChatErrorCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(NookTheme.Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+                        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
                 }
             }
             .padding(.leading, 26)
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coral.opacity(0.07)))
+        .roundedBackground(NookTheme.coral.opacity(0.07), radius: NookTheme.Radius.panel)
     }
 }
 

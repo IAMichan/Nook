@@ -14,7 +14,7 @@ extension View {
     func card(padding: CGFloat = Theme.Spacing.xl, tint: Color? = nil) -> some View {
         let content = self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
         if let tint {
-            content.cardBackground(Theme.surface, stroke: tint.opacity(0.35), radius: Theme.Radius.panel, style: .continuous)
+            content.cardBackground(Theme.surface, stroke: tint.opacity(0.35), radius: Theme.Radius.panel)
         } else {
             content.panelCard()
         }
@@ -229,7 +229,7 @@ struct Banner: View {
         .font(Theme.TextStyle.detail)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
-        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.panel, style: .continuous)
+        .cardBackground(Theme.surface, stroke: Theme.line2, radius: Theme.Radius.panel)
     }
 }
 

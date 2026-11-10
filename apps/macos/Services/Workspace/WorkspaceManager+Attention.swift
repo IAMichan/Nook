@@ -62,7 +62,8 @@ extension WorkspaceManager {
             limitedAt: run.limitedAt,
             unseen: unseen,
             settled: settled,
-            subagentsWorking: subagentsWorking.contains(run.id)
+            subagentsWorking: subagentsWorking.contains(run.id),
+            quietTurn: idleCompacting.contains(run.id)
         )
         let base = AgentAttention.resolve(input)
         guard includeSnooze else { return base }

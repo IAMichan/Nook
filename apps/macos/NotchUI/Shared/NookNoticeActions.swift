@@ -76,8 +76,7 @@ struct NookSplitButton: View {
                 .fixedSize()
                 .padding(.horizontal, primary.symbol == nil ? 18 : 16)
                 .frame(maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(hoveringPrimary ? NookTheme.primaryHover : NookTheme.primary))
+                .roundedBackground(hoveringPrimary ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -101,7 +100,7 @@ struct NookSplitButton: View {
         }
         .padding(3)
         .frame(height: SharedMetrics.buttonHeight)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
         .hoverLift(hoveringPrimary || hoveringSecondary)
     }
 }
