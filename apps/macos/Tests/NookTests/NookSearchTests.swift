@@ -189,4 +189,81 @@ final class NookSearchTests: XCTestCase {
         XCTAssertEqual(pieces.map { $0.marked }, [false, true, false])
         XCTAssertEqual(SearchHighlight.merge([0..<3, 2..<5, 7..<8]), [0..<5, 7..<8])
     }
+
+    // MARK: Speed
+
+    /// Word starts, parts and typos come out of the vocabulary as they did when every word was walked one by one.
+    func testVocabularyExpansions() {
+        let vocabulary = SearchVocabulary(["search", "searching", "research", "index", "indexes", "serach", "seerch",
+                                           "panelview", "view", "café", "cafe"])
+        let found = vocabulary.expansions("search")
+        XCTAssertEqual(found["search"], 1)
+        XCTAssertEqual(found["searching"], 0.75)
+        XCTAssertEqual(found["research"], 0.4)
+        XCTAssertEqual(found["seerch"], 0.5)
+        XCTAssertNil(found["index"])
+        XCTAssertEqual(vocabulary.expansions("view")["panelview"], 0.4)
+        // Two letters: only the words they start; no parts or typos.
+        XCTAssertEqual(Set(vocabulary.expansions("in").keys), ["in", "index", "indexes"])
+        // A typo in a word that is not plain ASCII.
+        XCTAssertEqual(SearchVocabulary(["caféx"]).expansions("cafés")["caféx"], 0.5)
+    }
+
+    func testFoldedContainsAndSplit() {
+        XCTAssertTrue(SearchText.contains(" fix login bug ", " login b"))
+        XCTAssertFalse(SearchText.contains(" fix login bug ", " ogin"))
+        XCTAssertTrue(SearchText.contains(" a ", ""))
+        XCTAssertFalse(SearchText.contains(" a ", " a b c "))
+        XCTAssertEqual(SearchText.split(" fix login  bug "), ["fix", "login", "bug"])
+    }
+
+    /// A rebuild that reuses the earlier index finds exactly what a fresh one does, also for a document that changed.
+    func testRebuildReusingTheIndexFindsTheSame() {
+        let first = SearchIndex(documents)
+        var changed = documents
+        changed[0].passages.append(SearchPassage(text: "Deploy the hotfix tonight", author: "me"))
+        changed[2].flags = []
+        let reused = SearchIndex(changed, reusing: first)
+        let fresh = SearchIndex(changed)
+        for text in ["login", "hotfix", "dinner", "is:unread", "logn", "anna"] {
+            let query = SearchQuery.parse(text, calendar: calendar)
+            XCTAssertEqual(reused.search(query).map(\.id), fresh.search(query).map(\.id), text)
+            XCTAssertEqual(reused.search(query).map(\.score), fresh.search(query).map(\.score), text)
+        }
+        XCTAssertEqual(reused.search(SearchQuery.parse("hotfix")).map(\.id), ["run:a"])
+        XCTAssertTrue(reused.search(SearchQuery.parse("is:unread")).isEmpty)
+    }
+
+    /// Many documents, built across threads and shards, all still found by their own word.
+    func testLargeIndexFindsEveryDocument() {
+        let many = (0..<1_000).map { number in
+            SearchDocument(id: "note:\(number)", kind: .note, title: "Call \(number)",
+                           passages: [SearchPassage(text: "token\(number) shared words here")])
+        }
+        let index = SearchIndex(many)
+        for number in stride(from: 0, to: 1_000, by: 97) {
+            XCTAssertEqual(index.search(SearchQuery.parse("token\(number)")).first?.id, "note:\(number)")
+        }
+        XCTAssertEqual(index.search(SearchQuery.parse("shared"), limit: 2_000).count, 1_000)
+    }
+
+    /// What you opened before ranks higher among equals.
+    func testOpenedBonusRanksHigher() {
+        let reports = [
+            SearchDocument(id: "a", kind: .note, title: "Weekly report"),
+            SearchDocument(id: "b", kind: .note, title: "Weekly report"),
+        ]
+        let index = SearchIndex(reports)
+        XCTAssertEqual(index.search(SearchQuery.parse("report")).map(\.id), ["a", "b"])
+        XCTAssertEqual(index.search(SearchQuery.parse("report"), bonus: ["b": 1]).map(\.id), ["b", "a"])
+    }
+
+    /// One or two letters find titles the letters start, not every message with a word that starts so.
+    func testShortPrefixFindsTitlesOnly() {
+        let documents = [
+            SearchDocument(id: "title", kind: .note, title: "Deploy notes"),
+            SearchDocument(id: "text", kind: .note, title: "Other", passages: [SearchPassage(text: "we deployed it")]),
+        ]
+        XCTAssertEqual(SearchIndex(documents).search(SearchQuery.parse("de")).map(\.id), ["title"])
+    }
 }
