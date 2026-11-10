@@ -609,10 +609,11 @@ struct AgentRunPanel: View {
         // ArrowUp walks through what you sent this session, also after a relaunch.
         composerModel.history.seed(workspace.timeline(runID).filter { $0.kind == .user }.map { ContextRefs.visible($0.text) })
         composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
-        let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
+        let (working, project) = (run.workingDirectory, run.projectPath)
         Task {
             skills = await Task.detached(priority: .utility) {
-                SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
+                let folder = SkillIndex.projectFolder(workingDirectory: working, projectPath: project)
+                return SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
             }.value
         }
     }

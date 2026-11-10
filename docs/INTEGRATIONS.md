@@ -55,12 +55,16 @@ The list at the top of the side panel's Pull request tab (`LinkedPullRequests`, 
 member cannot do:
 
 - GitHub has its own path; every other forge is a `PullRequestForgeClient` (`PullRequestForge*.swift`) with `PullRequestForgeFeatures`, so the page shows only what the forge offers. GitLab and the others are added under **Settings › Code › Pull requests › Code hosts** (`ForgeCredentials`; `email:token` (an Atlassian API token) for Bitbucket, `user:token` for Azure DevOps).
-- GitLab: no emoji (a request per note) and no revert. Request changes is a plain note. A multi-line comment anchors on its last line. A review with line comments is not atomic.
+- GitLab: no emoji (a request per note) and no revert. Request changes uses GitLab's own verdict (GraphQL `mergeRequestRequestChanges`, GitLab 18.9+, after adding you as reviewer); an older GitLab gets a plain note instead. A multi-line comment anchors on its last line. A review with line comments is not atomic.
 - Gitea, Forgejo: no emoji, auto-merge or revert; a thread cannot be resolved through the API, only read as resolved. A reply is a one-comment review. Draft uses the `WIP:` title prefix.
 - Bitbucket Cloud only (bitbucket.org): no labels, emoji, auto-merge, branch update, revert or draft actions; reopen does not exist.
 - Azure DevOps (dev.azure.com only): no patch API, so Code lists names without diffs or line counts; no commit view, labels picker, reviewer requests, emoji, branch update or revert; checks come from `/statuses`, not branch policies; editing your own comment is off because the viewer is not resolved.
 - GitCafe: no line comments (its draft flow), emoji, auto-merge, branch update, revert, commit view or branch deletion; editing your own comment is off because the viewer is not resolved.
 - GitHub's own stacks (`/repos/{repo}/stacks`) and their asynchronous merge are github.com only.
+- A merge or close from the agent's shell (`gh pr merge`, `glab mr merge`/`accept`, `tea pr merge`/`m`, `fj pr close`,
+  `cafe pr merge`, `az repos pr update --status completed`) reads the session's linked pull requests again at once
+  (`PullRequestToolCall.closesPullRequest`, `PullRequestSync.recheck`), for every coding agent Nook runs. Bitbucket has no
+  such CLI. A session Nook only sees (an agent in a terminal) waits for the next round.
 - The other platform apps (`apps/tauri`, `apps/ios`, `apps/android`, `apps/windows`, `apps/linux`) have no session side
   panel with a pull request tab, so there is nothing there to change.
 
