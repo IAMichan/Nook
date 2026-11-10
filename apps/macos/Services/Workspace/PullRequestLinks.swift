@@ -105,10 +105,38 @@ enum PullRequestToolCall {
         pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
         options: [.caseInsensitive])
 
+    /// A forge CLI that merges or closes a pull request from the shell, in every spelling the CLI takes: `gh pr merge`,
+    /// `glab mr merge` or `glab mr accept`, `tea pr merge` or `tea pulls m`, `fj pr close`, `cafe pr merge`, and Azure
+    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI. The same list as t3code's.
+    private static let closing = try? NSRegularExpression(
+        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
+            + #"tea\s+(?:pr|pulls?)\s+(?:merge|m|close)|fj\s+pr\s+(?:merge|close)|cafe\s+(?:pr|stack)\s+(?:merge|close)|"#
+            + #"az\s+repos\s+pr\s+update\b[^;&|\n]*--status[\s=]+["']?(?:completed|abandoned))\b"#,
+        options: [.caseInsensitive])
+
     static func showsPullRequest(tool: String?, command parts: [String?]) -> Bool {
         if let tool = tool?.lowercased(),
            ["pull_request", "pullrequest", "merge_request", "mergerequest"].contains(where: tool.contains) { return true }
-        guard let rx = command else { return false }
+        return matches(command, parts) || matches(closing, parts)
+    }
+
+    /// The command merged or closed a pull request, so the linked ones are read again at once instead of at the next
+    /// round, and the session's row turns merged while you look.
+    static func closesPullRequest(command parts: [String?]) -> Bool { matches(closing, parts) }
+
+    /// Every text in a tool call's input (`command`, `cmd`, an argument list), for `closesPullRequest`.
+    static func texts(in input: Any?) -> [String] {
+        switch input {
+        case let text as String: return [text]
+        case let words as [String]: return words + [words.joined(separator: " ")]
+        case let list as [Any]: return list.flatMap { texts(in: $0) }
+        case let object as [String: Any]: return object.values.flatMap { texts(in: $0) }
+        default: return []
+        }
+    }
+
+    private static func matches(_ rx: NSRegularExpression?, _ parts: [String?]) -> Bool {
+        guard let rx else { return false }
         return parts.compactMap { $0 }.contains { text in
             rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
         }

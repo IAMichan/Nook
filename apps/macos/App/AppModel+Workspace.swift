@@ -313,7 +313,10 @@ extension AppModel {
         workspace.pullRequestCreated = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         PullRequestSync.shared.found = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
-        workspace.runScript = { folder, command, title in _ = TerminalStore.shared.open(in: folder, command: command, title: title) }
+        workspace.runScript = { folder, command, title in
+            let terminal = TerminalStore.shared.open(in: folder, command: command, title: title)
+            return { [weak terminal] in terminal?.running ?? false }
+        }
         workspace.openTerminalFolders = { TerminalStore.shared.sessions.map(\.directory) }
         workspace.onLowDiskSpace = { [weak self] free, freed, worktrees in self?.warnLowDiskSpace(free: free, freed: freed, worktrees: worktrees) }
         BrowserProfiles.project = { [weak self] key in
