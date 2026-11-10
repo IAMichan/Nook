@@ -134,6 +134,19 @@ final class ModelManifestTests: XCTestCase {
         XCTAssertTrue(ModelManifestRefresh.isDue(online: true, lastAttempt: now.addingTimeInterval(3600), now: now))
     }
 
+    func testOpeningAPickerRefreshesAfterAFewMinutes() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let gap = ModelManifestRefresh.pickerInterval
+        XCTAssertLessThan(gap, ModelManifestRefresh.interval)
+        XCTAssertTrue(ModelManifestRefresh.isDue(online: true, lastAttempt: nil, now: now, every: gap))
+        XCTAssertFalse(ModelManifestRefresh.isDue(online: true, lastAttempt: now.addingTimeInterval(-60), now: now, every: gap))
+        XCTAssertTrue(ModelManifestRefresh.isDue(online: true, lastAttempt: now.addingTimeInterval(-gap), now: now, every: gap))
+        // An hour-old fetch is not due for the background refresh, but is for a picker that opens.
+        XCTAssertFalse(ModelManifestRefresh.isDue(online: true, lastAttempt: now.addingTimeInterval(-3600), now: now))
+        XCTAssertTrue(ModelManifestRefresh.isDue(online: true, lastAttempt: now.addingTimeInterval(-3600), now: now, every: gap))
+        XCTAssertFalse(ModelManifestRefresh.isDue(online: false, lastAttempt: now.addingTimeInterval(-3600), now: now, every: gap))
+    }
+
     // MARK: Versions
 
     func testReadsTheVersionsAgentsPrint() {

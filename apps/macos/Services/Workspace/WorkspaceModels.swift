@@ -5,7 +5,7 @@ import Foundation
 
 /// Which agent runs a workspace session. Only agents with a genuine headless mode that Nook can track.
 enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini, opencode, cursor, grok, antigravity, acp
+    case claude, codex, gemini, opencode, cursor, grok, antigravity, pi, acp
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .cursor: return "Cursor"
         case .grok: return "Grok"
         case .antigravity: return "Antigravity"
+        case .pi: return "Pi"
         // An ACP agent you added; its own name is the account's (see CustomAgents).
         case .acp: return "ACP"
         }
@@ -27,7 +28,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     var usesACP: Bool {
         switch self {
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: return true
-        case .claude, .codex: return false
+        // Pi speaks its own JSON lines over stdio (`PiRPC`).
+        case .claude, .codex, .pi: return false
         }
     }
 
@@ -64,6 +66,14 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+        case .pi:
+            // Pi's RPC mode (`PiRPC`): streamed text and thoughts, `abort`, a prompt sent mid-turn steers it, usage with cost
+            // per message. Approvals come from the extension Nook loads into Pi (`PiExtension`), through Pi's blocking
+            // tool_call hook and its confirm dialog; Pi has no plan mode and no reviewer of its own, so no "auto". Its
+            // sessions are files it resumes with `--session`.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: false,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
         case .opencode, .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
@@ -84,7 +94,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .codex: return ["", "gpt-5-codex", "gpt-5"]
         case .gemini: return ["", "gemini-2.5-pro", "gemini-2.5-flash"]
         // These agents choose their model in their own settings; Nook passes a name only when you type one.
-        case .opencode, .cursor, .grok, .antigravity, .acp: return [""]
+        // Pi lists its own models ("provider/model", `get_available_models`).
+        case .opencode, .cursor, .grok, .antigravity, .pi, .acp: return [""]
         }
     }
 }

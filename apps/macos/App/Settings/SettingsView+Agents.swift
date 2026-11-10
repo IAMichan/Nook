@@ -33,6 +33,7 @@ extension SettingsView {
                     ForEach(unlinkedAgents) { target in agentRow(target) }
                 }
             }
+            AgentUpdatesSection(workspace: app.workspace)
             AccountsSettingsSection()
         }
     }

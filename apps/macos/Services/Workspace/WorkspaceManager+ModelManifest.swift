@@ -18,11 +18,12 @@ extension WorkspaceManager {
 
     private static let versionRereadSeconds: TimeInterval = 30 * 60
 
-    /// Asks the repository for a newer manifest when one is due. A copy that does not validate, or is older than the one
-    /// in use, is dropped: the menus keep the last valid list.
-    func refreshModelManifest() {
+    /// Asks the repository for a newer manifest when one is due (`gap` after the last attempt). A copy that does not
+    /// validate, or is older than the one in use, is dropped: the menus keep the last valid list. The fetch runs in the
+    /// background; a menu that is open picks up the new list when it lands.
+    func refreshModelManifest(every gap: TimeInterval = ModelManifestRefresh.interval) {
         let now = Date()
-        guard ModelManifestRefresh.isDue(online: settings.onlineModelList, lastAttempt: manifestAttempted, now: now) else { return }
+        guard ModelManifestRefresh.isDue(online: settings.onlineModelList, lastAttempt: manifestAttempted, now: now, every: gap) else { return }
         manifestAttempted = now
         Task { [weak self] in
             guard let fetched = try? await NetworkGuard.fetch(ModelManifest.remoteURL), fetched.1.statusCode == 200,
@@ -36,10 +37,11 @@ extension WorkspaceManager {
         }
     }
 
-    /// Reads `--version` of the agents the manifest covers: once, and again when the program moved or after half an hour.
-    func readAgentVersions(_ providers: [RunProvider]) {
+    /// Reads `--version` of the agents the manifest covers (`every`: of all of them, for Settings' update list): once,
+    /// and again when the program moved or after half an hour.
+    func readAgentVersions(_ providers: [RunProvider], every: Bool = false) {
         let now = Date()
-        for provider in providers where modelManifest?.entry(for: provider) != nil {
+        for provider in providers where every || modelManifest?.entry(for: provider) != nil {
             guard let path = executable(provider) else { continue }
             if let last = versionsRead[provider], last.path == path, now.timeIntervalSince(last.at) < Self.versionRereadSeconds { continue }
             versionsRead[provider] = (path, now)
@@ -48,6 +50,13 @@ extension WorkspaceManager {
                 await self?.setAgentVersion(version, for: provider)
             }
         }
+    }
+
+    /// After an update: the version is read again and the agent asked again for its models.
+    func agentWasUpdated(_ provider: RunProvider) {
+        versionsRead[provider] = nil
+        modelsRefreshed[Self.effortKey(provider, profileID: nil)] = nil
+        readAgentVersions([provider], every: true)
     }
 
     private func setAgentVersion(_ version: String?, for provider: RunProvider) {

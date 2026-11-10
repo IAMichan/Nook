@@ -335,14 +335,17 @@ struct ModelManifestStore {
     }
 }
 
-/// When Nook asks the repository for a fresh manifest: at most every six hours, and never while you keep the model list
-/// offline (Settings › Workspace). The fetch itself goes through `NetworkGuard`.
+/// When Nook asks the repository for a fresh manifest: at most every six hours in the background, at most every few
+/// minutes when you open a model picker (a new model shows the moment you look for it), and never while you keep the
+/// model list offline (Settings › Workspace). The fetch itself goes through `NetworkGuard`.
 enum ModelManifestRefresh {
     static let interval: TimeInterval = 6 * 60 * 60
+    /// The shortest gap between two fetches started by opening a picker.
+    static let pickerInterval: TimeInterval = 5 * 60
 
-    static func isDue(online: Bool, lastAttempt: Date?, now: Date) -> Bool {
+    static func isDue(online: Bool, lastAttempt: Date?, now: Date, every gap: TimeInterval = interval) -> Bool {
         guard online else { return false }
         guard let lastAttempt else { return true }
-        return now.timeIntervalSince(lastAttempt) >= interval || now < lastAttempt
+        return now.timeIntervalSince(lastAttempt) >= gap || now < lastAttempt
     }
 }

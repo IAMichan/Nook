@@ -207,6 +207,7 @@ targets:
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+DiffReview.swift
+      - path: Core/I18n+AgentMaintenance.swift
       - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
       - path: Core/I18n+SourceControl.swift
@@ -448,6 +449,10 @@ targets:
       - path: Services/Workspace/BrowserSession.swift
       - path: Services/Workspace/WorkspaceBridgeSessions.swift
       - path: Services/Workspace/RenderedPage.swift
+      - path: Services/Workspace/RenderedPageFile.swift
+      - path: Services/Workspace/AgentUpdates.swift
+      - path: Services/Workspace/PiRPC.swift
+      - path: Services/Workspace/PiExtension.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift

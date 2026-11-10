@@ -5,7 +5,7 @@ import SQLite3
 /// Which agent a past session or account belongs to. Nook reads the sessions of Claude Code, Codex, Gemini CLI and
 /// Antigravity from disk; OpenCode, Cursor and Grok it runs over ACP and knows by their login.
 enum AgentKind: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, gemini, antigravity, opencode, cursor, grok, acp
+    case claude, codex, gemini, antigravity, opencode, cursor, grok, pi, acp
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "OpenCode"
         case .cursor: return "Cursor"
         case .grok: return "Grok"
+        case .pi: return "Pi"
         case .acp: return "ACP"
         }
     }
@@ -32,6 +33,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "opencode"
         case .cursor: return "cursor-agent"
         case .grok: return "grok"
+        case .pi: return "pi"
         // Each ACP agent has its own command (see CustomAgents); they start through your login shell.
         case .acp: return "npx"
         }
@@ -47,6 +49,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "OpenCode"
         case .cursor: return "Cursor"
         case .grok: return "Grok"
+        case .pi: return "Pi"
         case .acp: return "ACP"
         }
     }
@@ -61,6 +64,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return Color(hex: 0xE8D44D)
         case .cursor: return Color(hex: 0x9AA4B2)
         case .grok: return Color(hex: 0xD9D9DE)
+        case .pi: return Color(hex: 0x7FD1E8)
         case .acp: return Color(hex: 0xB59CF5)
         }
     }
@@ -74,7 +78,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .antigravity: return .antigravity
         case .opencode: return .openCode
         case .cursor: return .cursor
-        case .grok, .acp: return nil
+        // Pi has no hooks: Nook sees its sessions only when it runs them (`PiTransport`).
+        case .grok, .pi, .acp: return nil
         }
     }
 
@@ -87,7 +92,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .antigravity: return [.antigravity]
         case .opencode: return [.openCode]
         case .cursor: return [.cursor]
-        case .grok, .acp: return []
+        case .grok, .pi, .acp: return []
         }
     }
 
@@ -108,6 +113,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
             return "curl https://cursor.com/install -fsS | bash"
         case .grok:
             return "npm install -g @xai-official/grok"
+        case .pi:
+            return "npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
         // Registry agents run with npx or uvx, which come with Node.js and uv.
         case .acp:
             return "brew install node uv"
@@ -124,6 +131,8 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return "opencode auth login"
         case .cursor: return "cursor-agent login"
         case .grok: return "grok"
+        // Pi signs in with `/login` in its own screen.
+        case .pi: return "pi"
         // ACP agents sign in themselves during the first session.
         case .acp: return ""
         }
@@ -138,7 +147,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .codex: return ["login"]
         case .cursor: return ["login"]
         case .grok: return ["login"]
-        case .gemini, .antigravity, .opencode, .acp: return nil
+        case .gemini, .antigravity, .opencode, .pi, .acp: return nil
         }
     }
 
@@ -167,7 +176,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
     var otherCommands: [String] {
         switch self {
         case .cursor: return ["agent"]
-        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .acp: return []
+        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .pi, .acp: return []
         }
     }
 
@@ -177,7 +186,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         switch self {
         case .cursor: return target.contains("cursor-agent")
-        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .acp: return true
+        case .claude, .codex, .gemini, .antigravity, .opencode, .grok, .pi, .acp: return true
         }
     }
 
@@ -190,6 +199,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case .opencode: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode", isDirectory: true)
         case .cursor: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor", isDirectory: true)
         case .grok: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
+        case .pi: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent", isDirectory: true)
         case .acp: return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/acp", isDirectory: true)
         }
     }
@@ -203,6 +213,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         case "OpenCode": self = .opencode
         case "Cursor": self = .cursor
         case "Grok", "Grok Build": self = .grok
+        case "Pi": self = .pi
         default: return nil
         }
     }
@@ -298,6 +309,8 @@ struct PastSession: Identifiable, Equatable, Codable {
         case .antigravity: return ["--resume", sessionID]
         case .opencode: return ["--session", sessionID]
         case .cursor, .grok: return ["--resume", sessionID]
+        // Pi resumes a session by its file.
+        case .pi: return ["--session", sessionID]
         // ACP agents load their sessions over the protocol (session/load), not from the command line.
         case .acp: return []
         }
@@ -651,7 +664,7 @@ private final class HistoryScanner: @unchecked Sendable {
             // Antigravity is there when its own folder is, not because Gemini CLI made ~/.gemini.
             case .antigravity:
                 if !home.url.path.hasSuffix("antigravity"), !fm.fileExists(atPath: home.url.appendingPathComponent("antigravity").path) { continue }
-            case .claude, .codex, .gemini, .opencode, .cursor, .grok, .acp: break
+            case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp: break
             }
             installed.insert(home.kind)
             let found: [(url: URL, key: CacheKey)]
@@ -662,7 +675,8 @@ private final class HistoryScanner: @unchecked Sendable {
             case .antigravity: found = antigravityFiles(home.url, since: since)
             case .cursor: found = cursorFiles(home.url, since: since)
             // Their history comes from the agent itself (ACP session/list, see ProviderCapabilities.pastSessions).
-            case .opencode, .grok, .acp: found = []
+            // Pi: Nook lists the Pi sessions it ran itself; reading Pi's own session files is not built yet.
+            case .opencode, .grok, .pi, .acp: found = []
             }
             files += found.map { ($0.url, home.kind, home.id, $0.key) }
         }
@@ -710,7 +724,7 @@ private final class HistoryScanner: @unchecked Sendable {
                         let chats = cursorChats[home.path] ?? cursorChatFolders(home)
                         cursorChats[home.path] = chats
                         parsed = parseCursor(file.url, chats: chats)
-                    case .opencode, .grok, .acp: parsed = Parsed(session: nil, entries: [])
+                    case .opencode, .grok, .pi, .acp: parsed = Parsed(session: nil, entries: [])
                     }
                     parsed = interned(parsed)
                 }
@@ -861,7 +875,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 if let account = geminiAccount(home.url) { accounts[home.id] = account }
             case .antigravity:
                 if let account = antigravityAccount(home.url) { accounts[home.id] = account }
-            case .opencode, .cursor, .grok:
+            case .opencode, .cursor, .grok, .pi:
                 if let account = acpAgentAccount(home.kind, home.url) { accounts[home.id] = account }
             case .acp:
                 // An ACP agent you added: its account is there as long as the agent is configured.
@@ -873,7 +887,7 @@ private final class HistoryScanner: @unchecked Sendable {
         return accounts
     }
 
-    /// OpenCode, Cursor and Grok: signed in when their login file is there (with the email when it names one).
+    /// OpenCode, Cursor, Grok and Pi: signed in when their login file is there (with the email when it names one).
     private func acpAgentAccount(_ kind: AgentKind, _ home: URL) -> AgentAccount? {
         let file: URL
         switch kind {
@@ -882,8 +896,9 @@ private final class HistoryScanner: @unchecked Sendable {
         default: file = home.appendingPathComponent("auth.json")
         }
         guard let data = try? Data(contentsOf: file) else {
-            // Grok keeps its login elsewhere in its folder: the folder itself means it was set up.
-            return kind == .grok ? AgentAccount(agent: kind, name: kind.name, organization: "", plan: "") : nil
+            // Grok keeps its login elsewhere in its folder, and Pi may sign in with an API key from the environment: the
+            // folder itself means it was set up.
+            return kind == .grok || kind == .pi ? AgentAccount(agent: kind, name: kind.name, organization: "", plan: "") : nil
         }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         if kind == .cursor {
@@ -891,7 +906,7 @@ private final class HistoryScanner: @unchecked Sendable {
             guard let auth else { return nil }
             return AgentAccount(agent: kind, name: (auth["email"] as? String) ?? kind.name, organization: "", plan: "")
         }
-        if kind == .opencode {
+        if kind == .opencode || kind == .pi {
             // auth.json lists the providers you signed in to ("anthropic", "openai", …).
             let providers = object.keys.sorted()
             guard !providers.isEmpty else { return nil }

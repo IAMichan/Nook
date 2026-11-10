@@ -17,7 +17,7 @@ final class AgentSessionToolsTests: XCTestCase {
             let offered = provider.capabilities.policies.contains(.auto)
             switch provider {
             case .claude, .codex: XCTAssertTrue(offered, provider.rawValue)
-            case .gemini, .opencode, .cursor, .grok, .antigravity, .acp: XCTAssertFalse(offered, provider.rawValue)
+            case .gemini, .opencode, .cursor, .grok, .antigravity, .pi, .acp: XCTAssertFalse(offered, provider.rawValue)
             }
         }
     }

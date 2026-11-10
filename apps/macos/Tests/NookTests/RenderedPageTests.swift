@@ -8,7 +8,7 @@ final class RenderedPageTests: XCTestCase {
     func testArguments() throws {
         let page = try RenderedPage.parse(["html": "<h1>Hi</h1>", "title": " Sales\nby month ", "height": "5000"]).get()
         XCTAssertEqual(page, .init(html: "<h1>Hi</h1>", title: "Sales by month", height: RenderedPage.maxHeight))
-        XCTAssertEqual(try RenderedPage.parse(["html": "<p>x</p>"]).get().title, "Page")
+        XCTAssertEqual(try RenderedPage.parse(["html": "<p>x</p>"]).get().shownTitle, "Page")
         XCTAssertEqual(try RenderedPage.parse(["html": "<p>x</p>", "height": 10]).get().height, RenderedPage.minHeight)
         XCTAssertEqual(try RenderedPage.parse(["html": "<p>x</p>", "height": true]).get().height, RenderedPage.defaultHeight)
         XCTAssertThrowsError(try RenderedPage.parse(["html": "  "]).get())
@@ -16,7 +16,80 @@ final class RenderedPageTests: XCTestCase {
         XCTAssertThrowsError(try RenderedPage.parse(["html": String(repeating: "a", count: RenderedPage.maxHTMLBytes + 1)]).get(),
                              "size-capped")
         let long = try RenderedPage.parse(["html": "x", "title": String(repeating: "t", count: 500)]).get()
-        XCTAssertEqual(long.title.count, RenderedPage.maxTitleLength)
+        XCTAssertEqual(long.title?.count, RenderedPage.maxTitleLength)
+        let file = try RenderedPage.parse(["path": "out/chart.html", "height": 500]).get()
+        XCTAssertEqual(file.path, "out/chart.html")
+        XCTAssertNil(file.title, "named after the file once read")
+        XCTAssertEqual(file.height, 500)
+        XCTAssertThrowsError(try RenderedPage.parse(["html": "<p>x</p>", "path": "a.html"]).get(), "one or the other")
+    }
+
+    // MARK: Pages from a file
+
+    private func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rendered-page-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url.appendingPathComponent("work/assets"), withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    private func write(_ text: String, _ url: URL) throws { try Data(text.utf8).write(to: url) }
+
+    func testAPageFromAFileEmbedsWhatItRefersTo() throws {
+        let base = try folder()
+        let work = base.appendingPathComponent("work")
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: work.appendingPathComponent("assets/logo.png"))
+        try write("body{background:url('bg.png')} @import 'more.css';", work.appendingPathComponent("assets/site.css"))
+        try write("h1{color:red}", work.appendingPathComponent("assets/more.css"))
+        try Data([1, 2, 3]).write(to: work.appendingPathComponent("assets/bg.png"))
+        try write("console.log('</script>')", work.appendingPathComponent("assets/app.js"))
+        try write("""
+        <link rel="stylesheet" href="assets/site.css"><img src="assets/logo.png?v=2"><img src="https://example.com/x.png">
+        <script src="assets/app.js"></script><script>img.src = "assets/logo.png"</script><a href="other.html">x</a>
+        """, work.appendingPathComponent("index.html"))
+        let page = try RenderedPageFile.load("index.html", workdir: work.path).get()
+        XCTAssertEqual(page.name, "index.html")
+        XCTAssertEqual(page.leftOut, [])
+        XCTAssertTrue(page.html.contains(#"<img src="data:image/png;base64,iVBORw==">"#))
+        XCTAssertTrue(page.html.contains("url(\"data:image/png;base64,AQID\")"), "url() in a linked stylesheet, from its own folder")
+        XCTAssertTrue(page.html.contains("h1{color:red}"), "an @import is inlined")
+        XCTAssertFalse(page.html.contains("<link"))
+        XCTAssertTrue(page.html.contains("<script>console.log('<\\/script>')</script>"), "a script is inlined and cannot close its tag")
+        XCTAssertTrue(page.html.contains(#"img.src = "assets/logo.png""#), "a script's own strings stay as written")
+        XCTAssertTrue(page.html.contains("https://example.com/x.png"), "a remote URL stays and is blocked by the sandbox")
+        XCTAssertTrue(page.html.contains(#"href="other.html""#))
+        // An absolute path inside the working directory works too.
+        XCTAssertNoThrow(try RenderedPageFile.load(work.appendingPathComponent("index.html").path, workdir: work.path).get())
+    }
+
+    func testAPageFromAFileStaysInsideTheWorkingDirectory() throws {
+        let base = try folder()
+        let work = base.appendingPathComponent("work")
+        try write("<p>secret</p>", base.appendingPathComponent("outside.html"))
+        try Data([7]).write(to: base.appendingPathComponent("secret.png"))
+        XCTAssertThrowsError(try RenderedPageFile.load("../outside.html", workdir: work.path).get(), "no path out")
+        XCTAssertThrowsError(try RenderedPageFile.load(base.appendingPathComponent("outside.html").path, workdir: work.path).get())
+        try FileManager.default.createSymbolicLink(at: work.appendingPathComponent("link.html"), withDestinationURL: base.appendingPathComponent("outside.html"))
+        XCTAssertThrowsError(try RenderedPageFile.load("link.html", workdir: work.path).get(), "no symlink out")
+        XCTAssertThrowsError(try RenderedPageFile.load("missing.html", workdir: work.path).get())
+        try write("{}", work.appendingPathComponent("data.json"))
+        XCTAssertThrowsError(try RenderedPageFile.load("data.json", workdir: work.path).get(), "only HTML")
+        try FileManager.default.createSymbolicLink(at: work.appendingPathComponent("assets/pic.png"), withDestinationURL: base.appendingPathComponent("secret.png"))
+        try write(#"<img src="../secret.png"><img src="assets/pic.png"><img src="/etc/hosts.png"><div style="background:url(gone.png)"></div>"#,
+                  work.appendingPathComponent("page.html"))
+        let page = try RenderedPageFile.load("page.html", workdir: work.path).get()
+        XCTAssertEqual(page.leftOut, ["../secret.png (outside the working directory)", "assets/pic.png (outside the working directory)",
+                                      "/etc/hosts.png (not found)", "gone.png (not found)"])
+        XCTAssertFalse(page.html.contains("Bw=="), "nothing from outside is embedded")
+        XCTAssertTrue(page.html.contains(#"<img src="">"#))
+    }
+
+    func testAStylesheetThatImportsItselfStops() throws {
+        let work = try folder().appendingPathComponent("work")
+        try write("@import 'loop.css'; p{margin:0}", work.appendingPathComponent("loop.css"))
+        try write(#"<link rel="stylesheet" href="loop.css">"#, work.appendingPathComponent("page.html"))
+        let page = try RenderedPageFile.load("page.html", workdir: work.path).get()
+        XCTAssertTrue(page.leftOut.contains("loop.css (imported too deep)"))
     }
 
     func testThePageIsKeptWithItsSession() {

@@ -44,6 +44,39 @@ claude mcp add --scope user nook -- ~/.nook/nook-mcp --agent claude-code
 codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 ```
 
+### Updating the agents
+
+**Settings › Agents › Updates** lists each agent program Nook found, with its installed version (`--version`) and the
+newest one. Which installer owns a program is read from its real path once symlinks are resolved (`AgentUpdates.owner`):
+a Homebrew cask or formula (`brew upgrade [--cask] <name>`), a global npm install (`npm install -g <package>@latest`,
+with the npm of the Node that holds it), pnpm, Bun, Volta, mise (`mise upgrade <tool>`), or the agent's own updater
+(`claude update`, `opencode upgrade`, `cursor-agent update`). A program inside an app bundle, or one Nook does not
+recognise, is left to you and its row says so. The newest version comes from Homebrew's own index (`brew info --json=v2`)
+or the npm registry (through `NetworkGuard`), looked up when the page opens and at most every half hour.
+
+**Update** and **Update all** (every agent with a newer version and a command) ask first: the confirmation lists the
+commands and the running sessions of those agents, which keep the version they started with. The updates run one after
+another with their last output line on the agent's row, each start and end goes to the audit log, and afterwards Nook
+reads the version again, asks the agent again for its models, and says how it went. In a model picker, a model that needs
+a newer agent comes with an **Update** row that opens this question. Antigravity's ACP server (Nook installs that release
+itself) and ACP registry agents (run with npx or uvx) are not listed.
+
+### Pi
+
+Pi (`pi`, the pi.dev agent) runs as a session in Nook over its RPC mode: one `pi --mode rpc` process per turn that reads
+and writes one JSON object per line (`PiRPC`, `PiStreamParser`, `WorkspaceManager+Pi`). Nook sends `get_state` and the
+`prompt` (or `compact` for `/compact`), reads streamed text and thoughts, tool calls, usage with cost and the end of the
+turn, and resumes the conversation from the session file `get_state` names (`--session`). Pi has no permission system
+and no MCP client, so Nook loads an extension into every Pi session (`PiExtension`, written to
+`~/Library/Application Support/Nook/nook-pi-extension.ts`): its blocking `tool_call` hook asks through Pi's `confirm`
+dialog, which Nook shows as an approval (Supervised asks before everything but reads, Auto-accept edits also lets
+`edit` and `write` through, Full access asks nothing; there is no "Auto", Pi has no reviewer), and it starts `nook-mcp`
+and registers its tools in Pi as `mcp__nook__*`. Models come from `get_available_models` (a short-lived process
+without session or extensions), thinking levels go with `--thinking`, accounts with `PI_CODING_AGENT_DIR`. Not built:
+a native fork and rollback (Pi's `fork` needs an entry id of its session), Pi's own session files as past sessions, and
+Pi's select, input and editor dialogs (cancelled). The wire format follows Pi's documented protocol; it has not been run
+against a real Pi on this Mac, only against recorded transcripts (`PiRPCTests`).
+
 ### Android devices
 
 The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):
@@ -193,7 +226,7 @@ How Nook makes worktrees and handles the repositories behind sessions (`Workspac
 | `session_search` | Searches the user's sessions (titles and timelines, `TimelineSearch`), most recent first, and returns each matching session with its id and a few excerpts; `session_id` searches one, `include_archived` adds archived ones. A full-text index in `runs.sqlite` (FTS5, trigrams of the folded text of each event, `RunEventLog.sessions(mentioning:)`) first names the sessions that mention the text, so every session is searched, not only the newest 300; timelines open in Nook are always searched too. Without FTS5, or for a query under three characters, the newest sessions are read as before. | Immediate |
 | `session_organize` | Pins or unpins, settles or reopens, snoozes (`until`: hour, evening, tomorrow) or wakes, archives or unarchives, marks unread or read one session: the same actions as the Agents list (`InboxStore`, `FinishedSessions`, `SessionVisits`). A session that works or waits cannot be settled, snoozed or archived. | Requires approval, unless the session runs with **Allow everything**; disabled in Plan mode |
 | `session_questions` | Lists (`action: list`) and reads (`read`) the questions other sessions wait on, with their options, and answers one (`answer`, checked against the question's options). Permission requests are not questions and never show here. The answered session's timeline says who answered. | List and read: immediate (also in Plan mode) · Answer a task the caller delegated: immediate · Any other answer: requires approval, unless the session runs with **Allow everything**; disabled in Plan mode |
-| `render_page` | Shows an HTML page (`html`, `title`, `height` 80–1200, at most 512 KB, at most 24 per session) inline in the caller's own timeline: a chart, a diagram, a mock-up. Kept as a file with the session (`RenderedPage`, removed with it) and drawn by `RenderedPageRow` in a sandboxed frame (`allow-scripts` only) under the MCP app policy with no declared origins, so nothing loads or connects; the web view has no message handler and cancels every navigation, and exists only while its row is on screen and Nook is not saving energy, so a page that animates costs nothing out of sight. Only for sessions Nook runs. `show_chart` stays Nook Chat's own. | Immediate (disabled in Plan mode) |
+| `render_page` | Shows an HTML page (`html`, `title`, `height` 80–1200, at most 512 KB, at most 24 per session) inline in the caller's own timeline: a chart, a diagram, a mock-up. Instead of `html` the agent may give `path`: an `.html` file in its working directory (`RenderedPageFile`). Nook reads it once and embeds the local stylesheets, `@import`s and scripts inline and the images, fonts and media as data: URLs (at most 2 MB each, 6 MB for the page); every file is resolved through its symlinks and must lie inside the working directory, and what does not, is missing or too large is left out and named in the reply. Not for sessions on another machine. Kept as a file with the session (`RenderedPage`, removed with it) and drawn by `RenderedPageRow` in a sandboxed frame (`allow-scripts` only) under the MCP app policy with no declared origins, so nothing loads or connects; the web view has no message handler and cancels every navigation, and exists only while its row is on screen and Nook is not saving energy, so a page that animates costs nothing out of sight. Only for sessions Nook runs. `show_chart` stays Nook Chat's own. | Immediate (disabled in Plan mode) |
 | `browser_snapshot` | Lists the links, buttons, fields and headings on the page, each interactive one with a ref (`e7`) for `browser_click` / `browser_type`. Password values are never shown. | Immediate |
 | `browser_click` | Clicks one element by ref, CSS selector or visible text. | Local pages (`localhost`): immediate · Other sites: requires approval (unless the session has full access); disabled in Plan mode |
 | `browser_type` | Types into one field (replace or append, optionally submit its form), firing `input`/`change` so frameworks notice. The typed text is never written to the audit log. | Same as `browser_click` |

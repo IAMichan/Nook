@@ -634,7 +634,7 @@ enum ModelMention {
         providers.flatMap { provider -> [Candidate] in
             switch provider {
             case .acp: return []
-            case .claude, .codex, .gemini, .antigravity, .opencode, .cursor, .grok:
+            case .claude, .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi:
                 return models(provider).map { Candidate(agent: provider.rawValue, agentName: provider.displayName,
                                                         model: $0.id, name: $0.name) }
             }
