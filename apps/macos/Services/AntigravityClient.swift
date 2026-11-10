@@ -63,6 +63,12 @@ enum AntigravityClient {
             let stderr = Pipe()
             process.standardOutput = stdout
             process.standardError = stderr
+            defer {
+                try? stdout.fileHandleForReading.close()
+                try? stdout.fileHandleForWriting.close()
+                try? stderr.fileHandleForReading.close()
+                try? stderr.fileHandleForWriting.close()
+            }
 
             do {
                 try process.run()
