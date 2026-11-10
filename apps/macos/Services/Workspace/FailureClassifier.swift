@@ -58,7 +58,7 @@ enum FailureClassifier {
         default: break
         }
 
-        if e.rateLimitRejected { return .usageLimit(resetAt: latestStreamedReset(e)) }
+        if e.rateLimitRejected { return .usageLimit(resetAt: latestStreamedReset(e) ?? textReset(e)) }
 
         // Plain assistant text may mention "network"; only a failing result is read.
         guard isFailing(e), let text = e.messageText, !text.isEmpty else { return .generic }
@@ -67,7 +67,7 @@ enum FailureClassifier {
         }
         let lower = text.lowercased()
         if lower.contains("[429]") || lower.contains("rate_limit_error") || saysUsageLimit(lower) {
-            return .usageLimit(resetAt: latestStreamedReset(e))
+            return .usageLimit(resetAt: latestStreamedReset(e) ?? textReset(e))
         }
         if lower.contains("authentication_failed") || lower.contains("invalid api key") || lower.contains("/login")
             || lower.contains("api error: 401") { return .authentication }
@@ -107,7 +107,12 @@ enum FailureClassifier {
 
     private static func reset(_ e: FailureEvidence) -> Date? {
         if let seconds = e.messageText.flatMap(gatewayResetSeconds), seconds > 0 { return e.now.addingTimeInterval(seconds) }
-        return latestStreamedReset(e)
+        return latestStreamedReset(e) ?? textReset(e)
+    }
+
+    /// The reset the message itself names, when nothing streamed one ("resets 3pm", "|1736010000", "retry in 41s").
+    private static func textReset(_ e: FailureEvidence) -> Date? {
+        e.messageText.flatMap { UsageLimits.textReset($0, now: e.now) }
     }
 
     private static let gatewayResetPattern = try? NSRegularExpression(pattern: #"\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)"#)
