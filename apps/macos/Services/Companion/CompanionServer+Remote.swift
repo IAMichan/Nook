@@ -55,7 +55,10 @@ extension CompanionServer {
             return .failure(request.id, .badRequest)
         }
         // Pictures from the phone go to the agent as paths below the words, as from the composer.
-        guard let task = CompanionImages.attach(request.images, to: words) else { return .failure(request.id, .badRequest) }
+        guard let pictured = CompanionImages.attach(request.images, to: words),
+              let task = CompanionFiles.attach(request.attachments, images: request.images, to: pictured) else {
+            return .failure(request.id, .badRequest)
+        }
         // Only a folder the Mac already worked in: the phone cannot point an agent at an arbitrary path.
         let project = WorkspacePathPolicy.normalize(launch.project)
         guard recentProjects(settings).contains(where: { WorkspacePathPolicy.normalize($0) == project }) else {
@@ -106,7 +109,7 @@ extension CompanionServer {
     }
 
     /// Agents with a connected account and an executable on this Mac. ACP agents you added are started on the Mac.
-    private func launchableProviders(_ app: AppModel) -> [RunProvider] {
+    func launchableProviders(_ app: AppModel) -> [RunProvider] {
         app.connectedProviders.filter { $0 != .acp && app.workspace.executable($0) != nil }
     }
 
@@ -121,7 +124,7 @@ extension CompanionServer {
     /// Your default for this agent, at most "allow edits": a session started from a phone always keeps asking. "Auto"
     /// steps down to "allow edits" too (`PermissionPolicy.isUnattendedSafe`): its reviewer would approve commands nobody
     /// at the Mac sees. Plan mode takes the safest policy, as the composer does.
-    private func phonePermission(_ provider: RunProvider, preferred: PermissionPolicy, plan: Bool) -> PermissionPolicy {
+    func phonePermission(_ provider: RunProvider, preferred: PermissionPolicy, plan: Bool) -> PermissionPolicy {
         let offered = provider.capabilities.policies.filter(\.isUnattendedSafe)
         if plan { return offered.first ?? .acceptEdits }
         return offered.contains(preferred) ? preferred : (offered.contains(.acceptEdits) ? .acceptEdits : (offered.first ?? .acceptEdits))
@@ -290,7 +293,11 @@ extension CompanionServer {
         if let until = run.snoozedUntil, until > now {
             actions.append(.unsnooze)
         } else {
-            actions += [.snoozeHour, .snoozeEvening, .snoozeTomorrow]
+            actions += [.snoozeHour, .snoozeEvening, .snoozeTomorrow, .snoozeUntil]
+            // "Until the usage limit resets" only while a limit stopped it and Nook knows when it resets.
+            if SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt, now: now) != nil {
+                actions.append(.snoozeLimitReset)
+            }
         }
         return actions
     }
@@ -317,6 +324,14 @@ extension CompanionServer {
         case .snoozeEvening: workspace.snooze(runID, .evening)
         case .snoozeTomorrow: workspace.snooze(runID, .tomorrow)
         case .unsnooze: workspace.unsnooze(runID)
+        case .snoozeUntil:
+            guard let end = CompanionSnooze.end(request.text) else { return .failure(request.id, .badRequest) }
+            workspace.snooze(runID, until: end)
+        case .snoozeLimitReset:
+            guard let end = SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt) else {
+                return .failure(request.id, .notAllowedFromPhone)
+            }
+            workspace.snooze(runID, until: end)
         case .end: return .failure(request.id, .notAllowedFromPhone)
         }
         audit(action.rawValue, run.title)

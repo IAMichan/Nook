@@ -465,9 +465,10 @@ final class CompanionServer: ObservableObject {
     /// Your words from the phone, with the pictures that came along as paths below them; nil when there are neither,
     /// or a picture is not one the phone may send.
     private static func message(_ request: CompanionRequest) -> String? {
-        let hasImages = request.images?.isEmpty == false
-        guard let words = CompanionPolicy.cleanMessage(request.text ?? "") ?? (hasImages ? "" : nil) else { return nil }
-        return CompanionImages.attach(request.images, to: words)
+        let hasImages = request.images?.isEmpty == false || request.attachments?.isEmpty == false
+        guard let words = CompanionPolicy.cleanMessage(request.text ?? "") ?? (hasImages ? "" : nil),
+              let pictured = CompanionImages.attach(request.images, to: words) else { return nil }
+        return CompanionFiles.attach(request.attachments, images: request.images, to: pictured)
     }
 
     /// What a paired phone may do; nothing beyond keeping the connection for a key without a device.
@@ -629,6 +630,14 @@ final class CompanionServer: ObservableObject {
             return await inboxSend(request, app: app)
         case .inboxMark:
             return inboxMark(request, app: app)
+        case .pulls:
+            return pulls(request, app: app)
+        case .pull:
+            return await pull(request, app: app)
+        case .pullAct:
+            return await pullAct(request, app: app)
+        case .pullWork:
+            return await pullWork(request, app: app)
         }
     }
 
@@ -695,7 +704,9 @@ final class CompanionServer: ObservableObject {
                                  updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
                                  model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
                                  actions: Self.actions(run, now: now).map(\.rawValue),
-                                 canSteer: workspace.canSteer(run.id))
+                                 canSteer: workspace.canSteer(run.id),
+                                 limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
+                                                                           now: now)?.timeIntervalSince1970)
         }
     }
 }
