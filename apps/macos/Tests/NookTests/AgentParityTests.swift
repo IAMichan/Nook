@@ -40,7 +40,6 @@ final class AgentParityTests: XCTestCase {
         "Services/Workspace/TextGeneration.swift": 1,
         "Services/Workspace/WorkspaceManager+Acp.swift": 8,
         "Services/Workspace/WorkspaceManager+CodexServer.swift": 2,
-        "Services/Workspace/WorkspaceManager+Models.swift": 2,
         "Services/Workspace/WorkspaceManager+Rollback.swift": 1,
         "Services/Workspace/WorkspaceManager+TextGeneration.swift": 1,
         "Services/Workspace/WorkspaceManager.swift": 10,

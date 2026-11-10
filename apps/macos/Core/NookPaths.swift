@@ -22,6 +22,14 @@ enum NookPaths {
         return dir
     }
 
+    /// Empty folder an ACP agent opens a session in when Nook asks it for its models (`AcpModelProbe`); sessions there are
+    /// never listed as yours.
+    static var modelProbeDirectory: URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nook-models", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return dir
+    }
+
     static var socketURL: URL { supportDirectory.appendingPathComponent("hub.sock") }
     static var hookScriptURL: URL { supportDirectory.appendingPathComponent("nook-hook.sh") }
     /// Symlink to the hook script at a path without spaces (~/.nook/nook-hook), for agents that do not parse quoted commands.
