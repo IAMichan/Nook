@@ -33,6 +33,8 @@ enum NookPaths {
     /// What ssh forwards a session on another machine to (`RemoteBridge`): never `bridge.sock`.
     static var remoteBridgeSocketURL: URL { supportDirectory.appendingPathComponent("bridge-remote.sock") }
     static var bridgeScriptURL: URL { supportDirectory.appendingPathComponent("nook-mcp") }
+    /// The `sudo -A` helper every session Nook starts gets as `SUDO_ASKPASS` (see SudoAskpass).
+    static var askpassScriptURL: URL { supportDirectory.appendingPathComponent("nook-askpass") }
     /// Symlink to the bridge script without spaces (~/.nook/nook-mcp), for commands typed in a shell.
     static var spaceFreeBridgeURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/nook-mcp")

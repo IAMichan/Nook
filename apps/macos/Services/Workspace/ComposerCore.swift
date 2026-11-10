@@ -204,6 +204,9 @@ struct ContextRef: Codable, Equatable, Hashable, Sendable {
         case skill
         /// A big paste kept out of the box: it goes to the agent whole (up to `ContextRefs.pasteLimit`).
         case paste
+        /// A secret you pasted, kept out of the message: the id is the private file that holds it (`SecretFiles`), the
+        /// label its name. The agent gets the path and how to use it, never the value.
+        case secret
     }
 
     var kind: Kind
@@ -242,7 +245,7 @@ enum ContextRefs {
         case .file: return ref.id
         case .pullRequest: return "#" + ref.label
         case .skill: return "$" + ref.label
-        case .session, .excerpt, .source, .paste: return ref.label
+        case .session, .excerpt, .source, .paste, .secret: return ref.label
         }
     }
 
@@ -291,7 +294,9 @@ enum ContextRefs {
             let key = "\(item.kind.rawValue)|\(item.id)"
             guard seen.insert(key).inserted else { continue }
             var record = "<ref kind=\"\(item.kind.rawValue)\" id=\"\(escape(item.id))\""
-            if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
+            if item.kind == .secret {
+                record += ">\n\(escape(SecretFiles.instructions(name: item.label, path: item.id)))\n</ref>"
+            } else if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
                 let limit = item.kind == .paste ? pasteLimit : excerptLimit
                 let clipped = content.count > limit ? String(content.prefix(limit)) + "\n…" : content
                 record += ">\n\(escape(clipped))\n</ref>"
@@ -309,7 +314,7 @@ enum ContextRefs {
         case .session: return "[session: " + item.label + "]"
         case .pullRequest: return "#" + item.label
         case .skill: return "$" + item.label
-        case .excerpt, .paste: return "[" + item.label + "]"
+        case .excerpt, .paste, .secret: return "[" + item.label + "]"
         case .source: return "[" + item.label + "]"
         }
     }
