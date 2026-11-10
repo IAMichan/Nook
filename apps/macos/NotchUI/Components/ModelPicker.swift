@@ -46,6 +46,8 @@ struct ModelPickerItem: Identifiable {
     let id: String
     let title: String
     var brand: BrandLogo? = nil
+    /// The badge on the model's logo: which account it belongs to, when the agent has several (as t3code's rows).
+    var account: AccountTag? = nil
     /// Drawn instead of a logo, for an action.
     var symbol: String? = nil
     var detail: String? = nil
@@ -145,7 +147,7 @@ struct ModelPicker<Above: View>: View {
                      emptyNote: rows.isEmpty ? shown.emptyNote ?? tr("compose.noModels") : nil,
                      scrollTarget: current.map { rows[$0].id }) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { offset, item in
-                DropdownRow(symbol: item.symbol, brand: item.brand, title: item.title, detail: item.detail,
+                DropdownRow(symbol: item.symbol, account: item.account, brand: item.brand, title: item.title, detail: item.detail,
                             trailing: item.trailing, chosen: item.chosen, disabledReason: item.disabledReason,
                             staysOpen: item.staysOpen, favorite: item.favorite, highlighted: offset == current,
                             action: item.pick)

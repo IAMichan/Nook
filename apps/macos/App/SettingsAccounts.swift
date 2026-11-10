@@ -118,7 +118,7 @@ private struct AgentAccountCardRow: View {
                       removal: removal, startsOpen: startsOpen) {
             // The account's own color as a badge on the agent's logo, as everywhere the logo shows (`AccountTag`).
             AgentLogo(profile.kind, size: 22)
-                .accountBadge(profile.hasOwnBadge ? AccountTag.of(profile, app: app) : nil, size: 22, ring: NookTheme.rowRest)
+                .accountBadge(AccountTag.badge(profile, app: app), size: 22, ring: NookTheme.rowRest)
         } menu: {
             if antigravitySignedOut {
                 // Antigravity signs in right here, in your browser.
@@ -196,7 +196,7 @@ private struct ManageAccountSheet: View {
             title: profile.kind.name,
             subtitle: subtitle
         ) {
-            AgentMark(agent: profile.kind.name, account: current.hasOwnBadge ? AccountTag.of(current, app: app) : nil, size: 44)
+            AgentMark(agent: profile.kind.name, account: AccountTag.badge(current, app: app), size: 44)
         } content: {
             // The same parts as every sheet for something linked: the account, how it signs in, then its place in Nook.
             SheetPart(tr("agents.name")) {

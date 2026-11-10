@@ -74,13 +74,15 @@ extension WorkspaceManager {
             $0.permission = $0.permission.steppedDown(within: provider.capabilities.policies)
         }
         forkNext.remove(id)
-        if accountOnly {
-            append(id, RunEvent(kind: .system, text: tr("ws.event.switchedAccount", provider.displayName)))
-        } else if let now = self.run(id) {
-            // "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5": a divider with both agents and their models.
-            var event = RunEvent(kind: .system, text: tr("ws.event.switched", previous.displayName, provider.displayName),
+        if let now = self.run(id) {
+            // "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5": a divider with both agents and their models; to
+            // another account of the same agent, each logo carries its account's badge (as t3code).
+            var change = ModelSwitch(from: before, to: switchEndpoint(now))
+            if accountOnly { change.accountHandoff = true }
+            var event = RunEvent(kind: .system, text: accountOnly ? ModelSwitchText.plain(change)
+                                     : tr("ws.event.switched", previous.displayName, provider.displayName),
                                  tool: "switch")
-            event.change = ModelSwitch(from: before, to: switchEndpoint(now))
+            event.change = change
             append(id, event)
         }
         if let handoff { appendHandoffNote(id, handoff) }
@@ -272,11 +274,14 @@ extension WorkspaceManager {
         switch transition {
         case .reuse, .reject: break
         case .applyOnNextTurn:
+            let before = switchEndpoint(run)
             update(id) {
                 $0.profileID = profileID
                 $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
                 if run.model != model { $0.resolvedModel = nil }
             }
+            // Another account sharing this one's folder, or another model: marked in the timeline from the next turn.
+            noteModelSwitch(id, from: before)
             refreshWarmSession(id)
         case .createWithHandoff:
             if !switchProvider(id, to: provider, profileID: profileID, model: model, resumeIfLimited: resumeIfLimited) {
