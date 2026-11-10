@@ -23,6 +23,14 @@ connects out with a token; the public address names a room derived from that tok
 listen. Senders such as GitHub speak plain HTTPS, so **these bodies are readable to the relay**, unlike the companion's
 sealed traffic. It stores none of them, and the Mac checks each request's signature with a secret the relay never sees.
 
+## Guest links and Nook in another app
+
+`worker/guest.js` serves the page of a guest link (`GET /v1/guest`); the page and the Mac talk through a room, sealed under a key
+that is only in the link's fragment. `worker/mcp.js` passes an assistant's HTTPS requests (Claude.ai, ChatGPT) to a Mac that
+connected out with a token (`GET /v1/mcp/<room>/listen`); the Mac does the OAuth sign-in, the grants and every tool call.
+Those requests are plain HTTPS and readable to the relay, which stores and logs none of them. A request waits at most 290
+seconds for the Mac, 32 at a time (503 when the Mac is not connected).
+
 ## Turning it on
 
 In Nook on the Mac: **Settings › Devices › Away from home › Reach this Mac away from home**.
@@ -85,6 +93,9 @@ npx wrangler@4 dev          # a local relay at http://localhost:8787 (the Mac ac
 | `GET /v1/rooms/<32 hex>?role=mac` | the Mac's WebSocket; a newer one replaces the older |
 | `GET /v1/rooms/<32 hex>?role=phone` | a phone's WebSocket; closed with 4404 when the Mac is not connected |
 | `POST /v1/push` | a push for a paired phone (opt-in, below) |
+| `GET /v1/guest` | a guest link's page (`guest.js`) |
+| `GET /v1/mcp/<32 hex>/listen` | the Mac's WebSocket for remote MCP, token as bearer |
+| `* /v1/mcp/<32 hex>[/…]`, `GET /.well-known/<document>/v1/mcp/<32 hex>` | an assistant's request (`mcp.js`) |
 | `GET /health` | `Nook relay` |
 
 Messages on the Mac's socket are `[kind: 1 byte][connection: 4 bytes][payload]` (`worker/mux.js`, and `RelayMux` in
