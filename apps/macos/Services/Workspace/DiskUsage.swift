@@ -25,6 +25,26 @@ enum DiskUsage {
         return total
     }
 
+    /// How long a size measured for the Worktrees list stays good. Measuring walks every file of a worktree and its build
+    /// (hundreds of thousands), so measuring each worktree on every refresh kept a core busy for minutes at a time.
+    static let cachedSizeAge: TimeInterval = 15 * 60
+
+    private static let cacheLock = NSLock()
+    private nonisolated(unsafe) static var cache: [String: (bytes: Int64?, at: Date)] = [:]
+
+    /// `allocatedSize(of:)`, measured again only when the last measurement of `path` is older than `maxAge`.
+    static func cachedAllocatedSize(of path: String, maxAge: TimeInterval = cachedSizeAge, now: Date = Date()) -> Int64? {
+        cacheLock.lock()
+        let known = cache[path]
+        cacheLock.unlock()
+        if let known, now.timeIntervalSince(known.at) < maxAge { return known.bytes }
+        let bytes = allocatedSize(of: path)
+        cacheLock.lock()
+        cache[path] = (bytes, now)
+        cacheLock.unlock()
+        return bytes
+    }
+
     /// Removes the entries directly in `directory` that were not modified since `age` ago. For a temporary folder Nook
     /// hands to an agent as TMPDIR: unlike the system's, nobody else ever empties it. Returns the names it removed.
     @discardableResult

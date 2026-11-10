@@ -275,9 +275,9 @@ final class WorkspaceModelsTests: XCTestCase {
         let decoded = try JSONDecoder().decode(WorkspaceRun.self, from: JSONEncoder().encode(run))
         XCTAssertEqual(decoded.copiedFrom, "original")
         let runs = [(agent: run.provider.displayName, conversations: Set([run.providerSessionID!] + run.earlierConversations))]
-        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "original", busy: false, runs: runs))
-        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "original", busy: true, runs: runs),
-                       "working in its own app again, the original is listed there")
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "original", needsYou: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "original", needsYou: true, runs: runs),
+                       "waiting for you in its own app, the original is listed there")
     }
 }
 
