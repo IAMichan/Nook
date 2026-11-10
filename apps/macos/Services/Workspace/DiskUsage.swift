@@ -45,6 +45,13 @@ enum DiskUsage {
         return bytes
     }
 
+    /// The last size measured for `path`, however old; nil when it was never measured. Measures nothing.
+    static func knownSize(of path: String) -> Int64? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cache[path]?.bytes ?? nil
+    }
+
     /// Removes the entries directly in `directory` that were not modified since `age` ago. For a temporary folder Nook
     /// hands to an agent as TMPDIR: unlike the system's, nobody else ever empties it. Returns the names it removed.
     @discardableResult
@@ -63,6 +70,18 @@ enum DiskUsage {
 
     static func format(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+/// Whether a Worktrees list is open, readable from the background refresh that measures worktree sizes
+/// (`WorkspaceManager.worktreesShown`).
+final class WorktreeListFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = false
+
+    var isOpen: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return open }
+        set { lock.lock(); open = newValue; lock.unlock() }
     }
 }
 
