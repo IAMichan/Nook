@@ -677,7 +677,7 @@ struct AgentRunPanel: View {
         return true
     }
 
-    /// The context ring once the window starts to fill, and the microphone next to it.
+    /// The context ring once the window starts to fill (the microphone is the composer's own, `dictating()`).
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
@@ -688,7 +688,6 @@ struct AgentRunPanel: View {
                 ComposerContextRing(used: used, window: window,
                                     onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
             }
-            ComposerMic(text: $composerState.draft)
         }
     }
 
@@ -1560,6 +1559,7 @@ struct AgentRunPanel: View {
                 }
                 .rich(composerModel, composerConfig(run))
                 .trailing { composerTrailing(run) }
+                .dictating()
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
                           alternate: active ? deliver(preferred == .steer ? .queue : .steer, now: true) : nil,

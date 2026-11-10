@@ -414,6 +414,8 @@ targets:
       - path: Services/Workspace/TimelineHandles.swift
       - path: Services/Workspace/SkillIndex.swift
       - path: Services/Workspace/ComposerDrafts.swift
+      - path: Services/Workspace/ComposerChips.swift
+      - path: Services/Workspace/ComposerDictation.swift
       - path: Services/Workspace/AgentCommands.swift
       - path: Services/Workspace/EffortLevels.swift
       - path: Services/Workspace/AgentAdvice.swift
