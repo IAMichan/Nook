@@ -137,8 +137,7 @@ struct BrowserImportSheet: View {
                 ListEmptyNote(tr("cookieImport.sites.empty"))
             } else {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    TextField("", text: $filter, prompt: Text(tr("cookieImport.sites.search")))
-                        .textFieldStyle(.roundedBorder)
+                    NookSearchField(prompt: tr("cookieImport.sites.search"), text: $filter, style: .inline)
                     Button(tr("cookieImport.sites.all")) { chosen.formUnion(shownSites.map(\.domain)) }
                     Button(tr("cookieImport.sites.clear")) { chosen.subtract(shownSites.map(\.domain)) }
                 }
