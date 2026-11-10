@@ -148,6 +148,7 @@ enum SettingsSearch {
         .init("codeHost.title", .pullRequests),
         .init("gitlab.title", .pullRequests),
         .init("settings.ws.autoTitles", .sessions),
+        .init("settings.ws.timelineDetail", .sessions),
         .init("ws.section.restart", .sessions),
         .init("ws.section.tidy", .sessions),
         .init("settings.ws.showCost", .usage),

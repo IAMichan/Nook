@@ -703,3 +703,79 @@ extension AgentToolStep {
         }
     }
 }
+
+// MARK: - How much of the work a timeline shows
+
+/// How much of the agent's work a session's timeline shows. Everything: every step. Without finished steps: a command,
+/// edit, read or search that went fine is left out; one that runs, waits or failed stays. Without steps: every command,
+/// edit, read and search is left out, its thinking stays. Zen: only the conversation, your messages and the agent's
+/// final answer of each turn. What waits on you or went wrong (approvals, errors) and Nook's own lines (a switch,
+/// `/clear`) always stay; the find bar always searches everything.
+enum TimelineDetail: String, Codable, CaseIterable, Identifiable, Sendable {
+    case everything, hideSucceeded, noTools, zen
+
+    var id: String { rawValue }
+
+    var titleKey: String { "ws.detail." + rawValue }
+
+    var symbol: String {
+        switch self {
+        case .everything: return "list.bullet"
+        case .hideSucceeded: return "checkmark.circle"
+        case .noTools: return "wrench.and.screwdriver"
+        case .zen: return "leaf"
+        }
+    }
+
+    /// Whether the event stays, on its own (Zen's "final answer of a turn" is decided in `filter`, which sees the turn).
+    func keeps(_ event: RunEvent) -> Bool {
+        switch event.kind {
+        case .user, .assistant, .approval, .error, .system, .result, .page:
+            return true
+        case .tool, .fileChange:
+            switch self {
+            case .everything: return true
+            case .hideSucceeded: return !Self.succeeded(event)
+            case .noTools, .zen: return false
+            }
+        case .thinking:
+            return self != .zen
+        }
+    }
+
+    /// A step that is over and went fine; a running background command, a pending step or a failure is not.
+    private static func succeeded(_ event: RunEvent) -> Bool {
+        switch event.state {
+        case .running, .pending, .failed, .denied, .expired: return false
+        case .done, .allowed, nil: return true
+        }
+    }
+
+    func filter(_ events: [RunEvent]) -> [RunEvent] {
+        guard self != .everything else { return events }
+        guard self == .zen else { return events.filter(keeps) }
+        // Zen: of the agent's messages in a turn (everything between two of yours) only the last one stays.
+        var finalAnswers = Set<UUID>()
+        var lastAnswer: UUID?
+        for event in events {
+            switch event.kind {
+            case .user:
+                if let lastAnswer { finalAnswers.insert(lastAnswer) }
+                lastAnswer = nil
+            case .assistant:
+                lastAnswer = event.id
+            default:
+                break
+            }
+        }
+        if let lastAnswer { finalAnswers.insert(lastAnswer) }
+        return events.filter { event in
+            event.kind == .assistant ? finalAnswers.contains(event.id) : keeps(event)
+        }
+    }
+
+    /// What a session shows: its own choice, otherwise the one in Settings.
+    static func resolve(session: TimelineDetail?, global: TimelineDetail) -> TimelineDetail {
+        session ?? global
+    }
+}

@@ -33,6 +33,8 @@ struct ComposerConfig {
     var repository: String?
     /// Other sessions `@` can point at (id and title).
     var sessions: () -> [(id: String, title: String)] = { [] }
+    /// The models `@` can name for the agent (`ModelMention`): every connected agent's.
+    var models: () -> [ModelMention.Candidate] = { [] }
     var commands: [ComposerCommand] = []
     var onCommand: (ComposerCommand) -> Void = { _ in }
     /// The agent's skills for `$` (named in the text; the agent loads them itself).
@@ -165,13 +167,18 @@ final class ComposerModel: ObservableObject {
             let query = found.query
             let people = personRows(query, config)
             let known = config.sessions()
-            guard config.fileRoot != nil || !known.isEmpty || !people.isEmpty else { return close() }
+            let models = ModelMention.matches(query, in: config.models()).map { candidate in
+                ComposerSuggestion(id: "model:" + ModelMention.id(agent: candidate.agent, model: candidate.model),
+                                   title: candidate.name, detail: tr("compose.ref.model", candidate.agentName), symbol: "cpu",
+                                   payload: .ref(ModelMention.ref(candidate)))
+            }
+            guard config.fileRoot != nil || !known.isEmpty || !people.isEmpty || !models.isEmpty else { return close() }
             let sessions = known.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }.prefix(3).map { session in
                 ComposerSuggestion(id: "session:" + session.id, title: session.title, detail: tr("compose.ref.session"),
                                    symbol: "bubble.left.and.text.bubble.right",
                                    payload: .ref(ContextRef(kind: .session, id: session.id, label: session.title)))
             }
-            guard let root = config.fileRoot else { return publish(people + sessions) }
+            guard let root = config.fileRoot else { return publish(people + models + sessions) }
             search = Task { [weak self] in
                 // A short pause first, so a word typed after `@` reads the folder once and not once per letter.
                 try? await Task.sleep(nanoseconds: 80_000_000)
@@ -185,7 +192,7 @@ final class ComposerModel: ObservableObject {
                                        symbol: "doc", payload: .ref(ContextRef(kind: .file, id: path,
                                                                                 label: URL(fileURLWithPath: path).lastPathComponent)))
                 }
-                self.publish(people + rows + sessions)
+                self.publish(people + models + rows + sessions)
             }
         case .pullRequest:
             guard let repo = config.repository else { return close() }
