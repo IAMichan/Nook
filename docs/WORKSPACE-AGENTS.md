@@ -165,6 +165,7 @@ terminal bar run them, and **Add script** writes new ones there (`ProjectScripts
 {"scripts": [
   {"id": "dev", "name": "Dev server", "command": "pnpm dev", "previewUrl": "http://localhost:5173",
    "autoOpenPreview": true, "runOnWorktreeCreate": false, "stopOnSettle": true},
+  {"id": "install", "name": "Install", "command": "pnpm install", "runOnWorktreeCreate": true, "async": false},
   {"id": "clean", "name": "Clean", "command": "rm -rf node_modules .next", "runOnSettle": true}
 ]}
 ```
@@ -174,6 +175,7 @@ terminal bar run them, and **Add script** writes new ones there (`ProjectScripts
 | `id`, `name`, `command` | The script; `command` is required, the others are derived from it when missing. |
 | `previewUrl`, `autoOpenPreview` | The page the script serves; opened in Nook's browser a moment after it starts. |
 | `runOnWorktreeCreate` | Runs in a terminal next to the session when Nook makes a worktree for it (setup). |
+| `async` | Only for `runOnWorktreeCreate`. `true` (the default) starts the agent while the script still runs. `false` holds the first turn (or the message that brings a removed worktree back) until the script ended: a new session stays preparing meanwhile, and stopping it ends the wait. When the script fails, or its terminal is closed first, the agent is not started and the session shows the error; the terminal stays open with it. The command runs under `/bin/sh` so its exit code can be read. |
 | `stopOnSettle` | When the session settles, the terminal running this script stops, together with every process it started (each process group under the shell, except Nook's own and an agent's). |
 | `runOnSettle` | When a session in a worktree of its own settles, this runs once in a new terminal in that worktree (cleanup). The terminal closes when the command succeeds and stays open with the error when it fails. It never runs for a session in the project's own checkout, which other work shares. |
 

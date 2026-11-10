@@ -37,6 +37,16 @@ final class SkillIndexTests: XCTestCase {
         XCTAssertEqual(SkillIndex.scan(roots: [URL(fileURLWithPath: home + "/missing")]), [])
     }
 
+    func testRemovedWorktreeFallsBackToTheProjectCheckout() throws {
+        let project = try TestData.tempFolder()
+        let worktree = project + "-gone-worktree"
+        XCTAssertEqual(SkillIndex.projectFolder(workingDirectory: worktree, projectPath: project)?.path, project,
+                       "the worktree folder is gone: the project's own skills")
+        XCTAssertEqual(SkillIndex.projectFolder(workingDirectory: project, projectPath: "/elsewhere")?.path, project)
+        XCTAssertNil(SkillIndex.projectFolder(workingDirectory: worktree, projectPath: worktree + "-too"))
+        XCTAssertNil(SkillIndex.projectFolder(workingDirectory: "", projectPath: ""))
+    }
+
     func testHugeFileOnlyHeadIsRead() throws {
         let root = try TestData.tempFolder()
         try write(root + "/big/SKILL.md", "---\nname: big\ndescription: ok\n---\n" + String(repeating: "x", count: 500_000))

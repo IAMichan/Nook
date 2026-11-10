@@ -12,6 +12,42 @@ final class ProjectScriptsTests: XCTestCase {
         XCTAssertEqual(scripts[2].name, "make test", "a script without a name is called by its command")
     }
 
+    func testSetupScriptCanHoldTheAgent() {
+        let json = #"{"scripts":[{"name":"Install","command":"pnpm install","runOnWorktreeCreate":true,"async":false},{"name":"Env","command":"cp .env.example .env","runOnWorktreeCreate":true},{"name":"Dev","command":"pnpm dev","async":false}]}"#
+        let scripts = ProjectScripts.parse(Data(json.utf8))
+        XCTAssertEqual(scripts.map(\.async), [false, true, false], "async is true unless the file says false")
+        let setup = ProjectScripts.setup(scripts)
+        XCTAssertEqual(setup.scripts.map(\.name), ["Install", "Env"], "async only matters for setup scripts")
+        XCTAssertTrue(setup.holdsAgent)
+        XCTAssertFalse(ProjectScripts.setup([scripts[1], scripts[2]]).holdsAgent, "a script that is no setup script holds nothing")
+        XCTAssertFalse(ProjectScripts.setup([]).holdsAgent)
+    }
+
+    func testBlockingCommandWritesItsExitCode() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nook-setup-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func run(_ command: String) throws -> (shell: Int32, written: Int32?) {
+            let status = folder.appendingPathComponent("it's \(UUID().uuidString)").path
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-f", "-c", ProjectScripts.blockingCommand(command, statusFile: status) + "; exit 99"]
+            process.currentDirectoryURL = folder
+            try process.run()
+            process.waitUntilExit()
+            return (process.terminationStatus, ProjectScripts.exitStatus(FileManager.default.contents(atPath: status)))
+        }
+        let ok = try run("echo 'ready' > out.txt && test -f out.txt")
+        XCTAssertEqual(ok.written, 0)
+        XCTAssertEqual(ok.shell, 0, "a script that succeeds ends its terminal")
+        let failed = try run("exit 3")
+        XCTAssertEqual(failed.written, 3)
+        XCTAssertEqual(failed.shell, 99, "a script that fails leaves its terminal to the shell")
+        XCTAssertNil(ProjectScripts.exitStatus(nil))
+        XCTAssertNil(ProjectScripts.exitStatus(Data()))
+        XCTAssertEqual(ProjectScripts.exitStatus(Data("1\n".utf8)), 1)
+    }
+
     func testLoadFindsTheRepositoryFile() throws {
         let repo = FileManager.default.temporaryDirectory.appendingPathComponent("nook-scripts-\(UUID().uuidString)")
         let sub = repo.appendingPathComponent("packages/web")
