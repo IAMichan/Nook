@@ -503,13 +503,54 @@ struct GitService: Sendable {
 
     /// Lines added and removed per file between two snapshots (`to` nil: the files as they are now), keyed by the path
     /// relative to `directory`; for the numbers on what a single turn changed. `paths` nil: every file that differs.
-    func lineCounts(_ directory: String, paths: [String]?, from: String, to: String?) throws -> [String: (added: Int?, removed: Int?)] {
+    /// With `authored` (from `authoredPaths`), only those files are kept; a rename stays when either name is there.
+    func lineCounts(_ directory: String, paths: [String]?, from: String, to: String?,
+                    authored: Set<String>? = nil) throws -> [String: (added: Int?, removed: Int?)] {
         if let paths, paths.isEmpty { return [:] }
         var arguments = ["diff", "--numstat", "-z", "-M", "--relative", from]
         if let to { arguments.append(to) }
         if let paths { arguments += ["--"] + paths }
-        return Self.parseNumstat(try run(arguments, in: directory))
+        let text = try run(arguments, in: directory)
+        guard let authored else { return Self.parseNumstat(text) }
+        return Self.parseNumstat(text) { path, previous in authored.contains(path) || previous.map(authored.contains) == true }
     }
+
+    /// The files that work after snapshot `from` touched, up to snapshot `to` (relative to `directory`), when HEAD moved
+    /// between them: what was uncommitted at either snapshot, what commits made since `since` changed, and what the
+    /// commits that left HEAD changed. Files a pull, merge or rebase brought in come from older commits, so they are not
+    /// here; for a merge only the paths where its result differs from Git's own merge count (its conflict fixes), as in
+    /// t3code. Nil when HEAD did not move (every change is the turn's own) or Git cannot tell (it predates
+    /// `--diff-merges=remerge`): then nothing is left out.
+    func authoredPaths(_ directory: String, from: String, to: String, since: Date) -> Set<String>? {
+        guard let start = snapshotHead(directory, from), let end = snapshotHead(directory, to), start != end else { return nil }
+        let names = ["--name-only", "-z", "--no-renames", "--no-ext-diff", "--relative"]
+        let commits = ["log", "--format=", "--diff-merges=remerge"] + names
+        let lists = [
+            ["diff"] + names + [start, from + "^{commit}"],
+            ["diff"] + names + [end, to + "^{commit}"],
+            commits + ["\(end)..\(start)"],
+            commits + ["--since=@\(Int(since.timeIntervalSince1970))", "\(start)..\(end)"],
+        ]
+        var paths = Set<String>()
+        for arguments in lists {
+            guard let text = try? run(arguments, in: directory) else { return nil }
+            paths.formUnion(text.split(separator: "\0").map { $0.trimmingCharacters(in: .newlines) }.filter { !$0.isEmpty })
+        }
+        return paths
+    }
+
+    /// The HEAD a snapshot was taken at: a checkpoint commit's parent, or the commit itself for a snapshot that is
+    /// HEAD (`checkpointHead`). Nil before the first commit.
+    private func snapshotHead(_ directory: String, _ ref: String) -> String? {
+        guard let line = try? run(["show", "-s", "--format=%H%x1f%P%x1f%s", ref + "^{commit}"], in: directory) else { return nil }
+        let fields = line.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\u{1f}")
+        guard fields.count == 3, !fields[0].isEmpty else { return nil }
+        guard fields[2] == Self.checkpointMessage else { return fields[0] }
+        return fields[1].split(separator: " ").first.map(String.init)
+    }
+
+    /// The message of every checkpoint commit (`checkpoint`).
+    static let checkpointMessage = "Nook checkpoint"
 
     static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
@@ -816,7 +857,8 @@ struct GitService: Sendable {
     }
 
     /// `git diff --numstat -z`: lines added and removed per path (nil for binary files).
-    static func parseNumstat(_ text: String) -> [String: (added: Int?, removed: Int?)] {
+    /// `keep` decides per file (its path, and the old one of a rename) whether it is in the result.
+    static func parseNumstat(_ text: String, keep: (String, String?) -> Bool = { _, _ in true }) -> [String: (added: Int?, removed: Int?)] {
         var result: [String: (added: Int?, removed: Int?)] = [:]
         var fields = text.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)[...]
         while let entry = fields.first {
@@ -826,13 +868,15 @@ struct GitService: Sendable {
             let added = Int(parts[0])
             let removed = Int(parts[1])
             var path = parts[2]
+            var previous: String?
             if path.isEmpty {
                 // Renamed: followed by old and new path.
+                previous = fields.first
                 fields = fields.dropFirst()
                 path = fields.first ?? ""
                 fields = fields.dropFirst()
             }
-            if !path.isEmpty { result[path] = (added, removed) }
+            if !path.isEmpty, keep(path, previous) { result[path] = (added, removed) }
         }
         return result
     }

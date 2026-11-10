@@ -51,6 +51,9 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         // Clicking into a pane of a split makes it the active terminal: the one the buttons split and close.
         view.focused = { TerminalStore.shared.activate(id) }
         view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        // SwiftTerm keeps 500 lines by default; a build or test run scrolls past that quickly.
+        view.changeScrollback(TerminalText.scrollbackLines)
+        NookTerminalView.watchOptionKey()
 
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
         var environment = ProcessInfo.processInfo.environment
@@ -99,8 +102,17 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
 
     /// The last `lines` lines on screen and in the scrollback, for an agent to read.
     func output(lines: Int) -> String {
-        let data = view.getTerminal().getBufferAsData()
-        return TerminalText.tail(String(decoding: data, as: UTF8.self), lines: lines)
+        let terminal = view.getTerminal()
+        // Only the end of the buffer: with thousands of lines of scrollback, reading all of it for 80 lines is waste.
+        // The screen's rows come on top, because the empty rows below the prompt are dropped afterwards.
+        let first = terminal.buffer.totalLinesTrimmed
+        let end = TerminalText.lineEnd(from: first, limit: first + TerminalText.scrollbackLines + terminal.rows + 1) {
+            terminal.getScrollInvariantLine(row: $0) != nil
+        }
+        let start = max(first, end - max(1, lines) - terminal.rows)
+        let text = (start..<end).compactMap { terminal.getScrollInvariantLine(row: $0)?.translateToString(trimRight: true) }
+            .joined(separator: "\n")
+        return TerminalText.tail(text, lines: lines)
     }
 
     /// Ctrl-C to whatever runs in the shell; the shell itself stays open so the output remains readable.
@@ -147,6 +159,26 @@ final class NookTerminalView: LocalProcessTerminalView {
     override func mouseDown(with event: NSEvent) {
         MainActor.assumeIsolated { focused() }
         super.mouseDown(with: event)
+    }
+
+    @MainActor private static var optionMonitor: Any?
+
+    /// Option is Meta in SwiftTerm, which sends Esc + the bare key. Where Option makes a character of the keyboard layout
+    /// (@ | { [ on many European layouts), that character is typed instead; Option with an arrow or Return stays Meta
+    /// (`TerminalText.optionTypesText`). SwiftTerm's `keyDown` cannot be overridden, so one monitor sets the mode for each
+    /// key press just before it reaches the terminal that has focus. It only runs on a key press.
+    @MainActor static func watchOptionKey() {
+        guard optionMonitor == nil else { return }
+        optionMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            MainActor.assumeIsolated {
+                guard let terminal = event.window?.firstResponder as? NookTerminalView else { return }
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                let typesText = flags.contains(.option) && flags.isDisjoint(with: [.command, .control])
+                    && TerminalText.optionTypesText(event.characters)
+                if terminal.optionAsMetaKey == typesText { terminal.optionAsMetaKey = !typesText }
+            }
+            return event
+        }
     }
 
     override func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {

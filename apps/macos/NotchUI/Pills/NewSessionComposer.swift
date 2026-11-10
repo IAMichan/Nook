@@ -295,7 +295,7 @@ struct NewSessionComposer: View {
         }
         .rich(composerModel, composerConfig)
         .images($images)
-        .trailing { ComposerMic(text: taskBinding) }
+        .dictating()
         // One step more or less effort without opening the picker.
         .keyCommands(["effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
     }

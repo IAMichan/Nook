@@ -106,6 +106,8 @@ struct AgentSession: Identifiable, Equatable {
     var started: Date? = nil
     /// When the current turn began (your last prompt); nil between turns.
     var turnStarted: Date? = nil
+    /// When the agent started compacting the conversation, as its hooks said (`HookCompaction`); nil when it does not.
+    var compactingSince: Date? = nil
     /// The last time anything happened in it (a hook event).
     var updated: Date? = nil
     /// Derived from a running process rather than hooks.

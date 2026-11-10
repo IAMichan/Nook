@@ -100,3 +100,53 @@ enum CompanionWorkspace {
         return FolderDigest(path: path, entries: Array(shown.prefix(maxEntries)), truncated: shown.count > maxEntries ? true : nil)
     }
 }
+
+/// A piece of one file of a session's folder, for the phone to preview it (`CompanionOp.fileData`): pictures, PDFs,
+/// films and anything else Quick Look opens. A file travels in pieces, since one answer holds 256 KB once sealed and the
+/// bytes are base64 twice on the way (in the JSON, and in the sealed envelope).
+struct FileChunk: Codable, Equatable, Sendable {
+    /// Relative to the session's folder, as asked.
+    var path: String
+    var offset: Int
+    /// The whole file's size.
+    var total: Int
+    /// The bytes from `offset`, base64.
+    var data: String
+
+    /// One piece: base64 twice makes it about 1.8 times larger, which stays under `CompanionConstants.maxFrame`.
+    static let maxChunkBytes = 128 * 1024
+    /// The largest file the phone may fetch: 64 pieces, well within the Mac's rate of requests per minute.
+    static let maxFileBytes = 8 * 1024 * 1024
+
+    var bytes: Data? { Data(base64Encoded: data) }
+
+    /// What the Mac reads for a request from `offset` in a file of `total` bytes; nil for an offset outside it, or a
+    /// file too large to preview.
+    static func range(offset: Int, total: Int) -> Range<Int>? {
+        guard total >= 0, total <= maxFileBytes, offset >= 0, offset < total || (offset == 0 && total == 0) else { return nil }
+        return offset..<min(total, offset + maxChunkBytes)
+    }
+}
+
+/// A file on the phone as its pieces come in, in order. Refuses a piece that does not follow the last one, a size that
+/// changed underway (the file changed on the Mac), or more than `FileChunk.maxFileBytes`.
+struct FileAssembly: Equatable, Sendable {
+    enum Failure: Error, Equatable { case outOfOrder, changed, tooLarge, malformed }
+
+    private(set) var data = Data()
+    private(set) var total: Int?
+
+    /// Where the next piece starts.
+    var nextOffset: Int { data.count }
+    var complete: Bool { total.map { data.count >= $0 } ?? false }
+
+    mutating func take(_ chunk: FileChunk) throws {
+        guard chunk.total <= FileChunk.maxFileBytes else { throw Failure.tooLarge }
+        if let total, total != chunk.total { throw Failure.changed }
+        guard chunk.offset == data.count else { throw Failure.outOfOrder }
+        guard let bytes = chunk.bytes, bytes.count <= FileChunk.maxChunkBytes, data.count + bytes.count <= chunk.total,
+              !bytes.isEmpty || chunk.total == 0 else { throw Failure.malformed }
+        total = chunk.total
+        data.append(bytes)
+    }
+}

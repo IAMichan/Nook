@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Settings › Agents › Archive, as t3code's: everything put away in one place, newest first, each with Unarchive and
-/// Delete. Coding agent sessions first, then Nook's own conversations. A search narrows both lists once they grow.
+/// Delete. Coding agent sessions first, then Nook's own conversations. A search narrows both lists once they grow, and
+/// each list ends in "Delete all archived…" (what the search found, while searching), asked once with the count.
 struct ArchiveSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @State private var query = ""
@@ -18,10 +19,14 @@ private struct ArchiveLists: View {
     @Binding var query: String
 
     var body: some View {
-        let sessions = workspace.runs.filter { $0.archived && matches($0.title, $0.projectPath) }
-            .sorted { $0.updatedAt > $1.updatedAt }
-        let conversations = chat.conversations.filter { $0.archived && matches($0.title) }
-            .sorted { $0.updated > $1.updated }
+        let sessions = ArchivePurge.shown(workspace.runs, query: query, archived: \.archived,
+                                          fields: { [$0.title, $0.projectPath] }, updated: \.updatedAt)
+        let conversations = ArchivePurge.shown(chat.conversations, query: query, archived: \.archived,
+                                               fields: { [$0.title] }, updated: \.updated)
+        // "Delete all archived…" goes the same way as a row's Delete, so each session's worktree follows the cleanup
+        // rules, and it never takes a session or conversation that still works.
+        let deletableSessions = ArchivePurge.deletable(sessions, busy: sessionBusy).map(\.id)
+        let deletableConversations = ArchivePurge.deletable(conversations, busy: \.busy).map(\.id)
         Section {
             NookSearchField(prompt: tr("settings.archive.search"), text: $query, style: .inline)
         }
@@ -34,8 +39,16 @@ private struct ArchiveLists: View {
                            detail: URL(fileURLWithPath: run.projectPath).lastPathComponent,
                            date: run.updatedAt,
                            agent: run.provider.kind,
+                           busy: sessionBusy(run),
                            unarchive: { workspace.setArchived(run.id, false) },
                            delete: { workspace.delete(run.id) })
+            }
+            if !deletableSessions.isEmpty {
+                DeleteAllArchived(count: deletableSessions.count, searching: !query.isEmpty,
+                                  question: tr("settings.archive.deleteSessions.confirm", deletableSessions.count),
+                                  detail: tr("settings.archive.deleteSessions.detail")) {
+                    for id in deletableSessions { workspace.delete(id) }
+                }
             }
         } header: {
             SettingText("settings.archive.sessions")
@@ -46,17 +59,45 @@ private struct ArchiveLists: View {
             }
             ForEach(conversations) { conversation in
                 ArchiveRow(title: conversation.title, detail: nil, date: conversation.updated, agent: nil,
+                           busy: conversation.busy,
                            unarchive: { chat.setArchived(false, conversation.id) },
-                           delete: { chat.delete(conversation.id) })
+                           delete: { chat.delete([conversation.id]) })
+            }
+            if !deletableConversations.isEmpty {
+                DeleteAllArchived(count: deletableConversations.count, searching: !query.isEmpty,
+                                  question: tr("settings.archive.deleteConversations.confirm", deletableConversations.count),
+                                  detail: tr("settings.archive.deleteConversations.detail")) {
+                    chat.delete(Set(deletableConversations))
+                }
             }
         } header: {
             SettingText("settings.archive.conversations")
         }
     }
 
-    private func matches(_ fields: String...) -> Bool {
-        let text = query.trimmingCharacters(in: .whitespaces)
-        return text.isEmpty || fields.contains { $0.localizedCaseInsensitiveContains(text) }
+    /// A session that still works: a running turn, or a process Nook keeps alive. `WorkspaceManager.delete` refuses it.
+    private func sessionBusy(_ run: WorkspaceRun) -> Bool {
+        run.status.isActive || workspace.isRunning(run.id)
+    }
+}
+
+/// The foot of an archive list: one button that deletes everything the list shows (with a search, what it found),
+/// after one confirmation that states how many go.
+private struct DeleteAllArchived: View {
+    let count: Int
+    let searching: Bool
+    let question: String
+    let detail: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack {
+            Spacer()
+            ConfirmedButton(question: question, detail: detail, confirmTitle: tr("button.delete"), action: action) {
+                Text(searching ? tr("settings.archive.deleteFound", count) : tr("settings.archive.deleteAll"))
+            }
+            .controlSize(.small)
+        }
     }
 }
 
@@ -67,6 +108,8 @@ private struct ArchiveRow: View {
     let detail: String?
     let date: Date
     let agent: AgentKind?
+    /// Still working: it cannot be deleted until it stops.
+    let busy: Bool
     let unarchive: () -> Void
     let delete: () -> Void
 
@@ -90,6 +133,7 @@ private struct ArchiveRow: View {
                 .buttonStyle(.borderless)
                 .help(tr("button.delete"))
                 .accessibilityLabel(tr("button.delete"))
+                .disabled(busy)
         }
     }
 }

@@ -461,7 +461,9 @@ extension WorkspaceManager {
                 codexSubagents[id]?[thread] = nil
             }
         case .notice(let text):
-            append(id, RunEvent(kind: .system, text: text == "compact" ? tr("ws.event.compacted") : text))
+            if text == "compact" { compactionFinished(id) } else { append(id, RunEvent(kind: .system, text: text)) }
+        case .compaction(let phase):
+            noteCompaction(id, phase)
         default:
             break
         }

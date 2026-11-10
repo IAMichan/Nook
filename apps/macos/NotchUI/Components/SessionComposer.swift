@@ -51,7 +51,14 @@ struct SessionComposer<Controls: View>: View {
     /// What happens to another file that is dropped (default: its path goes into the text, which agents read).
     private var fileDropped: ((URL) -> Void)?
 
+    /// The microphone next to send dictates into the draft (`dictating()`).
+    private var dictates = false
+
     @FocusState private var ownFocus: Bool
+    @StateObject private var dictator = ComposerDictator()
+    @State private var editorLock = ComposerEditorLock()
+    /// Undo, redo, copy and cut over the draft while the field has the keyboard (`ComposerFieldSession`).
+    @State private var fieldSession = ComposerFieldSession()
     @State private var drop = ComposerDrop()
     @State private var pasteMonitor = PasteMonitor()
     /// Pasted pictures still being encoded: sending waits for them, or the message would go without the picture and the
@@ -114,6 +121,15 @@ struct SessionComposer<Controls: View>: View {
     func trailing<Accessory: View>(@ViewBuilder _ accessory: () -> Accessory) -> Self {
         var copy = self
         copy.trailingAccessory = AnyView(accessory())
+        return copy
+    }
+
+    /// The same composer with a microphone next to send that dictates into the draft: the box shows that it listens and
+    /// stays read-only until the words are in, Send while it listens sends once they have landed, and Escape throws the
+    /// recording away (see `ComposerDictator`).
+    func dictating() -> Self {
+        var copy = self
+        copy.dictates = true
         return copy
     }
 
@@ -185,7 +201,8 @@ struct SessionComposer<Controls: View>: View {
 
     private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }
-    private var enabled: Bool { canSend && !sending && !isEmpty && encodingPictures == 0 }
+    /// While dictating, Send may be pressed before any word is in: it sends once they have landed (and only if there are).
+    private var enabled: Bool { canSend && !sending && (!isEmpty || dictator.isActive) && encodingPictures == 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -224,24 +241,75 @@ struct SessionComposer<Controls: View>: View {
     /// The words in the box; files attached at the end of the draft show as tiles above it (see `ComposerAttachments`).
     private var typedText: String { ComposerAttachments.split(text).body }
 
+    private var isFocused: Bool { (focus ?? $ownFocus).wrappedValue }
+
+    /// The words as the field shows them (see `ComposerChips`): with the keyboard each reference is one chip where it was
+    /// put, without it each reads as its short name. The draft keeps the links.
+    private var shownText: String {
+        isFocused ? ComposerChips.display(typedText) : ComposerChips.resting(typedText)
+    }
+
     private var bodyBinding: Binding<String> {
-        Binding(get: { ComposerAttachments.split(text).body },
-                set: { text = ComposerAttachments.replacingBody(of: text, with: $0) })
+        Binding(get: { shownText }, set: { setShown($0) })
+    }
+
+    /// The field's words back into the draft: the chips that stay keep their links, a chip deleted takes its link along.
+    private func setShown(_ value: String) {
+        let body = typedText
+        // Dictation owns the box until its words are in; the field writes back what it was given (on focus changes too).
+        guard !dictator.isActive, value != ComposerChips.display(body) else { return }
+        let hasChips = !ContextRefs.find(in: body).isEmpty
+        if hasChips, !isFocused || value == ComposerChips.resting(body) { return }
+        guard hasChips || value.contains(ComposerChips.mark) else {
+            text = ComposerAttachments.replacingBody(of: text, with: value)
+            return
+        }
+        let edit = ComposerChips.applying(display: value, to: body, caret: ComposerFieldStyle.focusedCaret(),
+                                          spares: ComposerChipSpares.links)
+        ComposerChipSpares.update(edit)
+        text = ComposerAttachments.replacingBody(of: text, with: edit.text)
     }
 
     private func choose(_ suggestion: ComposerSuggestion) {
         guard let extras else { return }
-        let value = extras.model.accept(suggestion, in: typedText, extras.config)
+        // What you chose goes where its `@`, `#` or `/` was typed, also in the middle of the text; the caret after it.
+        let (value, caret) = extras.model.accepting(suggestion, in: typedText, extras.config)
         assign(ComposerAttachments.replacingBody(of: text, with: value))
+        if let caret { placeCaret(caret, inWords: value) }
         // A line that fills the box can lead to a list of its own ("@chat " lists the chats): show it straight away.
         if case .command(let command) = suggestion.payload, command.action == .insert {
-            extras.model.update(for: value, extras.config)
+            extras.model.update(for: value, caret: caret, extras.config)
         }
         (focus ?? $ownFocus).wrappedValue = true
     }
 
+    /// Where the caret is in `words` (the draft's words, UTF-16) while the field shows them; nil without the keyboard.
+    private func caret(in words: String) -> Int? {
+        guard isFocused, let selection = ComposerFieldStyle.focusedSelection(expecting: ComposerChips.display(words)) else { return nil }
+        return ComposerChips.draftOffset(display: NSMaxRange(selection), in: words)
+    }
+
+    /// Puts the caret at `offset` (UTF-16 in `words`, the draft's words) once the field shows them.
+    private func placeCaret(_ offset: Int, inWords words: String) {
+        guard isFocused else { return }
+        let clamped = min(offset, words.utf16.count)
+        ComposerFieldStyle.placeCaret(ComposerChips.displayOffset(draft: clamped, in: words), expecting: ComposerChips.display(words))
+    }
+
+    /// Hands the field's undo, redo, copy and cut to `fieldSession` while it has the keyboard.
+    private func wireFieldSession() {
+        fieldSession.draft = { text }
+        fieldSession.words = { typedText }
+        fieldSession.restore = { value, caret in
+            assign(value)
+            placeCaret(caret, inWords: ComposerAttachments.split(value).body)
+        }
+        fieldSession.editable = { !dictator.isActive }
+    }
+
     private func textChanged(_ oldText: String, _ newText: String) {
         NookPresence.shared.typed(count: newText.count)
+        fieldSession.record(old: oldText, new: newText, separate: extras?.model.applying ?? false)
         // Typing dismisses the suggestion; taking it with Tab has already called `accept`.
         if let suggestion, oldText != newText {
             let body = ComposerAttachments.split(newText).body
@@ -256,6 +324,14 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         extras.model.history.stopWalking()
+        // Text with chips copied from a composer comes in as readable Markdown: it gets its chips back.
+        if new.utf16.count > old.utf16.count, let at = caret(in: new),
+           let restored = ComposerFieldSession.restoringPaste(in: new, caret: at) {
+            assign(ComposerAttachments.replacingBody(of: newText, with: restored.text))
+            placeCaret(restored.caret, inWords: restored.text)
+            extras.model.close()
+            return
+        }
         // A session link pasted or dropped into the text ("Copy session link", a dragged row) becomes its chip.
         if let linked = SessionLink.replacingPasted(old: old, new: new) {
             assign(ComposerAttachments.replacingBody(of: newText, with: linked))
@@ -275,7 +351,7 @@ struct SessionComposer<Controls: View>: View {
         }
         // A pasted secret is offered to be kept out of the message first; the paste then stays in the box until you decide.
         if extras.config.secretScope != nil, extras.model.noticeSecrets(old: old, new: new) {
-            extras.model.update(for: new, extras.config)
+            extras.model.update(for: new, caret: caret(in: new), extras.config)
             return
         }
         if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
@@ -283,7 +359,7 @@ struct SessionComposer<Controls: View>: View {
             extras.model.close()
             return
         }
-        extras.model.update(for: new, extras.config)
+        extras.model.update(for: new, caret: caret(in: new), extras.config)
     }
 
     /// The pasted secrets go to private files and the box keeps references to them.
@@ -332,6 +408,17 @@ struct SessionComposer<Controls: View>: View {
 
     /// The composer's commands for the panel's key monitor (see `Keybindings`); they run while the box has the keyboard.
     private var keyHandlers: [String: () -> Bool] {
+        var handlers = baseKeyHandlers
+        if dictates {
+            handlers["composer.dictate"] = {
+                toggleDictation()
+                return true
+            }
+        }
+        return handlers
+    }
+
+    private var baseKeyHandlers: [String: () -> Bool] {
         [
             // ⌘Return: send, or while the agent works deliver the other way (steer instead of queue, or the reverse).
             "composer.send": { sendKey(alternate: false) },
@@ -343,6 +430,9 @@ struct SessionComposer<Controls: View>: View {
             "composer.stash": stashKey,
             "composer.historyPrevious": { walkHistory(-1) },
             "composer.historyNext": { walkHistory(1) },
+            // Undo and redo the draft itself, so a chip comes back whole; the field's own undo is off meanwhile.
+            "composer.undo": { fieldSession.isAttached ? fieldSession.undo() : false },
+            "composer.redo": { fieldSession.isAttached ? fieldSession.redo() : false },
         ]
     }
 
@@ -396,7 +486,7 @@ struct SessionComposer<Controls: View>: View {
     /// Tab and Shift+Tab on a list item move it in under the one above, or back out (`ComposerLists.nest`); the caret
     /// moves along. False anywhere else, so Tab keeps its usual meaning.
     private func nestListItem(outdent: Bool) -> Bool {
-        let body = typedText
+        let body = shownText
         guard let editor = ComposerFieldStyle.focusedEditor(expecting: body),
               let nested = ComposerLists.nest(body, selection: editor.selectedRange(), outdent: outdent) else { return false }
         guard nested.text != body else { return true }
@@ -410,12 +500,56 @@ struct SessionComposer<Controls: View>: View {
 
     /// The draft's Markdown styled in the field (Settings › Appearance › Style Markdown as you type), right after the
     /// field took the change.
+    /// The references are drawn as chips on their marks either way (`ComposerChips`).
     private func styleMarkdown() {
-        guard AppSettings.shared.richComposer else { return }
-        DispatchQueue.main.async { [typedText] in ComposerFieldStyle.restyleFocusedEditor(expecting: typedText) }
+        let markdown = AppSettings.shared.richComposer
+        let chips = ContextRefs.find(in: typedText).map { ContextRef(kind: $0.kind, id: $0.id, label: $0.label) }
+        guard markdown || !chips.isEmpty else { return }
+        DispatchQueue.main.async { [shown = ComposerChips.display(typedText)] in
+            ComposerFieldStyle.restyleFocusedEditor(expecting: shown, chips: chips, markdown: markdown)
+        }
+    }
+
+    // MARK: Dictation
+
+    /// The microphone or ⌘⇧D: start listening, or finish while it listens.
+    private func toggleDictation() {
+        if dictator.isActive {
+            dictator.finish()
+            return
+        }
+        // The words go where the caret is, in place of what is selected.
+        let words = typedText
+        let selection = isFocused ? ComposerFieldStyle.focusedSelection(expecting: ComposerChips.display(words)) : nil
+        (focus ?? $ownFocus).wrappedValue = true
+        dictator.start(body: words, selection: selection.map {
+            ComposerChips.draftRange(display: $0.location..<NSMaxRange($0), in: words)
+        }) { spoken, caret in
+            assign(ComposerAttachments.replacingBody(of: text, with: spoken))
+            placeCaret(caret, inWords: spoken)
+        }
+    }
+
+    /// Escape or the cross: the recording goes, the draft is as it was before it.
+    private func discardDictation() {
+        dictator.discard { before in assign(ComposerAttachments.replacingBody(of: text, with: before)) }
+    }
+
+    /// The box is read-only while the microphone has it, and editable again once the words are in.
+    private func dictationChanged(_ active: Bool) {
+        if active {
+            editorLock.lock(expecting: shownText)
+        } else {
+            editorLock.unlock()
+            styleMarkdown()
+        }
     }
 
     private func escapeKey() -> KeyPress.Result {
+        if dictator.isActive {
+            discardDictation()
+            return .handled
+        }
         if let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
             suggestion.dismiss()
             return .handled
@@ -465,8 +599,18 @@ struct SessionComposer<Controls: View>: View {
                 if now {
                     Self.placeCaretAtEnd()
                     styleMarkdown()
+                    wireFieldSession()
+                    DispatchQueue.main.async { if isFocused { fieldSession.attach() } }
+                    // With the keyboard the references turn from short names into chips: the field takes that text
+                    // after this update, so draw the chips once more right after it.
+                    if text.contains("nook-context:") {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { styleMarkdown() }
+                    }
+                } else {
+                    fieldSession.detach()
                 }
             }
+            .onChange(of: dictator.isActive) { _, active in dictationChanged(active) }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
             // In the non-activating notch and ask panels the binding can lag behind the field until Return commits it,
@@ -475,7 +619,7 @@ struct SessionComposer<Controls: View>: View {
             .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
                 guard focused.wrappedValue, let field = note.object as? NSTextField,
                       field.window is NotchPanel || field.window is SelectionAskPanel,
-                      field.stringValue != typedText else { return }
+                      field.stringValue != shownText else { return }
                 bodyBinding.wrappedValue = field.stringValue
             }
     }
@@ -514,6 +658,9 @@ struct SessionComposer<Controls: View>: View {
                     text = ComposerAttachments.removing(at: index, from: text)
                 }
                 .transition(.opacity)
+            }
+            if dictates, dictator.isActive {
+                ComposerDictationBar(dictator: dictator, tint: tint, discard: discardDictation, finish: { dictator.finish() })
             }
             if choicesBelow {
                 // The text gets 4 pt of its own above and below, so lines that wrap keep 12 pt from the edges while the
@@ -569,7 +716,13 @@ struct SessionComposer<Controls: View>: View {
             startPasteMonitor(focused: focused)
             extras?.model.connectStash()
         }
-        .onDisappear { pasteMonitor.stop() }
+        .onDisappear {
+            pasteMonitor.stop()
+            fieldSession.detach()
+            // Leaving the box stops listening; the words that came in so far stay in the draft.
+            dictator.discard { _ in }
+        }
+        .animation(NookTheme.reveal, value: dictator.isActive)
     }
 
     private var shape: RoundedRectangle {
@@ -608,6 +761,7 @@ struct SessionComposer<Controls: View>: View {
     private var sendCluster: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             if let trailingAccessory { trailingAccessory }
+            if dictates { ComposerDictationButton(dictator: dictator, toggle: toggleDictation) }
             if busy, let onStop {
                 if let queueAction, !isEmpty {
                     roundButton(symbol: queueSymbol, label: queueLabel, active: encodingPictures == 0) { fire(queueAction) }
@@ -625,7 +779,13 @@ struct SessionComposer<Controls: View>: View {
     /// `outgoing` adds the paths to what is sent: the box never shows them, and keeps your words and the pictures while a
     /// session starts in the background. The caller clears the pictures once the message went out. A plain composer has no
     /// model, so the paths go into the text for the moment of the send.
-    private func fire(_ action: () -> Void) {
+    private func fire(_ action: @escaping () -> Void) {
+        // Send while dictating finishes the recording and sends once its words are in (and only when there are any).
+        if dictates, dictator.send({ [self] in if !isEmpty { deliver(action) } }) { return }
+        deliver(action)
+    }
+
+    private func deliver(_ action: () -> Void) {
         guard imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty else { return action() }
         if let extras {
             extras.model.pictures = imagesBinding.wrappedValue

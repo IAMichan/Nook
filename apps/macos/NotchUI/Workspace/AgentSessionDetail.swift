@@ -175,7 +175,7 @@ struct AgentSessionDetail: View {
         let shown = withTranscript(session, past)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(folder: session.project, title: title(for: session, known: past), directory: session.cwd,
-                   agentWorking: session.status == .running || session.status == .waiting)
+                   agentWorking: session.status == .running || session.status == .waiting || session.compactingSince != nil)
 
             if shown.transcriptPath.isEmpty && !session.steps.isEmpty {
                 steps(session)
@@ -244,7 +244,8 @@ struct AgentSessionDetail: View {
     private func steps(_ session: AgentSession) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(session.steps.suffix(3)) { step in
-                let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
+                let current = step.id == session.steps.last?.id && step.mark == .running
+                    && (session.status == .running || session.compactingSince != nil)
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(step.symbol)
                         .foregroundStyle(step.color)
@@ -382,7 +383,7 @@ struct AgentSessionDetail: View {
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
             .images($composerState.images)
-            .trailing { ComposerMic(text: $composerState.draft) }
+            .dictating()
         }
     }
 
@@ -668,7 +669,7 @@ struct AgentSessionDetail: View {
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
                     .images($composerState.images)
-                    .trailing { ComposerMic(text: $composerState.draft) }
+                    .dictating()
                 }
                 .zIndex(1)
             }
