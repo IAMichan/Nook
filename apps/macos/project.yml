@@ -441,6 +441,8 @@ targets:
       - path: Services/Workspace/RenderedPage.swift
       - path: Services/Workspace/RenderedPageFile.swift
       - path: Services/Workspace/AgentUpdates.swift
+      - path: Services/Workspace/PiRPC.swift
+      - path: Services/Workspace/PiExtension.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/AppPrompt.swift

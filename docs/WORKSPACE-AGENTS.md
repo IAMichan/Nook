@@ -61,6 +61,22 @@ reads the version again, asks the agent again for its models, and says how it we
 a newer agent comes with an **Update** row that opens this question. Antigravity's ACP server (Nook installs that release
 itself) and ACP registry agents (run with npx or uvx) are not listed.
 
+### Pi
+
+Pi (`pi`, the pi.dev agent) runs as a session in Nook over its RPC mode: one `pi --mode rpc` process per turn that reads
+and writes one JSON object per line (`PiRPC`, `PiStreamParser`, `WorkspaceManager+Pi`). Nook sends `get_state` and the
+`prompt` (or `compact` for `/compact`), reads streamed text and thoughts, tool calls, usage with cost and the end of the
+turn, and resumes the conversation from the session file `get_state` names (`--session`). Pi has no permission system
+and no MCP client, so Nook loads an extension into every Pi session (`PiExtension`, written to
+`~/Library/Application Support/Nook/nook-pi-extension.ts`): its blocking `tool_call` hook asks through Pi's `confirm`
+dialog, which Nook shows as an approval (Supervised asks before everything but reads, Auto-accept edits also lets
+`edit` and `write` through, Full access asks nothing; there is no "Auto", Pi has no reviewer), and it starts `nook-mcp`
+and registers its tools in Pi as `mcp__nook__*`. Models come from `get_available_models` (a short-lived process
+without session or extensions), thinking levels go with `--thinking`, accounts with `PI_CODING_AGENT_DIR`. Not built:
+a native fork and rollback (Pi's `fork` needs an entry id of its session), Pi's own session files as past sessions, and
+Pi's select, input and editor dialogs (cancelled). The wire format follows Pi's documented protocol; it has not been run
+against a real Pi on this Mac, only against recorded transcripts (`PiRPCTests`).
+
 ### Android devices
 
 The device tools also take Android devices when the Android SDK is installed (`ANDROID_HOME`, or Android Studio's folder):

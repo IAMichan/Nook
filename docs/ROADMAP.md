@@ -6,8 +6,8 @@ Larger pieces, roughly by value. Each fits Nook's architecture; none is started.
   the Live Activity can host it.
 - **Composer chips.** Context references (`[label](nook-context:…)`) as inline chips that delete as one, with undo grouped
   per kind of edit. Needs the composer moved from `TextField` to an `NSTextView`.
-- **Pi and Muse as managed providers.** Pi speaks LF-delimited JSON RPC over stdio (`prompt`, `get_state`, `set_model`,
-  `fork`, `compact`); Nook would add a `RunProvider` and inject the workspace bridge as a Pi extension.
+- **Muse as a managed provider**, and for Pi (which Nook runs over its RPC mode) a native fork and rollback through its
+  `fork` command, reading its own session files for past sessions, and answering its select and input dialogs.
 - **Browser.** Device presets with rotate and zoom, history and address suggestions per project, several tabs, and
   recording a page to a video an agent can read.
 - **Terminal.** Split panes, and scrollback restored after a restart (bounded, with query/response escapes removed).
