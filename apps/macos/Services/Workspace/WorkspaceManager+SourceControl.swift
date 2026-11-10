@@ -51,7 +51,7 @@ extension WorkspaceManager {
         var seen: Set<String> = []
         var result: [String] = []
         let local = runs.filter { $0.remote == nil }.compactMap { $0.repoRoot ?? $0.projectPath }
-        for path in local + settings.favoriteProjects + settings.recentProjects.prefix(12) {
+        for path in local + settings.favoriteProjects + Array(settings.recentProjects.prefix(12)) {
             let clean = WorkspacePathPolicy.normalize(path)
             guard !clean.isEmpty, !ScratchProjects.isScratch(clean), seen.insert(clean).inserted,
                   settings.sessionDefaults(for: clean).autoPull, !settings.isArchivedProject(clean) else { continue }
