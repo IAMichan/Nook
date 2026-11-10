@@ -11,6 +11,9 @@ struct TranscriptConversation: View {
     let accent: Color
     /// The agent is working: keep reading and show that it is busy.
     var working = false
+    /// When the agent started compacting the conversation, as its hooks said (a session in a terminal); nil when it does
+    /// not. The live line says so until the compacted notice is in the transcript, also between turns.
+    var compactingSince: Date? = nil
     /// Shown when the transcript gives nothing once it was read, or when there is none to read.
     var fallback: [AgentChatMessage] = []
     var onReply: ((String) -> Void)? = nil
@@ -75,6 +78,12 @@ struct TranscriptConversation: View {
         TranscriptPresentation.shown(read: transcriptMessages, fallback: fallback, readFinished: readFinished)
     }
 
+    /// The agent compacts the conversation now: its hooks said it started, and the transcript has no compacted notice
+    /// for it yet (`HookCompaction`).
+    private var compacting: Bool {
+        compactingSince.map { !HookCompaction.finished(shown, since: $0) } ?? false
+    }
+
     /// The session's key in TimelineVisitStore: its transcript; nil for a conversation read from elsewhere.
     private var visitKey: String? { path.isEmpty ? nil : "transcript:" + path }
 
@@ -131,6 +140,10 @@ struct TranscriptConversation: View {
                                 // The "new since" line is a hairline of its own: a fold right above it gives up its own.
                                 self.row(row, ruled: row.id != beforeNew).pinProbe(row.id, room: pinRoom).id(row.id)
                             }
+                        }
+                        // A compaction between turns (your /compact while the agent waits): the line under the last turn.
+                        if compacting && !working {
+                            TranscriptLiveLine(activity: .compacting).id("compacting")
                         }
                         if let footer {
                             Text(footer)
@@ -270,7 +283,8 @@ struct TranscriptConversation: View {
         .environment(\.fileLinkBase, directory)
         // What the agent produced goes to the outputs tab and diff panel of the side panel around the conversation (`SessionWorkbench`).
         .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns, pullRequest: derived.pullRequest))
-        .task(id: path + (working ? "#working" : "")) {
+        // A compaction between turns is followed too, until its notice is in the transcript.
+        .task(id: path + (working || compactingSince != nil ? "#working" : "")) {
             // Another session in the same place: its conversation as read last time shows at once (never the previous
             // session's), and the read below brings it up to date.
             if readPath != path {
@@ -295,7 +309,7 @@ struct TranscriptConversation: View {
                 loaded = true
                 freshRead = true
                 // An earlier session does not change any more: read once.
-                guard working else { break }
+                guard working || compacting else { break }
                 try? await Task.sleep(nanoseconds: interval)
             }
         }
@@ -309,7 +323,7 @@ struct TranscriptConversation: View {
         TranscriptRowView(row: row, answers: row.id == derived.answerable, cards: derived.rowCards[row.id] ?? [:],
                           checks: derived.foldChecks[row.id] ?? [],
                           open: open.isEmpty ? [] : open.intersection(derived.rowOpenKeys[row.id] ?? []), ruled: ruled, directory: directory,
-                          side: sideLink, live: row.id == "live" ? shown : [],
+                          side: sideLink, live: row.id == "live" ? shown : [], compacting: row.id == "live" && compacting,
                           // Only the row with the match, or the fold around it, draws again as the choice moves.
                           found: foundMatch.flatMap { $0.rowID == row.id || $0.containers.contains(row.id) ? $0.rowID : nil },
                           onReply: onReply,
@@ -442,6 +456,8 @@ private struct TranscriptRowView: View, Equatable {
     let side: SessionSideLink
     /// The whole conversation, for the live line only (what the agent does now and its task list); empty for other rows.
     let live: [AgentChatMessage]
+    /// The live line's agent compacts the conversation (`HookCompaction`); false for other rows.
+    let compacting: Bool
     /// The row of the find bar's chosen match, lit up (it can sit inside a fold this row holds).
     let found: String?
     let onReply: ((String) -> Void)?
@@ -451,7 +467,7 @@ private struct TranscriptRowView: View, Equatable {
         lhs.row == rhs.row && lhs.answers == rhs.answers && lhs.ruled == rhs.ruled && lhs.directory == rhs.directory
             && lhs.side.shownFile == rhs.side.shownFile && (lhs.onReply == nil) == (rhs.onReply == nil)
             && lhs.open == rhs.open && lhs.cards == rhs.cards && lhs.checks == rhs.checks && lhs.live == rhs.live
-            && lhs.found == rhs.found
+            && lhs.found == rhs.found && lhs.compacting == rhs.compacting
     }
 
     var body: some View {
@@ -530,7 +546,8 @@ private struct TranscriptRowView: View, Equatable {
         case .live(let step, let thought):
             // The agent's task list, live, then why it does what it does now (the thought right before it) and what it
             // does in words rather than a bare "Thinking…".
-            let activity = step.map { AgentActivity.of($0) }
+            // While it compacts (its hooks said so) the agent does nothing else.
+            let activity: AgentActivity = compacting ? .compacting : step.map { AgentActivity.of($0) }
                 ?? (thought == nil ? TranscriptPresentation.activity(live) : .thinking(""))
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 if let thought { thinking(thought) }

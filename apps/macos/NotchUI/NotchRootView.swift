@@ -708,7 +708,8 @@ extension TaskRingItem {
             let status: AgentStatus
             if session.status == .waiting || session.approvalID != nil {
                 kind = .waiting; status = .waiting
-            } else if session.status == .running {
+            } else if session.status == .running || session.compactingSince != nil {
+                // Also while it compacts between turns (your /compact): it works, though no turn runs.
                 if app.isSettledWhileBusy(session) { continue }
                 kind = .running; status = .running
             } else if session.status == .failed {
@@ -722,7 +723,12 @@ extension TaskRingItem {
             } else {
                 continue
             }
-            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail(session.project, status),
+            // While it compacts, the line says so ("Compacting the conversation…") rather than only that it works.
+            let compacting = kind == .running && session.compactingSince != nil
+            let line = compacting
+                ? (session.project.isEmpty ? tr("ws.activity.compacting") : "\(session.project) · \(tr("ws.activity.compacting"))")
+                : detail(session.project, status)
+            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: line,
                                       state: kind, target: .agent(session.id)))
         }
         for conversation in app.chat.list(query: "", showArchived: false) {
