@@ -85,6 +85,10 @@ enum AndroidDevices {
         process.arguments = ["-s", serial, "exec-out", "screencap", "-p"]
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
+        defer {
+            try? pipe.fileHandleForReading.close()
+            try? pipe.fileHandleForWriting.close()
+        }
         guard (try? process.run()) != nil else { return nil }
         // A device that hangs must not hold the page or the agent: ending adb ends the read below.
         let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }

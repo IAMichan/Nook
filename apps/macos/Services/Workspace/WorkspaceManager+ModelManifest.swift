@@ -73,6 +73,10 @@ extension WorkspaceManager {
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         do { try process.run() } catch { return nil }
         let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: stop)

@@ -294,6 +294,10 @@ private struct AddMachineSheet: View {
         process.standardError = FileHandle.nullDevice
         let output = Pipe()
         process.standardOutput = output
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         do { try process.run() } catch { return [] }
         let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 4, execute: stop)

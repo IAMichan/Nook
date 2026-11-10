@@ -317,6 +317,10 @@ final class MCPStdioTransport: MCPTransport, @unchecked Sendable {
         waiting.removeAll()
         lock.unlock()
         output.fileHandleForReading.readabilityHandler = nil
+        try? output.fileHandleForReading.close()
+        try? output.fileHandleForWriting.close()
+        try? input.fileHandleForReading.close()
+        try? input.fileHandleForWriting.close()
         for continuation in pending.values { continuation.resume(throwing: error) }
     }
 
