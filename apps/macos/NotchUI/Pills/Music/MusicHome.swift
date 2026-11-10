@@ -9,9 +9,11 @@ struct MusicHomeView: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject private var spotify = SpotifySignIn.shared
     let onOpen: (MusicSection) -> Void
+    var onPlayingCardVisible: (Bool) -> Void = { _ in }
 
     var body: some View {
-        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen)
+        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen,
+                         onPlayingCardVisible: onPlayingCardVisible)
     }
 }
 
@@ -22,6 +24,8 @@ struct MusicHomeContent: View {
     @EnvironmentObject private var app: AppModel
     let spotifyConnected: Bool
     let onOpen: (MusicSection) -> Void
+    /// Whether the playing card is on screen, so the page's player bar only comes up once it has scrolled away.
+    var onPlayingCardVisible: (Bool) -> Void = { _ in }
     @State private var week: MusicStats?
     @State private var allRecent = false
     @Environment(\.panelSidebar) private var sidebar
@@ -35,7 +39,13 @@ struct MusicHomeContent: View {
     }
 
     private var currentID: String? { info?.trackID }
-    private var recent: [MusicTrack] { service.recent.tracks }
+    /// Where you left off, without the track that plays now: the card above already shows it.
+    private var recent: [MusicTrack] {
+        guard let info else { return service.recent.tracks }
+        return service.recent.tracks.filter { track in
+            track.id.isEmpty || info.trackID.isEmpty ? !(track.title == info.title && track.artist == info.artist) : track.id != info.trackID
+        }
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -47,13 +57,15 @@ struct MusicHomeContent: View {
                         .foregroundStyle(NookTheme.paper)
                         .padding(.bottom, -NookTheme.Spacing.lg)
                 }
+                // First what to play (what plays, where you left off, your playlists), then how you listened.
                 if let info {
                     MusicPlayingCard(info: info, service: service, lyrics: lyrics) { onOpen(.nowPlaying) }
+                        .onScrollVisibilityChange(threshold: 0.25) { onPlayingCardVisible($0) }
                 }
                 if showsConnect { connectCard }
-                weekRow
                 if !recent.isEmpty { recentGroup }
                 if !service.playlists.isEmpty { playlistsGroup }
+                weekRow
                 if let week, week.topArtists.count >= 3 { artistsGroup(week) }
                 if recent.isEmpty, service.playlists.isEmpty, info == nil { emptyHint }
             }
@@ -159,7 +171,7 @@ struct MusicHomeContent: View {
                     service.search(for: rank.name)
                     onOpen(.search)
                 }
-            }, service: service)
+            }, service: service, minimum: MusicLayout.artist)
         }
     }
 
@@ -463,6 +475,8 @@ private struct MusicSurpriseCard: View {
 private struct MusicCoverRow: View {
     let items: [MusicCoverItem]
     let service: NowPlayingService
+    /// The narrowest a cover gets: artists' faces are smaller than covers, so more fit in a row.
+    var minimum: CGFloat = MusicLayout.cover
 
     private static let gap = NookTheme.Spacing.xl
 
@@ -473,7 +487,7 @@ private struct MusicCoverRow: View {
                     MusicCoverCard(item: item, service: service)
                         .containerRelativeFrame(.horizontal) { width, _ in
                             // One cover in a very narrow pane, so it never gets smaller than intended.
-                            let count = max(1, ((width + Self.gap) / (MusicLayout.cover + Self.gap)).rounded(.down))
+                            let count = max(1, ((width + Self.gap) / (minimum + Self.gap)).rounded(.down))
                             return (width - Self.gap * (count - 1)) / count
                         }
                 }
