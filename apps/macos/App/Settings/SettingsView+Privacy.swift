@@ -117,7 +117,7 @@ extension SettingsView {
     /// One promise on one line; the longer explanation shows on hover.
     func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(NookTheme.font(14))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22)

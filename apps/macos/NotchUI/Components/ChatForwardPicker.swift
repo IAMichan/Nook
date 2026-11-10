@@ -122,7 +122,7 @@ private struct ChatForwardRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
+                Image(icon: chosen ? "checkmark.circle.fill" : "circle")
                     .font(NookTheme.font(15))
                     .foregroundStyle(chosen ? NookTheme.paper : (hovering ? NookTheme.textSecondary : NookTheme.textTertiary))
                     .accessibilityHidden(true)

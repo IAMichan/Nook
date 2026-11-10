@@ -128,11 +128,11 @@ struct DoubleTapRunBar: View {
         case .running:
             ProgressView().controlSize(.small).scaleEffect(0.7)
         case .done:
-            Image(systemName: "checkmark")
+            Image(icon: "checkmark")
                 .font(NookTheme.font(10, .bold))
                 .foregroundStyle(NookTheme.textTertiary)
         case .failed:
-            Image(systemName: "xmark")
+            Image(icon: "xmark")
                 .font(NookTheme.font(10, .bold))
                 .foregroundStyle(NookTheme.coral)
         }

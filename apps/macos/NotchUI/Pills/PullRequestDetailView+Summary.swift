@@ -135,7 +135,7 @@ extension PullRequestDetailView {
             showReadiness.toggle()
         } label: {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: verdict.symbol).font(NookTheme.font(11, .semibold)).foregroundStyle(verdict.color)
+                Image(icon: verdict.symbol).font(NookTheme.font(11, .semibold)).foregroundStyle(verdict.color)
                 Text(verdict.title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong).fixedSize()
                 if let reason {
                     Text("· " + readinessText(reason))
@@ -144,7 +144,7 @@ extension PullRequestDetailView {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                Image(systemName: "chevron.down").font(NookTheme.font(8, .bold)).foregroundStyle(NookTheme.textMuted)
+                Image(icon: "chevron.down").font(NookTheme.font(8, .bold)).foregroundStyle(NookTheme.textMuted)
             }
             .contentShape(Rectangle())
         }
@@ -154,7 +154,7 @@ extension PullRequestDetailView {
         .popover(isPresented: $showReadiness, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: verdict.symbol).font(NookTheme.font(13, .semibold)).foregroundStyle(verdict.color)
+                    Image(icon: verdict.symbol).font(NookTheme.font(13, .semibold)).foregroundStyle(verdict.color)
                     Text(verdict.title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
                 }
                 .padding(.horizontal, NookTheme.Spacing.lg)
@@ -190,7 +190,7 @@ extension PullRequestDetailView {
             if let hint = readinessHint(item) {
                 HStack(spacing: NookTheme.Spacing.xxs) {
                     Text(hint)
-                    Image(systemName: "chevron.right").font(NookTheme.font(8.5, .bold))
+                    Image(icon: "chevron.right").font(NookTheme.font(8.5, .bold))
                 }
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.textTertiary)
@@ -215,7 +215,7 @@ extension PullRequestDetailView {
         case .blocking: ("xmark", NookTheme.coral)
         case .neutral: ("minus", NookTheme.textTertiary)
         }
-        return Image(systemName: look.symbol).font(NookTheme.font(11, .bold)).foregroundStyle(look.color)
+        return Image(icon: look.symbol).font(NookTheme.font(11, .bold)).foregroundStyle(look.color)
     }
 
     func readinessText(_ item: PullRequestReadiness.Item) -> String {
@@ -320,7 +320,7 @@ extension PullRequestDetailView {
 
     /// A team asked for a review: a team mark in the same ring, its name on hover.
     func team(_ name: String) -> some View {
-        Image(systemName: "person.3.fill")
+        Image(icon: "person.3.fill")
             .font(NookTheme.font(8, .semibold))
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 20, height: 20)
@@ -339,7 +339,7 @@ extension PullRequestDetailView {
                     if let url = issue.url { NSWorkspace.shared.open(url) }
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        Image(systemName: issue.open ? "smallcircle.filled.circle" : "checkmark.circle")
+                        Image(icon: issue.open ? "smallcircle.filled.circle" : "checkmark.circle")
                             .font(NookTheme.font(11, .semibold))
                             .foregroundStyle(issue.open ? PullRequestIcon.tint(.open) : PullRequestIcon.tint(.merged))
                         Text((issue.repo.isEmpty || issue.repo.lowercased() == detail.repo.lowercased() ? "" : issue.repo) + "#\(issue.number)")
@@ -481,7 +481,7 @@ extension PullRequestDetailView {
                     }
                 }
                 if readsHere || check.url != nil {
-                    Image(systemName: readsHere ? "chevron.right" : "arrow.up.right")
+                    Image(icon: readsHere ? "chevron.right" : "arrow.up.right")
                         .font(NookTheme.font(9, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                 }

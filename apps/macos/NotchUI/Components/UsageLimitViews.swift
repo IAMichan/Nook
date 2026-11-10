@@ -50,7 +50,7 @@ struct LimitPaceIcon: View {
     }
 
     var body: some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.font(11, .medium))
             .foregroundStyle(NookTheme.textSecondary)
             .help(tr("limits.pace.\(pace.rawValue)"))
@@ -443,7 +443,7 @@ struct UsageLimitPools: View {
             }
             if !notices.isEmpty {
                 HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "exclamationmark.triangle")
+                    Image(icon: "exclamationmark.triangle")
                         .font(NookTheme.font(12, .medium))
                         .foregroundStyle(NookTheme.amber)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -530,7 +530,7 @@ private struct UsageBlockRows: View {
                 withAnimation(NookTheme.swap) { if open { expanded.remove(block.id) } else { expanded.insert(block.id) } }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .rotationEffect(.degrees(open ? 90 : 0))
@@ -796,7 +796,7 @@ private struct LimitResetChip: View {
             }
             if credits > 0 {
                 HStack(spacing: NookTheme.Spacing.xxs) {
-                    Image(systemName: "ticket")
+                    Image(icon: "ticket")
                     Text("\(credits)")
                 }
                 .fontWeight(.semibold)
@@ -845,7 +845,7 @@ private struct LimitLegendRow: View {
                     }
                     if credits > 0 {
                         HStack(spacing: NookTheme.Spacing.xxs) {
-                            Image(systemName: "ticket")
+                            Image(icon: "ticket")
                             Text("\(credits)")
                         }
                         .fontWeight(.semibold)

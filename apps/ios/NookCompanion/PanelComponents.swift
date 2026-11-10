@@ -22,7 +22,7 @@ struct HomeLogo: View {
         Group {
             switch content {
             case .agent(let name): AgentLogo(agent: name, size: size * 0.56)
-            case .symbol(let name): Image(systemName: name).font(Theme.font(size * 0.42, .medium)).foregroundStyle(tint)
+            case .symbol(let name): Image(icon: name).font(Theme.font(size * 0.42, .medium)).foregroundStyle(tint)
             }
         }
         .frame(width: size, height: size)
@@ -268,7 +268,7 @@ struct NookSearchField: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
+            Image(icon: "magnifyingglass")
                 .font(Theme.textFont(11, .medium))
                 .foregroundStyle(Theme.textTertiary)
             TextField(prompt, text: $text)
@@ -283,7 +283,7 @@ struct NookSearchField: View {
                     Haptics.tap()
                     text = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(icon: "xmark.circle.fill")
                         .font(Theme.textFont(11, .medium))
                         .foregroundStyle(Theme.textTertiary)
                         .frame(width: 28, height: 28)
@@ -394,7 +394,7 @@ struct SessionComposer<Controls: View>: View {
                 if sending {
                     ProgressView().controlSize(.small).tint(Theme.onIris)
                 } else {
-                    Image(systemName: symbol).font(Theme.font(13, .bold))
+                    Image(icon: symbol).font(Theme.font(13, .bold))
                         .foregroundStyle(active ? Theme.onIris : Theme.textTertiary)
                 }
             }
@@ -432,11 +432,11 @@ struct ComposerPill: View {
             } else if let dot {
                 Circle().fill(dot).frame(width: 7, height: 7)
             } else if let symbol {
-                Image(systemName: symbol).font(Theme.font(12, .medium))
+                Image(icon: symbol).font(Theme.font(12, .medium))
             }
             Text(text).lineLimit(1)
             if showsChevron {
-                Image(systemName: "chevron.down").font(Theme.font(9, .bold)).opacity(0.6)
+                Image(icon: "chevron.down").font(Theme.font(9, .bold)).opacity(0.6)
             }
         }
         .font(Theme.TextStyle.label)

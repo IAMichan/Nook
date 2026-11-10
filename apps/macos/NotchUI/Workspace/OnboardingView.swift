@@ -157,7 +157,7 @@ struct OnboardingView: View {
                 let named = !compact || current
                 Button { step = index } label: {
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: done[index] ? "checkmark.circle.fill" : "\(index + 1).circle")
+                        Image(icon: done[index] ? "checkmark.circle.fill" : "\(index + 1).circle")
                             .foregroundStyle(done[index] ? NookTheme.mint : (current ? NookTheme.paper : NookTheme.textSecondary))
                         if named {
                             Text(titles[index])
@@ -263,7 +263,7 @@ struct OnboardingView: View {
     /// only time.
     private var keychainNote: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
-            Image(systemName: "key").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
+            Image(icon: "key").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("onboarding.keychain.title"))
                 Text(tr("onboarding.keychain.detail"))

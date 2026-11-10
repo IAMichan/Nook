@@ -50,6 +50,10 @@ protocol WhatsAppProvider: Sendable {
     /// A group's members (you among them), for who has your messages and who read them: empty when the gateway
     /// cannot list them.
     func groupMembers(_ chat: String) async -> [WAMember]
+    /// A group's people and what the gateway says of it besides (its description, owner, settings): one request.
+    func groupInfo(_ chat: String) async -> WAGroupInfo
+    /// What the gateway says about the person of a private chat; nil when it says nothing.
+    func personInfo(_ chat: String) async -> ChatProfile?
     /// The chats on the phone, newest first: who Nook may send to, by name.
     func chats(limit: Int) async throws -> [WAChatInfo]
     /// The file of one message (a document, photo, video or voice note), only when you open it.
@@ -105,6 +109,8 @@ extension WhatsAppProvider {
     func groupNames() async -> [String: String] { [:] }
     func joinedGroups() async -> Set<String>? { nil }
     func groupMembers(_ chat: String) async -> [WAMember] { [] }
+    func groupInfo(_ chat: String) async -> WAGroupInfo { WAGroupInfo(members: await groupMembers(chat)) }
+    func personInfo(_ chat: String) async -> ChatProfile? { nil }
     func channels() async -> [WAChannel] { [] }
     func setOnline(_ online: Bool, chat: String?) async {}
     func removeAccount() async {}
@@ -481,6 +487,25 @@ actor GOWAProvider: WhatsAppProvider {
         return WAGOWA.members(data)
     }
 
+    func groupInfo(_ chat: String) async -> WAGroupInfo {
+        guard WAJID.isGroup(chat),
+              let data = try? await scoped("GET", "/group/info", query: [URLQueryItem(name: "group_id", value: chat)]) else {
+            return WAGroupInfo(members: [])
+        }
+        return WAGroupInfo(members: WAGOWA.members(data), profile: WAGOWA.groupProfile(data))
+    }
+
+    func personInfo(_ chat: String) async -> ChatProfile? {
+        guard WAJID.kind(chat) == .person,
+              let data = try? await scoped("GET", "/user/info", query: [URLQueryItem(name: "phone", value: chat)]) else { return nil }
+        let person = WAGOWA.person(data)
+        // A business says more of itself in its own profile.
+        guard person.business != nil,
+              let business = try? await scoped("GET", "/user/business-profile", query: [URLQueryItem(name: "phone", value: chat)])
+        else { return person }
+        return WAGOWA.business(business, over: person)
+    }
+
     /// Page by page (GOWA refuses more than 100 at once) until the list runs out or `limit` chats are in. A page that
     /// fails after the first keeps what came; one that brings nothing new ends it (a gateway that ignores the offset).
     func chats(limit: Int) async throws -> [WAChatInfo] {
@@ -637,7 +662,8 @@ actor OpenWAProvider: WhatsAppProvider {
     func registerWebhook(url: String, secret: String) async throws {
         let id = try await sid()
         let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack", "message.receipt",
-                                                                       "message.reaction", "presence.update"],
+                                                                       "message.reaction", "presence.update", "group.join", "group.leave",
+                                                                       "group.update"],
                                             "secret": secret]
         let (list, listCode) = try await http.call("GET", "/api/sessions/\(id)/webhooks")
         try check(list, listCode)
@@ -722,6 +748,20 @@ actor OpenWAProvider: WhatsAppProvider {
               let data = try? await scoped("GET", "/groups/\(WAHTTP.pathComponent(chat))"),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
         return WAMembers.list(obj["participants"])
+    }
+
+    func groupInfo(_ chat: String) async -> WAGroupInfo {
+        guard WAJID.isGroup(chat),
+              let data = try? await scoped("GET", "/groups/\(WAHTTP.pathComponent(chat))"),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return WAGroupInfo(members: []) }
+        return WAGroupInfo(members: WAMembers.list(obj["participants"]), profile: WAOpenWA.groupProfile(obj))
+    }
+
+    func personInfo(_ chat: String) async -> ChatProfile? {
+        guard WAJID.kind(chat) == .person,
+              let data = try? await scoped("GET", "/contacts/\(WAHTTP.pathComponent(chat))"),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return WAOpenWA.person(obj)
     }
 
     func channels() async -> [WAChannel] {

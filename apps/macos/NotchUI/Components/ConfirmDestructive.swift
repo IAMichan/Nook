@@ -42,7 +42,7 @@ extension ConfirmedButton where Label == Text {
 extension ConfirmedButton where Label == Image {
     /// A symbol-only button (a trash can in a row); `title` is its tooltip, what VoiceOver reads, and the red button.
     init(symbol: String, title: String, question: String, detail: String? = nil, action: @escaping () -> Void) {
-        self.init(question: question, detail: detail, confirmTitle: title, action: action) { Image(systemName: symbol) }
+        self.init(question: question, detail: detail, confirmTitle: title, action: action) { Image(icon: symbol) }
     }
 }
 

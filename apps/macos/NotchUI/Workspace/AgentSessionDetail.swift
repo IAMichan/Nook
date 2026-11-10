@@ -508,7 +508,7 @@ struct AgentSessionDetail: View {
         if request.items.count > 1 { context += " · \(index + 1)/\(request.items.count)" }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
+                Image(icon: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
                 Text(context)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
@@ -844,12 +844,12 @@ private struct SessionQuestionOptionButton: View {
     @ViewBuilder
     private var trailingIndicator: some View {
         if multiSelect {
-            Image(systemName: chosen ? "checkmark.square.fill" : "square")
+            Image(icon: chosen ? "checkmark.square.fill" : "square")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(chosen ? NookTheme.amber : (isHovered ? NookTheme.paper : NookTheme.textTertiary))
                 .padding(.top, 2)
         } else {
-            Image(systemName: isHovered ? "arrow.right.circle.fill" : "circle")
+            Image(icon: isHovered ? "arrow.right.circle.fill" : "circle")
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(isHovered ? NookTheme.amber : NookTheme.wash.opacity(0.08))
                 .opacity(isHovered ? 1 : 0.4)

@@ -117,10 +117,19 @@ final class UIConsistencyTests: XCTestCase {
     /// magnifying glass and a text field put together on the spot. The timeline's find bar, with its own next and
     /// previous, is the one exception.
     func testSearchFieldsAreTheSharedComponent() {
-        let found = offenders(#"Image\(systemName: "magnifyingglass"\)"#) {
+        let found = offenders(#"Image\((systemName|icon): "magnifyingglass"\)"#) {
             $0 == "NotchUI/Components/PanelBlocks.swift" || $0 == "NotchUI/Pills/TimelineFind.swift"
         }
         XCTAssertEqual(found, [], "use NookSearchField (NotchUI/Components/PanelBlocks.swift)")
+    }
+
+    /// Every icon is drawn through `Image(icon:)` or `NookIcon.nsImage`, so `NookIcon` turns it into Nook's Lucide icon
+    /// (set) and the app keeps one icon style; a raw SF Symbol would bypass that table.
+    func testIconsGoThroughNookIcon() {
+        let found = offenders(#"(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:"#) {
+            $0 == "NotchUI/Theme/NookIcon.swift"
+        }
+        XCTAssertEqual(found, [], "use Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift)")
     }
 
     /// A line between rows or regions is a `NookDivider`, so every divider has the same weight and color.

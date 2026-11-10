@@ -343,7 +343,7 @@ struct ConnectionOptionTile: View {
                 }
                 Spacer(minLength: NookTheme.Spacing.xs)
                 if option.linked {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(icon: "checkmark.circle.fill")
                         .foregroundStyle(NookTheme.mint)
                         .help(tr("hub.picker.linked"))
                         .accessibilityLabel(tr("hub.picker.linked"))

@@ -253,7 +253,7 @@ struct ChatBubbleView: View {
     private var stamp: some View {
         HStack(spacing: Theme.Spacing.xs) {
             if pending {
-                Image(systemName: "clock").font(Theme.font(10, .semibold))
+                Image(icon: "clock").font(Theme.font(10, .semibold))
             } else {
                 Text(Date(timeIntervalSince1970: line.date), format: .dateTime.hour().minute())
                     .monospacedDigit()

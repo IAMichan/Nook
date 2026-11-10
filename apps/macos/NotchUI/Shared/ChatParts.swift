@@ -217,7 +217,7 @@ struct MessageTicksMark: View {
         Group {
             switch ticks {
             case .pending:
-                Image(systemName: "clock").font(NookTheme.font(10.5, .semibold))
+                Image(icon: "clock").font(NookTheme.font(10.5, .semibold))
             case .sent:
                 check
             case .delivered, .read:
@@ -227,7 +227,7 @@ struct MessageTicksMark: View {
                     check.padding(.leading, 5)
                 }
             case .failed:
-                Image(systemName: "exclamationmark.circle.fill").font(NookTheme.font(11.5, .semibold))
+                Image(icon: "exclamationmark.circle.fill").font(NookTheme.font(11.5, .semibold))
             }
         }
         .foregroundStyle(color)
@@ -237,7 +237,7 @@ struct MessageTicksMark: View {
     }
 
     private var check: some View {
-        Image(systemName: "checkmark").font(NookTheme.font(10.5, .bold))
+        Image(icon: "checkmark").font(NookTheme.font(10.5, .bold))
     }
 
     private var color: Color {

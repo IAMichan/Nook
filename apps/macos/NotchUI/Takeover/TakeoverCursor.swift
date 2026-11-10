@@ -87,7 +87,7 @@ struct TakeoverCursorView: View {
                 .stroke(NookTheme.violet.opacity(ring ? 0 : 0.7), lineWidth: 2)
                 .frame(width: ring ? 34 : 6, height: ring ? 34 : 6)
                 .offset(x: ring ? -7 : 7, y: ring ? -7 : 7)
-            Image(systemName: "cursorarrow")
+            Image(icon: "cursorarrow")
                 .font(NookTheme.font(22, .bold))
                 .foregroundStyle(NookTheme.violet)
                 .shadow(color: NookTheme.violet.opacity(0.8), radius: 6)

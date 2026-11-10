@@ -335,7 +335,7 @@ struct AgentCommandPalette: View {
             Spacer(minLength: 0)
             if let keys = shortcut(entry.command) { NookKeyHint(text: keys) }
             if entry.id == "n:newIn" {
-                Image(systemName: "chevron.right").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "chevron.right").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             }
         }
         .padding(.horizontal, 10)

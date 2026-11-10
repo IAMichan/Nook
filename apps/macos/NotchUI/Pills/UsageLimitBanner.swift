@@ -13,7 +13,7 @@ struct UsageLimitBanner: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 AdaptiveActionRow {
                     HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                        Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
+                        Image(icon: auto ? "clock.arrow.circlepath" : "hourglass")
                             .font(NookTheme.font(12, .semibold))
                             .foregroundStyle(NookTheme.amber)
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

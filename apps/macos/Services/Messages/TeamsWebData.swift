@@ -180,6 +180,13 @@ enum TeamsWebData {
             let name = !topic.isEmpty ? topic : (oneOnOne && lastFrom != nil && lastFrom != me ? theirName : "")
             var chat = TeamsData.Chat(id: id, name: name, isGroup: !oneOnOne, last: date(last),
                                       readUntil: readUntil(conversation["properties"] as? [String: Any]))
+            // When the chat was made (`createdat`, milliseconds) and by whom (`creator`), for a group chat.
+            if !oneOnOne {
+                let created = Double("\(thread["createdat"] ?? "")").map { Date(timeIntervalSince1970: $0 / 1000) }
+                let creator = (thread["creator"] as? String).flatMap { $0 == me ? ChatMembership.me : nil }
+                let profile = ChatProfile(created: created, createdBy: creator)
+                chat.profile = profile.isEmpty ? nil : profile
+            }
             chat.preview = messages(["messages": [last]], chat: chat, me: me).first
             return chat
         }
@@ -202,13 +209,32 @@ enum TeamsWebData {
         ChatJSON.date(message["composetime"]) ?? ChatJSON.date(message["originalarrivaltime"])
     }
 
-    /// A chat's messages, oldest first: text, rich text and calls (no one joining); a deleted one shows as deleted, an
-    /// edited one says so, and a message with only files shows their names.
+    /// A chat's messages, oldest first: text, rich text, calls and people added, removed, joining or leaving (a line in
+    /// the chat, `membership`); a deleted one shows as deleted, an edited one says so, and a message with only files
+    /// shows their names.
     static func messages(_ json: [String: Any], chat: TeamsData.Chat, me: String) -> [InboxMessage] {
         let all = json["messages"] as? [[String: Any]] ?? []
-        // Who is who, by the names their messages carry: the emoji name their people by id only.
-        let names = displayNames(json)
+        // Who is who, by the names their messages carry: the emoji name their people by id only. A notice that someone
+        // left often names them by id only too: the name an earlier notice gave them counts.
+        var names = displayNames(json)
+        for message in all where (message["messagetype"] as? String)?.hasPrefix("ThreadActivity/") == true {
+            names.merge(memberNames((message["content"] as? String) ?? "")) { kept, _ in kept }
+        }
         let messages: [InboxMessage] = all.compactMap { message in
+            if let id = message["id"] as? String, let type = message["messagetype"] as? String, type.hasPrefix("ThreadActivity/"),
+               let sent = date(message) {
+                let content = (message["content"] as? String) ?? ""
+                if let change = membership(type, content, names: names, me: me) {
+                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
+                    line.membership = change
+                    return line
+                }
+                if type.lowercased() == "threadactivity/topicupdate", let change = topicUpdate(content, names: names, me: me) {
+                    var line = InboxMessage(id: "teams-\(id)", text: "", date: sent, fromMe: change.by == ChatMembership.me)
+                    line.groupChange = change
+                    return line
+                }
+            }
             guard let id = message["id"] as? String, let type = message["messagetype"] as? String,
                   type == "Text" || type.hasPrefix("RichText") || type == "Event/Call", let sent = date(message) else { return nil }
             let properties = message["properties"] as? [String: Any] ?? [:]
@@ -240,6 +266,76 @@ enum TeamsWebData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// Who came into the chat or went, from a `ThreadActivity/AddMember` or `ThreadActivity/DeleteMember` notice
+    /// (`<initiator>` who did it, a `<target>` per person, with their `<friendlyname>` when Teams gives it) or a
+    /// `MemberJoined` / `MemberLeft` one. Someone who removed only themselves left. Nil for any other activity (a new
+    /// topic, a picture).
+    static func membership(_ type: String, _ content: String, names: [String: String], me: String) -> ChatMembership? {
+        let change: ChatMembership.Change
+        switch type.lowercased() {
+        case "threadactivity/addmember": change = .added
+        case "threadactivity/deletemember": change = .removed
+        case "threadactivity/memberjoined": change = .joined
+        case "threadactivity/memberleft": change = .left
+        default: return nil
+        }
+        let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        func values(_ tag: String, in text: String) -> [String] {
+            var found: [String] = []
+            var rest = text[...]
+            while let range = rest.range(of: "<\(tag)>[^<]*</\(tag)>", options: options) {
+                let inner = rest[range].drop { $0 != ">" }.dropFirst().prefix { $0 != "<" }
+                let value = TeamsData.plain(html: String(inner)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty { found.append(value) }
+                rest = rest[range.upperBound...]
+            }
+            return found
+        }
+        let named = names.merging(memberNames(content)) { _, new in new }
+        func name(_ id: String) -> String { id == me ? ChatMembership.me : named[id] ?? "" }
+        let targets = values("target", in: content)
+        guard !targets.isEmpty else { return nil }
+        let initiator = values("initiator", in: content).first
+        // Someone who added or removed only themselves joined or left, also when Teams does not name them.
+        if let initiator, targets == [initiator] {
+            return ChatMembership(change == .removed || change == .left ? .left : .joined, people: targets.map(name))
+        }
+        return ChatMembership(change, by: change == .added || change == .removed ? initiator.map(name) : nil,
+                              people: targets.map(name))
+    }
+
+    /// The names a member notice gives people, by their id: `<detailedtargetinfo><id>…</id><friendlyname>…</friendlyname>`.
+    static func memberNames(_ content: String) -> [String: String] {
+        let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        func value(_ tag: String, in text: String) -> String? {
+            guard let range = text.range(of: "<\(tag)>[^<]*</\(tag)>", options: options) else { return nil }
+            let inner = text[range].drop { $0 != ">" }.dropFirst().prefix { $0 != "<" }
+            let found = TeamsData.plain(html: String(inner)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return found.isEmpty ? nil : found
+        }
+        var named: [String: String] = [:]
+        var block = content[...]
+        while let range = block.range(of: #"<detailedtargetinfo>[\s\S]*?</detailedtargetinfo>"#, options: options) {
+            let info = String(block[range])
+            if let id = value("id", in: info), let name = value("friendlyname", in: info) { named[id] = name }
+            block = block[range.upperBound...]
+        }
+        return named
+    }
+
+    /// A new name for the chat (`ThreadActivity/TopicUpdate`: `<initiator>` who gave it, `<value>` the name).
+    static func topicUpdate(_ content: String, names: [String: String], me: String) -> ChatGroupChange? {
+        let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        func value(_ tag: String) -> String? {
+            guard let range = content.range(of: "<\(tag)>[^<]*</\(tag)>", options: options) else { return nil }
+            let inner = content[range].drop { $0 != ">" }.dropFirst().prefix { $0 != "<" }
+            return ChatProfile.text(TeamsData.plain(html: String(inner)))
+        }
+        guard let topic = value("value") else { return nil }
+        let by = value("initiator").map { $0 == me ? ChatMembership.me : names[$0] ?? tr("chat.member.someone") }
+        return ChatGroupChange(.renamed, by: by, text: topic)
     }
 
     /// Who is who in a chat's history, by the names their messages carry (`imdisplayname`), by their id ("8:orgid:…").

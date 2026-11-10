@@ -94,7 +94,7 @@ struct MusicHomeContent: View {
     private var connectCard: some View {
         AdaptiveActionRow(spacing: NookTheme.Spacing.lg) {
             HStack(spacing: NookTheme.Spacing.lg) {
-                Image(systemName: "link")
+                Image(icon: "link")
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -518,7 +518,7 @@ struct MusicTrackTile: View {
                 }
                 Spacer(minLength: 0)
                 if queued {
-                    Image(systemName: "text.line.last.and.arrowtriangle.forward")
+                    Image(icon: "text.line.last.and.arrowtriangle.forward")
                         .font(NookTheme.font(10, .semibold))
                         .foregroundStyle(NookTheme.textTertiary)
                         .help(tr("music.queue.queued"))

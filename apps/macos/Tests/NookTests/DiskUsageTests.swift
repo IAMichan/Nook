@@ -31,9 +31,11 @@ final class DiskUsageTests: XCTestCase {
         XCTAssertEqual(DiskUsage.cachedAllocatedSize(of: folder.path, now: now.addingTimeInterval(60)), first)
         let later = try XCTUnwrap(DiskUsage.cachedAllocatedSize(of: folder.path, maxAge: 0, now: now.addingTimeInterval(60)))
         XCTAssertGreaterThanOrEqual(later, first + 400_000)
-        // With the Worktrees list closed a refresh takes what was measured, however old, and measures nothing.
-        XCTAssertEqual(DiskUsage.knownSize(of: folder.path), later)
-        XCTAssertNil(DiskUsage.knownSize(of: folder.appendingPathComponent("never-measured").path))
+        // Stopped halfway (the Worktrees list closed), a measurement is not kept: the one before stands.
+        try Data(count: 100_000).write(to: folder.appendingPathComponent("third.o"))
+        XCTAssertEqual(DiskUsage.cachedAllocatedSize(of: folder.path, maxAge: 0, now: now.addingTimeInterval(120)) { false }, later)
+        XCTAssertNil(DiskUsage.allocatedSize(of: folder.path) { false })
+        XCTAssertGreaterThan(try XCTUnwrap(DiskUsage.cachedAllocatedSize(of: folder.path, maxAge: 0, now: now.addingTimeInterval(180))), later)
     }
 
     func testListingSeesGrowthNewAndRemovedFilesWithoutListingAgain() throws {
@@ -60,6 +62,8 @@ final class DiskUsageTests: XCTestCase {
         try FileManager.default.removeItem(at: first)
         XCTAssertEqual(listing.files(in: folder, where: transcripts).map(\.url.lastPathComponent), ["b.jsonl"])
         XCTAssertTrue(listing.files(in: folder.appendingPathComponent("gone"), where: transcripts).isEmpty)
+        // Another caller asking the same unchanged folder for other names gets them, not the first caller's selection.
+        XCTAssertEqual(listing.files(in: folder, where: { $0.hasSuffix(".txt") }).map(\.url.lastPathComponent), ["notes.txt"])
     }
 
     func testPurgeRemovesOnlyOldEntries() throws {

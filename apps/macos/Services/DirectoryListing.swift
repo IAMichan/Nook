@@ -12,25 +12,28 @@ final class DirectoryListing {
         var size: Int
     }
 
-    /// What was last listed per directory, with the directory's own date then.
+    /// Every entry last listed per directory (unfiltered: callers may ask for different names), with the directory's own
+    /// date then.
     private var known: [String: (modified: Date, files: [URL])] = [:]
 
     /// The files in `directory` whose name passes `include`, with their date and size; empty when it cannot be read.
     func files(in directory: URL, where include: (String) -> Bool) -> [(url: URL, stamp: Stamp)] {
         let path = directory.path
         let directoryModified = Self.stamp(path)?.modified
+        let entries: [URL]
         if let directoryModified, let listed = known[path], listed.modified == directoryModified {
-            return listed.files.compactMap { file in Self.stamp(file.path).map { (file, $0) } }
+            entries = listed.files
+        } else {
+            guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+                known[path] = nil
+                return []
+            }
+            entries = urls
+            if let directoryModified { known[path] = (directoryModified, urls) }
         }
-        guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
-            known[path] = nil
-            return []
-        }
-        // The same `stat` as for a known directory above: a date read another way may differ in its last digit, and a
-        // caller keyed on the stamp would take an unchanged file for a new one.
-        let found = urls.compactMap { url in include(url.lastPathComponent) ? Self.stamp(url.path).map { (url, $0) } : nil }
-        if let directoryModified { known[path] = (directoryModified, found.map(\.0)) }
-        return found
+        // One `stat` per file either way: a date read another way may differ in its last digit, and a caller keyed on the
+        // stamp would take an unchanged file for a new one.
+        return entries.compactMap { url in include(url.lastPathComponent) ? Self.stamp(url.path).map { (url, $0) } : nil }
     }
 
     /// Date and size of a file or directory from one `stat`; nil when it is gone.

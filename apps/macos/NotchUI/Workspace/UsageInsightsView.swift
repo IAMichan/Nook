@@ -163,7 +163,7 @@ struct UsageOverviewBlocks: View {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Text(metric == .cost ? tr("usage.sessionsEstimate", insights.sessions) : tr("usage.sessions", insights.sessions))
                     if metric == .cost, insights.unpricedTokens > 0 {
-                        Image(systemName: "info.circle")
+                        Image(icon: "info.circle")
                             .help(tr("usage.unpricedNote", UsageFormat.percent(insights.unpricedShare)))
                     }
                 }

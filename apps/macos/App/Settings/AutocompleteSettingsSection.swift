@@ -256,7 +256,7 @@ struct AutocompleteSettingsSection: View {
     private func presentRow(_ file: CompletionModelFile) -> some View {
         let inUse = autocomplete.activeModel?.identity == file.url.path
         return HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).font(NookTheme.font(16))
+            Image(icon: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).font(NookTheme.font(16))
             SettingLabel(file.title, detail: "\(file.sizeText) · \(sourceLabel(file.source))")
             Spacer()
             if inUse {
@@ -264,7 +264,7 @@ struct AutocompleteSettingsSection: View {
             } else {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
                 // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
-                Button { pendingTrash = file } label: { Image(systemName: "trash") }
+                Button { pendingTrash = file } label: { Image(icon: "trash") }
                     .buttonStyle(.borderless)
                     .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
@@ -303,7 +303,7 @@ struct AutocompleteSettingsSection: View {
         let ownCopy = downloads.isInstalled(model)
         let inUse = here.map { autocomplete.activeModel?.identity == $0.path } ?? false
         return HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
+            Image(icon: installed ? "checkmark.circle.fill" : "arrow.down.circle")
                 .foregroundStyle(installed ? NookTheme.mint : NookTheme.textSecondary)
                 .font(NookTheme.font(16))
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -336,7 +336,7 @@ struct AutocompleteSettingsSection: View {
                 }
                 // Only Nook's own copies can be deleted here, and never the model in use.
                 if ownCopy, !inUse {
-                    Button { pendingDelete = model } label: { Image(systemName: "trash") }
+                    Button { pendingDelete = model } label: { Image(icon: "trash") }
                         .buttonStyle(.borderless)
                         .help(tr("autocomplete.download.delete"))
                 }
@@ -851,7 +851,7 @@ private struct AppIcon: View {
     var body: some View {
         Group {
             if let url { Image(nsImage: FileIcons.icon(url.path)).resizable() }
-            else { Image(systemName: "app.dashed").resizable().foregroundStyle(NookTheme.textSecondary) }
+            else { Image(icon: "app.dashed").resizable().foregroundStyle(NookTheme.textSecondary) }
         }
         .frame(width: 20, height: 20)
     }
@@ -920,7 +920,7 @@ struct CompletionKeyRecorder: View {
                 }
                 .buttonStyle(.borderless)
                 if shortcut != fallback, !recording {
-                    Button { shortcut = fallback } label: { Image(systemName: "arrow.uturn.backward") }
+                    Button { shortcut = fallback } label: { Image(icon: "arrow.uturn.backward") }
                         .buttonStyle(.borderless)
                         .help(tr("shortcut.reset"))
                 }
