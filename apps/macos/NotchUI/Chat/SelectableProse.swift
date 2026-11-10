@@ -57,7 +57,7 @@ struct SelectableProse: NSViewRepresentable {
     static func selection(of view: NSTextView) -> String? {
         let range = view.selectedRange()
         guard range.length > 0, NSMaxRange(range) <= (view.string as NSString).length else { return nil }
-        let text = ComposerQuotes.normalize((view.string as NSString).substring(with: range))
+        let text = ComposerQuotes.normalize(ProseTextView.plain((view.string as NSString).substring(with: range)))
         return text.isEmpty ? nil : text
     }
 
@@ -70,7 +70,7 @@ struct SelectableProse: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSTextView {
-        let view = NSTextView(usingTextLayoutManager: false)
+        let view = ProseTextView(usingTextLayoutManager: false)
         // Inline code draws as a rounded chip rather than the flat, line-high band of a background color.
         view.textContainer?.replaceLayoutManager(InlineCodeLayoutManager())
         view.isEditable = false
@@ -438,9 +438,17 @@ struct SelectableProse: NSViewRepresentable {
         let source = MarkdownBlock.inline(text, size: size, files: files, citations: citations)
         let result = NSMutableAttributedString()
         var previousCode = false
+        var previousLink: URL?
         for run in source.runs {
             let intent = run.inlinePresentationIntent ?? []
             let code = intent.contains(.code)
+            // A file link starts with the symbol of its kind of file (a React atom for `App.tsx`, braces for `nl.json`).
+            if let link = run.link, link != previousLink, files, MarkdownBlock.isFileLink(link),
+               let target = FileLink.parse(link.absoluteString) {
+                result.append(fileGlyph(target.path, size: size, link: link))
+                previousCode = false
+            }
+            previousLink = run.link
             // Room for the chip's padding on either side of a code span, so it never touches the words around it.
             if code != previousCode, result.length > 0 {
                 result.addAttribute(.kern, value: InlineCodeLayoutManager.padding, range: NSRange(location: result.length - 1, length: 1))
@@ -476,6 +484,37 @@ struct SelectableProse: NSViewRepresentable {
         // A line break inside a paragraph stays a break within it, without the gap between paragraphs.
         result.mutableString.replaceOccurrences(of: "\n", with: "\u{2028}", options: [], range: NSRange(location: 0, length: result.length))
         return result
+    }
+
+    /// The file's symbol (`FileTypeGlyph`) set in the text and opening the same link, centered on the capitals with a
+    /// little room before the name.
+    private static func fileGlyph(_ path: String, size: CGFloat, link: URL) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: size)
+        let image = FileTypeGlyph.image(for: path, size: round(size * 0.8))
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        let height = image.size.height
+        attachment.bounds = CGRect(x: 0, y: round((font.capHeight - height) / 2), width: image.size.width, height: height)
+        let glyph = NSMutableAttributedString(attachment: attachment)
+        // A word joiner, so a wrapping line never leaves the symbol behind without its name; it carries the room.
+        glyph.append(NSAttributedString(string: "\u{2060}"))
+        glyph.addAttributes([.link: link, .font: font], range: NSRange(location: 0, length: glyph.length))
+        glyph.addAttribute(.kern, value: round(size * 0.2), range: NSRange(location: glyph.length - 1, length: 1))
+        return glyph
+    }
+}
+
+/// An answer's text view that copies its words without the file symbols set before file links (`fileGlyph`), which
+/// would paste as a stray object character.
+final class ProseTextView: NSTextView {
+    static func plain(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{FFFC}", with: "").replacingOccurrences(of: "\u{2060}", with: "")
+    }
+
+    override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard type == .string else { return super.writeSelection(to: pboard, type: type) }
+        let text = selectedRanges.map { (string as NSString).substring(with: $0.rangeValue) }.joined(separator: "\n")
+        return pboard.setString(Self.plain(text), forType: .string)
     }
 }
 
