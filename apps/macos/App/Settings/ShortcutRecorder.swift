@@ -55,6 +55,7 @@ struct ShortcutRecorder: View {
         case .lookAtScreen: return tr("settings.overview.lookScreen")
         case .screenPart: return tr("shortcut.screenPart")
         case .recordCall: return tr("shortcut.recordCall")
+        case .captureWindow: return tr("windowCapture.shortcut")
         }
     }
 

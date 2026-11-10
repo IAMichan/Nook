@@ -694,7 +694,9 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
-    /// Nook's browser: the search engine of its address bar, and whether an agent's links open there or in your own.
+    /// Nook's browser: the search engine of its address bar, whether an agent's links open there or in your own, its
+    /// sign-ins (kept, imported from another browser), and Nook as the Mac's default browser.
+    @ViewBuilder
     private var browser: some View {
         Section(tr("settings.browser.title")) {
             BrowserSearchPicker()
@@ -710,7 +712,9 @@ struct WorkspaceSettingsSection: View {
                 SettingText("settings.browser.signIns")
             }
             .help(tr("settings.browser.signIns.detail"))
+            BrowserImportRow()
         }
+        DefaultBrowserSection()
     }
 
     /// How a choice for browser sign-ins reads in a picker.
@@ -1137,6 +1141,55 @@ struct WatchedPullRequestsSection: View {
             ToastCenter.shared.success(tr("connection.added", added.joined(separator: ", ")))
             dismiss()
         }
+    }
+}
+
+/// Nook as the Mac's default browser, and where the links other apps hand it then open (see `DefaultBrowser`,
+/// `IncomingLinkRoute`). macOS asks itself before it switches.
+private struct DefaultBrowserSection: View {
+    @AppStorage(IncomingLinkTarget.defaultsKey) private var target = IncomingLinkTarget.session.rawValue
+    @State private var isNook = DefaultBrowser.isNook
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                if isNook {
+                    Button(tr("browserDefault.restore")) {
+                        DefaultBrowser.restorePrevious { done($0) }
+                    }
+                    .disabled(PreviousBrowser.load() == nil)
+                } else {
+                    Button(tr("browserDefault.make")) {
+                        DefaultBrowser.makeNook { done($0) }
+                    }
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    SettingText("browserDefault.title")
+                    SettingNote(isNook ? tr("browserDefault.isNook") : tr("browserDefault.detail"))
+                }
+            }
+            Picker(selection: $target) {
+                ForEach(IncomingLinkTarget.allCases) { Text(tr("browserDefault.target." + $0.rawValue)).tag($0.rawValue) }
+            } label: {
+                SettingText("browserDefault.target")
+            }
+            .help(tr("browserDefault.target.help"))
+            if let error { SettingNote(error, tone: .error) }
+        }
+        .onAppear {
+            DefaultBrowser.refresh()
+            isNook = DefaultBrowser.isNook
+        }
+    }
+
+    /// macOS answered (you chose, or it refused): show what holds now.
+    private func done(_ failure: Error?) {
+        DefaultBrowser.refresh()
+        isNook = DefaultBrowser.isNook
+        // Cancelling the system's question is no error worth a line.
+        error = failure.flatMap { ($0 as NSError).code == NSUserCancelledError ? nil : $0.localizedDescription }
     }
 }
 

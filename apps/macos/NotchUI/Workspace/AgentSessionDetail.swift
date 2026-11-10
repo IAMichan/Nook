@@ -88,8 +88,9 @@ struct AgentSessionDetail: View {
 
     private func takeFromSidePanel() {
         guard case .live(let session) = selection,
-              let text = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
-        draft = SessionPrompts.merging(text, into: draft)
+              let delivery = ComposerInbox.shared.take(run: nil, directory: session.cwd) else { return }
+        draft = delivery.merged(into: draft)
+        composerState.images += delivery.images
         composerFocused = true
     }
 

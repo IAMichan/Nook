@@ -351,7 +351,11 @@ struct MarkdownView: View, Equatable {
             if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
             // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
             if pullRequestLinksBeside {
-                return MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) ? .handled : .systemAction
+                // Your own browser: while Nook is the default browser that is the one you had before, not Nook again.
+                return MainActor.assumeIsolated {
+                    if !AppModel.shared.openLinkBeside(url) { DefaultBrowser.openOutside(url) }
+                    return .handled
+                }
             }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
