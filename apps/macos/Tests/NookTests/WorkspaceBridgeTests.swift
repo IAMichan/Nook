@@ -190,6 +190,29 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(TerminalText.tail(long, lines: 1, limit: 10), "…" + String(repeating: "x", count: 10))
     }
 
+    func testTerminalLineEndFindsTheLastLine() {
+        XCTAssertEqual(TerminalText.lineEnd(from: 0, limit: 5_100) { $0 < 37 }, 37)
+        XCTAssertEqual(TerminalText.lineEnd(from: 1_200, limit: 6_300) { $0 >= 1_200 && $0 < 6_224 }, 6_224, "after trimmed history")
+        XCTAssertEqual(TerminalText.lineEnd(from: 0, limit: 10) { _ in false }, 0, "an empty buffer")
+        XCTAssertEqual(TerminalText.scrollbackLines, 5_000)
+    }
+
+    func testOptionTypesTheCharacterItsLayoutMakes() {
+        // Option+L on a German layout, Option+5 on a Dutch/US one, Option+Shift+A: text, not Meta.
+        XCTAssertTrue(TerminalText.optionTypesText("@"))
+        XCTAssertTrue(TerminalText.optionTypesText("["))
+        XCTAssertTrue(TerminalText.optionTypesText("|"))
+        XCTAssertTrue(TerminalText.optionTypesText("Å"))
+        // Arrows, function keys, a dead key's empty text, and control characters stay Meta.
+        XCTAssertFalse(TerminalText.optionTypesText("\u{F702}"))
+        XCTAssertFalse(TerminalText.optionTypesText("\u{F704}"))
+        XCTAssertFalse(TerminalText.optionTypesText(""))
+        XCTAssertFalse(TerminalText.optionTypesText(nil))
+        XCTAssertFalse(TerminalText.optionTypesText("\u{7F}"))
+        XCTAssertFalse(TerminalText.optionTypesText("\r"))
+        XCTAssertFalse(TerminalText.optionTypesText("ab"))
+    }
+
     // MARK: Tool names
 
     func testToolNames() {

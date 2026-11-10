@@ -15,6 +15,16 @@ struct Skill: Equatable, Sendable, Identifiable {
 enum SkillIndex {
     static let maxFileBytes = 64 * 1024
 
+    /// The folder whose project skills a session gets: the folder it works in, or, once its worktree was removed, the
+    /// project's own checkout, so an archived worktree session keeps its project's skills in the `$` list.
+    static func projectFolder(workingDirectory: String, projectPath: String,
+                              exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> URL? {
+        for folder in [workingDirectory, projectPath] where !folder.isEmpty && exists(folder) {
+            return URL(fileURLWithPath: folder, isDirectory: true)
+        }
+        return nil
+    }
+
     /// `<project>` roots come first: the first root that defines a name wins, so a project skill beats a user one.
     static func defaultRoots(home: URL, project: URL?) -> [URL] {
         var roots: [URL] = []

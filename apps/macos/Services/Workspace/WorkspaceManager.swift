@@ -328,8 +328,9 @@ final class WorkspaceManager: ObservableObject {
     var usageWindows: (String) -> [AutoModel.Window] = { _ in [] }
     /// The connected agents with their accounts, for "Auto" to pick among (see `AutoModel`); configured by AppModel.
     var autoAccounts: () -> [AutoModel.Account] = { [] }
-    /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
-    var runScript: ((String, String, String) -> Void)?
+    /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel. Returns whether that
+    /// terminal is still open, asked while a setup script holds the agent.
+    var runScript: ((String, String, String) -> @MainActor () -> Bool)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
     var bridgeLaunch: () -> BridgeLaunch? = { nil }
     /// A session is waiting for approval or has finished: AppModel displays it in the notch.
@@ -892,21 +893,20 @@ final class WorkspaceManager: ObservableObject {
                 return
             }
             guard let self, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
-            self.prepareTasks[id] = nil
             self.update(id) {
                 $0.workingDirectory = path
                 $0.worktreePath = path
                 $0.branch = branch
             }
             if let submoduleProblem { self.append(id, RunEvent(kind: .error, text: tr("sc.submodules.failed", submoduleProblem))) }
-            if prompt.isEmpty {
-                // Started without a first message: the worktree is ready and the session waits for yours.
-                self.update(id) {
-                    $0.status = .completed
-                    $0.turnStartedAt = nil
-                }
-            } else {
-                self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+            // The project's setup (nook.json `runOnWorktreeCreate`). One with `"async": false` holds the first turn until
+            // it ended; meanwhile the session stays preparing, and stopping it stops the wait.
+            let setup = ProjectScripts.setup(await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value)
+            guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+            let holds = setup.holdsAgent && !prompt.isEmpty
+            if !holds {
+                self.prepareTasks[id] = nil
+                self.startFirstTurn(id, prompt: prompt, executable: executable)
             }
             // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
             let worktreeKey = FolderLease.key(path)
@@ -916,14 +916,64 @@ final class WorkspaceManager: ObservableObject {
             if made {
                 self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
             }
-            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
-            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value
             guard !Task.isCancelled, self.run(id) != nil else { return }
-            for script in setup where script.runOnWorktreeCreate {
-                self.runScript?(path, script.command, script.name)
-                self.append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            let failure = await self.startSetupScripts(id, path: path, scripts: setup.scripts)
+            guard holds, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+            self.prepareTasks[id] = nil
+            if let failure {
+                self.update(id) { $0.move(to: .failed, detail: failure) }
+                self.append(id, RunEvent(kind: .error, text: failure))
+                return
+            }
+            self.startFirstTurn(id, prompt: prompt, executable: executable)
+        }
+    }
+
+    /// The first turn of a session in a new worktree; without a first message, the session waits for yours.
+    private func startFirstTurn(_ id: UUID, prompt: String, executable: String) {
+        if prompt.isEmpty {
+            update(id) {
+                $0.status = .completed
+                $0.turnStartedAt = nil
+            }
+        } else {
+            launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+        }
+    }
+
+    /// Starts the project's setup scripts in terminals next to the session, and returns once the ones with
+    /// `"async": false` ended: nil when they succeeded (or none waits), else what went wrong. While it waits it reads
+    /// the script's exit-code file twice a second; nothing runs when no script holds the agent.
+    func startSetupScripts(_ id: UUID, path: String, scripts: [ProjectScript]) async -> String? {
+        var waiting: [(name: String, status: String, open: @MainActor () -> Bool)] = []
+        for script in scripts {
+            if script.async {
+                _ = runScript?(path, script.command, script.name)
+                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+                continue
+            }
+            let status = FileManager.default.temporaryDirectory.appendingPathComponent("nook-setup-\(UUID().uuidString)").path
+            guard let open = runScript?(path, ProjectScripts.blockingCommand(script.command, statusFile: status), script.name) else { continue }
+            append(id, RunEvent(kind: .system, text: tr("ws.event.setupScriptWaiting", script.name)))
+            waiting.append((script.name, status, open))
+        }
+        var failure: String?
+        for item in waiting {
+            defer { try? FileManager.default.removeItem(atPath: item.status) }
+            while !Task.isCancelled {
+                let wasOpen = item.open()
+                if let code = ProjectScripts.exitStatus(FileManager.default.contents(atPath: item.status)) {
+                    if code != 0, failure == nil { failure = tr("ws.event.setupScriptFailed", item.name, String(code)) }
+                    break
+                }
+                if !wasOpen {
+                    failure = failure ?? tr("ws.event.setupScriptClosed", item.name)
+                    break
+                }
+                try? await Task.sleep(for: .milliseconds(500))
             }
         }
+        return failure
     }
 
     /// Resolves git metadata and captures the initial folder snapshot in the background without delaying the first turn.
@@ -2662,18 +2712,24 @@ final class WorkspaceManager: ObservableObject {
     /// The lines one turn added and removed per file (between the same snapshots as `turnDiff`), keyed by the path
     /// relative to the session's folder. Binary files count as nothing. With a snapshot on both sides of the turn these
     /// are all the files it changed, also by a command or script (`sed`, a formatter) that no edit of the agent shows;
-    /// otherwise only `paths`, against the last commit or the files as they are now.
+    /// otherwise only `paths`, against the last commit or the files as they are now. When the turn pulled, merged or
+    /// rebased, the files Git brought in are left out unless the turn edited, committed or fixed a conflict in them
+    /// (`GitService.authoredPaths`); restoring a snapshot still brings back everything.
     func turnLines(_ id: UUID, paths: [String], start: Date, end: Date) async throws -> TurnLines {
         guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
         let from = around?.before.ref ?? "HEAD"
         let to = around?.after?.ref
+        let since = around?.before.date ?? start
         let complete = to != nil
         // A file outside the folder (the agent's own settings, say) would make git refuse the whole list.
         let root = directory.hasSuffix("/") ? directory : directory + "/"
         let inside = complete ? nil : paths.filter { !$0.hasPrefix("/") || $0.hasPrefix(root) }
-        let counts = try await Task.detached(priority: .utility) { try git.lineCounts(directory, paths: inside, from: from, to: to) }.value
+        let counts = try await Task.detached(priority: .utility) {
+            let authored = to.flatMap { git.authoredPaths(directory, from: from, to: $0, since: since) }
+            return try git.lineCounts(directory, paths: inside, from: from, to: to, authored: authored)
+        }.value
         return TurnLines(counts: counts.mapValues { EditLines(added: $0.added ?? 0, removed: $0.removed ?? 0) }, complete: complete)
     }
 

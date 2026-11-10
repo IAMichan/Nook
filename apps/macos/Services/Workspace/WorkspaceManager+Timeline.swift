@@ -20,6 +20,10 @@ extension WorkspaceManager {
                     recordFileChange(id, path: change.path, kind: change.kind)
                 }
                 for path in paths where recorded.insert(path).inserted { recordFileChange(id, path: path, kind: "modified") }
+                // The agent merged or closed a pull request from the shell: its state shows now, for every agent alike.
+                if let input, PullRequestToolCall.closesPullRequest(command: PullRequestToolCall.texts(in: input.object)) {
+                    PullRequestSync.shared.recheck(id)
+                }
             }
         }
     }
