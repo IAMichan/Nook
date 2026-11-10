@@ -117,6 +117,12 @@ extension AppModel {
         refreshListedSessions()
     }
 
+    /// A model picker opened: looks for a newer model manifest when the last fetch is more than a few minutes old. The
+    /// fetch does not block the picker; it redraws when a newer list lands.
+    func modelPickerOpened() {
+        workspace.refreshModelManifest(every: ModelManifestRefresh.pickerInterval)
+    }
+
     /// Asks the agents whose earlier sessions come from themselves (OpenCode, Cursor, Grok, the ACP agents you added) for
     /// them, every connected account, so they show with the sessions read from disk and continue in Nook. Sessions Nook
     /// runs itself already have their place in the list.
