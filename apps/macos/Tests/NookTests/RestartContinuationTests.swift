@@ -60,3 +60,50 @@ final class RestartContinuationTests: XCTestCase {
         XCTAssertNil(loaded.first { $0.id == running.id }?.interruptedWhileWaiting)
     }
 }
+
+/// A session whose turn ended while it waited on a subagent, when Nook quit: it is woken with a note.
+final class RestartBackgroundWaitTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func waiting() -> WorkspaceRun {
+        var run = TestData.run(status: .completed)
+        run.updatedAt = now.addingTimeInterval(-3 * 3600)
+        run.cutBackgroundWork = CutBackgroundWork(labels: ["Audit chats"], at: now.addingTimeInterval(-60))
+        return run
+    }
+
+    func testAWaitCutByTheRestartContinues() {
+        var run = waiting()
+        XCTAssertTrue(RestartContinuation.shouldContinue(run, enabled: true, now: now), "the quit is what counts, not the turn's end")
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: false, now: now))
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, hasPendingQuestion: true, now: now))
+        run.continuations = RestartContinuation.limit
+        run.lastContinuedAt = now.addingTimeInterval(-30)
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "the loop cap holds")
+        run = waiting()
+        run.cutBackgroundWork?.at = now.addingTimeInterval(-RestartContinuation.maxAge - 1)
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "a quit long ago is yours to pick up")
+        run = waiting()
+        run.cutBackgroundWork = nil
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "a finished session waited on nothing")
+    }
+
+    func testTheMessageNamesWhatStopped() {
+        let message = RestartContinuation.message(for: waiting())
+        XCTAssertTrue(message.hasPrefix("Note: Nook restarted"))
+        XCTAssertTrue(message.contains("- subagent: Audit chats"))
+        XCTAssertTrue(message.hasSuffix(RestartContinuation.message))
+        XCTAssertEqual(RestartContinuation.message(for: TestData.run(status: .stopped)), RestartContinuation.message)
+        let many = RestartContinuation.note((1...12).map { "Task \($0)" })
+        XCTAssertTrue(many.contains("- and 2 more"))
+        XCTAssertFalse(many.contains("Task 11"))
+    }
+
+    func testOnlySubagentsStillAtWorkAreWaitedOn() {
+        let running = RunEvent(kind: .tool, text: "Agent · Audit", tool: "Agent", detail: #"{"description":"Audit chats"}"#, state: .running)
+        let done = RunEvent(kind: .tool, text: "Agent · Fix", tool: "Agent", detail: #"{"description":"Fix"}"#, state: .done)
+        var server = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash", state: .running)
+        server.background = true
+        XCTAssertEqual(RestartContinuation.waitedOn([running, done, server]), ["Audit chats"])
+    }
+}

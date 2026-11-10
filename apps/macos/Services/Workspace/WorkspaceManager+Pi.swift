@@ -36,9 +36,15 @@ extension WorkspaceManager {
             turns[id] = state
         case .confirm(let requestID, let title, let message):
             requestPiApproval(id, requestID: requestID, title: title, message: message)
-        case .unsupportedDialog(let requestID):
-            // Nook draws no select, input or editor dialog: cancel it so the extension goes on.
-            processes[id]?.send(PiRPC.line(["type": "extension_ui_response", "id": requestID, "cancelled": true]))
+        case .dialog(let requestID, let question):
+            // An extension asks something: the same question panel as every agent's questions, in place of the composer.
+            pauseLive(id)
+            let pending = PendingQuestion(id: "pidialog-" + requestID, runID: id, questions: [question],
+                                          origin: .pi(requestID: requestID), created: Date())
+            guard !(questions[id] ?? []).contains(where: { $0.id == pending.id }) else { break }
+            questions[id, default: []].append(pending)
+            update(id) { $0.move(to: .waitingApproval) }
+            if let run = run(id) { onQuestion?(run, pending) }
         case .notice(let message):
             append(id, RunEvent(kind: .system, text: message))
         case .compactionStarted:

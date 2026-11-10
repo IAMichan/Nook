@@ -1,5 +1,42 @@
 import Foundation
 
+/// Claude Code's Ultracode, a toggle beside the effort (`withUltracodeToggle`): the agent plans and checks its work
+/// in a longer workflow at extra-high effort. Claude Code reads it as `ultracode` in the settings it starts with, the
+/// key passes through the Agent SDK's `settings` (Nook's `--settings`). Claude's model catalog offers it on the
+/// models below; the other agents have no such thing (`ProviderCapabilities.ultracode`).
+enum Ultracode {
+    /// The models whose effort levels include Ultracode in Claude's model catalog, without "claude-" and a date.
+    static let models: Set<String> = ["fable-5", "opus-5-5", "opus-5", "opus-4-8", "sonnet-5-5", "haiku-5-5"]
+    /// Claude Code's aliases resolve to the newest model of each family, which has it; empty is its default model.
+    static let aliases: Set<String> = ["", "default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
+
+    static func offered(provider: RunProvider, model: String?) -> Bool {
+        guard provider.capabilities.ultracode else { return false }
+        switch provider {
+        case .claude:
+            let name = normalized(model ?? "")
+            return aliases.contains(name) || models.contains(name)
+        case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
+            return false
+        }
+    }
+
+    /// "claude-opus-5-5[1m]", "us.anthropic.claude-opus-4-8-20260101-v1:0" and "Opus-5-5" all read "opus-5-5".
+    static func normalized(_ model: String) -> String {
+        var name = model.lowercased().trimmingCharacters(in: .whitespaces)
+        if let range = name.range(of: "claude-", options: .backwards) { name = String(name[range.upperBound...]) }
+        if name.hasSuffix("[1m]") { name = String(name.dropLast(4)) }
+        if let range = name.range(of: #"-v\d+(:\d+)?$"#, options: .regularExpression) { name.removeSubrange(range) }
+        if let range = name.range(of: #"-\d{8}$"#, options: .regularExpression) { name.removeSubrange(range) }
+        return name
+    }
+
+    /// Claude Code's `--settings`: `ultracode` as you chose it; nothing when you did not, so your own setting holds.
+    static func claudeSettings(_ on: Bool?) -> [String: Any] {
+        on.map { ["ultracode": $0] } ?? [:]
+    }
+}
+
 /// A faster (and dearer) way of serving the same model, picked beside the effort (`ProviderCapabilities.speedTiers`).
 /// Codex lists the tiers per model in `model/list` (`serviceTiers`, before that `additionalSpeedTiers`) and takes the
 /// chosen one as `serviceTier` on `turn/start` (`service_tier` in its config for `codex exec`). Claude Code has one,

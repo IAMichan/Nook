@@ -291,6 +291,8 @@ struct NewSessionComposer: View {
             permissionMenu
             effortMenu
             ComposerSpeedTier(tiers: speedTiers, chosen: config.speedTier) { config.speedTier = $0 }
+            ComposerUltracodeToggle(offered: Ultracode.offered(provider: config.provider, model: config.model),
+                                    on: config.ultracode == true) { config.ultracode = $0 }
             usageLimits
         }
         .rich(composerModel, composerConfig)
