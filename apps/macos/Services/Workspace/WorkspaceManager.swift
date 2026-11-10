@@ -140,6 +140,11 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions whose title is being written again on request (`regenerateTitle`): a second request waits for the first.
     /// Not published: nothing draws it.
     var regeneratingTitles: Set<UUID> = []
+    /// The message you will likely send next, per session, shown as ghost text in its empty composer
+    /// (`NextPromptSuggestion`, WorkspaceManager+NextPrompt).
+    @Published var nextPrompts: [UUID: NextPromptState] = [:]
+    /// The request writing a session's suggestion; cancelled when you type or a turn starts.
+    var nextPromptTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Codex sessions over `codex app-server` (see WorkspaceManager+CodexServer), kept alive between turns.
     var codexServers: [UUID: CodexAppServerClient] = [:]
@@ -2285,6 +2290,7 @@ final class WorkspaceManager: ObservableObject {
         // State that only lives during a turn or while the session is open.
         turns[id] = nil
         regeneratingTitles.remove(id)
+        dropNextPrompt(id)
         checkpointing.remove(id)
         acpCommands[id] = nil
         queueLooks.remove(id)
@@ -2690,6 +2696,7 @@ final class WorkspaceManager: ObservableObject {
 
     func replace(_ run: WorkspaceRun) {
         guard let index = runIndex(run.id) else { return }
+        if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(run.id) }
         runs[index] = run
         scheduleSave()
     }
@@ -2700,6 +2707,8 @@ final class WorkspaceManager: ObservableObject {
         change(&run)
         guard run != runs[index] else { return }
         let freedPlace = runs[index].status.isActive && !run.status.isActive
+        // A turn starts: the suggestion for the one before it no longer fits.
+        if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(id) }
         run.updatedAt = max(run.updatedAt, runs[index].updatedAt)
         runs[index] = run
         if save { scheduleSave() }
