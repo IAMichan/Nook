@@ -95,6 +95,21 @@ final class UsageLimitTests: XCTestCase {
         XCTAssertEqual(UsageLimits.effectiveHighestPercent([]), 0)
     }
 
+    func testComposerChipLines() {
+        let hour: TimeInterval = 3600, week: TimeInterval = 7 * 24 * hour
+        let lines = UsageLimits.chipLines([(5 * hour, 38.4, "5 hours"), (week, 12, "Week")])
+        XCTAssertEqual(lines.map(\.used), [38, 12])
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertEqual(UsageLimits.chipLines([(week, 93, "Week"), (5 * hour, 44, "5 hours")]).map(\.used), [44, 93],
+                       "the short window comes first whatever the agent's order")
+        XCTAssertEqual(UsageLimits.chipLines([(5 * hour, 10, "A · 5 hours"), (week, 20, "A · Week"),
+                                              (5 * hour, 70, "B · 5 hours"), (week, 5, "B · Week")]).map(\.used), [70, 20],
+                       "per model: the fullest window of each length")
+        XCTAssertEqual(UsageLimits.chipLines([(week, 50, "Week")]).map(\.used), [50], "one length: one line")
+        XCTAssertEqual(UsageLimits.chipLines([(5 * hour, 120, "5 hours"), (nil, -3, "Other")]).map(\.used), [100, 0])
+        XCTAssertTrue(UsageLimits.chipLines([]).isEmpty)
+    }
+
     func testResetReadFromText() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
