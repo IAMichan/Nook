@@ -370,7 +370,7 @@ enum CodexAppServerMapper {
             guard finished, let text = item["text"] as? String, !text.isEmpty else { return [] }
             return [.plan(text)]
         case "contextCompaction":
-            return finished ? [.notice("compact")] : []
+            return finished ? [.notice("compact")] : [.compaction(.started)]
         default:
             return []
         }

@@ -2008,9 +2008,13 @@ final class WorkspaceManager: ObservableObject {
             // Turn finished: keep Claude Code waiting for the next message instead of closing it.
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
-            if text == "compact" {
-                turns[id]?.compacted = true
-                append(id, RunEvent(kind: .system, text: tr(sizeCompacting.contains(id) ? "ws.event.sizeCompaction" : idleCompacting.contains(id) ? "ws.event.idleCompaction" : "ws.event.compacted")))
+            if text == "compact" { compactionFinished(id) }
+        case .compaction(let phase):
+            // Claude Code reports a compaction it gave up for your Stop as failed: that is stopped, not an error.
+            if case .failed = phase, turns[id]?.stopping == true {
+                compactionFailed(id, message: nil)
+            } else {
+                noteCompaction(id, phase)
             }
         case .rateLimits(let event):
             onRateLimits?()
