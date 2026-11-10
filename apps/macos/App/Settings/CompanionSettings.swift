@@ -105,6 +105,9 @@ struct CompanionSettingsRows: View {
         } expanded: {
             if outdated {
                 SettingNote(tr("companion.device.outdated"), tone: .error)
+            } else if device.protocolVersion != nil, CompanionCompatibility.phoneBehind(device.protocolVersion) {
+                // It works, but cannot use what this Nook added since (pull requests, sharing…).
+                SettingNote(tr("companion.phone.behind"), tone: .info)
             }
             SheetPart(tr("companion.scopes.title")) {
                 scopeToggles(Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))

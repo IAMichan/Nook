@@ -81,12 +81,8 @@ struct TranscriptReply<Extras: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if !text.isEmpty {
-                Markdown.text(text)
-                    .font(Theme.TextStyle.body)
-                    .foregroundStyle(failed ? Theme.coral : Theme.textStrong)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                // Diagrams and math drawn as on the Mac; anything else is the same text as always.
+                RichMessageText(text: text, color: failed ? Theme.coral : Theme.textStrong)
                     .contextMenu { MessageCopyButton(text: text) }
             }
             extras()
