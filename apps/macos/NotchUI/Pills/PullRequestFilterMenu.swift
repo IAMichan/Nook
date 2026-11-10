@@ -112,7 +112,7 @@ struct PullRequestFilterMenu: View {
                     .foregroundStyle(isDefault(row) ? NookTheme.textTertiary : NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Image(systemName: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                Image(icon: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
@@ -392,7 +392,7 @@ struct PullRequestToolbarButton: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol).font(NookTheme.font(11, .semibold))
+            Image(icon: symbol).font(NookTheme.font(11, .semibold))
             Text(title).font(NookTheme.TextStyle.body)
             if badge > 0 {
                 Text("\(badge)")
@@ -439,7 +439,7 @@ private struct FilterChoiceRow: View {
                 .buttonStyle(.plain)
             if let toggleHidden, hovering || hidden {
                 Button(action: toggleHidden) {
-                    Image(systemName: hidden ? "eye" : "eye.slash")
+                    Image(icon: hidden ? "eye" : "eye.slash")
                         .font(NookTheme.font(10.5, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: 18, height: 18)
@@ -479,7 +479,7 @@ private struct FilterChoiceRow: View {
                 Text(trailing).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textTertiary)
             }
             if chosen {
-                Image(systemName: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
+                Image(icon: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
             }
         }
         .frame(maxHeight: .infinity)

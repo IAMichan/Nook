@@ -31,10 +31,10 @@ struct ProjectIconView: View {
                         .frame(width: size, height: size)
                         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip * size / 24, style: .continuous))
                 } else {
-                    Image(systemName: symbol).font(NookTheme.font(size * 0.85, .medium))
+                    Image(icon: symbol).font(NookTheme.font(size * 0.85, .medium))
                 }
             case nil:
-                Image(systemName: symbol).font(NookTheme.font(size * 0.85, .medium))
+                Image(icon: symbol).font(NookTheme.font(size * 0.85, .medium))
             }
         }
         .frame(width: size, height: size)

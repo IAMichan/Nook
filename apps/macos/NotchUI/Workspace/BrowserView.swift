@@ -44,6 +44,14 @@ final class BrowserStore: ObservableObject {
     /// The site you just signed in to while this browser still asks whether to keep sign-ins (`BrowserProfiles`): the
     /// browser asks above the page until you answer.
     @Published private(set) var signInQuestion: String?
+    /// The agent driving this browser now (opening, clicking, typing), while it does: the page glows at its edges with a
+    /// way to stop it (`BrowserTakeoverOverlay`). Clears a while after its last step, or as soon as you browse yourself.
+    @Published private(set) var drivenBy: String?
+    /// You stopped agents driving this browser: their next step is refused until you allow them again.
+    @Published private(set) var agentsStopped = false
+    private var driveEnd: Task<Void, Never>?
+    /// How long the glow stays after an agent's last step: long enough to cover the model thinking between two clicks.
+    static let driveLinger: UInt64 = 20
 
     /// One website data store for all tabs of this browser: see `BrowserProfiles`.
     private let dataStore: WKWebsiteDataStore
@@ -144,6 +152,7 @@ final class BrowserStore: ObservableObject {
     /// You browse yourself now, or the chat does: the page is no longer what an agent opened for its chat's corner.
     func go(_ input: String) {
         SessionBrowsers.shared.putAway(self)
+        endDrive()
         page.go(input)
     }
     func open(_ url: URL) {
@@ -174,6 +183,43 @@ final class BrowserStore: ObservableObject {
     func signedIn(to host: String) {
         guard signInQuestion == nil, BrowserProfiles.policy(for: session) == .ask else { return }
         signInQuestion = host.isEmpty ? (page.webView.url?.host ?? "") : host
+    }
+
+    // MARK: An agent driving
+
+    /// An agent takes a step in this browser: it glows for a while from now. Refused (false) while you stopped agents.
+    @discardableResult
+    func agentDrives(_ agent: String) -> Bool {
+        guard !agentsStopped else { return false }
+        if drivenBy != agent { drivenBy = agent }
+        driveEnd?.cancel()
+        driveEnd = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.driveLinger * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.drivenBy = nil
+        }
+        return true
+    }
+
+    /// An agent only looks (a snapshot, a wait): the glow stays on if it was, but looking alone does not turn it on.
+    func agentLooks(_ agent: String) {
+        if drivenBy != nil { agentDrives(agent) }
+    }
+
+    /// Stop: the page stops where it is and agents may not drive this browser until you allow it again.
+    func stopAgents() {
+        agentsStopped = true
+        endDrive()
+        pages.forEach { $0.webView.stopLoading() }
+    }
+
+    /// Agents may drive this browser again.
+    func allowAgents() { agentsStopped = false }
+
+    private func endDrive() {
+        driveEnd?.cancel()
+        driveEnd = nil
+        if drivenBy != nil { drivenBy = nil }
     }
 
     /// Your answer to the question: stored for good (Settings › Browser or the project's own row), or nil for "later",
@@ -727,7 +773,7 @@ struct BrowserView: View {
                     }
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
+                    Image(icon: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
                         .font(NookTheme.font(9.5, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                     TextField(tr("workbench.browser.address"), text: $store.address)
@@ -784,6 +830,7 @@ struct BrowserView: View {
             WebViewHost(webView: store.webView)
                 .id(store.page.id)
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
+                .overlay { BrowserTakeoverOverlay(store: store) }
         }
         // In view: whatever an agent opens here is seen, also while you watch.
         .onAppear {
@@ -828,7 +875,7 @@ struct BrowserView: View {
             ForEach(servers) { server in
                 Button { store.go(server.address) } label: {
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        Image(systemName: "server.rack").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                        Image(icon: "server.rack").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                         Text(verbatim: "localhost:\(server.port)").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
                         Spacer(minLength: NookTheme.Spacing.sm)
                         Text(verbatim: server.process).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
@@ -877,7 +924,7 @@ struct BrowserView: View {
     /// What you want to say about the element, before it goes to the session's composer.
     private func pickBar(_ element: PickedElement) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             TextField(tr("browser.annotate.note"), text: $pickNote)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.detail)
@@ -985,7 +1032,7 @@ private struct BrowserPopupView: View {
                 if let agent = store.openedBy {
                     AgentMark(agent: agent, account: nil, size: 14, ring: .clear)
                 } else {
-                    Image(systemName: "safari")
+                    Image(icon: "safari")
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -1001,10 +1048,10 @@ private struct BrowserPopupView: View {
                 }
                 Spacer(minLength: 0)
                 if store.loading { ProgressView().controlSize(.small) }
-                Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
+                Button { store.openInDefaultBrowser() } label: { Image(icon: "arrow.up.forward.app") }
                     .help(DefaultBrowser.openOutsideTitle)
                     .disabled(store.webView.url == nil)
-                Button(action: expand) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                Button(action: expand) { Image(icon: "arrow.up.left.and.arrow.down.right") }
                     .help(tr("browser.popup.expand"))
             }
             .buttonStyle(.borderless)
@@ -1014,6 +1061,7 @@ private struct BrowserPopupView: View {
             .frame(height: 38)
             Divider()
             WebViewHost(webView: store.webView).id(store.page.id)
+                .overlay { BrowserTakeoverOverlay(store: store, compact: true) }
         }
         .background(NookTheme.field)
         .ignoresSafeArea()
@@ -1181,7 +1229,7 @@ struct SessionBrowserCard: View {
                 if let agent = store.openedBy {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
                 } else {
-                    Image(systemName: "safari")
+                    Image(icon: "safari")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -1210,6 +1258,7 @@ struct SessionBrowserCard: View {
                 .onEnded { _ in dragEnded() })
             NookDivider()
             WebViewHost(webView: store.webView).id(store.page.id)
+                .overlay { BrowserTakeoverOverlay(store: store, compact: true) }
         }
         // Its usual size, narrower when the conversation it floats over is narrow (see `SessionTools`).
         .frame(maxWidth: Self.size.width)

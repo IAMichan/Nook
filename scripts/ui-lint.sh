@@ -18,6 +18,8 @@
 #   8. A pull request's state, checks and reviews take their icon and color from PullRequestIcon
 #      (NotchUI/Components/PullRequestIcons.swift): no arrow.triangle.pull / .merge, and the drawn marks only through
 #      PullRequestStateIcon or NookSymbol.
+#   9. Icons are drawn with Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift), which turns an SF Symbol
+#      name into Nook's Lucide icon; never Image(systemName:) or NSImage(systemSymbolName:) directly.
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
 # `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
@@ -73,9 +75,13 @@ grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\
   NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))"
 
-grep -rnE 'Image\(systemName: "magnifyingglass"\)' NotchUI App --include='*.swift' \
+grep -rnE 'Image\((systemName|icon): "magnifyingglass"\)' NotchUI App --include='*.swift' \
   | grep -v -e '^NotchUI/Components/PanelBlocks.swift:' -e '^NotchUI/Pills/TimelineFind.swift:' \
   | report "search fields are a NookSearchField (no magnifying glass and text field built inline)"
+
+grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Theme/NookIcon.swift:' \
+  | report "icons go through Image(icon:) / NookIcon.nsImage, so they are Nook's Lucide icons (no raw SF Symbols)"
 
 grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Components/PanelBlocks.swift:' \

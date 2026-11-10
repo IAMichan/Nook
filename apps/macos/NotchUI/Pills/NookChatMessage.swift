@@ -142,7 +142,7 @@ private struct ChatErrorCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                Image(systemName: "exclamationmark.circle.fill")
+                Image(icon: "exclamationmark.circle.fill")
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.coralSoft)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

@@ -20,7 +20,7 @@ extension PullRequestDetailView {
             } else if let guide {
                 if !guide.isCurrent(for: detail.headSHA) {
                     HStack(spacing: NookTheme.Spacing.md) {
-                        Image(systemName: "clock.arrow.circlepath").foregroundStyle(NookTheme.amber)
+                        Image(icon: "clock.arrow.circlepath").foregroundStyle(NookTheme.amber)
                         Text(tr("agents.pr.guide.stale")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                         Spacer(minLength: 6)
                         NookGhostButton(title: tr("agents.pr.guide.rewrite"), compact: true) { writeGuide(detail, key: key) }
@@ -94,7 +94,7 @@ extension PullRequestDetailView {
                         }
                     }) {
                         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                            Image(systemName: "chevron.right")
+                            Image(icon: "chevron.right")
                                 .font(NookTheme.font(8.5, .bold))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .rotationEffect(.degrees(guideFiles.contains(file.path) ? 90 : 0))
@@ -126,7 +126,7 @@ extension PullRequestDetailView {
             }
             ForEach(stop.questions, id: \.self) { question in
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "questionmark.circle").foregroundStyle(NookTheme.amber)
+                    Image(icon: "questionmark.circle").foregroundStyle(NookTheme.amber)
                     Text(question).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
                         .fixedSize(horizontal: false, vertical: true)
                 }

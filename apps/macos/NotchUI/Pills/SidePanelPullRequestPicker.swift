@@ -237,7 +237,7 @@ struct SidePanelPullRequestPicker: View {
                     linking ? stopLinking() : startLinking()
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xxs) {
-                        Image(systemName: "plus").font(NookTheme.font(9, .semibold))
+                        Image(icon: "plus").font(NookTheme.font(9, .semibold))
                         Text(tr("agents.pr.linked.link")).font(NookTheme.TextStyle.caption)
                     }
                     .foregroundStyle(NookTheme.textSecondary)

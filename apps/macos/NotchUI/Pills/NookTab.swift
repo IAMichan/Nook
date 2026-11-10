@@ -345,7 +345,7 @@ struct NookChatView: View {
                         .help(tr("ws.title.renameHelp"))
                 }
                 if conversation.pinned {
-                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                    Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: NookTheme.Spacing.md)
                 if conversation.busy, let since = conversation.turnStarted {
@@ -391,7 +391,7 @@ struct NookChatView: View {
             Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
                 .disabled(conversation.busy)
         } label: {
-            Image(systemName: "ellipsis")
+            Image(icon: "ellipsis")
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 28, height: 28)

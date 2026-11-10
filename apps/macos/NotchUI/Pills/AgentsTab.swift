@@ -939,17 +939,17 @@ struct AgentListRow: View, Equatable {
     @ViewBuilder
     private var marks: some View {
         if pinned {
-            Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+            Image(icon: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
         }
         if item.forked {
-            Image(systemName: "arrow.triangle.branch")
+            Image(icon: "arrow.triangle.branch")
                 .font(NookTheme.font(10))
                 .foregroundStyle(NookTheme.textTertiary)
                 .help(tr("lineage.forked"))
                 .accessibilityLabel(tr("lineage.forked"))
         }
         if item.comparison > 0 {
-            Image(systemName: "square.stack.3d.up")
+            Image(icon: "square.stack.3d.up")
                 .font(NookTheme.font(10))
                 .foregroundStyle(NookTheme.textTertiary)
                 .help(tr("compare.group", item.comparison + 1))
@@ -1014,7 +1014,7 @@ struct AgentListRow: View, Equatable {
     }
 
     private func rowIcon(_ symbol: String, _ label: String) -> some View {
-        Image(systemName: symbol)
+        Image(icon: symbol)
             .font(NookTheme.font(11, .medium))
             .foregroundStyle(NookTheme.textSecondary)
             .frame(width: 22, height: 22)

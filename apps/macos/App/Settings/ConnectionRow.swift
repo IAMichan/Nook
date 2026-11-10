@@ -93,7 +93,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                 }
                 moreMenu
                 // The chevron last: every row lines up, whether it opens or not.
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                     .rotationEffect(.degrees(open ? 90 : 0))
@@ -149,7 +149,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     Button(removal.title + "…", role: .destructive) { confirmRemove = true }
                 }
             } label: {
-                Image(systemName: "ellipsis")
+                Image(icon: "ellipsis")
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 24, height: 24)

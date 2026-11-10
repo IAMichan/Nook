@@ -169,7 +169,7 @@ struct SettingsSidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(NookTheme.font(13))
                     .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
                     .frame(width: 18)
@@ -244,7 +244,7 @@ struct SettingsPageBar: View {
     }
 
     private var crumbChevron: some View {
-        Image(systemName: "chevron.right")
+        Image(icon: "chevron.right")
             .font(NookTheme.font(9, .semibold))
             .foregroundStyle(NookTheme.textMuted)
             .accessibilityHidden(true)

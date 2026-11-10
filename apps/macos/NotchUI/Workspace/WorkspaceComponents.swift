@@ -405,7 +405,7 @@ struct DiffText: View, Equatable {
 
     private func hunkRow(_ row: UnifiedDiff.Row) -> some View {
         HStack(spacing: 0) {
-            Image(systemName: "arrow.up.and.down")
+            Image(icon: "arrow.up.and.down")
                 .font(NookTheme.font(9, .semibold))
                 .foregroundStyle(WS.tertiary)
                 .frame(width: numberWidth * 2)
@@ -429,7 +429,7 @@ struct DiffText: View, Equatable {
 
     private func fileRow(_ row: UnifiedDiff.Row, first: Bool) -> some View {
         HStack(spacing: 7) {
-            Image(systemName: "doc.text")
+            Image(icon: "doc.text")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.secondary)
             Text(row.text)
@@ -458,7 +458,7 @@ struct DiffText: View, Equatable {
 
     private func commentRow(_ comment: ReviewComment) -> some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: "text.bubble.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.amber)
+            Image(icon: "text.bubble.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.amber)
             Text(comment.text)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.paper)
@@ -564,7 +564,7 @@ struct DiffLineRow: View, Equatable {
         .overlay(alignment: .topTrailing) {
             if commentable, hovering, !editing {
                 Button(action: comment) {
-                    Image(systemName: "plus.bubble.fill")
+                    Image(icon: "plus.bubble.fill")
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.paper)
                         .padding(.horizontal, 7)

@@ -194,7 +194,7 @@ struct ChatVideoFailure: View {
 
     var body: some View {
         VStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(icon: "exclamationmark.triangle.fill")
                 .font(NookTheme.font(16, .semibold))
                 .foregroundStyle(NookTheme.paper.opacity(0.85))
             Text(tr("card.video.unplayable"))

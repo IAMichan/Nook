@@ -36,7 +36,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
             if steered || promoted {
                 // "↪ Steer" marks a message that went into the turn while it ran.
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "arrow.uturn.right")
+                    Image(icon: "arrow.uturn.right")
                     Text(tr("agents.message.steer"))
                 }
                 .font(NookTheme.TextStyle.label)

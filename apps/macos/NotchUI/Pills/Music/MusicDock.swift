@@ -103,7 +103,7 @@ struct MusicShowAllButton: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Text(tr("music.showAll")).font(NookTheme.TextStyle.label)
-                Image(systemName: "chevron.right").font(NookTheme.font(9, .bold))
+                Image(icon: "chevron.right").font(NookTheme.font(9, .bold))
             }
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .padding(.horizontal, NookTheme.Spacing.md)

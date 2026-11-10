@@ -688,7 +688,7 @@ struct NookTaskRingLabel: View {
                             .foregroundStyle(NookTheme.paper)
                         Text(item.detail)
                             .foregroundStyle(NookTheme.textSecondary)
-                        Image(systemName: "arrow.up.right")
+                        Image(icon: "arrow.up.right")
                             .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(NookTheme.textSecondary)
                     }
