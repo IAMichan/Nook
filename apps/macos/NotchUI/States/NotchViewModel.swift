@@ -82,6 +82,10 @@ final class NotchViewModel: ObservableObject {
         didSet {
             guard selectedAgentID != oldValue else { return }
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
+            // Leaving a session counts as having seen what it finished, wherever the switch came from (the ring, a
+            // notice, search), also while the Agents tab is not on screen to notice it: otherwise "done" came back on its
+            // row until you opened it once more.
+            SessionVisits.shared.visit(oldValue)
             if continuingSession {
                 // The same conversation under another key: its browser, terminal and other tabs stay as they are.
                 continuingSession = false
@@ -417,6 +421,23 @@ final class NotchViewModel: ObservableObject {
         guard inWindow else { return state == .panel(tab) }
         if case .panel = state { return false }
         return WorkspaceWindowController.shared.isKey && windowTab == tab && windowSheet == nil
+    }
+
+    /// Whether `tab` is in sight anywhere: as the main tab under any of its names (Nook and its chat are one), beside
+    /// it in split view, in the open panel or the main window while that is in front, or in a window of its own that is.
+    func isInSight(_ tab: PanelTab) -> Bool {
+        if TabWindowController.shared.isKey(tab) { return true }
+        let main: PanelTab
+        if case .panel(let open) = state {
+            main = open
+        } else if WorkspaceWindowController.shared.isKey && windowSheet == nil {
+            main = windowTab
+        } else {
+            return false
+        }
+        if PanelSplitChoice.same(main, tab) { return true }
+        let stored = UserDefaults.standard.string(forKey: PanelSplitChoice.key) ?? ""
+        return PanelSplitChoice.side(stored, current: main).map { PanelSplitChoice.same($0, tab) } ?? false
     }
 
     /// Whether `tab` is on screen: in the open panel, or in the main window while that is in front.
