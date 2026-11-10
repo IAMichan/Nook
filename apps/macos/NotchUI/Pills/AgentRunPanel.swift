@@ -1415,8 +1415,16 @@ struct AgentRunPanel: View {
                           label: steers ? tr("compose.steer") : tr("compose.queue"),
                           symbol: steers ? "arrow.turn.down.right" : "text.append")
                 .sendingNow(active ? nil : sendNow)
+                // The message you will likely send next, once the turn has ended (Settings › Sessions); every agent.
+                .suggesting(active ? nil : workspace.nextPrompt(runID),
+                            onAccept: { workspace.dismissNextPrompt(runID) },
+                            onDismiss: { workspace.dismissNextPrompt(runID) })
                 .images($composerState.images)
                 .zIndex(1)
+                // Asked for only while this composer is on screen and empty: a finished turn, once.
+                .onChange(of: run.status, initial: true) { _, _ in
+                    workspace.requestNextPrompt(runID, composerEmpty: composerState.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
             .keyCommands(["queue.steerFirst": { steerFirstQueued() }])

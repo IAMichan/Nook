@@ -227,6 +227,7 @@ targets:
       - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
       - path: Core/I18n+ProviderTraffic.swift
+      - path: Core/I18n+TextGen.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
       - path: Core/I18n+Mail.swift
@@ -483,6 +484,7 @@ targets:
       - path: Services/Workspace/AutoModel.swift
       - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
+      - path: Services/Workspace/TextGenerators.swift
       - path: Services/Workspace/GitCheckpoints.swift
       - path: Services/Workspace/ConversationRollback.swift
       - path: Services/Workspace/TranscriptFollow.swift

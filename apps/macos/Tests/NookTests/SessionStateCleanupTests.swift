@@ -45,6 +45,7 @@ final class SessionStateCleanupTests: XCTestCase {
         "forgetConnectorSignIns(id)": ["connectorSignIns", "connectorSignInChecks"],
         "closeCodexServer(id)": ["codexServers", "codexIdleClose"],
         "closeClaudeProcess(id)": ["claudeIdle", "claudeIdleClose"],
+        "dropNextPrompt(id)": ["nextPrompts", "nextPromptTasks"],
         "closeAcpClient(id)": ["acpClients", "acpIdleClose", "acpWakeBuffer", "acpReplays", "acpWakeFinish"],
     ]
 }

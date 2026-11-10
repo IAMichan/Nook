@@ -1,20 +1,37 @@
 import Foundation
 
-/// Text an agent writes for Nook (titles, commit messages, pull requests): the session's own
-/// agent when that is Claude Code or Codex, otherwise whichever of the two is connected. Nil when neither is.
+/// Text Nook asks for (titles, commit messages, pull requests, the suggested next prompt): written by the generator
+/// chosen for its task in Settings (`TextGenerator`), by default the session's own agent when that is Claude Code or
+/// Codex, otherwise whichever of the two is connected. Nil when none can.
 extension WorkspaceManager {
-    /// `model` is the Claude model (a small one by default); `timeout` how long the call may take.
-    func generateText(_ prompt: String, schema: [String: Any], prefer provider: RunProvider?, profileID: String?,
+    /// `task` picks the generator (nil: always an agent, as for review guides, which read the whole diff); `model` is
+    /// the Claude model of the agent route (a small one by default); `timeout` how long the call may take.
+    func generateText(_ prompt: String, schema: [String: Any], task: TextTask?, prefer provider: RunProvider?, profileID: String?,
                       cwd: String, model: String? = nil, timeout: TimeInterval = 120) async -> [String: Any]? {
+        if let task, case .api(let api, let apiModel, let key) = TextGenerationRoute.resolve(settings.textGenerator(for: task),
+                                                                                            key: { SecretStore.read($0.keyAccount) }) {
+            // A failed request leaves the text to the caller's fallback, as an agent that gave no answer does: a key
+            // you chose for this should not quietly turn into a run on your subscription.
+            return try? await TextGeneratorAPI.generate(provider: api, model: apiModel, key: key, prompt: prompt, schema: schema,
+                                                        maxTokens: task.maxTokens, timeout: min(timeout, 90))
+        }
+        return await generateWithAgent(prompt, schema: schema, prefer: provider, profileID: profileID, cwd: cwd, model: model,
+                                       timeout: timeout)
+    }
+
+    private func generateWithAgent(_ prompt: String, schema: [String: Any], prefer provider: RunProvider?, profileID: String?,
+                                   cwd: String, model: String?, timeout: TimeInterval) async -> [String: Any]? {
         var order: [RunProvider] = [.claude, .codex]
         if let provider, let index = order.firstIndex(of: provider) { order.insert(order.remove(at: index), at: 0) }
         guard let pick = order.first(where: { executable($0) != nil }), let executable = executable(pick) else { return nil }
         let environment = accountEnvironment(pick == provider ? (profileID ?? pick.kind.rawValue) : pick.kind.rawValue)
         let engine: TextGeneration.Engine = pick == .claude ? .claude : .codex
-        return await Task.detached(priority: .utility) {
+        let work = Task.detached(priority: .utility) {
             await TextGenerationRunner.run(engine: engine, executable: executable, environment: environment, prompt: prompt,
                                      schema: schema, cwd: cwd, timeout: timeout, model: model)
-        }.value
+        }
+        // A detached task does not inherit cancellation: pass it on, so a cancelled request stops its agent process.
+        return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
     }
 
     /// A title for a new session from its first message, in place of the first line Nook shows until then. It is
@@ -46,7 +63,7 @@ extension WorkspaceManager {
         if announce { regeneratingTitles.insert(id) }
         Task { [weak self] in
             guard let self else { return }
-            let answer = await self.generateText(prompt, schema: TextGeneration.titleSchema, prefer: run.provider, profileID: run.profileID,
+            let answer = await self.generateText(prompt, schema: TextGeneration.titleSchema, task: .titles, prefer: run.provider, profileID: run.profileID,
                                                  cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory)
             if announce { self.regeneratingTitles.remove(id) }
             if renamesBranch, let raw = answer?["branch"] as? String, let slug = TextGeneration.branchSlug(raw) {
@@ -88,7 +105,7 @@ extension WorkspaceManager {
             title: detail.title, body: detail.body, base: detail.baseBranch, head: detail.headBranch,
             commits: detail.commits.map { "\($0.shortSHA) \($0.subject)" },
             files: detail.files.map { ($0.path, $0.status, $0.patch) }, instructions: instructions)
-        guard let answer = await generateText(prompt, schema: PullRequestReviewGuide.schema, prefer: nil, profileID: nil,
+        guard let answer = await generateText(prompt, schema: PullRequestReviewGuide.schema, task: nil, prefer: nil, profileID: nil,
                                               cwd: NSHomeDirectory(), model: "sonnet", timeout: 300) else { return nil }
         return PullRequestReviewGuide.parse(answer, files: detail.files.map(\.path), headSHA: detail.headSHA)
     }
