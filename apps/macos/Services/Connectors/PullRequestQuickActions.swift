@@ -28,6 +28,20 @@ enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Why the list already knows a pull request will not merge, as the `tr` key of `PullRequestQuickRunner.blocker`
+    /// (takes its number); nil when it may. The merge itself checks again against GitHub's answer.
+    static func mergeBlocker(_ item: PullRequestItem) -> String? {
+        switch item.state {
+        case .merged: return "agents.pulls.quick.blocked.merged"
+        case .closed: return "agents.pulls.quick.blocked.closed"
+        case .open: break
+        }
+        if item.draft { return "agents.pulls.quick.blocked.draft" }
+        if item.conflict { return "agents.pulls.quick.blocked.conflict" }
+        if item.ci == .failing { return "agents.pulls.quick.blocked.checks" }
+        return nil
+    }
+
     /// The method a quick merge uses: the one you last picked on a pull request's page when the repository allows it,
     /// else the repository's own first choice.
     static func mergeMethod(preferred: PullRequestMergeMethod, allowed: [PullRequestMergeMethod]) -> PullRequestMergeMethod? {

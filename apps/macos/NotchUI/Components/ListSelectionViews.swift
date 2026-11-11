@@ -65,59 +65,132 @@ struct SelectionAction: Identifiable {
     let label: String
     var destructive = false
     var enabled = true
-    /// Asked in the bar before the action runs; the second click confirms.
+    /// Asked in the bar before the action runs, with Cancel and `confirmTitle` beside it.
     var confirm: String?
+    /// The button that sends it after the question ("Yes, merge"); the label when nil.
+    var confirmTitle: String?
+    /// Under the question: what it will touch, and what it leaves out.
+    var confirmDetail: String?
+    /// How many of the picked rows it applies to, on its button, when that is not all of them.
+    var count: Int?
+    /// The bar's main action: filled, and the last button.
+    var primary = false
+    /// Why it cannot run now, on its tooltip while it is off.
+    var disabledHelp: String?
     let perform: () -> Void
     var id: String { symbol + label }
 }
 
-/// The bar under a list while selecting: how many are picked, select all, done, and the actions as icons. An action
-/// that cannot be undone asks first, in place of the count.
+/// The bar under a list while selecting, kept compact and centred however wide the list is. On top how many are
+/// picked (with an optional line saying which), select all and done; under it the actions as buttons with their names,
+/// the main one filled. Names give way to icons only where the list is too narrow for them. An action that cannot be
+/// undone asks first: the bar then says what will happen, with Cancel and the button that does it.
 struct SelectionBar: View {
     let count: Int
     let allSelected: Bool
     let actions: [SelectionAction]
+    /// Under the count: which rows these are, or what the actions will do with them.
+    var detail: String? = nil
     let toggleAll: () -> Void
     let done: () -> Void
     @State private var confirming: String?
 
+    /// The bar never gets wider than this: on a wide page its ends would be too far apart to read as one thing.
+    private static let maxWidth: CGFloat = 560
+
     var body: some View {
-        VStack(spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Text(confirmText ?? (count == 0 ? tr("select.none") : tr("select.count", count)))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(confirmText == nil ? NookTheme.textSecondary : NookTheme.coral)
-                    .lineLimit(1)
-                Spacer(minLength: NookTheme.Spacing.xs)
-                textButton(allSelected ? tr("button.clear") : tr("select.all"), action: toggleAll)
-                    .keyboardShortcut("a", modifiers: .command)
-                textButton(tr("select.done"), action: done)
-                    .keyboardShortcut(.escape, modifiers: [])
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            if let asking = actions.first(where: { $0.id == confirming }) {
+                question(asking)
+            } else {
+                header
+                actionRow
+            }
+        }
+        .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .frame(maxWidth: Self.maxWidth)
+        .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.panel)
+        .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.panel)
+        .frame(maxWidth: .infinity)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .onChange(of: count) { _, _ in confirming = nil }
+        .animation(NookTheme.hover, value: confirming)
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(count == 0 ? tr("select.none") : tr("select.count", count))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+                if let detail, count > 0 {
+                    Text(detail)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            textButton(allSelected ? tr("button.clear") : tr("select.all"), action: toggleAll)
+                .keyboardShortcut("a", modifiers: .command)
+            textButton(tr("select.done"), action: done)
+                .keyboardShortcut(.escape, modifiers: [])
+        }
+    }
+
+    /// The actions with their names; only icons where that does not fit. The main one sits last, on the right.
+    private var actionRow: some View {
+        let ordered = actions.filter { !$0.primary } + actions.filter(\.primary)
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(ordered.filter { !$0.primary }) { actionButton($0, labeled: true) }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                ForEach(ordered.filter(\.primary)) { actionButton($0, labeled: true) }
             }
             HStack(spacing: NookTheme.Spacing.xs) {
-                ForEach(actions) { action in
-                    iconButton(action)
-                }
+                ForEach(ordered) { actionButton($0, labeled: false) }
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.panel)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-        .onChange(of: count) { _, _ in confirming = nil }
     }
 
-    private var confirmText: String? {
-        guard let confirming else { return nil }
-        return actions.first { $0.id == confirming }?.confirm
+    /// "Merge 2 pull requests?", what it touches, and Cancel beside the button that does it.
+    private func question(_ action: SelectionAction) -> some View {
+        AdaptiveActionRow(alignment: .center) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(action.confirm ?? action.label)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(action.destructive ? NookTheme.coral : NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail = action.confirmDetail {
+                    Text(detail)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } actions: {
+            SmallGhostButton(title: tr("button.cancel")) { confirming = nil }
+                .keyboardShortcut(.escape, modifiers: [])
+            if action.destructive {
+                destructiveButton(action.confirmTitle ?? action.label) { send(action) }
+            } else {
+                SmallPrimaryButton(title: action.confirmTitle ?? action.label, systemName: action.symbol) { send(action) }
+                    .keyboardShortcut(.return, modifiers: [])
+            }
+        }
     }
 
     private func run(_ action: SelectionAction) {
-        if action.confirm != nil, confirming != action.id {
+        if action.confirm != nil {
             confirming = action.id
             return
         }
+        send(action)
+    }
+
+    private func send(_ action: SelectionAction) {
         confirming = nil
         action.perform()
     }
@@ -132,23 +205,56 @@ struct SelectionBar: View {
         .buttonStyle(.plain)
     }
 
-    private func iconButton(_ action: SelectionAction) -> some View {
+    private func title(_ action: SelectionAction) -> String {
+        guard let shown = action.count, shown != count else { return action.label }
+        return "\(action.label) (\(shown))"
+    }
+
+    @ViewBuilder
+    private func actionButton(_ action: SelectionAction, labeled: Bool) -> some View {
         let usable = action.enabled && count > 0
-        let asking = confirming == action.id
-        return Button { run(action) } label: {
-            // NookSymbol: an SF Symbol name, or one of Nook's own marks (a pull request's merged or closed state).
-            NookSymbol(action.symbol, size: 12)
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(asking ? NookTheme.paper : (action.destructive ? NookTheme.coral : NookTheme.paper))
-                .frame(width: 30, height: 26)
-                .roundedBackground(asking ? NookTheme.coral.opacity(0.8) : NookTheme.field, radius: NookTheme.Radius.control)
+        Group {
+            if labeled, action.primary {
+                SmallPrimaryButton(title: title(action), systemName: action.symbol) { run(action) }
+            } else {
+                Button { run(action) } label: {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        // NookSymbol: an SF Symbol name, or one of Nook's own marks (a pull request's merged or closed state).
+                        NookSymbol(action.symbol, size: 12)
+                            .font(NookTheme.font(12, .medium))
+                        if labeled {
+                            Text(title(action)).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
+                        }
+                    }
+                    .foregroundStyle(action.destructive ? NookTheme.coral : (action.primary ? NookTheme.iris : NookTheme.paper))
+                    .padding(.horizontal, labeled ? NookTheme.Spacing.md : 0)
+                    .frame(minWidth: 30)
+                    .frame(height: labeled ? 30 : 26)
+                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(usable ? 1 : 0.4)
+            }
+        }
+        .disabled(!usable)
+        .help(usable ? action.label : (action.disabledHelp ?? action.label))
+        .accessibilityLabel(action.label)
+    }
+
+    private func destructiveButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, NookTheme.Spacing.md)
+                .frame(height: 30)
+                .roundedBackground(NookTheme.coral.opacity(0.85), radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!usable)
-        .opacity(usable ? 1 : 0.4)
-        .help(action.label)
-        .accessibilityLabel(action.label)
     }
 }
 
