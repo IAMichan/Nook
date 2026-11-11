@@ -21,8 +21,11 @@ extension WorkspaceManager {
                 }
                 for path in paths where recorded.insert(path).inserted { recordFileChange(id, path: path, kind: "modified") }
                 // The agent merged or closed a pull request from the shell: its state shows now, for every agent alike.
-                if let input, PullRequestToolCall.closesPullRequest(command: PullRequestToolCall.texts(in: input.object)) {
-                    PullRequestSync.shared.recheck(id)
+                if let input {
+                    let texts = PullRequestToolCall.texts(in: input.object)
+                    if PullRequestToolCall.closesPullRequest(command: texts) { PullRequestSync.shared.recheck(id) }
+                    // A pull request the agent works on with the forge's CLI joins the session's list, for every agent alike.
+                    noticePullRequests(id, PullRequestMentions.inCommand(texts), mustExist: false)
                 }
             }
         }
@@ -47,5 +50,30 @@ private struct SessionTimelineSink: RunTimelineSink {
 
     func eventID(callID: String) -> UUID? {
         MainActor.assumeIsolated { manager.timeline(id).last { $0.callID == callID && $0.kind == .tool }?.id }
+    }
+}
+
+// The pull requests a session works on besides its own branch's (`PullRequestMentions`): linked to it, so the tray above
+// its composer shows them with their state and checks.
+extension WorkspaceManager {
+    /// At most this many from one message or command: a pasted list of links is not a list of work.
+    private static let mentionsPerEvent = 6
+
+    func noticePullRequests(_ id: UUID, _ refs: [PullRequestRef], mustExist: Bool) {
+        guard !refs.isEmpty, let run = run(id) else { return }
+        let directory = run.workingDirectory
+        let key = PullRequestSync.sessionKey(run: id, directory: directory)
+        Task { @MainActor in
+            let sync = PullRequestSync.shared
+            let repository = await sync.repository(directory: directory)
+            for ref in refs.prefix(Self.mentionsPerEvent) {
+                guard let host = ref.host ?? repository?.host, let path = ref.repository ?? repository?.path else { continue }
+                let id = PullRequestLink(host: host, repository: path, number: ref.number).id
+                guard !sync.knows(id, session: key) else { continue }
+                if let link = await PullRequestResolver.resolve(ref, repository: repository, mustExist: mustExist) {
+                    sync.mention(link, session: key)
+                }
+            }
+        }
     }
 }

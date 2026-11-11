@@ -467,6 +467,7 @@ targets:
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/LinkedPullRequests.swift
       - path: Services/Workspace/PullRequestLinks.swift
+      - path: Services/Workspace/PullRequestMentions.swift
       - path: Services/Workspace/PullRequestStatus.swift
       - path: Services/Workspace/ScheduledTasks.swift
       - path: Services/Workspace/WorktreeOrigin.swift
