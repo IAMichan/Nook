@@ -46,6 +46,12 @@
 - name: skip changelog
   color: "ededed"
   description: Leave this pull request out of the release notes
+- name: needs triage
+  color: "fbca04"
+  description: New issue a maintainer has not looked at yet; remove the label once it has an area and a kind
+- name: preview
+  color: "1d76db"
+  description: Build an unsigned macOS app of this pull request to try (workflows/macos-preview.yml)
 - name: needs more info
   color: "d876e3"
   description: Waiting for the reporter; closed by workflows/stale.yml after 7 days without a reply

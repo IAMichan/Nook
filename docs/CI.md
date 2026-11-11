@@ -16,13 +16,20 @@ reusable workflow that can also be started on its own with *Run workflow*.
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
+| `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments) |
+| `ci.yml` → *Workflow scripts* | ubuntu, seconds | `.github/scripts`: `node --test` for the scripts below |
+| `ci.yml` → *Markdown links* | ubuntu, seconds | any `*.md`: [lychee](https://lychee.cli.rs) checks relative links and `#anchors` offline |
+| `ci.yml` → *Dependency review* | ubuntu, seconds, pull requests only | manifests and lock files (`package.json`, `Cargo.lock`, `Package.resolved`, `project.yml`, …): fails on a new dependency with a high or critical vulnerability |
+| `macos-preview.yml` | macOS, only with the `preview` label | builds an ad-hoc signed `Nook.app` of the pull request (artifact `nook-macOS-preview`, 14 days) so testers can try it without Xcode; every push rebuilds while the label stays |
 | `relay-deploy.yml` | ubuntu, on `main` or by hand | `apps/relay`: deploys Nook's relay to Cloudflare when its secrets are set |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
 | `labeler.yml` | ubuntu, seconds | adds area labels to every pull request from the paths it changes (`.github/labeler.yml`) |
 | `pr-size.yml` | ubuntu, seconds | labels every pull request `size:XS` to `size:XXL` from its changed lines (tests excluded) |
 | `pr-vouch.yml` | ubuntu, seconds | labels every pull request `vouch:trusted`, `vouch:unvouched` or `vouch:denounced` from its author and `.github/VOUCHED.td`; it blocks nothing. Comment `/recheck-vouch` to run it again |
 | `agent-context-budget.yml` | ubuntu, seconds | fails a pull request that makes the root `AGENTS.md` or `CLAUDE.md` larger than on the base branch (`scripts/agent-context-size.sh`), unless a maintainer adds the `agent-context-increase` label |
-| `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later (`keep open` exempts) |
+| `pr-overview.yml` | ubuntu, seconds, on pull request changes, reviews and when a pull request workflow finishes | keeps one comment at the top of every open pull request up to date: size, author, areas, CI, description, review and the next steps (`.github/scripts/pr-overview.cjs`) |
+| `welcome.yml` | ubuntu, seconds | welcomes someone on their first issue or pull request with what happens next (`.github/scripts/welcome.cjs`) |
+| `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later; locks issues and pull requests closed for 30 days (`keep open` exempts all of it) |
 | `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
 
 An area also runs when its own workflow file changes (and `.github/actions/**` for the ones that use it); a change to
@@ -40,6 +47,23 @@ change: add the new job to `needs` of `Check` (and to `scripts/ci-changes.sh` wh
 `.xcresult` bundles, `.DS_Store`, files under `.scratch/` or derived data, and any added or changed file over 2 MiB outside
 `apps/macos/Resources/` and `docs/assets/`. Screenshots that prove a change belong in the pull request description, not
 in the repository.
+
+## Community workflows
+
+The workflows that comment or label run on `pull_request_target`, `workflow_run` or `issues`, which have a write token
+also for pull requests from forks. That is only safe because they never check out or run pull request code: they load
+their script from the default branch (`.github/scripts`) and talk to the GitHub API. Keep it that way; zizmor fails the
+pull request that adds such a trigger without an `ignore` comment saying why it is safe. A bot comment must never
+contain `/recheck-vouch`, the command `pr-vouch.yml` listens for.
+
+New issues come in through the bug report and platform test report templates and get `needs triage`; remove it once
+the issue has an area and a kind. Ideas and questions go to Discussions (`.github/ISSUE_TEMPLATE/config.yml`).
+
+## Merging
+
+Auto-merge and the *Update branch* button are on: a pull request with auto-merge enabled merges by itself once `Check`
+is green and it has an approval. `ci.yml` already runs on `merge_group`, so a merge queue can be turned on in the
+`main` ruleset when many pull requests land at the same time; until then it costs nothing.
 
 ## What keeps the minutes down
 
