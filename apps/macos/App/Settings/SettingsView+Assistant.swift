@@ -69,6 +69,9 @@ extension SettingsView {
             Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
                 .disabled(!doubleTap.enabled)
                 .help(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
+            Toggle(tr("doubletap.settings.suggest"), isOn: $doubleTap.suggests)
+                .disabled(!doubleTap.enabled)
+                .help(tr("doubletap.settings.suggestDetail"))
         } header: {
             SettingText("doubletap.settings.title")
         } footer: {
