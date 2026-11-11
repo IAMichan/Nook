@@ -424,6 +424,8 @@ enum AgentTranscript {
                                                    ? (payload["input"] as? String).flatMap(EditLines.of(patch:))
                                                        ?? EditLines.of(tool: name, input: arguments)
                                                    : nil,
+                                               // A picture it looked at (view_image) opens from the step, as a Read does.
+                                               file: opensFile(name) ? ToolSummary.path(arguments) : nil,
                                                patch: name == "apply_patch"
                                                    ? (payload["input"] as? String) ?? EditPatch.make(tool: name, input: arguments)
                                                    : nil,

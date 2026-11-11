@@ -264,8 +264,10 @@ final class NotchViewModel: ObservableObject {
     func openSidePullRequest(_ request: PullRequestOpenRequest?) {
         if let request {
             let key = request.item.id.lowercased()
-            if let open = sidePullRequestTabs.first(where: { $0.request?.item.id.lowercased() == key }) {
-                activeSidePullRequest = open.id
+            if let index = sidePullRequestTabs.firstIndex(where: { $0.request?.item.id.lowercased() == key }) {
+                // A link to a place in it (a comment, a file) goes there in the tab that has it.
+                if let focus = request.focus { sidePullRequestTabs[index].request?.focus = focus }
+                activeSidePullRequest = sidePullRequestTabs[index].id
             } else if let index = sidePullRequestTabs.firstIndex(where: { $0.id == activeSidePullRequest && $0.request == nil }) {
                 sidePullRequestTabs[index].request = request
             } else {

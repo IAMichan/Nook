@@ -62,7 +62,9 @@ extension PullRequestDetailView {
                 PullRequestTimelineRail(last: last) {
                     GitHubAvatar(login: event.author, size: 28)
                 } content: {
+                    // The comment a link pointed at is lit up, as the find bar lights its match.
                     PullRequestCommentCard(event: event, now: now, showsAvatar: false)
+                        .roundedBackground(NookTheme.iris.opacity(event.id == focusedEvent ? 0.16 : 0), radius: NookTheme.Radius.card)
                 }
             }
         }
