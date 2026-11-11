@@ -39,8 +39,8 @@ final class ChatFollowUpStore: ObservableObject {
     }
 
     /// The chats as the shared shape, for every app in the inbox at once.
-    static func turns(of inbox: ChatInbox) -> [ChatTurn] {
-        inbox.threads.values.map(ChatTurn.init)
+    static func turns(of inbox: ChatInbox) -> [ChatFollowUpTurn] {
+        inbox.threads.values.map(ChatFollowUpTurn.init)
     }
 
     /// Forgets the waits that were answered and the snoozes that ended, after the inbox changed.

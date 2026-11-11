@@ -4,8 +4,8 @@ import XCTest
 final class ChatFollowUpTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func turn(_ chat: String, mine: Bool = false, hoursAgo: Double, text: String = "hi", kind: ChatKind = .person) -> ChatTurn {
-        ChatTurn(chat: chat, app: "whatsapp", name: chat, kind: kind, date: now.addingTimeInterval(-hoursAgo * 3600),
+    private func turn(_ chat: String, mine: Bool = false, hoursAgo: Double, text: String = "hi", kind: ChatKind = .person) -> ChatFollowUpTurn {
+        ChatFollowUpTurn(chat: chat, app: "whatsapp", name: chat, kind: kind, date: now.addingTimeInterval(-hoursAgo * 3600),
                  lastIsMine: mine, lastText: text, unread: mine ? 0 : 1)
     }
 
@@ -37,7 +37,7 @@ final class ChatFollowUpTests: XCTestCase {
         XCTAssertEqual(follow.dueReminders(now: now.addingTimeInterval(25 * 3600)), ["anna"])
         follow.acknowledge(chat: "anna", now: now.addingTimeInterval(25 * 3600))
         XCTAssertTrue(follow.dueReminders(now: now.addingTimeInterval(26 * 3600)).isEmpty)
-        let answered = ChatTurn(chat: "anna", app: "telegram", name: "Anna", kind: .person, date: now.addingTimeInterval(60),
+        let answered = ChatFollowUpTurn(chat: "anna", app: "telegram", name: "Anna", kind: .person, date: now.addingTimeInterval(60),
                                 lastIsMine: false, lastText: "Sorry!", unread: 1)
         XCTAssertTrue(follow.answered(answered))
         XCTAssertTrue(follow.settle(with: [answered], now: now.addingTimeInterval(120)))
@@ -47,7 +47,7 @@ final class ChatFollowUpTests: XCTestCase {
     func testYourOwnMessageDoesNotAnswerYourWait() {
         var follow = ChatFollowUps()
         follow.markWaiting(chat: "anna", now: now)
-        let mine = ChatTurn(chat: "anna", app: "signal", name: "Anna", kind: .person, date: now.addingTimeInterval(60),
+        let mine = ChatFollowUpTurn(chat: "anna", app: "signal", name: "Anna", kind: .person, date: now.addingTimeInterval(60),
                             lastIsMine: true, lastText: "ping", unread: 0)
         XCTAssertFalse(follow.answered(mine))
         XCTAssertFalse(follow.settle(with: [mine], now: now.addingTimeInterval(120)))
@@ -106,7 +106,7 @@ final class ChatFollowUpTests: XCTestCase {
             InboxMessage(id: "1", text: "Dinner?", date: now.addingTimeInterval(-7200)),
             InboxMessage(id: "2", text: "Yes!", date: now.addingTimeInterval(-3600), fromMe: true),
         ], unread: 0)
-        let turn = ChatTurn(thread)
+        let turn = ChatFollowUpTurn(thread)
         XCTAssertTrue(turn.lastIsMine)
         XCTAssertEqual(turn.lastText, "Yes!")
         XCTAssertEqual(turn.kind, .person)
