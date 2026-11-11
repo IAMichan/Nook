@@ -1243,10 +1243,14 @@ struct AgentRunPanel: View {
                 workspace.configure(id, mode: .agent)
                 workspace.send(id, text: tr("ws.plan.implementPrompt") + "\n\n" + event.text)
                 app.viewModel.selectedAgentID = "run:" + id.uuidString
-            }) {
+            }, implement: {
                 workspace.configure(runID, mode: .agent)
                 workspace.send(runID, text: tr("ws.plan.implementPrompt"))
-            }
+            }, implementSelected: { kept in
+                // The agent carries out the plan as you edited it: the kept steps go along with the request.
+                workspace.configure(runID, mode: .agent)
+                workspace.send(runID, text: tr("ws.plan.implementPrompt") + "\n\n" + kept)
+            })
         } else if event.kind == .user {
             eventView(event, onEdit: workspace.canEditFromHere(runID, before: event.date) ? {
                 editError = nil
