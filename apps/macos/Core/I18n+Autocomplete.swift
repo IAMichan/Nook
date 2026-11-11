@@ -210,7 +210,7 @@ let autocompleteTranslations: [AppLanguage: [String: String]] = [
         "autocomplete.apps.hasInstructions": "Met eigen uitleg",
         "autocomplete.apps.sites": "Websites",
         "autocomplete.apps.siteAdd": "Website toevoegen, bijv. mail.google.com",
-        "autocomplete.apps.add": "Voeg toe",
+        "autocomplete.apps.add": "Toevoegen",
         "autocomplete.apps.addLast": "De website waar je net typte",
         "autocomplete.apps.removeSite": "Verwijder",
         "autocomplete.apps.sitesFooter": "Zet aanvullen uit op een website of geef hem eigen uitleg, ook als de browser zelf aan staat.",

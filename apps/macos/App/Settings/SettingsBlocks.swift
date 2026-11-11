@@ -1055,7 +1055,7 @@ struct WatchedPullRequestsSection: View {
 
     private var full: Bool { watching.entries.count >= PullRequestWatchList.limit }
 
-    /// The header's button and the empty list's: none once the list is full.
+    /// The header's button: none once the list is full.
     private var addAction: (title: String, action: () -> Void)? {
         full ? nil : (tr("watch.add"), { adding = true })
     }
@@ -1074,7 +1074,7 @@ struct WatchedPullRequestsSection: View {
             SettingToggle(tr("settings.pulls.myOrganizations"), detail: tr("settings.pulls.myOrganizationsDetail"),
                           isOn: $watching.includeOrganizations)
             if watching.entries.isEmpty {
-                ConnectionListEmpty(title: tr("watch.empty.title"), detail: tr("watch.empty.detail"), add: addAction)
+                ConnectionListEmpty(title: tr("watch.empty.title"), detail: tr("watch.empty.detail"))
             }
             ForEach(watching.entries, id: \.self) { entry in
                 let repository = PullRequestWatchList.isRepository(entry)
@@ -1107,7 +1107,8 @@ struct WatchedPullRequestsSection: View {
         }
     }
 
-    /// Typing an organization or repository to watch, with Cancel and Watch on the right.
+    /// Watching an organization or repository in two steps: its name, then ready to add (nothing to check: it is
+    /// searched with every connected GitHub account, which may each see different ones). Cancel and Watch on the right.
     private struct AddSheet: View {
         @Environment(\.dismiss) private var dismiss
         @ObservedObject private var watching = PullRequestWatchSettings.shared
@@ -1120,14 +1121,16 @@ struct WatchedPullRequestsSection: View {
             SetupSheet(title: tr("watch.addTitle"), subtitle: tr("settings.pulls.footer"), width: 460) {
                 ServiceTile(domain: "github.com", fallback: "building.2", size: 48)
             } content: {
-                Text(tr("watch.name")).font(NookTheme.TextStyle.strong)
-                TextField("", text: $text, prompt: Text(tr("settings.pulls.placeholder")))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(add)
-                    .onChange(of: text) { _, _ in invalid = false }
-                if invalid {
-                    SettingNote(tr("settings.pulls.invalid"), tone: .warning)
+                SetupStep(number: 1, title: tr("watch.name"), done: canAdd) {
+                    TextField(tr("watch.name"), text: $text, prompt: Text(tr("settings.pulls.placeholder")))
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(add)
+                        .onChange(of: text) { _, _ in invalid = false }
+                    if invalid {
+                        SettingNote(tr("settings.pulls.invalid"), tone: .warning)
+                    }
                 }
+                SetupCheckStep(number: 2, title: tr("setup.ready.title"), detail: tr("watch.ready.detail"), state: .idle)
             } footer: {
                 Spacer()
                 Button(tr("button.cancel")) { dismiss() }
