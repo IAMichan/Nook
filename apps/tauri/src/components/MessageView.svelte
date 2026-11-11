@@ -122,7 +122,7 @@
     {#each message.charts ?? [] as chart (chart.id)}<ChartView {chart} />{/each}
     {#each message.mails ?? [] as draft (draft.id)}<MailDraftView {draft} {nookId} />{/each}
     {#if message.actions.length}
-      <PlanCard {nookId} {message} />
+      <PlanCard {nookId} {message} {last} />
     {/if}
     {#if message.references.length && !message.streaming}
       <ol class="refs">
