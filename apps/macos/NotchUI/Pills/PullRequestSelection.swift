@@ -51,9 +51,10 @@ struct PullRequestSelectionRing: View {
     }
 }
 
-/// The bar under a list of pull requests while some are picked: how many, select all, done, and Merge and Close. Both
-/// ask first in the bar ("Merge 2 pull requests?"); the second click sends them. Merges queue up and go one at a time
-/// (`PullRequestQuickMerges`), each checked against what the one before changed.
+/// The bar under a list of pull requests while some are picked: how many and which, select all, done, and Close and
+/// Merge (the main one). Each asks first: what will happen, to which pull requests, and which are left out and why (a
+/// draft, a conflict, failing checks). Merges queue up and go one at a time (`PullRequestQuickMerges`), each checked
+/// against what the one before changed.
 struct PullRequestSelectionBar: View {
     /// The pull requests the list shows now, in its order, for select all.
     let shown: [PullRequestOpenRequest]
@@ -65,26 +66,56 @@ struct PullRequestSelectionBar: View {
         if !selection.isEmpty {
             let picked = selection.picked
             let ids = Set(picked.map(\.item.id))
-            let mergeable = picked.filter { PullRequestQuickAction.actions(for: $0.item).contains(.merge) }
+            let mergeable = picked.filter { PullRequestQuickAction.mergeBlocker($0.item) == nil }
+            let skipped = picked.compactMap { request in
+                PullRequestQuickAction.mergeBlocker(request.item).map { tr($0, "#\(request.item.number)") }
+            }
             let closable = picked.filter { PullRequestQuickAction.actions(for: $0.item).contains(.close) }
             SelectionBar(count: picked.count,
                          allSelected: !shown.isEmpty && Set(shown.map(\.item.id)).isSubset(of: ids),
                          actions: [
-                             SelectionAction(symbol: PullRequestIcon.symbol(.merged), label: tr("agents.pulls.quick.merge"),
-                                             enabled: !mergeable.isEmpty,
-                                             confirm: tr("agents.pulls.select.mergeConfirm", mergeable.count)) {
-                                 merge(mergeable)
-                             },
                              SelectionAction(symbol: PullRequestIcon.symbol(.closed), label: tr("agents.pulls.quick.close"),
                                              destructive: true, enabled: !closable.isEmpty,
-                                             confirm: tr("agents.pulls.sweep.confirm", closable.count)) {
+                                             confirm: Self.question(closable, one: "agents.pulls.select.closeConfirmOne", many: "agents.pulls.sweep.confirm"),
+                                             confirmTitle: tr("agents.pulls.select.closeYes"),
+                                             confirmDetail: Self.numbers(closable),
+                                             count: closable.count) {
                                  close(closable)
                              },
+                             SelectionAction(symbol: PullRequestIcon.symbol(.merged), label: tr("agents.pulls.quick.merge"),
+                                             enabled: !mergeable.isEmpty,
+                                             confirm: Self.question(mergeable, one: "agents.pulls.select.mergeConfirmOne", many: "agents.pulls.select.mergeConfirm"),
+                                             confirmTitle: tr("agents.pulls.select.mergeYes"),
+                                             confirmDetail: Self.mergeDetail(mergeable, skipped: skipped),
+                                             count: mergeable.count, primary: true,
+                                             disabledHelp: skipped.joined(separator: "\n")) {
+                                 merge(mergeable)
+                             },
                          ],
+                         detail: Self.numbers(picked),
                          toggleAll: { selection.toggleAll(shown) },
                          done: { withAnimation(NookTheme.reveal) { selection.clear() } })
                 .padding([.horizontal, .bottom], inset)
         }
+    }
+
+    /// "Merge #12?" for one, "Merge 3 pull requests?" for more.
+    private static func question(_ requests: [PullRequestOpenRequest], one: String, many: String) -> String {
+        requests.count == 1 ? tr(one, "#\(requests[0].item.number)") : tr(many, requests.count)
+    }
+
+    /// "#12 · #15 · #18", the first eight and how many more.
+    static func numbers(_ requests: [PullRequestOpenRequest]) -> String {
+        let shown = requests.prefix(8).map { "#\($0.item.number)" }
+        let more = requests.count - shown.count
+        return shown.joined(separator: " · ") + (more > 0 ? " " + tr("agents.pulls.select.more", more) : "")
+    }
+
+    /// Which go, in what order, and which are left out and why.
+    private static func mergeDetail(_ mergeable: [PullRequestOpenRequest], skipped: [String]) -> String {
+        var lines = [tr("agents.pulls.select.mergeDetail", numbers(mergeable))]
+        if !skipped.isEmpty { lines.append(tr("agents.pulls.select.skipped", skipped.joined(separator: "; "))) }
+        return lines.joined(separator: "\n")
     }
 
     private func merge(_ requests: [PullRequestOpenRequest]) {
