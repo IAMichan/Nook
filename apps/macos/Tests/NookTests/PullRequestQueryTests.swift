@@ -20,6 +20,29 @@ final class PullRequestQueryTests: XCTestCase {
         XCTAssertEqual(query.repo, "acme/app")
     }
 
+    func testQueryPastedFromGitHubStillLists() {
+        let query = PullRequestQuery.parse("is:pr is:open archived:false org:acme state:open sort:updated-desc in:title author:a author:b -draft:true")
+        XCTAssertTrue(query.labels.isEmpty)
+        XCTAssertTrue(query.excludedLabels.isEmpty)
+        XCTAssertTrue(query.words.isEmpty)
+        XCTAssertNil(query.author, "two different authors mean any author")
+        XCTAssertEqual(query.draft, .ready)
+        let filter = PullRequestFilter(query: "is:pr is:open sort:updated-desc author:a author:b -draft:true")
+        XCTAssertTrue(filter.matches(item(1, author: "a")))
+        XCTAssertTrue(filter.matches(item(2, author: "b")))
+        XCTAssertFalse(filter.matches(item(3, author: "a", draft: true)))
+    }
+
+    func testRepeatedAuthorAndNegatedDraft() {
+        XCTAssertEqual(PullRequestQuery.parse("author:Ada author:ada").author, "Ada", "logins are case-insensitive")
+        XCTAssertEqual(PullRequestQuery.parse("author:@me author:me").author, "me")
+        XCTAssertNil(PullRequestQuery.parse("author:ada author:bob author:ada").author)
+        XCTAssertEqual(PullRequestQuery.parse("-draft:false").draft, .drafts)
+        XCTAssertEqual(PullRequestQuery.parse("-draft:true").draft, .ready)
+        XCTAssertEqual(PullRequestQuery.parse("-draft:maybe").words, ["-draft:maybe"])
+        XCTAssertEqual(PullRequestQuery.parse("type:bug").labels, [["type:bug"]], "scoped labels GitHub does not reserve stay labels")
+    }
+
     func testLabelListsQuotesAndScopedLabels() {
         let query = PullRequestQuery.parse(#"label:bug,ui label:"good first issue" area:ui -kind:chore"#)
         XCTAssertEqual(query.labels, [["bug", "ui"], ["good first issue"], ["area:ui"]])

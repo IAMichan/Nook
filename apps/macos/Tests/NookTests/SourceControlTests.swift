@@ -63,6 +63,57 @@ final class SourceControlRuleTests: XCTestCase {
         XCTAssertFalse(CloneLayout.sshRefused("fatal: destination path 'app' already exists"))
     }
 
+    func testRepositoryPagesCloneTheirRepository() {
+        let page = CloneLayout.repositoryURL(fromPage:)
+        XCTAssertEqual(page(" https://github.com/owner/repo/tree/main "), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://github.com/owner/repo/blob/main/src/a.swift#L12"), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://github.com/owner/repo/pull/12/files"), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://github.com/owner/repo/issues"), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://github.com/owner/repo/"), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://github.com/owner/repo?tab=readme-ov-file"), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://bitbucket.org/team/app/src/main/README.md"), "https://bitbucket.org/team/app")
+        XCTAssertEqual(page("https://gitlab.com/group/sub/app/-/tree/main?ref_type=heads"), "https://gitlab.com/group/sub/app")
+        XCTAssertEqual(page("https://git.example.com/group/app/-/merge_requests/3"), "https://git.example.com/group/app")
+        // Gitea and Forgejo on any host.
+        XCTAssertEqual(page("https://gitea.example.com/me/app/src/branch/main"), "https://gitea.example.com/me/app")
+        XCTAssertEqual(page("https://gitea.example.com/me/app/commits"), "https://gitea.example.com/me/app")
+        XCTAssertEqual(page("https://user@gitea.example.com:3000/me/app/pulls/4"), "https://user@gitea.example.com:3000/me/app")
+        // Already a clone URL, or not a page: as typed.
+        XCTAssertEqual(page("https://github.com/owner/repo"), "https://github.com/owner/repo")
+        XCTAssertEqual(page("https://github.com/owner/repo.git"), "https://github.com/owner/repo.git")
+        XCTAssertEqual(page("https://git.example.com/group/sub/tree.git"), "https://git.example.com/group/sub/tree.git")
+        XCTAssertEqual(page("https://git.example.com/group/sub/tree"), "https://git.example.com/group/sub/tree",
+                       "a GitLab project named tree in a subgroup")
+        XCTAssertEqual(page("git@github.com:owner/repo.git"), "git@github.com:owner/repo.git")
+        XCTAssertEqual(page("ssh://git@host.example:2222/me/app.git"), "ssh://git@host.example:2222/me/app.git")
+        XCTAssertEqual(page("https://github.com/owner"), "https://github.com/owner")
+        XCTAssertEqual(GitService.cloneFolderName(page("https://github.com/owner/repo/tree/main")), "repo")
+        XCTAssertTrue(GitService.isCloneURL(page("https://github.com/owner/repo/tree/main")))
+    }
+
+    func testCloneReusesAnEmptyFolder() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("nook-clone-target-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let target = base.appendingPathComponent("app").path
+        XCTAssertTrue(CloneLayout.prepareCloneTarget(target), "nothing there yet")
+        try fm.createDirectory(atPath: target, withIntermediateDirectories: true)
+        try Data().write(to: URL(fileURLWithPath: target + "/.DS_Store"))
+        XCTAssertTrue(CloneLayout.prepareCloneTarget(target), "an empty folder left by a failed clone")
+        XCTAssertFalse(fm.fileExists(atPath: target + "/.DS_Store"))
+        try "x".write(toFile: target + "/notes.md", atomically: true, encoding: .utf8)
+        XCTAssertFalse(CloneLayout.prepareCloneTarget(target))
+        try "x".write(toFile: base.path + "/file", atomically: true, encoding: .utf8)
+        XCTAssertFalse(CloneLayout.prepareCloneTarget(base.path + "/file"), "a file is never a clone folder")
+    }
+
+    func testRacyIndexRefreshWaitsOutTheCheckoutSecond() {
+        let now = Date(timeIntervalSince1970: 1000.4)
+        XCTAssertEqual(GitService.racyRefreshDelay(indexSecond: 1000, now: now) ?? -1, 0.65, accuracy: 0.001)
+        XCTAssertEqual(GitService.racyRefreshDelay(indexSecond: 999, now: now), 0, "that second is already over")
+        XCTAssertNil(GitService.racyRefreshDelay(indexSecond: 1002, now: now), "file stamps that do not follow this clock")
+    }
+
     func testRepositoryNames() {
         XCTAssertTrue(RepositoryPublish.isValidName("my-app_2.0"))
         XCTAssertFalse(RepositoryPublish.isValidName("my app"))
@@ -256,6 +307,23 @@ final class SourceControlGitTests: XCTestCase {
         try git.publish(folder, remoteURL: bare, branch: branch, token: nil)
         XCTAssertEqual(git.remotes(folder), ["origin"])
         XCTAssertThrowsError(try git.publish(folder, remoteURL: bare, branch: branch, token: nil), "a second remote is refused")
+    }
+
+    func testNewWorktreeIndexIsNotRacilyClean() throws {
+        let repo = root.appendingPathComponent("racy").path
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        try git.run(["init", "-q", "-b", "main"], in: repo)
+        try commit(repo, "a.txt", "one", "first")
+        let worktree = root.appendingPathComponent("wt/racy").path
+        try git.addWorktree(repo: repo, path: worktree, branch: "racy", base: "main", refreshBase: false)
+        let index = try git.run(["rev-parse", "--path-format=absolute", "--git-path", "index"], in: worktree)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        func second(_ path: String) throws -> Int {
+            Int((try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as! Date).timeIntervalSince1970)
+        }
+        // Git re-hashes a file stamped in the index's own second or later; the refresh moves the index past it.
+        XCTAssertGreaterThan(try second(index), try second(worktree + "/a.txt"))
+        XCTAssertEqual(try git.run(["status", "--porcelain"], in: worktree), "")
     }
 
     func testFastWorktreeEqualsAPlainOne() throws {

@@ -586,7 +586,53 @@ struct GitService: Sendable {
         } catch {
             throw Self.friendlyWorktreeError(error, base: base)
         }
+        refreshNewWorktreeIndex(path)
         return false
+    }
+
+    /// Rewrites a new worktree's index once, so Git stops re-reading its files. A checkout stamps most files in the
+    /// second it writes the index, and Git re-hashes every file stamped in the index's own second or later ("racily
+    /// clean") on each status, diff and add. Nook's own git calls never rewrite the index (`GIT_OPTIONAL_LOCKS=0`), so
+    /// without this every status of the worktree reads all its files. Called before the worktree is handed out, inside
+    /// the caller's `FolderLease`: the refresh holds `index.lock`, so in the background it would race the setup script's
+    /// and the agent's own git commands. As in t3code. Failures are logged, never thrown.
+    func refreshNewWorktreeIndex(_ path: String) {
+        // Older Git (such as 2.30) skips the write when racy entries merely check out clean, hence `--force-write-index`.
+        // A refresh re-reads every checked-out file, so it may take a while in a large repository.
+        let refresh = { _ = try self.run(["update-index", "-q", "--refresh", "--force-write-index"], in: path, timeout: 300) }
+        do {
+            // On another machine its clock and the index's stamp cannot be compared from here: refresh once.
+            guard remote == nil else { return try refresh() }
+            let index = try run(["rev-parse", "--git-path", "index"], in: path).trimmingCharacters(in: .whitespacesAndNewlines)
+            let indexPath = index.hasPrefix("/") ? index : URL(fileURLWithPath: path).appendingPathComponent(index).path
+            let checkoutSecond = Self.modificationSecond(indexPath)
+            try refresh()
+            guard let checkoutSecond, let refreshedSecond = Self.modificationSecond(indexPath),
+                  refreshedSecond <= checkoutSecond else { return }
+            // The refresh finished within the checkout's second, so its index is just as racy. Wait that second out (file
+            // stamps can trail the clock by a kernel tick) and refresh again. Two seconds or more means this clock does not
+            // match the file stamps, as on a share stamped by another machine, so it cannot say when that second ends.
+            let delay = Self.racyRefreshDelay(indexSecond: checkoutSecond, now: Date())
+            guard let delay else { return }
+            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+            try refresh()
+        } catch {
+            NSLog("Nook: refreshing the index of new worktree %@ failed; Git keeps re-reading its files until it is rewritten: %@",
+                  path, error.localizedDescription)
+        }
+    }
+
+    /// Seconds to wait before a second index refresh, so it lands after the second the index was written in (plus 50 ms
+    /// for a kernel tick). Nil when that is two seconds or more away: the file stamps do not follow this clock.
+    static func racyRefreshDelay(indexSecond: Int, now: Date) -> TimeInterval? {
+        let delay = Double(indexSecond + 1) + 0.05 - now.timeIntervalSince1970
+        return delay >= 2 ? nil : max(0, delay)
+    }
+
+    /// The whole second a file was last modified in, nil when it cannot be read.
+    private static func modificationSecond(_ path: String) -> Int? {
+        guard let date = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return nil }
+        return Int(date.timeIntervalSince1970.rounded(.down))
     }
 
     /// Checks out the submodules of a new worktree as `mode` says; nothing without a `.gitmodules`. Throws Git's error.
@@ -615,6 +661,7 @@ struct GitService: Sendable {
         } catch {
             throw Self.friendlyWorktreeError(error, base: branch)
         }
+        refreshNewWorktreeIndex(path)
     }
 
     /// Makes a session's branch again from the remote (it is gone here) in a new worktree, tracking `origin/<branch>`.
@@ -630,6 +677,7 @@ struct GitService: Sendable {
         } catch {
             throw Self.friendlyWorktreeError(error, base: branch)
         }
+        refreshNewWorktreeIndex(path)
     }
 
     /// Brings a pull request's head into its local branch. Never forced: a local branch with commits of its own refuses.
@@ -717,12 +765,12 @@ struct GitService: Sendable {
         return WorktreeNaming.slug(last, limit: 60)
     }
 
-    /// Clones into <parent>/<name>. The directory must not already exist.
+    /// Clones into <parent>/<name>, a repository page URL its repository. The directory must not exist yet, or be empty.
     func clone(url: String, into parent: String) throws -> String {
-        let clean = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = CloneLayout.repositoryURL(fromPage: url)
         guard Self.isCloneURL(clean) else { throw GitError("Not a recognized Git URL (https://… or git@host:path).") }
         let target = URL(fileURLWithPath: parent, isDirectory: true).appendingPathComponent(Self.cloneFolderName(clean)).path
-        guard !FileManager.default.fileExists(atPath: target) else { throw GitError("Directory \(target) already exists.") }
+        guard CloneLayout.prepareCloneTarget(target) else { throw GitError("Directory \(target) already exists and is not empty.") }
         try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
         let output = try raw(["clone", "--", clean, target], in: parent, timeout: 900)
         guard output.status == 0 else {
