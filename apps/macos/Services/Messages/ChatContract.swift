@@ -172,3 +172,56 @@ enum ChatBackoff {
         return min(start * pow(2, doublings), max(longest, start))
     }
 }
+
+/// The quick reads a bridge owes after one of its app's notifications (or a message sent from Nook), the same for every
+/// app: the app's server can list a message seconds after its phone or Mac showed the notification, and a bridge that
+/// otherwise reads once a minute (Slack, Teams, Mail) or less (WhatsApp through the phone) would leave the message out
+/// of the Chats tab until then. It reads at once and again after a growing gap, until a read brings a message new to
+/// the inbox (`caughtUp`) or the gaps run out, about two minutes after the last notification.
+struct ChatCatchUp {
+    /// The wait before each read that follows the first one (2 s, 5 s, 10 s, 15 s, 25 s, 40 s, 60 s, 90 s, 120 s).
+    static let gaps: [TimeInterval] = [2, 3, 5, 5, 10, 15, 20, 30, 30]
+    /// A message dated this long before the notification still counts as the one it told of: the app's server dates a
+    /// message when it was sent, a little before the notification showed, and a clock may be off.
+    static let slack: TimeInterval = 300
+
+    private struct Owed: Equatable {
+        var since: Date
+        var step: Int
+    }
+    /// By `ChatBridge.bridgeID`.
+    private var owed: [String: Owed] = [:]
+
+    /// A notification (or a send) at `date` says this bridge has something new: it reads at once, and the gaps start over.
+    mutating func expect(_ bridge: String, at date: Date) {
+        let since = owed[bridge].map { min($0.since, date) } ?? date
+        owed[bridge] = Owed(since: since, step: 0)
+    }
+
+    func isOwed(_ bridge: String) -> Bool { owed[bridge] != nil }
+
+    /// The read starting now: the wait before the next quick one, or nil when the bridge owes none (it then waits its
+    /// own interval). Each call takes one step.
+    mutating func next(_ bridge: String) -> TimeInterval? {
+        guard var entry = owed[bridge] else { return nil }
+        guard entry.step < Self.gaps.count else {
+            owed[bridge] = nil
+            return nil
+        }
+        let gap = Self.gaps[entry.step]
+        entry.step += 1
+        owed[bridge] = entry
+        return gap
+    }
+
+    /// A read of this bridge brought these new messages: one dated around or after what it waited for ends the quick reads.
+    mutating func read(_ bridge: String, brought dates: [Date]) {
+        guard let entry = owed[bridge] else { return }
+        let from = entry.since.addingTimeInterval(-Self.slack)
+        if dates.contains(where: { $0 >= from }) { owed[bridge] = nil }
+    }
+
+    mutating func forget(_ bridge: String) { owed[bridge] = nil }
+
+    mutating func reset() { owed = [:] }
+}
