@@ -123,7 +123,7 @@ struct GitQuickButton: View {
             do {
                 // A pull request it made stays put in the tray above the composer.
                 let link = try await workspace.performQuickGit(runID, action, progress: { _ in })
-                ToastCenter.shared.gitQuick(action, result: .success(link))
+                ToastCenter.shared.gitQuick(action, result: .success(link), run: runID)
             } catch {
                 ToastCenter.shared.gitQuick(action, result: .failure(error))
             }
@@ -133,10 +133,13 @@ struct GitQuickButton: View {
 }
 
 extension ToastCenter {
-    /// The result of a git quick action: what it did (with "View PR" when it opened one), or why it failed.
-    func gitQuick(_ action: GitQuickAction, result: Result<URL?, Error>) {
+    /// The result of a git quick action: what it did (with "View PR" when it opened one), or why it failed. A pull
+    /// request opened from the conversation on screen already opens beside it (`showCreatedPullRequest`), so that one
+    /// gets no toast.
+    func gitQuick(_ action: GitQuickAction, result: Result<URL?, Error>, run: UUID? = nil) {
         switch result {
         case .success(let link):
+            if link != nil, let run, AppModel.shared.isLookingAtSession(run) { return }
             success(tr(action.doneKey), action: link.map { url in
                 NookToastAction(title: tr("ws.quick.viewPR")) { PullRequestViewer.show(url) }
             })
@@ -283,7 +286,7 @@ struct HoverCardGitAction: View {
                 } else {
                     link = try await workspace.performQuickGit(folder: folder, action, progress: { _ in })
                 }
-                ToastCenter.shared.gitQuick(action, result: .success(link))
+                ToastCenter.shared.gitQuick(action, result: .success(link), run: runID)
             } catch {
                 ToastCenter.shared.gitQuick(action, result: .failure(error))
             }

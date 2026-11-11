@@ -137,9 +137,15 @@ extension AppModel {
     /// tool that made it, the end of the agent's turn, the sync that found it). Without a GitHub connection that can
     /// read it, it opens in Nook's browser, never in another app.
     func showCreatedPullRequest(_ url: URL, run id: UUID?) {
-        if let id, !(viewModel.isShowing(.agents) && viewModel.selectedAgentID == "run:" + id.uuidString) { return }
+        if let id, !isLookingAtSession(id) { return }
         guard CreatedPullRequests.shown.insert(url.absoluteString.lowercased()).inserted else { return }
         if !openPullRequestLink(url, beside: true) { BrowserStore.show(url) }
+    }
+
+    /// Whether the session's conversation is the one on screen, so what it makes opens beside it instead of needing a
+    /// toast to point at it.
+    func isLookingAtSession(_ id: UUID) -> Bool {
+        viewModel.isShowing(.agents) && viewModel.selectedAgentID == "run:" + id.uuidString
     }
 
     /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
