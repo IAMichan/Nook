@@ -1571,9 +1571,9 @@ struct AgentRunPanel: View {
                 BackgroundCommandBar(commands: commands, focus: $barFocus,
                                      reveal: { conversationFocus = $0 }) { outputsLink.openSubagents() }
             }
-            // While the agent works its list shows in the timeline; one it left unfinished waits here.
-            if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
-                TasksStrip(steps: tasks)
+            // The agent's task list: the step it works on now while it works, the list it left once it stops.
+            if let tasks = run.tasks, TaskChecklist.showsAboveComposer(tasks) {
+                TasksStrip(steps: tasks, working: run.status.isActive)
             }
             // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
             // same tray a new session shows its folder and branch in under the box.
