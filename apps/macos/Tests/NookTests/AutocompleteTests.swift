@@ -1,6 +1,10 @@
 import XCTest
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 
 final class AutocompleteTests: XCTestCase {
     // MARK: GGUF
@@ -1151,6 +1155,8 @@ final class CompletionTextColorTests: XCTestCase {
     }
 }
 
+// CryptoKit only (the Mac): scripts/core-tests.sh leaves CompletionSealing.swift out on Linux.
+#if canImport(CryptoKit)
 final class CompletionSealingTests: XCTestCase {
     func testSealedDataOpensOnlyWithItsKey() throws {
         let key = SymmetricKey(size: .bits256)
@@ -1172,3 +1178,4 @@ final class CompletionSealingTests: XCTestCase {
         XCTAssertNil(CompletionSealing.decode("not a key"))
     }
 }
+#endif

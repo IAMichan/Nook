@@ -122,7 +122,7 @@ final class WorktreeCleanupRulesTests: XCTestCase {
 
     func testOperationsOnOneFolderNeverOverlap() async throws {
         let lease = FolderLease()
-        let log = Log()
+        let log = RecordedLog()
         try await withThrowingTaskGroup(of: Void.self) { group in
             for index in 0..<6 {
                 group.addTask {
@@ -168,7 +168,7 @@ final class WorktreeCleanupRulesTests: XCTestCase {
     }
 }
 
-private final class Log: @unchecked Sendable {
+private final class RecordedLog: @unchecked Sendable {
     private let lock = NSLock()
     private var list: [String] = []
     func add(_ entry: String) { lock.withLock { list.append(entry) } }

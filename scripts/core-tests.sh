@@ -23,6 +23,9 @@ mkdir -p "$WORK/Sources/Core" "$WORK/Tests/CoreTests"
 
 # Sources that need Apple-only frameworks (CryptoKit, Combine views, URLSession on Linux …): they are tested on a Mac.
 EXCLUDE_SOURCES=(
+  "Services/Workspace/AgentGovernor.swift"
+  "Core/SystemLoad.swift"
+  "Core/Log.swift"
   "Services/Connectors/MCP/MCPOAuth.swift"
   "Services/Connectors/MCP/MCPClient.swift"
   "Brain/NetworkGuard.swift"
@@ -48,6 +51,7 @@ if [ "$(uname)" != "Darwin" ]; then
     "Brain/ChartRescue.swift"
     "Brain/MarkdownBlock.swift"
     "Services/Updates/Ed25519Verifier.swift"
+    "Services/Autocomplete/CompletionSealing.swift"
     "../../packages/protocol/Sources/CompanionSeal.swift"
     "../../packages/protocol/Sources/RelayPushSeal.swift"
     "../../packages/protocol/Sources/GuestLinkSeal.swift"
@@ -55,6 +59,7 @@ if [ "$(uname)" != "Darwin" ]; then
 fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
+  "AgentGovernorTests"
   "SessionKeeperTests"
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "TextGeneratorTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
@@ -200,4 +205,5 @@ cd "$WORK"
 echo "core tests in $WORK"
 # Tests that read the app's sources (UIConsistencyTests) find them here: the copies in $WORK have another #filePath.
 export NOOK_MACOS_ROOT="$ROOT"
-swift test "$@"
+# One heavy build at a time on this machine, at a lower priority (scripts/build-slot.sh says why).
+"$ROOT/../../scripts/build-slot.sh" swift test "$@"

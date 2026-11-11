@@ -24,6 +24,7 @@ SCHEME="${NOOK_XCODE_SCHEME:-Nook}"
 EXTRA=()
 [ "$ACTION" = test ] && [ $# -eq 0 ] && [ "$SCHEME" = Nook ] && EXTRA=(-only-testing:NookTests)
 
-exec xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS' \
+# One heavy build at a time on this Mac, at a lower priority (scripts/build-slot.sh says why).
+exec "$REPO/scripts/build-slot.sh" xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS' \
   -derivedDataPath "$REPO/.build/xcode" CODE_SIGNING_ALLOWED=NO \
   "$ACTION" ${EXTRA[@]+"${EXTRA[@]}"} "$@"

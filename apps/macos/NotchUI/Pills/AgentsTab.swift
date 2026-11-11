@@ -1186,15 +1186,25 @@ enum WorkspaceRunsSection {
 
     static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions? = nil, now: Date = Date()) -> [WorkspaceRun] {
         let finished = finished ?? .shared
-        let list = workspace.runs
-            .filter { !$0.archived }
-            .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
-        let isOpen = { (run: WorkspaceRun) in
-            run.status.isActive || !finished.isSettled(FinishedSessions.key(run: run), lastActive: run.updatedAt)
+        // Sorted by position, and each session copied once into the result: the notch and the Agents list ask for this on
+        // every redraw, and sorting and filtering the sessions themselves copied every one (a large struct) several times.
+        let runs = workspace.runs
+        let order = runs.indices.filter { !runs[$0].archived }.sorted { a, b in
+            let (x, y) = (runs[a], runs[b])
+            return (x.status.isActive ? 0 : 1, y.updatedAt) < (y.status.isActive ? 0 : 1, x.updatedAt)
         }
-        let settled = list.filter { !isOpen($0) && now.timeIntervalSince($0.updatedAt) < 24 * 3600 }
+        var open: [WorkspaceRun] = []
+        var settled: [WorkspaceRun] = []
+        for index in order {
+            let run = runs[index]
+            if run.status.isActive || !finished.isSettled(FinishedSessions.key(run: run), lastActive: run.updatedAt) {
+                open.append(run)
+            } else if settled.count < settledLimit, now.timeIntervalSince(run.updatedAt) < 24 * 3600 {
+                settled.append(run)
+            }
+        }
         // A side chat is listed with its parent only (nested under it), never as a session of its own.
-        return SideChat.listed(list.filter(isOpen) + settled.prefix(settledLimit))
+        return SideChat.listed(open + settled)
     }
 }
 

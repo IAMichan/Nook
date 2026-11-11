@@ -38,9 +38,7 @@ enum GitHubPullRequestDetail {
             throw NookError("GitHub returned an unexpected response.")
         }
         detail.activityLoaded = false
-        if detail.canBypass, detail.state == .open {
-            detail.canBypass = await adminCanBypass(base: detail.baseBranch, get: get)
-        }
+        detail = await applyBranchRules(detail, get: get)
         let sha = detail.headSHA
         if !sha.isEmpty {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
@@ -115,13 +113,27 @@ enum GitHubPullRequestDetail {
         let items: [[String: Any]]
     }
 
-    /// A GET on the repository's REST address, asked again when it failed on something passing.
-    /// Whether this admin may really merge past the rules of `base`: the rulesets GitHub applies to the branch, and its
-    /// branch protection (404 when there is none). A ruleset that cannot be read leaves the choice to GitHub.
-    static func adminCanBypass(base: String, get: @escaping @Sendable (String) async throws -> Any) async -> Bool {
-        guard let branch = base.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed), !branch.isEmpty else { return true }
-        async let protection = (try? await get("/branches/\(branch)/protection")) as? [String: Any]
+    /// The rules GitHub applies to the base branch of an open pull request: a ruleset can allow fewer merge methods than
+    /// the repository's own settings (GitHub then refuses the others with 405, "Merge commits are not allowed"), and it
+    /// decides whether this admin may really merge past them. Rules that cannot be read leave both as they were.
+    static func applyBranchRules(_ detail: PullRequestDetail, get: @escaping @Sendable (String) async throws -> Any) async -> PullRequestDetail {
+        guard detail.state == .open,
+              let branch = detail.baseBranch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed), !branch.isEmpty else {
+            return detail
+        }
+        var detail = detail
         let rules = ((try? await get("/rules/branches/\(branch)")) as? [[String: Any]]) ?? []
+        detail.methods = PullRequestDetailParser.methods(detail.methods, rules: rules)
+        if detail.canBypass {
+            detail.canBypass = await adminCanBypass(branch: branch, rules: rules, get: get)
+        }
+        return detail
+    }
+
+    /// Whether this admin may really merge past the rules of the (percent-encoded) `branch`: the rulesets behind its
+    /// `rules`, and its branch protection (404 when there is none). A ruleset that cannot be read leaves the choice to GitHub.
+    static func adminCanBypass(branch: String, rules: [[String: Any]], get: @escaping @Sendable (String) async throws -> Any) async -> Bool {
+        async let protection = (try? await get("/branches/\(branch)/protection")) as? [String: Any]
         let ids = Set(rules.compactMap { $0["ruleset_id"] as? Int })
         let rulesets = await withTaskGroup(of: [String: Any]?.self) { group in
             for id in ids { group.addTask { (try? await get("/rulesets/\(id)")) as? [String: Any] } }
@@ -132,6 +144,7 @@ enum GitHubPullRequestDetail {
         return PullRequestDetailParser.adminCanBypass(rulesets: rulesets, protection: await protection)
     }
 
+    /// A GET on the repository's REST address, asked again when it failed on something passing.
     private static func getter(repo: String, token: String) -> @Sendable (String) async throws -> Any {
         let auth = headers(token)
         let base = "https://api.github.com/repos/\(repo)"
@@ -165,9 +178,7 @@ enum GitHubPullRequestDetail {
         guard var detail = PullRequestDetailParser.detail(pull: pull, repository: repository) else {
             throw NookError("GitHub returned an unexpected response.")
         }
-        if detail.canBypass, detail.state == .open {
-            detail.canBypass = await adminCanBypass(base: detail.baseBranch, get: get)
-        }
+        detail = await applyBranchRules(detail, get: get)
         let sha = detail.headSHA
         if !sha.isEmpty, detail.state == .open {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]

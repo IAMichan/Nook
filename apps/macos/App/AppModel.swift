@@ -536,6 +536,10 @@ final class AppModel: ObservableObject {
 
         // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › Maintenance › Energy.
         EnergyMonitor.shared.start(settings: settings)
+        // How much room the coding agents may take: background when memory is tight, the youngest agents' commands wait
+        // when the Mac swaps hard (`AgentGovernor`). It also resumes what an earlier Nook left paused.
+        AgentGovernor.shared.start()
+        AgentProcess.beforeStop = { AgentGovernor.shared.release(agent: $0) }
         // The pull request list stays current with its panel closed: a quiet read now and then, slower when saving energy.
         PullRequestStore.shared.followInBackground { [weak self] in !(self?.demoMode ?? true) }
 

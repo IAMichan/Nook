@@ -509,6 +509,8 @@ struct ComposerTray<Content: View>: View {
 
 /// Where a conversation's composer sits: at the bottom over the canvas, fading the messages out behind it.
 struct ComposerDock<Content: View>: View {
+    /// The color the messages fade into: the canvas, or a chat's own wallpaper.
+    var fill: Color = Theme.canvas
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -516,7 +518,7 @@ struct ComposerDock<Content: View>: View {
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.top, Theme.Spacing.md)
             .padding(.bottom, Theme.Spacing.md)
-            .background(LinearGradient(colors: [Theme.canvas.opacity(0), Theme.canvas], startPoint: .top,
+            .background(LinearGradient(colors: [fill.opacity(0), fill], startPoint: .top,
                                        endPoint: UnitPoint(x: 0.5, y: 0.3)))
     }
 }

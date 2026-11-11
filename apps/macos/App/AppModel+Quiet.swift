@@ -55,9 +55,7 @@ extension AppModel {
         // on keeps being read, so its end is noticed.
         let calm = !quiet.situation.sharing && !quiet.situation.meeting
         if calm, quietViewers == 0, SystemLoad.idleSeconds >= EnergySignals.awayAfter { return }
-        let sharingPossible = QuietPolicy.canShowSharingBar(runningApps: NSWorkspace.shared.runningApplications.map {
-            ($0.localizedName ?? "", $0.bundleIdentifier ?? "")
-        })
+        let sharingPossible = RunningAppsWatch.shared.canShowSharingBar
         // The read (every window on screen, every audio process) runs off the main thread, so a slow WindowServer or
         // coreaudiod never holds up the notch, or the keys and clicks autocomplete's event tap waits on.
         lastQuietTick = Date()
@@ -125,5 +123,33 @@ extension AppModel {
         case (false, true): return tr("quiet.status.meeting")
         case (false, false): return tr("quiet.status.none")
         }
+    }
+}
+
+/// Whether an app runs that can share your screen (`QuietPolicy.canShowSharingBar`), worked out again only when an app
+/// starts or quits. Reading every app's name asks LaunchServices once per app, synchronously on the main thread: doing
+/// that on every quiet tick (every two seconds) was a steady share of the main thread.
+@MainActor
+final class RunningAppsWatch {
+    static let shared = RunningAppsWatch()
+    private var cached: Bool?
+    private var observers: [NSObjectProtocol] = []
+
+    private init() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { RunningAppsWatch.shared.cached = nil }
+            })
+        }
+    }
+
+    var canShowSharingBar: Bool {
+        if let cached { return cached }
+        let answer = QuietPolicy.canShowSharingBar(runningApps: NSWorkspace.shared.runningApplications.map {
+            ($0.localizedName ?? "", $0.bundleIdentifier ?? "")
+        })
+        cached = answer
+        return answer
     }
 }
