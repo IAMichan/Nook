@@ -77,6 +77,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
+                    platform::desktop::remember_main(window.app_handle());
                     let _ = window.hide();
                 }
             }
@@ -365,6 +366,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")
         .run(|app, event| {
+            #[cfg(desktop)]
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                platform::desktop::remember_main(app);
+            }
             if let tauri::RunEvent::Exit = event {
                 // Bij afsluiten: de WhatsApp-gateway en lopende agents van de werkruimte netjes stoppen.
                 connectors::shutdown(app);
