@@ -94,6 +94,16 @@ struct AcpToolCall: Equatable, Sendable {
         return JSONBox(input)
     }
 
+    /// The call's input, with the file a read reported only in its locations put in as `path`: the step then opens that
+    /// file, and a picture it looked at shows under it (`ViewedImages`), as for every other agent.
+    var readInput: JSONBox? {
+        guard kind == "read", let first = paths.first else { return input }
+        var object = input?.dictionary ?? [:]
+        guard ToolSummary.path(object) == nil else { return input }
+        object["path"] = first
+        return JSONBox(object)
+    }
+
     /// The tool name Nook's timeline groups by (see ToolCategory).
     var toolName: String {
         switch kind {

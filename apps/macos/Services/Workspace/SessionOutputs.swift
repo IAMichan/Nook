@@ -117,6 +117,67 @@ enum SessionOutputs {
     }
 }
 
+/// Pictures the agent only looked at (as t3code shows them): Claude Code's `Read` of a screenshot, Codex's `view_image`,
+/// Gemini CLI's `read_file` or `read_many_files`, an ACP agent's read (by its input or the location it reported), Pi's
+/// `read`, Cursor's `read_file`. The conversation shows them as one row of small thumbnails under the step or group that
+/// read them, so you see what the agent saw; handed-over files (`SharedFiles`) keep their own, larger row.
+enum ViewedImages {
+    /// Tools that only look at a picture, by name; every agent's tool that reads files counts too (`ToolCategory.read`).
+    static let viewTools: Set<String> = ["view_image", "viewimage", "image_view", "imageview"]
+    /// At most this many thumbnails in a row; the rest is a count.
+    static let rowLimit = 4
+
+    /// The pictures a call read, as the agent named them; empty for any other call.
+    static func paths(tool: String, input: [String: Any]) -> [String] {
+        guard mayView(tool) else { return [] }
+        var found: [String] = []
+        for key in ["file_path", "absolute_path", "path", "filePath", "target_file", "file", "abs_path", "notebook_path"] {
+            if let value = input[key] as? String { found.append(value) }
+        }
+        found += (input["paths"] as? [String]) ?? []
+        // An ACP read reports where it read (`locations`) when its input does not say.
+        found += ((input["locations"] as? [[String: Any]]) ?? []).compactMap { $0["path"] as? String }
+        var seen: Set<String> = []
+        return found.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { path in
+            // A pattern (`read_many_files` takes globs) names no one picture.
+            !path.isEmpty && !path.contains("*") && SessionOutputs.kind(path: path) == .image && seen.insert(path).inserted
+        }
+    }
+
+    /// The pictures a tool call of a session Nook runs read; none for a call that failed.
+    static func paths(_ event: RunEvent) -> [String] {
+        guard event.kind == .tool, event.state != .failed, event.state != .denied, let tool = event.tool,
+              mayView(tool) else { return [] }
+        return paths(tool: tool, input: AgentActivity.input(event.detail) ?? [:])
+    }
+
+    /// The pictures a step of an agent's own transcript read; none for a step that failed.
+    static func paths(_ step: AgentToolStep) -> [String] {
+        guard step.state != .failed, mayView(step.name) else { return [] }
+        let found = paths(tool: step.name, input: AgentActivity.input(step.input) ?? [:])
+        if !found.isEmpty { return found }
+        // A step whose input was not kept still names the file it read.
+        return step.file.map { file in paths(tool: step.name, input: ["path": file]) } ?? []
+    }
+
+    /// The pictures of a run of calls or steps, absolute (relative ones read from `directory`) and each once, in order.
+    static func resolved(_ raw: [String], in directory: String?) -> [String] {
+        var seen: Set<String> = []
+        return raw.compactMap { path -> String? in
+            let path = path.hasPrefix("~") ? (path as NSString).expandingTildeInPath : path
+            let full = path.hasPrefix("/") ? path : directory.flatMap { $0.isEmpty ? nil : SessionOutputs.resolve(path, in: $0) }
+            guard let full, seen.insert(full).inserted else { return nil }
+            return full
+        }
+    }
+
+    /// A cheap test before the input is read: only reading tools look at pictures.
+    private static func mayView(_ tool: String) -> Bool {
+        let name = tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool
+        return viewTools.contains(name.lowercased()) || ToolCategory.of(tool: name) == .read
+    }
+}
+
 /// Files the agent handed to you on purpose (Claude Code's SendUserFile): a video, a picture or a document it made for
 /// you to look at, not a step of its work. The conversation shows them in a row of their own, never folded away, and the
 /// outputs panel keeps them.

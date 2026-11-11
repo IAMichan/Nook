@@ -188,6 +188,7 @@ struct FileViewer: View {
                         }
                     } else {
                         FileCodeView(lines: lines, tokens: tokens, line: FileViewing.clampedLine(target.line, count: lines.count),
+                                     endLine: target.endLine.map { min($0, lines.count) },
                                      scrollKey: opened, comment: session == nil ? nil : { commentLine = $0 })
                             .equatable()
                         if let commentLine, commentLine <= lines.count { commentBar(commentLine, lines: lines) }
@@ -221,8 +222,9 @@ struct FileViewer: View {
                 .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
-            if let line = target.line {
-                Text(tr("file.viewer.line", line))
+            // "L42", or "L42–64" for a range.
+            if let label = target.lineLabel {
+                Text(verbatim: label)
                     .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
@@ -387,6 +389,8 @@ private struct FileCodeView: View, Equatable {
     let tokens: [[SyntaxToken]]
     /// The link's line (1-based): scrolled to and marked.
     let line: Int?
+    /// The last line of the link's range (`app.swift:42-64`): the lines from `line` to it are marked.
+    var endLine: Int? = nil
     let scrollKey: UUID
     /// Starts a remark on a line (1-based), from the + on its number. Nil outside a session.
     var comment: ((Int) -> Void)? = nil
@@ -400,7 +404,7 @@ private struct FileCodeView: View, Equatable {
 
     /// Drawn again only when the file, its colors or the marked line changed (with `.equatable()` where it is used).
     nonisolated static func == (a: FileCodeView, b: FileCodeView) -> Bool {
-        a.line == b.line && a.scrollKey == b.scrollKey && a.lines == b.lines && a.tokens == b.tokens
+        a.line == b.line && a.endLine == b.endLine && a.scrollKey == b.scrollKey && a.lines == b.lines && a.tokens == b.tokens
             && (a.comment == nil) == (b.comment == nil)
     }
 
@@ -428,7 +432,7 @@ private struct FileCodeView: View, Equatable {
     }
 
     private func row(_ index: Int) -> some View {
-        let marked = line == index + 1
+        let marked = line.map { first in (first...max(first, endLine ?? first)).contains(index + 1) } ?? false
         return HStack(alignment: .top, spacing: 0) {
             FileLineNumber(number: index + 1, marked: marked, comment: comment)
                 .frame(width: numberWidth, alignment: .trailing)
