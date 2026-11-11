@@ -12,17 +12,24 @@ enum ModelPickerStyle {
     /// The models scroll past this height, which keeps the whole panel on screen under a composer.
     static let listHeight: CGFloat = 240
     static let markSize: CGFloat = 18
+    /// The column of reasoning levels beside the models.
+    static let sideWidth: CGFloat = 170
 }
 
 /// The pill and panel of a model picker.
 struct ModelPickerDropdown<Trigger: View, Content: View>: View {
+    /// The picker also holds access and effort when it has a footer (`ModelPickerOptions`), so their keys open it.
+    var holdsOptions = false
+    /// A column beside the models makes the panel wider.
+    var hasSideColumn = false
     @ViewBuilder let trigger: () -> Trigger
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         // ⇧⌘M opens it (`modelPicker.toggle`).
-        ComposerDropdown(width: ModelPickerStyle.width, takesRoom: true, command: "modelPicker.toggle", trigger: trigger,
-                         content: content)
+        ComposerDropdown(width: ModelPickerStyle.width + (hasSideColumn ? ModelPickerStyle.sideWidth : 0), takesRoom: true, command: "modelPicker.toggle",
+                         alsoOpenedBy: holdsOptions ? ["permissionPicker.toggle", "effortPicker.toggle"] : [],
+                         trigger: trigger, content: content)
     }
 }
 
@@ -82,6 +89,10 @@ struct ModelPicker<Above: View>: View {
     let openSettings: () -> Void
     /// Rows above the search for a place ("send to several models").
     @ViewBuilder var above: (ModelPickerPlace) -> Above
+    /// A footer under the rail and the column: what is chosen for the session beside the model (`ModelPickerOptions`).
+    var footer: AnyView? = nil
+    /// A column right of the models (the reasoning levels).
+    var trailing: AnyView? = nil
     /// The rows for a place and the search text.
     let list: (ModelPickerPlace, String) -> ModelPickerList
     @State private var query = ""
@@ -90,6 +101,23 @@ struct ModelPicker<Above: View>: View {
     @Environment(\.closeDropdown) private var close
 
     var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                rail
+                if let trailing {
+                    NookDivider(vertical: true)
+                    trailing.frame(width: ModelPickerStyle.sideWidth).frame(maxHeight: .infinity, alignment: .top)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            if let footer {
+                NookDivider()
+                footer
+            }
+        }
+    }
+
+    private var rail: some View {
         RailDropdown(groups: [places.filter(\.isLocal), places.filter { !$0.isLocal && $0.symbol != nil },
                               places.filter { !$0.isLocal && $0.symbol == nil }], chosen: chosen,
                      help: help(of:), onShow: { _ in query = ""; highlight = 0 },
@@ -193,9 +221,10 @@ struct ModelPicker<Above: View>: View {
 
 extension ModelPicker where Above == EmptyView {
     init(places: [ModelPickerPlace], chosen: ModelPickerPlace, addHelp: String, settingsTitle: String,
-         openSettings: @escaping () -> Void, list: @escaping (ModelPickerPlace, String) -> ModelPickerList) {
+         openSettings: @escaping () -> Void, footer: AnyView? = nil, trailing: AnyView? = nil,
+         list: @escaping (ModelPickerPlace, String) -> ModelPickerList) {
         self.init(places: places, chosen: chosen, addHelp: addHelp, settingsTitle: settingsTitle,
-                  openSettings: openSettings, above: { _ in EmptyView() }, list: list)
+                  openSettings: openSettings, above: { _ in EmptyView() }, footer: footer, trailing: trailing, list: list)
     }
 }
 

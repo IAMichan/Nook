@@ -13,6 +13,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
     var takesRoom = false
     /// The keybinding command that opens and closes it (the model picker's ⇧⌘M).
     var command: String? = nil
+    /// More commands that open it too (the model picker also holds access and effort: ⇧⌘A and ⇧⌘E).
+    var alsoOpenedBy: [String] = []
     /// Scrolls once the rows are taller than the room on screen (a long menu), instead of running off the screen.
     var scrolls = false
     @ViewBuilder let trigger: () -> Trigger
@@ -25,7 +27,7 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
         Button { open.toggle() } label: { trigger() }
             .buttonStyle(.plain)
             .fixedSize(horizontal: !flexible, vertical: true)
-            .modifier(DropdownKeyCommand(command: command, open: $open))
+            .modifier(DropdownKeyCommand(command: command, others: alsoOpenedBy, open: $open))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 // The panel takes the height its rows ask for at this width, so wrapped text grows it instead of
                 // being cut off, and it follows when a search or another place changes what it shows.
@@ -61,11 +63,17 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
 /// The key that opens a dropdown, offered only by the dropdowns that have one.
 private struct DropdownKeyCommand: ViewModifier {
     let command: String?
+    var others: [String] = []
     @Binding var open: Bool
+
+    private func handlers(_ command: String) -> [String: () -> Bool] {
+        let toggle: () -> Bool = { open.toggle(); return true }
+        return Dictionary(uniqueKeysWithValues: ([command] + others).map { ($0, toggle) })
+    }
 
     func body(content: Content) -> some View {
         if let command {
-            content.keyCommands([command: { open.toggle(); return true }], context: ["modelPickerOpen": open])
+            content.keyCommands(handlers(command), context: ["modelPickerOpen": open])
         } else {
             content
         }
@@ -422,6 +430,10 @@ struct AgentModelPicker: View {
     /// "Auto" as a place of its own in the rail, above the agents: Nook picks one per turn (see `AutoModel`). Off for
     /// Nook's own brain.
     var offersAuto = true
+    /// Access, effort, speed and delegation for the session, under the models (`ModelPickerOptions`); nil for Nook's brain.
+    var footer: AnyView? = nil
+    /// The reasoning column beside the models (`ModelPickerReasoning`).
+    var trailing: AnyView? = nil
     let choose: (RunProvider, String?, String?) -> Void
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
     @State private var multi = false
@@ -458,13 +470,13 @@ struct AgentModelPicker: View {
             ?? pickerPlace(chosenPlace)
         ModelPicker(places: (local.map { [$0.place] } ?? []) + (auto.map { [$0] } ?? []) + agentPlaces, chosen: chosen,
                     addHelp: tr("agents.picker.add"), settingsTitle: tr("agents.picker.settings"),
-                    openSettings: { app.openSettings(section: .agents) }) { place in
+                    openSettings: { app.openSettings(section: .agents) }, above: { place in
             if let comparing, place != Self.autoPlace { compareToggle(comparing) }
-        } list: { picked, query in
+        }, footer: footer, trailing: trailing, list: { picked, query in
             if let local, picked.id == local.place.id { return local.list(query) }
             if picked == Self.autoPlace { return ModelPickerList(models: [autoRow()]) }
             return shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? ModelPickerList(models: [])
-        }
+        })
         // The picker's content only exists while it is open: opening it looks for newer models.
         .onAppear { app.modelPickerOpened() }
     }
