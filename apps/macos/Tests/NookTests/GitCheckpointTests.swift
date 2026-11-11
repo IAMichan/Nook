@@ -180,4 +180,46 @@ final class GitCheckpointTests: XCTestCase {
         XCTAssertEqual(try git.run(["show", "\(ref):staged.txt"], in: repo.path), "staged")
         XCTAssertEqual(try git.run(["show", "\(ref):a.txt"], in: repo.path), "unstaged")
     }
+
+    func testCheckpointSeesFilesTheCheckoutMarksUnchanged() throws {
+        try write("local.cfg", "committed")
+        try git.run(["add", "-A"], in: repo.path)
+        try git.run(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-q", "-m", "cfg"], in: repo.path)
+        try git.run(["update-index", "--assume-unchanged", "a.txt"], in: repo.path)
+        try git.run(["update-index", "--skip-worktree", "local.cfg"], in: repo.path)
+        // Same length as before, so only reading the file again shows the change.
+        try write("a.txt", "twe")
+        try write("local.cfg", "my own setting")
+
+        let ref = GitService.checkpointRef(session: UUID(), index: 0)
+        try git.checkpoint(repo.path, ref: ref)
+
+        XCTAssertEqual(try git.run(["show", "\(ref):a.txt"], in: repo.path), "twe", "an assume-unchanged file is read")
+        XCTAssertEqual(try git.run(["show", "\(ref):local.cfg"], in: repo.path), "my own setting", "a skip-worktree file is read")
+        let flags = try git.run(["ls-files", "-v"], in: repo.path)
+        XCTAssertTrue(flags.contains("h a.txt"), "the checkout's own index keeps its flags")
+        XCTAssertTrue(flags.contains("S local.cfg"))
+
+        // Going back keeps the local setting instead of writing the committed one over it.
+        try write("local.cfg", "changed by the agent")
+        try git.restore(repo.path, to: ref)
+        XCTAssertEqual(read("local.cfg"), "my own setting")
+    }
+
+    func testFlaggedEntriesFromTheListing() {
+        let listing = [
+            "H 100644 aaa 0\tplain.txt",
+            "h 100644 bbb 0\tassumed file.txt",
+            "S 100644 ccc 0\tlocal.cfg",
+            "S 100644 ddd 0\toutside/cone.txt",
+            "s 100755 eee 0\tgone.sh",
+            "h 160000 fff 0\tvendor/sub",
+            "M 100644 ggg 1\tconflict.txt",
+        ].joined(separator: "\0") + "\0"
+        let entries = GitService.flaggedEntries(listing) { $0 != "outside/cone.txt" && $0 != "gone.sh" }
+        XCTAssertEqual(entries, [
+            GitService.FlaggedEntry(mode: "100644", object: "bbb", path: "assumed file.txt"),
+            GitService.FlaggedEntry(mode: "100644", object: "ccc", path: "local.cfg"),
+        ])
+    }
 }

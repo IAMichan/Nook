@@ -82,6 +82,45 @@ struct SessionUsage: Codable, Equatable, Sendable {
     }
 }
 
+/// The session you last picked in the command palette for each thing you typed: typing it again puts that session first
+/// for three weeks, also when another one matches the words better or was opened more lately. Keyed by the words,
+/// without case or accents, so "Auth fix" and "auth  fix" are the same query.
+struct PalettePicks: Codable, Equatable, Sendable {
+    struct Pick: Codable, Equatable, Sendable {
+        var id: String
+        var date: Date
+    }
+
+    private(set) var picks: [String: Pick] = [:]
+    /// How long a pick counts.
+    static let lifetime: TimeInterval = 21 * 86_400
+    /// The queries kept; the oldest picks fall away first.
+    static let limit = 200
+
+    /// The key of `query`; nil for an empty one, whose order is the use alone.
+    static func key(_ query: PaletteQuery) -> String? {
+        guard !query.isEmpty else { return nil }
+        return query.words.map { $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+            .joined(separator: " ")
+    }
+
+    mutating func record(_ id: String, for query: PaletteQuery, at date: Date = Date()) {
+        guard !id.isEmpty, let key = Self.key(query) else { return }
+        picks[key] = Pick(id: id, date: date)
+        picks = picks.filter { date.timeIntervalSince($0.value.date) < Self.lifetime }
+        if picks.count > Self.limit {
+            let keep = picks.sorted { $0.value.date > $1.value.date }.prefix(Self.limit)
+            picks = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+        }
+    }
+
+    /// The session picked last for `query`, while that pick is younger than `lifetime`.
+    func pick(for query: PaletteQuery, now: Date = Date()) -> String? {
+        guard let key = Self.key(query), let pick = picks[key], now.timeIntervalSince(pick.date) < Self.lifetime else { return nil }
+        return pick.id
+    }
+}
+
 /// ⌘1–⌘9 on the Agents tab: the first nine rows of the list as it is shown (folded shelves and projects left out).
 enum SessionJump {
     static let count = 9
@@ -222,14 +261,17 @@ enum PaletteRanking {
     }
 
     /// Sessions for the palette: without words the ones you open often and lately first, then the newest; with words the
-    /// ones that match, the best match first and among equals the same order. At most `limit`.
-    static func sessions(_ candidates: [Candidate], query: PaletteQuery, usage: SessionUsage, now: Date = Date(),
-                         limit: Int = 12) -> [Candidate] {
+    /// ones that match, the one you picked last for these words first (`PalettePicks`), then the best match and among
+    /// equals the same order. At most `limit`.
+    static func sessions(_ candidates: [Candidate], query: PaletteQuery, usage: SessionUsage, picks: PalettePicks = PalettePicks(),
+                         now: Date = Date(), limit: Int = 12) -> [Candidate] {
+        let picked = picks.pick(for: query, now: now)
         let scored: [(candidate: Candidate, match: Int, use: Double)] = candidates.compactMap { candidate in
             guard let match = query.match(title: candidate.title, detail: candidate.detail) else { return nil }
             return (candidate, match, usage.score(candidate.id, now: now))
         }
         return scored.sorted { a, b in
+            if let picked, (a.candidate.id == picked) != (b.candidate.id == picked) { return a.candidate.id == picked }
             if a.match != b.match { return a.match > b.match }
             if a.use != b.use { return a.use > b.use }
             return a.candidate.updated > b.candidate.updated
@@ -243,14 +285,25 @@ enum PaletteRanking {
 final class SessionHistory {
     static let shared = SessionHistory()
     private static let usageKey = "agents.sessionUsage"
+    private static let picksKey = "agents.palettePicks"
     private let defaults: UserDefaults
     private(set) var trail = SessionTrail()
     private(set) var usage: SessionUsage
+    private(set) var picks: PalettePicks
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         usage = defaults.data(forKey: Self.usageKey).flatMap { try? JSONDecoder().decode(SessionUsage.self, from: $0) }
             ?? SessionUsage()
+        picks = defaults.data(forKey: Self.picksKey).flatMap { try? JSONDecoder().decode(PalettePicks.self, from: $0) }
+            ?? PalettePicks()
+    }
+
+    /// You picked a session in the command palette after typing `query`: typing it again puts that session first.
+    func picked(_ id: String, for query: PaletteQuery, at date: Date = Date()) {
+        guard PalettePicks.key(query) != nil else { return }
+        picks.record(id, for: query, at: date)
+        if let data = try? JSONEncoder().encode(picks) { defaults.set(data, forKey: Self.picksKey) }
     }
 
     /// You opened a session: it goes on the trail and counts for the palette's order.
