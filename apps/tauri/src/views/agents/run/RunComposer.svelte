@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Het invoerveld van een sessie die Nook draait (de composer in `AgentRunPanel`, met `QueuedMessagesStrip` en
-  // `UsageLimitBanner`): je vervolgbericht, of terwijl de agent werkt bijsturen of in de wachtrij; daaronder de
+  // Het invoerveld van een sessie die Nook draait (de composer in `AgentRunPanel`, met
+  // `QueuedMessagesStrip`): je vervolgbericht, of terwijl de agent werkt bijsturen of in de wachtrij; daaronder de
   // keuzes voor de volgende beurt (model, modus, rechten, denkniveau) en ⋯ voor de rest.
   import {
     effortLabels, effortLevels, isActive, modeHelp, permissionHelp, permissionLabels, workspaceApi,
@@ -8,7 +8,7 @@
   } from "../../../lib/workspace/api";
   import Icon from "../../../components/Icon.svelte";
   import { workspace } from "../../../lib/workspace/store.svelte";
-  import { contextLevel, contextPercent, duration, oneLine } from "../../../lib/workspace/timeline";
+  import { contextLevel, contextPercent, oneLine } from "../../../lib/workspace/timeline";
 
   let {
     run,
@@ -27,7 +27,6 @@
   let modelDraft = $state("");
   let collapsed = $state(false);
   let textarea = $state<HTMLTextAreaElement>();
-  let now = $state(Date.now());
 
   $effect(() => {
     try {
@@ -46,11 +45,6 @@
     } catch {
       // Geen opslag: het concept blijft alleen zolang de tab open is.
     }
-  });
-
-  $effect(() => {
-    const t = setInterval(() => (now = Date.now()), 30_000);
-    return () => clearInterval(t);
   });
 
   const active = $derived(isActive(run.status));
@@ -143,35 +137,11 @@
     menu = "";
     workspace.act(() => workspaceApi.configure(run.id, { model: modelDraft.trim() }));
   }
-
-  function limitLine(): string {
-    if (!run.limitResetAt) return "Wanneer de limiet vrijkomt is onbekend; probeer het later zelf opnieuw.";
-    const reset = Date.parse(run.limitResetAt);
-    if (reset <= now) return run.autoResume ? "De limiet is vrij; de sessie gaat zo verder." : "De limiet is weer vrij. Stuur een bericht om verder te gaan.";
-    const d = new Date(reset);
-    const today = d.toDateString() === new Date(now).toDateString();
-    const clock = today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-    const wait = duration((reset - now) / 1000);
-    return run.autoResume ? `Gaat verder om ${clock} (over ${wait})` : `Vrij om ${clock} (over ${wait})`;
-  }
 </script>
 
 <svelte:window onclick={() => (menu = "")} />
 
 <div class="composer">
-  {#if run.limitedAt && !active}
-    <div class="limit">
-      <span>{run.autoResume ? "↻" : "⌛"}</span>
-      <div class="ltext"><strong>Gebruikslimiet bereikt</strong><span class="faint">{limitLine()}</span></div>
-      {#if run.limitResetAt}
-        <button class="ghost" title={'Stuurt "Continue where you left off." zodra de limiet vrij is. Een eigen bericht annuleert dit.'}
-          onclick={() => workspace.act(() => workspaceApi.setAutoResume(run.id, !run.autoResume))}>
-          {run.autoResume ? "Niet automatisch hervatten" : "Hervat bij reset"}
-        </button>
-      {/if}
-    </div>
-  {/if}
-
   {#if queue && queue.messages.length}
     <div class="queue">
       <button class="qhead" onclick={() => (collapsed = !collapsed)}>
@@ -293,8 +263,6 @@
 
 <style>
   .composer { display: flex; flex-direction: column; gap: 6px; }
-  .limit { display: flex; gap: 9px; align-items: center; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line2)); border-radius: var(--radius-card); background: var(--surface); font-size: 12px; }
-  .ltext { flex: 1; display: flex; flex-direction: column; gap: 2px; }
   .queue { display: flex; flex-direction: column; gap: 4px; padding: 6px 12px; border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--line); font-size: 12px; }
   .qhead { background: none; border: none; padding: 0; text-align: left; color: var(--text2); font-size: 12px; }
   .qhead:hover { background: none; color: var(--paper); }

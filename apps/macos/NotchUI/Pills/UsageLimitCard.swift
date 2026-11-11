@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Above the composer of a session a usage limit stopped: when the limit resets, the accounts with room left to go on
-/// with at once (best first, each with its model and how much of it is used), and "Resume at reset", which sends
-/// "Continue where you left off." once the limit has reset.
-struct UsageLimitBanner: View {
+/// At the end of the timeline of a session a usage limit stopped, in the place and shape of the "You stopped the agent"
+/// card: when the limit resets, the accounts with room left to go on with at once (best first, each with its model and
+/// how much of it is used), "Resume at reset" (sends "Continue where you left off." once it has), and Retry.
+struct UsageLimitCard: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var app: AppModel
     let run: WorkspaceRun
@@ -11,8 +11,11 @@ struct UsageLimitBanner: View {
     /// At most this many accounts to go on with: the best ones; the agent menu has every account.
     private static let shownOptions = 3
 
+    /// Whether this session shows the limit card instead of the stopped/failed one.
+    static func shows(_ run: WorkspaceRun) -> Bool { run.limitedAt != nil && !run.status.isActive }
+
     var body: some View {
-        if run.limitedAt != nil, !run.status.isActive {
+        if Self.shows(run) {
             let auto = run.autoResume == true
             let options = Array(suggestions().prefix(Self.shownOptions))
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -33,24 +36,29 @@ struct UsageLimitBanner: View {
                     }
                 }
                 NookDivider()
-                // Also without a known reset: Nook then tries again now and then until the limit lets it through.
-                Toggle(isOn: Binding(get: { auto }, set: { workspace.setAutoResume(run.id, $0) })) {
-                    Text(tr("ws.limit.autoResume"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
+                HStack(spacing: NookTheme.Spacing.md) {
+                    // Also without a known reset: Nook then tries again now and then until the limit lets it through.
+                    Toggle(isOn: Binding(get: { auto }, set: { workspace.setAutoResume(run.id, $0) })) {
+                        Text(tr("ws.limit.autoResume"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(NookTheme.amber)
+                    .help(tr("ws.limit.resumeHelp"))
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    // The limit may already be free (or the reset was early): try the turn again now.
+                    SmallGhostButton(title: tr("ws.action.retry")) { workspace.retry(run.id) }
+                        .help(tr("ws.action.retry.help"))
                 }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .tint(NookTheme.amber)
-                .help(tr("ws.limit.resumeHelp"))
                 // A banked reset credit of this account frees it now, instead of waiting for the reset.
                 if let profile = app.profiles.profile(id: run.profileID) {
                     ResetCreditRow(profile: profile)
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
+            .padding(NookTheme.Spacing.md)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
         }
     }
 
@@ -139,7 +147,7 @@ struct UsageLimitBanner: View {
     }
 }
 
-/// An account to go on with after a usage limit, as `UsageLimitBanner` offers it.
+/// An account to go on with after a usage limit, as `UsageLimitCard` offers it.
 struct LimitOption {
     let provider: RunProvider
     let profile: AgentProfile
@@ -206,7 +214,7 @@ struct LimitOptionRow: View {
     }
 }
 
-/// The mark at the start of a banner above the composer or under the timeline: its symbol in a soft circle of its tint.
+/// The mark at the start of a card at the end of the timeline (usage limit, stopped, failed): its symbol in a soft circle of its tint.
 struct BannerMark: View {
     let symbol: String
     let tint: Color
