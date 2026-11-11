@@ -16,6 +16,8 @@ extension WorkspaceManager {
     /// The conversation is compacted (`.notice("compact")` of every agent).
     func compactionFinished(_ id: UUID) {
         turns[id]?.compacted = true
+        // A summary may leave out that this is a main thread: your next message says it again (`MainThread`).
+        if run(id)?.mainThreadTold != nil { update(id) { $0.mainThreadTold = nil } }
         apply(CompactionProgress.finish(timeline(id), text: compactedText(id)), to: id)
     }
 

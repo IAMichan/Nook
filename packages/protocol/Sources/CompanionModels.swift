@@ -159,6 +159,9 @@ enum SessionAction: String, Codable, Sendable, CaseIterable {
     case snoozeUntil, snoozeLimitReset
     /// Ends the process of an agent outside Nook; it saves its conversation, so it can be continued in Nook.
     case end
+    /// "Main thread" on or off: the agent hands its work to sub-threads that report back (`MainThread` on the Mac). The
+    /// Mac lists the one that applies, only for an agent that may delegate.
+    case mainThreadOn, mainThreadOff
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -235,11 +238,13 @@ struct LaunchRequest: Codable, Equatable, Sendable {
     var worktree: Bool
     /// One of the agent's `LaunchOptions.Agent.models`; nil keeps the Mac's default for the agent.
     var model: String?
+    /// Start as a main thread (`LaunchOptions.Agent.canMainThread`); nil from a phone that does not offer it.
+    var mainThread: Bool? = nil
 
     init(agent: String, project: String, task: String, title: String? = nil, plan: Bool = false, worktree: Bool = false,
-         model: String? = nil) {
+         model: String? = nil, mainThread: Bool? = nil) {
         self.agent = agent; self.project = project; self.task = task; self.title = title; self.plan = plan; self.worktree = worktree
-        self.model = model
+        self.model = model; self.mainThread = mainThread
     }
 }
 
@@ -252,6 +257,8 @@ struct LaunchOptions: Codable, Equatable, Sendable {
         /// The models the phone may pick for this agent, the Mac's default first; nil from a Mac that keeps the choice.
         var models: [Model]? = nil
         var defaultModel: String? = nil
+        /// The agent may delegate, so a session can start as a main thread; nil from a Mac that does not know it.
+        var canMainThread: Bool? = nil
     }
 
     /// A model an agent can run on: the id the Mac starts it with, and its name as the Mac shows it.

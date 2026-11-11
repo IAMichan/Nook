@@ -298,6 +298,8 @@ struct NewSessionComposer: View {
             ComposerSpeedTier(tiers: speedTiers, chosen: config.speedTier) { config.speedTier = $0 }
             ComposerUltracodeToggle(offered: Ultracode.offered(provider: config.provider, model: config.model),
                                     on: config.ultracode == true) { config.ultracode = $0 }
+            ComposerMainThreadToggle(offered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
+                                     on: config.mainThread == true) { config.mainThread = $0 ? true : nil }
             usageLimits
         }
         .rich(composerModel, composerConfig)

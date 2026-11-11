@@ -335,13 +335,13 @@ extension WorkspaceManager {
                 let pending = PendingQuestion(id: "codexq-" + rpcID.text, runID: id, questions: items, origin: .codex(rpcID), created: Date())
                 questions[id, default: []].append(pending)
                 update(id) { $0.move(to: .waitingApproval) }
-                if let run = run(id) { onQuestion?(run, pending) }
+                asked(id, pending)
             case .asyncQuestion(let itemID, let items):
                 // Codex goes on working: the question waits for you without holding the turn.
                 let pending = PendingQuestion(id: "codexasync-" + itemID, runID: id, questions: items, origin: .message, created: Date())
                 guard !(questions[id] ?? []).contains(where: { $0.id == pending.id }) else { continue }
                 questions[id, default: []].append(pending)
-                if let run = run(id) { onQuestion?(run, pending) }
+                asked(id, pending)
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not support this request.")
             case .rateLimits(let limits):
