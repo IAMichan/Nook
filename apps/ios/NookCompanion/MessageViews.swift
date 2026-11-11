@@ -178,6 +178,8 @@ struct ChatBubbleView: View {
     var last = true
     /// Written on the phone and waiting for the Mac: dimmed, with a clock for its time.
     var pending = false
+    /// Drawn as WhatsApp draws it (`WhatsAppLook`): its green and dark bubbles, its tail and its ticks.
+    var whatsApp = false
     /// Opens your message's info from its ticks (who has it and who read it); nil when the app says nothing per person.
     var onInfo: (() -> Void)? = nil
 
@@ -248,7 +250,7 @@ struct ChatBubbleView: View {
                     if !line.text.isEmpty {
                         Text(verbatim: line.text)
                             .font(Theme.TextStyle.body)
-                            .foregroundStyle(Theme.paper)
+                            .foregroundStyle(whatsApp ? WhatsAppLook.text : Theme.paper)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
@@ -256,11 +258,18 @@ struct ChatBubbleView: View {
                 }
             }
             .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.vertical, whatsApp ? Theme.Spacing.xs + Theme.Spacing.xxs : Theme.Spacing.sm)
             // Room for the tail on its side, on every bubble of the run, so their edges line up.
-            .padding(line.fromMe ? .trailing : .leading, ChatBubbleShape.tail)
-            .background(ChatBubbleShape(mine: line.fromMe, tailed: first, joinsBelow: !last)
-                .fill(line.fromMe ? Theme.chatMine : Theme.chatTheirs))
+            .padding(line.fromMe ? .trailing : .leading, whatsApp ? WhatsAppBubbleShape.tail : ChatBubbleShape.tail)
+            .background {
+                if whatsApp {
+                    WhatsAppBubbleShape(mine: line.fromMe, tailed: first)
+                        .fill(line.fromMe ? WhatsAppLook.mine : WhatsAppLook.theirs)
+                } else {
+                    ChatBubbleShape(mine: line.fromMe, tailed: first, joinsBelow: !last)
+                        .fill(line.fromMe ? Theme.chatMine : Theme.chatTheirs)
+                }
+            }
             .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -276,18 +285,27 @@ struct ChatBubbleView: View {
                 if let ticks = MessageTicks(line.ticks) {
                     if let onInfo {
                         // A tap on the ticks says who read it, who has it, and who does not yet, as on the Mac.
-                        Button(action: onInfo) { MessageTicksMark(ticks: ticks) }
+                        Button(action: onInfo) { ticksMark(ticks) }
                             .buttonStyle(.plain)
                             .accessibilityHint(Text("Message info"))
                     } else {
-                        MessageTicksMark(ticks: ticks)
+                        ticksMark(ticks)
                     }
                 }
             }
         }
-        .font(Theme.TextStyle.caption)
-        .foregroundStyle(Theme.chatStamp)
+        .font(whatsApp ? Theme.font(11.5) : Theme.TextStyle.caption)
+        .foregroundStyle(whatsApp ? (line.fromMe ? WhatsAppLook.stampOnMine : WhatsAppLook.quiet) : Theme.chatStamp)
         .fixedSize()
+    }
+
+    @ViewBuilder
+    private func ticksMark(_ ticks: MessageTicks) -> some View {
+        if whatsApp {
+            WhatsAppTicksMark(ticks: ticks, rest: WhatsAppLook.stampOnMine)
+        } else {
+            MessageTicksMark(ticks: ticks)
+        }
     }
 
     /// The emoji on a message as one pill over the bubble's bottom edge, as on the Mac: each emoji once, the first three,
