@@ -178,6 +178,11 @@ struct FileViewer: View {
         .frame(height: SidePanelMetrics.toolbar)
     }
 
+    /// A Markdown or notebook preview reads as a document on the panel itself, without the code background.
+    private var rendersAsDocument: Bool {
+        previewing && !editor.editing && !comparing && (kind == .markdown || kind == .notebook)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             bar
@@ -208,7 +213,7 @@ struct FileViewer: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(WS.code)
+        .background(rendersAsDocument ? Color.clear : WS.code)
         .task(id: "\(target.path)|\(reloads)") {
             let path = target.path
             let loaded = await Task.detached(priority: .userInitiated) { FileViewing.load(path: path) }.value
@@ -264,7 +269,7 @@ struct FileViewer: View {
                 MarkdownView(text: kind == .notebook ? (NotebookDocument.markdown(from: source) ?? source) : source)
                     .environment(\.fileLinkBase, folder)
                     .environment(\.pullRequestLinksBeside, beside)
-                    .padding(NookTheme.Spacing.xl)
+                    .padding([.horizontal, .top], NookTheme.Spacing.xl)
             }
         } else {
             FileCodeView(lines: lines, tokens: tokens, line: FileViewing.clampedLine(target.line, count: lines.count),
