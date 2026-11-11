@@ -12,6 +12,11 @@ extension WorkspaceManager {
         children(of: parent).filter { $0.status.isActive }
     }
 
+    /// The sub-threads at every level that still work for `parent` (`DelegatedTask.workingSubThreads`).
+    func workingSubThreads(of parent: UUID) -> Int {
+        DelegatedTask.workingSubThreads(of: parent, in: runs)
+    }
+
     /// The child a repeated call with the same `client_request_id` already started.
     func delegatedChild(of parent: UUID, key: String) -> WorkspaceRun? {
         children(of: parent).first { $0.delegation?.key == key }

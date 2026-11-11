@@ -310,6 +310,13 @@ struct SessionSideLink {
     var openDiff: (TurnDiffSelection) -> Void = { _ in }
     /// Opens the command in the Terminal tab, or puts it away when that tab shows it already.
     var toggleConsole: (UUID) -> Void = { _ in }
+    /// The sub-thread the side panel shows beside the conversation (`SubThreadStrip`), nil while none does.
+    var shownSubThread: UUID? = nil
+    /// Whether the conversation keeps its place beside the side panel: without that room (a narrow notch) a sub-thread
+    /// opens in place of the conversation instead.
+    var subThreadRoom = false
+    /// Shows a sub-thread beside the conversation, or with nil puts it away.
+    var showSubThread: (UUID?) -> Void = { _ in }
 }
 
 extension SessionSideLink: Equatable {
@@ -317,6 +324,7 @@ extension SessionSideLink: Equatable {
     /// environment value that is never equal redrew every answer and row that reads it on each streamed token.
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.shownFile == rhs.shownFile && lhs.panelOpen == rhs.panelOpen && lhs.hasPanel == rhs.hasPanel
+            && lhs.shownSubThread == rhs.shownSubThread && lhs.subThreadRoom == rhs.subThreadRoom
     }
 }
 

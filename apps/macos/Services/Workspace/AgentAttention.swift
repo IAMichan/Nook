@@ -35,6 +35,8 @@ enum AgentAttention: Int, Comparable, Sendable {
         var settled = false
         /// The turn ended, but subagents it started still work in the background.
         var subagentsWorking = false
+        /// The turn ended, but sub-threads it delegated (`DelegatedTask.workingSubThreads`) still work: it is busy through them.
+        var subThreadsWorking = 0
         /// The running turn is a summary Nook sends on its own (idle or size compaction): it asks nothing of you.
         var quietTurn = false
     }
@@ -56,7 +58,8 @@ enum AgentAttention: Int, Comparable, Sendable {
         case .preparing, .running: return .working
         case .waitingApproval: return .approval
         case .failed: return input.limitedAt != nil ? .limited : .failed
-        case .completed: return input.subagentsWorking ? .working : (input.unseen ? .ready : .idle)
+        case .completed:
+            return input.subagentsWorking || input.subThreadsWorking > 0 ? .working : (input.unseen ? .ready : .idle)
         case .stopped: return .finished
         }
     }

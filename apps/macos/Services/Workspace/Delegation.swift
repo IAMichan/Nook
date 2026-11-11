@@ -295,6 +295,36 @@ enum DelegatedTask {
     }
 
     /// The message that wakes the parent when a child it did not wait for has finished.
+    /// How many sub-threads still work for a session, at every level (a sub-thread's own sub-threads count too): while
+    /// any does, the session reads as busy everywhere, also after its own turn ended (`AgentAttention.Input`).
+    /// `parents` maps a session to the one that delegated it; `active` holds the sessions whose turn runs.
+    static func workingSubThreads(of parent: UUID, parents: [UUID: UUID], active: Set<UUID>) -> Int {
+        var children: [UUID: [UUID]] = [:]
+        for (child, of) in parents where child != of { children[of, default: []].append(child) }
+        var seen: Set<UUID> = [parent]
+        var queue = children[parent] ?? []
+        var working = 0
+        while let next = queue.popLast() {
+            guard seen.insert(next).inserted else { continue }
+            if active.contains(next) { working += 1 }
+            queue += children[next] ?? []
+        }
+        return working
+    }
+
+    /// The same, read from the sessions themselves: the delegation link of each and whether its turn runs.
+    static func workingSubThreads(of parent: UUID, in runs: [WorkspaceRun]) -> Int {
+        var parents: [UUID: UUID] = [:]
+        var active: Set<UUID> = []
+        for run in runs where !run.archived {
+            guard let link = run.delegation else { continue }
+            parents[run.id] = link.parentID
+            if run.status.isActive { active.insert(run.id) }
+        }
+        guard parents.values.contains(parent) else { return 0 }
+        return workingSubThreads(of: parent, parents: parents, active: active)
+    }
+
     /// Which of a session's tasks its sub-thread strip shows (`SubThreadStrip`): every one at work or asking, and the ones
     /// that ended after `since` (your last message there). Oldest first, the order you started them in.
     static func shown(_ children: [WorkspaceRun], asking: (UUID) -> Bool, since: Date) -> [WorkspaceRun] {

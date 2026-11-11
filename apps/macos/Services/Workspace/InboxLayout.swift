@@ -112,6 +112,13 @@ struct InboxEntry: Identifiable, Equatable, Sendable {
     var woke: Bool
     /// How far the row sits in under the session that started it: 0 for a session of its own.
     var depth = 0
+    /// The sessions it sits under in the list, nearest first: folding any of them hides this row.
+    var ancestors: [String] = []
+    /// How many sessions sit under it in the list, at every level (its sub-threads).
+    var subThreads = 0
+    /// One of those waits for you, or works: a folded row still says so.
+    var subThreadNeedsYou = false
+    var subThreadActive = false
     var id: String { row.id }
 }
 
@@ -159,17 +166,46 @@ enum InboxLayout {
         guard !children.isEmpty else { return entries }
         var result: [InboxEntry] = []
         var placed: Set<String> = []
-        func place(_ entry: InboxEntry, depth: Int) {
+        func place(_ entry: InboxEntry, depth: Int, ancestors: [String]) {
             guard placed.insert(entry.id).inserted else { return }
             var entry = entry
+            // Deeper threads stay at the second step, so a long chain keeps the name readable; `ancestors` keeps the real tree.
             entry.depth = min(depth, 2)
+            entry.ancestors = ancestors
             result.append(entry)
-            for child in children[entry.id] ?? [] { place(child, depth: depth + 1) }
+            for child in children[entry.id] ?? [] { place(child, depth: depth + 1, ancestors: [entry.id] + ancestors) }
         }
-        for root in roots { place(root, depth: 0) }
+        for root in roots { place(root, depth: 0, ancestors: []) }
         // A loop of parents has no root: its rows keep their place.
-        for entry in entries where !placed.contains(entry.id) { place(entry, depth: 0) }
+        for entry in entries where !placed.contains(entry.id) { place(entry, depth: 0, ancestors: []) }
+        // What each session holds under it: the count on its fold, and whether something in there works or waits for you.
+        let index = Dictionary(result.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for entry in result {
+            let active = entry.row.isActive || entry.row.attention == .working
+            for ancestor in entry.ancestors {
+                guard let at = index[ancestor] else { continue }
+                result[at].subThreads += 1
+                result[at].subThreadNeedsYou = result[at].subThreadNeedsYou || entry.row.needsYou
+                result[at].subThreadActive = result[at].subThreadActive || active
+            }
+        }
         return result
+    }
+
+    /// Whether a session's sub-threads show under it. What you chose wins; otherwise they show while one of them works or
+    /// waits for you, and fold away once they are all quiet.
+    static func threadOpen(_ entry: InboxEntry, opened: Set<String>, folded: Set<String>) -> Bool {
+        if folded.contains(entry.id) { return false }
+        if opened.contains(entry.id) { return true }
+        return entry.subThreadActive || entry.subThreadNeedsYou
+    }
+
+    /// The rows left once folded threads are put away: a row under a folded session is hidden, except the one that is
+    /// open on the right, so the session you look at never vanishes from the list.
+    static func foldThreads(_ entries: [InboxEntry], isOpen: (InboxEntry) -> Bool, selectedID: String?) -> [InboxEntry] {
+        let folded = Set(entries.filter { $0.subThreads > 0 && !isOpen($0) }.map(\.id))
+        guard !folded.isEmpty else { return entries }
+        return entries.filter { entry in entry.id == selectedID || !entry.ancestors.contains(where: folded.contains) }
     }
 
     /// Sections in display order; empty ones are left out. Every row lands in exactly one section.
@@ -207,6 +243,24 @@ enum InboxLayout {
             }
         }
 
+        // A thread that waits for you sits in Active as a whole: a session at work on the Working shelf comes up with the
+        // sub-thread that asks, so that one can sit under it instead of on its own.
+        let parentOf = Dictionary(rows.compactMap { row in row.parentID.map { (row.id, $0) } }, uniquingKeysWith: { first, _ in first })
+        let workingIDs = Set(working.map(\.id))
+        var lifted: Set<String> = []
+        for entry in active where entry.row.needsYou {
+            var seen: Set<String> = [entry.id]
+            var parent = entry.row.parentID
+            while let id = parent, workingIDs.contains(id), seen.insert(id).inserted {
+                lifted.insert(id)
+                parent = parentOf[id]
+            }
+        }
+        if !lifted.isEmpty {
+            active += working.filter { lifted.contains($0.id) }
+            working.removeAll { lifted.contains($0.id) }
+        }
+
         pinned.sort { (pinRank[$0.id] ?? Int.max, $1.row.lastActivity, $0.id) < (pinRank[$1.id] ?? Int.max, $0.row.lastActivity, $1.id) }
         active.sort {
             if $0.row.effectiveAttention != $1.row.effectiveAttention { return $0.row.effectiveAttention < $1.row.effectiveAttention }
@@ -222,25 +276,36 @@ enum InboxLayout {
         }
         settled.sort(by: newestFirst)
 
-        // A session started from another one that is running or open follows it into its section, so it can sit under it;
-        // one that needs you, is pinned, snoozed or settled stays where it is.
+        // A session started from another one that is running or open follows it into its section, so it sits under it and
+        // never also as a session of its own; one that is pinned, snoozed or settled stays where it is. One that needs you
+        // never goes onto the Working shelf (its parent came up to Active above), and a pinned parent is always in view.
         var home: [String: Kind] = [:]
         for entry in active { home[entry.id] = .active }
         for entry in working { home[entry.id] = .working }
         for entry in pinned { home[entry.id] = .pinned }
-        let follows = (working + active).filter { entry in
-            guard let parent = entry.row.parentID, let target = home[parent], target != home[entry.id] else { return false }
-            return !entry.row.needsYou
+        // Settled a step at a time, so a sub-thread of a sub-thread follows too, wherever the chain ends up.
+        let candidates = working + active
+        var moved: [String: Kind] = [:]
+        for _ in 0..<candidates.count {
+            var changed = false
+            for entry in candidates {
+                guard let parent = entry.row.parentID, parent != entry.id, let target = home[parent], target != home[entry.id],
+                      !(entry.row.needsYou && target == .working) else { continue }
+                home[entry.id] = target
+                moved[entry.id] = target
+                changed = true
+            }
+            if !changed { break }
         }
-        if !follows.isEmpty {
-            let moved = Set(follows.map(\.id))
-            working.removeAll { moved.contains($0.id) }
-            active.removeAll { moved.contains($0.id) }
-            for entry in follows {
-                switch home[entry.row.parentID ?? ""] {
+        if !moved.isEmpty {
+            working.removeAll { moved[$0.id] != nil }
+            active.removeAll { moved[$0.id] != nil }
+            for entry in candidates {
+                switch moved[entry.id] {
                 case .pinned?: pinned.append(entry)
                 case .working?: working.append(entry)
-                default: active.append(entry)
+                case .active?: active.append(entry)
+                default: break
                 }
             }
         }
