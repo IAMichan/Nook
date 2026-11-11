@@ -16,7 +16,7 @@ struct ShortcutCheatSheetView: View {
         let sheet = self.sheet
         VStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("cheatsheet.title")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.textPrimary)
+                Text(tr("cheatsheet.title")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
                 Spacer()
                 Button(tr("cheatsheet.change"), action: openSettings)
                     .buttonStyle(.plain).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.iris)
@@ -38,7 +38,7 @@ struct ShortcutCheatSheetView: View {
                                 ForEach(rows) { row in
                                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                                         Text(tr("keys.command." + row.command))
-                                            .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textPrimary)
+                                            .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                         Text(row.keys.joined(separator: "  "))
                                             .font(NookTheme.TextStyle.code).foregroundStyle(NookTheme.textSecondary)

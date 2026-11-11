@@ -308,10 +308,17 @@ struct AgentInboxList: View {
     /// The shelves you folded, kept across launches. Snoozed and Settled start folded.
     private var collapsed: Set<InboxSection.Kind> { store.collapsedShelves }
 
-    /// What a section draws: a folded shelf still shows the session that is open on the right.
+    /// What a section draws: a folded shelf still shows the session that is open on the right, and a folded thread only
+    /// its first session (and the open one).
     private func rows(of section: InboxSection) -> [InboxEntry] {
         let foldable = section.kind != .pinned && section.kind != .active
-        return InboxLayout.shownRows(section, folded: foldable && collapsed.contains(section.kind), selectedID: current)
+        let shown = InboxLayout.shownRows(section, folded: foldable && collapsed.contains(section.kind), selectedID: current)
+        return InboxLayout.foldThreads(shown, isOpen: threadOpen, selectedID: current)
+    }
+
+    /// Whether a session's sub-threads show under it; a search opens every thread, so a match is never folded away.
+    private func threadOpen(_ entry: InboxEntry) -> Bool {
+        !store.query.isEmpty || InboxLayout.threadOpen(entry, opened: store.openedThreads, folded: store.foldedThreads)
     }
 
     @ViewBuilder
@@ -319,7 +326,7 @@ struct AgentInboxList: View {
         switch section.kind {
         case .pinned, .active:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
+                ForEach(rows(of: section)) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
             }
             .padding(.bottom, section.kind == .pinned ? NookTheme.Spacing.md : 0)
         case .working, .snoozed, .settled:
@@ -345,7 +352,10 @@ struct AgentInboxList: View {
 
     /// A folded project still shows the session that is open on the right; a search opens every project.
     private func rows(of group: InboxProjectGroup) -> [(kind: InboxSection.Kind, entry: InboxEntry)] {
-        guard store.query.isEmpty, store.collapsedProjects.contains(group.project) else { return group.rows }
+        guard store.query.isEmpty, store.collapsedProjects.contains(group.project) else {
+            let kept = Set(InboxLayout.foldThreads(group.rows.map(\.entry), isOpen: threadOpen, selectedID: current).map(\.id))
+            return group.rows.filter { kept.contains($0.entry.id) }
+        }
         return group.rows.filter { $0.entry.id == current }
     }
 
@@ -523,9 +533,55 @@ struct AgentInboxList: View {
 
     // MARK: A row
 
-    @ViewBuilder
+    /// A session's row, and under a session that started others the fold of its sub-threads.
     private func entryRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                           shown: [String]) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            sessionRow(entry, in: section, sections: sections, byID: byID, shown: shown)
+            if entry.subThreads > 0, byID[entry.id] != nil { threadToggle(entry) }
+        }
+    }
+
+    /// The fold of a session's sub-threads, one step in where they sit: a chevron and how many there are. Folded, a dot
+    /// says that one of them waits for you (amber) or works (iris), so nothing that needs you is folded out of sight.
+    private func threadToggle(_ entry: InboxEntry) -> some View {
+        let open = threadOpen(entry)
+        let count = entry.subThreads == 1 ? tr("inbox.thread.one") : tr("inbox.thread.many", entry.subThreads)
+        let signal: (color: Color, help: String)? = open ? nil
+            : entry.subThreadNeedsYou ? (NookTheme.amber, tr("inbox.thread.needsYou"))
+            : entry.subThreadActive ? (NookTheme.iris, tr("inbox.thread.working")) : nil
+        return Button {
+            withAnimation(NookTheme.reveal) { store.setThread(entry.id, open: !open) }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(icon: "chevron.down")
+                    .font(NookTheme.font(9, .semibold))
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .frame(width: NookTheme.Spacing.xl)
+                Text(count)
+                    .font(NookTheme.TextStyle.detail)
+                    .lineLimit(1)
+                if let signal {
+                    Circle().fill(signal.color).frame(width: 6, height: 6)
+                        .help(signal.help)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            // Where the sub-threads' turn arrows stand, so the fold reads as the head of what sits under it.
+            .padding(.leading, NookTheme.Spacing.md + CGFloat(min(entry.depth, 1)) * NookTheme.Spacing.xl)
+            .frame(height: 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
+        .accessibilityLabel(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
+        .accessibilityValue(signal.map { count + ", " + $0.help } ?? count)
+    }
+
+    @ViewBuilder
+    private func sessionRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
+                            shown: [String]) -> some View {
         if let item = byID[entry.id] {
             let slim = section.kind == .snoozed || section.kind == .settled
             let isRun = runID(item) != nil
@@ -909,9 +965,15 @@ extension AgentInboxList {
         return .handled
     }
 
-    /// ← folds the project (or shelf) of the row the keyboard is on, → unfolds it.
+    /// ← folds the sub-threads, project (or shelf) of the row the keyboard is on, → unfolds them.
     private func foldKeyRow(_ fold: Bool, groups: [InboxProjectGroup], sections: [InboxSection]) -> KeyPress.Result {
         guard let keyRow else { return .ignored }
+        // On a session with sub-threads the keys fold and open those first, as a folder in Finder's list.
+        if let entry = sections.lazy.flatMap(\.rows).first(where: { $0.id == keyRow }), entry.subThreads > 0,
+           threadOpen(entry) == fold, store.query.isEmpty {
+            withAnimation(NookTheme.reveal) { store.setThread(entry.id, open: !fold) }
+            return .handled
+        }
         if store.groupByProject, let group = groups.first(where: { $0.rows.contains { $0.entry.id == keyRow } }) {
             withAnimation(NookTheme.reveal) {
                 if fold { store.collapsedProjects.insert(group.project) } else { store.collapsedProjects.remove(group.project) }

@@ -20,6 +20,9 @@ final class InboxStore: ObservableObject {
     @Published var collapsedProjects: Set<String> { didSet { save() } }
     /// The shelves folded at the foot of the list.
     @Published private(set) var collapsedShelves: Set<InboxSection.Kind>
+    /// Sessions whose sub-threads you folded or opened yourself; the rest follow `InboxLayout.threadOpen`.
+    @Published private(set) var foldedThreads: Set<String>
+    @Published private(set) var openedThreads: Set<String>
     /// The choices of the snooze menus (Settings › Sessions › Snooze options). Kept under a key of their own, so an option
     /// a later Nook adds and this one cannot read never costs the rest of the list's state.
     @Published var snoozeOptions: [SnoozeOption] {
@@ -49,6 +52,8 @@ final class InboxStore: ObservableObject {
         var groupByProject: Bool?
         var collapsedProjects: Set<String>?
         var collapsedShelves: Set<InboxSection.Kind>?
+        var foldedThreads: [String]?
+        var openedThreads: [String]?
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -63,6 +68,8 @@ final class InboxStore: ObservableObject {
         groupByProject = stored?.groupByProject ?? true
         collapsedProjects = stored?.collapsedProjects ?? []
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
+        foldedThreads = Set(stored?.foldedThreads ?? [])
+        openedThreads = Set(stored?.openedThreads ?? [])
         snoozeOptions = SnoozeOption.cleaned(defaults.data(forKey: Self.snoozeOptionsKey)
             .flatMap { try? JSONDecoder().decode([SnoozeOption].self, from: $0) } ?? SnoozeOption.defaults)
         // The choice is kept, so a later launch reads it instead of guessing again.
@@ -75,13 +82,32 @@ final class InboxStore: ObservableObject {
     private func save() {
         let stored = Stored(state: state, showWorking: showWorking, autoSettle: autoSettle,
                             groupByProject: groupByProject, collapsedProjects: collapsedProjects,
-                            collapsedShelves: collapsedShelves)
+                            collapsedShelves: collapsedShelves,
+                            foldedThreads: Array(foldedThreads), openedThreads: Array(openedThreads))
         if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.key) }
     }
 
     /// Folds or opens a shelf of the list.
     func setShelf(_ kind: InboxSection.Kind, collapsed: Bool) {
         if collapsed { collapsedShelves.insert(kind) } else { collapsedShelves.remove(kind) }
+        save()
+    }
+
+    /// The most thread choices kept; past it the oldest sessions' choices go (they long left the list).
+    private static let threadChoices = 300
+
+    /// Folds or opens the sub-threads under a session in the list, and keeps that choice.
+    func setThread(_ id: String, open: Bool) {
+        if open {
+            foldedThreads.remove(id)
+            openedThreads.insert(id)
+        } else {
+            openedThreads.remove(id)
+            foldedThreads.insert(id)
+        }
+        // A set has no age: trimming drops arbitrary old choices, which only brings those sessions back to the default.
+        if foldedThreads.count > Self.threadChoices { foldedThreads = Set(foldedThreads.prefix(Self.threadChoices / 2)) }
+        if openedThreads.count > Self.threadChoices { openedThreads = Set(openedThreads.prefix(Self.threadChoices / 2)) }
         save()
     }
 

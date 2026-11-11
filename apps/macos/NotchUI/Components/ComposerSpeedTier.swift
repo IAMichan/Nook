@@ -44,7 +44,7 @@ struct ComposerUltracodeToggle: View {
             ComposerDivider()
             Button { onToggle(!on) } label: {
                 ComposerPill(symbol: "point.3.connected.trianglepath.dotted", text: tr("compose.ultracode"),
-                             tint: on ? NookTheme.iris : nil, showsChevron: false)
+                             showsChevron: false, selected: on)
             }
             .buttonStyle(.plain)
             .composerTip(on ? tr("compose.ultracode.on") : tr("compose.ultracode.off"))
@@ -54,6 +54,7 @@ struct ComposerUltracodeToggle: View {
 }
 
 /// "Main thread" (`MainThread`): the agent hands its work to sub-threads that report back. Every agent that may delegate.
+/// On, the pill is filled with a check, so the mode is plain to see; `ComposerMainThreadHint` says what it means.
 struct ComposerMainThreadToggle: View {
     let offered: Bool
     let on: Bool
@@ -63,12 +64,34 @@ struct ComposerMainThreadToggle: View {
         if offered {
             ComposerDivider()
             Button { onToggle(!on) } label: {
-                ComposerPill(symbol: "arrow.triangle.branch", text: tr("compose.mainThread"),
-                             tint: on ? NookTheme.iris : nil, showsChevron: false)
+                ComposerPill(symbol: on ? "checkmark" : "arrow.triangle.branch", text: tr("compose.mainThread"),
+                             showsChevron: false, selected: on)
             }
             .buttonStyle(.plain)
             .composerTip(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
-            .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
+            .accessibilityValue(on ? tr("compose.mainThread.stateOn") : tr("compose.mainThread.stateOff"))
+        }
+    }
+}
+
+/// One calm line by a composer while Main thread is on (`ComposerMainThreadToggle`): what the session will do and where
+/// its sub-threads show up. The same line under a new session's box and a running one's, for every agent that offers it.
+struct ComposerMainThreadHint: View {
+    let offered: Bool
+    let on: Bool
+
+    var body: some View {
+        if offered && on {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                Image(icon: "arrow.triangle.branch")
+                    .foregroundStyle(NookTheme.iris)
+                Text(tr("compose.mainThread.hint"))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(NookTheme.TextStyle.detail)
+            .accessibilityElement(children: .combine)
         }
     }
 }
