@@ -610,49 +610,6 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// The reasoning effort for the next turns, only for agents that have it. ⇧⌘E opens it (`effortPicker.toggle`).
-    @ViewBuilder
-    private func effortMenu(_ run: WorkspaceRun) -> some View {
-        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
-        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
-            // An agent that lists one model per thinking level: the level picks the model of that family.
-            let familyLevels = family.members.map(\.level)
-            ComposerDivider()
-            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
-                let current = family.members.first { $0.id == run.model }?.level ?? ""
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(variant: current)))
-            } content: {
-                DropdownHeader(title: tr("compose.effort"))
-                ForEach(family.members, id: \.self) { member in
-                    DropdownRow(symbol: member.level.isEmpty ? "circle.dashed" : EffortSymbol.symbol(member.level, in: familyLevels),
-                                title: tr(EffortLevels.label(variant: member.level)), chosen: member.id == run.model) {
-                        _ = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: member.id)
-                    }
-                }
-            }
-            .composerTip(tr("compose.effort.help"))
-        } else if !levels.isEmpty {
-            ComposerDivider()
-            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
-                             text: workspace.effortTitle(run.effort, for: run.provider, profileID: run.profileID))
-            } content: {
-                DropdownHeader(title: tr("compose.effort"))
-                DropdownRow(symbol: "circle.dashed", title: tr(EffortLevels.label(nil)), chosen: run.effort == nil) {
-                    workspace.setEffort(runID, nil)
-                }
-                ForEach(levels, id: \.self) { level in
-                    DropdownRow(symbol: EffortSymbol.symbol(level, in: levels),
-                                title: workspace.effortTitle(level, for: run.provider, profileID: run.profileID),
-                                chosen: run.effort == level) {
-                        workspace.setEffort(runID, level)
-                    }
-                }
-            }
-            .composerTip(tr("compose.effort.help"))
-        }
-    }
-
     /// `effort.increase` / `effort.decrease`: one level up or down without opening the picker (`EffortStep`); for an
     /// agent that lists one model per level, the next model of that family. False when the agent has no levels.
     private func stepEffort(_ direction: EffortStep.Direction) -> Bool {
@@ -1596,15 +1553,6 @@ struct AgentRunPanel: View {
                     ComposerDivider()
                     modeMenu(run)
                     ComposerDivider()
-                    permissionMenu(run)
-                    effortMenu(run)
-                    ComposerSpeedTier(tiers: workspace.speedTiers(for: run), chosen: workspace.speedTier(run)) {
-                        workspace.setSpeedTier(runID, $0)
-                    }
-                    ComposerUltracodeToggle(offered: Ultracode.offered(provider: run.provider, model: run.model),
-                                            on: run.ultracode == true) { workspace.setUltracode(runID, $0) }
-                    ComposerMainThreadToggle(offered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
-                                             on: run.mainThread == true) { workspace.setMainThread(runID, $0) }
                     ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
@@ -1806,12 +1754,14 @@ struct AgentRunPanel: View {
         // The agents its project switched off are not offered to move to; the session's own agent always is.
         let allowed = app.connectedProviders(in: run.projectPath)
         let providers = idle ? (allowed.contains(run.provider) ? allowed : [run.provider] + allowed) : [run.provider]
-        return ModelPickerDropdown {
+        return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning(run) != nil) {
             ComposerPill(agent: run.provider.displayName, account: AccountTag.badge(profile, app: app),
                          text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
                          short: model ?? run.provider.displayName)
         } content: {
-            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle) { provider, accountID, option in
+            AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle,
+                             footer: AnyView(options(run)),
+                             trailing: reasoning(run).map { AnyView(ModelPickerReasoning(effort: $0)) }) { provider, accountID, option in
                 let profileID = accountID ?? (provider == run.provider ? run.profileID : app.connectedProfiles(for: provider).first?.id ?? run.profileID)
                 let chosen = option ?? (provider == run.provider ? chosenModel : workspace.settings.model(for: provider))
                 workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true)
@@ -1824,23 +1774,32 @@ struct AgentRunPanel: View {
         ModeToggle(mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }))
     }
 
-    private func permissionMenu(_ run: WorkspaceRun) -> some View {
-        // ⇧⌘A opens it (`permissionPicker.toggle`).
-        ComposerDropdown(width: 300, command: "permissionPicker.toggle") {
-            ComposerPill(symbol: run.mode == .plan ? "lock" : run.permission.symbol,
-                         text: run.mode == .plan ? tr("compose.readOnly") : run.permission.label,
-                         tint: run.permission == .bypass && run.mode != .plan ? NookTheme.coralSoft : nil)
-        } content: {
-            DropdownHeader(title: tr("compose.access"))
-            ForEach(run.provider.capabilities.policies) { policy in
-                DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: run.provider),
-                            chosen: run.permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
-                    workspace.configure(runID, permission: policy)
-                }
-            }
-        }
-        .disabled(run.mode == .plan)
-        .composerTip(run.permission.help(for: run.provider))
+    /// Access, effort, speed and sub-threads, in the footer of the model picker.
+    private func options(_ run: WorkspaceRun) -> some View {
+        ModelPickerOptions(
+            access: .init(provider: run.provider, chosen: run.permission, readOnly: run.mode == .plan,
+                          pick: { workspace.configure(runID, permission: $0) }),
+            speedTiers: workspace.speedTiers(for: run), speed: workspace.speedTier(run),
+            pickSpeed: { workspace.setSpeedTier(runID, $0) },
+            ultracodeOffered: Ultracode.offered(provider: run.provider, model: run.model),
+            ultracode: run.ultracode == true, setUltracode: { workspace.setUltracode(runID, $0) },
+            mainThreadOffered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
+            mainThread: run.mainThread == true, setMainThread: { workspace.setMainThread(runID, $0) })
+    }
+
+    /// The reasoning levels, in the column beside the models; nil when the agent has none for this model.
+    private func reasoning(_ run: WorkspaceRun) -> ModelPickerOptions.Effort? {
+        let levels = workspace.effortLevels(for: run.provider, profileID: run.profileID, model: run.model)
+        let effort = ModelPickerOptions.Effort(
+            family: app.modelFamily(run.model, for: run.provider, profileID: run.profileID),
+            model: run.model,
+            modelName: run.model.isEmpty ? run.provider.displayName
+                : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID),
+            levels: levels, chosen: run.effort,
+            title: { workspace.effortTitle($0, for: run.provider, profileID: run.profileID) },
+            pickLevel: { workspace.setEffort(runID, $0) },
+            pickModel: { _ = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: $0) })
+        return effort.family != nil || !levels.isEmpty ? effort : nil
     }
 }
 
