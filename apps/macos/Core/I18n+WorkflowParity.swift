@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts of the workflow features that follow t3code: the message limit and paste as text, the snooze options, the
+// Texts of the workflow features: the message limit and paste as text, the snooze options, the
 // auto-settle rules for pull requests, the settle sweep, pull request prompt links, the model picker's keys and the
 // appearance and theme commands in the command palette. Numbers use %ld, text uses %@.
 

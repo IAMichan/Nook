@@ -149,8 +149,8 @@ enum DelegationPolicy {
         }
     }
 
-    /// What every child is told after its brief: do the work itself (t3code: "If you are a subagent or child, do the work
-    /// yourself"), so a chain of sessions does not grow by itself, and end with the report its parent reads.
+    /// What every child is told after its brief: do the work itself, so a chain of sessions does not grow by itself, and
+    /// end with the report its parent reads.
     static let childNote = "You are a task delegated from another session in Nook. Do the work yourself; start no subtasks unless this brief asks for them. End with a short report of what you did and found: it is all the other session sees."
 
     /// What the child is told: the task and its role, nothing from the parent's conversation.
@@ -184,7 +184,7 @@ enum DelegatedTask {
     static let summaryLimit = 4_000
 
     /// `hasQueuedWork`: a message still waits to go out to the task (not held after a failure or a stop). The task is not
-    /// done until it went (t3code: a follow-up waits for a run its child queued on its own thread).
+    /// done until it went (a follow-up waits for a run its child queued on its own thread).
     static func state(_ status: RunStatus, hasPendingQuestion: Bool = false, hasQueuedWork: Bool = false) -> State {
         if hasQueuedWork, !status.isActive { return .running }
         switch status {
@@ -204,8 +204,8 @@ enum DelegatedTask {
     }
 
     /// Where a message to a session comes from, by the session that sent it (`session_send`); nil for you, Nook, or a
-    /// client without a session of its own (the command line, an MCP client). A task's own parent counts as you. As
-    /// t3code does, only a message from an unrelated session leaves the parent out of the turn it starts, and a message
+    /// client without a session of its own (the command line, an MCP client). A task's own parent counts as you. Only
+    /// a message from an unrelated session leaves the parent out of the turn it starts, and a message
     /// from a task this session delegated carries on the session's own work.
     static func origin(sender: UUID?, senderParent: UUID?, target: UUID, targetParent: UUID?) -> QueuedMessage.Origin? {
         guard let sender, sender != targetParent else { return nil }
@@ -342,8 +342,8 @@ enum DelegatedTask {
         return text
     }
 
-    /// The message that tells a parent that did not wait that its task asks something (t3code routes a child's question to
-    /// its parent, because nobody watches a child): the parent answers it or asks the user.
+    /// The message that tells a parent that did not wait that its task asks something (a child's question goes to its
+    /// parent, because nobody watches a child): the parent answers it or asks the user.
     static func questionMessage(_ snapshot: Snapshot, questionID: String, question: String) -> String {
         var text = "Delegated task \"\(snapshot.title)\" (\(snapshot.taskID)) asks a question and waits for the answer."
         let clean = question.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -353,8 +353,8 @@ enum DelegatedTask {
     }
 }
 
-/// "Main thread": a session that hands its work to delegated tasks (sub-threads) and keeps its own context small, the
-/// way t3code's orchestrator thread works with `delegate_task`. You switch it on in the composer; the agent learns of it
+/// "Main thread": a session that hands its work to delegated tasks (sub-threads) and keeps its own context small, as an
+/// orchestrator thread working with `delegate_task`. You switch it on in the composer; the agent learns of it
 /// with your next message, in the hidden part (`<nook_context>`) so your bubble stays yours. Its system prompt does not
 /// change, so the prompt cache stays warm.
 enum MainThread {

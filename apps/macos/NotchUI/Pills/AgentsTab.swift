@@ -70,7 +70,7 @@ struct AgentsTab: View {
                     PanelSidebarTop(history: AnyView(SessionHistoryButtons(
                         current: selectedID(selection),
                         back: { goBack(entries) }, forward: { goForward(entries) })), hasToggle: true)
-                    // In the sidebar the search field and these buttons share one row, as t3code's threads header.
+                    // In the sidebar the search field and these buttons share one row.
                     if sidebar == nil { listHeader(selection) }
                     sessionList(entries, selection: selection)
                     if !app.demoMode {
@@ -427,7 +427,7 @@ struct AgentsTab: View {
         return ListEntries(running: sorted(built), earlier: earlier, busyKeys: busyKeys, standIn: standIn)
     }
 
-    /// The list as t3code keeps it: flat. A delegated task or side chat has no row while its parent has one (the parent's
+    /// The list stays flat. A delegated task or side chat has no row while its parent has one (the parent's
     /// Lineage control lists it); the parent's row stands in for it while it is open, and shows the approval it waits for,
     /// and for a side chat its question too. A fork or a comparison keeps a row of its own, at the same level.
     private static func subThreadsUnderParents(_ items: [AgentListItem], runs: [WorkspaceRun])
@@ -726,7 +726,7 @@ enum SessionSweep {
     static let rows = RowSweep<String>()
 }
 
-/// A session as t3code shows a thread: its folder with the status or how long ago, its name, and a line of what it did
+/// A session row: its folder with the status or how long ago, its name, and a line of what it did
 /// (branch, changes, pull request) with the agent's logo. A row that asks nothing of you recedes (lighter text, normal
 /// weight, working rows dimmed) so what needs you is the only loud thing.
 struct AgentListRow: View, Equatable {
@@ -739,7 +739,7 @@ struct AgentListRow: View, Equatable {
     /// One line, for the snoozed and settled shelves.
     var slim = false
     /// Under its project's header, which already names the folder: the agent's logo, the name and the status, and under
-    /// it the branch, changes and pull request when there are any, as a thread sits under its project in t3code.
+    /// it the branch, changes and pull request when there are any.
     var grouped = false
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
@@ -781,7 +781,7 @@ struct AgentListRow: View, Equatable {
     @State private var narrow = false
     /// Below this width a one-line row keeps the name readable by showing the status as its mark only.
     static let narrowWidth: CGFloat = 200
-    /// A row of one line, and the first line of a row under its project's header, as t3code's.
+    /// A row of one line, and the first line of a row under its project's header.
     static let lineHeight: CGFloat = 36
     /// Where the name starts under a project's header: past the folder's mark, so it lines up with the project's name.
     static let groupedIndent: CGFloat = 36
@@ -849,7 +849,7 @@ struct AgentListRow: View, Equatable {
         .opacity(restOpacity)
     }
 
-    /// Three lines, as a thread card in t3code: the folder with the status or how long ago on the right; the session's
+    /// Three lines: the folder with the status or how long ago on the right; the session's
     /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {

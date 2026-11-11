@@ -365,7 +365,7 @@ struct TranscriptStepOutput: View {
     private var isPatch: Bool { text.contains("\n@@") || text.hasPrefix("@@") || text.hasPrefix("--- ") }
 
     var body: some View {
-        // Both ways: long lines sideways, and at most 240 points tall (t3code's cap), so an opened step never pushes
+        // Both ways: long lines sideways, and at most 240 points tall, so an opened step never pushes
         // the conversation out of sight.
         ScrollView([.horizontal, .vertical], showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {

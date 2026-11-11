@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Subscription limits, drawn as t3code draws them but counted as Nook's composer counts them: how full a limit is ("38%
+// Subscription limits, counted as Nook's composer counts them: how full a limit is ("38%
 // used", a bar that fills), a line on the bar marks where even spending would be by now, color only once it gets full, and the details (reset
 // time, pace) one hover or click away instead of in a footnote. Two shapes share these rules: `UsageLimitRows`, one line
 // per window for one account (the composer's popover, Settings › Coding agents), and `UsageLimitsModal`, the modal with
@@ -275,7 +275,7 @@ enum UsageModalTab: String, CaseIterable, Hashable {
     static let storageKey = "usage.modal.tab"
 }
 
-/// Usage as a modal, as t3code's Usage: Cost and Tokens show every agent's usage on this Mac (`UsageInsightsPanel`), and
+/// Usage as a modal: Cost and Tokens show every agent's usage on this Mac (`UsageInsightsPanel`), and
 /// Limits shows the usage limits of every connected account: per agent, a card per window with how much of the pool is used
 /// in large type and its pace, beside a bar with a segment per account. The one component for every way in: the footer's
 /// usage button bottom left, "All limits" under the composer's ring, the command palette and search (over the panel,
@@ -291,7 +291,7 @@ struct UsageLimitsModal: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // As t3code's Usage: the title, then Cost, Tokens and Limits as one segmented control, the range for Cost and
+            // The title, then Cost, Tokens and Limits as one segmented control, the range for Cost and
             // Tokens as a second one beside it (on a line of its own when the modal is too narrow), refresh and close.
             ViewThatFits(in: .horizontal) {
                 header(range: true)

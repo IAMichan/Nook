@@ -22,8 +22,8 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
         /// Nook tells the agent about its own work (a task's result, a background command that ended): it carries on.
         case notice
 
-        /// The turn a message starts is one a delegating parent hears of when it ends: yours (nil) and Nook's notices are,
-        /// as in t3code; a send from another session that is not the parent is not.
+        /// The turn a message starts is one a delegating parent hears of when it ends: yours (nil) and Nook's notices are;
+        /// a send from another session that is not the parent is not.
         static func rearmsParent(_ origin: Origin?) -> Bool { origin == nil || origin == .notice }
         /// The turn a message starts continues the agent's work rather than starting new work (`TurnTimer`).
         static func continuesWork(_ origin: Origin?) -> Bool { origin == .child || origin == .notice }

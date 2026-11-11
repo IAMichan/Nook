@@ -719,7 +719,7 @@ enum BridgeURLPolicy {
 
 /// Terminal output as an agent gets it: the last lines, without the empty screen below the prompt.
 enum TerminalText {
-    /// Lines of history a terminal keeps above its screen, like t3code's terminals.
+    /// Lines of history a terminal keeps above its screen.
     static let scrollbackLines = 5_000
 
     /// The row after the last line of a buffer whose lines are `first..<end`, found by asking `exists` for a row: a binary
@@ -734,7 +734,7 @@ enum TerminalText {
     }
 
     /// Whether Option with a key typed a character of its own (`characters` of the key event): Option+L is "@" on a
-    /// German layout, Option+5 is "[" on a US one. Like t3code's terminal, that character is typed instead of being sent
+    /// German layout, Option+5 is "[" on a US one. That character is typed instead of being sent
     /// as Meta (Esc + the key), so those layouts can type @ | { [. Option with an arrow, a function key, or a dead key
     /// (no text yet) has no character of its own and stays Meta, so Option-arrow still moves a word.
     static func optionTypesText(_ characters: String?) -> Bool {

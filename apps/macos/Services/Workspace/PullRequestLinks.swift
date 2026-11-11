@@ -97,7 +97,7 @@ extension PullRequestRef {
     static func gitHubItem(_ url: URL) -> PullRequestItem? { parse(url.absoluteString)?.gitHubItem }
 }
 
-/// Where a pull request link points inside the pull request, so it opens there and not on the summary (as in t3code): a
+/// Where a pull request link points inside the pull request, so it opens there and not on the summary: a
 /// comment or review (`#issuecomment-12`, `#discussion_r34`, `#pullrequestreview-56`, GitLab's `#note_7`), a file and
 /// line of the diff (`/files#diff-<hash>R12`, `/-/merge_requests/3/diffs`), the checks, or the commits.
 enum PullRequestFocus: Equatable, Sendable {
@@ -277,7 +277,7 @@ enum PullRequestToolCall {
 
     /// A forge CLI that merges or closes a pull request from the shell, in every spelling the CLI takes: `gh pr merge`,
     /// `glab mr merge` or `glab mr accept`, `tea pr merge` or `tea pulls m`, `fj pr close`, `cafe pr merge`, and Azure
-    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI. The same list as t3code's.
+    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI.
     private static let closing = try? NSRegularExpression(
         pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
             + #"tea\s+(?:pr|pulls?)\s+(?:merge|m|close)|fj\s+pr\s+(?:merge|close)|cafe\s+(?:pr|stack)\s+(?:merge|close)|"#

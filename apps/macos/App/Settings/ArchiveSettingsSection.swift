@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Agents › Archive, as t3code's: everything put away in one place, newest first, each with Unarchive and
+/// Settings › Agents › Archive: everything put away in one place, newest first, each with Unarchive and
 /// Delete. Coding agent sessions first, then Nook's own conversations. A search narrows both lists once they grow, and
 /// each list ends in "Delete all archived…" (what the search found, while searching), asked once with the count.
 struct ArchiveSettingsSection: View {
