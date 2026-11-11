@@ -104,7 +104,8 @@ extension AppModel {
 
     /// A file link opens in Nook's own viewer at its line: in the session's side panel when clicked in an agent's
     /// conversation (`beside`), else in a window of its own. ⌘ or ⌃ held while clicking opens it in your editor
-    /// instead, and a folder shows in Finder. Nothing is handed to the file's own app.
+    /// instead, and a folder shows in Finder. Nothing is handed to the file's own app. A link to an app (`Safari.app`)
+    /// opens that app; with ⌘ or ⌃ it shows in Finder.
     func openFileInNook(_ target: FileTarget, beside: Bool) {
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isFolder) else {
@@ -120,7 +121,10 @@ extension AppModel {
             }
             return
         }
-        if isFolder.boolValue {
+        if FileLink.isAppBundle(target.path), NSEvent.modifierFlags.isDisjoint(with: [.command, .control]) {
+            // A link to an app opens the app you clicked, as Finder would; ⌘-click shows it in Finder instead.
+            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: target.path), configuration: NSWorkspace.OpenConfiguration())
+        } else if isFolder.boolValue {
             workspace.revealInFinder(target.path)
         } else if !NSEvent.modifierFlags.isDisjoint(with: [.command, .control]) {
             workspace.openFile(target)
@@ -178,7 +182,7 @@ extension AppModel {
     func pullRequestRequest(for url: URL) -> PullRequestOpenRequest? {
         if !demoMode, let ref = PullRequestRef.parse(url.absoluteString), let repo = ref.forgeRepository, PullRequestForges.client(repo) != nil {
             let item = PullRequestItem(repo: repo.path, number: ref.number, title: "", url: url, draft: false, updated: nil, author: "")
-            return PullRequestOpenRequest(account: repo.forgeAccount, item: item)
+            return PullRequestOpenRequest(account: repo.forgeAccount, item: item, focus: pullRequestFocus(of: url))
         }
         guard !demoMode, GitHubPullRequestList.isAvailable, let link = PullRequestRef.gitHubItem(url) else { return nil }
         let key = link.id.lowercased()
@@ -186,7 +190,12 @@ extension AppModel {
             (account.mine + account.reviews + account.watched).first { $0.id.lowercased() == key }.map { (account.id, $0) }
         }.first
         let account = listed?.0 ?? AccountRegistry.shared.accounts(for: "github").first?.id ?? "github"
-        return PullRequestOpenRequest(account: account, item: listed?.1 ?? link)
+        return PullRequestOpenRequest(account: account, item: listed?.1 ?? link, focus: pullRequestFocus(of: url))
+    }
+
+    /// Where in the pull request the link points (a comment, a file, the checks), for the page to open there.
+    private func pullRequestFocus(of url: URL) -> PullRequestFocusRequest? {
+        PullRequestFocus.parse(url).map { PullRequestFocusRequest(focus: $0) }
     }
 
     /// Reads ahead the pull request a conversation links last, so clicking the link shows it at once.

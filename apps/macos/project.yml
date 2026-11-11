@@ -1,4 +1,7 @@
 name: Nook
+# The end-to-end scenarios' targets and scheme (docs/SCENARIOS.md).
+include:
+  - Scenarios/scenarios.yml
 options:
   bundleIdPrefix: nl.imdigital
   deploymentTarget:
@@ -388,6 +391,7 @@ targets:
       - path: Services/Connectors/PullRequestForgeGitCafe.swift
       - path: Services/Connectors/PullRequestForgeBitbucket.swift
       - path: Services/Connectors/PullRequestForgeAzureDevOps.swift
+      - path: Services/Connectors/PullRequestEvents.swift
       - path: Services/Connectors/PullRequestChangeBreakdown.swift
       - path: Services/Connectors/PullRequestFilter.swift
       - path: Services/Connectors/PullRequestQuery.swift
@@ -411,6 +415,7 @@ targets:
       - path: Services/Workspace/MessageQueue.swift
       - path: Services/Workspace/TurnSafety.swift
       - path: Services/Workspace/FailureClassifier.swift
+      - path: Services/Workspace/AgentVersionRejection.swift
       - path: Services/Workspace/ChangedFilesTree.swift
       - path: Services/Workspace/TimelineSearch.swift
       - path: Services/Workspace/ScrollModel.swift
@@ -471,6 +476,7 @@ targets:
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/LinkedPullRequests.swift
       - path: Services/Workspace/PullRequestLinks.swift
+      - path: Services/Workspace/PullRequestMentions.swift
       - path: Services/Workspace/PullRequestStatus.swift
       - path: Services/Workspace/ScheduledTasks.swift
       - path: Services/Workspace/WorktreeOrigin.swift
@@ -520,6 +526,8 @@ targets:
       - path: Services/Workspace/RenderedPageFile.swift
       - path: Services/Workspace/AgentUpdates.swift
       - path: Services/Workspace/PiRPC.swift
+      - path: Services/Workspace/SteerReceipts.swift
+      - path: Services/Workspace/AgentAnnouncements.swift
       - path: Services/Workspace/PiExtension.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
@@ -595,6 +603,7 @@ targets:
       - path: Services/Workspace/TokenSavings.swift
       - path: Services/Workspace/AgentTuning.swift
       - path: Services/Workspace/ProcessGroups.swift
+      - path: Services/Workspace/QuitShutdown.swift
       - path: Services/Workspace/ProviderTransport.swift
       - path: Services/AgentTranscript.swift
       - path: Services/TranscriptPresentation.swift
@@ -610,6 +619,7 @@ targets:
       - path: Services/WhatsApp/WhatsAppGateway.swift
       - path: Services/WhatsApp/WhatsAppNames.swift
       - path: Services/Flow/FlowLogic.swift
+      - path: Services/Flow/VoiceModelCopies.swift
       - path: Services/DoubleTap/DoubleTapLogic.swift
       - path: Services/DoubleTap/DoubleTapEditLogic.swift
       - path: Services/DoubleTap/DoubleTapRun.swift

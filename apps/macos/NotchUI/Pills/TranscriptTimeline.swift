@@ -30,6 +30,8 @@ struct TranscriptConversation: View {
     @State private var readPath: String?
     /// The session's folder on this Mac, for the files the agent wrote; nil when they are not here (a cloud session).
     var directory: String? = nil
+    /// The agent waits on you (its hooks said so): for an approval or for your answer. Nil follows `working`.
+    var waitingOn: AgentAnnouncementSnapshot.Status? = nil
     /// Folds, groups and thoughts you opened.
     @State private var open: Set<String> = []
     @Environment(\.sessionSide) private var sideLink
@@ -84,6 +86,16 @@ struct TranscriptConversation: View {
     /// for it yet (`HookCompaction`).
     private var compacting: Bool {
         compactingSince.map { !HookCompaction.finished(shown, since: $0) } ?? false
+    }
+
+    /// What a screen reader is told about the conversation (`AgentAnnouncer`); only built while one listens.
+    private var announcement: AgentAnnouncementSnapshot {
+        guard AgentAnnouncer.listening else { return .idle }
+        let messages = shown
+        let status = waitingOn ?? (working || compacting ? .working : .idle)
+        let step = status == .working
+            ? AgentAnnouncer.spokenStep(compacting ? .compacting : TranscriptPresentation.activity(messages)) : nil
+        return AgentAnnouncements.snapshot(messages, status: status, step: step)
     }
 
     /// The session's key in TimelineVisitStore: its transcript; nil for a conversation read from elsewhere.
@@ -294,6 +306,8 @@ struct TranscriptConversation: View {
         .environment(\.fileLinkBase, directory)
         // What the agent produced goes to the outputs tab and diff panel of the side panel around the conversation (`SessionWorkbench`).
         .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns, pullRequest: derived.pullRequest))
+        // VoiceOver hears the step, the finished replies and what waits on you, as for a session Nook runs.
+        .announcesAgentProgress(key: "transcript:" + path, author: author, snapshot: announcement)
         // A compaction between turns is followed too, until its notice is in the transcript.
         .task(id: path + (working || compactingSince != nil ? "#working" : "")) {
             // Another session in the same place: its conversation as read last time shows at once (never the previous
@@ -545,7 +559,16 @@ private struct TranscriptRowView: View, Equatable {
             SharedFilesRow(input: AgentActivity.input(step.input) ?? [:], directory: directory ?? "", showFile: side.showFile,
                            shownFile: side.shownFile)
         case .step(let step):
-            stepLine(step)
+            // A picture the step looked at shows under it.
+            let images = ViewedImages.resolved(ViewedImages.paths(step), in: directory)
+            if images.isEmpty {
+                stepLine(step)
+            } else {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    stepLine(step)
+                    ViewedImagesRow(paths: images)
+                }
+            }
         case .group(let id, let steps, let thoughts):
             group(id: id, steps: steps, thoughts: thoughts)
         case .fold, .continued, .superseded:
@@ -575,7 +598,9 @@ private struct TranscriptRowView: View, Equatable {
     private func group(id: String, steps: [AgentToolStep], thoughts: [String: [AgentChatMessage]]) -> some View {
         let key = "group:" + id
         let tally = ToolTally(steps: steps)
-        return TranscriptWorkGroup(tally: tally, open: open.contains(key), toggle: { toggle(key) }) {
+        // The pictures its steps looked at stay in sight under the group, open or folded: one row for all of them.
+        return TranscriptWorkGroup(tally: tally, open: open.contains(key), toggle: { toggle(key) },
+                                   images: ViewedImages.resolved(steps.flatMap { ViewedImages.paths($0) }, in: directory)) {
             ForEach(steps) { step in
                 ForEach(thoughts[step.id] ?? []) { thinking($0) }
                 stepLine(step)

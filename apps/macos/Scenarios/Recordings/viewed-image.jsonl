@@ -1,0 +1,4 @@
+// The agent looks at a picture in the project with Read, then describes it.
+{"replay":"text","text":"Let me look at the logo first.","ms":30}
+{"replay":"tool","id":"toolu_logo_{{turn}}","name":"Read","input":{"file_path":"{{cwd}}/Assets/logo.png"},"result":"[image]","ms":400}
+{"replay":"text","text":"The logo is a plain square in Nook's iris. Nothing in it needs to change.","ms":30}

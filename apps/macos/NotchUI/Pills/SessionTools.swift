@@ -940,7 +940,7 @@ private struct SessionToolPanel: View {
                                               onOpenPullRequest: { openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: $0)) },
                                               onUpdate: { updated in
                             updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        }, onBack: showPullRequestList, waitsForPanel: opening)
+                        }, onBack: showPullRequestList, waitsForPanel: opening, focus: pullRequest.focus)
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory, runID: runID) { openPullRequest($0) }

@@ -137,6 +137,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var timelineDetail: TimelineDetail {
         didSet { defaults.set(timelineDetail.rawValue, forKey: "ws.timelineDetail") }
     }
+    /// What a screen reader hears from the session on screen while VoiceOver runs (`AgentAnnouncements`).
+    @Published var screenReaderAnnouncements: ScreenReaderAnnouncements {
+        didSet { defaults.set(screenReaderAnnouncements.rawValue, forKey: "ws.screenReaderAnnouncements") }
+    }
     /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
@@ -304,6 +308,8 @@ final class WorkspaceSettings: ObservableObject {
         buildLeftoverCleanup = defaults.object(forKey: "ws.buildLeftoverCleanup") as? Bool ?? true
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         timelineDetail = TimelineDetail(rawValue: defaults.string(forKey: "ws.timelineDetail") ?? "") ?? .everything
+        screenReaderAnnouncements = ScreenReaderAnnouncements(rawValue: defaults.string(forKey: "ws.screenReaderAnnouncements") ?? "")
+            ?? .replies
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true

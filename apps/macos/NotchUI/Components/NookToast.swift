@@ -384,7 +384,7 @@ private struct NookToastHost<Above: View>: ViewModifier {
                 .padding(.top, PanelView.headerHeight + NookTheme.Spacing.md)
                 .padding(.horizontal, NookTheme.Spacing.xl)
             }
-            .background(ToastWindowReader { window = $0 })
+            .background(WindowReader { window = $0 })
             .onChange(of: window) { _, window in
                 if let window { center.register(id, window: window) } else { center.unregister(id) }
             }
@@ -476,8 +476,8 @@ struct NookToastStack: View {
     }
 }
 
-/// Reports the window a view is in, and nil when it leaves it.
-private struct ToastWindowReader: NSViewRepresentable {
+/// Reports the window a view is in, and nil when it leaves it (the toast host, `AgentAnnouncer`).
+struct WindowReader: NSViewRepresentable {
     let changed: (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> NSView {

@@ -4,6 +4,8 @@ import SwiftUI
 struct OpenPullRequest: Identifiable, Equatable {
     let account: String
     var item: PullRequestItem
+    /// Where the link that opened it pointed, for the page to go there.
+    var focus: PullRequestFocusRequest? = nil
     var id: String { account + " " + item.id }
 }
 

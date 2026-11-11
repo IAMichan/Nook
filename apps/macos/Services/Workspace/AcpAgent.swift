@@ -94,6 +94,16 @@ struct AcpToolCall: Equatable, Sendable {
         return JSONBox(input)
     }
 
+    /// The call's input, with the file a read reported only in its locations put in as `path`: the step then opens that
+    /// file, and a picture it looked at shows under it (`ViewedImages`), as for every other agent.
+    var readInput: JSONBox? {
+        guard kind == "read", let first = paths.first else { return input }
+        var object = input?.dictionary ?? [:]
+        guard ToolSummary.path(object) == nil else { return input }
+        object["path"] = first
+        return JSONBox(object)
+    }
+
     /// The tool name Nook's timeline groups by (see ToolCategory).
     var toolName: String {
         switch kind {
@@ -331,8 +341,9 @@ enum AcpMapper {
         case "tool_call_update":
             return [.toolCallUpdate(toolCall(update))]
         case "plan":
-            let steps = RunTasks.acp(update)
-            return steps.isEmpty ? [] : [.plan(steps)]
+            // An empty plan clears the list: it goes through, and `setTasks` takes it as a clear.
+            guard update["entries"] is [Any] else { return [] }
+            return [.plan(RunTasks.acp(update))]
         case "usage_update":
             let cost = (update["cost"] as? [String: Any]).flatMap { cost -> Double? in
                 guard (cost["currency"] as? String)?.uppercased() ?? "USD" == "USD" else { return nil }

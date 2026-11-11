@@ -1,31 +1,46 @@
 /* Shared Nook tokens. State colors match NookTheme on macOS. */
 :root {
+  /* Nook's dark palette, 1:1 with NookPalette.nookDark on macOS: true black canvas, grey ramp, 8 % lines. */
   --notch: #000;
-  --canvas: #19191e;
-  --sidebar: #121216;
-  --row-hover: #25252d;
+  --canvas: #000000;
+  --well: #0a0a0a;
+  --surface: #111111;
+  --sidebar: #000000;
+  --row-hover: #141415;
+  --row-selected: #1c1c1e;
+  --radius-chip: 6px;
   --radius-control: 8px;
-  --radius-card: 12px;
-  /* Home's cards and the sheets. */
-  --radius-panel: 18px;
-  --shadow-control: 0 1px 3px #0002;
-  --shadow-popover: 0 12px 36px #0005;
-  --graphite: #16161b;
-  --smoke: #22222a;
-  --field: #0f0f13;
-  --line: #ffffff0e;
-  --line2: #ffffff18;
-  --paper: #f4f3f7;
-  --ink: #0b0a12;
-  --text2: #aaa9b6;
-  --text3: #858391;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+  --radius-sheet: 14px;
+  --radius-composer: 16px;
+  --shadow-control: none;
+  --shadow-popover: 0 12px 36px #0007;
+  --graphite: #191a1d;
+  --smoke: #242424;
+  --field: #0d0d0d;
+  --line: #1a1a1a;
+  --line2: #262626;
+  --border: #1a1a1a;
+  --separator: #1f1f1f;
+  --paper: #f5f5f5;
+  --text-strong: #e5e5e5;
+  --ink: #0b0b0d;
+  --text2: #a1a1a1;
+  --text3: #8f8f8f;
+  --blue: #51a2ff;
   --iris: #f4f3f7;
-  --on-iris: #0b0a12;
-  --mint: #46e0a6;
-  --amber: #ffb84d;
-  --coral: #ff6b6b;
-  --violet: #b48cff;
-  --radius: 14px;
+  --on-iris: #0b0b0d;
+  --mint: #00d492;
+  --amber: #ffb900;
+  --coral: #ff6467;
+  --violet: #a684ff;
+  --music: #f0936a;
+  /* Your own message in a conversation (NookPalette.bubble): a soft fill a step off the canvas. */
+  --bubble: #1e1e1e;
+  /* The width a coding agent's conversation reads at --chat-content-max-width. */
+  --thread-width: 768px;
+  --radius: 12px;
   --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", "Cantarell", "Noto Sans", sans-serif;
   --mono: "Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace;
   /* Safe areas and software keyboard insets supplied by Android. */
@@ -43,9 +58,9 @@ html, body {
   margin: 0;
   height: 100%;
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--paper);
-  background: var(--graphite);
+  background: var(--canvas);
   -webkit-font-smoothing: antialiased;
   user-select: text;
 }
@@ -59,10 +74,11 @@ html:has(body.bar), body.bar { background: transparent; overflow: hidden; }
 
 button {
   font: inherit;
+  font-weight: 500;
   color: inherit;
   background: var(--smoke);
   border: 1px solid var(--line2);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   padding: 6px 12px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
@@ -80,7 +96,7 @@ input, textarea, select {
   color: var(--paper);
   background: var(--field);
   border: 1px solid var(--line2);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   padding: 7px 10px;
   outline: none;
   user-select: text;
@@ -114,6 +130,9 @@ a { color: var(--iris); }
 .markdown th, .markdown td { border: 1px solid var(--line2); padding: 4px 8px; text-align: left; }
 .markdown blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line2); color: var(--text2); }
 .markdown sup.cite { font-size: 10px; background: var(--smoke); border-radius: 4px; padding: 0 4px; margin-left: 2px; color: var(--text2); }
+
+/* A coding agent's conversation: one centered column, the composer under it at the same width. */
+.thread-column { width: 100%; max-width: var(--thread-width); margin: 0 auto; padding: 0 20px; box-sizing: border-box; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }

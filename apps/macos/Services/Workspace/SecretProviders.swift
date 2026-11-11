@@ -42,7 +42,8 @@ enum SecretProviders {
     /// `value`, or the secret it refers to. The keychain is read off the main thread, and so is `op`.
     static func resolve(_ value: String) async throws -> String {
         guard SecretReference.isReference(value) else { return value }
-        let config: OnePassword.Config = await Task.detached(priority: .userInitiated) { Self.config() }.value
-        return try await OnePassword.resolve(value, config: config, runner: OnePassword.processRunner)
+        // A local named `config` would shadow `config()` inside the closure, and the compiler could not infer the task.
+        let settings: OnePassword.Config = await Task.detached(priority: .userInitiated) { Self.config() }.value
+        return try await OnePassword.resolve(value, config: settings, runner: OnePassword.processRunner)
     }
 }

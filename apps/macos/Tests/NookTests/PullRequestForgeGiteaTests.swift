@@ -11,7 +11,7 @@ final class PullRequestForgeGiteaTests: XCTestCase {
             "head": ["ref": "login", "sha": "abc123", "repo": ["full_name": "ada/app", "owner": ["login": "ada"]]],
             "additions": 4, "deletions": 2, "changed_files": 3, "comments": 1,
             "created_at": "2026-01-02T03:04:05+01:00", "updated_at": "2026-01-03T03:04:05Z",
-            "labels": [["id": 1, "name": "bug", "color": "e11d21"]], "assignees": [["login": "grace"]],
+            "labels": [["id": 1, "name": "bug", "color": "e11d21", "description": "Something is broken"]], "assignees": [["login": "grace"]],
             "requested_reviewers": [["login": "ken"]], "requested_reviewers_teams": [["name": "core"]],
             "milestone": ["title": "1.0"], "is_locked": true, "allow_maintainer_edit": true,
         ]
@@ -42,6 +42,7 @@ final class PullRequestForgeGiteaTests: XCTestCase {
         XCTAssertTrue(result.locked)
         XCTAssertTrue(result.maintainerEdits)
         XCTAssertEqual(result.labelColors, ["bug": "e11d21"])
+        XCTAssertEqual(result.labelDescriptions, ["bug": "Something is broken"])
         XCTAssertEqual(result.requestedReviewers, ["ken", "core"])
         XCTAssertEqual(result.requestedTeams, ["core"])
         XCTAssertEqual(result.assignees, ["grace"])

@@ -6,6 +6,7 @@
     effortLabels, effortLevels, isActive, modeHelp, permissionHelp, permissionLabels, workspaceApi,
     type PermissionPolicy, type WorkspaceRun,
   } from "../../../lib/workspace/api";
+  import Icon from "../../../components/Icon.svelte";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { contextLevel, contextPercent, duration, oneLine } from "../../../lib/workspace/timeline";
 
@@ -276,9 +277,11 @@
         {#if draft.trim()}
           <button class="pill" onclick={() => deliver(steers ? "steer" : "queue")} title={steers ? "Bijsturen: gaat nu naar de agent" : "In de wachtrij: gaat na deze beurt"}>{steers ? "Bijsturen" : "In de wachtrij"}</button>
         {/if}
-        <button class="stop" title="Stop de agent (Ctrl+.)" onclick={() => workspace.act(() => workspaceApi.stop(run.id))}>■</button>
+        <button class="round stop" title="Stop de agent (Ctrl+.)" aria-label="Stop de agent" onclick={() => workspace.act(() => workspaceApi.stop(run.id))}><Icon name="stop" size={12} /></button>
+      {:else if editing}
+        <button class="primary send" disabled={!draft.trim()} title="Bewaar het bericht in de wachtrij" onclick={send}>Bewaar</button>
       {:else}
-        <button class="primary send" disabled={!draft.trim()} title="Stuur je bericht. De agent gaat verder in dezelfde sessie." onclick={send}>{editing ? "Bewaar" : "Stuur"}</button>
+        <button class="primary round" disabled={!draft.trim()} title="Stuur je bericht. De agent gaat verder in dezelfde sessie." aria-label="Stuur" onclick={send}><Icon name="arrow" size={16} /></button>
       {/if}
     </div>
   </div>
@@ -289,10 +292,10 @@
 </div>
 
 <style>
-  .composer { display: flex; flex-direction: column; gap: 5px; }
-  .limit { display: flex; gap: 9px; align-items: center; padding: 8px 10px; border: 1px solid rgba(255, 184, 77, 0.22); border-radius: 10px; font-size: 12px; }
+  .composer { display: flex; flex-direction: column; gap: 6px; }
+  .limit { display: flex; gap: 9px; align-items: center; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line2)); border-radius: var(--radius-card); background: var(--surface); font-size: 12px; }
   .ltext { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  .queue { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-radius: 10px; background: var(--graphite); font-size: 12px; }
+  .queue { display: flex; flex-direction: column; gap: 4px; padding: 6px 12px; border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--line); font-size: 12px; }
   .qhead { background: none; border: none; padding: 0; text-align: left; color: var(--text2); font-size: 12px; }
   .qhead:hover { background: none; color: var(--paper); }
   .chev { display: inline-block; transition: transform 0.15s; }
@@ -301,22 +304,24 @@
   .qtext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .icon { background: none; border: none; padding: 0 3px; font-size: 11px; color: var(--text2); }
   .qnote { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 11.5px; }
-  .box { border: 1px solid var(--line2); border-radius: 14px; background: var(--field); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-  textarea { background: transparent; border: none; resize: none; padding: 2px; min-height: 40px; max-height: 200px; }
-  textarea:focus { border: none; }
+  /* composer surface: one rounded box with a hairline, the prompt on top and the controls in a row under it. */
+  .box { border: 1px solid var(--line2); border-radius: var(--radius-composer); background: var(--surface); padding: 10px 8px 8px 12px; display: flex; flex-direction: column; gap: 6px; transition: border-color 120ms ease; }
+  .box:focus-within { border-color: color-mix(in srgb, var(--paper) 22%, var(--line2)); }
+  textarea { background: transparent; border: none; resize: none; padding: 2px 0; min-height: 44px; max-height: 200px; font-size: 14px; line-height: 1.5; }
+  textarea:focus, textarea:focus-visible { border: none; box-shadow: none; }
   .bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-  .pill { background: none; border: none; padding: 3px 7px; font-size: 12px; color: var(--text2); border-radius: 8px; display: inline-flex; gap: 5px; align-items: center; }
-  .pill:hover:not(:disabled) { background: var(--smoke); color: var(--paper); }
-  .hot { color: #ff9b9b; }
+  .pill { background: none; border: none; height: 28px; padding: 0 8px; font-size: 13px; font-weight: 500; color: var(--text2); border-radius: var(--radius-control); display: inline-flex; gap: 6px; align-items: center; }
+  .pill:hover:not(:disabled) { background: var(--row-hover); color: var(--paper); }
+  .hot { color: var(--coral); }
   .adot { width: 7px; height: 7px; border-radius: 50%; background: var(--paper); display: inline-block; }
-  .sep { width: 1px; height: 16px; background: #3a3a44; margin: 0 3px; }
+  .sep { width: 1px; height: 16px; background: var(--line2); margin: 0 2px; }
   .spacer { flex: 1; }
   .pop { position: relative; }
-  .menu { position: absolute; bottom: 30px; left: 0; z-index: 20; background: var(--graphite); border: 1px solid var(--line2); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; min-width: 180px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
+  .menu { position: absolute; bottom: 34px; left: 0; z-index: 20; background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-panel); padding: 4px; display: flex; flex-direction: column; min-width: 180px; box-shadow: var(--shadow-popover); }
   .menu.wide { width: 300px; gap: 4px; padding: 8px; }
-  .menu button { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: 7px; font-size: 12.5px; }
-  .menu button:hover:not(:disabled) { background: var(--smoke); }
-  .menu button.chosen { background: var(--smoke); }
+  .menu button { background: none; border: none; text-align: left; padding: 6px 8px; border-radius: var(--radius-chip); font-size: 13px; }
+  .menu button:hover:not(:disabled) { background: var(--row-hover); }
+  .menu button.chosen { background: var(--row-selected); }
   .menu hr { border: none; border-top: 1px solid var(--line2); margin: 3px 0; width: 100%; }
   .opt { display: flex; flex-direction: column; gap: 2px; }
   .mhead { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 4px; }
@@ -324,8 +329,11 @@
   .ctx { font-family: var(--mono); font-size: 11px; color: var(--text3); }
   .ctx.warning { color: var(--amber); }
   .ctx.critical { color: var(--coral); }
-  .stop { border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 10px; }
-  .send { padding: 5px 14px; }
+  /* The send and stop buttons: 32 px circles at the composer's corner. */
+  .round { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 50%; flex: none; }
+  .stop { background: var(--paper); color: var(--on-iris); border-color: transparent; }
+  .stop:hover:not(:disabled) { background: color-mix(in srgb, var(--paper) 85%, var(--canvas)); }
+  .send { height: 32px; padding: 0 14px; border-radius: 999px; }
   .hint { font-size: 11px; margin: 0; }
   .small { font-size: 11px; }
   .err { color: var(--coral); font-size: 12px; margin: 0; }
