@@ -15,6 +15,11 @@ on:
   # Ready for a merge queue: when the ruleset turns one on, each queued group runs here before it lands on main.
   merge_group:
   workflow_dispatch:
+  # Once a week every area runs on main from scratch, without the "already verified" shortcut, so a new runner image,
+  # Xcode or Swift release that breaks the build shows up within days instead of at the next pull request that touches
+  # the area. GitHub mails a failed scheduled run to whoever last changed this cron line.
+  schedule:
+    - cron: '23 4 * * 1'
 
 permissions:
   contents: read
@@ -40,6 +45,8 @@ jobs:
       packages: ${{ steps.detect.outputs.packages }}
       relay: ${{ steps.detect.outputs.relay }}
       tauri: ${{ steps.detect.outputs.tauri }}
+      chatd: ${{ steps.detect.outputs.chatd }}
+      core_tests: ${{ steps.detect.outputs.core_tests }}
       workflows: ${{ steps.detect.outputs.workflows }}
       github_scripts: ${{ steps.detect.outputs.github_scripts }}
       docs: ${{ steps.detect.outputs.docs }}
@@ -73,7 +80,7 @@ jobs:
           if [ -n "$base" ] && files="$(git diff --name-only "$base" HEAD)"; then
             printf '%s\n' "$files" | scripts/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
           else
-            echo "Running every area (started by hand, or the change could not be resolved)."
+            echo "Running every area (started by hand or by the weekly schedule, or the change could not be resolved)."
             scripts/ci-changes.sh --all | tee -a "$GITHUB_OUTPUT"
           fi
 
@@ -191,6 +198,18 @@ jobs:
     if: needs.changes.outputs.tauri == 'true'
     uses: ./.github/workflows/tauri.yml
 
+  chatd:
+    name: chatd
+    needs: changes
+    if: needs.changes.outputs.chatd == 'true'
+    uses: ./.github/workflows/chatd.yml
+
+  core_tests:
+    name: Core tests (Linux)
+    needs: changes
+    if: needs.changes.outputs.core_tests == 'true'
+    uses: ./.github/workflows/core-tests.yml
+
   # The ruleset on main requires this job by its name, `Check`. It fails when any other job fails, is cancelled, or is
   # skipped although `changes` said its area was needed, so adding or splitting jobs needs no ruleset change. Add every
   # new job to `needs` (and, when it can be skipped, to the jq map below). `always()` rather than `!cancelled()`: a
@@ -199,7 +218,7 @@ jobs:
   check:
     name: Check
     if: always() && github.event.action != 'closed' && !github.event.pull_request.draft
-    needs: [changes, files, workflows, github_scripts, docs, dependencies, macos, ios, packages, relay, tauri]
+    needs: [changes, files, workflows, github_scripts, docs, dependencies, macos, ios, packages, relay, tauri, chatd, core_tests]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
