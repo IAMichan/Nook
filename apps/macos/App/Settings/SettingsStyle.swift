@@ -245,6 +245,62 @@ struct SetupStep<Content: View>: View {
     }
 }
 
+/// How the last step of a setup flow is doing: Nook checking what the steps before it set up.
+enum SetupCheckState: Equatable {
+    /// Nothing checked yet (or something earlier changed): the check button shows.
+    case idle
+    case checking
+    /// It works; the line says what Nook found ("Signed in as …", "Reached build-server").
+    case passed(String)
+    /// It does not work; the line says why in plain words, and the button tries again.
+    case failed(String)
+}
+
+/// The last step of every setup flow in Settings: Nook checks the link, the key or the address before it is saved, or,
+/// where there is nothing to check, says it is ready to add. One look everywhere: the step's number, "Check the
+/// connection" (or the caller's title), one line, and the button or the outcome under it.
+struct SetupCheckStep: View {
+    let number: Int
+    var title: String = tr("settings2.step.check")
+    /// What will be checked, shown while idle.
+    let detail: String
+    let state: SetupCheckState
+    /// The button that runs the check; nil for a flow with nothing to check (the step then only says it is ready).
+    var check: (() -> Void)? = nil
+    /// The earlier steps are not done yet: the button stays off.
+    var disabled = false
+
+    var body: some View {
+        SetupStep(number: number, title: title, done: isPassed) {
+            switch state {
+            case .idle:
+                if let check {
+                    StepAction(detail: detail, button: tr("setup.check.button"), prominent: false, disabled: disabled, action: check)
+                } else {
+                    SettingNote(detail)
+                }
+            case .checking:
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    SettingNote(tr("setup.check.checking"))
+                }
+            case .passed(let line):
+                SettingNote(line, tone: .success)
+            case .failed(let line):
+                SettingNote(line, tone: .error)
+                if let check {
+                    Button(tr("setup.check.retry"), action: check).disabled(disabled)
+                }
+            }
+        }
+    }
+
+    private var isPassed: Bool {
+        if case .passed = state { return true }
+        return false
+    }
+}
+
 /// A friendly explanation at the top of a page, under the header that already shows the section's icon.
 struct IntroCard: View {
     let title: String

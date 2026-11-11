@@ -16,20 +16,19 @@ struct PublishRepositorySheet: View {
         SetupSheet(title: tr("sc.publish.title"), subtitle: AgentPathFormat.tilde(plan.folder)) {
             NookSymbol("icloud.and.arrow.up", size: 22).foregroundStyle(NookTheme.textSecondary)
         } content: {
-            Form {
-                TextField(tr("sc.publish.name"), text: $name)
+            // The steps of every flow that makes something: its name, where it goes, and what Nook will do.
+            SetupStep(number: 1, title: tr("sc.publish.name"), done: RepositoryPublish.isValidName(name)) {
+                TextField(tr("sc.publish.name"), text: $name, prompt: Text(plan.name))
+                    .textFieldStyle(.roundedBorder)
+                if !RepositoryPublish.isValidName(name) { SettingNote(tr("sc.publish.badName"), tone: .warning) }
+            }
+            SetupStep(number: 2, title: tr("sc.publish.where")) {
+                Text(tr("sc.publish.owner")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
                 TextField(tr("sc.publish.owner"), text: $owner, prompt: Text(tr("sc.publish.ownerPrompt")))
+                    .textFieldStyle(.roundedBorder)
                 Toggle(tr("sc.publish.private"), isOn: $isPrivate)
             }
-            .formStyle(.grouped)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                Text(tr("sc.publish.steps")).font(NookTheme.TextStyle.strong)
-                ForEach(steps, id: \.self) { step in
-                    Text("• " + step).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if !RepositoryPublish.isValidName(name) { SettingNote(tr("sc.publish.badName"), tone: .warning) }
-            if let error { SettingNote(error, tone: .error) }
+            SetupCheckStep(number: 3, title: tr("sc.publish.readyTitle"), detail: summary, state: publishState)
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { done(nil) }
@@ -44,6 +43,18 @@ struct PublishRepositorySheet: View {
             .disabled(working || !RepositoryPublish.isValidName(name))
         }
         .onAppear { if name.isEmpty { name = plan.name } }
+    }
+
+    /// What Nook will do, one line each, in the last step.
+    private var summary: String {
+        ([tr("sc.publish.steps") + ":"] + steps).joined(separator: "\n")
+    }
+
+    /// Publishing is the check: the last step shows it running and why it failed.
+    private var publishState: SetupCheckState {
+        if working { return .checking }
+        if let error { return .failed(error) }
+        return .idle
     }
 
     private var steps: [String] {

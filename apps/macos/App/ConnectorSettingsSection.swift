@@ -254,22 +254,19 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             capabilityNote
         } footer: {
             if configured {
-                if confirmDisconnect {
-                    Text(tr("connect.disconnectTitle", connector.title))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Button(tr("button.cancel")) { confirmDisconnect = false }
-                        .keyboardShortcut(.cancelAction)
-                    Button(tr("settings2.disconnect"), role: .destructive) { clear() }
-                } else {
-                    Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
-                }
+                Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+        }
+        .confirmationDialog(tr("connect.disconnectTitle", connector.title), isPresented: $confirmDisconnect) {
+            Button(tr("settings2.disconnect"), role: .destructive) { clear() }
+            Button(tr("button.cancel"), role: .cancel) {}
+        } message: {
+            Text(tr("confirm.keychain.detail"))
         }
         .onAppear {
             load()
@@ -358,20 +355,17 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     private var keySteps: some View {
         SetupStep(number: 1, title: connector.signupURL != nil ? tr("settings2.step.getKey", connector.title) : tr("settings2.step.findInfo"),
                   done: configured) {
-            Text(connector.helpText)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
             if let url = connector.signupURL {
-                Button {
+                StepAction(detail: connector.helpText, button: tr("settings2.openSite", connector.title)) {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
-                } label: {
-                    Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 SettingNote(tr("brain.key.autoPaste"))
+            } else {
+                Text(connector.helpText)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         SetupStep(number: 2, title: tr("settings2.step.paste"), done: configured) {
@@ -392,35 +386,17 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     /// The last step of every connection: Nook checks the link. `waiting` says what has to happen first.
     private func resultStep(number: Int, waiting: String = tr("settings2.step.checkWaiting")) -> some View {
-        SetupStep(number: number, title: tr("settings2.step.check"), done: health == .working) {
-            resultView(waiting: waiting)
-        }
+        SetupCheckStep(number: number, detail: waiting, state: checkState,
+                       check: health == .notLinked ? nil : { refreshNow() })
     }
 
-    @ViewBuilder
-    private func resultView(waiting: String) -> some View {
+    /// The check step's state, from how the service is doing.
+    private var checkState: SetupCheckState {
         switch health {
-        case .notLinked:
-            Text(waiting)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-        case .busy:
-            HStack(spacing: NookTheme.Spacing.md) {
-                ProgressView().controlSize(.small)
-                Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
-            }
-        case .working, .needsYou:
-            Label(tr("settings2.step.checkOK", connector.title), systemImage: "checkmark.seal.fill")
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(ConnectionHealth.working.color)
-        case .broken, .off:
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                Label(ServiceState.summary(of: connector, health: health), systemImage: "exclamationmark.triangle.fill")
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(ConnectionHealth.broken.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(tr("connector.retry")) { refreshNow() }
-            }
+        case .notLinked: return .idle
+        case .busy: return .checking
+        case .working, .needsYou: return .passed(tr("settings2.step.checkOK", connector.title))
+        case .broken, .off: return .failed(ServiceState.summary(of: connector, health: health))
         }
     }
 
@@ -433,13 +409,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         SheetPart(tr("sheet.part.status")) {
             // How it is doing is the pill beside the title; here only what you can do about it.
             if health == .broken {
-                HStack {
-                    Text(ServiceState.summary(of: connector, health: health))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button(tr("connector.retry")) { refreshNow() }
-                }
+                StepAction(detail: ServiceState.summary(of: connector, health: health), button: tr("connector.retry"),
+                           prominent: false) { refreshNow() }
             }
             // In a row the switch is the row's own; only the sheet shows it here.
             if !embedded {
@@ -462,11 +433,8 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             } else if replacing || connector.configFields.contains(where: { !$0.secret }) {
                 fieldsAndPaste
             } else {
-                HStack {
-                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Spacer()
-                    Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
+                StepAction(detail: tr("settings2.service.keySafe"), button: tr("settings2.service.replaceKey"), prominent: false) {
+                    withAnimation { replacing = true }
                 }
             }
         }

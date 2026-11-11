@@ -1,10 +1,34 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Connections, for someone coming from Beeper: bringing over what Beeper Desktop has in one click (`BeeperImporter`),
-/// then every app that was linked there with its Link button, until you say the move is done.
+/// Settings › Connections, for someone coming from Beeper: one row that opens the move in a sheet (`BeeperImportSheet`):
+/// bringing over what Beeper Desktop has in one click (`BeeperImporter`), then every app that was linked there.
 struct BeeperImportSection: View {
     let setCollecting: (Bool) -> Void
+    @ObservedObject private var importer = BeeperImporter.shared
+    @State private var showing = false
+
+    var body: some View {
+        Section {
+            SettingsLinkRow(title: tr("beeper.import.title"),
+                            detail: importer.imported == nil ? tr("beeper.import.rowDetail") : tr("beeper.import.rowDone")) {
+                showing = true
+            }
+        } header: {
+            SettingsSectionTitle(tr("beeper.import.header"), info: tr("beeper.import.footer"))
+        }
+        .sheet(isPresented: $showing) {
+            BeeperImportSheet(setCollecting: setCollecting)
+        }
+    }
+}
+
+/// The move from Beeper in numbered steps, as every setup in Settings: Beeper's token, bringing everything over, linking
+/// each app that was linked there (one connection row each), and Nook saying what came over. Saying the move is done
+/// sits on the left of the buttons, as removing does.
+struct BeeperImportSheet: View {
+    let setCollecting: (Bool) -> Void
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var importer = BeeperImporter.shared
     // Linking an app in its sheet changes these: the rows follow.
     @ObservedObject private var capture = ChatCaptureService.shared
@@ -12,17 +36,17 @@ struct BeeperImportSection: View {
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @State private var token = ""
     @State private var open: ChatAppSheetItem?
+    @State private var confirmFinish = false
 
-    /// The move in numbered steps, as every setup in Settings: Beeper's token, bringing everything over, linking each app
-    /// that was linked there (one connection row each), and saying the move is done.
     var body: some View {
-        Section {
-            IntroCard(title: tr("beeper.import.title"), text: tr("beeper.import.intro"))
+        SetupSheet(title: tr("beeper.import.title"), subtitle: tr("beeper.import.intro")) {
+            ServiceTile(domain: "beeper.com", fallback: "arrow.down.circle.fill", tint: NookTheme.iris, size: 48)
+        } content: {
             SetupStep(number: 1, title: tr("beeper.import.token"), done: importer.hasToken) {
-                if !importer.hasToken { tokenRow }
+                if !importer.hasToken { tokenStep }
             }
             SetupStep(number: 2, title: tr("beeper.import.run"), done: importer.imported != nil) {
-                if importer.hasToken { runRow }
+                if importer.hasToken { runStep }
                 if let problem = importer.problem {
                     SettingNote(problem, tone: .warning)
                 }
@@ -36,59 +60,63 @@ struct BeeperImportSection: View {
                     ForEach(importer.apps, id: \.self) { row($0) }
                 }
             }
-            SetupStep(number: importer.apps.isEmpty ? 3 : 4, title: tr("beeper.import.finish")) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    Text(tr("beeper.import.finishDetail"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button(tr("beeper.import.finishButton")) { importer.finish() }
-                        .disabled(importer.isBusy)
-                }
+            SetupCheckStep(number: importer.apps.isEmpty ? 3 : 4, title: tr("import.check.title"),
+                           detail: tr("beeper.import.checkDetail"), state: checkState)
+        } footer: {
+            Button(tr("beeper.import.finish")) { confirmFinish = true }
+                .disabled(importer.isBusy)
+            Spacer()
+            Button(tr("settings2.done")) { dismiss() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        }
+        .confirmationDialog(tr("beeper.import.finish"), isPresented: $confirmFinish) {
+            Button(tr("beeper.import.finishButton")) {
+                importer.finish()
+                dismiss()
             }
-        } header: {
-            SettingsSectionTitle(tr("beeper.import.header"), info: tr("beeper.import.footer"))
+            Button(tr("button.cancel"), role: .cancel) {}
+        } message: {
+            Text(tr("beeper.import.finishDetail"))
         }
         .sheet(item: $open) { item in
             ChatAppSheet(app: item.id, setCollecting: setCollecting)
         }
     }
 
+    /// What came over: nothing yet, the import running, or how many of Beeper's apps are linked here now.
+    private var checkState: SetupCheckState {
+        guard let imported = importer.imported else { return importer.isBusy ? .checking : .idle }
+        let apps = importer.apps
+        guard !apps.isEmpty else { return .passed(summary(imported)) }
+        let linked = apps.filter { ChatAppStates.state($0)?.linked == true }.count
+        return .passed(tr("beeper.import.checkApps", linked, apps.count))
+    }
+
     /// Beeper's access token, pasted once: Nook did not keep one yet.
-    private var tokenRow: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(tr("beeper.import.tokenDetail"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                SecureField("", text: $token, prompt: Text(tr("beeper.import.token")))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
-                    .onSubmit { saveToken() }
-                Button(tr("chats.slack.save")) { saveToken() }
-                    .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button(tr("beeper.import.openBeeper")) { openBeeper() }
-            }
-        }
+    @ViewBuilder
+    private var tokenStep: some View {
+        StepAction(detail: tr("beeper.import.tokenDetail"), button: tr("beeper.import.openBeeper"), prominent: false) { openBeeper() }
+        SecureField("", text: $token, prompt: Text(tr("beeper.import.token")))
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: .infinity)
+            .onSubmit { saveToken() }
+        Button(tr("chats.slack.save")) { saveToken() }
+            .buttonStyle(.borderedProminent)
+            .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     /// The move itself, on your own click; again after linking more apps in Beeper, or to pick up what changed.
-    private var runRow: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Text(tr("beeper.import.runDetail"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer()
-            if importer.isBusy { ProgressView().controlSize(.small) }
-            Button(importer.imported == nil ? tr("beeper.import.start") : tr("beeper.import.again")) {
-                Task { await importer.run(setCollecting: setCollecting) }
-            }
-            .disabled(importer.isBusy)
+    @ViewBuilder
+    private var runStep: some View {
+        StepAction(detail: tr("beeper.import.runDetail"),
+                   button: importer.imported == nil ? tr("beeper.import.start") : tr("beeper.import.again"),
+                   prominent: importer.imported == nil, disabled: importer.isBusy) {
+            Task { await importer.run(setCollecting: setCollecting) }
         }
+        if importer.isBusy { ProgressView().controlSize(.small) }
     }
 
     /// One app that was linked in Beeper, in the one connection row: linked in Nook already, or Link in its "…" menu and

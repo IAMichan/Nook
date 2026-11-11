@@ -379,7 +379,7 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "chats.settings.sourcesFooter": "Zet een app uit om de chats ervan te verbergen. Mist er een? Typ de website (zoals linkedin.com/messaging) of kies een Mac-app: alles wat die als melding toont, komt in Chats.",
         "chats.settings.addField": "Bron toevoegen",
         "chats.settings.addPrompt": "linkedin.com of Telegram",
-        "chats.settings.add": "Voeg toe",
+        "chats.settings.add": "Toevoegen",
         "chats.settings.chooseApp": "Kies Mac-app…",
         "chats.settings.remove": "Verwijder %@",
         "chats.settings.macApp": "Mac-app",
