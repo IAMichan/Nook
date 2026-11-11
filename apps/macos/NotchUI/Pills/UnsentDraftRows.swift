@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The new-session drafts you typed in and did not start, on top of the Agents list, newest first, as t3code lists its
-/// draft threads: a pen, the project, and the first line of the words. A click opens the composer on that draft; the ×
+/// The new-session drafts you typed in and did not start, floating over the top of the Agents list, newest first, as
+/// t3code lists its draft threads: a pen, the project, and the first line of the words. A click opens the composer on that draft; the ×
 /// under the pointer throws it away. The draft open in the composer stays in its place, lit as the open one.
 struct UnsentDraftRows: View {
     @ObservedObject private var store = ComposerDraftStore.shared
@@ -10,6 +10,11 @@ struct UnsentDraftRows: View {
     let open: () -> Void
 
     var body: some View {
+        Group { drafts }
+            .animation(NookTheme.reveal, value: store.unsentNewSessions.isEmpty)
+    }
+
+    @ViewBuilder private var drafts: some View {
         if !store.unsentNewSessions.isEmpty {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 ForEach(store.unsentNewSessions) { draft in
@@ -21,7 +26,11 @@ struct UnsentDraftRows: View {
                     }
                 }
             }
-            .padding(.bottom, NookTheme.Spacing.xs)
+            .padding(NookTheme.Spacing.xxs)
+            // Lifted a step above the list it floats over, as the undo notice is, so the rows under it don't read through.
+            .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+            .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
+            .transition(.opacity)
         }
     }
 
