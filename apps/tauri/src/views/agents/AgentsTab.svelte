@@ -19,11 +19,36 @@
   import NewSession from "./run/NewSession.svelte";
   import RunPanel from "./run/RunPanel.svelte";
   import { ago, folderName } from "./time";
+  import * as inbox from "../../lib/agent-inbox";
+  import { emptyState, needsYou, type Attention, type InboxEntry, type InboxState } from "../../lib/agent-inbox";
 
   let { compact = false }: { compact?: boolean } = $props();
   let query = $state("");
   let showFinished = $state(false);
+  // What you decided about the list (pins, settled, snoozed, folded projects) is remembered.
+  const STATE_KEY = "nook.agents.inbox";
+  function loadState(): InboxState {
+    try { return { ...emptyState(), ...JSON.parse(localStorage.getItem(STATE_KEY) ?? "{}") }; } catch { return emptyState(); }
+  }
+  let inboxState = $state<InboxState>(loadState());
+  let settledLimit = $state(inbox.settledPage);
+  let menuFor = $state<string | null>(null);
+  function update(next: InboxState) {
+    inboxState = next;
+    menuFor = null;
+    try { localStorage.setItem(STATE_KEY, JSON.stringify(next)); } catch { /* No storage: the choice lasts until the window closes. */ }
+  }
   let now = $state(Date.now());
+  // In the main window the session list is the sidebar's list, as on the Mac: the column moves into the sidebar slot.
+  let docked = $state(false);
+  function dock(node: HTMLElement) {
+    if (compact) return;
+    const slot = document.getElementById("sidebar-slot");
+    // A narrow window folds the sidebar to icons: the list then stays in the page.
+    if (!slot || slot.offsetWidth < 180) return;
+    slot.appendChild(node);
+    docked = true;
+  }
 
   $effect(() => {
     agents.start();
@@ -116,18 +141,25 @@
     };
   }
 
-  const rank: Record<Status, number> = { waiting: 0, input: 1, failed: 2, limited: 3, working: 4, idle: 5, finished: 6 };
-  function matches(i: Item): boolean {
-    const q = query.trim().toLowerCase();
-    return !q || `${i.title} ${i.folder} ${i.agent} ${i.branch ?? ""}`.toLowerCase().includes(q);
-  }
-  const items = $derived(
-    [...runs.map(runItem), ...live.map(liveItem)]
-      .map((item, index) => ({ item, index }))
-      .sort((a, b) => rank[a.item.status] - rank[b.item.status] || a.index - b.index)
-      .map((x) => x.item)
-      .filter(matches),
-  );
+  const attentionOf: Record<Status, Attention> = {
+    waiting: "approval", input: "input", failed: "failed", limited: "limited", working: "working", idle: "idle", finished: "finished",
+  };
+  const all = $derived([...runs.map(runItem), ...live.map(liveItem)]);
+  const byId = $derived(new Map(all.map((i) => [i.id, i])));
+  const rows = $derived(inbox.filterRows(
+    all.map((i): inbox.InboxRow => ({
+      id: i.id, title: i.title, project: i.folder, attention: i.unseen && i.status === "idle" ? "ready" : attentionOf[i.status],
+      lastActivity: Date.parse(i.started ?? "") || 0, unread: i.unseen,
+    })),
+    query,
+  ));
+  const list = $derived(inbox.sections(rows, inboxState, { showWorking: !inboxState.groupByProject, now, settledLimit, selectedId: agents.selectedId }));
+  const groups = $derived(inboxState.groupByProject ? inbox.projectGroups(list) : []);
+  const shelves = $derived(list.filter((s) => (inboxState.groupByProject ? s.kind !== "working" && s.kind !== "active" : true)));
+  const shelfTitle: Record<inbox.SectionKind, string> = {
+    pinned: "Vastgezet", active: "Actief", working: "Bezig", snoozed: "Gesnoozed", settled: "Afgerond",
+  };
+  const items = $derived(rows);
   const earlier = $derived(past.filter((p) => !query.trim() || `${p.title} ${p.cwd} ${agentNames[p.agent]}`.toLowerCase().includes(query.trim().toLowerCase())));
 
   const pages = ["pulls", "actions", "usage", "terminals", "browser", "worktrees"] as const;
@@ -196,27 +228,75 @@
   };
 </script>
 
-<div class="tab" class:compact>
-  <aside>
+<div class="tab" class:compact class:docked>
+  <aside use:dock class:docked>
     <div class="head">
-      <strong>Agents</strong>
-      <span class="spacer"></span>
+      <input class="search" placeholder="Zoek in sessies" bind:value={query} />
+      <button class="new" class:on={inboxState.groupByProject} title="Groepeer per project" aria-label="Groepeer per project" onclick={() => update({ ...inboxState, groupByProject: !inboxState.groupByProject })}>▤</button>
       <button class="new" class:on={selected.kind === "new"} title="Nieuwe sessie" aria-label="Nieuwe sessie" onclick={() => agents.select("new")}>✎</button>
     </div>
-    <input class="search" placeholder="Zoek in sessies" bind:value={query} />
     <div class="list">
-      {#each items as i (i.id)}
-        <button class="row" class:on={currentId === i.id} class:receded={i.status === "idle" || i.status === "finished"} onclick={() => agents.select(i.id)}>
-          <span class="line0">
-            <span class="folder" title={i.path}>{i.folder}</span>
-            <span class="spacer"></span>
-            {#if statusText[i.status]}<span class="badge {i.status}">{statusText[i.status]}</span>
-            {:else if i.unseen}<span class="badge done">klaar</span>
-            {:else}<span class="faint">{ago(i.started, now)}</span>{/if}
-          </span>
-          <span class="line1">{#if dotClass[i.status]}<span class="dot {dotClass[i.status]}"></span>{/if}{i.title}</span>
-          <span class="line2 faint">⑂ {i.branch ?? "geen branch"}<span class="spacer"></span>{i.agent}</span>
-        </button>
+      {#snippet entryRow(entry: InboxEntry, kind: inbox.SectionKind)}
+        {@const i = byId.get(entry.row.id)}
+        {#if i}
+          <div class="rowwrap">
+            <button class="row" class:on={currentId === i.id} class:receded={entry.receded} onclick={() => agents.select(i.id)}>
+              <span class="line0">
+                <span class="folder" title={i.path}>{i.folder}</span>
+                <span class="spacer"></span>
+                {#if kind === "snoozed"}<span class="faint">tot {new Date(inboxState.snoozed[i.id]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                {:else if entry.woke}<span class="badge done">wakker</span>
+                {:else if statusText[i.status]}<span class="badge {i.status}">{statusText[i.status]}</span>
+                {:else if i.unseen}<span class="badge done">klaar</span>
+                {:else}<span class="faint">{ago(i.started, now)}</span>{/if}
+              </span>
+              <span class="line1">{#if dotClass[i.status]}<span class="dot {dotClass[i.status]}"></span>{/if}{i.title}</span>
+              <span class="line2 faint">⑂ {i.branch ?? "geen branch"}<span class="spacer"></span>{i.agent}</span>
+            </button>
+            <button class="more" aria-label="Acties voor sessie" title="Acties" onclick={(e) => { e.stopPropagation(); menuFor = menuFor === i.id ? null : i.id; }}>⋯</button>
+            {#if menuFor === i.id}
+              <div class="menu" role="menu">
+                {#if inboxState.pinned.includes(i.id)}
+                  <button role="menuitem" onclick={() => update(inbox.unpin(inboxState, i.id))}>Los maken</button>
+                {:else}
+                  <button role="menuitem" onclick={() => update(inbox.pin(inboxState, i.id))}>Vastzetten</button>
+                {/if}
+                {#if inboxState.settled.includes(i.id)}
+                  <button role="menuitem" onclick={() => update(inbox.unsettle(inboxState, i.id))}>Heropenen</button>
+                {:else}
+                  <button role="menuitem" onclick={() => update(inbox.settle(inboxState, i.id))}>Afronden</button>
+                {/if}
+                {#if kind === "snoozed"}
+                  <button role="menuitem" onclick={() => update(inbox.wake(inboxState, i.id))}>Wakker maken</button>
+                {:else if !needsYou(entry.row.attention)}
+                  <button role="menuitem" onclick={() => update(inbox.snooze(inboxState, i.id, now + 3_600_000))}>Snooze 1 uur</button>
+                  <button role="menuitem" onclick={() => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); update(inbox.snooze(inboxState, i.id, d.getTime())); }}>Snooze tot morgen</button>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      {/snippet}
+      {#each shelves.filter((s) => s.kind === "pinned") as shelf (shelf.kind)}
+        <p class="section">{shelfTitle[shelf.kind]}</p>
+        {#each shelf.rows as entry (entry.row.id)}{@render entryRow(entry, shelf.kind)}{/each}
+      {/each}
+      {#if inboxState.groupByProject}
+        {#each groups as group (group.project)}
+          {@const folded = inboxState.collapsedProjects.includes(group.project) && !query.trim()}
+          <button class="project" class:ask={group.needsYou} aria-expanded={!folded} onclick={() => update(inbox.toggleProject(inboxState, group.project))}>
+            <span class="chev">{folded ? "▸" : "▾"}</span><span class="pname">{group.project || "geen map"}</span>
+            <span class="spacer"></span>{#if folded && group.needsYou}<span class="dot waiting"></span>{/if}<span class="faint count">{group.rows.length}</span>
+          </button>
+          {#each group.rows.filter((r) => !folded || r.entry.row.id === currentId) as r (r.entry.row.id)}{@render entryRow(r.entry, r.kind)}{/each}
+        {/each}
+      {/if}
+      {#each shelves.filter((s) => s.kind !== "pinned") as shelf (shelf.kind)}
+        <p class="section">{shelfTitle[shelf.kind]} ({shelf.rows.length + shelf.hiddenCount})</p>
+        {#each shelf.rows as entry (entry.row.id)}{@render entryRow(entry, shelf.kind)}{/each}
+        {#if shelf.hiddenCount > 0}
+          <button class="section toggle" onclick={() => (settledLimit += inbox.settledPage)}>Toon {Math.min(inbox.settledPage, shelf.hiddenCount)} meer</button>
+        {/if}
       {/each}
       {#if earlier.length}
         <button class="section toggle" onclick={() => (showFinished = !showFinished)}>Afgerond ({earlier.length}) {showFinished ? "▾" : "▸"}</button>
@@ -229,7 +309,7 @@
           {/each}
         {/if}
       {/if}
-      {#if !items.length && !earlier.length}
+      {#if !list.length && !earlier.length}
         <p class="faint empty">{agents.history ? "Er werkt nu geen agent." : "Even kijken…"}</p>
       {/if}
     </div>
@@ -267,44 +347,63 @@
 <style>
   .tab { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: 100%; min-height: 0; }
   .tab.compact { grid-template-columns: 250px 1fr; }
-  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px; gap: 6px; }
-  .head { display: flex; align-items: center; padding: 0 6px; gap: 6px; }
+  .tab.docked { grid-template-columns: minmax(0, 1fr); }
+  aside { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px; gap: 6px; }
+  /* Docked in the sidebar: no column of its own, the sidebar's edge and padding are the list's. */
+  aside.docked { border-right: 0; padding: 0; flex: 1; min-height: 0; }
+  .head { display: flex; align-items: center; padding: 0 2px; gap: 4px; }
   .spacer { flex: 1; }
-  .new { background: none; border: none; width: 28px; height: 28px; padding: 0; border-radius: 8px; color: var(--text2); }
-  .new.on, .new:hover { background: var(--smoke); color: var(--paper); }
-  .search { margin: 0 2px; }
-  .list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; flex: 1; }
+  .new { background: none; border: none; width: 28px; height: 28px; padding: 0; flex: none; border-radius: var(--radius-control); color: var(--text2); }
+  .new.on { background: var(--row-selected); color: var(--paper); }
+  .new:hover { background: var(--row-hover); color: var(--paper); }
+  .search { flex: 1; min-width: 0; height: 28px; padding: 0 10px; font-size: 12px; background: var(--surface); }
+  .list { overflow-y: auto; display: flex; flex-direction: column; gap: 1px; min-height: 0; flex: 1; }
   .section { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 8px 4px; background: none; border: none; text-align: left; }
   .section.toggle:hover { color: var(--paper); background: none; }
-  .row { display: flex; flex-direction: column; gap: 3px; text-align: left; background: var(--graphite); border: none; border-radius: 12px; padding: 9px 12px; }
+  .rowwrap { position: relative; }
+  .rowwrap > .row { width: 100%; }
+  .more { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 20px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-chip); color: var(--text3); opacity: 0; line-height: 1; }
+  .rowwrap:hover .more, .more:focus-visible { opacity: 1; }
+  .more:hover { background: var(--smoke); color: var(--paper); }
+  .menu { position: absolute; right: 4px; top: 100%; z-index: 20; min-width: 160px; display: flex; flex-direction: column; padding: 4px; background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-panel); box-shadow: var(--shadow-popover); }
+  .menu button { text-align: left; background: transparent; border: 0; border-radius: var(--radius-chip); padding: 6px 8px; font-size: 12.5px; }
+  .menu button:hover { background: var(--row-hover); }
+  .project { display: flex; align-items: center; gap: 6px; width: 100%; background: transparent; border: 0; border-radius: var(--radius-control); padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--text2); text-align: left; margin-top: 6px; }
+  .project:hover { background: var(--row-hover); color: var(--paper); }
+  .project.ask .pname { color: var(--paper); }
+  .chev { width: 10px; font-size: 9px; color: var(--text3); }
+  .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count { font-size: 11px; font-weight: 500; }
+  .row { display: flex; flex-direction: column; gap: 2px; text-align: left; background: transparent; border: 0; border-radius: var(--radius-control); padding: 8px 10px; }
   .row:hover { background: var(--row-hover); }
-  .row.on { background: var(--smoke); }
-  .row.slim { padding: 7px 12px; }
-  .line0, .line2 { display: flex; gap: 6px; font-size: 12px; color: var(--text2); align-items: center; }
-  .line2 { color: var(--text3); }
+  .row.on { background: var(--row-selected); }
+  .row.slim { padding: 6px 10px; }
+  .line0, .line2 { display: flex; gap: 6px; font-size: 11.5px; color: var(--text2); align-items: center; }
+  .line2 { color: var(--text3); font-size: 10.5px; }
   .row.receded .line0 { color: var(--text3); }
   .folder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .line1 { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: center; }
+  .line1 { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: center; }
   .row.receded .line1 { font-weight: 400; color: var(--text2); }
-  .row.slim .line1 { font-size: 13px; color: var(--text2); }
+  .row.slim .line1 { font-size: 12.5px; color: var(--text2); }
   .badge { font-size: 11px; font-weight: 600; }
   .badge.waiting, .badge.input, .badge.limited { color: var(--amber); }
   .badge.failed { color: var(--coral); }
   .badge.done { color: var(--mint); }
   .empty { padding: 8px; }
-  .footer { display: flex; gap: 4px; align-items: center; padding-top: 4px; }
-  .footer button { background: none; border: none; height: 30px; padding: 0 9px; border-radius: 8px; color: var(--text3); font-size: 12px; }
-  .footer button:hover, .footer button.on { color: var(--paper); background: var(--smoke); }
+  .footer { display: flex; gap: 2px; align-items: center; padding-top: 4px; }
+  .footer button { background: none; border: none; height: 28px; padding: 0 8px; border-radius: var(--radius-control); color: var(--text3); font-size: 12px; }
+  .footer button:hover { color: var(--paper); background: var(--row-hover); }
+  .footer button.on { color: var(--paper); background: var(--row-selected); }
   .footer button.glyph { display: grid; place-items: center; }
-  .vsep { width: 1px; height: 16px; background: var(--line2); margin: 0 4px; }
+  .vsep { width: 1px; height: 14px; background: var(--line2); margin: 0 4px; }
   .main { min-width: 0; min-height: 0; padding: 12px 16px; overflow: hidden; display: flex; flex-direction: column; }
   .err { color: var(--coral); font-size: 12px; margin: 0 0 6px; }
   @media (max-width: 800px) {
-    .tab:not(.compact) { grid-template-columns: 210px minmax(0, 1fr); }
+    .tab:not(.compact):not(.docked) { grid-template-columns: 210px minmax(0, 1fr); }
   }
   @media (max-width: 640px) {
     .tab:not(.compact) { grid-template-columns: minmax(0, 1fr); overflow-y: auto; display: flex; flex-direction: column; }
-    .tab:not(.compact) aside { max-height: 36%; flex-shrink: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+    .tab:not(.compact) aside { max-height: 36%; flex-shrink: 0; border-right: 0; border-bottom: 1px solid var(--border); }
     .tab:not(.compact) .main { flex: 1; min-height: 280px; overflow-y: auto; }
   }
 </style>
