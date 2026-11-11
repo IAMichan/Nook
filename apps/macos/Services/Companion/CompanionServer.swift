@@ -748,7 +748,7 @@ final class CompanionServer: ObservableObject {
     func anyBusy(_ app: AppModel) -> Bool {
         let workspace = app.workspace
         let now = Date()
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(CompanionHistory.liveCount)
+        let runs = workspace.newestRuns(CompanionHistory.liveCount)
         let working = runs.contains { run in
             let waiting = !(workspace.approvals[run.id] ?? []).isEmpty || !(workspace.questions[run.id] ?? []).isEmpty
             return KeepAwakePolicy.isBusy(attention: String(describing: workspace.attention(run, unseen: false, now: now)),
@@ -761,7 +761,7 @@ final class CompanionServer: ObservableObject {
 
     private func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
         let now = Date()
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(CompanionHistory.liveCount)
+        let runs = workspace.newestRuns(CompanionHistory.liveCount)
         return runs.map { digest($0, workspace: workspace, now: now) }
     }
 

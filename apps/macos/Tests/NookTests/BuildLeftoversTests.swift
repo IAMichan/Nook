@@ -126,6 +126,17 @@ final class BuildLeftoversTests: XCTestCase {
         XCTAssertTrue(BuildLeftovers.isIdle(worktree, busy: ["/w/nook/feature-2"], mainCheckouts: []))
     }
 
+    /// The busy folders are resolved once for a whole sweep and give every worktree the same answer.
+    func testHeldFoldersAnswerForEveryWorktreeAtOnce() {
+        let held = BuildLeftovers.heldFolders(["/w/nook/a/apps/web", "/w/nook/a/apps/web", "/w/other/b", "/Users/me"])
+        XCTAssertFalse(BuildLeftovers.isIdle("/w/nook/a", held: held, mainCheckouts: []))
+        XCTAssertFalse(BuildLeftovers.isIdle("/w/other/b", held: held, mainCheckouts: []))
+        XCTAssertTrue(BuildLeftovers.isIdle("/w/nook/c", held: held, mainCheckouts: []))
+        XCTAssertTrue(BuildLeftovers.isIdle("/w/nook/a-2", held: held, mainCheckouts: []))
+        // A folder above a worktree (your home folder) says nothing about it.
+        XCTAssertTrue(BuildLeftovers.isIdle("/Users/me/project", held: held, mainCheckouts: []))
+    }
+
     func testLowDiskSpaceWarnsOnceUntilItRecovered() {
         XCTAssertFalse(DiskSpace.isLow(available: 30_000_000_000, wasLow: false))
         XCTAssertTrue(DiskSpace.isLow(available: 20_000_000_000, wasLow: false))

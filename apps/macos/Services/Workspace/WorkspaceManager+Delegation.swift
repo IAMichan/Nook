@@ -13,8 +13,12 @@ extension WorkspaceManager {
     }
 
     /// The sub-threads at every level that still work for `parent` (`DelegatedTask.workingSubThreads`).
+    /// Read from a table made once per change of `runs` (`DelegatedTask.workingSubThreadCounts`).
     func workingSubThreads(of parent: UUID) -> Int {
-        DelegatedTask.workingSubThreads(of: parent, in: runs)
+        if let subThreadCounts { return subThreadCounts[parent] ?? 0 }
+        let counts = DelegatedTask.workingSubThreadCounts(in: runs)
+        subThreadCounts = counts
+        return counts[parent] ?? 0
     }
 
     /// The child a repeated call with the same `client_request_id` already started.
