@@ -479,7 +479,7 @@ struct ComposerSuggestionList: View {
                     .roundedBackground(index == model.selection ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
         }
         .padding(NookTheme.Spacing.sm)
@@ -580,7 +580,7 @@ struct ComposerContextRing: View {
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .composerTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) {
@@ -625,7 +625,7 @@ struct CompactFirstChip: View {
                          text: tr(compacts ? "compose.compactFirst.compact" : "compose.compactFirst.keep", size),
                          tint: compacts ? NookTheme.amber : nil, showsChevron: false)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .composerTip(tr(compacts ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp", size))
     }
 }
@@ -709,7 +709,7 @@ struct ComposerUsageRing: View, Equatable {
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .fixedSize()
         .composerTip(help)
         .accessibilityLabel(help)

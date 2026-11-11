@@ -302,7 +302,7 @@ struct PullRequestsPanel: View {
         return HStack(spacing: NookTheme.Spacing.sm) {
             Text(tr("agents.pulls.shownOf", shownCount, all)).monospacedDigit()
             Button(tr("agents.pulls.clearFilter")) { filter = PullRequestFilter() }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .foregroundStyle(NookTheme.textSecondary)
             Spacer(minLength: 0)
         }
@@ -444,7 +444,7 @@ struct PullRequestsPanel: View {
             .padding(.bottom, NookTheme.Spacing.xs)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
         if open {

@@ -42,7 +42,7 @@ struct ChatAppSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
         }
         .confirmDelete($unlinking, question: { tr("chats.link.unlinkQuestion", $0.name) }, detail: tr("chats.link.unlinkDetail", name),
@@ -308,7 +308,7 @@ struct ChatLinkSteps: View {
                 }
             }
             Button(tr("chats.link.continue")) { submit(fields) }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(linker.isSending || fields.contains { !$0.isOptional && (values[$0.id] ?? $0.initial).trimmingCharacters(in: .whitespaces).isEmpty })
                 .id(id)
         case .browser(_, let instructions, let url, _, _, _, _):
@@ -320,7 +320,7 @@ struct ChatLinkSteps: View {
             } label: {
                 Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
             SettingNote(tr("chats.link.browser.privacy", network.name))
         case .display(_, let instructions, let show):

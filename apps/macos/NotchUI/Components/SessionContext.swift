@@ -125,7 +125,7 @@ struct PullRequestDescription: View {
                                 .font(NookTheme.TextStyle.body)
                                 .foregroundStyle(checked ? NookTheme.mint : NookTheme.textTertiary)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .disabled(!editable)
                         .accessibilityLabel(text)
                         .accessibilityValue(tr(checked ? "agents.pr.task.done" : "agents.pr.task.open"))

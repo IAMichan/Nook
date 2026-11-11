@@ -95,7 +95,7 @@ struct ModelPickerOptions: View {
             .roundedBackground(on ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 
     @ViewBuilder
@@ -139,7 +139,7 @@ private struct ModelPickerPermissions: View {
                             .roundedBackground(on ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.chip)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .onHover { hovered = $0 ? policy : nil }
                     .help(policy.label)
                     .accessibilityLabel(policy.label)

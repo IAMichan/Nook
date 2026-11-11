@@ -358,7 +358,7 @@ struct PullRequestActionPanel: View {
                         }
                         .font(NookTheme.TextStyle.detail)
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.nookBorderlessButton)
                     .fixedSize()
                 }
                 Spacer(minLength: 0)
@@ -407,7 +407,7 @@ struct PullRequestActionPanel: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(chosen ? NookTheme.iris : NookTheme.smoke))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
@@ -443,7 +443,7 @@ struct PullRequestActionPanel: View {
                                 if on { Image(icon: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.paper) }
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         // The button's own tip covers the chip's, so it carries the description too.
                         .help(tr(on ? "agents.pr.labels.remove" : "agents.pr.labels.add", label.name)
                               + (label.description.isEmpty ? "" : "\n" + label.description))

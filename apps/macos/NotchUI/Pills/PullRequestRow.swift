@@ -58,7 +58,7 @@ struct PullRequestRow: View, Equatable {
                     onOpen()
                 }
             } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             // Shift shows the quick actions; outside the row's own button, so their clicks stay theirs.
             if readable { PullRequestQuickActionButtons(item: item, accountID: accountID) }
         }

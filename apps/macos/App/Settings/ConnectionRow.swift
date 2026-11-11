@@ -102,6 +102,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
+            .nookClickable(opens)
             .onTapGesture { if opens { withAnimation(NookTheme.reveal) { open.toggle() } } }
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(opens ? .isButton : [])
@@ -155,7 +156,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.nookBorderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .help(tr("connection.more"))
@@ -212,7 +213,7 @@ struct ConnectionListHeader: View {
                 Button(action: add.action) {
                     ConnectionListAddLabel(title: add.title, symbol: symbol)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.nookBorderless)
             }
         }
     }
@@ -235,7 +236,7 @@ struct ConnectionListMenuHeader<Items: View>: View {
             } label: {
                 ConnectionListAddLabel(title: add, symbol: "plus")
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.nookBorderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }

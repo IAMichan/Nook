@@ -659,7 +659,7 @@ private struct ChoiceRow: View {
             .roundedBackground(hovering || checked ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }

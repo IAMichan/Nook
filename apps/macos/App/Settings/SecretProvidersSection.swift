@@ -89,7 +89,7 @@ struct SecretProviderSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
         }
         .task { await load() }

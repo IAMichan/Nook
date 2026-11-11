@@ -3191,7 +3191,10 @@ final class WorkspaceManager: ObservableObject {
             let id = runs[index].id
             guard backgroundWork.contains(id) || subagentsWorking.contains(id) else { continue }
             let labels = RestartContinuation.waitedOn(events[id] ?? [])
-            if !labels.isEmpty { runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now) }
+            if !labels.isEmpty {
+                runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now)
+                runs[index].stoppedByQuit = true
+            }
         }
         GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
@@ -3207,6 +3210,7 @@ final class WorkspaceManager: ObservableObject {
             runs[index].status = .stopped
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
+            runs[index].stoppedByQuit = true
         }
         saveForQuit()
     }

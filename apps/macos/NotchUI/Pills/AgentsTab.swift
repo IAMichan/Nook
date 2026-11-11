@@ -796,7 +796,7 @@ struct AgentListRow: View, Equatable {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: action) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             // Built only under the pointer: a menu and two or three buttons in every row of a long list were AppKit views,
             // hover regions and accessibility nodes that each redraw and hit test walked, for buttons nobody saw.
             if let actions, hovering || sweepOrigin {

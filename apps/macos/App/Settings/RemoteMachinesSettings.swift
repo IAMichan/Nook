@@ -275,7 +275,7 @@ private struct AddMachineSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
             .disabled(!canAdd || check == .checking)
         }

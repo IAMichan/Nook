@@ -56,7 +56,7 @@ struct UpdateSettingsSection: View {
             switch updater.phase {
             case .available, .installing, .readyToRestart, .readyToBuildInXcode, .failed:
                 Button(tr("update.settings.open")) { updater.showPanel() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.small)
             default:
                 Button(tr("update.settings.checkNow")) { updater.check() }

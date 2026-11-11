@@ -36,7 +36,7 @@ struct PullRequestSummarySection<Content: View, Accessory: View>: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .accessibilityValue(open ? tr("compose.queue.expanded") : "")
                 Spacer(minLength: NookTheme.Spacing.sm)
                 accessory().foregroundStyle(NookTheme.textTertiary).lineLimit(1)
@@ -121,7 +121,7 @@ struct PullRequestCommitEntry: View {
                         .truncationMode(.tail)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
                 .help(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
                 if !details.isEmpty {
@@ -135,7 +135,7 @@ struct PullRequestCommitEntry: View {
                             .background(NookTheme.shape(NookTheme.Radius.control).fill(expanded ? NookTheme.rowSelected : NookTheme.rowHover))
                             .contentShape(NookTheme.shape(NookTheme.Radius.control))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .help(tr("agents.pr.timeline.commitDetails"))
                     .accessibilityLabel(tr("agents.pr.timeline.commitDetails"))
                     .accessibilityValue(expanded ? tr("compose.queue.expanded") : "")
@@ -197,7 +197,7 @@ struct PullRequestHoverRow<Content: View>: View {
                 .background(hovering ? NookTheme.rowHover : Color.clear)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }

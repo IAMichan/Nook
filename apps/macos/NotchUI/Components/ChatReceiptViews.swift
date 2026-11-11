@@ -133,7 +133,7 @@ struct ChatInfoButton: View {
                 .underline(hovering)
                 .lineLimit(1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .pointerStyle(.link)
         .help(tr(isGroup ? "chats.info.group" : "chats.info.person"))

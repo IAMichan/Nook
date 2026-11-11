@@ -22,7 +22,7 @@ struct SmallPrimaryButton: View {
             .frame(height: compact ? 24 : 30)
             .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }
@@ -56,7 +56,7 @@ struct NookAcknowledgeButton: View {
             .roundedHitShape(NookTheme.Radius.control)
             .hoverLift(hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }
@@ -160,7 +160,7 @@ private struct NookActionBarItem: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }
@@ -206,7 +206,7 @@ struct ToolbarIconButton: View {
                                    radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
@@ -333,7 +333,7 @@ struct SmallGhostButton: View {
                 .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }

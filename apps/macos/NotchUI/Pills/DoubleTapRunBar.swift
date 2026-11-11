@@ -102,7 +102,7 @@ struct DoubleTapRunBar: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
             ForEach(run.steps.suffix(run.steps.count - hidden)) { step in
                 HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
@@ -183,7 +183,7 @@ struct DoubleTapRunBar: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             } else if run.moreChecks > 0 {
                 Text(tr("doubletap.card.more", run.moreChecks))
                     .font(NookTheme.TextStyle.detail)

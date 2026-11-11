@@ -15,7 +15,7 @@ struct ComposerUltracodeToggle: View {
                 ComposerPill(symbol: "point.3.connected.trianglepath.dotted", text: tr("compose.ultracode"),
                              showsChevron: false, selected: on)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .composerTip(on ? tr("compose.ultracode.on") : tr("compose.ultracode.off"))
             .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
         }
@@ -37,7 +37,7 @@ struct ComposerMainThreadToggle: View {
                 ComposerPill(symbol: on ? "checkmark" : "arrow.triangle.branch", text: tr("compose.mainThread"),
                              showsChevron: false, selected: on)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .composerTip(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
             .accessibilityValue(on ? tr("compose.mainThread.stateOn") : tr("compose.mainThread.stateOff"))
         }

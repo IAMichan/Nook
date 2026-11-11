@@ -88,7 +88,7 @@ struct AccountOptionsSection: View {
                         .toggleStyle(.button)
                         .help(tr("accounts.variables.secret"))
                     Button { rows.removeAll { $0.id == row.id }; saveVariables() } label: { Image(icon: "minus.circle") }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .help(tr("accounts.variables.remove"))
                         .accessibilityLabel(tr("accounts.variables.remove"))
                 }

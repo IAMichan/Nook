@@ -239,7 +239,7 @@ struct FolderGitButton: View {
                             label(icon: "folder", text: (model.directory as NSString).lastPathComponent)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .help(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? AgentPathFormat.tilde(model.directory)))
                     .popover(isPresented: $open, arrowEdge: .bottom) {
                         SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) { open = false }
@@ -258,7 +258,7 @@ struct FolderGitButton: View {
                             .frame(height: ToolbarGroup.itemHeight)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .help(tr("agents.git.changes", model.changes.count))
                         .fixedSize()
                     }

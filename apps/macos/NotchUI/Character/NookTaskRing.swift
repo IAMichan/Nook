@@ -701,7 +701,7 @@ struct NookTaskRingLabel: View {
                     .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
                     .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { pointer?.onLabel($0) }
                 .help(tr("notch.taskRing.open"))
                 .shadow(color: .black.opacity(0.5), radius: 9, y: 4)

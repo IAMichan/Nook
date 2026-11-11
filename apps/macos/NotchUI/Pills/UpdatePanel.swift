@@ -121,7 +121,7 @@ struct UpdatePanel: View {
             .foregroundStyle(NookTheme.textSecondary)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 
     // MARK: Available release (a downloaded build)
@@ -460,7 +460,7 @@ private struct ChangeRow: View {
             .roundedBackground(hovering && url != nil ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(url == nil)
         .onHover { hovering = $0 }
         .help(change.title + " · " + change.author)

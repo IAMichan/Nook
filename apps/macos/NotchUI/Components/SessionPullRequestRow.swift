@@ -64,7 +64,7 @@ struct SessionPullRequestRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             if let action, let listed { actionButton(action, listed: listed).padding(.top, NookTheme.Spacing.xxs) }
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
@@ -111,7 +111,7 @@ struct SessionPullRequestRow: View {
             .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(armed ? NookTheme.amber : NookTheme.line2))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(running)
         .fixedSize()
     }

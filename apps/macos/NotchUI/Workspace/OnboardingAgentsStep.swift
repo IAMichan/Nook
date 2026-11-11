@@ -17,7 +17,7 @@ struct OnboardingAgentsStep: View {
                 ForEach(CustomAgents.load()) { agent in acpRow(agent) }
             }
             Button(tr("onboarding.agents.addAcp")) { app.openSettings(section: .agents) }
-                .buttonStyle(.link)
+                .buttonStyle(.nookLink)
             projects
         }
         .onAppear { app.history.refresh() }

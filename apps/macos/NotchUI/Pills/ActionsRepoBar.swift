@@ -83,6 +83,7 @@ struct ActionsRepoTab: View {
         .frame(height: 30)
         .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
         .roundedHitShape(NookTheme.Radius.control)
+        .nookClickable()
         .onTapGesture(perform: onSelect)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)

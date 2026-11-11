@@ -47,7 +47,7 @@ extension PullRequestDetailView {
             .frame(height: 28)
             .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.nookBorderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .help(tr("agents.pulls.stack.position", index, shownStack.count))
@@ -215,7 +215,7 @@ extension PullRequestDetailView {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .allowsHitTesting(note != nil)
         .help(note.map { status.word + " · " + tr($0) } ?? method ?? "")
         .popover(isPresented: $showBlocker, arrowEdge: .bottom) {

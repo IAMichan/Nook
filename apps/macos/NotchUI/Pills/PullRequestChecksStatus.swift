@@ -37,7 +37,7 @@ struct PullRequestChecksStatus: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("agents.pr.status.checks"))
             .accessibilityLabel(tr("agents.pr.status.checks") + ": " + summary)
             .popover(isPresented: $showing, arrowEdge: .bottom) { list(outcome) }

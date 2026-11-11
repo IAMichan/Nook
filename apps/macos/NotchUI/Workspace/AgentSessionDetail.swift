@@ -799,7 +799,7 @@ private struct SessionQuestionOptionButton: View {
             .roundedStroke(borderColor, radius: NookTheme.Radius.control, lineWidth: isHovered || chosen ? 1.2 : 1)
             .roundedHitShape(NookTheme.Radius.control)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering in
             isHovered = hovering
             if hovering {

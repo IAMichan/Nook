@@ -168,7 +168,7 @@ private struct ChatErrorCard: View {
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 if showDetails {
                     Text(message.text)
                         .font(NookTheme.mono(11.5))

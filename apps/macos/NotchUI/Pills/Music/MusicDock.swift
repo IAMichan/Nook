@@ -62,7 +62,7 @@ private struct MusicBar: View {
                                    radius: NookTheme.Radius.panel)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hoveringTrack = $0 }
             .help(tr("music.openNowPlaying"))
             .accessibilityLabel("\(info.title), \(subtitle)")
@@ -111,7 +111,7 @@ struct MusicShowAllButton: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         // Its text lines up with the page's edge at rest.

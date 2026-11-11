@@ -230,7 +230,7 @@ private struct MusicPlayingCard: View {
                 .shadow(color: .black.opacity(0.4), radius: 16, y: 10)
                 .scaleEffect(hoveringCover ? 1.03 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hoveringCover = $0 }
         .animation(NookTheme.hover, value: hoveringCover)
         .help(tr("music.openNowPlaying"))
@@ -392,7 +392,7 @@ private struct MusicWeekCard: View {
             .background(shape.fill(hovering ? NookTheme.rowHover : NookTheme.surface))
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.section.stats"))
@@ -545,7 +545,7 @@ struct MusicTrackTile: View {
                                radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))

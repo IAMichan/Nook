@@ -113,7 +113,7 @@ struct RunInspector: View {
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(files.prefix(40)) { file in
                             Button { review(file) } label: { FileChangeRow(file: file) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.nookPlain)
                                 .sessionFileMenu(workspace, runID: runID, path: file.path)
                         }
                         if files.count > 40 {
@@ -143,7 +143,7 @@ struct RunInspector: View {
                     } label: {
                         Image(icon: "ellipsis.circle")
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.nookBorderlessButton)
                     .help(tr("a11y.more"))
                     .accessibilityLabel(tr("a11y.more"))
                     .fixedSize()
