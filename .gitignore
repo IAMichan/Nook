@@ -37,3 +37,6 @@ apps/macos/Vendor/
 
 # Previews and drafts made for the user by coding agents (see AGENTS.md §5)
 .scratch/
+
+# Local build logs (scripts/pr-files-check.sh rejects *.log in pull requests)
+*.log

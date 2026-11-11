@@ -1,8 +1,7 @@
 # Nook
 
-[![Build](https://github.com/IAMichan/nook/actions/workflows/build.yml/badge.svg)](https://github.com/IAMichan/nook/actions/workflows/build.yml)
+[![CI](https://github.com/IAMichan/nook/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/IAMichan/nook/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tauri](https://github.com/IAMichan/nook/actions/workflows/tauri.yml/badge.svg)](https://github.com/IAMichan/nook/actions/workflows/tauri.yml)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
 ![iOS](https://img.shields.io/badge/iOS-Companion-lightgrey)
 ![Windows](https://img.shields.io/badge/Windows-early-0078D6)

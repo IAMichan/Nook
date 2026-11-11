@@ -136,7 +136,7 @@ Nook has one visual language, and the repository guards it in three places:
    `NookDivider`, so these look and behave the same everywhere, and when a pull request icon is named or sized by hand
    (`arrow.triangle.pull`, a `PullRequestStateGlyph` outside `PullRequestIcons.swift`) instead of through `PullRequestIcon`.
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
-   `.github/workflows/build.yml` runs it on every pull request.
+   `.github/workflows/build.yml` (started by `ci.yml`) runs it on every pull request that touches the app.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.
 
 When a file genuinely draws its own colors (a brand mark, a chart palette, Nook's face), add it to the allow-list in
