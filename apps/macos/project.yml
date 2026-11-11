@@ -269,6 +269,10 @@ targets:
       - path: Core/I18n+PolishNotch.swift
       - path: Core/I18n+PolishRendering.swift
       - path: Core/I18n+PolishSettings.swift
+      - path: Core/I18n+PolishReliability.swift
+      - path: Core/DiagnosticsRedactor.swift
+      - path: Core/SyncStatus.swift
+      - path: Core/RelativeTime.swift
       - path: Core/I18n+SettingsPages.swift
       - path: Core/I18n+ConnectionsAgents.swift
       - path: Core/I18n+ConnectionsDevices.swift
