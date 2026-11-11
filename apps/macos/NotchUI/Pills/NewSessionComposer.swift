@@ -139,6 +139,8 @@ struct NewSessionComposer: View {
                     box.zIndex(1)
                     belowBox
                 }
+                // The tray's choices show their tips like the box's own (`composerTip`), not as slow system tooltips.
+                .composerTips()
                 notice
             }
             .frame(maxWidth: 640)
@@ -520,7 +522,7 @@ struct NewSessionComposer: View {
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.detail)
                         .frame(minWidth: 90, maxWidth: 150)
-                        .help(tr("ws.remote.baseHelp"))
+                        .composerTip(tr("ws.remote.baseHelp"))
                 }
             } else {
                 // A folder that is no git repository has no branch or worktree to choose.
@@ -538,9 +540,11 @@ struct NewSessionComposer: View {
                     } content: {
                         BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
                     }
+                    .composerTip(tr("compose.from.help"))
                 } else if let branch = project?.currentBranch {
                     ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
                         .frame(maxWidth: 220)
+                        .composerTip(tr("compose.currentBranch.help"))
                 }
             }
         }
