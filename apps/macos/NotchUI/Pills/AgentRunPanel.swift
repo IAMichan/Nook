@@ -602,7 +602,11 @@ struct AgentRunPanel: View {
         composerModel.stash = store.stash
         // ArrowUp walks through what you sent this session, also after a relaunch.
         composerModel.history.seed(workspace.timeline(runID).filter { $0.kind == .user }.map { ContextRefs.visible($0.text) })
-        composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
+        // Weakly: the model holds this closure, so a strong capture would keep it (and its stash) alive for good.
+        composerModel.onStashChanged = { [weak composerModel] in
+            guard let composerModel else { return }
+            store.setStash(composerModel.stash)
+        }
         let (working, project) = (run.workingDirectory, run.projectPath)
         Task {
             skills = await Task.detached(priority: .utility) {
