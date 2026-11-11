@@ -50,9 +50,9 @@ When answering, the model follows a strict reasoning order: what does the user w
 
 A follow-up (*"and on Friday?"*, *"make it shorter"*, *"go back to the budget question"*) only works when the brain sees what came before, but sending a whole long conversation with every question wastes the model's window and time. `NookChat.history` therefore passes the conversation through `ConversationWindow` (`Brain/ConversationWindow.swift`, tested in `ConversationWindowTests`):
 
-- the six newest turns go in full (up to 4,000 characters each), older turns as their first 600 characters, at most 20 turns;
-- everything stays within 24,000 characters (it used to be up to 16 messages of 4,000 characters, about 64,000, while everything before them was forgotten);
-- turns that no longer fit are folded into one recap at the start that lists what the user asked earlier (the first questions, where the topic was set, and the latest ones before the window), so a conversation can pick up an earlier topic again. The window always starts on the user's side, and the brain is told never to answer the recap itself.
+- the window is sized to the brain (`ConversationWindow.Limits.fitting`): a sixth of what the model's prompt holds, between 3,000 and 32,000 characters. A cloud model gets 32,000 (it used to be up to 16 messages of 4,000 characters, about 64,000, while everything before them was forgotten); Apple Intelligence's 4k window gets 3,000;
+- the newest turns go in full (six, or four on a small local model; up to 4,000 characters each, less on a small window), older turns as their start (up to 600 characters), at most 20 turns (12 on a small local model);
+- turns that no longer fit are folded into one recap at the start that lists what the user asked earlier (the first questions, where the topic was set, and the latest ones before the window), so a conversation can pick up an earlier topic again. The window always starts on the user's side, and the brain is told never to answer the recap itself. What reads the newest turns on the Mac leaves the recap out (`ConversationWindow.withoutRecap`): `ChatIntent` would otherwise carry an old "send Anna a WhatsApp" from it into a new "try again", and `Research` would search for an old topic on "and the budget?". `LongConversationTests` plays such a conversation end to end.
 
 Small local models keep their own, shorter view of the same window (`BrainService.historyPrefix`).
 

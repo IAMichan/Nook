@@ -80,4 +80,51 @@ final class ConversationWindowTests: XCTestCase {
         XCTAssertEqual(ConversationWindow.shortened("hello world", to: 9), "hello…")
         XCTAssertEqual(ConversationWindow.shortened("abcdefghij", to: 5), "abcd…")
     }
+
+    func testTheWindowIsSizedToTheModel() {
+        let cloud = ConversationWindow.Limits.fitting(.cloud)
+        XCTAssertEqual(cloud.budget, 32_000, "a cloud model gets the most room, capped")
+        XCTAssertEqual(cloud.fullLength, 4_000)
+        XCTAssertEqual(cloud.recentTurns, 6)
+
+        let local = ConversationWindow.Limits.fitting(.localLarge)
+        XCTAssertLessThan(local.budget, cloud.budget)
+        XCTAssertEqual(local.budget, ModelProfile.localLarge.promptCharacterBudget / 6)
+        XCTAssertEqual(local.maxTurns, 12, "a small model keeps fewer turns")
+
+        let apple = ConversationWindow.Limits.fitting(.apple)
+        XCTAssertEqual(apple.budget, 3_000, "never below the floor")
+        XCTAssertEqual(apple.fullLength, 1_000)
+
+        // A strong local model works like an external one, with the window its context allows.
+        XCTAssertEqual(ConversationWindow.Limits.fitting(.localPro).maxTurns, ConversationWindow.Limits.standard.maxTurns)
+    }
+
+    func testEveryTurnFitsTheWindowOfASmallModel() {
+        let limits = ConversationWindow.Limits.fitting(.apple)
+        let window = ConversationWindow.fit(conversation(40) { _ in long }, limits: limits)
+        XCTAssertLessThanOrEqual(window.reduce(0) { $0 + $1.text.count }, limits.budget)
+        XCTAssertFalse(window.isEmpty)
+    }
+
+    func testTheRecapIsNotReadAsTheLatestRequest() {
+        let window = ConversationWindow.fit(conversation(30) { $0 % 2 == 0 ? "q\($0)" : "a\($0)" })
+        let plain = ConversationWindow.withoutRecap(window)
+        XCTAssertEqual(plain.count, window.count, "a recap merged into a turn leaves the turn itself")
+        XCTAssertEqual(plain.first?.text, "q10")
+        XCTAssertFalse(plain.contains { $0.text.contains(ConversationWindow.recapHeader) })
+
+        let alone = [ChatTurn(fromUser: true, text: ConversationWindow.recap(of: [ChatTurn(fromUser: true, text: "send it to Anna")])!),
+                     ChatTurn(fromUser: false, text: "Sure.")]
+        XCTAssertEqual(ConversationWindow.withoutRecap(alone).map(\.text), ["Sure."], "a recap of its own is left out")
+    }
+
+    func testAFollowUpDoesNotInheritTermsFromTheRecap() {
+        let history = [ChatTurn(fromUser: true, text: ConversationWindow.recap(of: [ChatTurn(fromUser: true, text: "Wat staat er in de offerte van Apollo?")])!),
+                       ChatTurn(fromUser: false, text: "Here it is.")]
+        XCTAssertFalse(Research.terms(in: "En het budget?", history: history).inherited)
+        // The same question asked as the turn before is followed up, as before.
+        let plain = [ChatTurn(fromUser: true, text: "Wat staat er in de offerte van Apollo?"), ChatTurn(fromUser: false, text: "Here it is.")]
+        XCTAssertTrue(Research.terms(in: "En het budget?", history: plain).inherited)
+    }
 }

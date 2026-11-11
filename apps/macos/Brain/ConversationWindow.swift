@@ -28,7 +28,27 @@ enum ConversationWindow {
         var recapQuestionLength: Int = 140
 
         static let standard = Limits()
+
+        /// Sized to the model: a sixth of what its prompt can hold goes to the conversation, between 3,000 and 32,000
+        /// characters, so a 4k on-device model is not handed the window of a cloud model, and a cloud model gets more
+        /// room than before without paying for a whole long conversation with every question.
+        static func fitting(_ profile: ModelProfile) -> Limits {
+            var limits = Limits()
+            limits.budget = min(32_000, max(3_000, profile.promptCharacterBudget / 6))
+            limits.fullLength = min(4_000, max(800, limits.budget / 3))
+            limits.shortLength = min(600, max(200, limits.budget / 20))
+            if profile.isSmall && !profile.richPrompt {
+                limits.recentTurns = 4
+                limits.maxTurns = 12
+                limits.recapQuestions = 4
+            }
+            return limits
+        }
     }
+
+    /// How the recap starts, so the code that reads the newest turns (`ChatIntent`, `Research`) can leave it out.
+    static let recapHeader = "[Earlier in this conversation (shortened), the user asked:"
+    static let recapFooter = "\n]"
 
     /// The turns to send, oldest first. The recap, when there is one, is the first turn and comes from the user's side,
     /// so every provider accepts it as the start of the conversation.
@@ -88,13 +108,25 @@ enum ConversationWindow {
             picked = Array(questions.prefix(head)) + Array(questions.suffix(tail))
             skipped = questions.count - picked.count
         }
-        var lines = ["[Earlier in this conversation (shortened), the user asked:"]
+        var lines = [recapHeader]
         for (index, question) in picked.enumerated() {
             if skipped > 0, index == (limits.recapQuestions + 1) / 2 { lines.append("- … \(skipped) more") }
             lines.append("- " + question)
         }
         lines.append("]")
         return lines.joined(separator: "\n")
+    }
+
+    /// The turns without the recap: what the user really said in the newest turns. The recap lists questions from long
+    /// ago, so reading it as the latest request would carry an old "send it to Anna" into a new question, or search for
+    /// an old topic when the user asks "and the budget?".
+    static func withoutRecap(_ turns: [ChatTurn]) -> [ChatTurn] {
+        turns.compactMap { turn in
+            guard turn.fromUser, turn.text.hasPrefix(recapHeader) else { return turn }
+            guard let end = turn.text.range(of: recapFooter) else { return nil }
+            let rest = turn.text[end.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            return rest.isEmpty ? nil : ChatTurn(fromUser: true, text: rest)
+        }
     }
 
     /// The text cut at a word near `length`, marked with an ellipsis when something was left out.

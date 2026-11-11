@@ -172,12 +172,14 @@ extension AppModel {
             if reveal { showChat() }
         }
         // The screen brain is on this Mac: it may read the whole conversation.
-        let history = chat.history(before: question.id, hiding: screenBrain != nil ? [] : settings.privateSources)
+        // As much of the conversation as the brain's window has room for (`ConversationWindow.Limits.fitting`).
+        let historyLimits = ConversationWindow.Limits.fitting(settings.brainProfile)
+        let history = chat.history(before: question.id, limits: historyLimits, hiding: screenBrain != nil ? [] : settings.privateSources)
         // Also the chosen brain's part: that one sees the conversation without what stays on this Mac.
         let together = screenBrain != nil && ScreenBrain.routed == nil && ScreenBrain.needsBoth(text) && images.isEmpty
-        let outside = together ? chat.history(before: question.id, hiding: settings.privateSources) : nil
+        let outside = together ? chat.history(before: question.id, limits: historyLimits, hiding: settings.privateSources) : nil
         // The model on this Mac reads the whole conversation for its note, the chosen brain what it may see.
-        let local = relay.map { _ in chat.history(before: question.id) } ?? []
+        let local = relay.map { _ in chat.history(before: question.id, limits: historyLimits) } ?? []
         let replyID = reply.id
         // The answer's task inherits the brain it runs on.
         chatTasks[conversation] = ScreenBrain.$routed.withValue(screenBrain) {
