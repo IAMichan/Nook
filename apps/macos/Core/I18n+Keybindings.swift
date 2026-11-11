@@ -121,7 +121,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "inbox.draft.discard": "Concept weggooien",
         "inbox.draft.help": "Niet verzonden concept voor %@",
         "inbox.draft.accessibility": "Niet verzonden concept in %@: %@",
-        "inbox.draft.unsent": "Niet verzonden",
+        "inbox.draft.unsent": "Concept",
     ],
     .en: [
         "keys.title": "Panel keys",
@@ -240,7 +240,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "inbox.draft.discard": "Discard draft",
         "inbox.draft.help": "Unsent draft for %@",
         "inbox.draft.accessibility": "Unsent draft in %@: %@",
-        "inbox.draft.unsent": "Unsent",
+        "inbox.draft.unsent": "Draft",
     ],
     .de: [
         "keys.title": "Panel-Tasten",
@@ -359,7 +359,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "inbox.draft.discard": "Entwurf verwerfen",
         "inbox.draft.help": "Nicht gesendeter Entwurf für %@",
         "inbox.draft.accessibility": "Nicht gesendeter Entwurf in %@: %@",
-        "inbox.draft.unsent": "Nicht gesendet",
+        "inbox.draft.unsent": "Entwurf",
     ],
     .fr: [
         "keys.title": "Touches du panneau",
@@ -478,7 +478,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "inbox.draft.discard": "Supprimer le brouillon",
         "inbox.draft.help": "Brouillon non envoyé pour %@",
         "inbox.draft.accessibility": "Brouillon non envoyé dans %@ : %@",
-        "inbox.draft.unsent": "Non envoyé",
+        "inbox.draft.unsent": "Brouillon",
     ],
     .es: [
         "keys.title": "Teclas del panel",
@@ -597,6 +597,6 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "inbox.draft.discard": "Descartar borrador",
         "inbox.draft.help": "Borrador sin enviar para %@",
         "inbox.draft.accessibility": "Borrador sin enviar en %@: %@",
-        "inbox.draft.unsent": "Sin enviar",
+        "inbox.draft.unsent": "Borrador",
     ],
 ]
