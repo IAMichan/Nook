@@ -33,6 +33,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 | Asking about a selection (`SelectionAsk`: a bar above selected text anywhere in Nook, the answer in a card beside it) | ○ | |
 | `SecretStore` | ✓ | Credential Manager, Secret Service, private app folder on Android |
 | Plans with Run, never run twice, Undo | ✓ | `src-tauri/src/commands/plans.rs` |
+| Main window like the Mac and the Claude app: list grouped Today / Yesterday / Previous 7 days / Older under the pinned, time-of-day greeting with a "waiting for you" line, title you rename in place, sidebar state remembered, sidebar as an overlay in a narrow window | ✓ (tested in unit tests and svelte-check; not run on a real window) | `lib/conversation-list.ts`, `components/NookList.svelte`, `components/Chat.svelte`, `views/Main.svelte` |
 | Onboarding (welcome card, three steps) | ✓ | `src/views/` |
 | `AppleIntelligence`, `EmbeddedModel` (MLX), `MacReport` | — | Apple only; local thinking goes through Ollama or LM Studio |
 
