@@ -22,7 +22,7 @@ struct ComposerSpeedTier: View {
                                 chosen: chosen == tier.id) { onPick(tier.id) }
                 }
             }
-            .help(tr("compose.speed.help"))
+            .composerTip(tr("compose.speed.help"))
         }
     }
 
@@ -47,7 +47,7 @@ struct ComposerUltracodeToggle: View {
                              tint: on ? NookTheme.iris : nil, showsChevron: false)
             }
             .buttonStyle(.plain)
-            .help(on ? tr("compose.ultracode.on") : tr("compose.ultracode.off"))
+            .composerTip(on ? tr("compose.ultracode.on") : tr("compose.ultracode.off"))
             .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
         }
     }

@@ -236,6 +236,8 @@ struct ChatReplyField: View {
         .animation(NookTheme.reveal, value: showsDraft)
         .animation(NookTheme.reveal, value: drafting)
         .animation(NookTheme.reveal, value: outgoing)
+        // What each button under the field does, above it on hover (`composerTip`).
+        .composerTips()
         .onAppear(perform: startPasteMonitor)
         .onDisappear { pasteMonitor.stop() }
     }
@@ -1072,7 +1074,7 @@ private struct ChatSendButton: View {
         .disabled(!ready)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: ready)
-        .help(label)
+        .composerTip(label)
         .accessibilityLabel(label)
     }
 }
