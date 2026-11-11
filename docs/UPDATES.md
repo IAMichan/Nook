@@ -89,7 +89,9 @@ version, `0.3.0-beta.2`) and `NookReleaseRepository` (`owner/name`) into its `In
 `NookUpdatePublicKey` from the repository variable `NOOK_UPDATE_PUBLIC_KEY`. Such a build updates itself from the
 releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`):
 
-- **Checking** asks `api.github.com/repos/<repository>/releases` on the same schedule as above. A beta build is offered
+- **Checking** asks `api.github.com/repos/<repository>/releases` 20 seconds after launch, every 4 minutes (as 
+  desktop app does), after the Mac wakes and when the footer appears. Each request after the first sends the last
+  `ETag` (`If-None-Match`), so an unchanged list is a `304` that does not count against GitHub's rate limit. A beta build is offered
   newer betas and releases, a regular release only regular releases; drafts never. Versions compare like SemVer
   (`0.3.0-beta.2` < `0.3.0-beta.10` < `0.3.0`).
 - **Installing** shows four steps: **download** `Nook-<version>-macOS.zip` and `Nook-<version>-macOS.zip.sig` from
@@ -97,8 +99,18 @@ releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`
   `ditto`, and refuse an app that is not `nl.imdigital.nook` or whose `NookReleaseVersion` is not the promised version
   (so an older signed .zip renamed as a newer release cannot downgrade you), then `codesign --verify` it; **install**
   swaps the app in place exactly as step 5 above; **restart** as step 6.
+- **What's new**: the panel lists the pull requests of every release between this build and the newest one, read from
+  the release notes (`* Title by @author in …/pull/N`, GitHub's generated list), newest first. The same list shows once
+  after the restart.
+- **Progress**: the download step shows how much of the .zip has arrived.
+- **Not applied**: before the restart Nook saves which version it installs. When the next launch is still the old
+  version (and no rollback explains it), the footer shows **Update failed** saying the update did not take.
+- **App Translocation**: opened straight from Downloads or the disk image, macOS runs a quarantined app from a random
+  read-only folder, which an update cannot replace. Nook sees that before downloading and offers **Move to
+  Applications**: it copies itself to `/Applications/Nook.app` (replacing an older copy), drops the quarantine flag and
+  restarts from there. A folder Nook cannot write to fails before the download, not after it.
 - A newer release **without a signature**, or a build **without a public key**, is never installed: Settings shows the
-  release with a **Download** link instead.
+  release with a **Download** link instead. Builds up to 0.1.0-beta.2 carry no key and need this one manual download.
 
 ### Setting up the signing key (once, for maintainers)
 
@@ -110,7 +122,10 @@ releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`
    into every release from then on.
 
 The workflow signs the .zip after notarization (`Sign the update`) and uploads the `.zip.sig`; the script refuses a
-private key that does not belong to `NOOK_UPDATE_PUBLIC_KEY`. With either one missing, the step prints a warning and
-the release goes out without a signature, as before. Builds released before the key existed carry no public key, so
+private key that does not belong to `NOOK_UPDATE_PUBLIC_KEY`. With either one missing, or without a signing identity
+(`MACOS_DEVELOPER_ID_P12` or `MACOS_SIGNING_P12`), the release fails instead of shipping a build that cannot update
+itself or that loses its permissions with every update. `Prepare the app` also checks that `Info.plist` carries the
+public key. The key pair and the self-signed identity were set up on 2026-11-11; the maintainer's Keychain holds a
+backup of each. Builds released before the key existed carry no public key, so
 they need one manual download to start updating themselves. Rotating the key works the same way: builds with the old
 key then also need one manual download.
