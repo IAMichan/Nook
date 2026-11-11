@@ -1,0 +1,135 @@
+name: CI
+
+# The single entry point for Nook's builds and tests. A seconds-long ubuntu job reads the change and starts only the
+# areas it can affect (scripts/ci-changes.sh holds the path lists); each area is a reusable workflow (build.yml,
+# ios.yml, packages.yml, relay.yml, tauri.yml). The `Check` job at the end passes only when every area passed or was
+# skipped because the change could not affect it, so `main` can require that one check however many pull requests
+# come in and however the jobs behind it change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # verified-check looks up the markers of earlier runs
+
+# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
+# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
+# of merges costs at most two builds instead of cancelling every build before it completes.
+# The reusable workflows have no concurrency block of their own: theirs would share this group and deadlock.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changes
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      macos: ${{ steps.detect.outputs.macos }}
+      ios: ${{ steps.detect.outputs.ios }}
+      packages: ${{ steps.detect.outputs.packages }}
+      relay: ${{ steps.detect.outputs.relay }}
+      tauri: ${{ steps.detect.outputs.tauri }}
+    steps:
+      # Depth 2: on a pull request HEAD is GitHub's merge commit, and its first parent is the base branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Detect affected areas
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -uo pipefail
+          # Reads the change from git, not the REST API, so a busy day of pull requests does not eat the token quota.
+          # Detection fails open: when the diff cannot be resolved, every area runs.
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=HEAD^1
+          elif [ "$EVENT_NAME" = push ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != 0000000000000000000000000000000000000000 ] \
+            && git fetch --quiet --no-tags --depth=1 origin "$BEFORE_SHA"; then
+            base=$BEFORE_SHA
+          else
+            base=
+          fi
+          if [ -n "$base" ] && files="$(git diff --name-only "$base" HEAD)"; then
+            printf '%s\n' "$files" | scripts/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "Running every area (started by hand, or the change could not be resolved)."
+            scripts/ci-changes.sh --all | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # Cheap and on every pull request: no build logs, result bundles, screenshots-as-evidence or oversized files.
+  files:
+    name: Committed files
+    if: github.event_name == 'pull_request' && github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: No generated or oversized files
+        run: git diff --name-only --diff-filter=AM HEAD^1 HEAD | scripts/pr-files-check.sh
+
+  macos:
+    name: macOS
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    uses: ./.github/workflows/build.yml
+
+  ios:
+    name: iOS
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/ios.yml
+
+  packages:
+    name: Packages
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
+    uses: ./.github/workflows/packages.yml
+
+  relay:
+    name: Relay
+    needs: changes
+    if: needs.changes.outputs.relay == 'true'
+    uses: ./.github/workflows/relay.yml
+
+  tauri:
+    name: Tauri
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    uses: ./.github/workflows/tauri.yml
+
+  # The ruleset on main requires this job by its name, `Check`. It fails when any other job fails, is cancelled, or is
+  # skipped although `changes` said its area was needed, so adding or splitting jobs needs no ruleset change. Add every
+  # new job to `needs` (and, when it can be skipped, to the jq map below). `always()` rather than `!cancelled()`: a
+  # skipped job reports success to the ruleset, so a cancelled run must still produce a failing check.
+  # Drafts and closed pull requests run nothing; GitHub does not merge a draft, and marking it ready starts a new run.
+  check:
+    name: Check
+    if: always() && github.event.action != 'closed' && !github.event.pull_request.draft
+    needs: [changes, files, macos, ios, packages, relay, tauri]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          # An area may skip only when `changes` said it was not needed; `files` only runs on pull requests.
+          echo "$RESULTS" | jq -e --arg event "$EVENT_NAME" '.changes.outputs as $gates
+            | all(to_entries[];
+                .value.result == "success"
+                or (.value.result == "skipped"
+                  and ((.key == "files" and $event != "pull_request") or $gates[.key] == "false")))' > /dev/null

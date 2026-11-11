@@ -1,28 +1,14 @@
 name: Packages
 
+# Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only
+# packages/core's tests.
 on:
-  push:
-    branches: [main]
-    paths: &paths
-      - 'packages/core/**'
-      - '.github/workflows/packages.yml'
-      - '.github/actions/**'
-  pull_request:
-    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
-    types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: *paths
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
   actions: read # verified-check looks up the markers of earlier runs
-
-# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
-# On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
-# of merges costs at most two builds instead of cancelling every build before it completes.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -41,7 +27,7 @@ jobs:
       verified: ${{ steps.verified.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Keep this list in sync with the paths filter above.
+      # Keep this list in sync with scripts/ci-changes.sh.
       - name: Already verified on these inputs?
         id: verified
         uses: ./.github/actions/verified-check
