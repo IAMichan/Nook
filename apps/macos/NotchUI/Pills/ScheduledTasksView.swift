@@ -342,76 +342,73 @@ private struct ScheduledTaskEditor: View {
         _permission = State(initialValue: existing.map { ScheduledTaskStore.shared.permission(for: $0.id) } ?? .ask)
     }
 
+    /// A form, in the sheet every dialog of Settings uses: Cancel and Save on the right.
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(existing == nil ? tr("sched.new") : tr("sched.edit"))
-                .font(NookTheme.TextStyle.heading)
-                .foregroundStyle(NookTheme.paper)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    field(tr("sched.field.name")) { TextField(tr("sched.field.namePlaceholder"), text: $title).textFieldStyle(.plain).modifier(FieldBox()) }
-                    field(tr("sched.field.prompt")) {
-                        MentionSuggestions(model: mentionModel, text: $prompt, config: mentionConfig)
-                        TextEditor(text: $prompt)
-                            .font(NookTheme.TextStyle.body)
-                            .scrollContentBackground(.hidden)
-                            .mentions(mentionModel, text: $prompt, config: mentionConfig)
-                            .frame(minHeight: 90)
-                            .padding(NookTheme.Spacing.sm)
-                            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
-                    }
-                    field(tr("automation.sched.destination")) { destinationPicker }
-                    if destination == .newSession {
-                    field(tr("sched.field.project")) {
-                        HStack(spacing: NookTheme.Spacing.md) {
-                            Text(path.isEmpty ? tr("sched.field.noProject") : AgentPathFormat.tilde(path))
-                                .font(NookTheme.TextStyle.code)
-                                .foregroundStyle(path.isEmpty ? NookTheme.textTertiary : NookTheme.paper)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .modifier(FieldBox())
-                            SmallGhostButton(title: tr("sched.field.choose"), action: chooseFolder)
-                        }
-                    }
-                    field(tr("sched.field.agent")) {
-                        Picker("", selection: $provider) {
-                            ForEach(providers) { Text($0.displayName).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(maxWidth: 240, alignment: .leading)
-                    }
-                    } else {
-                        sessionPicker
-                    }
-                    field(tr("sched.field.schedule")) { scheduleEditor }
-                    if kind == .webhook {
-                        webhookInfo
-                        webhookRulesEditor
-                        if let existing { deliveriesLog(existing.id) }
-                        Text(tr("sched.permission.webhookNote"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                    } else {
-                        field(tr("sched.permission")) { permissionPicker }
+        SetupSheet(title: existing == nil ? tr("sched.new") : tr("sched.edit"), subtitle: tr("sched.editor.subtitle"), width: 540) {
+            SettingsTile(.automation, size: 48)
+        } content: {
+            VStack(alignment: .leading, spacing: 14) {
+                field(tr("sched.field.name")) { TextField(tr("sched.field.namePlaceholder"), text: $title).textFieldStyle(.plain).modifier(FieldBox()) }
+                field(tr("sched.field.prompt")) {
+                    MentionSuggestions(model: mentionModel, text: $prompt, config: mentionConfig)
+                    TextEditor(text: $prompt)
+                        .font(NookTheme.TextStyle.body)
+                        .scrollContentBackground(.hidden)
+                        .mentions(mentionModel, text: $prompt, config: mentionConfig)
+                        .frame(minHeight: 90)
+                        .padding(NookTheme.Spacing.sm)
+                        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
+                }
+                field(tr("automation.sched.destination")) { destinationPicker }
+                if destination == .newSession {
+                field(tr("sched.field.project")) {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        Text(path.isEmpty ? tr("sched.field.noProject") : AgentPathFormat.tilde(path))
+                            .font(NookTheme.TextStyle.code)
+                            .foregroundStyle(path.isEmpty ? NookTheme.textTertiary : NookTheme.paper)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .modifier(FieldBox())
+                        SmallGhostButton(title: tr("sched.field.choose"), action: chooseFolder)
                     }
                 }
+                field(tr("sched.field.agent")) {
+                    Picker("", selection: $provider) {
+                        ForEach(providers) { Text($0.displayName).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 240, alignment: .leading)
+                }
+                } else {
+                    sessionPicker
+                }
+                field(tr("sched.field.schedule")) { scheduleEditor }
+                if kind == .webhook {
+                    webhookInfo
+                    webhookRulesEditor
+                    if let existing { deliveriesLog(existing.id) }
+                    Text(tr("sched.permission.webhookNote"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                } else {
+                    field(tr("sched.permission")) { permissionPicker }
+                }
             }
-            HStack {
-                Text(problem ?? "")
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                Spacer()
-                NookGhostButton(title: tr("button.cancel"), action: onDone)
-                    .keyboardShortcut(.cancelAction)
-                NookPrimaryButton(title: tr("sched.save"), action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(problem != nil)
-            }
+        } footer: {
+            Text(problem ?? "")
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.coralSoft)
+            Spacer()
+            Button(tr("button.cancel"), action: onDone)
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(tr("sched.save"), action: save)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(problem != nil)
         }
-        .padding(20)
-        .frame(width: 540, height: 640)
-        .background(NookTheme.graphite)
         .onChange(of: provider) {
             if !provider.capabilities.policies.contains(permission) { permission = .ask }
         }

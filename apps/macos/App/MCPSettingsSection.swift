@@ -170,7 +170,8 @@ private struct MCPServerDetailSheet: View {
     var body: some View {
         SetupSheet(
             title: config.name,
-            subtitle: transportDescription
+            subtitle: transportDescription,
+            status: health
         ) {
             ServiceTile(
                 domain: SourceBrand.mcpDomain(name: config.name, transport: config.transport),
@@ -233,6 +234,18 @@ private struct MCPServerDetailSheet: View {
         }
     }
 
+    /// How the server is doing, the same as its row says.
+    private var health: ConnectionHealth {
+        guard config.enabled else { return .off }
+        guard let connector else { return .notLinked }
+        switch connector.status.state {
+        case .ok: return .working
+        case .loading: return .busy
+        case .off: return .off
+        case .error: return .broken
+        }
+    }
+
     private var transportDescription: String {
         switch config.transport {
         case .stdio: return tr("mcp.kind.local")
@@ -281,89 +294,10 @@ struct AddMCPServerWizardSheet: View {
             )
         } content: {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-                // Quick paste box if no preset was selected
-                if preset == nil {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        HStack {
-                            Text(tr("mcp.wizard.smartPasteTitle")).font(NookTheme.TextStyle.strong)
-                            Spacer()
-                            Button {
-                                pasteFromClipboard()
-                            } label: {
-                                Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
-                            }
-                            .controlSize(.small)
-                        }
-
-                        SettingNote(tr("mcp.wizard.smartPasteHelp"))
-                    }
-                    .padding(NookTheme.Spacing.lg)
-                    .roundedBackground(NookTheme.iris.opacity(0.1), radius: NookTheme.Radius.card)
-                }
-
-                // A preset fills in its name and command: only its keys are left to you, the rest is folded away.
-                if preset == nil {
-                    nameAndCommand
-                }
-
-                // Step 3: API keys / environment variables if needed
-                if let preset, !preset.requiredEnv.isEmpty {
-                    SetupStep(number: 1, title: tr("mcp.wizard.stepKeys"), done: allRequiredEnvFilled) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                            ForEach(preset.requiredEnv, id: \.self) { key in
-                                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                                    Text(preset.envLabels[key] ?? key).font(NookTheme.TextStyle.label)
-                                    SecureField(
-                                        key,
-                                        text: binding(for: key),
-                                        prompt: Text(preset.envPlaceholders[key] ?? tr("mcp.wizard.keyPrompt"))
-                                    )
-                                    .textFieldStyle(.roundedBorder)
-                                }
-                            }
-
-                            if let url = preset.helpURL {
-                                Button {
-                                    NSWorkspace.shared.open(url)
-                                    keyCatcher.watch()
-                                } label: {
-                                    Label(tr("mcp.wizard.getKeySite"), systemImage: "arrow.up.forward.app")
-                                }
-                                .buttonStyle(.borderedProminent)
-                                SettingNote(tr("brain.key.autoPaste"))
-                            }
-                        }
-                    }
-                } else if preset == nil {
-                    // Optional environment variables for custom
-                    DisclosureGroup(isExpanded: $showAdvanced) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                            Text(isRemote ? tr("mcp.headers") : tr("mcp.env")).font(NookTheme.TextStyle.body)
-                            TextEditor(text: $rawSecrets)
-                                .font(NookTheme.mono(11))
-                                .frame(height: 70)
-                                .roundedStroke(NookTheme.fieldStroke, radius: NookTheme.Radius.chip)
-                            Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                        }
-                        .padding(.top, NookTheme.Spacing.sm)
-                    } label: {
-                        Text(tr("mcp.wizard.optionalEnv")).font(NookTheme.TextStyle.body)
-                    }
-                }
-
-                if preset != nil {
-                    // Nothing to fill in is still step 1, so every sheet that adds something reads as steps.
-                    if preset?.requiredEnv.isEmpty == true {
-                        SetupStep(number: 1, title: tr("mcp.wizard.stepReady"), done: true) {
-                            SettingNote(tr("mcp.wizard.ready"), tone: .success)
-                        }
-                    }
-                    DisclosureGroup(tr("mcp.nameAndCommand")) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) { nameAndCommand }
-                            .padding(.top, NookTheme.Spacing.sm)
-                    }
+                if let preset {
+                    presetSteps(preset)
+                } else {
+                    customSteps
                 }
 
                 if !problem.isEmpty {
@@ -381,7 +315,7 @@ struct AddMCPServerWizardSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty || !allRequiredEnvFilled)
+                .disabled(trimmedName.isEmpty || trimmedCommand.isEmpty || !allRequiredEnvFilled)
         }
         // The key copied on the service's page, picked up on the way back into the first field still empty.
         .onDisappear { keyCatcher.stop() }
@@ -400,34 +334,105 @@ struct AddMCPServerWizardSheet: View {
         }
     }
 
-    /// The server's name and its command or address: the steps of a server of your own, the folded details of a preset.
+    /// A server of your own: pasting a copied command or config fills in the steps; then its name, its command or
+    /// address (with optional variables or headers), and ready to add.
     @ViewBuilder
-    private var nameAndCommand: some View {
-        SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-            TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
-                .textFieldStyle(.roundedBorder)
+    private var customSteps: some View {
+        StepAction(title: tr("mcp.wizard.smartPasteTitle"), detail: tr("mcp.wizard.smartPasteHelp"),
+                   button: tr("button.pasteClipboard"), prominent: false, action: pasteFromClipboard)
+            .padding(NookTheme.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .roundedBackground(NookTheme.iris.opacity(0.1), radius: NookTheme.Radius.card)
+
+        SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !trimmedName.isEmpty) {
+            nameField
         }
-
-        SetupStep(number: 2, title: isRemote ? tr("mcp.address") : tr("mcp.command"), done: !commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                TextField(
-                    isRemote ? "https://..." : "npx -y ...",
-                    text: $commandOrURL,
-                    prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
-                )
-                .textFieldStyle(.roundedBorder)
-
-                if preset == nil {
-                    Picker("", selection: $isRemote) {
-                        Text(tr("mcp.kind.local")).tag(false)
-                        Text(tr("mcp.kind.remote")).tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+        SetupStep(number: 2, title: isRemote ? tr("mcp.address") : tr("mcp.command"), done: !trimmedCommand.isEmpty) {
+            commandField
+            Picker("", selection: $isRemote) {
+                Text(tr("mcp.kind.local")).tag(false)
+                Text(tr("mcp.kind.remote")).tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            DisclosureGroup(isExpanded: $showAdvanced) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(isRemote ? tr("mcp.headers") : tr("mcp.env")).font(NookTheme.TextStyle.body)
+                    TextEditor(text: $rawSecrets)
+                        .font(NookTheme.mono(11))
+                        .frame(height: 70)
+                        .roundedStroke(NookTheme.fieldStroke, radius: NookTheme.Radius.chip)
+                    Text(isRemote ? tr("mcp.headersHint") : tr("mcp.envHint"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                 }
+                .padding(.top, NookTheme.Spacing.sm)
+            } label: {
+                Text(tr("mcp.wizard.optionalEnv")).font(NookTheme.TextStyle.body)
             }
         }
+        SetupCheckStep(number: 3, title: tr("setup.ready.title"), detail: tr("mcp.wizard.readyDetail"), state: .idle)
     }
+
+    /// A preset: its keys when it needs any, then ready to add. Its name and command are filled in already, so they are
+    /// plain fields folded away last.
+    @ViewBuilder
+    private func presetSteps(_ preset: MCPPreset) -> some View {
+        if preset.requiredEnv.isEmpty {
+            SetupCheckStep(number: 1, title: tr("setup.ready.title"), detail: tr("mcp.wizard.ready"), state: .idle)
+        } else {
+            SetupStep(number: 1, title: tr("mcp.wizard.stepKeys"), done: allRequiredEnvFilled) {
+                ForEach(preset.requiredEnv, id: \.self) { key in
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        Text(preset.envLabels[key] ?? key).font(NookTheme.TextStyle.label)
+                        SecureField(
+                            key,
+                            text: binding(for: key),
+                            prompt: Text(preset.envPlaceholders[key] ?? tr("mcp.wizard.keyPrompt"))
+                        )
+                        .textFieldStyle(.roundedBorder)
+                    }
+                }
+                if let url = preset.helpURL {
+                    StepAction(detail: tr("brain.key.autoPaste"), button: tr("mcp.wizard.getKeySite")) {
+                        NSWorkspace.shared.open(url)
+                        keyCatcher.watch()
+                    }
+                }
+            }
+            SetupCheckStep(number: 2, title: tr("setup.ready.title"), detail: tr("mcp.wizard.readyDetail"), state: .idle)
+        }
+        DisclosureGroup(tr("mcp.nameAndCommand")) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("mcp.name")).font(NookTheme.TextStyle.label)
+                    nameField
+                }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(isRemote ? tr("mcp.address") : tr("mcp.command")).font(NookTheme.TextStyle.label)
+                    commandField
+                }
+            }
+            .padding(.top, NookTheme.Spacing.sm)
+        }
+    }
+
+    private var nameField: some View {
+        TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
+            .textFieldStyle(.roundedBorder)
+    }
+
+    private var commandField: some View {
+        TextField(
+            isRemote ? "https://..." : "npx -y ...",
+            text: $commandOrURL,
+            prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
+        )
+        .textFieldStyle(.roundedBorder)
+    }
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+    private var trimmedCommand: String { commandOrURL.trimmingCharacters(in: .whitespaces) }
 
     private var allRequiredEnvFilled: Bool {
         guard let preset, !preset.requiredEnv.isEmpty else { return true }

@@ -210,20 +210,55 @@ struct ConnectionListHeader: View {
             Spacer()
             if let add {
                 Button(action: add.action) {
-                    Label(add.title, systemImage: symbol)
+                    ConnectionListAddLabel(title: add.title, symbol: symbol)
                 }
                 .buttonStyle(.borderless)
-                .controlSize(.small)
             }
         }
     }
 }
 
-/// An empty list of connections: what would be here, and the way to add the first one.
+/// `ConnectionListHeader` for a list where adding starts with a choice (which agent, which kind of host): the same
+/// "+ Add …" on the right, opening a menu of the choices.
+struct ConnectionListMenuHeader<Items: View>: View {
+    let title: String
+    var info: String? = nil
+    let add: String
+    @ViewBuilder var items: () -> Items
+
+    var body: some View {
+        HStack {
+            SettingsSectionTitle(title, info: info)
+            Spacer()
+            Menu {
+                items()
+            } label: {
+                ConnectionListAddLabel(title: add, symbol: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+    }
+}
+
+/// The "+ Add …" in a list's header, one look whether it is a button or opens a menu.
+struct ConnectionListAddLabel: View {
+    let title: String
+    let symbol: String
+
+    var body: some View {
+        Label(title, systemImage: symbol)
+            .font(NookTheme.TextStyle.control)
+            .foregroundStyle(NookTheme.textStrong)
+    }
+}
+
+/// An empty list: what would be here. The way to add the first one is the "+ Add …" in the list's header, never a
+/// second button in here.
 struct ConnectionListEmpty: View {
     let title: String
     let detail: String
-    var add: (title: String, action: () -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -232,10 +267,6 @@ struct ConnectionListEmpty: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let add {
-                Button(action: add.action) { Label(add.title, systemImage: "plus") }
-                    .controlSize(.small)
-            }
         }
         .padding(.vertical, NookTheme.Spacing.xs)
     }

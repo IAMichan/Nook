@@ -19,7 +19,8 @@ struct TextGenerationSection: View {
     }
 }
 
-/// One kind of text: the generator picker, and for an API its model, key and Test.
+/// One kind of text: the generator picker, and for an API its model, its key (saved on Return), and the same
+/// "Connection" row as the Brain page.
 private struct TextGeneratorRow: View {
     let task: TextTask
     @Binding var generator: TextGenerator
@@ -27,7 +28,7 @@ private struct TextGeneratorRow: View {
     @State private var modelDraft = ""
     @State private var keyDraft = ""
     @State private var testing = false
-    @State private var result: (ok: Bool, text: String)?
+    @State private var result: (ok: Bool, message: String)?
 
     var body: some View {
         Picker(selection: Binding(get: { generator.provider }, set: { provider in
@@ -43,34 +44,20 @@ private struct TextGeneratorRow: View {
             SettingText("textgen.task." + task.rawValue)
         }
         if let provider = generator.provider {
-            HStack(spacing: NookTheme.Spacing.md) {
-                TextField(tr("textgen.model"), text: $modelDraft,
-                          prompt: Text(provider.defaultModel.isEmpty ? tr("textgen.model.loaded") : provider.defaultModel))
-                    .onSubmit { saveModel(provider) }
-                    .onChange(of: modelDraft) { _, _ in result = nil }
-                Button(tr("textgen.test")) { Task { await test(provider) } }
-                    .disabled(testing || (provider.needsKey && !brain.hasKey(for: provider)))
-                    .controlSize(.small)
-                if testing { ProgressView().controlSize(.small) }
-            }
-            .onAppear { modelDraft = currentModel }
-            .onChange(of: generator) { _, _ in modelDraft = currentModel }
+            TextField(tr("textgen.model"), text: $modelDraft,
+                      prompt: Text(provider.defaultModel.isEmpty ? tr("textgen.model.loaded") : provider.defaultModel))
+                .onSubmit { saveModel(provider) }
+                .onChange(of: modelDraft) { _, _ in result = nil }
+                .onAppear { modelDraft = currentModel }
+                .onChange(of: generator) { _, _ in modelDraft = currentModel }
             if provider.needsKey && !brain.hasKey(for: provider) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    SecureField(tr("textgen.key"), text: $keyDraft, prompt: Text(provider.keyPlaceholder))
-                        .onSubmit { saveKey(provider) }
-                    Button(tr("textgen.key.save")) { saveKey(provider) }
-                        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .controlSize(.small)
-                }
-                SettingNote(tr("textgen.key.missing", name(provider)))
+                SecureField(tr("textgen.key"), text: $keyDraft, prompt: Text(provider.keyPlaceholder))
+                    .onSubmit { saveKey(provider) }
+                SettingNote(tr("textgen.key.missing", name(provider)) + " " + tr("textgen.key.onReturn"))
             }
-            if let result {
-                let state: StatusState = result.ok ? .done : .error
-                Label(result.text, systemImage: state.symbol)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(state.color)
-                    .textSelection(.enabled)
+            ConnectionTestRow(testing: testing, result: result,
+                              disabled: provider.needsKey && !brain.hasKey(for: provider)) {
+                Task { await test(provider) }
             }
         }
     }

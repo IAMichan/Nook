@@ -59,31 +59,6 @@ struct AccountsSettingsSection: View {
     }
 }
 
-/// The header of a list of connections whose Add first asks which kind ("+ Add account" › Claude Code, Codex, …):
-/// `ConnectionListHeader` with a menu in place of its button, so adding stays in the same place and looks the same.
-struct ConnectionListMenuHeader<Items: View>: View {
-    let title: String
-    var info: String? = nil
-    let add: String
-    @ViewBuilder var items: () -> Items
-
-    var body: some View {
-        HStack {
-            SettingsSectionTitle(title, info: info)
-            Spacer()
-            Menu {
-                items()
-            } label: {
-                Label(add, systemImage: "plus")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .controlSize(.small)
-        }
-    }
-}
-
 /// One agent account in the connection row: the agent's logo, the account's name, its state with whose account it is,
 /// and in its "…" menu signing in (again), Make default, and Remove for an account Nook added. Opened, it shows what the
 /// manage sheet used to: the name, how it signs in, the key.
@@ -194,7 +169,8 @@ private struct ManageAccountSheet: View {
     var body: some View {
         SetupSheet(
             title: profile.kind.name,
-            subtitle: subtitle
+            subtitle: subtitle,
+            status: health
         ) {
             AgentMark(agent: profile.kind.name, account: AccountTag.badge(current, app: app), size: 44)
         } content: {
@@ -207,18 +183,6 @@ private struct ManageAccountSheet: View {
                     Button(tr("button.save"), action: saveName)
                         .disabled(!nameChanged)
                 }
-            }
-            // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
-            SheetPart(tr("accounts.color")) {
-                AccountColorPicker(accent: Binding(get: { current.accent },
-                                                   set: { app.profiles.setAccent(profile.id, $0) }))
-                SettingNote(tr("accounts.color.help"))
-            }
-            // Its own icon, centered on that badge instead of the first letter of its name.
-            SheetPart(tr("accounts.icon")) {
-                AccountIconPicker(icon: Binding(get: { current.icon }, set: { app.profiles.setIcon(profile.id, $0) }),
-                                  tag: AccountTag.of(current, app: app))
-                SettingNote(tr("accounts.icon.help"))
             }
             if profile.kind != .gemini && profile.kind != .antigravity {
                 // Signing in with the agent's own login is the way; a key is only for whoever needs one, folded away.
@@ -241,6 +205,18 @@ private struct ManageAccountSheet: View {
             if profile.kind == .antigravity {
                 SheetPart(tr("accounts.method")) { antigravitySignInView }
             }
+            // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
+            SheetPart(tr("accounts.color")) {
+                AccountColorPicker(accent: Binding(get: { current.accent },
+                                                   set: { app.profiles.setAccent(profile.id, $0) }))
+                SettingNote(tr("accounts.color.help"))
+            }
+            // Its own icon, centered on that badge instead of the first letter of its name.
+            SheetPart(tr("accounts.icon")) {
+                AccountIconPicker(icon: Binding(get: { current.icon }, set: { app.profiles.setIcon(profile.id, $0) }),
+                                  tag: AccountTag.of(current, app: app))
+                SettingNote(tr("accounts.icon.help"))
+            }
             AccountOptionsSection(profile: current)
             if let error {
                 SettingNote(error, tone: .error)
@@ -254,6 +230,16 @@ private struct ManageAccountSheet: View {
         .onAppear {
             name = profile.label
         }
+    }
+
+    /// How the account is doing, the same as its row says.
+    private var health: ConnectionHealth {
+        if app.agentConnect[profile.id]?.isBusy == true { return .busy }
+        if !current.isEnabled { return .off }
+        if profile.kind == .antigravity && app.antigravityUsage.noLogin { return .needsYou }
+        if account != nil { return .working }
+        if app.history.executables[profile.kind] == nil { return .notLinked }
+        return .needsYou
     }
 
     private var nameChanged: Bool {
@@ -457,7 +443,8 @@ private struct AccountIconPicker: View {
     }
 }
 
-/// Add an account sheet: simple and guided
+/// Adding an account in numbered steps: its name (or a folder found on this Mac that already has a login), how it
+/// signs in, and the last step that says it is ready or checks the key as it is added.
 private struct AddAccountSheet: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -467,11 +454,13 @@ private struct AddAccountSheet: View {
     @State private var key = ""
     @State private var saving = false
     @State private var error: String?
+    /// A folder found on this Mac, picked in step 1: it is added as it is, with the login it already has.
+    @State private var picked: URL?
 
     /// Folders with a login on this Mac not added yet; looked up once as the sheet opens, not on every redraw (it lists
     /// the home folder).
     @State private var found: [(kind: AgentKind, url: URL)] = []
-    private var canAdd: Bool { method == .cli || !key.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var canAdd: Bool { picked != nil || method == .cli || !key.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         SetupSheet(
@@ -484,12 +473,24 @@ private struct AddAccountSheet: View {
                 SetupStep(number: 1, title: tr("agents.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
                     TextField(tr("agents.addNamePrompt"), text: $name, prompt: Text(tr("agents.work")))
                         .textFieldStyle(.roundedBorder)
+                    if !found.isEmpty {
+                        Text(tr("agents.foundOnMac")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+                        ForEach(found, id: \.url) { item in
+                            SettingsPickRow(title: AgentProfile.tildePath(item.url.path),
+                                            detail: AgentProfileStore.label(forFolder: item.url),
+                                            selected: picked == item.url) {
+                                pick(item.url)
+                            }
+                        }
+                    }
                 }
 
                 // Step 2 is signing in with the agent's own login, in the browser, right after adding. A key instead is
                 // folded away for whoever needs one.
-                SetupStep(number: 2, title: tr("accounts.signInStep"), done: method == .apiKey && canAdd) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                SetupStep(number: 2, title: tr("accounts.signInStep"), done: picked != nil || (method == .apiKey && canAdd)) {
+                    if picked != nil {
+                        SettingNote(tr("accounts.found.signedIn"))
+                    } else {
                         if method == .cli {
                             SettingNote(tr("accounts.signInStepDetail", kind.shortName))
                         }
@@ -499,6 +500,7 @@ private struct AddAccountSheet: View {
                                                                 set: { method = $0 ? .apiKey : .cli })) {
                                 SecureField(tr("accounts.keyPlaceholder"), text: $key)
                                     .textFieldStyle(.roundedBorder)
+                                    .onSubmit { if canAdd { add() } }
                                     .padding(.top, NookTheme.Spacing.xs)
                             } label: {
                                 Text(tr("accounts.useKeyInstead"))
@@ -507,29 +509,7 @@ private struct AddAccountSheet: View {
                     }
                 }
 
-                if !found.isEmpty {
-                    Divider()
-                    Text(tr("agents.foundOnMac")).font(NookTheme.TextStyle.strong)
-                    ForEach(found, id: \.url) { item in
-                        HStack {
-                            Text(AgentProfile.tildePath(item.url.path))
-                                .font(NookTheme.TextStyle.code)
-                            Spacer()
-                            Button(tr("agents.add")) {
-                                app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
-                                dismiss()
-                            }
-                        }
-                        .padding(NookTheme.Spacing.md)
-                        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
-                    }
-                }
-
-                if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.coral)
-                }
+                checkStep
             }
             .onAppear { found = app.profiles.discover().filter { $0.kind == kind } }
         } footer: {
@@ -537,22 +517,55 @@ private struct AddAccountSheet: View {
             Button(tr("button.cancel")) { dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .controlSize(.large)
-            if saving {
-                ProgressView().controlSize(.small)
-            } else {
-                Button(method == .cli
-                       ? (app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin"))
-                       : tr("agents.add")) { add() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!canAdd)
-            }
+            Button(addTitle) { add() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!canAdd || saving)
         }
+    }
+
+    /// The last step: a key is checked as the account is added (Add runs it); signing in in the browser or a folder
+    /// found on this Mac has nothing to check here, so it says it is ready.
+    @ViewBuilder
+    private var checkStep: some View {
+        if picked == nil, method == .apiKey {
+            SetupCheckStep(number: 3, detail: tr("accounts.check.keyDetail", kind.shortName), state: keyState)
+        } else {
+            SetupCheckStep(number: 3, title: tr("setup.ready.title"),
+                           detail: picked != nil ? tr("accounts.ready.found") : tr("accounts.ready.signIn", kind.shortName),
+                           state: .idle)
+        }
+    }
+
+    private var keyState: SetupCheckState {
+        if saving { return .checking }
+        if let error { return .failed(error) }
+        return .idle
+    }
+
+    private var addTitle: String {
+        if picked != nil || method == .apiKey { return tr("agents.add") }
+        return app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin")
+    }
+
+    /// Picks a found folder (again: lets go of it); its name fills in an empty name field.
+    private func pick(_ url: URL) {
+        if picked == url {
+            picked = nil
+            return
+        }
+        picked = url
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = AgentProfileStore.label(forFolder: url) }
     }
 
     private func add() {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let picked {
+            app.addAccount(kind, label: clean.isEmpty ? AgentProfileStore.label(forFolder: picked) : clean, home: picked)
+            dismiss()
+            return
+        }
         let label = clean.isEmpty ? tr("agents.work") : clean
         if method == .cli {
             app.addAccount(kind, label: label)
