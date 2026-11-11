@@ -223,6 +223,31 @@ enum NookAppearanceMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// How much room Nook gives its text and rows (Settings › Appearance). Comfortable is the design as drawn; compact fits
+/// more on screen, spacious reads easier. A scale on the type and on a row's own padding, never on a hit target.
+enum NookDensity: String, CaseIterable, Identifiable, Sendable {
+    case compact, comfortable, spacious
+    var id: String { rawValue }
+
+    /// Multiplies every size of the type scale.
+    var textScale: Double {
+        switch self {
+        case .compact: return 0.93
+        case .comfortable: return 1
+        case .spacious: return 1.07
+        }
+    }
+
+    /// Multiplies the padding of rows and cards (`NookTheme.Spacing.scaled`).
+    var spacingScale: Double {
+        switch self {
+        case .compact: return 0.75
+        case .comfortable: return 1
+        case .spacious: return 1.25
+        }
+    }
+}
+
 /// A theme: a name and a palette for dark, for light, or both. Built-in ones have both; an imported VS Code theme has the
 /// one its `type` says.
 struct NookColorTheme: Identifiable, Equatable, Sendable {
@@ -251,7 +276,19 @@ struct NookColorTheme: Identifiable, Equatable, Sendable {
         dark: .generated(dark: true, canvas: 0x000000, text: 0xFFFFFF, accent: 0xFFFFFF, link: 0x9CC2FF).raised(by: 0.12),
         light: .generated(dark: false, canvas: 0xFFFFFF, text: 0x000000, accent: 0x000000, link: 0x1747A6).raised(by: 0.12))
 
-    static let builtIn: [NookColorTheme] = [.nook, .midnight, .paper, .contrast]
+    /// Warm neutrals after the Claude app: an ivory day and a soft charcoal night (never pure white or black), one clay
+    /// accent, and quiet lines. Surfaces and text are stepped from the canvas as every generated theme is, so text stays AA.
+    static let warm = NookColorTheme(
+        id: "warm", name: "Warm",
+        dark: .generated(dark: true, canvas: 0x1F1E1B, text: 0xF1EEE6, accent: 0xE08A66, link: 0x9DBCEB),
+        light: .generated(dark: false, canvas: 0xFAF9F5, text: 0x2B2924, accent: 0xB5542F, link: 0x2F5F9E))
+    /// Neutral grey only, with the accent in the text color: no hue anywhere but state.
+    static let mono = NookColorTheme(
+        id: "mono", name: "Mono",
+        dark: .generated(dark: true, canvas: 0x101010, text: 0xEDEDED, accent: 0xEDEDED),
+        light: .generated(dark: false, canvas: 0xF6F6F6, text: 0x141414, accent: 0x141414))
+
+    static let builtIn: [NookColorTheme] = [.nook, .warm, .mono, .midnight, .paper, .contrast]
 
     func palette(dark: Bool) -> NookPalette? { dark ? self.dark : light }
 }

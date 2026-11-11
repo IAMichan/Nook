@@ -32,6 +32,8 @@ final class SpeechOutput {
         synthesizer.speak(utterance)
     }
 
+    var isSpeaking: Bool { synthesizer.isSpeaking }
+
     func stop() {
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
     }

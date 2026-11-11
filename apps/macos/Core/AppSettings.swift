@@ -329,6 +329,13 @@ final class AppSettings: ObservableObject {
             applyTheme()
         }
     }
+    /// How much room text and rows get: compact, comfortable or spacious (Settings › Appearance).
+    @Published var density: NookDensity {
+        didSet {
+            UserDefaults.standard.set(density.rawValue, forKey: "density")
+            if NookTheme.apply(density: density) { themeRevision = NookTheme.revision }
+        }
+    }
     /// VS Code color themes the user imported, kept as their JSON (`NookCustomTheme`).
     @Published var customThemes: [NookCustomTheme] {
         didSet {
@@ -734,6 +741,9 @@ final class AppSettings: ObservableObject {
         accentHex = storedAccent
         NookTheme.accentHex = storedAccent
         appearanceMode = NookAppearanceMode(rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .dark
+        let storedDensity = NookDensity(rawValue: defaults.string(forKey: "density") ?? "") ?? .comfortable
+        density = storedDensity
+        NookTheme.density = storedDensity
         darkThemeID = defaults.string(forKey: "darkThemeID") ?? NookColorTheme.nook.id
         lightThemeID = defaults.string(forKey: "lightThemeID") ?? NookColorTheme.nook.id
         let storedThemes = (defaults.data(forKey: "customThemes")).flatMap { try? JSONDecoder().decode([NookCustomTheme].self, from: $0) } ?? []
