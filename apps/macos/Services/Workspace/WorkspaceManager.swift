@@ -3139,6 +3139,9 @@ final class WorkspaceManager: ObservableObject {
         }
         scheduleEventSave(id)
         if event.kind == .result { noticeCreatedPullRequest(id) }
+        // A pull request you name in your message ("#12", a link) is one this session works on. "#12" may be an issue,
+        // so it is linked only once the forge says it is a pull request.
+        if event.kind == .user { noticePullRequests(id, PullRequestMentions.inMessage(event.text), mustExist: true) }
     }
 
     /// At the end of a turn: a pull request link the turn brought that the conversation did not have before is the one
