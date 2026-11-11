@@ -182,7 +182,7 @@ The checklist for a new or changed view:
 - A field where you write words (not a name, a path or a search) gets `@` through `.mentions` and `MentionSuggestions`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice in a
-  tab a `PanelNoticeBar` (`floating:` for what waits for you over the panel's bottom edge; toasts sit top right). Change one of these and every tab follows.
+  tab a `PanelNoticeBar` (`floating:` for what waits for you in the top-right corner, on top of the toasts). Change one of these and every tab follows.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: a whole panel or pane waiting for its content shows `PatientSpinner()` (nothing for the first 350 ms, so a quick load never flashes a spinner; show what was read last time while reading again where you can); a button or a row that is busy shows `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry.
 
@@ -197,7 +197,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
   key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
   (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
   `.nookToastHost()` once, at its root. What waits for you on that surface (a permission request, an agent's question)
-  floats over the bottom edge instead, just above the composer, through `.nookToastHost { … }` and
+  shows in the same corner, as narrow as a toast and on top of the stack, through `.nookToastHost { … }` and
   `PanelNoticeBar(floating: true)`.
 - **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
   every toast stays while hovered, and an error with a detail can be copied in one click.
@@ -242,7 +242,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSectionLabel` | `Shared/PanelParts.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
 | `NookDivider` | `Shared/PanelParts.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
 | `NookRowSeparator` | `Shared/PanelParts.swift` | The clearer line between the items of a list (the Chats tab), in `NookTheme.separator`; placed before every item but the first |
-| `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` in a tab, or with `floating` in the toast's bubble over the panel's bottom edge (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
+| `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` in a tab, or with `floating` in the toast's bubble in the top-right corner (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
 | `AdaptiveActionRow` | `Shared/PanelParts.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
 | `ComposerUsageRing` | `ComposerRich.swift` | Among the choices of a session's composer, right after the effort: a small ring filled to the window with the least room left, with its percentage. Its popover is the account's `UsageLimitRows` and "All limits", which opens `UsageModal`. Shown from the first percent, also while the agent works, in the composers of new, running, outside and earlier sessions (`ComposerUsageRing.forAccount`), for every agent `QuotaService` has limits for |
 | `UsageLimitRows`, `UsageTone`, `LimitPaceIcon` | `UsageLimitViews.swift` | One account's limits in the usage modal's layout: a small card per window (name, percentage **used** with the pace icon, a bar with the even-pace line and the reset time inside it), the full reset and the pace in the card's tooltip, amber from 75 % used and coral from 90 %. The composer's popover and Settings › Usage & costs; never draw a limit bar by hand |
