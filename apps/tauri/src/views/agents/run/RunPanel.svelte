@@ -6,6 +6,7 @@
   import { projectName, workspaceApi, type RunEvent } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { oneLine } from "../../../lib/workspace/timeline";
+  import Icon from "../../../components/Icon.svelte";
   import ApprovalCard from "../ApprovalCard.svelte";
   import QuestionCard from "../QuestionCard.svelte";
   import Changes from "./Changes.svelte";
@@ -92,15 +93,16 @@
   <p class="faint">Deze sessie bestaat niet meer.</p>
 {:else}
   <div class="panel">
-    <header>
-      <span class="project faint" title={run.workingDirectory}>{projectName(run.projectPath)}</span>
-      <span class="faint">/</span>
+    <!-- thread header: the project, a slash, the thread's name, and the thread's tools on the right. -->
+    <header class="thread-head">
+      <span class="project" title={run.workingDirectory}>{projectName(run.projectPath)}</span>
+      <span class="slash">/</span>
       {#if renaming}
         <!-- svelte-ignore a11y_autofocus -->
         <input class="title-input" bind:value={titleDraft} placeholder="Naam van de sessie" autofocus
           onkeydown={(e) => { if (e.key === "Enter") rename(); if (e.key === "Escape") renaming = false; }} onblur={rename} />
       {:else}
-        <button class="title" title="Dubbelklik om de naam te wijzigen" ondblclick={() => { titleDraft = run.title; renaming = true; }}>{run.title}</button>
+        <button class="title" title="Dubbelklik om de naam te wijzigen" ondblclick={() => { titleDraft = run.title; renaming = true; }}><span class="name">{run.title}</span><span class="chev"><Icon name="chevron-down" size={14} /></span></button>
       {/if}
       <span class="spacer"></span>
       {#if fraction > 0.6}
@@ -108,7 +110,7 @@
       {/if}
       {#if run.repoRoot}
         <button class="ghost branch" class:on={view === "changes"} title="Wijzigingen bekijken" onclick={() => (view === "changes" ? (view = "chat") : openChanges())}>
-          ⑂ {run.branch ?? "geen branch"}{#if run.changedFiles} · {run.changedFiles}{/if}{#if run.lastChangeAt && (!run.reviewedAt || run.reviewedAt < run.lastChangeAt) && run.changedFiles}<span class="dot unread"></span>{/if}
+          <Icon name="branch" size={14} /><span class="bname">{run.branch ?? "geen branch"}</span>{#if run.changedFiles}<span class="files">{run.changedFiles}</span>{/if}{#if run.lastChangeAt && (!run.reviewedAt || run.reviewedAt < run.lastChangeAt) && run.changedFiles}<span class="dot unread"></span>{/if}
         </button>
       {/if}
     </header>
@@ -119,6 +121,7 @@
       <Timeline {run} {events} asking={!!question} onrevert={askRevert} onretry={() => workspace.act(() => workspaceApi.retry(runId))}
         onimplement={implement} openFile={(p) => openChanges(p)} />
 
+      <div class="thread-column foot">
       {#if approvals.length}
         <ApprovalCard approval={approvals[0]} others={approvals.length - 1} compact />
       {/if}
@@ -148,26 +151,34 @@
       {:else}
         <RunComposer {run} onrename={() => { titleDraft = run.title; renaming = true; }} ondelete={() => (confirmDelete = true)} onchanges={() => openChanges()} />
       {/if}
+      </div>
     {/if}
   </div>
 {/if}
 
 <style>
-  .panel { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
-  header { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 13.5px; }
-  .project { white-space: nowrap; }
-  .title { background: none; border: none; padding: 0; font-weight: 600; color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .thread-head { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 16px; font-size: 14px; flex: none; }
+  .project { white-space: nowrap; color: var(--text2); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+  .slash { color: var(--text3); }
+  .title { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; padding: 0; font-weight: 500; color: var(--paper); min-width: 0; }
+  .title .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title .chev { display: inline-flex; color: var(--text3); opacity: 0; transition: opacity 120ms ease; }
+  .title:hover .chev { opacity: 1; }
   .title:hover { background: none; }
+  .foot { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; flex: none; }
   .title-input { flex: 1; padding: 3px 8px; }
   .spacer { flex: 1; }
   .ctx { font-family: var(--mono); font-size: 11px; color: var(--amber); }
   .ctx.crit { color: var(--coral); }
-  .branch { font-size: 12px; display: inline-flex; gap: 6px; align-items: center; max-width: 45%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
-  .branch.on { background: var(--smoke); color: var(--paper); }
-  .confirm { display: flex; gap: 8px; align-items: center; padding: 12px; border-radius: 12px; }
-  .confirm.amber { background: rgba(255, 184, 77, 0.08); }
-  .confirm.coral { background: rgba(255, 107, 107, 0.08); }
+  .files { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .bname { overflow: hidden; text-overflow: ellipsis; }
+  .branch { font-size: 12px; display: inline-flex; gap: 6px; height: 28px; padding: 0 8px; color: var(--text2); align-items: center; max-width: 45%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
+  .branch.on { background: var(--row-selected); color: var(--paper); }
+  .confirm { display: flex; gap: 8px; align-items: center; padding: 12px; border-radius: var(--radius-composer); border: 1px solid var(--line2); background: var(--surface); }
+  .confirm.amber { border-color: color-mix(in srgb, var(--amber) 35%, var(--line2)); }
+  .confirm.coral { border-color: color-mix(in srgb, var(--coral) 35%, var(--line2)); }
   .ctext { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
   .ctext strong { font-size: 13px; }
-  .err { color: #ff9b9b; }
+  .err { color: var(--coral); }
 </style>

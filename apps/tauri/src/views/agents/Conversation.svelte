@@ -24,7 +24,7 @@
 <div class="conversation">
   {#each messages as m (m.id)}
     {#if m.kind === "thinking"}
-      <details class="thinking"><summary>Denkt na</summary><div class="markdown">{@html renderMarkdown(m.text)}</div></details>
+      <details class="thinking"><summary>Denkstappen</summary><div class="markdown">{@html renderMarkdown(m.text)}</div></details>
     {:else}
       <div class="msg {m.kind}"><div class="markdown">{@html renderMarkdown(m.text)}</div></div>
     {/if}
@@ -34,10 +34,12 @@
 </div>
 
 <style>
-  .conversation { display: flex; flex-direction: column; gap: 8px; }
-  .msg { padding: 8px 12px; border-radius: 12px; max-width: 92%; }
-  .msg.user { align-self: flex-end; background: var(--smoke); }
-  .msg.assistant { align-self: flex-start; background: transparent; padding-left: 0; }
-  .thinking { color: var(--text3); font-size: 12px; }
-  .thinking summary { cursor: pointer; }
+  /* As a session Nook runs (EventRow): your message a round bubble on the right, the answer without one. */
+  .conversation { display: flex; flex-direction: column; gap: 16px; }
+  .msg { font-size: 14px; line-height: 1.6; }
+  .msg.user { align-self: flex-end; max-width: 80%; padding: 8px 12px; border-radius: var(--radius-composer); background: var(--bubble); color: var(--paper); }
+  .msg.assistant { align-self: stretch; padding: 2px 4px; color: var(--text-strong); }
+  .thinking { color: var(--text2); font-size: 14px; padding: 0 4px; }
+  .thinking summary { cursor: pointer; min-height: 24px; line-height: 24px; }
+  .thinking .markdown { color: var(--text3); font-size: 13px; margin-left: 16px; }
 </style>
