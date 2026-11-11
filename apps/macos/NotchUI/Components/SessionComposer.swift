@@ -1221,6 +1221,8 @@ extension View {
                     .allowsHitTesting(false)
                 }
             }
+            // Drawn here, so a host around this one (the new session's box and its tray) does not draw it again.
+            .transformPreference(ComposerTipKey.self) { $0 = nil }
     }
 }
 
