@@ -65,18 +65,17 @@ struct RowChangesCard: View {
 /// The hover card of a session row's pull request badge: per pull request its title, state, branches, size, checks and
 /// who it waits for. A GitHub pull request is read for it (kept for a minute, shared by every row); any other shows what
 /// the branch sync knows. With more than one it says how many, and the ones of branches or worktrees the chat worked on
-/// before sit under their own heading, so the state of a request the chat moved on from stays in view.
+/// before sit under their own heading, so the state of a request the chat moved on from stays in view. A stack longer
+/// than the card scrolls under its count, so every request in it can be read and opened from here.
 struct RowPullRequestCard: View {
     let pullRequests: SessionPullRequests
     /// Opens one of them.
     let onOpen: (URL) -> Void
-    /// More than this and the rest is counted under the list.
-    static let limit = 4
+    /// Taller than this and the list scrolls: about three requests stay in view, the next one peeks in below.
+    static let maxListHeight: CGFloat = 560
+    @State private var listHeight: CGFloat = 0
 
-    private var shownCurrent: [PullRequestLink] { Array(pullRequests.current.prefix(Self.limit)) }
-    private var shownEarlier: [PullRequestLink] { Array(pullRequests.earlier.prefix(max(0, Self.limit - shownCurrent.count))) }
-    private var hidden: Int { pullRequests.all.count - shownCurrent.count - shownEarlier.count }
-    /// Counted over all of them, also the ones past the limit: this is what says how far a stack has landed.
+    /// Counted over all of them: this is what says how far a stack has landed.
     private var merged: Int { pullRequests.all.filter { $0.state == .merged }.count }
 
     var body: some View {
@@ -96,25 +95,39 @@ struct RowPullRequestCard: View {
                         .foregroundStyle(PullRequestIcon.tint(.merged))
                     }
                 }
+                .padding(.horizontal, Self.inset)
             }
-            // Headings only when the chat has requests of an earlier branch: one branch's list needs none.
-            let sections = !pullRequests.earlier.isEmpty
-            if !shownCurrent.isEmpty {
-                section(sections ? tr("agents.row.pr.current") : nil, shownCurrent)
+            let fitted = min(listHeight, Self.maxListHeight)
+            ScrollView {
+                list
+                    .padding(.horizontal, Self.inset)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
             }
-            if !shownEarlier.isEmpty {
-                if !shownCurrent.isEmpty { NookDivider() }
-                section(tr("agents.row.pr.earlier"), shownEarlier)
-            }
-            if hidden > 0 {
-                Text(tr("agents.row.changes.more", hidden))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(listHeight > Self.maxListHeight ? .automatic : .hidden)
+            .frame(height: fitted)
         }
-        .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
+        .padding(.vertical, Self.inset)
         .frame(width: 320, alignment: .leading)
         .background(DropdownStyle.panel)
+    }
+
+    /// The card's padding; the list keeps it inside the scroll view so the scroller sits at the card's edge.
+    private static var inset: CGFloat { NookTheme.Spacing.lg + NookTheme.Spacing.xxs }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            // Headings only when the chat has requests of an earlier branch: one branch's list needs none.
+            let sections = !pullRequests.earlier.isEmpty
+            if !pullRequests.current.isEmpty {
+                section(sections ? tr("agents.row.pr.current") : nil, pullRequests.current)
+            }
+            if !pullRequests.earlier.isEmpty {
+                if !pullRequests.current.isEmpty { NookDivider() }
+                section(tr("agents.row.pr.earlier"), pullRequests.earlier)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func section(_ title: String?, _ links: [PullRequestLink]) -> some View {
