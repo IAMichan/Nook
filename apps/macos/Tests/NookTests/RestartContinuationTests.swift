@@ -23,6 +23,25 @@ final class RestartContinuationTests: XCTestCase {
         XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "it waited for an approval the restart cut off")
     }
 
+    func testASessionYourQuitStoppedGoesOnHoweverLongNookWasClosed() {
+        var run = interrupted()
+        run.updatedAt = now.addingTimeInterval(-2 * 24 * 3600)
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "a crash two days ago is yours to pick up")
+        run.stoppedByQuit = true
+        XCTAssertTrue(RestartContinuation.shouldContinue(run, enabled: true, now: now), "you quit Nook and opened it again")
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: false, now: now), "only with the setting on")
+        run.interruptedWhileWaiting = true
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now), "it still waits on you")
+    }
+
+    func testAWaitCutByAQuitLongAgoContinues() {
+        var run = TestData.run(status: .completed)
+        run.cutBackgroundWork = CutBackgroundWork(labels: ["Audit chats"], at: now.addingTimeInterval(-24 * 3600))
+        XCTAssertFalse(RestartContinuation.shouldContinue(run, enabled: true, now: now))
+        run.stoppedByQuit = true
+        XCTAssertTrue(RestartContinuation.shouldContinue(run, enabled: true, now: now))
+    }
+
     func testChainCountsOnlyWithinTheLoopWindow() {
         var run = interrupted()
         run.continuations = RestartContinuation.limit
@@ -42,7 +61,9 @@ final class RestartContinuationTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         object["lastContinuedAt"] = nil
         object["interruptedWhileWaiting"] = nil
+        object["stoppedByQuit"] = nil
         let decoded = try JSONDecoder().decode(WorkspaceRun.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(decoded.stoppedByQuit)
         XCTAssertNil(decoded.lastContinuedAt)
         XCTAssertNil(decoded.interruptedWhileWaiting)
     }
