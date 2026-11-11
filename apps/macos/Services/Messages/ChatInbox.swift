@@ -405,7 +405,7 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
         if let poll { return poll.line }
         if let call { return call.summary(mine: isMine) }
         let plain = ChatFormat.plain(text)
-        guard let media else { return plain }
+        guard let media else { return plain.isEmpty ? tr("chat.message.empty") : plain }
         return plain.isEmpty ? media.label : "\(media.label): \(plain)"
     }
 }
