@@ -7,7 +7,8 @@ import AppKit
 struct UpdatePanel: View {
     @ObservedObject private var updater = AppUpdater.shared
     let close: () -> Void
-    /// You agreed to set uncommitted changes aside for this install.
+    /// You asked to set uncommitted changes aside for this install and put them back after. Optional: without it the
+    /// update leaves your changes in place and stashes only the files it also changes.
     @State private var stashConsent = false
 
     var body: some View {
@@ -51,8 +52,13 @@ struct UpdatePanel: View {
             switch preflight {
             case .blocked(let blocker):
                 note(UpdateText.blocker(blocker, branch: update.branch), symbol: "exclamationmark.triangle.fill", tint: NookTheme.amber)
-            case .needsStash(let files):
-                note(tr("update.warning.stash", files), symbol: "tray.and.arrow.down", tint: NookTheme.amber)
+            case .hasChanges(let files, let overlapping):
+                if overlapping.isEmpty {
+                    note(tr("update.warning.stash", files), symbol: "tray.and.arrow.down", tint: NookTheme.textSecondary)
+                } else {
+                    note(tr("update.warning.overlap", files, Self.fileList(overlapping)), symbol: "tray.and.arrow.down",
+                         tint: NookTheme.amber)
+                }
                 Toggle(isOn: $stashConsent) {
                     Text(tr("update.stashConsent")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
                 }
@@ -74,16 +80,21 @@ struct UpdatePanel: View {
                 if case .blocked = preflight {
                     SmallGhostButton(title: tr("update.checkAgain")) { updater.check() }
                 } else {
-                    let needsConsent = preflight != .ready && !stashConsent
                     SmallPrimaryButton(title: tr(updater.fromXcode ? "update.install.xcode" : "update.install"),
                                        systemName: "arrow.down.circle") {
-                        updater.install(stash: stashConsent)
+                        updater.install(stash: stashConsent && preflight != .ready)
                     }
-                    .disabled(needsConsent)
                     .keyboardShortcut(.defaultAction)
                 }
             }
         }
+    }
+
+    /// "Localizable.xcstrings", "a.swift, b.swift and 2 more": the files a note names.
+    private static func fileList(_ paths: [String]) -> String {
+        let names = paths.prefix(3).map { ($0.hasSuffix("/") ? $0 : ($0 as NSString).lastPathComponent) }
+        let list = names.joined(separator: ", ")
+        return paths.count > 3 ? list + " " + tr("update.more", paths.count - 3) : list
     }
 
     private func commitRange(from: String, to: String, update: AppUpdater.Available) -> some View {
