@@ -82,6 +82,7 @@ enum SettingsSearch {
         .init("nookAccess.title", .assistant),
         .init("doubletap.settings.title", .assistant),
         .init("doubletap.settings.enable", .assistant),
+        .init("doubletap.settings.suggest", .assistant),
         .init("memory.settings.use", .memory),
         .init("memory.settings.learn", .memory),
         .init("memory.settings.clear", .memory),

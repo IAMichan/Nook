@@ -35,9 +35,15 @@ struct CardView: View {
     var body: some View {
         Group {
             if card.compact {
-                // Only the field, level with Nook: the card asks one thing and waits for the answer.
-                inputField.padding(.top, NookTheme.Spacing.xs)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight($0) }
+                // Only the field, level with Nook: the card asks one thing and waits for the answer. What Nook could do
+                // with what is in front of you follows under it, one click each.
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    inputField
+                    if !card.suggestions.isEmpty { suggestionChips }
+                }
+                .padding(.top, NookTheme.Spacing.xs)
+                .animation(NookTheme.reveal, value: card.suggestions)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight($0) }
             } else {
                 fullCard
             }
@@ -188,6 +194,18 @@ struct CardView: View {
 
     private static func rich(_ text: String) -> AttributedString {
         MarkdownBlock.inline(MarkdownBlock.clean(text))
+    }
+
+    /// A compact card's suggestions, wrapping onto a second row when they do not fit: a click sends one as typed.
+    private var suggestionChips: some View {
+        ChipFlow(spacing: NookTheme.Spacing.sm) {
+            ForEach(card.suggestions, id: \.self) { suggestion in
+                AnswerOfferChip(text: suggestion.text, symbol: suggestion.symbol) { onReply(suggestion.text) }
+            }
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(tr("doubletap.suggest.a11y"))
     }
 
     /// What Nook can do next: one click and it gets to work.
