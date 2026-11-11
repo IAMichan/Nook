@@ -519,6 +519,40 @@ enum SessionBranches {
         return list.isEmpty ? nil : list
     }
 
+    /// The branches HEAD went through after it left `old` and before it reached `current`, oldest first, read from the
+    /// worktree's reflog subjects (`git log -g --format=%gs`, newest first). Nook reads git now and then, so an agent
+    /// that makes several branches in one turn (one pull request each) can be on some of them only between two reads;
+    /// the reflog still names them. Empty when the reflog never shows HEAD on `old` (a rename of it counts as `old`), so
+    /// an unknown history adds nothing. Detached commits and `current` itself are left out.
+    static func passed(reflog: [String], from old: String?, to current: String) -> [String] {
+        guard let old, !old.isEmpty, old != current else { return [] }
+        var names: Set<String> = [old]
+        var started = false
+        var passed: [String] = []
+        for subject in reflog.reversed() {
+            if let (from, to) = move(subject, prefix: "checkout: moving from ", separator: " to ") {
+                if names.contains(from) { started = true; passed = [] }
+                guard started else { continue }
+                if names.contains(to) { passed = [] } else { passed.append(to) }
+            } else if let (from, to) = move(subject, prefix: "Branch: renamed refs/heads/", separator: " to refs/heads/") {
+                if names.contains(from) { names.insert(to) }
+                passed = passed.map { $0 == from ? to : $0 }
+            }
+        }
+        var seen: Set<String> = [current]
+        func isCommit(_ name: String) -> Bool { (7...40).contains(name.count) && name.allSatisfy { $0.isHexDigit && !$0.isUppercase } }
+        return Array(passed.reversed().filter { seen.insert($0).inserted && !isCommit($0) }.reversed())
+    }
+
+    private static func move(_ subject: String, prefix: String, separator: String) -> (String, String)? {
+        guard subject.hasPrefix(prefix) else { return nil }
+        let rest = subject.dropFirst(prefix.count)
+        guard let range = rest.range(of: separator) else { return nil }
+        let from = String(rest[..<range.lowerBound]), to = String(rest[range.upperBound...])
+        guard !from.isEmpty, !to.isEmpty, !to.contains(" ") else { return nil }
+        return (from, to)
+    }
+
     /// A branch the session left is empty when it has no commits beyond the base and was never pushed: nothing was done
     /// on it, so it is not listed as an earlier branch. A branch that is gone (its worktree and branch removed) and was
     /// never pushed has nothing left to show either. Unknown (a failed read of a branch that exists) counts as not empty.

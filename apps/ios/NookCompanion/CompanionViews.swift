@@ -18,21 +18,43 @@ struct RootView: View {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
-                // The Mac's panel: one tab at a time, switched in the header row every tab starts with
-                // (`PanelHeader`), no tab bar along the bottom. Each tab keeps where it was.
-                Group {
-                    switch shownTab {
-                    case .nook:
+                // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
+                // each with what waits there as a badge. Each tab keeps where it was.
+                let available = router.available(client)
+                TabView(selection: $router.tab) {
+                    if available.contains(.nook) {
                         NavigationStack(path: $chatPath) { ChatListView(path: $chatPath) }
-                    case .agents:
-                        NavigationStack(path: $sessionPath) {
-                            SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
-                        }
-                    case .chats:
-                        NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
+                            .tabItem { tabLabel(.nook) }
+                            .tag(CompanionTab.nook)
+                            .badge(router.count(.nook, client))
                     }
+                    NavigationStack(path: $sessionPath) {
+                        SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
+                    }
+                    .tabItem { tabLabel(.agents) }
+                    .tag(CompanionTab.agents)
+                    .badge(router.count(.agents, client))
+                    if available.contains(.chats) {
+                        NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
+                            .tabItem { tabLabel(.chats) }
+                            .tag(CompanionTab.chats)
+                            .badge(router.count(.chats, client))
+                    }
+                    if available.contains(.pulls) {
+                        NavigationStack { PullRequestListView() }
+                            .tabItem { tabLabel(.pulls) }
+                            .tag(CompanionTab.pulls)
+                    }
+                    NavigationStack { SettingsView() }
+                        .tabItem { tabLabel(.settings) }
+                        .tag(CompanionTab.settings)
                 }
                 .environmentObject(router)
+                // A tab the Mac no longer allows falls back to Agents.
+                .onChange(of: available) { _, tabs in
+                    if !tabs.contains(router.tab) { router.tab = .agents }
+                }
+                .onChange(of: router.tab) { _, _ in Haptics.tap() }
             }
         }
         .tint(Theme.paper)
@@ -105,9 +127,13 @@ struct RootView: View {
         } message: { Text(client.notice ?? "") }
     }
 
-    /// The chosen tab, or Agents when the Mac does not let this phone use it (`CompanionScope`).
-    private var shownTab: CompanionTab {
-        router.available(client).contains(router.tab) ? router.tab : .agents
+    /// A tab's icon and name in the bar along the bottom.
+    private func tabLabel(_ tab: CompanionTab) -> some View {
+        Label {
+            Text(tab.title)
+        } icon: {
+            Image(icon: tab.symbol(selected: router.tab == tab))
+        }
     }
 }
 
@@ -153,6 +179,7 @@ struct PairingView: View {
             VStack(spacing: Theme.Spacing.xxl) {
                 VStack(spacing: Theme.Spacing.lg) {
                     NookMark(size: 72)
+                        .background(NookAura(size: 240))
                         .padding(.bottom, Theme.Spacing.md)
                     Text("Nook on your iPhone")
                         .font(Theme.TextStyle.display).foregroundStyle(Theme.paper).multilineTextAlignment(.center)
@@ -167,10 +194,10 @@ struct PairingView: View {
                            symbol: "xmark.shield.fill", color: Theme.coral)
                 }
 
-                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                VStack(alignment: .leading, spacing: 0) {
                     PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
                     PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
-                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.")
+                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.", last: true)
                 }
                 .card()
 
@@ -203,6 +230,17 @@ struct PairingView: View {
             }
             .padding(.horizontal, Theme.Spacing.xxl)
             .padding(.bottom, Theme.Spacing.xxl)
+
+            Label {
+                Text("Everything between your iPhone and your Mac is encrypted end to end.")
+            } icon: {
+                Image(icon: "lock.shield")
+            }
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.xxl)
+                .padding(.bottom, Theme.Spacing.xxl)
         }
         .screen()
         .sheet(isPresented: $scanning) {
@@ -218,6 +256,8 @@ struct PairingView: View {
 private struct PairingStep: View {
     let number: Int
     let text: LocalizedStringKey
+    /// The last step has no line down to a next one.
+    var last = false
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.lg) {
@@ -233,7 +273,20 @@ private struct PairingStep: View {
                 .font(Theme.TextStyle.body)
                 .foregroundStyle(Theme.textStrong)
                 .lineSpacing(2)
+                .padding(.top, Theme.Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.bottom, last ? 0 : Theme.Spacing.xl)
+        // The steps hang on one thin line, from under this number down to the next.
+        .overlay(alignment: .topLeading) {
+            if !last {
+                Rectangle()
+                    .fill(Theme.line2)
+                    .frame(width: 1)
+                    .padding(.top, 28 + Theme.Spacing.xs)
+                    .padding(.bottom, Theme.Spacing.xs)
+                    .padding(.leading, 13.5)
+            }
         }
     }
 }
@@ -281,8 +334,6 @@ struct SessionListView: View {
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
     @State private var composing = false
-    /// The pull request list (`PullRequestListView`) is open.
-    @State private var showsPulls = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
     /// Words to find a session by (its title, folder, branch or agent).
@@ -332,12 +383,7 @@ struct SessionListView: View {
             Group {
                 PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
-                    HStack(spacing: Theme.Spacing.sm) {
-                        if client.can(CompanionFeature.pullRequests) {
-                            NookIconButton(systemName: "arrow.triangle.pull", label: String(localized: "Pull requests")) { showsPulls = true }
-                        }
-                        NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
-                    }
+                    NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }
                 .buttonStyle(.borderless)
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -385,6 +431,7 @@ struct SessionListView: View {
         }
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
+        .animation(Theme.reveal, value: client.sessions)
         .refreshable { await client.refresh() }
         // The words go to the Mac once you pause typing, for the sessions older than the live list.
         .task(id: query) {
@@ -395,7 +442,6 @@ struct SessionListView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
-        .navigationDestination(isPresented: $showsPulls) { PullRequestListView() }
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
@@ -723,9 +769,10 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, the Mac's `AgentListRow` in the same shared layout (`AgentRowLayout`): the folder with the
-/// status (or how long ago) on the right, the session's name, and its branch with the agent's logo at the end. A row
-/// that asks nothing of you recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
+/// A session in a list, laid out as a card row, in Nook's colors: the agent's
+/// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
+/// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
+/// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
 struct AgentRow: View {
     let session: SessionDigest
 
@@ -737,24 +784,49 @@ struct AgentRow: View {
     }
 
     var body: some View {
-        AgentRowLayout(folder: session.folder, hasMeta: branch != nil) {
-            slot
-        } title: {
-            AgentRowTitle(title: session.title, receded: receded)
-        } logo: {
-            AgentMark(agent: session.agent, size: 14, quiet: receded && session.attention != "working")
-        } meta: {
-            if let branch {
-                AgentRowBranch(branch: branch)
-                    .font(Theme.TextStyle.detail)
-                    .foregroundStyle(Theme.textTertiary)
-                Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: Theme.Spacing.md + Theme.Spacing.xxs) {
+            AgentMark(agent: session.agent, size: 20, quiet: receded && session.attention != "working")
+                .frame(width: 22, height: 22)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                    Text(session.title)
+                        .font(Theme.TextStyle.strong)
+                        .foregroundStyle(receded ? Theme.textStrong : Theme.paper)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    slot
+                }
+                meta
             }
         }
         .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
         .padding(.vertical, SharedMetrics.rowVertical)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    /// Where it works: the folder, then its branch in the code font, quiet and on one line; the newest words of an
+    /// answer instead when the session waits on you without a question to show.
+    private var meta: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Label {
+                Text(session.folder).lineLimit(1)
+            } icon: {
+                Image(icon: "folder").font(Theme.font(10, .medium))
+            }
+            .labelStyle(.titleAndIcon)
+            .layoutPriority(1)
+            if let branch {
+                Text(verbatim: "·")
+                AgentRowBranch(branch: branch)
+                    .font(Theme.TextStyle.code)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
     }
 
     /// The status where it says something (working, waiting, failed, ready), otherwise how long ago.
@@ -819,6 +891,11 @@ struct SessionNotice: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [Theme.color(session.attention).opacity(0.10), Theme.color(session.attention).opacity(0)],
+                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.6)),
+            in: Theme.shape(Theme.Radius.panel)
+        )
         .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel)
     }
 
@@ -839,11 +916,13 @@ struct SessionNotice: View {
                 ApproveOffLabel()
             case .approval:
                 if item.canAllow {
-                    NookSplitButton(primary: NookNoticeAction(String(localized: "Allow"), symbol: "checkmark") {
-                        Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                    }, secondary: NookNoticeAction(String(localized: "Deny")) {
+                    // The same two thumb-sized buttons as on the session's own screen (`DecisionButton`).
+                    DecisionButton(title: String(localized: "Deny"), symbol: "xmark", role: .deny) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
-                    })
+                    }
+                    DecisionButton(title: String(localized: "Allow"), symbol: "checkmark", role: .allow) {
+                        Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
+                    }
                 } else {
                     NookGhostButton(title: String(localized: "Deny")) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }

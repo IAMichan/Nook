@@ -433,6 +433,62 @@
         }
       }
     },
+    "%@ · catching up…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · wird abgeglichen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · sincronizando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · synchronisation…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · bijwerken…"
+          }
+        }
+      }
+    },
+    "%@ · live" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · live"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · en directo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · en direct"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · live"
+          }
+        }
+      }
+    },
     "%lld comments" : {
       "localizations" : {
         "nl" : {
@@ -457,6 +513,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld comentarios"
+          }
+        }
+      }
+    },
+    "%lld done · %lld working · %lld failed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld fertig · %2$lld aktiv · %3$lld fehlgeschlagen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld listas · %2$lld en curso · %3$lld fallidas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld terminées · %2$lld en cours · %3$lld en échec"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld klaar · %2$lld bezig · %3$lld mislukt"
           }
         }
       }
@@ -731,6 +815,34 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld sessions today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Sitzungen heute"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sesiones hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sessions aujourd’hui"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sessies vandaag"
           }
         }
       }
@@ -1066,6 +1178,34 @@
         }
       }
     },
+    "About" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca de"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À propos"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Over"
+          }
+        }
+      }
+    },
     "Activity" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1262,6 +1402,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alle"
+          }
+        }
+      }
+    },
+    "All calm. Nothing needs you right now." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles ruhig. Gerade braucht nichts deine Aufmerksamkeit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo en calma. Ahora mismo nada te necesita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout est calme. Rien ne vous attend pour l’instant."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles rustig. Er hoeft nu niets van je."
           }
         }
       }
@@ -1516,6 +1684,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toestemming"
+          }
+        }
+      }
+    },
+    "Approval needed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freigabe nötig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita aprobación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approbation requise"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goedkeuring nodig"
           }
         }
       }
@@ -2593,6 +2789,34 @@
         }
       }
     },
+    "Connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden"
+          }
+        }
+      }
+    },
     "Connected over Tailscale" : {
       "localizations" : {
         "de" : {
@@ -3496,6 +3720,34 @@
         }
       }
     },
+    "Everything between your iPhone and your Mac is encrypted end to end." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles zwischen deinem iPhone und deinem Mac ist Ende-zu-Ende-verschlüsselt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo lo que pasa entre tu iPhone y tu Mac está cifrado de extremo a extremo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout ce qui passe entre votre iPhone et votre Mac est chiffré de bout en bout."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles tussen je iPhone en je Mac is end-to-end versleuteld."
+          }
+        }
+      }
+    },
     "Failed" : {
       "localizations" : {
         "de" : {
@@ -3803,6 +4055,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Para tu revisión"
+          }
+        }
+      }
+    },
+    "From your Mac, also away from home." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von deinem Mac, auch unterwegs."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde tu Mac, también fuera de casa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis votre Mac, même hors de chez vous."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Van je Mac, ook buitenshuis."
           }
         }
       }
@@ -4437,6 +4717,34 @@
         }
       }
     },
+    "Loading…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird geladen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chargement…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laden…"
+          }
+        }
+      }
+    },
     "Local network" : {
       "localizations" : {
         "de" : {
@@ -4461,6 +4769,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lokaal netwerk"
+          }
+        }
+      }
+    },
+    "Looking for %@…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suche %@…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscando %@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche de %@…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoeken naar %@…"
           }
         }
       }
@@ -5431,6 +5767,34 @@
         }
       }
     },
+    "No plan limits reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Limits gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han indicado límites"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune limite signalée"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen limieten gemeld"
+          }
+        }
+      }
+    },
     "No pull requests" : {
       "localizations" : {
         "nl" : {
@@ -5687,6 +6051,34 @@
         }
       }
     },
+    "Nook Companion" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook Companion"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook Companion"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook Companion"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook Companion"
+          }
+        }
+      }
+    },
     "Nook has no brain set up on your Mac yet: choose one in Nook › Settings." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5826,6 +6218,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nook op %@ is te oud voor deze app."
+          }
+        }
+      }
+    },
+    "Nook on your Mac" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur votre Mac"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac"
           }
         }
       }
@@ -6055,6 +6475,62 @@
         }
       }
     },
+    "Not connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet verbonden"
+          }
+        }
+      }
+    },
+    "Not connected · last updated %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden · zuletzt aktualisiert %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión · actualizado a las %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté · mis à jour à %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet verbonden · laatst bijgewerkt %@"
+          }
+        }
+      }
+    },
     "Not now" : {
       "localizations" : {
         "de" : {
@@ -6137,6 +6613,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niet verstuurd"
+          }
+        }
+      }
+    },
+    "Not set up on your Mac yet (Settings › iPhone companion)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf dem Mac noch nicht eingerichtet (Einstellungen › iPhone-Begleiter)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no configurado en tu Mac (Ajustes › Compañero de iPhone)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore configuré sur votre Mac (Réglages › Compagnon iPhone)."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog niet ingesteld op je Mac (Instellingen › iPhone-companion)."
           }
         }
       }
@@ -6253,6 +6757,34 @@
         }
       }
     },
+    "Notifications" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notificaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldingen"
+          }
+        }
+      }
+    },
     "Now" : {
       "localizations" : {
         "de" : {
@@ -6306,6 +6838,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speelt nu"
+          }
+        }
+      }
+    },
+    "Off: your message waits until the turn ends." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus: Deine Nachricht wartet bis zum Ende des Zugs."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado: tu mensaje espera a que termine el turno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé : votre message attend la fin du tour."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uit: je bericht wacht tot de beurt klaar is."
           }
         }
       }
@@ -6503,6 +7063,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En su propia rama"
+          }
+        }
+      }
+    },
+    "On this iPhone" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem iPhone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En este iPhone"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur cet iPhone"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Op deze iPhone"
           }
         }
       }
@@ -6901,6 +7489,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Koppel nog een Mac"
+          }
+        }
+      }
+    },
+    "Pairing" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kopplung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vinculación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jumelage"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppelen"
           }
         }
       }
@@ -8413,6 +9029,34 @@
         }
       }
     },
+    "Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instellingen"
+          }
+        }
+      }
+    },
     "Several questions at once: answer them on your Mac." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8924,6 +9568,34 @@
         }
       }
     },
+    "Steer a working agent right away" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeitenden Agenten sofort lenken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dirigir al instante a un agente que trabaja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orienter tout de suite un agent au travail"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een werkende agent direct bijsturen"
+          }
+        }
+      }
+    },
     "Stop" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9092,6 +9764,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Resumen"
+          }
+        }
+      }
+    },
+    "Switch to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu %@ wechseln"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar a %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer à %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overschakelen naar %@"
           }
         }
       }
@@ -10369,6 +11069,34 @@
         }
       }
     },
+    "Unpair" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trennen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desvincular"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dissocier"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontkoppelen"
+          }
+        }
+      }
+    },
     "Unpair from this Mac" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10398,6 +11126,34 @@
         }
       }
     },
+    "Unpair from this Mac?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von diesem Mac trennen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desvincular de este Mac?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dissocier de ce Mac ?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontkoppelen van deze Mac?"
+          }
+        }
+      }
+    },
     "Unread" : {
       "localizations" : {
         "de" : {
@@ -10422,6 +11178,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ongelezen"
+          }
+        }
+      }
+    },
+    "Unread chats" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungelesene Chats"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chats sin leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discussions non lues"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ongelezen chats"
           }
         }
       }
@@ -10995,6 +11779,34 @@
         }
       }
     },
+    "Waiting for your answer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf deine Antwort"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espera tu respuesta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attend votre réponse"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wacht op je antwoord"
+          }
+        }
+      }
+    },
     "Waiting for your Mac: it goes as soon as your Mac can be reached." : {
       "localizations" : {
         "de" : {
@@ -11019,6 +11831,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wacht op je Mac: het gaat zodra je Mac bereikbaar is."
+          }
+        }
+      }
+    },
+    "Waiting on you" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf dich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te espera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous attend"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wacht op jou"
           }
         }
       }
@@ -11617,6 +12457,34 @@
         }
       }
     },
+    "Working late?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch spät dran?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Trabajando hasta tarde?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encore debout ?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog laat bezig?"
+          }
+        }
+      }
+    },
     "Works" : {
       "localizations" : {
         "de" : {
@@ -11754,6 +12622,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jij"
+          }
+        }
+      }
+    },
+    "You can pair again with the code in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du kannst mit dem Code in Nook auf dem Mac erneut koppeln."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes vincular de nuevo con el código en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pouvez jumeler à nouveau avec le code dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je kunt opnieuw koppelen met de code in Nook op je Mac."
           }
         }
       }

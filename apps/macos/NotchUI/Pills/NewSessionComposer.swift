@@ -195,7 +195,7 @@ struct NewSessionComposer: View {
                     }
                 }
             }
-            .help(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
+            .composerTip(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
             .sheet(item: $newProjectPlan) { plan in
                 PublishRepositorySheet(plan: plan) { _ in newProjectPlan = nil }
                     .environmentObject(workspace)
@@ -357,7 +357,7 @@ struct NewSessionComposer: View {
                 }
             }
         }
-        .help(tr("ws.new.accountPinned"))
+        .composerTip(tr("ws.new.accountPinned"))
     }
 
     private var modeMenu: some View {
@@ -381,7 +381,7 @@ struct NewSessionComposer: View {
             }
         }
         .disabled(config.mode == .plan)
-        .help(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
+        .composerTip(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
     }
 
     /// How hard the agent thinks, only for agents that have it; "Default" leaves it to the agent.
@@ -411,7 +411,7 @@ struct NewSessionComposer: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         }
     }
 
@@ -439,7 +439,7 @@ struct NewSessionComposer: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         }
     }
 
@@ -483,7 +483,7 @@ struct NewSessionComposer: View {
             if let remoteMachine {
                 // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
                 ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
-                    .help(tr("ws.remote.limits"))
+                    .composerTip(tr("ws.remote.limits"))
                 isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
                 if config.isolation == .worktree {
@@ -536,7 +536,7 @@ struct NewSessionComposer: View {
                 remember()
             }
         }
-        .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
+        .composerTip(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
     }
 
     /// One line, only when something needs saying: why you cannot start yet, or what went wrong.

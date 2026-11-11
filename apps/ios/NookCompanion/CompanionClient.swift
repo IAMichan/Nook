@@ -46,6 +46,8 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var timelines: [String: [TimelineEntry]] = [:]
     /// The session on screen whose conversation follows live (`CompanionOp.watch`), kept across reconnects.
     private(set) var watchedSession: String?
+    /// The chat open in the Chats tab, followed live (`watchChat`); watched again after a reconnect.
+    private(set) var watchedChat: String?
     /// The changed files of a session (`CompanionOp.diff`).
     @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
     /// Messages your Mac refused, per session, to edit and send again or to drop, so a
@@ -87,6 +89,9 @@ final class CompanionClient: ObservableObject {
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
+    /// Connected, and still catching up on what changed while the phone was away (after connecting, and after the app
+    /// comes back to the front) "synchronizing" before "live". The header says so while it lasts.
+    @Published private(set) var synchronizing = false
     /// The name of a Mac that removed this iPhone (`CompanionResponse.revoked`), until the user pairs again or lets it go.
     @Published var revokedMac: String?
     /// The conversation a question that waited in the outbox started, by its request id, once the Mac took it.
@@ -414,7 +419,10 @@ final class CompanionClient: ObservableObject {
             replacing = true
             channel.close()
         case .probe:
-            Task { await probe(channel) }
+            Task {
+                await probe(channel)
+                await resynchronize()
+            }
         }
     }
 
@@ -570,7 +578,11 @@ final class CompanionClient: ObservableObject {
             apply(response, to: CompanionRequest(op: .list))
             phase = .connected
             channel.startHeartbeat()
-            Task { await afterConnecting() }
+            synchronizing = true
+            Task {
+                await afterConnecting()
+                synchronizing = false
+            }
             await watch(channel)
             if self.channel === channel { self.channel = nil }
             CompanionDiagnosticsLog.phone.record("closed", ["route": route.logKind, "up": String(Int(Date().timeIntervalSince(since))),
@@ -606,7 +618,9 @@ final class CompanionClient: ObservableObject {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     if Task.isCancelled { return }
-                    await self?.refreshInbox()
+                    // A Mac that sends the inbox by itself (`liveChats`) needs no asking.
+                    let live = await self?.can(CompanionFeature.liveChats) ?? false
+                    if !live { await self?.refreshInbox() }
                     await self?.refreshOthers()
                 }
             }
@@ -636,6 +650,7 @@ final class CompanionClient: ObservableObject {
     private func afterConnecting() async {
         // A new connection has no session open on the Mac yet: the one on screen follows again.
         if let session = watchedSession { await watchSession(session) }
+        if let chat = watchedChat { await watchChat(chat) }
         await LiveActivities.shared.reconcile(sessions)
         takeShares()
         await drainOutbox()
@@ -656,6 +671,20 @@ final class CompanionClient: ObservableObject {
         if update.revoked == true { return revoked() }
         apply(update, to: CompanionRequest(op: .list))
         Task { await LiveActivities.shared.reconcile(sessions) }
+    }
+
+    /// Back in front after a glance elsewhere, on a connection that still answers: what is open is asked again from where
+    /// the phone left it (the session's last entry, the open chat, the lists) from its last
+    /// sequence on every wakeup, so nothing an update lost while the phone slept stays behind.
+    func resynchronize() async {
+        guard phase == .connected, channel != nil, !synchronizing else { return }
+        synchronizing = true
+        defer { synchronizing = false }
+        await perform(CompanionRequest.versioned(.list), quiet: true)
+        if let session = watchedSession { await watchSession(session) }
+        if let chat = watchedChat { await watchChat(chat) }
+        await refreshInbox()
+        if can(CompanionFeature.chat), allows(.nookChat) { await loadChats() }
     }
 
     /// A quick look whether the channel still answers; if not, it is replaced at once.
@@ -1037,6 +1066,26 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .inboxChat, item: chatID), quiet: true)
     }
 
+    /// Opens a chat live (`CompanionOp.watchChat`): the Mac answers with its messages, then sends what changes by itself.
+    /// False when this Mac cannot, and the screen asks every few seconds instead.
+    @discardableResult
+    func watchChat(_ chatID: String) async -> Bool {
+        watchedChat = chatID
+        guard await supports(CompanionFeature.liveChats), phase == .connected else { return false }
+        return await perform(CompanionRequest(op: .watchChat, item: chatID), quiet: true)?.ok == true
+    }
+
+    /// The chat left the screen: the Mac stops sending its messages (unless another one opened meanwhile).
+    func unwatchChat(_ chatID: String) async {
+        guard watchedChat == chatID else { return }
+        watchedChat = nil
+        guard can(CompanionFeature.liveChats), phase == .connected else { return }
+        await perform(CompanionRequest(op: .watchChat), quiet: true)
+    }
+
+    /// Whether the Chats tab and Nook's conversations follow live right now, so their screens need not ask.
+    var chatsAreLive: Bool { can(CompanionFeature.liveChats) && phase == .connected && channel != nil }
+
     /// Your own words to a chat (a WhatsApp chat on the Mac), as an answer to `replyTo` when one is quoted. Through the
     /// outbox: it waits while the Mac cannot be reached, shown in the chat as waiting.
     func sendInbox(_ text: String, to chatID: String, replyTo: String? = nil) async -> Delivery {
@@ -1227,14 +1276,16 @@ final class CompanionClient: ObservableObject {
         }
         if let chats = response.inbox {
             if chats != inbox { inbox = chats }
+            // The chats' own pictures: the ones the phone does not have yet, or that changed (`CompanionFeature.avatars`).
+            if can(CompanionFeature.avatars) { ChatPictures.shared.update(chats, client: self) }
             if response.message != inboxStatus { inboxStatus = response.message }
         }
-        if let lines = response.inboxLines, let chat = req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
+        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
         takePulls(response, for: req)
         if let accounts = response.usage?.accounts ?? response.home?.accounts { keepUsage(accounts) }
         if response.sessions != nil || response.launch != nil || response.features != nil { writeShareTargets() }
         // A Mac that says nothing of typing leaves it empty, never standing from an earlier answer.
-        if response.inboxLines != nil, let chat = req.item {
+        if response.inboxLines != nil, let chat = response.inboxChat ?? req.item {
             let typing = response.inboxTyping ?? []
             if inboxTyping[chat] ?? [] != typing { inboxTyping[chat] = typing }
         }
