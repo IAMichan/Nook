@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Combine
+import NaturalLanguage
 
 /// Double Tap: tap the chosen key twice (right ⌘ by default) and a small field in the notch asks what Nook should do
 /// (`onAsk`). Typing "fill in the form" there (`DoubleTapLogic.asksToFill`) fills the empty fields of the form or reply
@@ -64,6 +65,22 @@ final class DoubleTap: ObservableObject {
     private var askedIn: (app: NSRunningApplication, date: Date)?
     /// Writes a line to the audit log: what was asked, what happened.
     var record: ((_ args: String, _ result: String) -> Void)?
+    /// What is in front as the field opens (a selection, a reply box, a form, dates), read just after it: the field
+    /// offers what Nook could do with it (`DoubleTapLogic.suggestions`). Set by `AppModel`.
+    var onScene: ((DoubleTapScene) -> Void)?
+    /// The last requests typed in the field, newest first: they come back as chips.
+    @Published private(set) var recents: [String] {
+        didSet { defaults.set(recents, forKey: "doubleTapRecents") }
+    }
+    private var sceneTask: Task<Void, Never>?
+    /// The field offers what Nook could do with what is in front, and what you asked lately (Settings › Assistant).
+    /// Off forgets the requests it kept.
+    @Published var suggests: Bool {
+        didSet {
+            defaults.set(suggests, forKey: "doubleTapSuggests")
+            if !suggests { recents = [] }
+        }
+    }
     /// One tap gives Nook a task (Settings › Shortcuts).
     @Published var taskOnTap: Bool {
         didSet { defaults.set(taskOnTap, forKey: "takeoverOnTap") }
@@ -88,6 +105,14 @@ final class DoubleTap: ObservableObject {
         enabled = defaults.object(forKey: "doubleTapEnabled") as? Bool ?? true
         key = FlowKey(rawValue: defaults.string(forKey: "doubleTapKey") ?? "") ?? .rightCommand
         taskOnTap = defaults.object(forKey: "takeoverOnTap") as? Bool ?? true
+        recents = defaults.stringArray(forKey: "doubleTapRecents") ?? []
+        suggests = defaults.object(forKey: "doubleTapSuggests") as? Bool ?? true
+    }
+
+    /// A request typed in the field (or picked from its chips): offered again next time.
+    func remember(_ request: String) {
+        guard suggests else { return }
+        recents = DoubleTapLogic.remembering(request, in: recents)
     }
 
     /// Flow owns a key it dictates with: holding it and tapping it both mean something there.
@@ -168,6 +193,35 @@ final class DoubleTap: ObservableObject {
         let own = ProcessInfo.processInfo.processIdentifier
         guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != own else { return }
         askedIn = (app, Date())
+        readScene(of: app)
+    }
+
+    /// Reads what is in front of the user in `app` (its focused text, its selection, the empty fields of its window, the
+    /// text Nook may see there) for the field's suggestions. Apps Nook never types in (password managers, terminals)
+    /// are not read: they get no suggestions of their own.
+    private func readScene(of app: NSRunningApplication) {
+        sceneTask?.cancel()
+        let appName = app.localizedName ?? ""
+        guard suggests, onScene != nil, AXIsProcessTrusted(), !UIControl.isBlocked(app: appName, bundleID: app.bundleIdentifier) else { return }
+        let pid = app.processIdentifier
+        let bundle = app.bundleIdentifier ?? ""
+        let windowText = screenText(bundle) ?? ""
+        sceneTask = Task { @MainActor [weak self] in
+            var scene = await Task.detached(priority: .userInitiated) { () -> DoubleTapScene in
+                AutocompleteField.wake(pid: pid, bundleID: bundle)
+                var scene = DoubleTapScene.readFocus(pid: pid)
+                // A selection or a reply box says enough; a form is only walked when it can matter.
+                if scene.selection.isEmpty, let form = DoubleTapForm.read(pid: pid), !form.focusIsSecure {
+                    scene.emptyFields = DoubleTapLogic.candidates(form.fields.map(\.field)).filter(\.isEmpty).count
+                }
+                return scene
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            scene.app = appName
+            scene.bundleID = bundle
+            scene.windowText = windowText
+            self.onScene?(scene)
+        }
     }
 
     /// The app that was in front when the notch last asked what Nook should do, once: a later request is about whatever
@@ -724,5 +778,72 @@ struct DoubleTapForm {
         // A child does not take the root's timeout: one hung element would otherwise wait the global default.
         for child in children { AXUIElementSetMessagingTimeout(child, 1.0) }
         return children
+    }
+}
+
+// MARK: - What is in front, for the suggestions
+
+extension DoubleTapLogic {
+    /// The dominant language of a selection ("nl", "en"), when there is enough text to tell.
+    static func language(of text: String) -> String? {
+        let words = text.split { $0.isWhitespace || $0.isNewline }
+        guard words.count >= 3 else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(String(text.prefix(2_000)))
+        guard let language = recognizer.dominantLanguage,
+              (recognizer.languageHypotheses(withMaximum: 1)[language] ?? 0) >= 0.5 else { return nil }
+        return language.rawValue
+    }
+}
+
+extension DoubleTapScene {
+    /// The focused text of app `pid`, read through the accessibility layer of that app (not the system-wide focus, which
+    /// moves to Nook's field as soon as it opens). A password field counts as no text at all: it is never read.
+    /// Not on the main actor: it asks another app, which may take a moment.
+    static func readFocus(pid: pid_t) -> DoubleTapScene {
+        var scene = DoubleTapScene()
+        guard AXIsProcessTrusted() else { return scene }
+        let root = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(root, 0.5)
+        guard let focused = element(root, kAXFocusedUIElementAttribute) else { return scene }
+        let role = string(focused, kAXRoleAttribute) ?? ""
+        let subrole = string(focused, kAXSubroleAttribute) ?? ""
+        guard role != "AXSecureTextField", subrole != kAXSecureTextFieldSubrole else { return scene }
+        var settable: DarwinBoolean = false
+        AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable)
+        let editableAncestor = element(focused, "AXEditableAncestor") != nil
+        switch role {
+        case "AXTextArea":
+            scene.focus = .text
+        case "AXWebArea" where editableAncestor:
+            scene.focus = .text
+        case "AXTextField", "AXComboBox", "AXSearchField":
+            scene.focus = .field
+        default:
+            // Rich web editors (a mail body, a chat box in a browser): an editable group.
+            scene.focus = editableAncestor || settable.boolValue ? .text : .none
+        }
+        guard scene.focus != .none else { return scene }
+        let value = string(focused, kAXValueAttribute) ?? ""
+        let count = (copy(focused, kAXNumberOfCharactersAttribute) as? Int) ?? value.count
+        scene.focusEmpty = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && count <= 1
+        scene.selection = String((string(focused, kAXSelectedTextAttribute) ?? "").prefix(4_000))
+        scene.placeholder = string(focused, kAXPlaceholderValueAttribute) ?? ""
+        return scene
+    }
+
+    private static func copy(_ node: AXUIElement, _ name: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(node, name as CFString, &value) == .success else { return nil }
+        return value
+    }
+
+    private static func element(_ node: AXUIElement, _ name: String) -> AXUIElement? {
+        guard let value = copy(node, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private static func string(_ node: AXUIElement, _ name: String) -> String? {
+        copy(node, name) as? String
     }
 }

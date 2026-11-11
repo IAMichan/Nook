@@ -177,10 +177,10 @@ enum DoubleTapLogic {
         "schrijf", "typ", "tik", "formuleer", "herschrijf", "herformuleer", "vertaal", "beantwoord", "antwoord", "verbeter",
         "corrigeer", "verkort", "maak",
         "schreib", "schreibe", "tippe", "tipp", "verfasse", "formuliere", "übersetze", "antworte", "beantworte",
-        "korrigiere", "verbessere",
+        "korrigiere", "verbessere", "kürze", "kuerze",
         "écris", "ecris", "écrivez", "tape", "tapez", "rédige", "redige", "reformule", "traduis", "réponds", "reponds",
-        "corrige", "améliore",
-        "escribe", "redacta", "teclea", "reformula", "traduce", "responde", "contesta", "mejora"
+        "corrige", "améliore", "raccourcis",
+        "escribe", "redacta", "teclea", "reformula", "traduce", "responde", "contesta", "mejora", "acorta"
     ]
     /// The same verbs as an infinitive, which Dutch and German put at the end ("kun je een brief schrijven"): anywhere.
     static let writeInfinitives: Set<String> = [

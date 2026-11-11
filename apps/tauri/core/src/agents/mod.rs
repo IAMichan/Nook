@@ -277,7 +277,33 @@ pub fn is_executable(path: &Path) -> bool {
 
 /// Zoekt een programma in `PATH` en op de bekende plekken van de agent.
 pub fn find_executable(kind: AgentKind) -> Option<PathBuf> {
-    which(kind.command()).or_else(|| kind.executable_candidates().into_iter().find(|p| is_executable(p)))
+    let found = which(kind.command()).or_else(|| kind.executable_candidates().into_iter().find(|p| is_executable(p)))?;
+    Some(unwrap_cmd_shim(&found).unwrap_or(found))
+}
+
+/// On Windows an npm install leaves `claude.cmd`, a batch shim. Rust refuses to pass arguments containing quotes or
+/// newlines to a batch file (CVE-2024-24576), so the agent would never start. When the shim only forwards to a native
+/// `.exe` (as Claude Code's does), return that `.exe` instead.
+pub fn unwrap_cmd_shim(path: &Path) -> Option<PathBuf> {
+    let ext = path.extension()?.to_string_lossy().to_lowercase();
+    if !cfg!(windows) || (ext != "cmd" && ext != "bat") {
+        return None;
+    }
+    let text = std::fs::read_to_string(path).ok()?;
+    let dir = path.parent()?;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('"') {
+            let target = line[1..].split('"').next()?;
+            let relative = target.replace("%dp0%", "").replace("%~dp0", "");
+            let candidate = dir.join(relative.trim_start_matches(['\\', '/']));
+            let is_exe = candidate.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"));
+            if is_exe && candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// Zoekt `command` in `PATH` (met `PATHEXT` op Windows).
@@ -301,5 +327,22 @@ pub fn tilde(path: &str) -> String {
         format!("~{}", &path[home.len()..])
     } else {
         path.into()
+    }
+}
+
+#[cfg(all(test, windows))]
+mod shim_tests {
+    use super::*;
+
+    #[test]
+    fn npm_cmd_shim_resolves_to_native_exe() {
+        let dir = std::env::temp_dir().join(format!("nook-shim-{}", std::process::id()));
+        let exe_dir = dir.join("node_modules").join("pkg").join("bin");
+        std::fs::create_dir_all(&exe_dir).unwrap();
+        std::fs::write(exe_dir.join("tool.exe"), b"").unwrap();
+        let shim = dir.join("tool.cmd");
+        std::fs::write(&shim, "@ECHO off\r\nSETLOCAL\r\n\"%dp0%\\node_modules\\pkg\\bin\\tool.exe\"   %*\r\n").unwrap();
+        assert_eq!(unwrap_cmd_shim(&shim), Some(exe_dir.join("tool.exe")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

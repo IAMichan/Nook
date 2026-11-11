@@ -11,6 +11,20 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Double Tap suggests what Nook can do with what is in front of you: under its field, one-click chips such as
+  **Improve this**, **Translate this into English** and **Explain the selected text** for a selection, **Write a
+  reply** for an empty message box, **Fill in the form** for a form with empty fields, and **Put this in my calendar**
+  or **Summarize this window** for the window behind it. What you asked lately comes back as a chip too. Settings ›
+  Assistant › Double Tap can turn them off, which also forgets those requests.
+
+- Taking over a task with mouse and keyboard got smarter. Every step now returns a fresh read of the window, so Nook
+  needs fewer rounds and notices when a step changed nothing. Reading again really reads again, so a loading page
+  is seen once it has loaded. The same steps asked for a third time are refused, so Nook tries another way. Nook can
+  use the menu bar, scrolls an off-screen button into view before clicking it, and knows the browser shortcuts. Large
+  windows are shrunk before Nook looks at them so its clicks land where it aimed. A task started from Nook's own panel
+  sees the window behind it. Typing a line break into a field, or pressing Space on a focused "Place order" button,
+  now waits for your yes like the click would.
+
 - Settings › Maintenance can copy a redacted diagnostics report: versions and set-up facts with secrets, mail
   addresses, phone numbers, IBANs, link queries and your name in file paths taken out. Nothing is sent anywhere.
   Nook also has a shared last-synced and offline line, and plural-aware texts, for every surface.
