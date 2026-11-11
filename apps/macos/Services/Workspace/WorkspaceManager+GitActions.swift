@@ -89,7 +89,8 @@ extension WorkspaceManager {
 
     /// The session works on another branch now (a new one for a new pull request, or one the agent switched to): it is
     /// the session's branch from here on, and the one it left stays listed above the composer with its pull request.
-    func followBranch(_ id: UUID, to branch: String) {
+    /// `passing`: the branches it went through in between (`SessionBranches.passed`), oldest first, listed as well.
+    func followBranch(_ id: UUID, to branch: String, passing: [String] = []) {
         guard !branch.isEmpty, let run = run(id), run.branch != branch else { return }
         let left = run.branch
         let sync = PullRequestSync.shared
@@ -98,12 +99,19 @@ extension WorkspaceManager {
                 || ((sync.links[id] ?? []) + (sync.earlier[id] ?? [])).contains { $0.headBranch == old }
         } ?? true
         update(id) {
-            $0.earlierBranches = SessionBranches.leaving($0.branch, for: branch, earlier: $0.earlierBranches, base: $0.baseBranch)
+            var earlier = SessionBranches.leaving($0.branch, for: passing.first ?? branch, earlier: $0.earlierBranches, base: $0.baseBranch)
+            for (step, next) in zip(passing, passing.dropFirst() + [branch]) {
+                earlier = SessionBranches.leaving(step, for: next, earlier: earlier, base: $0.baseBranch)
+            }
+            $0.earlierBranches = earlier
             $0.branch = branch
         }
         openPullRequests[id] = nil
         sync.forget(id)
         if let left, !hadPullRequest { dropIfEmpty(id, branch: left, now: branch) }
+        // A branch passed through without work of its own (only checked out on the way) leaves the list again; one with
+        // commits or pushed stays, and the sync finds its pull request. Never deleted: Nook did not make it.
+        for step in passing { Task { await dropEarlierBranchIfEmpty(id, branch: step) } }
     }
 
     /// The branch the session left never got work of its own: a question answered without changes, after which the
