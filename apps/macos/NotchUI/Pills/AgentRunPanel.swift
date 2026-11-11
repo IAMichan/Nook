@@ -578,7 +578,7 @@ struct AgentRunPanel: View {
             case .plan: workspace.configure(runID, mode: .plan)
             case .fork:
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
-            // As t3code does: the next message starts the new conversation, also while a turn runs; the strip above the
+            // The next message starts the new conversation, also while a turn runs; the strip above the
             // box takes it back.
             case .clear: workspace.armFreshConversation(runID)
             case .insert, .compact, .new: break
@@ -1589,7 +1589,7 @@ struct AgentRunPanel: View {
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
             // ⌥⌘Return: this message goes (as Return sends it) and the box of a new session opens for the next task, while
-            // this one works on in the background (t3code's "Send and start new thread").
+            // this one works on in the background.
             .keyCommands(["queue.steerFirst": { steerFirstQueued() },
                           "composer.startInBackground": {
                               guard editingQueued == nil, composerModel.hasContent(draft.trimmingCharacters(in: .whitespacesAndNewlines))

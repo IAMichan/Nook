@@ -34,7 +34,7 @@
 </div>
 
 <style>
-  /* As a session Nook runs (EventRow), after t3code: your message a round bubble on the right, the answer without one. */
+  /* As a session Nook runs (EventRow): your message a round bubble on the right, the answer without one. */
   .conversation { display: flex; flex-direction: column; gap: 16px; }
   .msg { font-size: 14px; line-height: 1.6; }
   .msg.user { align-self: flex-end; max-width: 80%; padding: 8px 12px; border-radius: var(--radius-composer); background: var(--bubble); color: var(--paper); }

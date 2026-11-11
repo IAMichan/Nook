@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The measures of the Settings window, after t3code's: a 240 pt sidebar, a 48 pt bar over the page, and a page that
+/// The measures of the Settings window: a 240 pt sidebar, a 48 pt bar over the page, and a page that
 /// keeps to a readable width however wide the window is.
 enum SettingsLayout {
     static let sidebarWidth: CGFloat = 240
@@ -11,7 +11,7 @@ enum SettingsLayout {
     static let trafficLightInset: CGFloat = 40
 }
 
-/// The sidebar of Settings, as t3code's: a search row on top (⌘F or / puts the keyboard in it), then the pages in their
+/// The sidebar of Settings: a search row on top (⌘F or / puts the keyboard in it), then the pages in their
 /// groups, each a line icon and a name. While you search, the pages give way to what matches, with the page each lives
 /// on; ↑ and ↓ move through them and Return opens one. A view of its own, so a keystroke in the search redraws only the
 /// sidebar, not every page and count of Settings.
@@ -61,7 +61,7 @@ struct SettingsSidebar: View {
         NookSearchField(prompt: tr("settings.search.prompt"), text: $query, focus: $searchFocused,
                         onSubmit: { open(hits) }, onEscape: { searchFocused = false })
             .overlay(alignment: .trailing) {
-                // The key that finds a setting, as t3code shows it, until you type.
+                // The key that finds a setting, shown until you type.
                 if query.isEmpty {
                     NookKeyHint(text: "/").padding(.trailing, NookTheme.Spacing.sm)
                 }
@@ -79,7 +79,7 @@ struct SettingsSidebar: View {
             }
     }
 
-    /// ⌘F anywhere in Settings, and / where no text is being edited, put the keyboard in the search, as in t3code.
+    /// ⌘F anywhere in Settings, and / where no text is being edited, put the keyboard in the search.
     private func watchKeys() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -199,7 +199,7 @@ struct SettingsSidebarRow: View {
     }
 }
 
-/// The bar over a page, as t3code's: where you are (Settings › group › page), the ⓘ that explains the page, and on the
+/// The bar over a page: where you are (Settings › group › page), the ⓘ that explains the page, and on the
 /// right Restore defaults. Adding sits in the header of the list it adds to ("+ Add machine"), not here.
 struct SettingsPageBar: View {
     let section: SettingsSection
@@ -222,7 +222,7 @@ struct SettingsPageBar: View {
             if let info = section.info { SettingsInfoButton(text: info) }
             Spacer(minLength: NookTheme.Spacing.lg)
             if let restore = SettingsRestore(section) {
-                // As t3code's General: put this page's own settings back to how Nook ships, after asking.
+                // Put this page's own settings back to how Nook ships, after asking.
                 ConfirmedButton(question: tr("settings.restore.question", section.title), confirmTitle: tr("settings.general.restore"),
                                 action: {
                                     restore.run()

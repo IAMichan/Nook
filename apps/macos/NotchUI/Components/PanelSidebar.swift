@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The main window's sidebar, as in t3code: one column along the window's left edge, from the top of the window to the
+// The main window's sidebar: one column along the window's left edge, from the top of the window to the
 // bottom. Its head is the title bar's row: the traffic lights, and search, talk and split view. Nook himself stays in the notch.
 // Then the tabs (Nook, Agents, Chats, Music) on one bar of marks, the name only on the tab you are on, then the list of
 // the tab you are on (its sessions, its Nooks, its chats), and the footer at the bottom.

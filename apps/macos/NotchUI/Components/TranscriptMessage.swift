@@ -36,7 +36,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
         let long = TranscriptStyle.isLong(parts.text)
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
             if steered || promoted {
-                // "↪ Steer", as t3code marks a message that went into the turn while it ran.
+                // "↪ Steer" marks a message that went into the turn while it ran.
                 // Not read yet: "Steer · waiting to be read" until the agent takes it in between steps.
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(icon: "arrow.uturn.right")

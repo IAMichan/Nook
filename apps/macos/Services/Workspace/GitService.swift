@@ -518,8 +518,8 @@ struct GitService: Sendable {
     /// The files that work after snapshot `from` touched, up to snapshot `to` (relative to `directory`), when HEAD moved
     /// between them: what was uncommitted at either snapshot, what commits made since `since` changed, and what the
     /// commits that left HEAD changed. Files a pull, merge or rebase brought in come from older commits, so they are not
-    /// here; for a merge only the paths where its result differs from Git's own merge count (its conflict fixes), as in
-    /// t3code. Nil when HEAD did not move (every change is the turn's own) or Git cannot tell (it predates
+    /// here; for a merge only the paths where its result differs from Git's own merge count (its conflict fixes).
+    /// Nil when HEAD did not move (every change is the turn's own) or Git cannot tell (it predates
     /// `--diff-merges=remerge`): then nothing is left out.
     func authoredPaths(_ directory: String, from: String, to: String, since: Date) -> Set<String>? {
         guard let start = snapshotHead(directory, from), let end = snapshotHead(directory, to), start != end else { return nil }
@@ -599,7 +599,7 @@ struct GitService: Sendable {
     /// clean") on each status, diff and add. Nook's own git calls never rewrite the index (`GIT_OPTIONAL_LOCKS=0`), so
     /// without this every status of the worktree reads all its files. Called before the worktree is handed out, inside
     /// the caller's `FolderLease`: the refresh holds `index.lock`, so in the background it would race the setup script's
-    /// and the agent's own git commands. As in t3code. Failures are logged, never thrown.
+    /// and the agent's own git commands. Failures are logged, never thrown.
     func refreshNewWorktreeIndex(_ path: String) {
         // Older Git (such as 2.30) skips the write when racy entries merely check out clean, hence `--force-write-index`.
         // A refresh re-reads every checked-out file, so it may take a while in a large repository.

@@ -139,7 +139,7 @@ struct AccountTag: Hashable {
         }
     }
 
-    /// The account's initials as t3code writes them on its badge: two letters of a one-word name ("Work" → "WO"), the
+    /// The account's initials on its badge: two letters of a one-word name ("Work" → "WO"), the
     /// first letter of the first two words otherwise ("Acme Labs" → "AL"). Punctuation splits words ("Claude (hub)" → "CH");
     /// an apostrophe inside a word does not ("Theo's Work" → "TW").
     static func initials(_ name: String) -> String {
@@ -169,7 +169,7 @@ struct AccountTag: Hashable {
         }
     }
 
-    /// The account's own color, or a quiet grey card as t3code draws a badge without one.
+    /// The account's own color, or a quiet grey card for a badge without one.
     fileprivate var fill: Color {
         if let accent { return Color(hex: accent) }
         if letters != nil { return NookTheme.smoke }
@@ -188,7 +188,7 @@ struct AccountTag: Hashable {
     }
 }
 
-/// A small badge in the corner of an agent's logo, as t3code marks a model of another account: the account's initials on
+/// A small badge in the corner of an agent's logo, marking a model of another account: the account's initials on
 /// a grey card ("WO" for Work), on the account's own color when you gave it one, or the icon you gave it. A badge with two
 /// letters grows into a pill; one letter or an icon stays round. Without a name it falls back to the role's symbol
 /// (a person, a briefcase, a key).
@@ -284,8 +284,8 @@ extension AccountTag {
         return AccountTag(role: role, accent: profile.accent, name: AccountLabel.name(profile, app: app), icon: profile.icon)
     }
 
-    /// The badge on the agent's logo where it runs under `profile`, or nil when there is nothing to tell apart. As in
-    /// t3code: an account you gave a color or an icon always shows its badge; otherwise only while you have more than
+    /// The badge on the agent's logo where it runs under `profile`, or nil when there is nothing to tell apart.
+    /// An account you gave a color or an icon always shows its badge; otherwise only while you have more than
     /// one account of that agent, so the model picker and the timeline say which account a model belongs to.
     @MainActor
     static func badge(_ profile: AgentProfile?, app: AppModel) -> AccountTag? {

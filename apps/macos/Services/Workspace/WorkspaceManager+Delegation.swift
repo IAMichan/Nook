@@ -71,7 +71,7 @@ extension WorkspaceManager {
     }
 
     /// A new turn of a task that already reported (a message from you, its parent, or a client without a session of its
-    /// own): its parent hears of this one too when it ends (t3code: a send to a finished child notifies its parent).
+    /// own): its parent hears of this one too when it ends (a send to a finished child notifies its parent).
     func rearmDelegation(_ id: UUID) {
         guard run(id)?.delegation?.delivered == true else { return }
         update(id) { $0.delegation?.delivered = false }
@@ -85,7 +85,7 @@ extension WorkspaceManager {
     }
 
     /// A task its parent did not wait for asks a question: the parent hears of it once, the way it hears of a result
-    /// (t3code: nobody watches a child, so its question would go unanswered). A waiting parent learns it from its wait.
+    /// (nobody watches a child, so its question would go unanswered). A waiting parent learns it from its wait.
     func deliverDelegatedQuestion(_ id: UUID, _ pending: PendingQuestion) {
         guard let child = run(id), var link = child.delegation, link.wake,
               !(link.toldQuestions ?? []).contains(pending.id),

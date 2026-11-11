@@ -1,6 +1,6 @@
 import XCTest
 
-/// Pictures the agent only looked at, shown as thumbnails under the step that read them (t3code 5b11efe5df).
+/// Pictures the agent only looked at, shown as thumbnails under the step that read them.
 final class ViewedImagesTests: XCTestCase {
     func testEveryAgentsReadOfAPictureCounts() {
         // Claude Code, Gemini CLI, Codex, OpenCode, Cursor, an ACP agent (with the location Nook put in), Pi.

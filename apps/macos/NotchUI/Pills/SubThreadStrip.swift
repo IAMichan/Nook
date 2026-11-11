@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Above a session's composer: the tasks it delegated (`delegate_task`), the way t3code
-/// shows a thread's subagents. A row opens the sub-thread live beside the main thread, in the session's side panel, so
+/// Above a session's composer: the tasks it delegated (`delegate_task`).
+/// A row opens the sub-thread live beside the main thread, in the session's side panel, so
 /// you can follow it and answer its questions there; another row swaps it, the open row (or the tab's close button)
 /// closes it. ⌘-click or the row's menu opens it in place of the main thread, as without room beside it (a narrow notch).
 /// One that ended stays until your next message here.

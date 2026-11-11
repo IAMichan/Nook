@@ -122,7 +122,7 @@
 
 <style>
   .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  /* t3code's thread header: the project, a slash and the thread's name, its state on the right. */
+  /* The thread header: the project, a slash and the thread's name, its state on the right. */
   .thread-head { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; flex: none; }
   .thread-head .title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; font-size: 14px; }
   .project { color: var(--text2); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; flex: none; }
@@ -142,7 +142,7 @@
   .step.failed .mark { color: var(--coral); }
   .step.todo { color: var(--text3); }
   .reply { white-space: pre-wrap; user-select: text; color: var(--text2); }
-  /* The reply field in t3code's composer surface. */
+  /* The reply field in the composer surface. */
   .reply-box { display: flex; gap: 6px; align-items: center; padding: 6px 6px 6px 14px; border: 1px solid var(--line2); border-radius: var(--radius-composer); background: var(--surface); }
   .reply-box:focus-within { border-color: color-mix(in srgb, var(--paper) 22%, var(--line2)); }
   .reply-box input { flex: 1; border: 0; background: transparent; padding: 6px 0; font-size: 14px; }

@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - One row for every connection
 //
-// Laid out as t3code lays out its providers, environments and source control: the icon, the name (and a version), one
+// Every connection is laid out the same way: the icon, the name (and a version), one
 // line that starts with the state ("Connected · michan@…"), a dot only when something is wrong, and on the right a
 // switch (switching off keeps it) and a "…" menu whose last item, after a line, removes it after asking. Managing
 // happens in the row itself: a click opens it in place and shows what the sheet used to show, so the page stays the page.
@@ -70,7 +70,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                         }
                     }
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        // A dot only when something needs you, as t3code: a working connection says so in words alone.
+                        // A dot only when something needs you: a working connection says so in words alone.
                         if status.needsAttention {
                             Circle().fill(status.color).frame(width: 6, height: 6).accessibilityHidden(true)
                         }
@@ -92,7 +92,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                         .accessibilityLabel(tr("connection.use", title))
                 }
                 moreMenu
-                // The chevron last, as t3code's source control rows: every row lines up, whether it opens or not.
+                // The chevron last: every row lines up, whether it opens or not.
                 Image(icon: "chevron.right")
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
@@ -195,7 +195,7 @@ extension ServiceStatus {
     }
 }
 
-/// The header of a list of connections, as t3code's sections: the name, its ⓘ, and on the right the one way to add
+/// The header of a list of connections: the name, its ⓘ, and on the right the one way to add
 /// another ("+ Add machine"), so adding is always in the same place.
 struct ConnectionListHeader: View {
     let title: String

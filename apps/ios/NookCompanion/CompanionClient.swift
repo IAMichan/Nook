@@ -97,7 +97,7 @@ final class CompanionClient: ObservableObject {
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
     /// Connected, and still catching up on what changed while the phone was away (after connecting, and after the app
-    /// comes back to the front), as t3code's "synchronizing" before "live". The header says so while it lasts.
+    /// comes back to the front), a "synchronizing" step before "live". The header says so while it lasts.
     @Published private(set) var synchronizing = false
     /// The name of a Mac that removed this iPhone (`CompanionResponse.revoked`), until the user pairs again or lets it go.
     @Published var revokedMac: String?
@@ -681,8 +681,8 @@ final class CompanionClient: ObservableObject {
     }
 
     /// Back in front after a glance elsewhere, on a connection that still answers: what is open is asked again from where
-    /// the phone left it (the session's last entry, the open chat, the lists), as t3code resubscribes from its last
-    /// sequence on every wakeup, so nothing an update lost while the phone slept stays behind.
+    /// the phone left it (the session's last entry, the open chat, the lists), resubscribing from the last sequence on
+    /// every wakeup, so nothing an update lost while the phone slept stays behind.
     func resynchronize() async {
         guard phase == .connected, channel != nil, !synchronizing else { return }
         synchronizing = true
