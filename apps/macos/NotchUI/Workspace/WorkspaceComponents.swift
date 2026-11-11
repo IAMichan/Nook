@@ -170,9 +170,14 @@ struct DiffText: View, Equatable {
     var annotationLines: Set<Int> = []
     var annotationVersion = ""
     var annotation: ((Int) -> AnyView)? = nil
+    /// Accepts (stages) or rejects (discards) the hunk with this number, counted from the first: its header offers both.
+    /// Nil where the diff is not git's own (a turn's edits, a pull request), so there is nothing to apply it to.
+    var onHunk: ((_ hunk: Int, _ action: HunkAction) -> Void)? = nil
     /// One file of a `StackedDiffList`: no scroll view of its own and no file line, its header above says which file.
     var stacked = false
     private let rows: [UnifiedDiff.Row]
+    /// The number of each hunk header by its row, for `onHunk`.
+    private let hunkNumbers: [Int: Int]
     /// Width of one line-number column, from the largest number in the diff.
     private let numberWidth: CGFloat
     private let text: String
@@ -199,7 +204,8 @@ struct DiffText: View, Equatable {
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
          onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil, scope: String? = nil,
          onRowComment: ((UnifiedDiff.Row, UnifiedDiff.Row?, String) -> Void)? = nil, annotationLines: Set<Int> = [], annotationVersion: String = "",
-         annotation: ((Int) -> AnyView)? = nil) {
+         annotation: ((Int) -> AnyView)? = nil, onHunk: ((_ hunk: Int, _ action: HunkAction) -> Void)? = nil) {
+        self.onHunk = onHunk
         self.onRowComment = onRowComment
         self.annotationLines = annotationLines
         self.annotationVersion = annotationVersion
@@ -228,6 +234,9 @@ struct DiffText: View, Equatable {
             rows = parsedRows
             numberWidth = width
         }
+        var numbers: [Int: Int] = [:]
+        for (index, row) in rows.enumerated() where row.kind == .hunk { numbers[index] = numbers.count }
+        hunkNumbers = numbers
     }
 
     /// Drawn again only when what it shows changed (with `.equatable()` where it is used): every line of a long diff is
@@ -237,6 +246,7 @@ struct DiffText: View, Equatable {
             && a.anchor == b.anchor && a.comments == b.comments
             && (a.onComment == nil) == (b.onComment == nil) && (a.onRemoveComment == nil) == (b.onRemoveComment == nil)
             && (a.onRowComment == nil) == (b.onRowComment == nil) && a.annotationVersion == b.annotationVersion
+            && (a.onHunk == nil) == (b.onHunk == nil)
     }
 
     /// The rows of the diffs shown lately: a diff is made again with each redraw of the view around it (a side panel
@@ -291,7 +301,7 @@ struct DiffText: View, Equatable {
                     let row = rows[index]
                     switch row.kind {
                     case .file: if !stacked { fileRow(row, first: index == 0) }
-                    case .hunk: hunkRow(row)
+                    case .hunk: hunkRow(row, at: index)
                     case .note: noteRow(row)
                     case .context, .add, .remove:
                         lineRow(row, index: index)
@@ -320,7 +330,7 @@ struct DiffText: View, Equatable {
             let line = split[index]
             if let full = line.full {
                 switch rows[full].kind {
-                case .hunk: hunkRow(rows[full])
+                case .hunk: hunkRow(rows[full], at: full)
                 case .file: EmptyView()
                 default: noteRow(rows[full])
                 }
@@ -403,7 +413,7 @@ struct DiffText: View, Equatable {
         }
     }
 
-    private func hunkRow(_ row: UnifiedDiff.Row) -> some View {
+    private func hunkRow(_ row: UnifiedDiff.Row, at index: Int) -> some View {
         HStack(spacing: 0) {
             Image(icon: "arrow.up.and.down")
                 .font(NookTheme.font(9, .semibold))
@@ -422,6 +432,11 @@ struct DiffText: View, Equatable {
                     .padding(.leading, NookTheme.Spacing.md)
             }
             Spacer(minLength: 0)
+            if let onHunk, let number = hunkNumbers[index] {
+                ToolbarIconButton("arrow.uturn.backward", tr("agents.diff.hunk.reject"), height: 20, width: 20) { onHunk(number, .reject) }
+                ToolbarIconButton("checkmark", tr("agents.diff.hunk.accept"), height: 20, width: 20) { onHunk(number, .accept) }
+                    .padding(.trailing, NookTheme.Spacing.sm)
+            }
         }
         .frame(height: 24)
         .background(WS.subtle)
