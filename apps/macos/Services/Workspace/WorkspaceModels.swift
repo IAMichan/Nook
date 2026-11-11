@@ -50,7 +50,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true,
-                                        speedTiers: true)
+                                        speedTiers: true, echoesSteers: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -74,7 +74,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // sessions are files it resumes with `--session`.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: false,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true)
         case .opencode, .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
@@ -148,6 +148,11 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Claude Code's Ultracode beside the effort (`Ultracode`). No other agent has the concept: Codex, Pi and the ACP
     /// agents offer only their effort levels (see docs/INTEGRATIONS.md).
     var ultracode = false
+    /// The agent echoes a steered message as a message of yours once it reads it (Pi's user `message_start`, a Codex
+    /// app-server `userMessage` item), so a steer can show "waiting to be read" until then (`SteerReceipts`). Claude Code
+    /// does not: Nook runs it without `--replay-user-messages`, whose replay only acknowledges receipt. The ACP agents
+    /// are steered by interrupting them, so the steer is the next prompt and is read at once.
+    var echoesSteers = false
 }
 
 /// See `ProviderCapabilities.denyReason`.
@@ -827,6 +832,10 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// For a message of yours that went into a turn while it ran: whether you steered it, or a queued message was taken
     /// into it. Nil for a message that started a turn, and for every other event.
     var steer: SteerKind? = nil
+    /// For a steer sent to an agent that says when it reads one (`ProviderCapabilities.echoesSteers`): `pending` until
+    /// the agent echoes it as a message of yours, `cancelled` when Stop dropped it unread. Nil once read, and for every
+    /// other event (also in timelines saved before this existed).
+    var steerStatus: SteerStatus? = nil
     /// For a switch of agent, model or effort (a `.system` event with tool "switch"): what the session ran before and
     /// after it. Nil for every other event.
     var change: ModelSwitch? = nil
@@ -837,6 +846,14 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
         case steer
         /// Queued first, then taken into the running turn.
         case promoted
+    }
+
+    /// Whether the agent read a steer yet (t3code's "Steer · waiting to be read").
+    enum SteerStatus: String, Codable, Sendable {
+        /// Sent, but the agent has not taken it in yet: it reads steers between steps, after a running tool returns.
+        case pending
+        /// The turn stopped before the agent read it: it never reached the agent.
+        case cancelled
     }
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
