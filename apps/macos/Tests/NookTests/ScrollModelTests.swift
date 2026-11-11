@@ -69,6 +69,18 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertNil(m.anchorMessageID)
     }
 
+    func testSendingWhileAMessageIsHeldKeepsItsRoom() {
+        var m = ScrollModel()
+        XCTAssertTrue(m.goesToEndOnSend)
+        m.userScrolled()
+        XCTAssertTrue(m.goesToEndOnSend)
+        // The last reply was short: the message before it still stands near the top, with room under the reply.
+        m.sent(messageID: UUID())
+        XCTAssertFalse(m.goesToEndOnSend)
+        m.contentGrew(toolActivityStarted: true, overflows: true)
+        XCTAssertTrue(m.goesToEndOnSend)
+    }
+
     func testUserScrollLeavesAnchor() {
         var m = ScrollModel()
         m.sent(messageID: UUID())
