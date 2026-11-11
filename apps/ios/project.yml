@@ -77,7 +77,9 @@ targets:
         CFBundleDisplayName: Nook Companion
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        UILaunchScreen: {}
+        # The canvas behind Nook's own launch screen (`LaunchView`): black, so opening the app has no white flash.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
         NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.

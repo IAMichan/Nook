@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var inboxPath: [String] = []
     /// A quick action asked for a new session: the Agents tab opens its New session sheet.
     @State private var newSessionRequested = false
+    /// The launch screen (`LaunchView`) over everything while the app opens, until the Mac answers or a moment passes.
+    @State private var launching = true
 
     var body: some View {
         Group {
@@ -60,7 +62,14 @@ struct RootView: View {
         .tint(Theme.paper)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
+        .overlay {
+            if launching {
+                LaunchView(macName: client.macName, paired: client.phase != .unpaired)
+                    .transition(.opacity)
+            }
+        }
         .task { client.appBecameActive() }
+        .task { await finishLaunch() }
         #if DEBUG
         // `-NookDemoShow agents|chats|session|chat` with `-NookDemo`: opens that screen of the demo.
         .task {
@@ -127,6 +136,18 @@ struct RootView: View {
         } message: { Text(client.notice ?? "") }
     }
 
+    /// Holds the launch screen for at least a short moment, so it does not flash, and, with a paired Mac, until it
+    /// answers or `LaunchView.maxWait` passes: then the tabs show what was kept, marked as not live.
+    private func finishLaunch() async {
+        let start = ContinuousClock.now
+        try? await Task.sleep(for: LaunchView.minShown)
+        while !Task.isCancelled, client.phase != .connected, client.phase != .unpaired,
+              ContinuousClock.now - start < LaunchView.maxWait {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        withAnimation(.easeOut(duration: 0.3)) { launching = false }
+    }
+
     /// A tab's icon and name in the bar along the bottom.
     private func tabLabel(_ tab: CompanionTab) -> some View {
         Label {
@@ -168,6 +189,39 @@ enum QuickActionBlock {
 // MARK: Pairing
 
 /// The welcome screen: what the app is, three steps, and one button.
+/// What shows while the app opens: Nook with a calm glow and, with a paired Mac, that it is reaching it. Drawn on the
+/// same canvas as the system's launch screen (`LaunchBackground`), so the opening has no flash.
+struct LaunchView: View {
+    let macName: String
+    let paired: Bool
+
+    static let minShown = Duration.milliseconds(700)
+    static let maxWait = Duration.seconds(4)
+
+    var body: some View {
+        VStack(spacing: Theme.Spacing.xl) {
+            NookMark(size: 72)
+                .background(NookAura(size: 240))
+            VStack(spacing: Theme.Spacing.md) {
+                ProgressView().tint(Theme.textSecondary)
+                Text(status)
+                    .font(Theme.TextStyle.body)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(Theme.Spacing.xxl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas.ignoresSafeArea())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var status: String {
+        guard paired else { return String(localized: "Starting Nook…") }
+        return macName.isEmpty ? String(localized: "Connecting to your Mac…") : String(localized: "Connecting to \(macName)…")
+    }
+}
+
 struct PairingView: View {
     @EnvironmentObject private var client: CompanionClient
     @State private var text = ""
