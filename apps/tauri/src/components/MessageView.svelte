@@ -24,7 +24,26 @@
     enlargedImages[src] = !enlargedImages[src];
   }
 
+  let copied = $state(false);
+  async function copyAnswer() {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch { /* The clipboard can be busy; the button simply stays. */ }
+  }
+
   function click(e: MouseEvent) {
+    const copy = (e.target as HTMLElement).closest("[data-copy-code]") as HTMLButtonElement | null;
+    if (copy) {
+      const code = copy.parentElement?.querySelector("pre code")?.textContent ?? "";
+      navigator.clipboard.writeText(code).then(() => {
+        copy.textContent = "Copied";
+        copy.classList.add("copied");
+        setTimeout(() => { copy.textContent = "Copy"; copy.classList.remove("copied"); }, 1500);
+      }).catch(() => {});
+      return;
+    }
     const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
     if (a) {
       e.preventDefault();
@@ -77,6 +96,9 @@
     {:else if text}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="markdown" onclick={click}>{@html html}</div>
+      {#if !message.streaming && !message.isError}
+        <div class="tools"><button class="ghost" onclick={copyAnswer} title="Copy answer" aria-label="Copy answer">{copied ? "✓ Copied" : "Copy"}</button></div>
+      {/if}
     {/if}
     {#each message.charts ?? [] as chart (chart.id)}<ChartView {chart} />{/each}
     {#each message.mails ?? [] as draft (draft.id)}<MailDraftView {draft} {nookId} />{/each}
@@ -128,6 +150,10 @@
   .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
   .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+  .tools { display: flex; gap: 4px; margin-top: 2px; opacity: 0; transition: opacity 0.15s; }
+  .msg:hover .tools, .tools:focus-within { opacity: 1; }
+  .tools button { font-size: 11px; padding: 2px 8px; color: var(--text3); }
+  .tools button:hover { color: var(--paper); }
   .offers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .offers button { font-size: 12px; padding: 4px 10px; border-radius: 999px; }
 </style>
