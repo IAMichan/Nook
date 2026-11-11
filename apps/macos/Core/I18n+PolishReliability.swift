@@ -1,0 +1,61 @@
+import Foundation
+
+// Texts for the offline state and the last-synced line (`NookSyncStatus`). One block per language; every key in all five.
+
+let polishReliabilityTranslations: [AppLanguage: [String: String]] = [
+    .nl: [
+        "sync.last": "Laatst bijgewerkt %@",
+        "sync.never": "Nog niet bijgewerkt",
+        "sync.offline": "Offline. Nook toont wat hij heeft bewaard.",
+        "sync.offline.since": "Offline. Nook toont wat hij %@ bewaarde.",
+        "sync.queued.one": "%d bericht wacht om verstuurd te worden",
+        "sync.queued.other": "%d berichten wachten om verstuurd te worden",
+        "diagnostics.export": "Diagnose exporteren",
+        "diagnostics.export.detail": "Kopieert versies en instellingen, zonder mailadressen, sleutels, telefoonnummers of je naam in paden. Er wordt niets verstuurd.",
+        "diagnostics.copy": "Diagnose kopiëren",
+    ],
+    .en: [
+        "sync.last": "Last synced %@",
+        "sync.never": "Not synced yet",
+        "sync.offline": "Offline. Nook shows what it has saved.",
+        "sync.offline.since": "Offline. Nook shows what it saved %@.",
+        "sync.queued.one": "%d message waits to be sent",
+        "sync.queued.other": "%d messages wait to be sent",
+        "diagnostics.export": "Export diagnostics",
+        "diagnostics.export.detail": "Copies versions and set-up facts, without mail addresses, keys, phone numbers or your name in paths. Nothing is sent.",
+        "diagnostics.copy": "Copy diagnostics",
+    ],
+    .de: [
+        "sync.last": "Zuletzt aktualisiert %@",
+        "sync.never": "Noch nicht aktualisiert",
+        "sync.offline": "Offline. Nook zeigt, was es gespeichert hat.",
+        "sync.offline.since": "Offline. Nook zeigt, was es %@ gespeichert hat.",
+        "sync.queued.one": "%d Nachricht wartet aufs Senden",
+        "sync.queued.other": "%d Nachrichten warten aufs Senden",
+        "diagnostics.export": "Diagnose exportieren",
+        "diagnostics.export.detail": "Kopiert Versionen und Einrichtung, ohne E-Mail-Adressen, Schlüssel, Telefonnummern oder deinen Namen in Pfaden. Es wird nichts gesendet.",
+        "diagnostics.copy": "Diagnose kopieren",
+    ],
+    .fr: [
+        "sync.last": "Dernière synchronisation %@",
+        "sync.never": "Pas encore synchronisé",
+        "sync.offline": "Hors ligne. Nook affiche ce qu'il a enregistré.",
+        "sync.offline.since": "Hors ligne. Nook affiche ce qu'il a enregistré %@.",
+        "sync.queued.one": "%d message attend d'être envoyé",
+        "sync.queued.other": "%d messages attendent d'être envoyés",
+        "diagnostics.export": "Exporter le diagnostic",
+        "diagnostics.export.detail": "Copie les versions et la configuration, sans adresses e-mail, clés, numéros de téléphone ni ton nom dans les chemins. Rien n'est envoyé.",
+        "diagnostics.copy": "Copier le diagnostic",
+    ],
+    .es: [
+        "sync.last": "Última sincronización %@",
+        "sync.never": "Aún sin sincronizar",
+        "sync.offline": "Sin conexión. Nook muestra lo que ha guardado.",
+        "sync.offline.since": "Sin conexión. Nook muestra lo que guardó %@.",
+        "sync.queued.one": "%d mensaje espera para enviarse",
+        "sync.queued.other": "%d mensajes esperan para enviarse",
+        "diagnostics.export": "Exportar diagnóstico",
+        "diagnostics.export.detail": "Copia versiones y configuración, sin direcciones de correo, claves, teléfonos ni tu nombre en las rutas. No se envía nada.",
+        "diagnostics.copy": "Copiar diagnóstico",
+    ],
+]

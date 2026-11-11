@@ -164,6 +164,7 @@ enum SettingsSearch {
         .init("settings.ws.codexAppServer", .agents),
         .init("settings.ws.trafficLog", .maintenance),
         .init("settings.maintenance.diagnostics", .maintenance),
+        .init("diagnostics.export", .maintenance),
         .init("settings.about.version", .about),
         .init("settings.about.license", .about),
         .init("settings.about.report", .about),
