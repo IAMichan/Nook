@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // The side panel's tabs and its list of tools: small tabs that each carry what
 // they show (the page's title, the pull request's number and title), with a cross at the end that closes them;
@@ -22,6 +23,8 @@ struct SidePanelTabItem<Value: Hashable>: Identifiable {
     var help: String? = nil
     /// A small control right after the tab, such as the browser's + for another browser tab.
     var after: AnyView? = nil
+    /// Kept at the front of the row: it shows a pin where the others show a cross, and is closed from its menu.
+    var pinned = false
     var id: Value { value }
 }
 
@@ -32,6 +35,11 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
     let selected: Value
     let onSelect: (Value) -> Void
     let onClose: (Value) -> Void
+    /// Dragging a tab onto another puts it in that place (`SidePanelTabOrder`). Nil keeps the order as it is.
+    var onMove: ((_ moved: Value, _ onto: Value) -> Void)? = nil
+    /// Pins a tab to the front of the row, or lets it go again (its context menu). Nil offers no pin.
+    var onTogglePin: ((Value) -> Void)? = nil
+    @State private var dragging: Value?
     @ViewBuilder var add: () -> Add
     @ViewBuilder var trailing: () -> Trailing
 
@@ -42,7 +50,9 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
                     HStack(spacing: NookTheme.Spacing.xs) {
                         ForEach(items) { item in
                             SidePanelTab(item: item, active: item.value == selected,
-                                         select: { onSelect(item.value) }, close: { onClose(item.value) })
+                                         select: { onSelect(item.value) }, close: { onClose(item.value) },
+                                         togglePin: onTogglePin.map { toggle in { toggle(item.value) } })
+                                .modifier(SidePanelTabReorder(value: item.value, dragging: $dragging, move: onMove))
                                 .id(item.value)
                             if let after = item.after { after }
                         }
@@ -67,6 +77,7 @@ private struct SidePanelTab<Value: Hashable>: View {
     let active: Bool
     let select: () -> Void
     let close: () -> Void
+    var togglePin: (() -> Void)? = nil
     @State private var hovering = false
 
     var body: some View {
@@ -78,7 +89,7 @@ private struct SidePanelTab<Value: Hashable>: View {
                             Circle().fill(NookTheme.iris).frame(width: 5, height: 5).offset(x: 2, y: 2)
                         }
                     }
-                    .opacity(hovering ? 0 : 1)
+                    .opacity(hovering && !item.pinned ? 0 : 1)
                     .accessibilityHidden(true)
                 Button(action: close) {
                     Image(icon: "xmark")
@@ -87,8 +98,8 @@ private struct SidePanelTab<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
+                .opacity(hovering && !item.pinned ? 1 : 0)
+                .allowsHitTesting(hovering && !item.pinned)
                 .help(tr("tab.close"))
                 .accessibilityLabel(tr("tab.close") + " " + item.title)
             }
@@ -103,6 +114,12 @@ private struct SidePanelTab<Value: Hashable>: View {
             }
             .buttonStyle(.plain)
             .help(item.help ?? item.title)
+            if item.pinned {
+                Image(icon: "pin.fill")
+                    .font(NookTheme.font(8, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .accessibilityLabel(tr("tab.pinned"))
+            }
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -115,8 +132,53 @@ private struct SidePanelTab<Value: Hashable>: View {
         // In the main window the tabs lie in the title bar's row, where `onHover` hears nothing.
         .trackedHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
+        .contextMenu {
+            if let togglePin {
+                Button(item.pinned ? tr("tab.unpin") : tr("tab.pin"), action: togglePin)
+            }
+            Button(tr("tab.close"), action: close)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// Makes a tab draggable and a place to drop one: the tab being dragged takes the place of the one it is over at once,
+/// so the row shows where it will land. Without `move` the tab is left as it is.
+private struct SidePanelTabReorder<Value: Hashable>: ViewModifier {
+    let value: Value
+    @Binding var dragging: Value?
+    let move: ((Value, Value) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let move {
+            content
+                .onDrag {
+                    dragging = value
+                    return NSItemProvider(object: "nook.sidepanel.tab" as NSString)
+                }
+                .onDrop(of: [.plainText], delegate: SidePanelTabDrop(target: value, dragging: $dragging, move: move))
+        } else {
+            content
+        }
+    }
+}
+
+private struct SidePanelTabDrop<Value: Hashable>: DropDelegate {
+    let target: Value
+    @Binding var dragging: Value?
+    let move: (Value, Value) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        withAnimation(NookTheme.swap) { move(dragging, target) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
     }
 }
 
