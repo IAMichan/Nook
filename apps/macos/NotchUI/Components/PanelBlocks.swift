@@ -254,8 +254,8 @@ struct PanelNoticeBar<Trailing: View>: View {
     var countdown: TimeInterval? = nil
     var paused: Bool = false
     var onOK: () -> Void = {}
-    /// Floats over the panel's bottom edge in the toast's bubble (`toastBubble`), where the results of what you did show
-    /// too, instead of a bar under the tabs: a request or a note that comes in while you work elsewhere in the panel.
+    /// Floats in the panel's top-right corner in the toast's bubble (`toastBubble`), as narrow as a toast and on top of
+    /// them, instead of a bar under the tabs: a request or a note that comes in while you work elsewhere in the panel.
     var floating: Bool = false
     /// What a request that waits for you asks with (`NookNoticeActions`: Allow and Deny).
     @ViewBuilder var trailing: () -> Trailing
@@ -267,8 +267,8 @@ struct PanelNoticeBar<Trailing: View>: View {
             .help(help ?? title)
         if floating {
             notice
-                .toastBubble(tone: tone ?? NookTheme.textSecondary, maxWidth: 560)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .toastBubble(tone: tone ?? NookTheme.textSecondary, maxWidth: NookToastView.maxWidth)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
         } else {
             notice
                 .padding(.horizontal, NookTheme.Spacing.lg)
