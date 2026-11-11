@@ -1780,10 +1780,9 @@ struct AgentRunPanel: View {
         ModeToggle(mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }))
     }
 
-    /// Agent or Plan, access, speed and sub-threads, in the footer of the model picker.
+    /// Access, speed and sub-threads, in the footer of the model picker (the agent decides on Plan itself).
     private func options(_ run: WorkspaceRun) -> some View {
         ModelPickerOptions(
-            mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }),
             access: .init(provider: run.provider, chosen: run.permission, readOnly: run.mode == .plan,
                           pick: { workspace.configure(runID, permission: $0) }),
             speedTiers: workspace.speedTiers(for: run), speed: workspace.speedTier(run),
