@@ -33,6 +33,7 @@ enum RemoteBridge {
             return true
         case .sessionList, .sessionSearch, .workspaceInfo, .terminalRun, .terminalRead, .terminalList, .terminalStop, .pullRequestCreate,
              .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel, .sessionSend, .sessionStart, .sessionWait,
+             .sessionSuggest,
              .sessionOrganize, .sessionQuestions, .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose, .scheduleTask,
              .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest, .getPullRequestStatus,
              .requestSecret, .nookTools, .nookUse, .nookChatList, .nookChatRead, .nookChatSend, .takeOverScreen:

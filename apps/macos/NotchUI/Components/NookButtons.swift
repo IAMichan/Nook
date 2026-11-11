@@ -4,20 +4,22 @@ import SwiftUI
 struct SmallPrimaryButton: View {
     let title: String
     var systemName: String? = nil
+    /// A smaller button (24 pt, control type) for inside a pill or a toolbar bar.
+    var compact: Bool = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if let systemName { NookSymbol(systemName, size: 12).font(NookTheme.font(11, .semibold)) }
-                // One line in its 30 pt capsule: the text beside the button gives way, not the button's title.
-                Text(title).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
+            HStack(spacing: compact ? 5 : 6) {
+                if let systemName { NookSymbol(systemName, size: compact ? 11 : 12).font(NookTheme.font(compact ? 10 : 11, .semibold)) }
+                // One line in its capsule: the text beside the button gives way, not the button's title.
+                Text(title).font(compact ? NookTheme.TextStyle.control : NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
             }
             .foregroundStyle(NookTheme.onPrimary)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
+            .padding(.horizontal, compact ? 10 : 12)
+            .frame(height: compact ? 24 : 30)
             .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
         }
         .buttonStyle(.plain)

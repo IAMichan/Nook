@@ -31,6 +31,11 @@ struct ScrollModel: Equatable, Sendable {
     /// each frame, which made scrolling stutter.
     var isFreeAfterUserScroll: Bool { mode == .free && anchorMessageID == nil && cancelQueuedScrolls }
 
+    /// You sent a message: the view goes to its end, except while a message you sent before is still held near the top.
+    /// The view stands at its end then already, and the new message takes over the room under it once it shows; going to
+    /// the end first released that room, so the conversation dropped down and came back up.
+    var goesToEndOnSend: Bool { mode != .anchoringNewTurn }
+
     mutating func userScrolled() {
         mode = .free
         anchorMessageID = nil

@@ -1,0 +1,61 @@
+import Foundation
+
+// Texts for Settings › Sound & voice: which sound each agent moment makes.
+
+let soundTranslations: [AppLanguage: [String: String]] = [
+    .nl: [
+        "settings.sound.event.done": "Agent is klaar",
+        "settings.sound.event.permission": "Agent vraagt toestemming",
+        "settings.sound.event.attention": "Agent stelt een vraag of wacht op je",
+        "settings.sound.event.error": "Agent stopt met een fout",
+        "settings.sound.standard": "Standaard (%@)",
+        "settings.sound.standardFile": "Standaard (eigen bestand)",
+        "settings.sound.file": "Eigen bestand",
+        "settings.sound.none": "Geen geluid",
+        "settings.sound.preview": "Laat horen",
+    ],
+    .en: [
+        "settings.sound.event.done": "Agent is done",
+        "settings.sound.event.permission": "Agent asks for permission",
+        "settings.sound.event.attention": "Agent asks a question or waits on you",
+        "settings.sound.event.error": "Agent stops with an error",
+        "settings.sound.standard": "Default (%@)",
+        "settings.sound.standardFile": "Default (own file)",
+        "settings.sound.file": "Own file",
+        "settings.sound.none": "No sound",
+        "settings.sound.preview": "Play",
+    ],
+    .de: [
+        "settings.sound.event.done": "Agent ist fertig",
+        "settings.sound.event.permission": "Agent bittet um Erlaubnis",
+        "settings.sound.event.attention": "Agent stellt eine Frage oder wartet auf dich",
+        "settings.sound.event.error": "Agent stoppt mit einem Fehler",
+        "settings.sound.standard": "Standard (%@)",
+        "settings.sound.standardFile": "Standard (eigene Datei)",
+        "settings.sound.file": "Eigene Datei",
+        "settings.sound.none": "Kein Ton",
+        "settings.sound.preview": "Abspielen",
+    ],
+    .fr: [
+        "settings.sound.event.done": "L’agent a terminé",
+        "settings.sound.event.permission": "L’agent demande une autorisation",
+        "settings.sound.event.attention": "L’agent pose une question ou vous attend",
+        "settings.sound.event.error": "L’agent s’arrête sur une erreur",
+        "settings.sound.standard": "Par défaut (%@)",
+        "settings.sound.standardFile": "Par défaut (fichier personnel)",
+        "settings.sound.file": "Fichier personnel",
+        "settings.sound.none": "Aucun son",
+        "settings.sound.preview": "Écouter",
+    ],
+    .es: [
+        "settings.sound.event.done": "El agente ha terminado",
+        "settings.sound.event.permission": "El agente pide permiso",
+        "settings.sound.event.attention": "El agente hace una pregunta o te espera",
+        "settings.sound.event.error": "El agente se detiene con un error",
+        "settings.sound.standard": "Predeterminado (%@)",
+        "settings.sound.standardFile": "Predeterminado (archivo propio)",
+        "settings.sound.file": "Archivo propio",
+        "settings.sound.none": "Sin sonido",
+        "settings.sound.preview": "Escuchar",
+    ],
+]

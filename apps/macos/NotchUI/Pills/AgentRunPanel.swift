@@ -267,7 +267,8 @@ struct AgentRunPanel: View {
         HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
             // of pushing the header past it (under a wide side panel).
-            FolderCrumb(name: run.projectName, directory: run.projectPath, local: run.remote == nil)
+            FolderCrumb(name: run.projectName, directory: run.projectPath, workingDirectory: run.workingDirectory,
+                        local: run.remote == nil)
                 .layoutPriority(1)
             Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
@@ -294,7 +295,7 @@ struct AgentRunPanel: View {
                     .help(tr("ws.title.renameHelp"))
                 // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
                 // whenever the running session redrew the header.
-                ComposerDropdown(width: 248) {
+                ComposerDropdown(width: 248, scrolls: true) {
                     Image(icon: "chevron.down")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -431,17 +432,10 @@ struct AgentRunPanel: View {
             DropdownRow(symbol: "eye", title: tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
         }
         // Connectors the agent cannot use until you sign in, also the ones you hid above the composer: a group of
-        // their own in the panel, so there is no submenu to lose under the pointer.
+        // their own in the panel (folded when there are many), so there is no submenu to lose under the pointer.
         if let connectors = workspace.connectorSignIns[runID], !connectors.isEmpty {
             DropdownDivider()
-            DropdownHeader(title: tr("ws.connector.menu"))
-            ForEach(connectors) { connector in
-                DropdownRow(symbol: connector.waiting ? "hourglass" : "person.badge.key",
-                            title: connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title),
-                            disabledReason: connector.waiting ? tr("ws.connector.waitingHelp") : nil) {
-                    workspace.signInConnector(runID, name: connector.name)
-                }
-            }
+            ConnectorSignInGroup(runID: runID, connectors: connectors)
         }
         DropdownDivider()
         // How much of the agent's work the timeline shows, for this session only (Settings has the default).
@@ -1001,8 +995,10 @@ struct AgentRunPanel: View {
                 still.disablesAnimations = true
                 withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            // You sent something: it is the newest thing and shows again, also when you had scrolled up.
-            .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
+            // You sent something: it is the newest thing and shows again, also when you had scrolled up. Not while the
+            // message you sent before still stands near the top: going to the end gave up its room, so the conversation
+            // dropped and then rose again once the new message came in and took that room over (`pinSent`).
+            .onChange(of: sentCount) { _, _ in if scroll.goesToEndOnSend { settleAtEnd(proxy) } }
             .onChange(of: scroll.anchorMessageID) { _, id in if id == nil { pinRoom.release() } }
             .onChange(of: events.last(where: { $0.kind == .user })?.id) { old, new in
                 // A message that came in at the end stands near the top with the reply under it. The timeline loading
@@ -1381,7 +1377,8 @@ struct AgentRunPanel: View {
             // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
             showBackground: {
                 if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.openSubagents() }
-            }
+            },
+            onSuggestion: { app.chooseSuggestion($0, event: event, in: runID) }
         )
         // Undone by going back to before an earlier message: the agent no longer remembers it.
         .opacity(event.rolledBack == true ? 0.45 : 1)

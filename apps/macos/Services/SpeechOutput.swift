@@ -97,26 +97,62 @@ private final class SpeechMouth: NSObject, AVSpeechSynthesizerDelegate {
 
 /// Short system sounds indicating when an agent is waiting for you or has finished.
 /// Custom sounds take priority: place `attention`, `done`, or `error` (.wav, .mp3, .aiff, or .m4a) in Nook's Sounds directory.
-enum NookSound {
-    case attention, done, error
+enum NookSound: String, CaseIterable, Identifiable {
+    /// In the order Settings › Sound & voice lists them.
+    case done, permission, attention, error
+
+    var id: String { rawValue }
 
     /// Filename without extension for a custom sound, for example `done.mp3`.
-    var fileName: String {
-        switch self {
-        case .attention: return "attention"
-        case .done: return "done"
-        case .error: return "error"
-        }
-    }
+    var fileName: String { rawValue }
 
-    /// Built-in macOS sound if no custom file exists.
-    private var systemName: String {
+    /// The Settings label of the moment this sound is for.
+    var titleKey: String { "settings.sound.event.\(rawValue)" }
+
+    /// Built-in macOS sound when nothing else was chosen and no custom file exists.
+    var defaultSystemName: String {
         switch self {
         case .attention: return "Ping"
+        case .permission: return "Hero"
         case .done: return "Glass"
         case .error: return "Basso"
         }
     }
+
+    /// What plays for this moment (Settings › Sound & voice). Stored as a string in `AppSettings.soundChoices`:
+    /// empty for the default, `none`, `file` for the custom file, or the name of a macOS sound.
+    enum Choice: Hashable {
+        case standard, none, file
+        case system(String)
+
+        init(stored: String?) {
+            switch stored ?? "" {
+            case "": self = .standard
+            case "none": self = .none
+            case "file": self = .file
+            case let name: self = .system(name)
+            }
+        }
+
+        var stored: String {
+            switch self {
+            case .standard: return ""
+            case .none: return "none"
+            case .file: return "file"
+            case .system(let name): return name
+            }
+        }
+    }
+
+    /// The macOS sounds to choose from (/System/Library/Sounds), sorted by name.
+    static let systemSounds: [String] = {
+        let dir = URL(fileURLWithPath: "/System/Library/Sounds", isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
+            .map { $0.deletingPathExtension().lastPathComponent } ?? []
+        let fallback = ["Basso", "Blow", "Bottle", "Frog", "Funk", "Glass", "Hero", "Morse", "Ping", "Pop", "Purr",
+                        "Sosumi", "Submarine", "Tink"]
+        return (names.isEmpty ? fallback : names).sorted()
+    }()
 
     /// Custom sounds directory: ~/Library/Application Support/Nook/Sounds.
     static var folder: URL {
@@ -125,14 +161,36 @@ enum NookSound {
 
     private static let extensions = ["wav", "mp3", "aiff", "aif", "m4a"]
 
-    /// The custom sound file for this sound, if one has been provided.
+    /// The custom sound file for this sound, if one has been provided. A permission request without a `permission`
+    /// file of its own uses `attention`, as it did before it had a sound of its own.
     var customFile: URL? {
         let fm = FileManager.default
-        for ext in Self.extensions {
-            let url = Self.folder.appendingPathComponent(fileName).appendingPathExtension(ext)
-            if fm.fileExists(atPath: url.path) { return url }
+        let names = self == .permission ? [fileName, NookSound.attention.fileName] : [fileName]
+        for name in names {
+            for ext in Self.extensions {
+                let url = Self.folder.appendingPathComponent(name).appendingPathExtension(ext)
+                if fm.fileExists(atPath: url.path) { return url }
+            }
         }
         return nil
+    }
+
+    /// The sound this moment makes with `choice`, at its volume; nil for silence.
+    @MainActor
+    private func effect(for choice: Choice) -> (sound: NSSound, volume: Float)? {
+        // Custom sound files are usually already at an appropriate volume.
+        func file() -> (NSSound, Float)? {
+            customFile.flatMap { NSSound(contentsOf: $0, byReference: true) }.map { ($0, 0.8) }
+        }
+        func system(_ name: String) -> (NSSound, Float)? {
+            NSSound(named: NSSound.Name(name)).map { ($0, 0.35) }
+        }
+        switch choice {
+        case .none: return nil
+        case .file: return file() ?? system(defaultSystemName)
+        case .system(let name): return system(name) ?? system(defaultSystemName)
+        case .standard: return file() ?? system(defaultSystemName)
+        }
     }
 
     /// Retains the currently playing sound; otherwise NSSound could be deallocated midway.
@@ -143,16 +201,15 @@ enum NookSound {
     @MainActor
     static func play(_ sound: NookSound) {
         guard AppSettings.shared.sounds, !muted else { return }
-        var effect: NSSound?
-        var volume: Float = 0.35
-        if let url = sound.customFile, let custom = NSSound(contentsOf: url, byReference: true) {
-            effect = custom
-            // Custom sound files are usually already at an appropriate volume.
-            volume = 0.8
-        }
-        if effect == nil { effect = NSSound(named: NSSound.Name(sound.systemName)) }
-        guard let effect else { return }
+        play(sound, choice: Choice(stored: AppSettings.shared.soundChoices[sound.rawValue]))
+    }
+
+    /// Plays `sound` as `choice` would, also with sounds off or muted: the preview when you pick one in Settings.
+    @MainActor
+    static func play(_ sound: NookSound, choice: Choice) {
         playing?.stop()
+        playing = nil
+        guard let (effect, volume) = sound.effect(for: choice) else { return }
         effect.volume = volume
         effect.play()
         playing = effect

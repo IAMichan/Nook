@@ -218,6 +218,7 @@ targets:
       - path: Core/I18n+Confirm.swift
       - path: Core/I18n+Buddy.swift
       - path: Core/I18n+Quiet.swift
+      - path: Core/I18n+Sounds.swift
       - path: Core/I18n+Search.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
@@ -515,6 +516,7 @@ targets:
       - path: Services/Workspace/BrowserSession.swift
       - path: Services/Workspace/WorkspaceBridgeSessions.swift
       - path: Services/Workspace/RenderedPage.swift
+      - path: Services/Workspace/SessionSuggestion.swift
       - path: Services/Workspace/RenderedPageFile.swift
       - path: Services/Workspace/AgentUpdates.swift
       - path: Services/Workspace/PiRPC.swift

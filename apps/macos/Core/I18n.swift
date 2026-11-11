@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [chatCallTranslations, workflowParityTranslations, transcriptTranslations, phoneTranslations, remoteTranslations, lookThemesTranslations, browserCaptureTranslations, agentMaintenanceTranslations, sourceControlTranslations, secretsTranslations, automationTranslations, sessionControlsTranslations, textGenTranslations, accountOptionTranslations, goalTranslations, connectionsAgentsTranslations, connectionsDevicesTranslations, sessionContextTranslations, worktreeCleanupTranslations, settingsPagesTranslations, agentToolsTranslations, diffReviewTranslations, polishListsTranslations, polishComposersTranslations, polishNotchTranslations, polishRenderingTranslations, polishSettingsTranslations, autoModelTranslations, limitsTranslations, selectionAskTranslations, mailChatTranslations, actionsTranslations, settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, splitTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, musicPageTranslations, musicRedesignTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [soundTranslations, chatCallTranslations, workflowParityTranslations, transcriptTranslations, phoneTranslations, remoteTranslations, lookThemesTranslations, browserCaptureTranslations, agentMaintenanceTranslations, sourceControlTranslations, secretsTranslations, automationTranslations, sessionControlsTranslations, textGenTranslations, accountOptionTranslations, goalTranslations, connectionsAgentsTranslations, connectionsDevicesTranslations, sessionContextTranslations, worktreeCleanupTranslations, settingsPagesTranslations, agentToolsTranslations, diffReviewTranslations, polishListsTranslations, polishComposersTranslations, polishNotchTranslations, polishRenderingTranslations, polishSettingsTranslations, autoModelTranslations, limitsTranslations, selectionAskTranslations, mailChatTranslations, actionsTranslations, settingsHubTranslations, whatsAppAccountTranslations, fileViewerTranslations, mailSendTranslations, snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, splitTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, musicPageTranslations, musicRedesignTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
@@ -727,7 +727,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.use": "Gebruik",
         "settings.brain.tooHeavyForMemory": "Te zwaar voor %lld GB",
         "settings.brain.localModelDownloadHint": "Eén keer downloaden (een paar GB), daarna werkt het zonder internet. Deze Mac heeft %lld GB geheugen. Het model gaat na anderhalve minuut zonder vraag weer uit het geheugen.",
-        "settings.voice.customSoundsHint": "Zet attention, done of error (.wav, .mp3, .aiff, .m4a) in de map om een eigen geluid te gebruiken.",
+        "settings.voice.customSoundsHint": "Zet attention, permission, done of error (.wav, .mp3, .aiff, .m4a) in de map om een eigen geluid te gebruiken.",
         "settings.agents.changeNotice": "Dit verandert in %@. Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.",
         "settings.agents.noChange": "Er verandert niets.",
 
@@ -1500,7 +1500,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.use": "Use",
         "settings.brain.tooHeavyForMemory": "Too demanding for %lld GB",
         "settings.brain.localModelDownloadHint": "Download once (a few GB), then works completely offline. This Mac has %lld GB memory. The model unloads after 90 seconds of inactivity.",
-        "settings.voice.customSoundsHint": "Place attention, done or error (.wav, .mp3, .aiff, .m4a) files in the folder to use custom sounds.",
+        "settings.voice.customSoundsHint": "Place attention, permission, done or error (.wav, .mp3, .aiff, .m4a) files in the folder to use custom sounds.",
         "settings.agents.changeNotice": "This changes in %@. Your existing settings remain intact; a backup is created alongside the file.",
         "settings.agents.noChange": "No changes.",
 
@@ -2271,7 +2271,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.use": "Verwenden",
         "settings.brain.tooHeavyForMemory": "Zu anspruchsvoll für %lld GB",
         "settings.brain.localModelDownloadHint": "Einmalig herunterladen (ein paar GB), danach funktioniert es komplett offline. Dieser Mac hat %lld GB Speicher. Das Modell entlädt sich nach 90 Sekunden Inaktivität.",
-        "settings.voice.customSoundsHint": "Platziere attention-, done- oder error-Dateien (.wav, .mp3, .aiff, .m4a) im Ordner, um eigene Töne zu nutzen.",
+        "settings.voice.customSoundsHint": "Platziere attention-, permission-, done- oder error-Dateien (.wav, .mp3, .aiff, .m4a) im Ordner, um eigene Töne zu nutzen.",
         "settings.agents.changeNotice": "Dies ändert sich in %@. Deine eigenen Einstellungen bleiben erhalten; eine Sicherungskopie wird daneben angelegt.",
         "settings.agents.noChange": "Keine Änderungen.",
 
