@@ -39,8 +39,12 @@ enum WhatsAppSettings {
 
     /// The accounts linked besides the first one, in the order they were added (see `WAAccount`).
     static var accounts: [WAAccount] {
-        get { defaults.data(forKey: "whatsappAccounts").flatMap { try? JSONDecoder().decode([WAAccount].self, from: $0) } ?? [] }
-        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "whatsappAccounts") }
+        // Account by account, the stored list kept aside first when one cannot be read (`SafeStorage`).
+        get {
+            SafeStorage.decode(LossyArray<WAAccount>.self, defaults: defaults, key: "whatsappAccounts", skipped: { $0.skipped })
+                .value?.elements ?? []
+        }
+        set { defaults.setEncoded(newValue, forKey: "whatsappAccounts") }
     }
 
     /// What you call the first account; empty, it goes by its number.
@@ -75,12 +79,12 @@ enum WhatsAppSettings {
 
     /// Each chat's unread messages when Nook last ran (see `WAUnreadCarry`), by its JID.
     static func unreadCarry(account: String) -> [String: WAUnreadCarry] {
-        defaults.data(forKey: key("whatsappUnreadCarry", account: account))
-            .flatMap { try? JSONDecoder().decode([String: WAUnreadCarry].self, from: $0) } ?? [:]
+        SafeStorage.decode(LossyDictionary<WAUnreadCarry>.self, defaults: defaults, key: key("whatsappUnreadCarry", account: account),
+                           skipped: { $0.skipped }).value?.values ?? [:]
     }
 
     static func setUnreadCarry(_ carry: [String: WAUnreadCarry], account: String) {
-        defaults.set(try? JSONEncoder().encode(carry), forKey: key("whatsappUnreadCarry", account: account))
+        defaults.setEncoded(carry, forKey: key("whatsappUnreadCarry", account: account))
     }
 
     /// The chats pinned on the phone as far as Nook knows, by their JID: the ones you pinned from Nook, and what the

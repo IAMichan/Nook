@@ -61,6 +61,16 @@ enum SafeStorage {
         }
     }
 
+    /// Same as `decode`, for a value kept in UserDefaults under `key`. A backup goes to `<key>.json` in `backupFolder`.
+    static func decode<Value: Decodable>(
+        _ type: Value.Type, defaults: UserDefaults, key: String, backupFolder: URL? = nil, decoder: JSONDecoder = JSONDecoder(),
+        skipped: (Value) -> Int = { _ in 0 }
+    ) -> Outcome<Value> {
+        guard let data = defaults.data(forKey: key) else { return .missing }
+        let folder = backupFolder ?? NookPaths.supportDirectory
+        return decode(type, data: data, original: folder.appendingPathComponent("\(key).json"), decoder: decoder, skipped: skipped)
+    }
+
     /// Copies the data aside, once per distinct content. Returns the backup's location.
     @discardableResult
     static func preserve(_ data: Data, for url: URL, now: Date = Date()) -> URL? {
@@ -126,5 +136,53 @@ extension LossyArray: Encodable where Element: Encodable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(elements)
+    }
+}
+
+/// A dictionary with string keys that decodes value by value: values that cannot be read are counted and left out.
+struct LossyDictionary<Value: Decodable>: Decodable {
+    var values: [String: Value] = [:]
+    var skipped = 0
+
+    init(_ values: [String: Value]) { self.values = values }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyKey.self)
+        for key in container.allKeys {
+            if let value = try? container.decode(Value.self, forKey: key) {
+                values[key.stringValue] = value
+            } else {
+                skipped += 1
+            }
+        }
+    }
+
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+}
+
+extension LossyDictionary: Encodable where Value: Encodable {
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(values)
+    }
+}
+
+extension UserDefaults {
+    /// Stores `value` as JSON. When it cannot be encoded nothing is written, so the value already stored stays: the
+    /// pattern `set(try? encode(x), forKey:)` stores nil then, which deletes the key and the user's data with it.
+    @discardableResult
+    func setEncoded<Value: Encodable>(_ value: Value, forKey key: String, encoder: JSONEncoder = JSONEncoder()) -> Bool {
+        do {
+            set(try encoder.encode(value), forKey: key)
+            return true
+        } catch {
+            SafeStorage.report("\(key) could not be encoded (\(error)); the stored value is kept")
+            return false
+        }
     }
 }

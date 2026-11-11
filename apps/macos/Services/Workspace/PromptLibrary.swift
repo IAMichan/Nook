@@ -52,6 +52,26 @@ struct SavedPrompt: Codable, Equatable, Identifiable, Sendable {
     static func cleanTrigger(_ raw: String) -> String {
         String(raw.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
     }
+
+    init(id: UUID = UUID(), title: String, body: String, trigger: String = "", updatedAt: Date = Date()) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.trigger = trigger
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, title, body, trigger, updatedAt }
+
+    /// Fields with a default may be missing (a file from an older version): they get the default instead of failing.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try container.decode(String.self, forKey: .title)
+        body = try container.decode(String.self, forKey: .body)
+        trigger = try container.decodeIfPresent(String.self, forKey: .trigger) ?? ""
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+    }
 }
 
 /// The prompts the user saved, newest edit first. Foundation only; the app keeps it in `prompts.json` in Nook's folder.
@@ -95,15 +115,26 @@ struct PromptLibrary: Codable, Equatable, Sendable {
         return byTrigger + rest
     }
 
+    /// Prompt by prompt: one that cannot be read is left out, and the original file is kept aside first (`SafeStorage`),
+    /// so the next save never takes the user's prompts with it.
     static func load(_ url: URL) -> PromptLibrary {
-        guard let data = try? Data(contentsOf: url), let library = try? JSONDecoder().decode(PromptLibrary.self, from: data) else { return PromptLibrary() }
-        return library
+        SafeStorage.load(Stored.self, from: url, skipped: { $0.prompts.skipped }).value.map { PromptLibrary(prompts: $0.prompts.elements) }
+            ?? PromptLibrary()
+    }
+
+    private struct Stored: Decodable {
+        var prompts: LossyArray<SavedPrompt>
+        private enum CodingKeys: String, CodingKey { case prompts }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            prompts = try container.decodeIfPresent(LossyArray<SavedPrompt>.self, forKey: .prompts) ?? LossyArray([])
+        }
     }
 
     func write(to url: URL) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(self) else { return }
-        try? data.write(to: url, options: .atomic)
+        try? SafeStorage.write(data, to: url)
     }
 }

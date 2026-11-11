@@ -348,7 +348,7 @@ final class AppSettings: ObservableObject {
     /// VS Code color themes the user imported, kept as their JSON (`NookCustomTheme`).
     @Published var customThemes: [NookCustomTheme] {
         didSet {
-            UserDefaults.standard.set(try? JSONEncoder().encode(customThemes), forKey: "customThemes")
+            UserDefaults.standard.setEncoded(customThemes, forKey: "customThemes")
             customThemeCache = customThemes.compactMap(\.theme)
             applyTheme()
         }
@@ -755,7 +755,9 @@ final class AppSettings: ObservableObject {
         NookTheme.density = storedDensity
         darkThemeID = defaults.string(forKey: "darkThemeID") ?? NookColorTheme.nook.id
         lightThemeID = defaults.string(forKey: "lightThemeID") ?? NookColorTheme.nook.id
-        let storedThemes = (defaults.data(forKey: "customThemes")).flatMap { try? JSONDecoder().decode([NookCustomTheme].self, from: $0) } ?? []
+        // Theme by theme, the stored list kept aside first when one cannot be read (`SafeStorage`).
+        let storedThemes = SafeStorage.decode(LossyArray<NookCustomTheme>.self, defaults: defaults, key: "customThemes",
+                                              skipped: { $0.skipped }).value?.elements ?? []
         customThemes = storedThemes
         customThemeCache = storedThemes.compactMap(\.theme)
         renderMath = defaults.object(forKey: "renderMath") as? Bool ?? true

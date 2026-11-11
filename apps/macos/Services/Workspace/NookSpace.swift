@@ -18,6 +18,26 @@ struct NookSpace: Codable, Equatable, Identifiable, Sendable {
         guard !text.isEmpty else { return "" }
         return "Instructions of the space \"\(name)\" (written by the user; follow them):\n" + text
     }
+
+    init(id: UUID = UUID(), name: String, instructions: String = "", attachments: [String] = [], createdAt: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.instructions = instructions
+        self.attachments = attachments
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, instructions, attachments, createdAt }
+
+    /// Fields with a default may be missing (a file from an older version): they get the default instead of failing.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        instructions = try container.decodeIfPresent(String.self, forKey: .instructions) ?? ""
+        attachments = try container.decodeIfPresent([String].self, forKey: .attachments) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
 }
 
 /// The user's spaces and which conversation is filed in which. Foundation only; kept in `spaces.json`.
@@ -52,15 +72,29 @@ struct NookSpaceBook: Codable, Equatable, Sendable {
         membership.filter { $0.value == space }.compactMap { UUID(uuidString: $0.key) }
     }
 
+    /// Space by space and entry by entry: what cannot be read is left out, and the original file is kept aside first
+    /// (`SafeStorage`), so the next save never takes the user's spaces with it.
     static func load(_ url: URL) -> NookSpaceBook {
-        guard let data = try? Data(contentsOf: url), let book = try? JSONDecoder().decode(NookSpaceBook.self, from: data) else { return NookSpaceBook() }
-        return book
+        guard let stored = SafeStorage.load(Stored.self, from: url, skipped: { $0.spaces.skipped + $0.membership.skipped }).value
+        else { return NookSpaceBook() }
+        return NookSpaceBook(spaces: stored.spaces.elements, membership: stored.membership.values)
+    }
+
+    private struct Stored: Decodable {
+        var spaces: LossyArray<NookSpace>
+        var membership: LossyDictionary<UUID>
+        private enum CodingKeys: String, CodingKey { case spaces, membership }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            spaces = try container.decodeIfPresent(LossyArray<NookSpace>.self, forKey: .spaces) ?? LossyArray([])
+            membership = try container.decodeIfPresent(LossyDictionary<UUID>.self, forKey: .membership) ?? LossyDictionary([:])
+        }
     }
 
     func write(to url: URL) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(self) else { return }
-        try? data.write(to: url, options: .atomic)
+        try? SafeStorage.write(data, to: url)
     }
 }

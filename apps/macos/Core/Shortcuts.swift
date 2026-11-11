@@ -125,8 +125,12 @@ struct ShortcutSet: Equatable, Sendable {
     static let defaultsKey = "shortcuts"
 
     static func load(from defaults: UserDefaults = .standard) -> ShortcutSet {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let stored = try? JSONDecoder().decode([String: Shortcut?].self, from: data) else { return ShortcutSet() }
+        // Shortcut by shortcut: one that cannot be read, or an action this version does not know, is left out, and the
+        // stored set is kept aside first (`SafeStorage`), so the next save never loses it for good.
+        let outcome = SafeStorage.decode(LossyDictionary<Shortcut?>.self, defaults: defaults, key: defaultsKey, skipped: { stored in
+            stored.skipped + stored.values.keys.filter { ShortcutAction(rawValue: $0) == nil }.count
+        })
+        guard let stored = outcome.value?.values else { return ShortcutSet() }
         var set = ShortcutSet()
         for (key, value) in stored { if let action = ShortcutAction(rawValue: key) { set.custom[action] = .some(value) } }
         return set
@@ -135,6 +139,6 @@ struct ShortcutSet: Equatable, Sendable {
     func save(to defaults: UserDefaults = .standard) {
         var stored: [String: Shortcut?] = [:]
         for (action, value) in custom { stored[action.rawValue] = .some(value) }
-        if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.defaultsKey) }
+        defaults.setEncoded(stored, forKey: Self.defaultsKey)
     }
 }

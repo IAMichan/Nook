@@ -17,8 +17,9 @@ final class ChatFollowUpStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        follow = defaults.data(forKey: Self.followKey).flatMap { try? JSONDecoder().decode(ChatFollowUps.self, from: $0) } ?? ChatFollowUps()
-        notes = defaults.data(forKey: Self.notesKey).flatMap { try? JSONDecoder().decode(ChatPersonNotes.self, from: $0) } ?? ChatPersonNotes()
+        // What cannot be read is kept aside first (`SafeStorage`), so the next change never loses it for good.
+        follow = SafeStorage.decode(ChatFollowUps.self, defaults: defaults, key: Self.followKey).value ?? ChatFollowUps()
+        notes = SafeStorage.decode(ChatPersonNotes.self, defaults: defaults, key: Self.notesKey).value ?? ChatPersonNotes()
     }
 
     /// Changes the follow-ups and saves them, only when something changed (a published value publishes on every write).
@@ -27,7 +28,7 @@ final class ChatFollowUpStore: ObservableObject {
         change(&next)
         guard next != follow else { return }
         follow = next
-        if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.followKey) }
+        defaults.setEncoded(next, forKey: Self.followKey)
     }
 
     func changeNotes(_ change: (inout ChatPersonNotes) -> Void) {
@@ -35,7 +36,7 @@ final class ChatFollowUpStore: ObservableObject {
         change(&next)
         guard next != notes else { return }
         notes = next
-        if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.notesKey) }
+        defaults.setEncoded(next, forKey: Self.notesKey)
     }
 
     /// The chats as the shared shape, for every app in the inbox at once.

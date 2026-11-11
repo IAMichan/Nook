@@ -510,7 +510,7 @@ final class NookChat: ObservableObject {
     func setScope(_ scope: SourceScope, conversation id: UUID) {
         guard let index = index(of: id) else { return }
         conversations[index].scope = scope
-        UserDefaults.standard.set(try? JSONEncoder().encode(scope), forKey: Self.lastScopeKey)
+        UserDefaults.standard.setEncoded(scope, forKey: Self.lastScopeKey)
         scheduleSave()
     }
 
@@ -630,6 +630,17 @@ final class NookChat: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.save()
         }
+    }
+
+    /// On quit: a save still waiting for its debounce is written now, and every queued write finishes before this returns,
+    /// so the last edits are not lost when the process ends right after.
+    func flush() {
+        if let task = saveTask {
+            task.cancel()
+            saveTask = nil
+            save()
+        }
+        Self.saveQueue.sync {}
     }
 
     private func save() {
