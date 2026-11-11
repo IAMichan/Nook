@@ -1,7 +1,7 @@
 name: Cancel stale runs
 
 # Cancels pull request runs that are still queued or running although their PR is already merged or
-# closed. New PRs cancel their own run on close (see the concurrency block in build.yml); this clears
+# closed. New PRs cancel their own run on close (see the concurrency block in ci.yml); this clears
 # runs left behind from before that, or any that slipped through. Runs on ubuntu, so it never waits
 # behind the macOS queue it is clearing.
 on:

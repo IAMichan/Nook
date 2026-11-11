@@ -4,14 +4,19 @@ Nook's CI runs on GitHub Actions. The macOS runners are the scarce resource: the
 time, and every queued macOS job makes the next pull request wait. The workflows are built to start one only when it
 can tell us something new.
 
-| Workflow | Runs on | When |
+Every push and pull request goes through one entry point, `ci.yml`. Its *Changes* job reads the diff with git (seconds on
+ubuntu) and starts only the areas the change can affect; `scripts/ci-changes.sh` holds the path lists. Each area is a
+reusable workflow that can also be started on its own with *Run workflow*.
+
+| Workflow | Runs on | When (`scripts/ci-changes.sh`) |
 |---|---|---|
+| `ci.yml` | ubuntu, then the areas below; ends with the `Check` job | every push to `main` and every ready pull request |
 | `build.yml` | ubuntu (UI and performance lint), then macOS (build + `NookTests`) | `apps/macos`, `packages/protocol`, `scripts/ui-lint.sh`, `scripts/perf-lint.sh` |
 | `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol` |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
-| `relay-deploy.yml` | ubuntu, on `main` or by hand | `apps/relay`: deploys Nook's relay to Cloudflare when its secrets are set |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
+| `relay-deploy.yml` | ubuntu, on `main` or by hand | `apps/relay`: deploys Nook's relay to Cloudflare when its secrets are set |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
 | `labeler.yml` | ubuntu, seconds | adds area labels to every pull request from the paths it changes (`.github/labeler.yml`) |
 | `pr-size.yml` | ubuntu, seconds | labels every pull request `size:XS` to `size:XXL` from its changed lines (tests excluded) |
@@ -20,12 +25,26 @@ can tell us something new.
 | `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later (`keep open` exempts) |
 | `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
 
-A workflow also runs when its own file changes (and `.github/actions/**` for the ones that use it).
+An area also runs when its own workflow file changes (and `.github/actions/**` for the ones that use it); a change to
+`ci.yml` or `scripts/ci-changes.sh` runs every area.
+
+## The `Check` job (required on `main`)
+
+`Check`, the last job of `ci.yml`, passes only when every job in the run passed, or was skipped because `Changes` said
+its area was not needed. It fails when a job failed or was cancelled, and when detection itself failed (detection
+fails open: if the diff cannot be read, every area runs). This is the one status check the `main` ruleset requires, so a
+red pull request cannot be merged by accident, however many come in, and adding or splitting jobs needs no ruleset
+change: add the new job to `needs` of `Check` (and to `scripts/ci-changes.sh` when it can be skipped).
+
+`ci.yml` also runs *Committed files* on every pull request (`scripts/pr-files-check.sh`): it fails on build logs,
+`.xcresult` bundles, `.DS_Store`, files under `.scratch/` or derived data, and any added or changed file over 2 MiB outside
+`apps/macos/Resources/` and `docs/assets/`. Screenshots that prove a change belong in the pull request description, not
+in the repository.
 
 ## What keeps the minutes down
 
-- **Path filters.** A pull request that only touches docs starts no runner at all; one that only touches the Tauri app
-  starts no macOS runner.
+- **Change detection.** A pull request that only touches docs starts only the seconds-long *Changes*, *Committed files*
+  and `Check` jobs on ubuntu; one that only touches the Tauri app starts no macOS runner.
 - **One run per pull request.** A new push, or merging or closing the PR, cancels the run that is still going. On `main`
   a running build finishes and only the newest push waits behind it, so a burst of merges costs at most two builds.
 - **Drafts wait.** Draft pull requests run nothing; marking one ready for review starts CI.
@@ -61,9 +80,12 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
 
 ## Adding a workflow
 
-Copy the `on:` block (with `closed` in the pull request types), the `concurrency` block, and the `if:` on the first job
-from `build.yml`. For a job on a macOS runner, put `verified-check` in a cheap ubuntu job before it (with the same paths
-as the filter) and `verified-mark` as the last step of the macOS job.
+For a new build or test area, write a reusable workflow (`on: workflow_call` and `workflow_dispatch`, no `concurrency`
+block: it would share `ci.yml`'s group and deadlock), add its paths to `scripts/ci-changes.sh`, and add a job that calls
+it to `ci.yml` and to the `needs` of `Check`. A workflow outside `ci.yml` (labels, triage) copies the `on:` block (with
+`closed` in the pull request types) and the `concurrency` block from `ci.yml`. For a job on a macOS runner, put
+`verified-check` in a cheap ubuntu job before it (with the same paths as in `scripts/ci-changes.sh`) and `verified-mark` as
+the last step of the macOS job.
 
 ## Release notes
 

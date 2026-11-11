@@ -1,24 +1,13 @@
 name: Relay
 
+# Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only
+# the relay's tests.
 on:
-  push:
-    branches: [main]
-    paths: &paths
-      - 'apps/relay/**'
-      - '.github/workflows/relay.yml'
-  pull_request:
-    # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
-    types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: *paths
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-# One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The relay for the iPhone companion (apps/relay): its room logic and message format, with Node's own test runner.
 # Ubuntu only, seconds; it has no dependencies to install.
