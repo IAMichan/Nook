@@ -61,6 +61,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-tags: true # scripts/next-release-tag.sh reads the earlier release tags
+          persist-credentials: false
       - name: Choose the version
         id: version
         env:
@@ -129,9 +130,13 @@ jobs:
           xcodebuild build -project Nook.xcodeproj -scheme Nook -configuration Release -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO SWIFT_COMPILATION_MODE=singlefile \
-            MARKETING_VERSION="${{ steps.version.outputs.marketing }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            NOOK_RELAY_URL="${{ vars.NOOK_RELAY_URL }}" NOOK_UPDATE_PUBLIC_KEY="${{ vars.NOOK_UPDATE_PUBLIC_KEY }}" \
+            MARKETING_VERSION="${STEPS_VERSION_OUTPUTS_MARKETING}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            NOOK_RELAY_URL="${VARS_NOOK_RELAY_URL}" NOOK_UPDATE_PUBLIC_KEY="${VARS_NOOK_UPDATE_PUBLIC_KEY}" \
             2>&1 | tee build.log
+        env:
+          STEPS_VERSION_OUTPUTS_MARKETING: ${{ steps.version.outputs.marketing }}
+          VARS_NOOK_RELAY_URL: ${{ vars.NOOK_RELAY_URL }}
+          VARS_NOOK_UPDATE_PUBLIC_KEY: ${{ vars.NOOK_UPDATE_PUBLIC_KEY }}
       - name: Save Swift package build cache
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -186,11 +191,11 @@ jobs:
           for KEY in NookReleaseVersion NookReleaseRepository; do
             /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
           done
-          /usr/libexec/PlistBuddy -c "Add :NookReleaseVersion string ${{ steps.version.outputs.version }}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NookReleaseVersion string ${STEPS_VERSION_OUTPUTS_VERSION}" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NookReleaseRepository string $GITHUB_REPOSITORY" "$PLIST"
           # The key the app checks its next update with; a build without it can never install one by itself.
           KEY="$(/usr/libexec/PlistBuddy -c "Print :NookUpdatePublicKey" "$PLIST" 2>/dev/null || true)"
-          if [ -z "$KEY" ] || [ "$KEY" != "${{ vars.NOOK_UPDATE_PUBLIC_KEY }}" ]; then
+          if [ -z "$KEY" ] || [ "$KEY" != "${VARS_NOOK_UPDATE_PUBLIC_KEY}" ]; then
             echo "::error::Info.plist does not carry NOOK_UPDATE_PUBLIC_KEY."
             exit 1
           fi
@@ -210,12 +215,16 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           mkdir -p "$RUNNER_TEMP/dist"
           ditto "$APP" "$RUNNER_TEMP/dist/Nook.app"
+        env:
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
+          VARS_NOOK_UPDATE_PUBLIC_KEY: ${{ vars.NOOK_UPDATE_PUBLIC_KEY }}
       - name: Package .dmg and .zip
         working-directory: ${{ runner.temp }}/dist
         env:
           CONFIG: ${{ github.workspace }}/apps/macos/Config/DMG
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           ditto -c -k --keepParent Nook.app "Nook-$VERSION-macOS.zip"
           # The installer window: Nook's own layout as background (scripts/generate_dmg_background.py), the app on the
           # left, Applications on the right. dmgbuild writes the window's layout without driving Finder.
@@ -235,8 +244,9 @@ jobs:
           NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
           NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
           NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           if [ -z "$NOTARY_APPLE_ID" ] || [ -z "$NOTARY_PASSWORD" ] || [ -z "$NOTARY_TEAM_ID" ]; then
             echo "::warning::Developer ID signed but not notarized: set APPLE_NOTARY_APPLE_ID, APPLE_NOTARY_PASSWORD and APPLE_TEAM_ID."
             exit 0
@@ -257,8 +267,9 @@ jobs:
         env:
           NOOK_UPDATE_SIGNING_KEY: ${{ secrets.NOOK_UPDATE_SIGNING_KEY }}
           NOOK_UPDATE_PUBLIC_KEY: ${{ vars.NOOK_UPDATE_PUBLIC_KEY }}
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           if [ -z "$NOOK_UPDATE_SIGNING_KEY" ] || [ -z "$NOOK_UPDATE_PUBLIC_KEY" ]; then
             # Without them, every build out there would have to download the next release by hand.
             echo "::error::NOOK_UPDATE_SIGNING_KEY or NOOK_UPDATE_PUBLIC_KEY is not set: make the pair with swift scripts/sign-update.swift generate (docs/UPDATES.md)."
@@ -270,28 +281,33 @@ jobs:
       - name: Checksums
         working-directory: ${{ runner.temp }}/dist
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           shasum -a 256 "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
+        env:
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
       - name: Publish the release
         working-directory: ${{ runner.temp }}/dist
         env:
           GH_TOKEN: ${{ github.token }}
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
+          STEPS_VERSION_OUTPUTS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          STEPS_VERSION_OUTPUTS_TITLE: ${{ steps.version.outputs.title }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           # GitHub's own list of what changed since the last release; it goes folded away at the bottom of the page.
           gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
             --jq .body > changes.md || : > changes.md
           # The page: banner, download button and the downloads on top, then the install steps (scripts/release-notes.sh).
-          TAG="$TAG" VERSION="$VERSION" REPO="$GITHUB_REPOSITORY" PRERELEASE="${{ steps.version.outputs.prerelease }}" \
+          TAG="$TAG" VERSION="$VERSION" REPO="$GITHUB_REPOSITORY" PRERELEASE="${STEPS_VERSION_OUTPUTS_PRERELEASE}" \
             NOTARIZED="${NOTARIZED:-false}" DMG="Nook-$VERSION-macOS.dmg" ZIP="Nook-$VERSION-macOS.zip" CHANGES=changes.md \
             "$GITHUB_WORKSPACE/scripts/release-notes.sh" > notes.md
           FLAGS=""
-          [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
+          [ "${STEPS_VERSION_OUTPUTS_PRERELEASE}" = "true" ] && FLAGS="--prerelease"
           test -s "Nook-$VERSION-macOS.zip.sig"
           FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt)
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.title }}" \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${STEPS_VERSION_OUTPUTS_TITLE}" \
             --notes-file notes.md $FLAGS "${FILES[@]}"
       - name: Keep the build log
         if: failure()
