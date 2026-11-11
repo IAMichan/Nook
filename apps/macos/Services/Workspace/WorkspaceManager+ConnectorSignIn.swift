@@ -50,16 +50,19 @@ extension WorkspaceManager {
     // MARK: Claude Code
 
     /// The Claude Code process of a session, working or waiting for the next message; a session whose process closed
-    /// gets one again (it resumes the conversation, as when you open it).
-    private func claudeProcess(_ id: UUID) -> AgentProcess? {
+    /// gets one again (it resumes the conversation, as when you open it) unless `starts` is off.
+    private func claudeProcess(_ id: UUID, starts: Bool = true) -> AgentProcess? {
         if let process = processes[id] ?? claudeIdle[id]?.process, process.isRunning { return process }
+        guard starts else { return nil }
         prewarm(id)
         return claudeIdle[id]?.process
     }
 
-    /// Sends a control request and hands its answer to `reply` (on the main actor).
-    private func claudeControl(_ id: UUID, _ make: (String) -> String, reply: @escaping (JSONBox?, String?) -> Void) -> Bool {
-        guard let process = claudeProcess(id) else { return false }
+    /// Sends a control request and hands its answer to `reply` (on the main actor). With `starts` off it goes only to a
+    /// process that already runs.
+    func claudeControl(_ id: UUID, starts: Bool = true, _ make: (String) -> String,
+                       reply: @escaping (JSONBox?, String?) -> Void) -> Bool {
+        guard let process = claudeProcess(id, starts: starts) else { return false }
         let requestID = "nook-mcp-" + UUID().uuidString.prefix(8)
         claudeControlReplies[requestID] = reply
         process.send(make(requestID))

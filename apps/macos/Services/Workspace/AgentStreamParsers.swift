@@ -435,6 +435,12 @@ enum ClaudeStreamParser {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_status"]])
     }
 
+    /// Asks what fills the context window (`ContextUsage.claude`). `summary` answers from the last response's usage and
+    /// local estimates, without the token-count calls of `full`.
+    static func contextUsageRequest(id: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "get_context_usage", "detail": "summary"]])
+    }
+
     /// Connects a connector again, as after signing in to it on claude.ai.
     static func mcpReconnectRequest(id: String, server: String) -> String {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_reconnect", "serverName": server]])
