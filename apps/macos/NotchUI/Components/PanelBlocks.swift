@@ -114,6 +114,8 @@ extension View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ask() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in ask() }
+        // A side panel that closed with the keyboard dropped, and nothing to give it back to (`SideFocusReturn`).
+        .onReceive(NotificationCenter.default.publisher(for: .nookComposerFocusRequest)) { _ in ask() }
     }
 }
 

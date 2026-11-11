@@ -302,6 +302,8 @@ extension AppModel {
             if url.absoluteString.contains("/-/merge_requests/") { return await GitLabMergeRequests.snapshot(url: url) }
             return await PullRequestForges.snapshot(url: url)
         }
+        // GitHub says when a watched pull request changed, so the watch reads it at once instead of at the next sweep.
+        workspace.pullRequestEvents = { GitHubPullRequestEventStream.changes($0) }
         // The tray above the composer reads its pull request with the same accounts, into the one shared status.
         PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot
         PullRequestSync.shared.seedStatuses(watches: workspace.runs.compactMap(\.prWatch))

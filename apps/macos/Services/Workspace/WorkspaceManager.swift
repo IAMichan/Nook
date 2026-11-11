@@ -249,7 +249,16 @@ final class WorkspaceManager: ObservableObject {
     var pullRequestCreated: ((_ run: UUID?, _ url: URL) -> Void)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
+    /// The host's change feed of a watched pull request (GitHub's event stream): emits when it may have changed and once
+    /// per (re)connect; nil where the host offers none. Set by AppModel.
+    var pullRequestEvents: ((URL) -> AsyncStream<Void>?)?
     var watchesInFlight: Set<String> = []
+    /// Watches whose host reported a change while they were being read: read once more when that read is done.
+    var watchRechecks: Set<String> = []
+    /// One change feed per watched pull request (by its link), shared by every session watching it.
+    var pullRequestFeeds: [String: Task<Void, Never>] = [:]
+    /// When a feed ended by itself (GitHub refused it, or it kept failing): it starts again a sweep later at the earliest.
+    var pullRequestFeedEnded: [String: Date] = [:]
     /// Sessions whose queue waits for a fresh look at a pull request before its next message goes out.
     var queueLooks: Set<UUID> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
@@ -264,6 +273,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var modelManifest: ModelManifest?
     /// What `claude --version` and `codex --version` printed, for the models that need a newer agent.
     @Published var agentVersions: [RunProvider: String] = [:]
+    /// Nook is quitting (`shutdown()` ran): agents are being stopped and nothing new starts.
+    private(set) var quitting = false
     /// When the repository was last asked for the manifest, and when each agent's version was read (with its path).
     var manifestAttempted: Date?
     /// The model list of each agent (see `modelMenu`), by `effortKey`.
@@ -298,6 +309,12 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNowSteer: [UUID: RunEvent.SteerKind] = [:]
     /// The message in `pendingSendNow` starts a new conversation (`/clear`).
     var pendingSendNowFresh: Set<UUID> = []
+    /// Where the message in `pendingSendNow` comes from, when that is not you (`QueuedMessage.Origin`).
+    var pendingSendNowOrigin: [UUID: QueuedMessage.Origin] = [:]
+    /// When the work now going on began (`TurnTimer`): a new prompt sets it, the agent carrying on by itself keeps it.
+    var workStartedAt: [UUID: Date] = [:]
+    /// The turn about to start carries on the agent's own work (`TurnTimer`); taken by the turn's start.
+    var continuingTurns: Set<UUID> = []
     /// The words of the turn that went out last, to send them again in a new conversation when the agent lost the old one or
     /// it no longer fits (`recoverConversation`).
     var turnPrompts: [UUID: String] = [:]
@@ -1197,15 +1214,15 @@ final class WorkspaceManager: ObservableObject {
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
     @discardableResult
-    func send(_ id: UUID, text: String) -> Bool {
-        send(id, text: text, shown: false)
+    func send(_ id: UUID, text: String, origin: QueuedMessage.Origin? = nil) -> Bool {
+        send(id, text: text, shown: false, origin: origin)
     }
 
     /// A message from Nook rather than from you (the result of background work): it goes to the agent without a bubble
     /// of yours in the timeline.
     @discardableResult
-    func sendHidden(_ id: UUID, text: String) -> Bool {
-        send(id, text: text, shown: true)
+    func sendHidden(_ id: UUID, text: String, origin: QueuedMessage.Origin? = nil) -> Bool {
+        send(id, text: text, shown: true, origin: origin)
     }
 
     /// Sends the message you asked to go out right away once the turn ended; if it cannot go out now it waits
@@ -1215,19 +1232,30 @@ final class WorkspaceManager: ObservableObject {
         guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
         let mark = pendingSendNowSteer.removeValue(forKey: id)
         let fresh = pendingSendNowFresh.remove(id) != nil
+        let origin = pendingSendNowOrigin.removeValue(forKey: id)
         // A new conversation starts only between turns; while the snapshot is still being made it waits at the front.
         if fresh, !clearConversation(id, quietly: true) {
             queued[id, default: MessageQueue()].requeueFirst(next, fresh: true)
             return true
         }
         let before = timeline(id).last { $0.kind == .user }?.id
-        if !send(id, text: next, shown: false) {
+        if !send(id, text: next, shown: false, origin: origin) {
             queued[id, default: MessageQueue()].requeueFirst(next, fresh: fresh)
         } else if let mark, let sent = timeline(id).last(where: { $0.kind == .user }), sent.id != before {
             // It cut the turn off to go out: it reads as a steer, as a message taken into the turn does.
             mutateEvent(id, sent.id) { $0.steer = mark }
         }
         return true
+    }
+
+    /// Where the working timer of the turn starting now begins (`TurnTimer`). `continuing`: the agent carries on by itself
+    /// (a wake for background work); otherwise whatever started the turn says so (`continuingTurns`, set by `send`). Every
+    /// agent's turn start and wake goes through here.
+    func turnStart(_ id: UUID, continuing: Bool = false) -> Date {
+        let continuing = continuingTurns.remove(id) != nil || continuing
+        let start = TurnTimer.start(continuing: continuing, previous: workStartedAt[id])
+        workStartedAt[id] = start
+        return start
     }
 
     /// Whether this turn goes to Codex over app-server (rather than `codex exec`, or another agent).
@@ -1239,10 +1267,15 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
+    /// `origin`: who the message comes from when not you (`QueuedMessage.Origin`): whether the delegating parent hears of
+    /// the turn it starts, and whether the working timer keeps the start of the work it carries on.
     @discardableResult
-    private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
+    private func send(_ id: UUID, text: String, shown: Bool, origin: QueuedMessage.Origin? = nil) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, var run = run(id) else { return false }
+        // Only for the turn this call starts: the mark never lingers for a later message of yours.
+        if QueuedMessage.Origin.continuesWork(origin) { continuingTurns.insert(id) }
+        defer { continuingTurns.remove(id) }
         // Anything but Nook's own summary ends a summary that never reported back (it failed to start, or stopped).
         let idleSummary = shown && clean == "/compact" && idleCompacting.contains(id)
         if !idleSummary {
@@ -1253,14 +1286,17 @@ final class WorkspaceManager: ObservableObject {
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
         // Its worktree is being made again for an earlier message: this one follows that turn.
         if reopeningWorktrees.contains(id) {
-            enqueue(id, text: clean)
+            enqueue(id, text: clean, origin: origin)
             return true
         }
         if checkpointing.contains(id), awaitingCheckpoint[id] != nil {
-            enqueue(id, text: clean)
+            enqueue(id, text: clean, origin: origin)
             return true
         }
         guard run.canContinue || (shown && run.status == .preparing), processes[id] == nil else { return false }
+        // A turn starts: a delegated task tells its parent again when it ends (`Origin.rearmsParent`). Not for Nook's
+        // quiet summary, which reports to nobody.
+        if !idleSummary, QueuedMessage.Origin.rearmsParent(origin) { rearmDelegation(id) }
         // "Auto" may move the session to another agent or account first (see `autoMove`); Nook's summary of an idle
         // session stays with the conversation it summarizes.
         if !idleSummary { autoMove(id, prompt: clean) }
@@ -1334,6 +1370,7 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
+        settleSteers(id, dropped: run.status != .completed)
         noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
         if run.status != .failed { recoveringConversation.remove(id) }
@@ -1362,6 +1399,7 @@ final class WorkspaceManager: ObservableObject {
         } else {
             heldWakeCompletions.remove(id)
             onTurnFinished?(run)
+            // Not while a message still waits to go out to it: then it reports after that turn (`sendQueued`).
             deliverDelegatedResult(id)
         }
         captureCheckpoint(id)
@@ -1433,7 +1471,7 @@ final class WorkspaceManager: ObservableObject {
     /// another agent, a guest or a schedule never takes your `/clear`. A fresh message (or one with `fresh`) starts the
     /// new conversation right away when the agent is free, otherwise it waits in line marked so and never joins a turn.
     @discardableResult
-    func submit(_ id: UUID, text: String, fresh: Bool = false, fromYou: Bool = false) -> Bool {
+    func submit(_ id: UUID, text: String, fresh: Bool = false, fromYou: Bool = false, origin: QueuedMessage.Origin? = nil) -> Bool {
         guard let run = run(id) else { return false }
         if fromYou, FreshConversation.isCommand(text) {
             armFreshConversation(id)
@@ -1446,9 +1484,9 @@ final class WorkspaceManager: ObservableObject {
         var cleared = false
         if !busy {
             if fresh { cleared = clearConversation(id, quietly: true) }
-            if !fresh || cleared, send(id, text: text, shown: false) { return true }
+            if !fresh || cleared, send(id, text: text, shown: false, origin: origin) { return true }
         }
-        enqueue(id, text: text, fresh: fresh && !cleared)
+        enqueue(id, text: text, fresh: fresh && !cleared, origin: origin)
         sendQueued(id)
         return false
     }
@@ -1459,40 +1497,43 @@ final class WorkspaceManager: ObservableObject {
     /// running turn the agent can take and otherwise goes as `submit`; `steer` only into the running turn (nil when it
     /// cannot take it); `restart` stops the running turn and goes out right after; `queue` is `submit`. It never takes
     /// your `/clear`, and never cuts into a turn that is starting a new conversation for you.
-    func deliver(_ id: UUID, text: String, mode: BridgeSessionArguments.SendMode) -> Delivery? {
+    /// `origin`: who sends it when that is not you (`DelegatedTask.origin`).
+    func deliver(_ id: UUID, text: String, mode: BridgeSessionArguments.SendMode, origin: QueuedMessage.Origin? = nil) -> Delivery? {
         guard let run = run(id) else { return nil }
         let active = run.status.isActive
         switch mode {
         case .queue:
-            return submit(id, text: text) ? .sent : .queued
+            return submit(id, text: text, origin: origin) ? .sent : .queued
         case .auto:
             if active, canSteer(id), steer(id, text: text) { return .steered }
-            return submit(id, text: text) ? .sent : .queued
+            return submit(id, text: text, origin: origin) ? .sent : .queued
         case .steer:
-            guard active else { return submit(id, text: text) ? .sent : .queued }
+            guard active else { return submit(id, text: text, origin: origin) ? .sent : .queued }
             return canSteer(id) && steer(id, text: text) ? .steered : nil
         case .restart:
-            guard active else { return submit(id, text: text) ? .sent : .queued }
+            guard active else { return submit(id, text: text, origin: origin) ? .sent : .queued }
             let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { return nil }
             // A message already waits to go out when this turn ends (yours, sent now): this one goes after it.
             guard pendingSendNow[id] == nil else {
-                enqueue(id, text: clean)
+                enqueue(id, text: clean, origin: origin)
                 return .queued
             }
             pendingSendNow[id] = clean
             pendingSendNowSteer[id] = .steer
             pendingSendNowFresh.remove(id)
+            pendingSendNowOrigin[id] = origin
             stop(id)
             return .restarted
         }
     }
 
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
-    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil, fresh: Bool = false) {
+    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil, fresh: Bool = false,
+                 origin: QueuedMessage.Origin? = nil) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
-        queue.enqueue(text, pullRequest: pullRequest, fresh: fresh)
+        queue.enqueue(text, pullRequest: pullRequest, fresh: fresh, origin: origin)
         queued[id] = queue.isEmpty ? nil : queue
     }
 
@@ -1526,6 +1567,7 @@ final class WorkspaceManager: ObservableObject {
             store(queue, for: id)
             pendingSendNow[id] = text
             pendingSendNowSteer[id] = fresh ? nil : .promoted
+            pendingSendNowOrigin[id] = nil
             if fresh { pendingSendNowFresh.insert(id) } else { pendingSendNowFresh.remove(id) }
             stop(id)
             return
@@ -1573,6 +1615,8 @@ final class WorkspaceManager: ObservableObject {
         guard var queue = queued[id] else { return }
         queue.remove(message)
         store(queue, for: id)
+        // A finished task whose result waited for this message reports now.
+        deliverDelegatedResult(id)
     }
 
     func moveQueued(_ id: UUID, message: UUID, toIndex index: Int) {
@@ -1617,8 +1661,12 @@ final class WorkspaceManager: ObservableObject {
     /// that just ended may well have fixed it. `looked` says that look was just taken.
     func sendQueued(_ id: UUID, looked: Bool = false) {
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
-        guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
-              var queue = queued[id], let next = queue.next() else { return }
+        guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed else { return }
+        guard var queue = queued[id], let next = queue.next() else {
+            // Nothing left to send: a delegated task whose result waited for its queue reports now.
+            deliverDelegatedResult(id)
+            return
+        }
         if !looked, let notice = next.pullRequest, let fetch = pullRequestSnapshot, let url = URL(string: notice.url) {
             guard queueLooks.insert(id).inserted else { return }
             Task { [weak self] in
@@ -1640,7 +1688,7 @@ final class WorkspaceManager: ObservableObject {
         store(queue, for: id)
         // A message after `/clear`: the conversation so far ends here (sendQueued only runs between turns).
         if next.fresh { clearConversation(id, quietly: true) }
-        send(id, text: next.text)
+        send(id, text: next.text, origin: next.origin)
     }
 
     /// Retries the previous task (after an error or when stopped).
@@ -1730,6 +1778,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
+        guard !quitting else { return }
         cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
         if waitForCapacity(id, prompt: prompt, executable: executable, showPrompt: showPrompt) { return }
@@ -1807,7 +1856,7 @@ final class WorkspaceManager: ObservableObject {
         if forkNext.remove(id) != nil { forkLaunched.insert(id) } else { forkLaunched.remove(id) }
         if rollback != nil { run.pendingRollback = nil }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id)
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
@@ -1834,7 +1883,7 @@ final class WorkspaceManager: ObservableObject {
     /// straight in instead of waiting for a process to start: Claude Code waits on stdin, Codex has its thread open, an
     /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
     func prewarm(_ id: UUID) {
-        guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
+        guard !quitting, let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
               (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
               let executable = launchExecutable(run),
               run.provider != .claude || run.pendingRollback == nil,
@@ -2160,6 +2209,8 @@ final class WorkspaceManager: ObservableObject {
     }
 
     private func processExited(_ id: UUID, status: Int32, stderr: String, process: AgentProcess? = nil) {
+        // Quitting: `shutdown()` already settled every session; an exit now must not send queued messages or start a turn.
+        guard !quitting else { return }
         // A Claude Code process that waited between turns ended (closed when idle, or gone): nothing else to do.
         if let process, claudeIdle[id]?.process === process {
             claudeIdle[id] = nil
@@ -2368,6 +2419,7 @@ final class WorkspaceManager: ObservableObject {
                 $0.prWatch = nil
                 $0.extraPRWatches = nil
             }
+            followPullRequestFeeds()
             return
         }
         guard !isWatching(id, url: url) else { return }
@@ -2398,32 +2450,92 @@ final class WorkspaceManager: ObservableObject {
             run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
             run.extraPRWatches = rest.isEmpty ? nil : rest
         }
+        // Its host change feed ends with the last watch on it; the subscription is deleted.
+        followPullRequestFeeds()
     }
 
     /// Looks at each watched pull request at most every two minutes, stretched by the energy plan. A watch that wakes its
     /// agent keeps going while nobody is at the Mac (the agent answers a review or a failed check by itself), only slower;
-    /// one that only updates a badge waits until someone is back.
+    /// one that only updates a badge waits until someone is back. Host change feeds start and stop here too.
     func checkPullRequestWatches(force: Bool = false) {
-        guard let fetch = pullRequestSnapshot else { return }
+        guard pullRequestSnapshot != nil else { return }
         let now = Date()
         let energy = EnergyMonitor.shared
         let gap = 120 * energy.plan.slowdown
         for run in runs {
             guard !run.archived else { continue }
             for watch in run.prWatches {
-                let key = run.id.uuidString + " " + watch.url
-                guard watch.state == "open", !watchesInFlight.contains(key),
-                      force || watch.wakeAgent || !energy.signals.idle,
-                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true,
-                      let url = URL(string: watch.url) else { continue }
-                let id = run.id
-                watchesInFlight.insert(key)
-                Task { [weak self] in
-                    let snapshot = await fetch(url)
-                    self?.watchesInFlight.remove(key)
-                    guard let self, let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == watch.url }) else { return }
-                    self.pullRequestChanged(id, old: current, new: snapshot)
+                guard force || watch.wakeAgent || !energy.signals.idle,
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true else { continue }
+                checkPullRequestWatch(run.id, url: watch.url, recheck: false)
+            }
+        }
+        followPullRequestFeeds()
+    }
+
+    /// Reads every watch on the pull request at `url` now: its host just said it changed.
+    func checkPullRequestWatches(url: String) {
+        for run in runs where !run.archived && run.prWatches.contains(where: { $0.url == url }) {
+            checkPullRequestWatch(run.id, url: url, recheck: true)
+        }
+    }
+
+    /// Reads one watched pull request and turns what changed into news. With `recheck` (the host reported a change), a
+    /// read already under way is followed by one more, so the change is not missed; the sweep just skips it.
+    private func checkPullRequestWatch(_ id: UUID, url link: String, recheck: Bool) {
+        guard let fetch = pullRequestSnapshot, let watch = run(id)?.prWatches.first(where: { $0.url == link }),
+              watch.state == "open", let url = URL(string: link) else { return }
+        let key = id.uuidString + " " + link
+        guard !watchesInFlight.contains(key) else {
+            if recheck { watchRechecks.insert(key) }
+            return
+        }
+        watchesInFlight.insert(key)
+        Task { [weak self] in
+            let snapshot = await fetch(url)
+            guard let self else { return }
+            self.watchesInFlight.remove(key)
+            if let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == link }) {
+                self.pullRequestChanged(id, old: current, new: snapshot)
+            }
+            if self.watchRechecks.remove(key) != nil { self.checkPullRequestWatch(id, url: link, recheck: false) }
+        }
+    }
+
+    /// Keeps one host change feed per open watched pull request that the sweep would read now: none while the energy plan
+    /// pauses background work, and none for a watch that only updates a badge while nobody is at the Mac. A feed that
+    /// ended by itself waits a sweep (two minutes) before it is asked for again, as in t3code.
+    private func followPullRequestFeeds() {
+        guard let events = pullRequestEvents else { return }
+        let now = Date()
+        let energy = EnergyMonitor.shared
+        var wanted = Set<String>()
+        if energy.plan.pace != .paused {
+            for run in runs where !run.archived {
+                for watch in run.prWatches where watch.state == "open" && (watch.wakeAgent || !energy.signals.idle) {
+                    wanted.insert(watch.url)
                 }
+            }
+        }
+        for (url, feed) in pullRequestFeeds where !wanted.contains(url) {
+            feed.cancel()
+            pullRequestFeeds[url] = nil
+        }
+        pullRequestFeedEnded = pullRequestFeedEnded.filter { wanted.contains($0.key) && now.timeIntervalSince($0.value) < 120 }
+        for url in wanted where pullRequestFeeds[url] == nil && pullRequestFeedEnded[url] == nil {
+            // No feed for this host or account: asked again a sweep later, not every half minute.
+            guard let link = URL(string: url), let changes = events(link) else {
+                pullRequestFeedEnded[url] = now
+                continue
+            }
+            pullRequestFeeds[url] = Task { [weak self] in
+                for await _ in changes {
+                    guard !Task.isCancelled else { break }
+                    self?.checkPullRequestWatches(url: url)
+                }
+                guard !Task.isCancelled, let self else { return }
+                self.pullRequestFeeds[url] = nil
+                self.pullRequestFeedEnded[url] = Date()
             }
         }
     }
@@ -2445,6 +2557,8 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         settleQueuedNews(id, url: old.url, with: new)
+        // A merged or closed pull request has nothing more to report: its change feed ends.
+        if new.state != "open" { followPullRequestFeeds() }
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }
@@ -2567,6 +2681,9 @@ final class WorkspaceManager: ObservableObject {
         pendingSendNow[id] = nil
         pendingSendNowSteer[id] = nil
         pendingSendNowFresh.remove(id)
+        pendingSendNowOrigin[id] = nil
+        workStartedAt[id] = nil
+        continuingTurns.remove(id)
         freshArmed.remove(id)
         turnPrompts[id] = nil
         recoveringConversation.remove(id)
@@ -3055,6 +3172,9 @@ final class WorkspaceManager: ObservableObject {
 
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
+        // Called again once the agents exited (`QuitShutdown`): what they wrote while Nook waited is saved too.
+        guard !quitting else { return saveForQuit() }
+        quitting = true
         let kept = detachKeptRuns()
         // Nothing is announced on the way out: a completion held for a monitor ends with Nook.
         heldWakeCompletions.removeAll()
@@ -3082,6 +3202,10 @@ final class WorkspaceManager: ObservableObject {
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
         }
+        saveForQuit()
+    }
+
+    private func saveForQuit() {
         // Saves still queued go first: one that ran after these would write an older timeline over the newer one.
         store.flush()
         if runsLoaded { try? store.saveRuns(runs) }
@@ -3102,6 +3226,8 @@ final class WorkspaceManager: ObservableObject {
         var run = runs[index]
         change(&run)
         guard run != runs[index] else { return }
+        // A version the API refused while a custom endpoint is in between: the failure says what really happened.
+        if run.status == .failed, runs[index].status != .failed, let note = versionRejectionNote(run) { run.statusDetail = note }
         let freedPlace = runs[index].status.isActive && !run.status.isActive
         // A turn starts: the suggestion for the one before it no longer fits.
         if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(id) }

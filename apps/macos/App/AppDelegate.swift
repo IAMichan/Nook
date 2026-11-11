@@ -55,9 +55,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.openIncoming(urls)
     }
 
-    /// Quitting stops the sessions Nook runs (they can be resumed later). While one is still at work, Nook asks
-    /// first. Not when you log out or shut down, nor for a restart into an update you chose.
+    /// Quitting stops the sessions Nook runs (they can be resumed later), and waits for their agents to exit
+    /// (`stopAgentsBeforeQuit`).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Asked again while the agents are being stopped: the answer already comes.
+        if quitReply != nil { return .terminateLater }
+        let answer = confirmQuit()
+        guard answer == .terminateNow else { return answer }
+        return stopAgentsBeforeQuit()
+    }
+
+    /// Set while Nook waits for its agents to exit; replies once.
+    private var quitReply: (() -> Void)?
+
+    /// Every agent process gets SIGINT, then SIGTERM, then SIGKILL at one deadline (`QuitShutdown`), and the agent-device
+    /// daemon is stopped alongside. AppKit keeps the run loop going meanwhile, so what the agents still write reaches
+    /// their timelines, which `applicationWillTerminate` saves. Quitting never waits longer than the deadline.
+    private func stopAgentsBeforeQuit() -> NSApplication.TerminateReply {
+        model.workspace.shutdown()
+        let daemonStop = DeviceHubService.shared.stopForQuit()
+        let processes = LiveAgentProcesses.shared.beginQuit()
+        guard !processes.isEmpty || daemonStop != nil else { return .terminateNow }
+        var replied = false
+        quitReply = {
+            guard !replied else { return }
+            replied = true
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        let timing = QuitShutdown.Timing()
+        let started = Date()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let daemon = DispatchGroup()
+            if let daemonStop { DispatchQueue.global(qos: .userInitiated).async(group: daemon, execute: daemonStop) }
+            let outcome = QuitShutdown.stopAll(processes, timing: timing)
+            let left = timing.deadline - Date().timeIntervalSince(started)
+            _ = daemon.wait(timeout: .now() + max(0, left))
+            Log.app.info("Quit: \(processes.count) agent processes, \(String(describing: outcome), privacy: .public)")
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.quitReply?() } }
+        }
+        // Whatever hangs, the answer comes by the deadline.
+        DispatchQueue.main.asyncAfter(deadline: .now() + timing.deadline + 0.5) { [weak self] in
+            MainActor.assumeIsolated { self?.quitReply?() }
+        }
+        return .terminateLater
+    }
+
+    /// While a session is still at work, Nook asks before quitting. Not when you log out or shut down, nor for a
+    /// restart into an update you chose.
+    private func confirmQuit() -> NSApplication.TerminateReply {
         let working = model.workspace.activeRuns.count
         let defaults = UserDefaults.standard
         let systemQuit = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)) != nil

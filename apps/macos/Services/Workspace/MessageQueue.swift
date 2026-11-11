@@ -10,15 +10,34 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
     var pullRequest: PullRequestNotice?
     /// Sent after `/clear`: it starts a new conversation with the agent, never one taken into a running turn.
     var fresh: Bool
+    /// Who it comes from when that is not you (nil): see `Origin`.
+    var origin: Origin?
+
+    /// Where a message comes from, for the turn it starts. Nil is you (or a client acting for you, or a task's own parent).
+    enum Origin: String, Codable, Sendable {
+        /// Another agent's session that is not this task's parent: the parent does not hear of the turn it starts.
+        case agent
+        /// A task this session delegated: the session carries on its own work, so its working timer keeps running.
+        case child
+        /// Nook tells the agent about its own work (a task's result, a background command that ended): it carries on.
+        case notice
+
+        /// The turn a message starts is one a delegating parent hears of when it ends: yours (nil) and Nook's notices are,
+        /// as in t3code; a send from another session that is not the parent is not.
+        static func rearmsParent(_ origin: Origin?) -> Bool { origin == nil || origin == .notice }
+        /// The turn a message starts continues the agent's work rather than starting new work (`TurnTimer`).
+        static func continuesWork(_ origin: Origin?) -> Bool { origin == .child || origin == .notice }
+    }
 
     init(id: UUID = UUID(), text: String, createdAt: Date = Date(), edited: Bool = false, pullRequest: PullRequestNotice? = nil,
-         fresh: Bool = false) {
+         fresh: Bool = false, origin: Origin? = nil) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
         self.edited = edited
         self.pullRequest = pullRequest
         self.fresh = fresh
+        self.origin = origin
     }
 
     init(from decoder: Decoder) throws {
@@ -29,6 +48,8 @@ struct QueuedMessage: Codable, Identifiable, Equatable, Sendable {
         edited = try c.decodeIfPresent(Bool.self, forKey: .edited) ?? false
         pullRequest = try c.decodeIfPresent(PullRequestNotice.self, forKey: .pullRequest)
         fresh = try c.decodeIfPresent(Bool.self, forKey: .fresh) ?? false
+        // A value a later Nook wrote that this one does not know reads as you.
+        origin = (try? c.decodeIfPresent(Origin.self, forKey: .origin)) ?? nil
     }
 }
 
@@ -68,10 +89,10 @@ struct MessageQueue: Codable, Equatable, Sendable {
     /// Returns the new message, or nil when the text is empty or the queue is full.
     @discardableResult
     mutating func enqueue(_ text: String, now: Date = Date(), id: UUID = UUID(), pullRequest: PullRequestNotice? = nil,
-                          fresh: Bool = false) -> QueuedMessage? {
+                          fresh: Bool = false, origin: QueuedMessage.Origin? = nil) -> QueuedMessage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, messages.count < Self.limit else { return nil }
-        let message = QueuedMessage(id: id, text: trimmed, createdAt: now, pullRequest: pullRequest, fresh: fresh)
+        let message = QueuedMessage(id: id, text: trimmed, createdAt: now, pullRequest: pullRequest, fresh: fresh, origin: origin)
         messages.append(message)
         return message
     }

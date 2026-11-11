@@ -12,6 +12,7 @@ struct BitbucketPullRequestForge: PullRequestForgeClient {
         features.autoMerge = false
         features.draft = false
         features.updateBranch = false
+        // Bitbucket Cloud has no revert API.
         features.revert = false
         return features
     }()
@@ -74,7 +75,7 @@ struct BitbucketPullRequestForge: PullRequestForgeClient {
         return (user?["nickname"] as? String) ?? (user?["display_name"] as? String) ?? ""
     }
 
-    func labels() async -> [(name: String, color: String)] { [] }
+    func labels() async -> [PullRequestLabelChoice] { [] }
 
     /// Every page of a list, up to `limit`: Bitbucket's lists are paged by an address it hands out.
     private func pages(_ path: String, limit: Int = 10) async throws -> [[String: Any]] {
@@ -193,10 +194,15 @@ struct BitbucketPullRequestForge: PullRequestForgeClient {
         }
     }
 
-    /// `to` is a line of the new file, `from` one of the old file; Bitbucket takes one of them.
+    /// `to` is a line of the new file, `from` one of the old file; Bitbucket takes one of them. A comment on several lines
+    /// names its first line too, as `start_to` or `start_from` by the side it starts on.
     static func lineCommentBody(_ comment: PullRequestAction.LineComment) -> [String: Any] {
-        ["content": ["raw": comment.body],
-         "inline": ["path": comment.path, comment.side == "LEFT" ? "from" : "to": comment.line] as [String: Any]]
+        var inline: [String: Any] = ["path": comment.path, comment.side == "LEFT" ? "from" : "to": comment.line]
+        if let start = comment.startLine {
+            let side = comment.startSide ?? comment.side
+            if start != comment.line || side != comment.side { inline[side == "LEFT" ? "start_from" : "start_to"] = start }
+        }
+        return ["content": ["raw": comment.body], "inline": inline]
     }
 
     /// The uuids of the reviewers already asked and of `people`, by nickname or name. A name nobody has is refused

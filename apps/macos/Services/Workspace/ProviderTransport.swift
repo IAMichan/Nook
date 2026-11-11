@@ -32,6 +32,12 @@ protocol ProviderTransport: AnyObject, Sendable {
     /// Keeps the group signallable after the process exited, until `release()` (see `SpawnedProcess`).
     func hold()
     func release()
+    /// Whether the process, or anything left in its group, still runs (see `QuitShutdown`).
+    var groupIsAlive: Bool { get }
+}
+
+extension ProviderTransport {
+    var groupIsAlive: Bool { isRunning }
 }
 
 extension SpawnedProcess: ProviderTransport {
