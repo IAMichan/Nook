@@ -248,6 +248,11 @@ struct NewSessionComposer: View {
                 .frame(height: 30)
                 .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 .onSubmit(clone)
+                // A page copied from the browser (`…/tree/main`) shows as the repository it clones.
+                .onChange(of: cloneURL) { _, typed in
+                    let repository = CloneLayout.repositoryURL(fromPage: typed)
+                    if repository != typed.trimmingCharacters(in: .whitespacesAndNewlines) { cloneURL = repository }
+                }
             SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { showClone = false }
@@ -1144,6 +1149,7 @@ struct NewSessionComposer: View {
     }
 
     private func clone() {
+        cloneURL = CloneLayout.repositoryURL(fromPage: cloneURL)
         guard !cloning, GitService.isCloneURL(cloneURL) else { return }
         cloning = true
         error = nil

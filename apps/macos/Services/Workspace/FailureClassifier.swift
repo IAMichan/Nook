@@ -38,6 +38,9 @@ enum FailureClass: Equatable, Sendable {
     /// The user's own stop (terminal_reason aborted_*): not a failure.
     case interrupted
     case network
+    /// The API refused the agent's version for this model (`AgentVersionRejection`): an update, or a custom endpoint
+    /// that rewrote the version.
+    case versionRejected(reported: String?, required: String?)
     case generic
 }
 
@@ -64,6 +67,9 @@ enum FailureClassifier {
         guard isFailing(e), let text = e.messageText, !text.isEmpty else { return .generic }
         if let seconds = gatewayResetSeconds(text) {
             return .usageLimit(resetAt: seconds > 0 ? e.now.addingTimeInterval(seconds) : nil)
+        }
+        if let rejection = AgentVersionRejection.parse(text) {
+            return .versionRejected(reported: rejection.reported, required: rejection.required)
         }
         let lower = text.lowercased()
         if lower.contains("[429]") || lower.contains("rate_limit_error") || saysUsageLimit(lower) {
@@ -92,7 +98,7 @@ enum FailureClassifier {
     static func isFailure(_ e: FailureEvidence) -> Bool {
         switch classify(e) {
         case .interrupted: return false
-        case .usageLimit, .authentication, .forbidden, .network: return true
+        case .usageLimit, .authentication, .forbidden, .network, .versionRejected: return true
         case .generic: return isFailing(e)
         }
     }

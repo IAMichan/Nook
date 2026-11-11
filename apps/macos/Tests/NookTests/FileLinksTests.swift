@@ -10,8 +10,35 @@ final class FileLinksTests: XCTestCase {
     func testGitHubAnchorsAndFileURLs() {
         XCTAssertEqual(FileLink.parse("/repo/a.swift#L20"), FileTarget(path: "/repo/a.swift", line: 20, column: nil))
         XCTAssertEqual(FileLink.parse("a.swift#L20C5"), FileTarget(path: "a.swift", line: 20, column: 5))
-        XCTAssertEqual(FileLink.parse("a.swift#L20-L30"), FileTarget(path: "a.swift", line: 20, column: nil))
+        XCTAssertEqual(FileLink.parse("a.swift#L20-L30"), FileTarget(path: "a.swift", line: 20, column: nil, endLine: 30))
         XCTAssertEqual(FileLink.parse("file:///Users/me/My%20App/x.swift"), FileTarget(path: "/Users/me/My App/x.swift"))
+    }
+
+    func testLineRangesOpenAtTheirFirstLine() throws {
+        let range = try XCTUnwrap(FileLink.parse("src/http.ts:42-64"))
+        XCTAssertEqual(range, FileTarget(path: "src/http.ts", line: 42, column: nil, endLine: 64))
+        XCTAssertEqual(range.positioned, "src/http.ts:42")
+        XCTAssertEqual(range.lineLabel, "L42\u{2013}64")
+        XCTAssertEqual(FileLink.parse("/repo/http.ts#L42-L64")?.lineLabel, "L42\u{2013}64")
+        XCTAssertEqual(FileLink.parse("/repo/http.ts#L42-64")?.endLine, 64)
+        XCTAssertEqual(FileLink.parse("file:///repo/http.ts#L42-L64"), FileTarget(path: "/repo/http.ts", line: 42, endLine: 64))
+        XCTAssertEqual(FileLink.parse("a.swift:12:3")?.lineLabel, "L12")
+        // A range that does not run forward is its first line.
+        XCTAssertEqual(FileLink.parse("a.swift:64-42"), FileTarget(path: "a.swift", line: 64))
+        XCTAssertEqual(FileLink.parse("a.swift:42-42")?.lineLabel, "L42")
+        XCTAssertNil(FileTarget(path: "a.swift").lineLabel)
+        // Resolving keeps the range.
+        XCTAssertEqual(FileLink.resolve(range, base: "/repo")?.endLine, 64)
+        XCTAssertEqual(FileLink.named("src/http.ts:42-64")?.endLine, 64)
+    }
+
+    func testAppBundles() {
+        XCTAssertTrue(FileLink.isAppBundle("/Applications/Safari.app"))
+        XCTAssertTrue(FileLink.isAppBundle("/Applications/Safari.app/"))
+        XCTAssertTrue(FileLink.isAppBundle("~/Applications/My Tool.APP"))
+        XCTAssertFalse(FileLink.isAppBundle("/Applications/Safari.app/Contents/Info.plist"))
+        XCTAssertFalse(FileLink.isAppBundle("src/app.swift"))
+        XCTAssertFalse(FileLink.isAppBundle(".app"))
     }
 
     func testWebAndOtherLinksAreNotFiles() {

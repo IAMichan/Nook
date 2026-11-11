@@ -183,7 +183,10 @@ enum DelegatedTask {
 
     static let summaryLimit = 4_000
 
-    static func state(_ status: RunStatus, hasPendingQuestion: Bool = false) -> State {
+    /// `hasQueuedWork`: a message still waits to go out to the task (not held after a failure or a stop). The task is not
+    /// done until it went (: a follow-up waits for a run its child queued on its own thread).
+    static func state(_ status: RunStatus, hasPendingQuestion: Bool = false, hasQueuedWork: Bool = false) -> State {
+        if hasQueuedWork, !status.isActive { return .running }
         switch status {
         case .preparing: return .queued
         case .running: return hasPendingQuestion ? .waiting : .running
@@ -192,6 +195,21 @@ enum DelegatedTask {
         case .failed: return .failed
         case .stopped: return .cancelled
         }
+    }
+
+    /// Whether the parent hears of a finished task now: it ended (well or not) and nothing it still has to do waits in its
+    /// queue. A task with work queued reports after that work, so its parent never reads a result that is not the last.
+    static func mayDeliver(_ status: RunStatus, hasQueuedWork: Bool) -> Bool {
+        (status == .completed || status == .failed) && !hasQueuedWork
+    }
+
+    /// Where a message to a session comes from, by the session that sent it (`session_send`); nil for you, Nook, or a
+    /// client without a session of its own (the command line, an MCP client). A task's own parent counts as you. As
+    /// does, only a message from an unrelated session leaves the parent out of the turn it starts, and a message
+    /// from a task this session delegated carries on the session's own work.
+    static func origin(sender: UUID?, senderParent: UUID?, target: UUID, targetParent: UUID?) -> QueuedMessage.Origin? {
+        guard let sender, sender != targetParent else { return nil }
+        return senderParent == target ? .child : .agent
     }
 
     /// The result of a task: what the child said last, or why it failed (the error before any progress text).

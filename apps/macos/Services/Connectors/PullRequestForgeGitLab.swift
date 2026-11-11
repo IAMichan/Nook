@@ -3,11 +3,10 @@ import Foundation
 /// GitLab merge requests as pull requests, through API v4. A note's id stays in the event id and its discussion's id in
 /// `threadID`, because every write on a thread needs the discussion.
 struct GitLabPullRequestForge: PullRequestForgeClient {
-    /// Reactions take one request per note. A revert has no API that opens a merge request.
+    /// Reactions take one request per note.
     static let forgeFeatures: PullRequestForgeFeatures = {
         var features = PullRequestForgeFeatures()
         features.reactions = false
-        features.revert = false
         return features
     }()
 
@@ -52,9 +51,12 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         if let id = Self.int(mergeRequest["source_project_id"]), id != Self.int(mergeRequest["target_project_id"]) {
             source = try? await http.json("/projects/\(id)") as? [String: Any]
         }
-        let colors = Dictionary(await labelList.map { ($0.name, $0.color) }, uniquingKeysWith: { first, _ in first })
+        let known = await labelList
+        let colors = Dictionary(known.map { ($0.name, $0.color) }, uniquingKeysWith: { first, _ in first })
+        let descriptions = Dictionary(known.filter { !$0.description.isEmpty }.map { ($0.name, $0.description) }, uniquingKeysWith: { first, _ in first })
         guard let detail = Self.detail(mergeRequest: mergeRequest, project: await settings, sourceProject: source,
-                                       approvals: await approvals, labelColors: colors, jobs: jobs, repo: repo) else {
+                                       approvals: await approvals, labelColors: colors, labelDescriptions: descriptions,
+                                       jobs: jobs, repo: repo) else {
             throw PullRequestForgeError.refused("GitLab did not send this merge request.")
         }
         return detail
@@ -85,7 +87,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         return (user?["username"] as? String) ?? ""
     }
 
-    func labels() async -> [(name: String, color: String)] {
+    func labels() async -> [PullRequestLabelChoice] {
         Self.labels(await list(project + "/labels", pages: 5) ?? [])
     }
 
@@ -167,7 +169,9 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
                                     body: Self.mergeBody(method: method, sha: detail.headSHA).merging(["merge_when_pipeline_succeeds": true]) { $1 })
         case .disableAutoMerge:
             _ = try await http.json(path + "/cancel_merge_when_pipeline_succeeds", method: "POST")
-        case .revert, .approveWorkflow:
+        case .revert:
+            return try await revert(number)
+        case .approveWorkflow:
             throw PullRequestForgeError.unsupported("GitLab")
         }
         return nil
@@ -178,6 +182,37 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         guard method != .rebase else { throw PullRequestForgeError.unsupported("GitLab") }
         let answer = try await http.json(request(number) + "/merge", method: "PUT", body: Self.mergeBody(method: method, sha: sha))
         return Self.mergedSHA(answer as? [String: Any] ?? [:])
+    }
+
+    /// What GitLab's own Revert button does (as): the merged commit reverted onto a new branch off the target, and a
+    /// merge request of that branch. Returns its link. The branch goes again when a later step fails, or a retry would
+    /// fail on making it.
+    private func revert(_ number: Int) async throws -> String? {
+        guard let mergeRequest = try await http.json(request(number)) as? [String: Any], let target = Self.revertTarget(mergeRequest) else {
+            throw PullRequestForgeError.refused("GitLab did not send this merge request.")
+        }
+        guard target.merged else { throw PullRequestForgeError.refused("Only a merged merge request can be reverted.") }
+        var sha = target.sha
+        if sha == nil {
+            // A fast-forward merge without squash records neither commit; it can be reverted only when it was one commit.
+            let commits = try await http.json(request(number) + "/commits?per_page=2") as? [[String: Any]] ?? []
+            sha = commits.count == 1 ? commits[0]["id"] as? String : nil
+        }
+        guard let sha, let escaped = Self.escape(sha) else {
+            throw PullRequestForgeError.refused("This merge request landed as several commits, so there is no single commit to revert.")
+        }
+        let body = Self.revertRequest(number: number, title: target.title, targetBranch: target.targetBranch, sha: sha)
+        _ = try await http.json(project + "/repository/branches", method: "POST", body: ["branch": body.branch, "ref": target.targetBranch])
+        do {
+            _ = try await http.json(project + "/repository/commits/\(escaped)/revert", method: "POST", body: ["branch": body.branch])
+            let made = try await http.json(project + "/merge_requests", method: "POST", body: body.mergeRequest) as? [String: Any]
+            return made?["web_url"] as? String
+        } catch {
+            // Detached, so a cancelled request still removes the branch.
+            let http = http, path = project + "/repository/branches/" + (Self.escape(body.branch) ?? body.branch)
+            await Task.detached { _ = try? await http.data(path, method: "DELETE") }.value
+            throw error
+        }
     }
 
     private func note(_ body: String, number: Int) async throws {
@@ -291,7 +326,8 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
     // MARK: Parsing
 
     static func detail(mergeRequest item: [String: Any], project: [String: Any]?, sourceProject: [String: Any]?,
-                       approvals: [String: Any]?, labelColors: [String: String], jobs: [[String: Any]],
+                       approvals: [String: Any]?, labelColors: [String: String], labelDescriptions: [String: String] = [:],
+                       jobs: [[String: Any]],
                        repo: RemoteRepository) -> PullRequestDetail? {
         guard let number = int(item["iid"]) else { return nil }
         let state: PullRequestDetail.State
@@ -325,6 +361,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         detail.locked = (item["discussion_locked"] as? Bool) == true
         detail.labels = (item["labels"] as? [String]) ?? []
         detail.labelColors = labelColors.filter { detail.labels.contains($0.key) }
+        detail.labelDescriptions = labelDescriptions.filter { detail.labels.contains($0.key) }
         detail.maintainerEdits = (item["allow_collaboration"] as? Bool) == true
         detail.autoMergeAllowed = true
         if (item["merge_when_pipeline_succeeds"] as? Bool) == true {
@@ -512,18 +549,34 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         }
     }
 
-    /// Names with colors as six hex digits, as the page expects them.
-    static func labels(_ list: [[String: Any]]) -> [(name: String, color: String)] {
+    /// What a revert needs of a merge request. `sha` is nil for a fast-forward merge without squash, which records neither.
+    static func revertTarget(_ item: [String: Any]) -> (merged: Bool, title: String, targetBranch: String, sha: String?)? {
+        guard let title = item["title"] as? String, let branch = item["target_branch"] as? String, let state = item["state"] as? String else { return nil }
+        func trimmed(_ value: Any?) -> String? {
+            (value as? String).map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        return (state == "merged", title, branch, trimmed(item["merge_commit_sha"]) ?? trimmed(item["squash_commit_sha"]))
+    }
+
+    /// The branch a revert of `sha` goes on, and the merge request that proposes it, in GitLab's own words.
+    static func revertRequest(number: Int, title: String, targetBranch: String, sha: String) -> (branch: String, mergeRequest: [String: Any]) {
+        let branch = "revert-" + sha.prefix(8)
+        return (branch, ["source_branch": branch, "target_branch": targetBranch, "title": "Revert \"\(title)\"",
+                         "description": "This reverts merge request !\(number)", "remove_source_branch": true])
+    }
+
+    /// Names with colors as six hex digits, as the page expects them, and what each is for.
+    static func labels(_ list: [[String: Any]]) -> [PullRequestLabelChoice] {
         list.compactMap { item in
             guard let name = item["name"] as? String else { return nil }
-            return (name, ((item["color"] as? String) ?? "").replacingOccurrences(of: "#", with: ""))
+            return (name, ((item["color"] as? String) ?? "").replacingOccurrences(of: "#", with: ""), (item["description"] as? String) ?? "")
         }
     }
 
     // MARK: Building
 
     /// A diff position. A line that did not change needs both its numbers, and only the patch knows the other one. A
-    /// comment on several lines lands on its last line: a range needs line codes that are not worth rebuilding here.
+    /// comment on several lines also sends `line_range` (see `lineRange`), so GitLab marks every line of it.
     static func position(_ comment: PullRequestAction.LineComment, refs: [String: Any], file: PullRequestFile?) -> [String: Any] {
         var position: [String: Any] = ["position_type": "text", "new_path": comment.path, "old_path": file?.previousPath ?? comment.path]
         for key in ["base_sha", "start_sha", "head_sha"] { position[key] = refs[key] }
@@ -535,7 +588,104 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
             position["new_line"] = comment.line
             if let pair { position["old_line"] = pair }
         }
+        if let range = lineRange(comment, file: file) { position["line_range"] = range }
         return position
+    }
+
+    /// Where a comment on several lines starts and ends, as GitLab's own page sends it: each end
+    /// with `type` ("new" for an added line, "old" for a removed one, null for one that did not change), its line numbers,
+    /// and a `line_code` of the path's SHA-1 and both of GitLab's line counters there. GitLab finds the lines to mark by
+    /// that code, and only the patch knows the other side's counter. Nil for a comment on one line.
+    static func lineRange(_ comment: PullRequestAction.LineComment, file: PullRequestFile?) -> [String: Any]? {
+        guard let startLine = comment.startLine else { return nil }
+        let hash = sha1Hex(Data(comment.path.utf8))
+        let patch = file?.patch ?? ""
+        let start = rangeEnd(line: startLine, left: (comment.startSide ?? comment.side) == "LEFT", patch: patch, hash: hash)
+        let end = rangeEnd(line: comment.line, left: comment.side == "LEFT", patch: patch, hash: hash)
+        guard start["line_code"] as? String != end["line_code"] as? String else { return nil }
+        return ["start": start, "end": end]
+    }
+
+    private static func rangeEnd(line: Int, left: Bool, patch: String, hash: String) -> [String: Any] {
+        let found = lineCounters(line, left: left, patch: patch)
+        let kind = found?.kind ?? (left ? .deleted : .added)
+        let old = found?.old ?? (left ? line : 0), new = found?.new ?? (left ? 0 : line)
+        var end: [String: Any] = ["line_code": "\(hash)_\(old)_\(new)"]
+        switch kind {
+        case .added:
+            end["type"] = "new"
+            end["new_line"] = new
+        case .deleted:
+            end["type"] = "old"
+            end["old_line"] = old
+        case .context:
+            end["type"] = NSNull()
+            end["old_line"] = old
+            end["new_line"] = new
+        }
+        return end
+    }
+
+    enum LineKind: Equatable { case added, deleted, context }
+
+    /// The old and new line counters GitLab's diff parser holds at a line, and what kind of line it is. An added line keeps
+    /// the old counter where it stands, and a removed line the new one. Nil for a line outside the patch.
+    static func lineCounters(_ line: Int, left: Bool, patch: String) -> (kind: LineKind, old: Int, new: Int)? {
+        var old = 0, new = 0
+        for text in patch.components(separatedBy: "\n") {
+            if text.hasPrefix("@@") {
+                let numbers = text.split(separator: " ").dropFirst().prefix(2).map { part -> Int in
+                    Int(part.dropFirst().prefix { $0.isNumber }) ?? 0
+                }
+                guard numbers.count == 2 else { return nil }
+                old = numbers[0]
+                new = numbers[1]
+            } else if text.hasPrefix("+") {
+                if !left && new == line { return (.added, old, new) }
+                new += 1
+            } else if text.hasPrefix("-") {
+                if left && old == line { return (.deleted, old, new) }
+                old += 1
+            } else if !text.hasPrefix("\\") {
+                if (left ? old : new) == line { return (.context, old, new) }
+                old += 1
+                new += 1
+            }
+        }
+        return nil
+    }
+
+    /// SHA-1 in hex, for GitLab's line codes. Written out because the adapters stay Foundation-only (no CryptoKit).
+    static func sha1Hex(_ data: Data) -> String {
+        var h: [UInt32] = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0]
+        var message = [UInt8](data)
+        let bits = UInt64(message.count) * 8
+        message.append(0x80)
+        while message.count % 64 != 56 { message.append(0) }
+        for shift in stride(from: 56, through: 0, by: -8) { message.append(UInt8((bits >> UInt64(shift)) & 0xFF)) }
+        func rotate(_ value: UInt32, _ count: UInt32) -> UInt32 { (value << count) | (value >> (32 - count)) }
+        var w = [UInt32](repeating: 0, count: 80)
+        for chunk in stride(from: 0, to: message.count, by: 64) {
+            for i in 0..<16 {
+                let at = chunk + i * 4
+                w[i] = UInt32(message[at]) << 24 | UInt32(message[at + 1]) << 16 | UInt32(message[at + 2]) << 8 | UInt32(message[at + 3])
+            }
+            for i in 16..<80 { w[i] = rotate(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1) }
+            var a = h[0], b = h[1], c = h[2], d = h[3], e = h[4]
+            for i in 0..<80 {
+                let f: UInt32, k: UInt32
+                switch i {
+                case 0..<20: f = (b & c) | (~b & d); k = 0x5A827999
+                case 20..<40: f = b ^ c ^ d; k = 0x6ED9EBA1
+                case 40..<60: f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC
+                default: f = b ^ c ^ d; k = 0xCA62C1D6
+                }
+                let next = rotate(a, 5) &+ f &+ e &+ k &+ w[i]
+                e = d; d = c; c = rotate(b, 30); b = a; a = next
+            }
+            h[0] = h[0] &+ a; h[1] = h[1] &+ b; h[2] = h[2] &+ c; h[3] = h[3] &+ d; h[4] = h[4] &+ e
+        }
+        return h.map { String(format: "%08x", $0) }.joined()
     }
 
     /// The number on the other side of an unchanged line; nil for an added or removed line, or one outside the patch.

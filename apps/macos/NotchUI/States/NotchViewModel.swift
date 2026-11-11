@@ -131,8 +131,17 @@ final class NotchViewModel: ObservableObject {
                 take(sessionTool, from: \.bottomTool, tabs: \.bottomTabs)
             }
             if sessionTool != oldValue { resizeForWorkbench() }
+            // The keyboard goes back where it was when the side panel closes (`SideFocusReturn`).
+            if oldValue == .conversation, sessionTool != .conversation {
+                sideFocus.panelOpened()
+            } else if oldValue != .conversation, sessionTool == .conversation {
+                sideFocus.panelClosed()
+            }
         }
     }
+
+    /// What had the keyboard before the side panel opened, to give it back when it closes.
+    private let sideFocus = SideFocusReturn()
 
     /// The tools open as tabs in a session's side panel, in the order you opened them. They stay while the panel is
     /// put away (`toggleSidePanel`), so it opens again on what it showed; with none it opens on the list of tools.
@@ -269,8 +278,10 @@ final class NotchViewModel: ObservableObject {
     func openSidePullRequest(_ request: PullRequestOpenRequest?) {
         if let request {
             let key = request.item.id.lowercased()
-            if let open = sidePullRequestTabs.first(where: { $0.request?.item.id.lowercased() == key }) {
-                activeSidePullRequest = open.id
+            if let index = sidePullRequestTabs.firstIndex(where: { $0.request?.item.id.lowercased() == key }) {
+                // A link to a place in it (a comment, a file) goes there in the tab that has it.
+                if let focus = request.focus { sidePullRequestTabs[index].request?.focus = focus }
+                activeSidePullRequest = sidePullRequestTabs[index].id
             } else if let index = sidePullRequestTabs.firstIndex(where: { $0.id == activeSidePullRequest && $0.request == nil }) {
                 sidePullRequestTabs[index].request = request
             } else {

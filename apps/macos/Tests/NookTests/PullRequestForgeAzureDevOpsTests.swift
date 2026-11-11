@@ -192,4 +192,28 @@ final class PullRequestForgeAzureDevOpsTests: XCTestCase {
         XCTAssertEqual(decoded(AzureDevOpsPullRequestForge.credential("secret")), ":secret")
         XCTAssertEqual(decoded(AzureDevOpsPullRequestForge.credential("ada:secret")), "ada:secret")
     }
+
+    func testARevertIsAzuresOwnOperationThenAPullRequest() {
+        XCTAssertTrue(AzureDevOpsPullRequestForge.forgeFeatures.revert)
+        let body = AzureDevOpsPullRequestForge.revertBody(number: 7, branch: "revert-pr-7-x", onto: "main")
+        XCTAssertEqual(body["generatedRefName"] as? String, "refs/heads/revert-pr-7-x")
+        XCTAssertEqual(body["ontoRefName"] as? String, "refs/heads/main")
+        XCTAssertEqual((body["source"] as? [String: Any])?["pullRequestId"] as? Int, 7)
+        let pull = AzureDevOpsPullRequestForge.revertPullRequestBody(number: 7, title: "Login", branch: "revert-pr-7-x", onto: "main")
+        XCTAssertEqual(pull["sourceRefName"] as? String, "refs/heads/revert-pr-7-x")
+        XCTAssertEqual(pull["targetRefName"] as? String, "refs/heads/main")
+        XCTAssertEqual(pull["title"] as? String, "Revert \"Login\"")
+        XCTAssertNotEqual(AzureDevOpsPullRequestForge.revertBranch(number: 7, at: Date(timeIntervalSince1970: 1)),
+                          AzureDevOpsPullRequestForge.revertBranch(number: 7, at: Date(timeIntervalSince1970: 2)))
+        XCTAssertEqual(AzureDevOpsPullRequestForge.revertOutcome(["status": "queued"]), .pending)
+        XCTAssertEqual(AzureDevOpsPullRequestForge.revertOutcome(["status": "inProgress"]), .pending)
+        XCTAssertEqual(AzureDevOpsPullRequestForge.revertOutcome(["status": "completed"]), .done)
+        XCTAssertEqual(AzureDevOpsPullRequestForge.revertOutcome(["status": "failed", "detailedStatus": ["failureMessage": "No permission"]]),
+                       .failed("No permission"))
+        if case .failed(let reason) = AzureDevOpsPullRequestForge.revertOutcome(["status": "failed", "detailedStatus": ["conflict": true]]) {
+            XCTAssertTrue(reason.contains("conflicts"))
+        } else {
+            XCTFail("a conflict fails")
+        }
+    }
 }

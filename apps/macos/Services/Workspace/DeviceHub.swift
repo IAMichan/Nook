@@ -243,11 +243,102 @@ enum DeviceHub {
          "AGENT_DEVICE_NO_UPDATE_NOTIFIER": "1", "FORCE_COLOR": "0", "NO_COLOR": "1"]
     }
 
-    /// `daemon.json`: the port and token of the running agent-device daemon.
-    static func daemon(_ data: Data) -> (port: Int, token: String)? {
+    /// The running agent-device daemon as its `daemon.json` describes it.
+    struct AgentDaemon: Equatable, Sendable {
+        var port: Int
+        var token: String
+        /// Its process, and the agent-device version it runs, when the file says so.
+        var pid: Int32? = nil
+        var version: String? = nil
+    }
+
+    /// `daemon.json`: the port and token of the running agent-device daemon, with its pid and version when written.
+    static func daemon(_ data: Data) -> AgentDaemon? {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let port = (object["httpPort"] as? NSNumber)?.intValue, let token = object["token"] as? String, port > 0 else { return nil }
-        return (port, token)
+        let pid = (object["pid"] as? NSNumber)?.int32Value
+        let version = (object["version"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return AgentDaemon(port: port, token: token, pid: pid.flatMap { $0 > 1 ? $0 : nil }, version: version)
+    }
+
+    /// What Nook writes down when it starts the daemon (`nook-daemon.json` next to `daemon.json`): the daemon may outlive
+    /// this Nook (a crash) or run an agent-device version Nook has moved on from, and is then stopped with the CLI of the
+    /// version it runs, from the folder it was started from.
+    struct DaemonRecord: Codable, Equatable, Sendable {
+        var pid: Int32?
+        var version: String
+        /// The agent-device entry script and the Node that ran it.
+        var entry: String
+        var node: String
+    }
+
+    static let daemonRecordName = "nook-daemon.json"
+
+    static func daemonRecord(_ data: Data) -> DaemonRecord? {
+        try? JSONDecoder().decode(DaemonRecord.self, from: data)
+    }
+
+    /// A record that belongs to another daemon than the one `daemon.json` names counts as none.
+    static func matchingRecord(_ record: DaemonRecord?, daemon: AgentDaemon?) -> DaemonRecord? {
+        guard let record else { return nil }
+        guard let running = daemon?.pid, let recorded = record.pid else { return record }
+        return running == recorded ? record : nil
+    }
+
+    enum DaemonReuse: Equatable, Sendable {
+        /// None answers: start one.
+        case start
+        /// It answers and runs the agent-device Nook uses now.
+        case reuse
+        /// It answers but runs another version: stop it first, then start the current one.
+        case replace
+    }
+
+    /// Whether to use the daemon that runs now. One whose version is unknown (neither file says it) is used as it is.
+    static func daemonReuse(_ daemon: AgentDaemon?, record: DaemonRecord?, healthy: Bool, version: String = agentVersion) -> DaemonReuse {
+        guard let daemon, healthy else { return .start }
+        let running = daemon.version ?? matchingRecord(record, daemon: daemon)?.version
+        guard let running else { return .reuse }
+        return running == version ? .reuse : .replace
+    }
+
+    enum DaemonStop: Equatable, Sendable {
+        /// No daemon was started.
+        case nothing
+        /// Its process is gone: only the files are left, and they go.
+        case forget
+        /// `node entry daemon stop`: the version it runs when still installed, else the current one.
+        case run(node: String, entry: String)
+        /// No CLI to stop it with: SIGTERM, after checking the pid is still agent-device.
+        case signal(pid: Int32)
+    }
+
+    /// How to stop the daemon. `alive` tells whether a pid runs, `exists` whether a file is there.
+    static func daemonStop(record: DaemonRecord?, daemon: AgentDaemon?, currentNode: String?, currentEntry: String,
+                           alive: (Int32) -> Bool, exists: (String) -> Bool) -> DaemonStop {
+        let record = matchingRecord(record, daemon: daemon)
+        guard record != nil || daemon != nil else { return .nothing }
+        let pid = daemon?.pid ?? record?.pid
+        if let pid, !alive(pid) { return .forget }
+        var candidates: [(node: String, entry: String)] = []
+        if let record { candidates.append((record.node, record.entry)) }
+        if let currentNode { candidates.append((currentNode, currentEntry)) }
+        if let usable = candidates.first(where: { exists($0.node) && exists($0.entry) }) {
+            return .run(node: usable.node, entry: usable.entry)
+        }
+        return pid.map { .signal(pid: $0) } ?? .forget
+    }
+
+    /// `daemon stop` for the daemon in `stateDir`.
+    static func daemonStopArguments(entry: String, stateDir: String) -> [String] {
+        [entry, "daemon", "stop", "--state-dir", stateDir]
+    }
+
+    /// An earlier install may only go once no daemon runs from it.
+    static func inUse(_ folder: URL, by record: DaemonRecord?) -> Bool {
+        guard let record else { return false }
+        let base = folder.standardizedFileURL.path
+        return record.entry == base || record.entry.hasPrefix(base.hasSuffix("/") ? base : base + "/")
     }
 
     /// The command agents run: refuses to work without the --config and --session that device_open hands out.

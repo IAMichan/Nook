@@ -17,6 +17,7 @@ final class GitHubRateLimitTests: XCTestCase {
         XCTAssertFalse(GitHubRateLimit.isAnonymous("API rate limit exceeded for user ID 123."))
         XCTAssertFalse(GitHubRateLimit.isAnonymous("You have exceeded a secondary rate limit."))
         XCTAssertNotNil(GitHubRateLimit.message(response(429), "You have exceeded a secondary rate limit."))
+        XCTAssertNotNil(GitHubRateLimit.message(response(403), "You have triggered an abuse detection mechanism. Please wait a few minutes before you try again."))
     }
 
     func testOtherErrorsPassThrough() {

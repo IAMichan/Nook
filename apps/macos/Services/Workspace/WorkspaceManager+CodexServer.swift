@@ -18,7 +18,7 @@ extension WorkspaceManager {
         turns[id] = TurnState()
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id)
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
 
@@ -184,18 +184,18 @@ extension WorkspaceManager {
         let mark: RunEvent.SteerKind = promoted ? .promoted : .steer
         if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean, mark: mark) }
         if let process = processes[id], run(id)?.provider == .claude {
-            append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
+            append(id, steerEvent(id, text: clean, mark: mark))
             turns[id]?.steered = true
             process.send(ClaudeStreamParser.userMessage(clean, steer: true))
             return true
         }
         if let process = processes[id], run(id)?.provider == .pi {
-            append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
+            append(id, steerEvent(id, text: clean, mark: mark))
             process.send(PiRPC.prompt(clean, steer: true))
             return true
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
-        append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
+        append(id, steerEvent(id, text: clean, mark: mark))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
             guard case .failure(let error) = result else { return }
             Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }
@@ -342,6 +342,10 @@ extension WorkspaceManager {
                 guard !(questions[id] ?? []).contains(where: { $0.id == pending.id }) else { continue }
                 questions[id, default: []].append(pending)
                 asked(id, pending)
+            case .userMessage(let text, let thread):
+                // Codex took a message of yours into the conversation: a steer it had not read yet is read now. A
+                // subagent's thread has messages of its own.
+                if thread == nil || thread == client.threadID { steerEchoed(id, text: text) }
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not support this request.")
             case .rateLimits(let limits):
@@ -357,10 +361,11 @@ extension WorkspaceManager {
                 noteSubagentsWorking(id)
                 append(id, RunEvent(kind: .system, text: tr("ws.wake.command", ToolSummary.oneLine(command, 80)), tool: "wake"))
                 let message = BackgroundWork.codexMessage(command: command, exitCode: exitCode, output: output)
+                // Codex carries on its own work: its working timer keeps going (`TurnTimer`).
                 if let run = run(id), run.canContinue, processes[id] == nil, !run.status.isActive {
-                    sendHidden(id, text: message)
+                    sendHidden(id, text: message, origin: .notice)
                 } else {
-                    enqueue(id, text: message)
+                    enqueue(id, text: message, origin: .notice)
                 }
             default:
                 handleCodex(event, id: id)
@@ -533,7 +538,7 @@ extension WorkspaceManager {
         append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id, continuing: true)
         replace(run)
     }
 

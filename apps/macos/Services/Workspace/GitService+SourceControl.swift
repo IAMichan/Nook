@@ -12,15 +12,17 @@ extension GitService {
     }
 
     /// Clones into `<parent>/<repo>`, or `<parent>/<host>/<owner>/<repo>` with `hostLayout`. An SSH address whose SSH
-    /// connection is refused (no key, unknown host key) is tried once more over HTTPS. The folder must not exist yet.
+    /// connection is refused (no key, unknown host key) is tried once more over HTTPS. A repository page URL clones its
+    /// repository (`CloneLayout.repositoryURL(fromPage:)`). The folder must not exist yet, or be empty (left by a failed
+    /// clone).
     func clone(url: String, into parent: String, hostLayout: Bool) throws -> CloneResult {
-        let clean = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = CloneLayout.repositoryURL(fromPage: url)
         guard Self.isCloneURL(clean) else { throw GitError("Not a recognized Git URL (https://… or git@host:path).") }
         guard let target = CloneLayout.target(url: clean, parent: parent, hostLayout: hostLayout,
                                               folderName: Self.cloneFolderName(clean)) else {
             throw GitError("Could not read the host and owner of \(clean).")
         }
-        guard !FileManager.default.fileExists(atPath: target) else { throw GitError("Directory \(target) already exists.") }
+        guard CloneLayout.prepareCloneTarget(target) else { throw GitError("Directory \(target) already exists and is not empty.") }
         let folder = URL(fileURLWithPath: target).deletingLastPathComponent().path
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         // SSH asks nothing: without a usable key it fails at once instead of waiting for a passphrase nobody can type.

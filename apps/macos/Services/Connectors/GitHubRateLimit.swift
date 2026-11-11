@@ -5,11 +5,16 @@ import Foundation
 enum GitHubRateLimit {
     static func message(_ response: HTTPURLResponse?, _ text: String?) -> String? {
         guard let response, [403, 429].contains(response.statusCode),
-              let text, text.localizedCaseInsensitiveContains("rate limit") else { return nil }
+              let text, namesLimit(text) else { return nil }
         let reset = (response.value(forHTTPHeaderField: "X-RateLimit-Reset")).flatMap(TimeInterval.init).map(Date.init(timeIntervalSince1970:))
             ?? Date().addingTimeInterval(TimeInterval(response.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init) ?? 3600))
         let until = DateFormatter.localizedString(from: reset, dateStyle: .none, timeStyle: .short)
         return tr(isAnonymous(text) ? "github.error.rateLimitAnonymous" : "github.error.rateLimit", until)
+    }
+
+    /// Older GitHub Enterprise hosts call a secondary limit an "abuse detection mechanism".
+    static func namesLimit(_ text: String) -> Bool {
+        text.localizedCaseInsensitiveContains("rate limit") || text.localizedCaseInsensitiveContains("abuse detection mechanism")
     }
 
     /// "…exceeded for 86.95.248.97." (signed out) against "…exceeded for user ID 123." (with a token).

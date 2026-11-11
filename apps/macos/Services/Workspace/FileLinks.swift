@@ -1,11 +1,20 @@
 import Foundation
 
-/// A file an agent pointed at: `src/app.swift:12:3`, `./README.md`, `~/notes.txt`,
-/// `/abs/path.swift#L12`, or `file:///abs/path.swift`. Opening it puts the cursor on that line in your editor.
+/// A file an agent pointed at: `src/app.swift:12:3`, `src/app.swift:42-64`, `./README.md`, `~/notes.txt`,
+/// `/abs/path.swift#L12`, `/abs/path.swift#L42-L64`, or `file:///abs/path.swift`. Opening it puts the cursor on that line in your editor.
 struct FileTarget: Equatable, Sendable {
     var path: String
     var line: Int?
     var column: Int?
+    /// The last line of a range (`app.swift:42-64`, `#L42-L64`); the file opens at `line`, the first.
+    var endLine: Int? = nil
+
+    /// "L42", or "L42–64" for a range: how a link's place reads next to its file.
+    var lineLabel: String? {
+        guard let line else { return nil }
+        guard let endLine, endLine > line else { return "L\(line)" }
+        return "L\(line)\u{2013}\(endLine)"
+    }
 
     /// `path:line:column`, the form most editors take after `--goto`.
     var positioned: String {
@@ -16,8 +25,8 @@ struct FileTarget: Equatable, Sendable {
 }
 
 enum FileLink {
-    private static let position = try! NSRegularExpression(pattern: #"^(.+?):(\d+)(?::(\d+))?$"#)
-    private static let githubAnchor = try! NSRegularExpression(pattern: #"#L(\d+)(?:C(\d+))?(?:-L?\d+(?:C\d+)?)?$"#)
+    private static let position = try! NSRegularExpression(pattern: #"^(.+?):(\d+)(?::(\d+))?(?:-(\d+))?$"#)
+    private static let githubAnchor = try! NSRegularExpression(pattern: #"#L(\d+)(?:C(\d+))?(?:-L?(\d+)(?:C\d+)?)?$"#)
     private static let scheme = try! NSRegularExpression(pattern: #"^([A-Za-z][A-Za-z0-9+.-]*):"#)
 
     /// The file a link or a piece of text points at, or nil when it is a web, mail or other link.
@@ -37,18 +46,32 @@ enum FileLink {
 
         var line: Int?
         var column: Int?
+        var endLine: Int?
         if let match = first(githubAnchor, in: text) {
             line = group(match, 1, in: text).flatMap(Int.init)
             column = group(match, 2, in: text).flatMap(Int.init)
+            endLine = group(match, 3, in: text).flatMap(Int.init)
             text = String(text[..<Range(match.range, in: text)!.lowerBound])
         } else if let match = first(position, in: text) {
             line = group(match, 2, in: text).flatMap(Int.init)
             column = group(match, 3, in: text).flatMap(Int.init)
+            endLine = group(match, 4, in: text).flatMap(Int.init)
             text = group(match, 1, in: text) ?? text
         }
         guard !text.isEmpty, !text.hasPrefix("#"), !text.hasPrefix("?") else { return nil }
         if let line, line < 1 { return nil }
-        return FileTarget(path: text, line: line, column: column.flatMap { $0 >= 1 ? $0 : nil })
+        // A range runs forward; `:64-42` or `:42-42` is just its first line.
+        let end = endLine.flatMap { end in line.flatMap { end > $0 ? end : nil } }
+        return FileTarget(path: text, line: line, column: column.flatMap { $0 >= 1 ? $0 : nil }, endLine: end)
+    }
+
+    /// A link to an app (`/Applications/Safari.app`): it shows the app's own icon and a click opens the app, rather than
+    /// showing the bundle in Finder as a folder.
+    static func isAppBundle(_ path: String) -> Bool {
+        var trimmed = path
+        while trimmed.count > 1, trimmed.hasSuffix("/") { trimmed.removeLast() }
+        let name = (trimmed as NSString).lastPathComponent
+        return name.count > 4 && name.lowercased().hasSuffix(".app")
     }
 
     /// The target with an absolute path: `~` is your home folder, a relative path is read from `base` (the session's

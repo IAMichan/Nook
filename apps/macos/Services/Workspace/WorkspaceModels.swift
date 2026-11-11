@@ -50,7 +50,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true,
-                                        speedTiers: true)
+                                        speedTiers: true, echoesSteers: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -74,7 +74,7 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // sessions are files it resumes with `--session`.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: false,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true)
         case .opencode, .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
@@ -148,6 +148,11 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Claude Code's Ultracode beside the effort (`Ultracode`). No other agent has the concept: Codex, Pi and the ACP
     /// agents offer only their effort levels (see docs/INTEGRATIONS.md).
     var ultracode = false
+    /// The agent echoes a steered message as a message of yours once it reads it (Pi's user `message_start`, a Codex
+    /// app-server `userMessage` item), so a steer can show "waiting to be read" until then (`SteerReceipts`). Claude Code
+    /// does not: Nook runs it without `--replay-user-messages`, whose replay only acknowledges receipt. The ACP agents
+    /// are steered by interrupting them, so the steer is the next prompt and is read at once.
+    var echoesSteers = false
 }
 
 /// See `ProviderCapabilities.denyReason`.
@@ -497,7 +502,19 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
 /// One step of the task list an agent keeps while it works: Claude Code's TodoWrite, Codex's `turn/plan/updated`,
 /// an ACP `plan` update.
 struct RunTaskStep: Codable, Equatable, Sendable {
-    enum Status: String, Codable, Sendable { case pending, active, done }
+    enum Status: String, Codable, Sendable {
+        case pending, active, done
+        /// Dropped: the agent will not do it (Gemini, Cursor and OpenCode say so in their todo lists).
+        case cancelled
+
+        /// A value this Nook does not know (written by a later one) reads as still to do, so the list still loads.
+        init(from decoder: Decoder) throws {
+            self = Status(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .pending
+        }
+
+        /// Nothing more comes of it: done, or dropped.
+        var isSettled: Bool { self == .done || self == .cancelled }
+    }
     var text: String
     var status: Status
 }
@@ -507,17 +524,20 @@ enum RunTasks {
         switch raw {
         case "completed", "done": return .done
         case "in_progress", "inProgress", "running", "active": return .active
+        case "cancelled", "canceled": return .cancelled
         default: return .pending
         }
     }
 
-    /// Claude Code's TodoWrite input: `todos` with `content`, `status` and, for the running one, `activeForm`.
+    /// Claude Code's TodoWrite input: `todos` with `content`, `status` and, for the running one, `activeForm`. The same
+    /// shape from Cursor's `todo_write` and OpenCode's `todowrite`, and Gemini CLI's `write_todos` (`description`).
     static func claude(_ input: [String: Any]) -> [RunTaskStep]? {
         guard let todos = input["todos"] as? [[String: Any]] else { return nil }
         return todos.compactMap { todo in
             let state = Self.status(todo["status"] as? String)
             let active = (todo["activeForm"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            guard let text = (state == .active ? active : nil) ?? (todo["content"] as? String), !text.isEmpty else { return nil }
+            guard let text = (state == .active ? active : nil) ?? (todo["content"] as? String) ?? (todo["description"] as? String),
+                  !text.isEmpty else { return nil }
             return RunTaskStep(text: text, status: state)
         }
     }
@@ -540,14 +560,25 @@ enum RunTasks {
     }
 
     /// How far the list is, and the step that matters now: the running one, else the next, else the last.
+    /// A dropped step counts in neither number: the list is through when every step left is done.
     static func progress(_ steps: [RunTaskStep]) -> (done: Int, total: Int, current: String) {
-        let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending } ?? steps.last
-        return (steps.filter { $0.status == .done }.count, steps.count, current?.text ?? "")
+        let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending }
+            ?? steps.last { $0.status != .cancelled } ?? steps.last
+        return (steps.filter { $0.status == .done }.count, steps.filter { $0.status != .cancelled }.count, current?.text ?? "")
     }
 
     static func isFinished(_ steps: [RunTaskStep]?) -> Bool {
         guard let steps, !steps.isEmpty else { return true }
-        return steps.allSatisfy { $0.status == .done }
+        return steps.allSatisfy(\.status.isSettled)
+    }
+}
+
+/// Where the "working for …" timer of a turn starts (`WorkspaceRun.turnStartedAt`). A new prompt starts it again; the
+/// agent carrying on by itself (background work it waited for ended, a task it delegated reported back) keeps the start
+/// of the work it continues, so the timer does not jump back to zero mid-work.
+enum TurnTimer {
+    static func start(continuing: Bool, previous: Date?, now: Date = Date()) -> Date {
+        continuing ? (previous ?? now) : now
     }
 }
 
@@ -801,6 +832,10 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// For a message of yours that went into a turn while it ran: whether you steered it, or a queued message was taken
     /// into it. Nil for a message that started a turn, and for every other event.
     var steer: SteerKind? = nil
+    /// For a steer sent to an agent that says when it reads one (`ProviderCapabilities.echoesSteers`): `pending` until
+    /// the agent echoes it as a message of yours, `cancelled` when Stop dropped it unread. Nil once read, and for every
+    /// other event (also in timelines saved before this existed).
+    var steerStatus: SteerStatus? = nil
     /// For a switch of agent, model or effort (a `.system` event with tool "switch"): what the session ran before and
     /// after it. Nil for every other event.
     var change: ModelSwitch? = nil
@@ -811,6 +846,14 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
         case steer
         /// Queued first, then taken into the running turn.
         case promoted
+    }
+
+    /// Whether the agent read a steer yet ("Steer · waiting to be read").
+    enum SteerStatus: String, Codable, Sendable {
+        /// Sent, but the agent has not taken it in yet: it reads steers between steps, after a running tool returns.
+        case pending
+        /// The turn stopped before the agent read it: it never reached the agent.
+        case cancelled
     }
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,

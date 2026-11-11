@@ -299,6 +299,8 @@ final class AgentProcess: @unchecked Sendable {
     var isRunning: Bool { process.isRunning }
 
     func start(baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) throws {
+        // Nook is quitting: nothing new starts that the quit would then have to wait for.
+        guard !LiveAgentProcesses.shared.quitting else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(ECANCELED)) }
         var environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
         for key in spec.removedEnvironment where spec.extraEnvironment[key] == nil { environment[key] = nil }
         let options = SpawnedProcess.Options(executable: spec.executable, arguments: spec.arguments, environment: environment,
@@ -327,11 +329,14 @@ final class AgentProcess: @unchecked Sendable {
                     self.flushRemainder()
                     self.trafficLog?.exit(status)
                     let tail = String(decoding: self.stderrTail, as: UTF8.self)
+                    LiveAgentProcesses.shared.remove(self)
                     self.markFinished()
                     self.onExit?(status, tail)
                 }
             }
         })
+        // A kept agent outlives Nook on purpose; every other one is stopped and waited for when Nook quits.
+        if !isKept { LiveAgentProcesses.shared.add(self) }
         for line in spec.initialInput { send(line) }
     }
 
@@ -381,6 +386,37 @@ final class AgentProcess: @unchecked Sendable {
             process.signalGroup(SIGKILL)
             process.release()
         }
+    }
+
+    // MARK: Quit
+
+    /// Nook quits: SIGINT to the group unless a stop is already under way (a second interrupt makes some agents leave
+    /// without saving), and the group stays signallable until Nook is gone. `QuitShutdown` escalates from here.
+    func beginQuit() {
+        lock.lock()
+        let first = !stopping
+        stopping = true
+        lock.unlock()
+        guard !isKept else { return }
+        process.hold()
+        guard first else { return }
+        trafficLog?.signal(SIGINT)
+        process.signalGroup(SIGINT)
+    }
+
+    /// Whether the agent or anything it started still runs.
+    var groupIsAlive: Bool { process.groupIsAlive }
+
+    /// SIGTERM or SIGKILL to the whole group, for `QuitShutdown`.
+    func signalQuit(_ signal: Int32) {
+        trafficLog?.signal(signal)
+        process.signalGroup(signal)
+    }
+
+    /// The quit's wait is over: the leader may be reaped.
+    func endQuit() {
+        guard !isKept else { return }
+        process.release()
     }
 
     private func markFinished() {

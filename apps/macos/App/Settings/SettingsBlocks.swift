@@ -854,6 +854,12 @@ struct WorkspaceSettingsSection: View {
             } label: {
                 SettingLabel(tr("settings.ws.timelineDetail"), hint: tr("settings.ws.timelineDetail.help"))
             }
+            // Only heard while VoiceOver runs, and only from the session on screen (`AgentAnnouncer`).
+            Picker(selection: $ws.screenReaderAnnouncements) {
+                ForEach(ScreenReaderAnnouncements.allCases) { level in Text(tr(level.titleKey)).tag(level) }
+            } label: {
+                SettingLabel(tr("settings.ws.screenReader"), hint: tr("settings.ws.screenReader.help"))
+            }
             Picker(tr("settings.ws.maxWorking"), selection: $ws.maxWorkingSessions) {
                 ForEach(SessionCapacity.choices, id: \.self) { count in
                     Text(count == 0 ? tr("settings.ws.maxWorking.none") : "\(count)").tag(count)

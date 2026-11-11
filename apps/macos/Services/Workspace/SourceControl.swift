@@ -90,6 +90,60 @@ enum CloneLayout {
         return Address(host: host, owner: owner, name: name)
     }
 
+    /// Hosts whose repositories are always `owner/name`, so anything below that is a page inside the repository.
+    private static let twoPartHosts: Set<String> = ["github.com", "www.github.com", "bitbucket.org", "codeberg.org", "gitea.com",
+                                                    "git.cafe", "staging.git.cafe"]
+    /// Page routes GitHub, Gitea, Forgejo and Bitbucket serve inside a repository (`owner/repo/tree/main`).
+    private static let pageRoutes: Set<String> = ["tree", "blob", "commit", "commits", "pull", "pulls", "pull-requests", "issues",
+                                                  "actions", "releases", "compare", "wiki", "src", "raw", "tags", "branches"]
+    /// Routes that may end the address (`owner/repo/issues`); the others are pages only with a part after them, as
+    /// `owner/repo/tree` could still be a GitLab project named "tree" in a group.
+    private static let listRoutes: Set<String> = ["commits", "pulls", "pull-requests", "issues", "actions", "releases", "wiki",
+                                                  "tags", "branches"]
+
+    /// The repository a URL copied from a browser is in: `https://github.com/owner/repo/tree/main` →
+    /// `https://github.com/owner/repo`. GitLab pages are cut at `/-/`; on github.com, bitbucket.org, codeberg.org and
+    /// the like everything below `owner/repo` goes; on other hosts (Gitea, Forgejo) a page route right after
+    /// `owner/repo` does. The query and fragment are dropped. A path ending in `.git`, an ssh:// or scp-style address, and
+    /// anything else that is no page come back as typed (trimmed)..
+    static func repositoryURL(fromPage raw: String) -> String {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = clean.lowercased()
+        guard lower.hasPrefix("https://") || lower.hasPrefix("http://"),
+              var components = URLComponents(string: clean), let host = components.host?.lowercased(), !host.isEmpty else { return clean }
+        var path = components.percentEncodedPath
+        let dropsExtras = components.percentEncodedQuery != nil || components.percentEncodedFragment != nil
+        if !(path.hasSuffix("/") ? String(path.dropLast()) : path).hasSuffix(".git") {
+            var parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            if let marker = parts.firstIndex(of: "-"), marker >= 3 {
+                // GitLab (also self-hosted): every page of a project is below `/-/`.
+                parts = Array(parts[..<marker])
+            } else if twoPartHosts.contains(host), parts.count > 3, parts[1...2].allSatisfy({ !$0.isEmpty }) {
+                parts = Array(parts[...2])
+            } else if parts.count > 3, parts[1...2].allSatisfy({ !$0.isEmpty }), pageRoutes.contains(parts[3]) {
+                let rest = parts[4...].filter { !$0.isEmpty }
+                if !rest.isEmpty || listRoutes.contains(parts[3]) { parts = Array(parts[...2]) }
+            }
+            path = parts.joined(separator: "/")
+        }
+        guard path != components.percentEncodedPath || dropsExtras else { return clean }
+        components.percentEncodedPath = path
+        components.percentEncodedQuery = nil
+        components.percentEncodedFragment = nil
+        return components.string ?? clean
+    }
+
+    /// Whether a clone may go into `path`: nothing is there yet, or an empty folder (a failed clone leaves one behind).
+    /// Finder's `.DS_Store` counts as empty and is removed, since `git clone` refuses a folder that holds it.
+    static func prepareCloneTarget(_ path: String, fileManager fm: FileManager = .default) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: path, isDirectory: &isDirectory) else { return true }
+        guard isDirectory.boolValue, let names = try? fm.contentsOfDirectory(atPath: path),
+              names.allSatisfy({ $0 == ".DS_Store" }) else { return false }
+        for name in names { try? fm.removeItem(atPath: path + "/" + name) }
+        return (try? fm.contentsOfDirectory(atPath: path))?.isEmpty == true
+    }
+
     /// The folder a clone goes into: `<parent>/<repo>`, or with the host layout `<root>/<host>/<owner>/<repo>` (as ghq
     /// lays clones out). Nil when the host layout is asked for an address it cannot read.
     static func target(url: String, parent: String, hostLayout: Bool, folderName: String) -> String? {

@@ -19,7 +19,7 @@ extension WorkspaceManager {
         turns[id] = TurnState()
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id)
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
 
@@ -462,7 +462,7 @@ extension WorkspaceManager {
         append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id, continuing: true)
         replace(run)
     }
 
@@ -494,8 +494,8 @@ extension WorkspaceManager {
                 turns[id]?.acpThought += text
                 feed(id, .thinkingDelta(text))
             case .toolCall(let call):
-                // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput).
-                let input = call.editInput ?? call.input
+                // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput), a read's file as its path.
+                let input = call.editInput ?? call.readInput
                 feed(id, .toolStarted(AgentToolCall(id: call.id, name: call.toolName, title: call.title.isEmpty ? call.toolName : call.title,
                                                     detail: input.map { ToolSummary.json($0.object) }, input: input,
                                                     output: call.output, state: Self.state(call.status) ?? .running, paths: call.paths)))

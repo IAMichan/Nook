@@ -108,6 +108,15 @@ harness that opens a window interrupts whatever the user is doing:
   `osascript`: it moves the user's cursor and lands on whatever is under it.
 - If a check only works on the real screen, ask the user first and run it once, not in a loop.
 
+To show a behavior end to end, or to prove a fix (it fails on the base commit and passes on the fix), write a scenario:
+the real app code in a test process with a replay agent instead of a model, offscreen, against a scenario home of its
+own. See [`docs/SCENARIOS.md`](docs/SCENARIOS.md):
+
+```sh
+./scripts/scenarios.sh [ScenarioName…]
+./scripts/prove-scenario.sh <ScenarioName> --base <rev> [--head <rev>]
+```
+
 ## 5. Showing Files to the User
 
 When you make something the user should look at (an image, a rendered HTML page, a PDF, a drafted caption or post), make sure they can open it in the side panel of their agent app instead of only reading a path in chat:
