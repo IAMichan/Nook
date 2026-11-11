@@ -127,3 +127,36 @@ test("findPullNumber: finds from pull_request payload, workflow_run, or head_sha
   });
   assert.equal(num3, 77);
 });
+
+test("run: keeps the oldest overview and deletes duplicates from parallel runs", async () => {
+  const { run, MARKER } = require("./pr-overview.cjs");
+  const deleted = [];
+  const updated = [];
+  const comments = [
+    { id: 30, user: { type: "Bot" }, body: `${MARKER}\nnewer` },
+    { id: 10, user: { type: "Bot" }, body: `${MARKER}\nolder` },
+    { id: 20, user: { type: "User" }, body: `${MARKER}\nquoted by a person` },
+  ];
+  const github = {
+    rest: {
+      pulls: {
+        get: async () => ({
+          data: { number: 4, state: "open", draft: false, user: { login: "a", type: "User" }, labels: [], head: { sha: "s" }, base: { repo: { html_url: "https://github.com/IAMichan/Nook" } } },
+        }),
+        listReviews: "listReviews",
+      },
+      checks: { listForRef: "listForRef" },
+      issues: {
+        listComments: "listComments",
+        updateComment: async (args) => updated.push(args.comment_id),
+        createComment: async () => assert.fail("must not create a second overview"),
+        deleteComment: async (args) => deleted.push(args.comment_id),
+      },
+    },
+    paginate: async (method) => (method === "listComments" ? comments : []),
+  };
+  const context = { repo: { owner: "IAMichan", repo: "Nook" }, payload: { pull_request: { number: 4 } } };
+  await run({ github, context, core: { info() {} } });
+  assert.deepEqual(updated, [10]);
+  assert.deepEqual(deleted, [30]);
+});

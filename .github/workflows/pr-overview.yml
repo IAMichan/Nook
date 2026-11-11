@@ -20,10 +20,8 @@ on:
 
 permissions: {}
 
-# One update at a time per commit; the newest event wins, because the script always reads the current state.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
-  cancel-in-progress: true
+# No concurrency block on purpose: cancelling a superseded run would show a red, cancelled check on the pull request.
+# Each run takes seconds, reads the current state and writes the same comment; the script removes duplicates.
 
 jobs:
   publish:

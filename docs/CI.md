@@ -16,7 +16,7 @@ reusable workflow that can also be started on its own with *Run workflow*.
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
-| `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments) |
+| `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`, `.github/dependabot.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments) |
 | `ci.yml` → *Workflow scripts* | ubuntu, seconds | `.github/scripts`: `node --test` for the scripts below |
 | `ci.yml` → *Markdown links* | ubuntu, seconds | any `*.md`: [lychee](https://lychee.cli.rs) checks relative links and `#anchors` offline |
 | `ci.yml` → *Dependency review* | ubuntu, seconds, pull requests only | manifests and lock files (`package.json`, `Cargo.lock`, `Package.resolved`, `project.yml`, …): fails on a new dependency with a high or critical vulnerability |

@@ -222,6 +222,13 @@ async function findPullNumber({ github, context }) {
   return pulls.find((pull) => pull.head.sha === run.head_sha)?.number ?? null;
 }
 
+// The overview comments on a pull request, oldest first.
+function overviewComments(comments) {
+  return comments
+    .filter((comment) => comment.user?.type === "Bot" && comment.body?.startsWith(MARKER))
+    .sort((a, b) => a.id - b.id);
+}
+
 async function run({ github, context, core }) {
   const number = await findPullNumber({ github, context });
   if (!number) {
@@ -254,7 +261,8 @@ async function run({ github, context, core }) {
     issue_number: number,
     per_page: 100,
   });
-  const existing = comments.find((comment) => comment.user?.type === "Bot" && comment.body?.startsWith(MARKER));
+  const ours = overviewComments(comments);
+  const existing = ours[0];
   if (existing?.body === body) {
     core.info(`#${number}: overview unchanged.`);
   } else if (existing) {
@@ -264,6 +272,22 @@ async function run({ github, context, core }) {
     await github.rest.issues.createComment({ ...context.repo, issue_number: number, body });
     core.info(`#${number}: overview posted.`);
   }
+
+  // Runs are not serialized (a cancelled run would show as a failed check on the pull request), so two runs can both
+  // post a first comment. Keep the oldest and delete the rest; every run reads the current state, so any copy is right.
+  const after = existing
+    ? ours
+    : overviewComments(
+        await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: number, per_page: 100 }),
+      );
+  for (const duplicate of after.slice(1)) {
+    await github.rest.issues
+      .deleteComment({ ...context.repo, comment_id: duplicate.id })
+      .catch((error) => {
+        if (error.status !== 404) throw error;
+      });
+    core.info(`#${number}: removed duplicate overview ${duplicate.id}.`);
+  }
 }
 
-module.exports = { MARKER, summarize, render, nextSteps, run, findPullNumber };
+module.exports = { MARKER, summarize, render, nextSteps, run, findPullNumber, overviewComments };
