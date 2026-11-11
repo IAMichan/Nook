@@ -182,7 +182,7 @@
       <header class="title page-title"><span class="name">{routeTitle}</span></header>
       <div class="route-body"><Chats onnook={(id) => { nook.select(id); route = "chat"; }} /></div>
     {:else}
-      <header class="title page-title"><span class="name">{routeTitle}</span></header>
+      {#if route !== "agents"}<header class="title page-title"><span class="name">{routeTitle}</span></header>{/if}
       <div class="route-body">
         {#key route}<LazyView load={routeViews[route]!} label={routeTitle} onretry={() => reloadRoute(route)} />{/key}
       </div>

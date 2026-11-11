@@ -323,7 +323,7 @@
       <button class:on={selected.kind === "page" && selected.page === "worktrees"} title="Worktrees" onclick={() => agents.select("worktrees")}>⑂</button>
     </div>
   </aside>
-  <section class="main">
+  <section class="main" class:thread={selected.kind === "run" || selected.kind === "live" || selected.kind === "past"}>
     {#if agents.error}<p class="err">{agents.error} <button class="ghost" onclick={() => (agents.error = null)}>✕</button></p>{/if}
     {#if selected.kind === "run"}
       {#key selected.id}<RunPanel runId={selected.id} ongone={() => agents.select(null)} />{/key}
@@ -397,6 +397,8 @@
   .footer button.glyph { display: grid; place-items: center; }
   .vsep { width: 1px; height: 14px; background: var(--line2); margin: 0 4px; }
   .main { min-width: 0; min-height: 0; padding: 12px 16px; overflow: hidden; display: flex; flex-direction: column; }
+  .main.thread { padding: 0; }
+  .main.thread > .err { padding: 8px 16px 0; }
   .err { color: var(--coral); font-size: 12px; margin: 0 0 6px; }
   @media (max-width: 800px) {
     .tab:not(.compact):not(.docked) { grid-template-columns: 210px minmax(0, 1fr); }

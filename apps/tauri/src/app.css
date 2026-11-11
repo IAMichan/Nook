@@ -36,6 +36,10 @@
   --coral: #ff6467;
   --violet: #a684ff;
   --music: #f0936a;
+  /* Your own message in a conversation (NookPalette.bubble): a soft fill a step off the canvas. */
+  --bubble: #1e1e1e;
+  /* The width a coding agent's conversation reads at, as t3code's --chat-content-max-width. */
+  --thread-width: 768px;
   --radius: 12px;
   --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", "Cantarell", "Noto Sans", sans-serif;
   --mono: "Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace;
@@ -126,6 +130,9 @@ a { color: var(--iris); }
 .markdown th, .markdown td { border: 1px solid var(--line2); padding: 4px 8px; text-align: left; }
 .markdown blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line2); color: var(--text2); }
 .markdown sup.cite { font-size: 10px; background: var(--smoke); border-radius: 4px; padding: 0 4px; margin-left: 2px; color: var(--text2); }
+
+/* A coding agent's conversation, after t3code: one centered column, the composer under it at the same width. */
+.thread-column { width: 100%; max-width: var(--thread-width); margin: 0 auto; padding: 0 20px; box-sizing: border-box; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
