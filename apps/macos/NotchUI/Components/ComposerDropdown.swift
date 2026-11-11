@@ -135,6 +135,8 @@ struct DropdownRow: View {
     var tint: Color? = nil
     /// Draws the symbol in a small tile of this color instead of on its own (the chat composer's "+" menu).
     var tile: Color? = nil
+    /// A small picture in place of the tile (the picture on the clipboard, in the chat composer's "+" menu).
+    var thumbnail: NSImage? = nil
     var disabledReason: String? = nil
     /// Keeps the panel open after the click (several choices in a row).
     var staysOpen = false
@@ -148,13 +150,16 @@ struct DropdownRow: View {
     @Environment(\.closeDropdown) private var close
     @State private var hovering = false
 
+    /// Drawn with a tile or a picture in front: a taller row with the text centred beside it.
+    private var tiled: Bool { tile != nil || thumbnail != nil }
+
     var body: some View {
         Button {
             guard disabledReason == nil else { return }
             action()
             if !staysOpen { close() }
         } label: {
-            HStack(alignment: detail == nil ? .center : .top, spacing: tile == nil ? 8 : NookTheme.Spacing.md) {
+            HStack(alignment: detail == nil || tiled ? .center : .top, spacing: tiled ? NookTheme.Spacing.md : 8) {
                 if let agent {
                     AgentMark(agent: agent, account: account, size: 15, ring: DropdownStyle.panel)
                 } else if let brand {
@@ -165,6 +170,13 @@ struct DropdownRow: View {
                 } else if let projectIcon {
                     ProjectIconView(icon: projectIcon, size: 15)
                         .padding(.top, detail == nil ? 0 : 1)
+                } else if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 26, height: 26)
+                        .roundedClip(NookTheme.Radius.control)
+                        .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.control)
                 } else if let symbol, let tile {
                     NookSymbol(symbol, size: 13)
                         .font(NookTheme.font(12, .semibold))
@@ -203,8 +215,8 @@ struct DropdownRow: View {
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
             }
-            .padding(.horizontal, tile == nil ? NookTheme.Spacing.md : NookTheme.Spacing.sm)
-            .padding(.vertical, detail == nil ? (tile == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.xs) : NookTheme.Spacing.md)
+            .padding(.horizontal, tiled ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
+            .padding(.vertical, tiled ? NookTheme.Spacing.xs : (detail == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.md))
             .frame(minHeight: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
             .roundedBackground(chosen && !highlighted ? DropdownStyle.chosen : ((hovering || highlighted) && disabledReason == nil ? DropdownStyle.hover : .clear),
@@ -234,6 +246,84 @@ struct DropdownRow: View {
             .help(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
             .accessibilityLabel(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
         }
+    }
+}
+
+/// The big choices on top of a dropdown (the chat composer's "+" panel): `DropdownTile`s in a grid of three columns.
+struct DropdownTileGrid<Content: View>: View {
+    var columns = 3
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: NookTheme.Spacing.xs), count: columns),
+                  spacing: NookTheme.Spacing.xs) {
+            content()
+        }
+    }
+}
+
+/// One big choice in a `DropdownTileGrid`: its symbol in a tinted tile, the title under it. Closes the dropdown.
+struct DropdownTile: View {
+    let symbol: String
+    let title: String
+    let tint: Color
+    let action: () -> Void
+    @Environment(\.closeDropdown) private var close
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            action()
+            close()
+        } label: {
+            VStack(spacing: NookTheme.Spacing.sm) {
+                NookSymbol(symbol, size: 16)
+                    .font(NookTheme.font(16, .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 40, height: 40)
+                    .roundedBackground(tint.opacity(hovering ? 0.26 : 0.16), radius: NookTheme.Radius.card)
+                    .scaleEffect(hovering ? 1.04 : 1)
+                Text(title)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, NookTheme.Spacing.md)
+            .padding(.bottom, NookTheme.Spacing.sm)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .roundedBackground(hovering ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.control)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .accessibilityLabel(title)
+    }
+}
+
+/// A quiet line at the foot of a dropdown: a tip on another way to do what the rows offer.
+struct DropdownNote: View {
+    var symbol: String? = nil
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            if let symbol {
+                Image(icon: symbol)
+                    .font(NookTheme.TextStyle.detail)
+            }
+            Text(text)
+                .font(NookTheme.TextStyle.detail)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(NookTheme.textTertiary)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.top, NookTheme.Spacing.xs)
+        .padding(.bottom, NookTheme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -541,14 +541,15 @@ enum ChatVoiceOpus {
 // MARK: - The buttons beside the field
 
 /// "+" before the field: everything a chat can take besides text, as far as this chat's app can send it, in Nook's own
-/// dropdown: each kind behind a tinted tile, files and media first, then what you share from a form.
+/// dropdown. Files and media on top as big tiles, then what you share from a form with a line on what it is, the
+/// picture on the clipboard with its preview, and at the foot the reminder that files can also be dropped on the chat.
 struct ChatAttachMenu: View {
     @ObservedObject var model: ChatComposerModel
     let sends: Set<ChatOutgoing.Kind>
     @State private var hovering = false
 
     var body: some View {
-        ComposerDropdown(width: 224) {
+        ComposerDropdown(width: 288) {
             Image(icon: "plus")
                 .font(NookTheme.font(13, .semibold))
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -558,57 +559,121 @@ struct ChatAttachMenu: View {
                 .onHover { hovering = $0 }
                 .animation(NookTheme.hover, value: hovering)
         } content: {
-            if sends.contains(.photo) || sends.contains(.video) {
-                DropdownRow(symbol: "photo.on.rectangle.angled", title: tr("chat.compose.photoVideo"), tile: NookTheme.blue) {
-                    pick(nil, [.image, .movie])
-                }
-            }
-            if sends.contains(.file) {
-                DropdownRow(symbol: "doc.fill", title: tr("chat.compose.file"), tile: NookTheme.violet) {
-                    pick(.file, [])
-                }
-            }
-            if sends.contains(.gif) {
-                DropdownRow(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tile: NookTheme.mint) {
-                    model.open(.gifs)
-                }
-            }
-            if sends.contains(.sticker) {
-                DropdownRow(symbol: "face.smiling.inverse", title: tr("chat.compose.stickers"), tile: NookTheme.amber) {
-                    model.open(.stickers)
-                }
-            }
-            if sends.contains(.audio) {
-                DropdownRow(symbol: "headphones", title: tr("chat.media.audio"), tile: NookTheme.music) {
-                    pick(.audio, [.audio])
-                }
-            }
-            if sends.contains(.poll) || sends.contains(.location) || sends.contains(.contact) { DropdownDivider() }
-            if sends.contains(.poll) {
-                DropdownRow(symbol: "chart.bar.fill", title: tr("chat.compose.poll"), tile: NookTheme.amber) {
-                    model.open(.poll)
-                }
-            }
-            if sends.contains(.location) {
-                DropdownRow(symbol: "mappin.and.ellipse", title: tr("chat.compose.place"), tile: NookTheme.coral) {
-                    model.open(.place)
-                }
-            }
-            if sends.contains(.contact) {
-                DropdownRow(symbol: "person.crop.circle.fill", title: tr("chat.compose.contact"), tile: NookTheme.blue) {
-                    // The panel looks them up itself as it opens (`ChatContactForm`).
-                    model.open(.contact)
-                }
-            }
-            if sends.contains(.photo), model.canPastePicture {
-                DropdownDivider()
-                DropdownRow(symbol: "doc.on.clipboard", title: tr("chat.compose.pastePicture"), tile: NookTheme.textSecondary) {
-                    _ = model.paste()
-                }
-            }
+            ChatAttachPanel(model: model, sends: sends)
         }
         .composerTip(tr("chat.compose.attach"))
         .accessibilityLabel(tr("chat.compose.attach"))
+    }
+}
+
+/// What the "+" opens, in its dropdown.
+struct ChatAttachPanel: View {
+    @ObservedObject var model: ChatComposerModel
+    let sends: Set<ChatOutgoing.Kind>
+
+    /// How many tiles there are: photo and video share one.
+    private var tileCount: Int {
+        [sends.contains(.photo) || sends.contains(.video), sends.contains(.file), sends.contains(.audio),
+         sends.contains(.gif), sends.contains(.sticker)].filter { $0 }.count
+    }
+
+    private var hasMedia: Bool { tileCount > 0 }
+
+    /// Rows that come out even: two tiles side by side, four as two by two, otherwise three to a row.
+    private var tileColumns: Int { tileCount == 4 ? 2 : min(3, max(1, tileCount)) }
+
+    private var hasShare: Bool {
+        !sends.isDisjoint(with: [.poll, .location, .contact])
+    }
+
+    /// Files can be dropped on the chat (and pasted) whenever it takes any of them.
+    private var takesFiles: Bool {
+        !sends.isDisjoint(with: [.photo, .video, .file, .audio])
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if hasMedia {
+                DropdownHeader(title: tr("chat.compose.header"))
+                DropdownTileGrid(columns: tileColumns) { mediaTiles }
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .padding(.bottom, NookTheme.Spacing.xs)
+            }
+            if hasShare {
+                if hasMedia { DropdownDivider() }
+                DropdownHeader(title: tr("chat.compose.shareHeader"))
+                shareRows
+            }
+            if sends.contains(.photo), let picture = clipboardPicture {
+                DropdownDivider()
+                DropdownRow(title: tr("chat.compose.pastePicture"), detail: tr("chat.compose.pastePicture.detail"),
+                            trailing: "⌘V", thumbnail: picture) {
+                    _ = model.paste()
+                }
+            }
+            if takesFiles {
+                DropdownDivider()
+                DropdownNote(symbol: "square.and.arrow.down", text: tr("chat.compose.dropHint", ChatComposerModel.maxFiles))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var mediaTiles: some View {
+        if sends.contains(.photo) || sends.contains(.video) {
+            DropdownTile(symbol: "photo.on.rectangle.angled", title: tr("chat.compose.tile.photoVideo"), tint: NookTheme.blue) {
+                pick(nil, [.image, .movie])
+            }
+        }
+        if sends.contains(.file) {
+            DropdownTile(symbol: "doc.fill", title: tr("chat.compose.tile.file"), tint: NookTheme.violet) {
+                pick(.file, [])
+            }
+        }
+        if sends.contains(.audio) {
+            DropdownTile(symbol: "headphones", title: tr("chat.media.audio"), tint: NookTheme.music) {
+                pick(.audio, [.audio])
+            }
+        }
+        if sends.contains(.gif) {
+            DropdownTile(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tint: NookTheme.mint) {
+                model.open(.gifs)
+            }
+        }
+        if sends.contains(.sticker) {
+            DropdownTile(symbol: "face.smiling.inverse", title: tr("chat.compose.tile.stickers"), tint: NookTheme.amber) {
+                model.open(.stickers)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var shareRows: some View {
+        if sends.contains(.poll) {
+            DropdownRow(symbol: "chart.bar.fill", title: tr("chat.compose.poll"), detail: tr("chat.compose.poll.detail"),
+                        tile: NookTheme.amber) {
+                model.open(.poll)
+            }
+        }
+        if sends.contains(.location) {
+            DropdownRow(symbol: "mappin.and.ellipse", title: tr("chat.compose.place"), detail: tr("chat.compose.place.detail"),
+                        tile: NookTheme.coral) {
+                model.open(.place)
+            }
+        }
+        if sends.contains(.contact) {
+            DropdownRow(symbol: "person.crop.circle.fill", title: tr("chat.compose.contact"),
+                        detail: tr("chat.compose.contact.detail"), tile: NookTheme.blue) {
+                // The panel looks them up itself as it opens (`ChatContactForm`).
+                model.open(.contact)
+            }
+        }
+    }
+
+    /// The picture on the clipboard, read as the panel draws: only when there is one to paste.
+    private var clipboardPicture: NSImage? {
+        guard model.canPastePicture else { return nil }
+        return NSImage(pasteboard: NSPasteboard.general)
     }
 
     /// The file picker opens once the dropdown has closed: run from inside the open popover, its modal loop hangs it.
