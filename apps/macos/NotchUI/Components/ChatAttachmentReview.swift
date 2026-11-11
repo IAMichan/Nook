@@ -257,7 +257,7 @@ private struct ChatImageCanvas: View {
 
     private static let space = "chat-image"
     /// Sharp on a big window; the file's own pixels are for what is sent.
-    private static let previewSide = 2400
+    nonisolated private static let previewSide = 2400
 
     @State private var picture: NSImage?
     @State private var line: [CGPoint] = []

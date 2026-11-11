@@ -91,7 +91,7 @@ final class GitHubAvatarStore: @unchecked Sendable {
     private let cache: NSCache<NSURL, NSImage> = {
         let cache = NSCache<NSURL, NSImage>()
         cache.countLimit = 400
-        MemoryPressure.shared.register("gitHubAvatars") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("gitHubAvatars", emptying: cache)
         return cache
     }()
     private let lock = NSLock()
@@ -103,19 +103,14 @@ final class GitHubAvatarStore: @unchecked Sendable {
 
     func image(for url: URL) async -> NSImage? {
         if let image = cached(url) { return image }
-        lock.lock()
-        if missing.contains(url) {
-            lock.unlock()
-            return nil
-        }
-        let task: Task<Void, Never>
-        if let running = loading[url] {
-            task = running
-        } else {
-            task = Task.detached(priority: .utility) { [self] in await self.read(url) }
+        let task: Task<Void, Never>? = lock.withLock {
+            if missing.contains(url) { return nil }
+            if let running = loading[url] { return running }
+            let task = Task.detached(priority: .utility) { [self] in await self.read(url) }
             loading[url] = task
+            return task
         }
-        lock.unlock()
+        guard let task else { return nil }
         await task.value
         return cached(url)
     }
@@ -128,11 +123,11 @@ final class GitHubAvatarStore: @unchecked Sendable {
         if found, let data = answer?.0, let image = DecodedImage.image(data, maxPixel: 256) {
             cache.setObject(image, forKey: url as NSURL)
         }
-        lock.lock()
-        loading[url] = nil
-        // Only a real answer without a picture; a failed request (offline) is asked again later.
-        if answer != nil, !found { missing.insert(url) }
-        lock.unlock()
+        lock.withLock {
+            loading[url] = nil
+            // Only a real answer without a picture; a failed request (offline) is asked again later.
+            if answer != nil, !found { missing.insert(url) }
+        }
     }
 }
 
