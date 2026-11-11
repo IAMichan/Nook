@@ -638,7 +638,7 @@ struct AgentRunPanel: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         } else if !levels.isEmpty {
             ComposerDivider()
             ComposerDropdown(width: 220, command: "effortPicker.toggle") {
@@ -657,7 +657,7 @@ struct AgentRunPanel: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         }
     }
 
@@ -1752,7 +1752,7 @@ struct AgentRunPanel: View {
                 workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true)
             }
         }
-        .help(run.resolvedModel ?? tr("ws.new.model"))
+        .composerTip(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {
@@ -1775,7 +1775,7 @@ struct AgentRunPanel: View {
             }
         }
         .disabled(run.mode == .plan)
-        .help(run.permission.help(for: run.provider))
+        .composerTip(run.permission.help(for: run.provider))
     }
 }
 

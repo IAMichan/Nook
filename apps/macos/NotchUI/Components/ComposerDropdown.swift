@@ -32,6 +32,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .background(DropdownStyle.panel)
                     .environment(\.closeDropdown, { open = false })
+                    // A panel is a window of its own: the composer below cannot draw tips into it.
+                    .environment(\.composerTipsHosted, false)
             }
             // Ahead of the spacer, so the pill gets all the room left instead of half of it.
             .layoutPriority(flexible ? 1 : 0)
@@ -626,7 +628,7 @@ struct ModeToggle: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help(mode.help + " · " + tr("compose.modeSwitch"))
+        .composerTip(mode.help + " · " + tr("compose.modeSwitch"))
     }
 }
 

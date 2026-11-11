@@ -607,7 +607,7 @@ struct ChatAttachMenu: View {
                 }
             }
         }
-        .help(tr("chat.compose.attach"))
+        .composerTip(tr("chat.compose.attach"))
         .accessibilityLabel(tr("chat.compose.attach"))
     }
 
@@ -631,7 +631,7 @@ struct ChatEmojiButton: View {
     }
 
     var body: some View {
-        ToolbarIconButton("face.smiling", tr("chat.compose.emoji"), height: 26, width: 26) {
+        ToolbarIconButton("face.smiling", tr("chat.compose.emoji"), height: 26, width: 26, inComposer: true) {
             let editor = NSApp.keyWindow?.firstResponder as? NSTextView
             anchor.editor = editor
             anchor.range = editor?.selectedRange() ?? NSRange(location: NSNotFound, length: 0)
@@ -662,7 +662,7 @@ struct ChatMicButton: View {
     let failed: (Error) -> Void
 
     var body: some View {
-        NookIconButton(systemName: "mic.fill", label: tr("chat.compose.voice"), size: ChatReplyField.buttonSide) {
+        NookIconButton(systemName: "mic.fill", label: tr("chat.compose.voice"), size: ChatReplyField.buttonSide, inComposer: true) {
             Task { @MainActor in
                 do { try await recorder.start() } catch { failed(error) }
             }
@@ -913,7 +913,7 @@ struct ChatAttachmentKindMenu: View {
                 .foregroundStyle(NookTheme.textSecondary)
             }
             .composerMenu()
-            .help(tr("chat.compose.sendAs"))
+            .composerTip(tr("chat.compose.sendAs"))
         } else {
             Text(Self.title(file.kind))
                 .font(NookTheme.TextStyle.caption)
