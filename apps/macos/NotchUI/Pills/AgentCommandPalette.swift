@@ -56,6 +56,8 @@ struct AgentCommandPalette: View {
         var detail = ""
         /// The keybinding command it stands for, whose key it shows.
         var command: String? = nil
+        /// A session Nook runs, by its run id: the row drags onto a composer as that session's chip (`SessionLinkDrag`).
+        var dragSession: String? = nil
         /// Runs it; true keeps the palette open (a step into a list).
         let run: () -> Bool
     }
@@ -96,11 +98,16 @@ struct AgentCommandPalette: View {
                                              limit: parsed.isEmpty ? 6 : 12)
         return ranked.map { candidate in
             Entry(id: candidate.id, group: .recent, symbol: "bubble.left.and.text.bubble.right", title: candidate.title,
-                  detail: candidate.detail) {
+                  detail: candidate.detail, dragSession: Self.runID(candidate.id)) {
                 viewModel.selectedAgentID = candidate.id
                 return false
             }
         }
+    }
+
+    /// The run id of a session Nook runs ("run:<uuid>"); nil for any other row, which does not drag.
+    private static func runID(_ id: String) -> String? {
+        id.hasPrefix("run:") ? UUID(uuidString: String(id.dropFirst(4)))?.uuidString : nil
     }
 
     private static func detail(_ item: AgentListItem) -> String {
@@ -373,6 +380,10 @@ struct AgentCommandPalette: View {
                                     // The pointer and the arrow keys share one highlighted row.
                                     .onHover { if $0 { index = offset } }
                                     .onTapGesture { index = offset; perform(list) }
+                                    // Dragged onto the composer under the palette, a session becomes its chip, as a
+                                    // row of the Agents list does; the palette closes as the drag starts so the
+                                    // composer can take the drop.
+                                    .sessionLinkDrag(id: entry.dragSession, title: entry.title, onStart: close)
                             }
                         }
                         .padding(NookTheme.Spacing.sm)

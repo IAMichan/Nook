@@ -31,7 +31,7 @@ struct EventRow: View {
         case .user:
             // Each turn starts as its own block, as in the Nook chat and an agent's transcript.
             TranscriptUserMessage(text: event.text, date: event.date, steered: event.steer == .steer,
-                                  promoted: event.steer == .promoted, onEdit: onEdit)
+                                  promoted: event.steer == .promoted, steerStatus: event.steerStatus, onEdit: onEdit)
                 .padding(.top, event.steer == nil ? TranscriptStyle.turnGap - NookTheme.Spacing.sm : NookTheme.Spacing.xs)
                 .padding(.bottom, NookTheme.Spacing.xxs)
 

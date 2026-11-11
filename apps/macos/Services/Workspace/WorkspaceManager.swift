@@ -1359,6 +1359,7 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
+        settleSteers(id, dropped: run.status != .completed)
         noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
         if run.status != .failed { recoveringConversation.remove(id) }

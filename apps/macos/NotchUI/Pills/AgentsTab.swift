@@ -1140,7 +1140,8 @@ struct AgentConversation: View {
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, compactingSince: session.compactingSince,
                                fallback: fallback, onReply: onReply,
-                               bottomBar: bottomBar, directory: session.cwd)
+                               bottomBar: bottomBar, directory: session.cwd,
+                               waitingOn: session.status == .waiting ? (session.approvalID != nil ? .approval : .question) : nil)
             .id(session.id)
     }
 }

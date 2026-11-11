@@ -184,18 +184,18 @@ extension WorkspaceManager {
         let mark: RunEvent.SteerKind = promoted ? .promoted : .steer
         if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean, mark: mark) }
         if let process = processes[id], run(id)?.provider == .claude {
-            append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
+            append(id, steerEvent(id, text: clean, mark: mark))
             turns[id]?.steered = true
             process.send(ClaudeStreamParser.userMessage(clean, steer: true))
             return true
         }
         if let process = processes[id], run(id)?.provider == .pi {
-            append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
+            append(id, steerEvent(id, text: clean, mark: mark))
             process.send(PiRPC.prompt(clean, steer: true))
             return true
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
-        append(id, steered(RunEvent(kind: .user, text: shownMessage(id, clean)), mark))
+        append(id, steerEvent(id, text: clean, mark: mark))
         client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
             guard case .failure(let error) = result else { return }
             Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }
@@ -342,6 +342,10 @@ extension WorkspaceManager {
                 guard !(questions[id] ?? []).contains(where: { $0.id == pending.id }) else { continue }
                 questions[id, default: []].append(pending)
                 asked(id, pending)
+            case .userMessage(let text, let thread):
+                // Codex took a message of yours into the conversation: a steer it had not read yet is read now. A
+                // subagent's thread has messages of its own.
+                if thread == nil || thread == client.threadID { steerEchoed(id, text: text) }
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not support this request.")
             case .rateLimits(let limits):
