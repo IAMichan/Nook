@@ -484,4 +484,19 @@ final class CompanionModelsTests: XCTestCase {
         let old = try JSONDecoder().decode(TimelineEntry.self, from: Data(#"{"id":"a","kind":"tool","text":"Ran","date":0,"failed":false}"#.utf8))
         XCTAssertNil(old.output)
     }
+
+    /// A long line travels clipped and says so, so the phone can ask for all of it; a short one goes whole and unmarked.
+    func testClippedLineIsRecognizedAndTheFullTextCanBeAskedFor() throws {
+        let clipped = CompanionPolicy.clip(String(repeating: "word ", count: 2_000))
+        XCTAssertTrue(CompanionPolicy.wasClipped(clipped))
+        XCTAssertEqual(clipped.count, CompanionConstants.lineLimit + 1)
+        XCTAssertFalse(CompanionPolicy.wasClipped(CompanionPolicy.clip("short")))
+        XCTAssertFalse(CompanionPolicy.wasClipped(CompanionPolicy.clip(String(repeating: "a", count: CompanionConstants.lineLimit))))
+        XCTAssertEqual(CompanionScopes.table[.entry], .scope(.read))
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.fullTranscript))
+        XCTAssertFalse(CommandReceipts.keeps(.entry), "reading an entry changes nothing, so it is answered afresh")
+        // An older phone reads an entry without the mark.
+        let old = try JSONDecoder().decode(TimelineEntry.self, from: Data(#"{"id":"a","kind":"assistant","text":"Hi","date":0,"failed":false}"#.utf8))
+        XCTAssertNil(old.clipped)
+    }
 }

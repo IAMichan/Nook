@@ -62,6 +62,48 @@ final class ChatPictures: ObservableObject {
         }
     }
 
+    // MARK: App icons
+
+    /// The chat apps' own icons from the Mac (`CompanionFeature.appIcons`), by app id, kept on disk across launches.
+    @Published private(set) var appIcons: [String: UIImage] = [:]
+    /// Apps asked for this launch, so an app the Mac has no icon for is not asked again and again.
+    private var askedApps: Set<String> = []
+
+    /// The icon of a chat app, once the Mac sent it.
+    func appIcon(_ app: String) -> UIImage? { appIcons[app] }
+
+    /// Asks the Mac for the icons of the apps in the inbox that the phone does not have yet.
+    func updateAppIcons(_ apps: Set<String>, client: CompanionClient) {
+        var missing: [String] = []
+        for app in apps.sorted() where appIcons[app] == nil && !askedApps.contains(app) {
+            askedApps.insert(app)
+            if let image = UIImage(contentsOfFile: iconFile(app).path) {
+                appIcons[app] = image
+            } else {
+                missing.append(app)
+            }
+        }
+        guard !missing.isEmpty else { return }
+        Task {
+            var start = 0
+            while start < missing.count {
+                let batch = Array(missing[start..<min(start + ChatAvatar.batch, missing.count)])
+                start += batch.count
+                for picture in await client.loadAvatars(batch.map { ChatAvatar.appPrefix + $0 }) {
+                    let app = String(picture.chat.dropFirst(ChatAvatar.appPrefix.count))
+                    guard let data = Data(base64Encoded: picture.jpeg), let image = UIImage(data: data) else { continue }
+                    try? data.write(to: iconFile(app), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                    appIcons[app] = image
+                }
+            }
+        }
+    }
+
+    private func iconFile(_ app: String) -> URL {
+        let name = PureSHA256.hash(Data(app.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return folder.appendingPathComponent("app-\(name).png")
+    }
+
     private func store(_ image: UIImage, chat: String, version: String) {
         // Bounded like the Mac's list of pictures: far more than a phone lists.
         if images.count > 600 {
