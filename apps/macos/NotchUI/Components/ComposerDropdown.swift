@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // Composer dropdowns in Nook: the quiet pill as trigger, and instead of a system menu a dark panel with rows.
 // A section header, rows with an icon or logo, a title and a description, a faint fill on the chosen row (no check
@@ -12,6 +13,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
     var takesRoom = false
     /// The keybinding command that opens and closes it (the model picker's ⇧⌘M).
     var command: String? = nil
+    /// Scrolls once the rows are taller than the room on screen (a long menu), instead of running off the screen.
+    var scrolls = false
     @ViewBuilder let trigger: () -> Trigger
     @ViewBuilder let content: () -> Content
     @Environment(\.composerDensity) private var density
@@ -26,8 +29,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 // The panel takes the height its rows ask for at this width, so wrapped text grows it instead of
                 // being cut off, and it follows when a search or another place changes what it shows.
-                VStack(alignment: .leading, spacing: 0) { content() }
-                    .padding(4)
+                panel
+                    .padding(scrolls ? 0 : 4)
                     .frame(width: width, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .background(DropdownStyle.panel)
@@ -37,6 +40,21 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
             }
             // Ahead of the spacer, so the pill gets all the room left instead of half of it.
             .layoutPriority(flexible ? 1 : 0)
+    }
+
+    @ViewBuilder
+    private var panel: some View {
+        if scrolls {
+            DropdownList(maxHeight: Self.scrollingHeight) { content() }
+                .padding(.horizontal, 4)
+        } else {
+            VStack(alignment: .leading, spacing: 0) { content() }
+        }
+    }
+
+    /// Most of the screen, so a popover above or below the trigger still fits.
+    private static var scrollingHeight: CGFloat {
+        max(320, ((NSScreen.main?.visibleFrame.height) ?? 800) * 0.6)
     }
 }
 
@@ -116,6 +134,8 @@ struct DropdownRow: View {
     var favorite: Binding<Bool>? = nil
     /// The row the arrow keys are on (the model picker): lit as under the pointer.
     var highlighted = false
+    /// A row that folds a group open and closed: a chevron at the end that points down while it is open.
+    var expanded: Bool? = nil
     let action: () -> Void
     @Environment(\.closeDropdown) private var close
     @State private var hovering = false
@@ -168,6 +188,12 @@ struct DropdownRow: View {
                 }
                 // Room for the star, which sits on top of the row as a button of its own.
                 if favorite != nil { Color.clear.frame(width: 14, height: 14) }
+                if let expanded {
+                    Image(icon: "chevron.right")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
             }
             .padding(.horizontal, tile == nil ? NookTheme.Spacing.md : NookTheme.Spacing.sm)
             .padding(.vertical, detail == nil ? (tile == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.xs) : NookTheme.Spacing.md)
