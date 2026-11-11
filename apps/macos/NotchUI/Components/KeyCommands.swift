@@ -20,7 +20,9 @@ final class KeyCommandCenter: ObservableObject {
         /// Later registrations win; a negative priority yields to any view that offers the same command.
         var order: Int
         var priority: Int
-        weak var window: NSWindow?
+        /// The registering view, whose window is read when a key comes in. Not the window itself: a view publishes while
+        /// a closing popover's window is being deallocated, and a weak reference to such an object aborts the app.
+        weak var view: NSView?
         var enabled: Bool
         var context: [String: Bool]
         var handlers: [String: () -> Bool]
@@ -92,11 +94,11 @@ final class KeyCommandCenter: ObservableObject {
     /// The registrations of a window that are on, oldest and lowest priority first.
     private func live(in window: NSWindow) -> [Registration] {
         registrations.values
-            .filter { $0.enabled && $0.window === window }
+            .filter { $0.enabled && $0.view?.window === window }
             .sorted { ($0.priority, $0.order) < ($1.priority, $1.order) }
     }
 
-    func update(_ id: UUID, window: NSWindow?, enabled: Bool, priority: Int, context: [String: Bool],
+    func update(_ id: UUID, view: NSView, enabled: Bool, priority: Int, context: [String: Bool],
                 handlers: [String: () -> Bool]) {
         start()
         var order = registrations[id]?.order ?? 0
@@ -104,7 +106,7 @@ final class KeyCommandCenter: ObservableObject {
             nextOrder += 1
             order = nextOrder
         }
-        registrations[id] = Registration(order: order, priority: priority, window: window, enabled: enabled, context: context,
+        registrations[id] = Registration(order: order, priority: priority, view: view, enabled: enabled, context: context,
                                          handlers: handlers)
     }
 
@@ -216,7 +218,7 @@ private struct KeyCommandProbe: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         func publish() {
-            KeyCommandCenter.shared.update(id, window: window, enabled: enabled, priority: priority, context: flags,
+            KeyCommandCenter.shared.update(id, view: self, enabled: enabled, priority: priority, context: flags,
                                            handlers: handlers)
         }
     }
