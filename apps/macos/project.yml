@@ -223,6 +223,7 @@ targets:
       - path: Core/I18n+Quiet.swift
       - path: Core/I18n+Sounds.swift
       - path: Core/I18n+Search.swift
+      - path: Core/I18n+Instructions.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+Split.swift
@@ -654,6 +655,12 @@ targets:
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
       - path: Services/Search/NookSearch.swift
+      - path: Brain/ResponseStyle.swift
+      - path: Brain/ContextBreakdown.swift
+      - path: Services/Workspace/PromptLibrary.swift
+      - path: Services/Workspace/NookSpace.swift
+      - path: Services/Workspace/NookDeepLink.swift
+      - path: Services/Workspace/ShortcutCheatSheet.swift
       - path: Services/Search/SearchAI.swift
       - path: Brain/MacReport.swift
       - path: Brain/EnergyVAD.swift

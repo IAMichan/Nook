@@ -13,7 +13,7 @@ import EventKit
 /// its list.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case start, general, appearance, notch, notifications, notificationApps, sound, shortcuts,
-         brain, assistant, memory,
+         brain, assistant, memory, instructions,
          autocomplete, autocompleteApps, autocompleteStyle, autocompletePlayground, autocompleteStats, dictation,
          agents, sessions, automation, usage, archive,
          projects, worktrees, openIn, pullRequests,
@@ -40,7 +40,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             // Nook itself: how it behaves, where and how it shows, notifies and sounds, and its keys.
             case .nook: return [.start, .general, .appearance, .notch, .notifications, .notificationApps, .sound, .shortcuts]
             // The AI Nook thinks with, what it does with it, and what it remembers.
-            case .intelligence: return [.brain, .assistant, .memory]
+            case .intelligence: return [.brain, .assistant, .memory, .instructions]
             // Completing what you type, one page per part, and dictating.
             case .typing: return [.autocomplete, .autocompleteApps, .autocompleteStyle, .autocompletePlayground,
                                   .autocompleteStats, .dictation]
@@ -205,6 +205,7 @@ struct SettingsView: View {
         case .brain: brainSection
         case .assistant: assistantSection
         case .memory: MemorySettingsSection()
+        case .instructions: InstructionsSettingsSection()
         case .autocomplete: AutocompleteSettingsSection(page: .general)
         case .autocompleteApps: AutocompleteSettingsSection(page: .apps)
         case .autocompleteStyle: AutocompleteSettingsSection(page: .style)
