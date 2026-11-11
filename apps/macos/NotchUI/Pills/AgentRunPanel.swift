@@ -49,6 +49,8 @@ struct AgentRunPanel: View {
     @State private var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
+    @State private var drawnRows = DrawnRows()
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State private var sentCount = 0
@@ -836,6 +838,7 @@ struct AgentRunPanel: View {
                             .equatable()
                         }
                         .pinProbe(block.id.uuidString, room: pinRoom)
+                        .countsAsDrawnRow(drawnRows)
                         .id(block.id)
                     }
                     if active {
@@ -921,14 +924,21 @@ struct AgentRunPanel: View {
                 overflows = now
             }
             // Never a black conversation: at rest with none of its blocks in view, back to the one you last saw (or the end).
-            .recoversBlankRows(UUID.self, rows: shownBlocks.count, idle: { scrollPhase.value == .idle }) { last in
+            .recoversBlankRows(UUID.self, rows: shownBlocks.count, drawn: drawnRows, idle: { scrollPhase.value == .idle }) { last, attempt in
                 var still = Transaction()
                 still.disablesAnimations = true
                 withTransaction(still) {
                     if let last, !scroll.shouldFollowEnd, !atEnd {
                         proxy.scrollTo(last, anchor: .top)
-                    } else {
+                    } else if attempt == 0 {
                         proxy.scrollTo("bottom", anchor: .bottom)
+                    } else {
+                        // Still blank at the end: let go of the room held under a sent message, land on the last block
+                        // itself (a row the lazy stack must draw), and only then on the very end.
+                        scroll.jumpedToEnd()
+                        pinRoom.release()
+                        if let lastBlock = shownBlocks.last?.id { proxy.scrollTo(lastBlock, anchor: .bottom) }
+                        DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     }
                 }
             }
