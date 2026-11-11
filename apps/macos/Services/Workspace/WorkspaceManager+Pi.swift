@@ -15,6 +15,9 @@ extension WorkspaceManager {
             if let window { turns[id]?.contextWindow = window }
         case .started:
             break
+        case .userMessage(let text):
+            // Pi took a message of yours into the conversation: a steer it had not read yet is read now.
+            steerEchoed(id, text: text)
         case .textDelta(let text):
             feed(id, .textDelta(text))
         case .text(let text):

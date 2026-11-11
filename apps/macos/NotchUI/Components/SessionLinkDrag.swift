@@ -41,10 +41,16 @@ enum SessionLinkDrag {
 
 extension View {
     /// Makes a session row draggable as its link (sessions Nook runs only: other rows pass nil and are not dragged).
+    /// `onStart` runs once the drag began, on the next turn of the run loop: what floats over the composer (the command
+    /// palette) gets out of the way so the drop can land there. The drag goes on without the row, as the hosting view
+    /// is its source.
     @ViewBuilder
-    func sessionLinkDrag(id: String?, title: String) -> some View {
+    func sessionLinkDrag(id: String?, title: String, onStart: (() -> Void)? = nil) -> some View {
         if let id {
-            onDrag { SessionLinkDrag.provider(id: id, title: title) }
+            onDrag {
+                if let onStart { DispatchQueue.main.async(execute: onStart) }
+                return SessionLinkDrag.provider(id: id, title: title)
+            }
         } else {
             self
         }

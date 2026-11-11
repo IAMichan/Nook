@@ -1005,6 +1005,25 @@ struct AgentRunPanel: View {
                 }
             }
         }
+        // VoiceOver hears the step, the finished replies and what waits on you, as for an agent's own transcript.
+        .announcesAgentProgress(key: "run:" + runID.uuidString, author: run.provider.displayName, snapshot: announcement(run))
+    }
+
+    /// What a screen reader is told about the session (`AgentAnnouncer`), from the whole timeline rather than what the
+    /// timeline detail shows; only built while one listens.
+    private func announcement(_ run: WorkspaceRun) -> AgentAnnouncementSnapshot {
+        guard AgentAnnouncer.listening else { return .idle }
+        let events = workspace.timeline(runID)
+        let status: AgentAnnouncementSnapshot.Status
+        if workspace.questions[runID] != nil {
+            status = .question
+        } else if run.status == .waitingApproval {
+            status = .approval
+        } else {
+            status = run.status.isActive ? .working : .idle
+        }
+        let step = status == .working ? AgentAnnouncer.spokenStep(AgentActivity.current(TimelinePresentation.lastTurn(events))) : nil
+        return AgentAnnouncements.snapshot(events, status: status, step: step)
     }
 
     /// Brings the message you sent near the top of the view, with room under it for the reply, until you scroll away.

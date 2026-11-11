@@ -19,6 +19,8 @@ struct TranscriptUserMessage<Attachments: View>: View {
     var steered = false
     /// It waited in the queue first and was then taken into the running turn.
     var promoted = false
+    /// Whether the agent read the steer yet (`SteerReceipts`): nil once it did, or when the agent does not say.
+    var steerStatus: RunEvent.SteerStatus? = nil
     /// "Edit from here": goes back to before this message and puts it in the composer again; nil where it cannot.
     var onEdit: (() -> Void)? = nil
     /// Pictures that came with the message as attachments rather than as paths in its text (the Nook chat's).
@@ -35,13 +37,14 @@ struct TranscriptUserMessage<Attachments: View>: View {
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
             if steered || promoted {
                 // "↪ Steer", as t3code marks a message that went into the turn while it ran.
+                // Not read yet: "Steer · waiting to be read" until the agent takes it in between steps.
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(icon: "arrow.uturn.right")
-                    Text(tr("agents.message.steer"))
+                    Text(steerLabel)
                 }
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
-                .help(promoted ? tr("agents.message.steerPromotedHelp") : tr("agents.message.steerHelp"))
+                .help(steerHelp)
                 .accessibilityElement(children: .combine)
             }
             attachments()
@@ -82,6 +85,22 @@ struct TranscriptUserMessage<Attachments: View>: View {
         .onHover { hovering = $0 }
     }
 
+    private var steerLabel: String {
+        switch steerStatus {
+        case .pending: return tr("agents.message.steerWaiting")
+        case .cancelled: return tr("agents.message.steerDropped")
+        case nil: return tr("agents.message.steer")
+        }
+    }
+
+    private var steerHelp: String {
+        switch steerStatus {
+        case .pending: return tr("agents.message.steerWaitingHelp")
+        case .cancelled: return tr("agents.message.steerDroppedHelp")
+        case nil: return promoted ? tr("agents.message.steerPromotedHelp") : tr("agents.message.steerHelp")
+        }
+    }
+
     /// Your words in Markdown, as the agent reads them: a quote, list or code block as such, `code` and **bold** inline.
     /// Only a message with blocks takes the whole width of the bubble; one of plain lines keeps hugging its words.
     @ViewBuilder
@@ -103,8 +122,9 @@ struct TranscriptUserMessage<Attachments: View>: View {
 }
 
 extension TranscriptUserMessage where Attachments == EmptyView {
-    init(text: String, date: Date? = nil, steered: Bool = false, promoted: Bool = false, onEdit: (() -> Void)? = nil) {
-        self.init(text: text, date: date, steered: steered, promoted: promoted, onEdit: onEdit) { EmptyView() }
+    init(text: String, date: Date? = nil, steered: Bool = false, promoted: Bool = false,
+         steerStatus: RunEvent.SteerStatus? = nil, onEdit: (() -> Void)? = nil) {
+        self.init(text: text, date: date, steered: steered, promoted: promoted, steerStatus: steerStatus, onEdit: onEdit) { EmptyView() }
     }
 }
 

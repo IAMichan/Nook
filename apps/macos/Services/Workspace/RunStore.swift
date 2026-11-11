@@ -429,6 +429,8 @@ final class RunStore: @unchecked Sendable {
         hasher.combine(event.rolledBack)
         hasher.combine(event.source)
         hasher.combine(event.subagentSteps)
+        hasher.combine(event.steer)
+        hasher.combine(event.steerStatus)
         return hasher.finalize()
     }
 
