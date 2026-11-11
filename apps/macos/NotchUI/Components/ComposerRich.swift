@@ -501,7 +501,7 @@ struct ComposerPlusMenu<Extra: View>: View {
             ComposerIcon(symbol: "plus")
         }
         .composerMenu()
-        .help(tr("chat.more"))
+        .composerTip(tr("chat.more"))
         .accessibilityLabel(tr("chat.more"))
     }
 }
@@ -575,7 +575,7 @@ struct ComposerContextRing: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .composerTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 8) {
@@ -620,7 +620,7 @@ struct CompactFirstChip: View {
                          tint: compacts ? NookTheme.amber : nil, showsChevron: false)
         }
         .buttonStyle(.plain)
-        .help(tr(compacts ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp", size))
+        .composerTip(tr(compacts ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp", size))
     }
 }
 
@@ -705,7 +705,7 @@ struct ComposerUsageRing: View, Equatable {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help(help)
+        .composerTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: shown, account: account, open: $open) }
     }

@@ -233,6 +233,8 @@ struct SessionComposer<Controls: View>: View {
                 box
             }
         }
+        // What each control does, above it on hover (`composerTip`): the system tooltip did not show in this row.
+        .composerTips()
         // The composer keeps to the conversation's reading column on its own, so a wide window never stretches it
         // from edge to edge, wherever it is placed.
         .chatColumn()
@@ -895,7 +897,7 @@ struct SessionComposer<Controls: View>: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .help(label)
+        .composerTip(label)
         .accessibilityLabel(label)
     }
 }
@@ -1128,5 +1130,134 @@ extension View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+    }
+}
+
+// MARK: Composer tips
+
+/// What a control in the composer does, shown above it once the pointer rests on it a moment. Drawn by the composer
+/// itself (`composerTips()`) instead of the system tooltip, which the composer's row (redrawn while the agent works,
+/// measured at several widths and clipped when narrow) did not show reliably, and which took a second or more to come.
+struct ComposerTip {
+    let text: String
+    let anchor: Anchor<CGRect>
+}
+
+struct ComposerTipKey: PreferenceKey {
+    static var defaultValue: ComposerTip? { nil }
+    static func reduce(value: inout ComposerTip?, nextValue: () -> ComposerTip?) {
+        value = value ?? nextValue()
+    }
+}
+
+private struct ComposerTipsHostedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True inside a composer that draws its controls' tips (`composerTips()`); outside one `composerTip` is a tooltip.
+    var composerTipsHosted: Bool {
+        get { self[ComposerTipsHostedKey.self] }
+        set { self[ComposerTipsHostedKey.self] = newValue }
+    }
+}
+
+private struct ComposerTipModifier: ViewModifier {
+    let text: String
+    @Environment(\.composerTipsHosted) private var hosted
+    @State private var shown = false
+    @State private var delay: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        if hosted, !text.isEmpty {
+            content
+                .onHover { inside in
+                    delay?.cancel()
+                    guard inside else { shown = false; return }
+                    delay = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        if !Task.isCancelled { shown = true }
+                    }
+                }
+                // A click opens the control's own panel or does what it says: the tip makes way.
+                .simultaneousGesture(TapGesture().onEnded {
+                    delay?.cancel()
+                    shown = false
+                })
+                .onDisappear {
+                    delay?.cancel()
+                    shown = false
+                }
+                .anchorPreference(key: ComposerTipKey.self, value: .bounds) { shown ? ComposerTip(text: text, anchor: $0) : nil }
+                .accessibilityHint(text)
+        } else {
+            content.help(text)
+        }
+    }
+}
+
+extension View {
+    /// What this composer control does, shown above it on hover by the composer around it; a plain tooltip elsewhere.
+    func composerTip(_ text: String) -> some View {
+        modifier(ComposerTipModifier(text: text))
+    }
+
+    /// `composerTip` for a shared button that sits under a composer only sometimes; a plain tooltip otherwise.
+    @ViewBuilder
+    func composerTip(_ text: String, inComposer: Bool) -> some View {
+        if inComposer { composerTip(text) } else { help(text) }
+    }
+
+    /// Draws the tips of the controls inside (`composerTip`) above the control the pointer rests on.
+    func composerTips() -> some View {
+        environment(\.composerTipsHosted, true)
+            .overlayPreferenceValue(ComposerTipKey.self) { tip in
+                if let tip {
+                    GeometryReader { proxy in
+                        ComposerTipPlacement(target: proxy[tip.anchor]) {
+                            ComposerTipLabel(text: tip.text)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+/// The tip itself: a small dark label, wrapped when long.
+private struct ComposerTipLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.paper)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .cardBackground(DropdownStyle.panel, stroke: NookTheme.line2, radius: NookTheme.Radius.control)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Places the tip centered above `target`, kept inside the composer's width, at most `maxWidth` wide.
+private struct ComposerTipPlacement: Layout {
+    let target: CGRect
+    var gap: CGFloat = NookTheme.Spacing.sm
+    var maxWidth: CGFloat = 280
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let label = subviews.first else { return }
+        let width = min(maxWidth, bounds.width)
+        let size = label.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let centered = bounds.minX + target.midX - size.width / 2
+        let x = min(max(bounds.minX, centered), bounds.maxX - size.width)
+        let y = bounds.minY + target.minY - gap - size.height
+        label.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
     }
 }

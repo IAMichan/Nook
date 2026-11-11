@@ -121,7 +121,7 @@ struct ComposerDictationButton: View {
 
     var body: some View {
         let label = dictator.isActive ? tr("compose.dictate.finish") : tr("compose.dictate.start")
-        NookIconButton(systemName: dictator.isActive ? "mic.fill" : "mic", label: label, size: 30, action: toggle)
+        NookIconButton(systemName: dictator.isActive ? "mic.fill" : "mic", label: label, size: 30, inComposer: true, action: toggle)
     }
 }
 
