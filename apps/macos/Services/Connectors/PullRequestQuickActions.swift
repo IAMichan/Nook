@@ -59,14 +59,17 @@ struct PullRequestQuickMergeQueue: Equatable, Sendable {
     private(set) var current: String?
     /// Merged since the queue last ran empty; their rows say so until the list is read again.
     private(set) var merged: [String] = []
+    /// Not merged but handed to auto-merge: checks or reviews still held them back and no admin bypass was possible.
+    private(set) var autoMerged: [String] = []
     private(set) var failed = 0
 
-    enum Phase: Equatable { case waiting, merging, merged }
+    enum Phase: Equatable { case waiting, merging, merged, autoMerge }
 
     func phase(_ id: String) -> Phase? {
         if current == id { return .merging }
         if waiting.contains(id) { return .waiting }
         if merged.contains(id) { return .merged }
+        if autoMerged.contains(id) { return .autoMerge }
         return nil
     }
 
@@ -93,10 +96,20 @@ struct PullRequestQuickMergeQueue: Equatable, Sendable {
         if success { merged.append(id) } else { failed += 1 }
     }
 
+    /// The one at GitHub got auto-merge instead of a merge.
+    mutating func finishAutoMerge() {
+        guard let id = current else { return }
+        current = nil
+        autoMerged.append(id)
+    }
+
+    /// Something changed at GitHub this run, so the list is read again.
+    var changed: Bool { !merged.isEmpty || !autoMerged.isEmpty }
+
     /// Once the queue ran empty: how it went, and a clean slate for the next run.
-    mutating func drain() -> (merged: [String], failed: Int)? {
-        guard isIdle, !merged.isEmpty || failed > 0 else { return nil }
-        defer { merged = []; failed = 0 }
-        return (merged, failed)
+    mutating func drain() -> (merged: [String], autoMerged: [String], failed: Int)? {
+        guard isIdle, changed || failed > 0 else { return nil }
+        defer { merged = []; autoMerged = []; failed = 0 }
+        return (merged, autoMerged, failed)
     }
 }

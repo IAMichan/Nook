@@ -95,6 +95,26 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertFalse(clean.bypassesRules, "Nothing holds a clean pull request back: a plain merge")
     }
 
+    func testWhoWaitsForAutoMerge() throws {
+        var object = try json(pull)
+        object["mergeable_state"] = "blocked"
+        object["node_id"] = "PR_1"
+        let writer = try json(#"{"allow_auto_merge": true, "permissions": {"push": true, "admin": false}}"#)
+        let blocked = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: writer))
+        XCTAssertTrue(blocked.waitsForAutoMerge, "Held back and no bypass: GitHub merges it once it may")
+
+        let admin = try json(#"{"allow_auto_merge": true, "permissions": {"push": true, "admin": true}}"#)
+        let bypass = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: admin))
+        XCTAssertFalse(bypass.waitsForAutoMerge, "An admin who may bypass merges at once")
+
+        let noAutoMerge = try json(#"{"allow_auto_merge": false, "permissions": {"push": true}}"#)
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: noAutoMerge)).waitsForAutoMerge)
+
+        var clean = try json(pull)
+        clean["node_id"] = "PR_1"
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: clean, repository: writer)).waitsForAutoMerge)
+    }
+
     func testAdminBypassFollowsTheRulesetsOfTheBaseBranch() throws {
         let bypassable = try json(#"{"name": "Protect main", "current_user_can_bypass": "always"}"#)
         let viaPullRequest = try json(#"{"name": "Reviews", "current_user_can_bypass": "pull_requests_only"}"#)

@@ -157,6 +157,12 @@ struct PullRequestDetail: Equatable, Sendable {
     /// Whether the merge button can be pressed. GitHub has the last word (branch protection, an admin bypass), so only
     /// what certainly fails is held back here.
     var canMerge: Bool { state == .open && !conflicted && canPush != false && !methods.isEmpty }
+    /// Checks or reviews still hold it back and this account may not go past them: the way on is to let GitHub merge
+    /// when they are done (auto-merge), on the pull request's page and in a quick merge from the list alike.
+    var waitsForAutoMerge: Bool {
+        !canBypass && features.autoMerge && autoMergeAllowed && mergeable != nil && !nodeID.isEmpty
+            && (checkSummary == .pending || mergeState == "blocked")
+    }
     /// Merging now goes past what holds it back (checks, reviews, an auto-merge that waits): only an admin may.
     var bypassesRules: Bool { canBypass && (checkSummary == .pending || mergeState == "blocked" || autoMerge != nil) }
 

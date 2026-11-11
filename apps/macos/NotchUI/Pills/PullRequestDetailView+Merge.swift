@@ -149,7 +149,7 @@ extension PullRequestDetailView {
                 ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext)
             }
             .help(tr("agents.pr.note.conflict"))
-        } else if !detail.canBypass, detail.features.autoMerge, detail.autoMergeAllowed, detail.mergeable != nil, detail.checkSummary == .pending || detail.mergeState == "blocked", !detail.nodeID.isEmpty {
+        } else if detail.waitsForAutoMerge {
             // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done. An
             // admin gets Merge instead, which goes past them; auto-merge stays in the ⋯ menu.
             SmallPrimaryButton(title: tr("agents.pr.action.enableAutoMerge"), systemName: "bolt", compact: true) {
