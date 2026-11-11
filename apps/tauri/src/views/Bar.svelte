@@ -130,6 +130,11 @@
     statuses = next;
   });
 
+  // The tray tooltip says how many Nooks wait on you (only the bar reports it, so it is said once).
+  $effect(() => {
+    api.trayStatus(nook.waiting, nook.working).catch(() => {});
+  });
+
   // De ring om Nook in het open paneel: alles waar hij mee bezig is of wat op je wacht.
   const ring = $derived(
     nook.nooks

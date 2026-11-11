@@ -113,6 +113,7 @@ pub fn run() {
             commands::take_route,
             commands::repair_start_menu_shortcut,
             commands::start_local_brain,
+            commands::tray_status,
             commands::companion::companion_info,
             commands::companion::companion_set_enabled,
             commands::companion::companion_begin_pairing,
