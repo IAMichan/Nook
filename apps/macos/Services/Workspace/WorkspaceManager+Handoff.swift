@@ -57,6 +57,11 @@ extension WorkspaceManager {
         closeAcpClient(id)
         let previous = run.provider
         let accountOnly = previous == provider
+        // No model given (the usage limit banner's "Switch to"): another account keeps the model in use, another agent
+        // starts on the model you set for it in Settings, as the agent menu does. Only without either the agent picks.
+        let given = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = !given.isEmpty ? given
+            : accountOnly ? run.model : settings.sessionDefaults(for: run.projectPath).model(for: provider)
         update(id) {
             $0.provider = provider
             // A goal lives in the agent's own conversation.
@@ -91,7 +96,9 @@ extension WorkspaceManager {
         let limited = run.limitedAt != nil
         clearUsageLimit(id)
         if limited && resumeIfLimited {
-            append(id, RunEvent(kind: .system, text: tr("ws.limit.resumingSwitched")))
+            append(id, RunEvent(kind: .system, text: accountOnly ? tr("ws.limit.resumingSwitched")
+                                                                 : tr("ws.limit.resumingSwitchedAgent", provider.displayName),
+                                tool: "resume"))
             send(id, text: UsageLimits.resumeMessage)
         }
         return true

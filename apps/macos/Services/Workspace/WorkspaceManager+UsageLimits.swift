@@ -11,7 +11,7 @@ extension WorkspaceManager {
         if event.blocked {
             let first = turns[id]?.limitWindows.isEmpty ?? true
             turns[id]?.limitWindows[event.window] = .some(event.resetsAt)
-            if first { append(id, RunEvent(kind: .system, text: Self.limitText(event.resetsAt))) }
+            if first { append(id, RunEvent(kind: .system, text: Self.limitText(event.resetsAt), tool: "limit")) }
         } else {
             turns[id]?.limitWindows[event.window] = nil
         }
@@ -120,7 +120,7 @@ extension WorkspaceManager {
         }
         let retries = (run.limitRetries ?? -1) + 1
         update(id) { $0.limitRetries = retries }
-        append(id, RunEvent(kind: .system, text: tr("ws.limit.resuming")))
+        append(id, RunEvent(kind: .system, text: tr("ws.limit.resuming"), tool: "resume"))
         if !send(id, text: UsageLimits.resumeMessage) {
             update(id) { $0.limitRetries = run.limitRetries }
             retryLimitResume(id)
