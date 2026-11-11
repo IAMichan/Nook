@@ -127,6 +127,9 @@ enum PiStreamEvent: Equatable, Sendable {
     case dialog(requestID: String, question: RunQuestion)
     /// Something Pi or an extension wants you to know.
     case notice(String)
+    /// Pi took a message of yours into the conversation (a user `message_start`): its prompt, or a steer it reads now,
+    /// between steps. Its text, nil when Pi sent none.
+    case userMessage(String?)
     case compactionStarted
     case compactionEnded(failed: String?)
     /// Pi retries a failed model call.
@@ -174,6 +177,10 @@ enum PiStreamParser {
             return [.started]
         case "message_update":
             return messageUpdate(object)
+        case "message_start":
+            guard let message = object["message"] as? [String: Any], (message["role"] as? String) == "user" else { return [] }
+            let text = message["content"] as? String ?? contentText(message["content"])
+            return [.userMessage(text.isEmpty ? nil : text)]
         case "message_end":
             guard let message = object["message"] as? [String: Any], (message["role"] as? String) == "assistant" else { return [] }
             var events: [PiStreamEvent] = []

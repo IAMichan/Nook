@@ -126,8 +126,17 @@ final class NotchViewModel: ObservableObject {
                 take(sessionTool, from: \.bottomTool, tabs: \.bottomTabs)
             }
             if sessionTool != oldValue { resizeForWorkbench() }
+            // The keyboard goes back where it was when the side panel closes (`SideFocusReturn`).
+            if oldValue == .conversation, sessionTool != .conversation {
+                sideFocus.panelOpened()
+            } else if oldValue != .conversation, sessionTool == .conversation {
+                sideFocus.panelClosed()
+            }
         }
     }
+
+    /// What had the keyboard before the side panel opened, to give it back when it closes.
+    private let sideFocus = SideFocusReturn()
 
     /// The tools open as tabs in a session's side panel, in the order you opened them. They stay while the panel is
     /// put away (`toggleSidePanel`), so it opens again on what it showed; with none it opens on the list of tools.
