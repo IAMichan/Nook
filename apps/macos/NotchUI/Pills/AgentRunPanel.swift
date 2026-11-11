@@ -1747,8 +1747,9 @@ struct AgentRunPanel: View {
     /// which waits until the agent is idle.
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
-        let account = profile.map { AccountLabel.name($0, app: app) }
-        let picked = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
+        let picked = run.model.isEmpty ? nil
+            : ComposerModelLabel.compact(app.modelMenuName(run.model, for: run.provider, profileID: run.profileID),
+                                         agent: run.provider.displayName)
         // On Auto: "Auto · Claude Sonnet 5.5", the model it picked last.
         let model = run.autoModel == true ? [tr("auto.model"), picked].compactMap { $0 }.joined(separator: " · ") : picked
         let chosenModel = run.autoModel == true ? AutoModel.id : run.model
@@ -1758,8 +1759,10 @@ struct AgentRunPanel: View {
         let providers = idle ? (allowed.contains(run.provider) ? allowed : [run.provider] + allowed) : [run.provider]
         return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning(run) != nil) {
             ComposerPill(agent: run.provider.displayName, account: AccountTag.badge(profile, app: app),
-                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
-                         short: model ?? run.provider.displayName)
+                         text: model ?? run.provider.displayName,
+                         detail: effortWord(run),
+                         badge: subThreadsOn(run) ? ("app.connected.to.app.below.fill", tr("compose.mainThread.on")) : nil,
+                         showsChevron: false)
         } content: {
             AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle,
                              footer: AnyView(options(run)),
@@ -1788,6 +1791,21 @@ struct AgentRunPanel: View {
             ultracode: run.ultracode == true, setUltracode: { workspace.setUltracode(runID, $0) },
             mainThreadOffered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
             mainThread: run.mainThread == true, setMainThread: { workspace.setMainThread(runID, $0) })
+    }
+
+    /// The chosen effort as the model pill says it ("High"); nil on the agent's default.
+    private func effortWord(_ run: WorkspaceRun) -> String? {
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
+            guard let level = family.members.first(where: { $0.id == run.model })?.level, !level.isEmpty else { return nil }
+            return tr(EffortLevels.label(variant: level))
+        }
+        return run.effort.map { workspace.effortTitle($0, for: run.provider, profileID: run.profileID) }
+    }
+
+    /// Main thread (or Ultracode, the same choice in the picker) is on for this session.
+    private func subThreadsOn(_ run: WorkspaceRun) -> Bool {
+        MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess) ? run.mainThread == true
+            : Ultracode.offered(provider: run.provider, model: run.model) && run.ultracode == true
     }
 
     /// The reasoning levels, in the column beside the models; nil when the agent has none for this model.

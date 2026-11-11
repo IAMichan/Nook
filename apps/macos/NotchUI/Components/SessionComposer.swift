@@ -935,6 +935,10 @@ struct ComposerPill: View {
     let text: String
     /// A shorter text for a narrower composer (the model alone instead of agent, account and model).
     var short: String? = nil
+    /// A word after the text in full white ("High", the model's effort), kept down to the narrow density.
+    var detail: String? = nil
+    /// A small state icon after the text (Main thread on), with what it means for its tooltip.
+    var badge: (symbol: String, help: String)? = nil
     var tint: Color? = nil
     var showsChevron = true
     /// A toggle that is on: drawn filled in Nook's color, so its state reads at a glance and not only by its tint.
@@ -988,11 +992,31 @@ struct ComposerPill: View {
             }
             if !iconOnly {
                 Text(shown).lineLimit(1)
+                if let detail {
+                    Text(detail).lineLimit(1).foregroundStyle(selected ? NookTheme.onIris : NookTheme.paper)
+                }
+            }
+            if let badge, density != .icons {
+                Image(icon: badge.symbol).font(NookTheme.font(12, .medium))
+                    .padding(.leading, 2)
+                    .help(badge.help)
+                    .accessibilityLabel(badge.help)
             }
             if showsChevron && density == .full {
                 Image(icon: "chevron.down").font(NookTheme.font(8, .bold)).opacity(0.6)
             }
         }
+    }
+}
+
+/// How a model reads on the composer's model pill: its name without the maker the agent's logo beside it already shows
+/// ("Sonnet 5.5" for "Claude Sonnet 5.5" under Claude Code's logo). A name whose rest would not start with a word
+/// ("Gemini 3 Pro") keeps its maker.
+enum ComposerModelLabel {
+    static func compact(_ name: String, agent: String) -> String {
+        guard let maker = agent.split(separator: " ").first, name.hasPrefix(maker + " ") else { return name }
+        let rest = name.dropFirst(maker.count + 1)
+        return rest.first?.isLetter == true ? String(rest) : name
     }
 }
 
