@@ -293,8 +293,8 @@ pub fn unwrap_cmd_shim(path: &Path) -> Option<PathBuf> {
     let dir = path.parent()?;
     for line in text.lines() {
         let line = line.trim();
-        if let Some(rest) = line.strip_prefix('"') {
-            let target = rest.split('"').next()?;
+        if let Some(quoted) = line.strip_prefix('"') {
+            let target = quoted.split('"').next()?;
             let relative = target.replace("%dp0%", "").replace("%~dp0", "");
             let candidate = dir.join(relative.trim_start_matches(['\\', '/']));
             let is_exe = candidate.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"));

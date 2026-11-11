@@ -2,7 +2,8 @@
   // De tijdlijn van een sessie die Nook draait (de tijdlijn in `AgentRunPanel` met `TimelineBlocks` en `TimelineFind`):
   // afgeronde beurten vouwen tot "… gewerkt", tool-aanroepen achter elkaar tot één zin, één levende regel terwijl de
   // agent werkt, zoeken met Ctrl+F, en volgen van het einde tot je zelf wegscrolt.
-  import { isActive, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
+  import { isActive, workspaceApi, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
+  import { workspace } from "../../../lib/workspace/store.svelte";
   import * as T from "../../../lib/workspace/timeline";
   import Icon from "../../../components/Icon.svelte";
   import EventRow from "./EventRow.svelte";
@@ -50,6 +51,26 @@
     const t = setInterval(() => (now = Date.now()), 1000);
     return () => clearInterval(t);
   });
+
+  // Een gebruikslimiet beëindigde de beurt: een eigen kaart op de plek van "Je hebt deze beurt gestopt".
+  const limited = $derived(!!run.limitedAt && !active);
+  $effect(() => {
+    if (!limited) return;
+    now = Date.now();
+    const t = setInterval(() => (now = Date.now()), 30_000);
+    return () => clearInterval(t);
+  });
+
+  function limitLine(): string {
+    if (!run.limitResetAt) return "Wanneer de limiet vrijkomt is onbekend; probeer het later zelf opnieuw.";
+    const reset = Date.parse(run.limitResetAt);
+    if (reset <= now) return run.autoResume ? "De limiet is vrij; de sessie gaat zo verder." : "De limiet is weer vrij. Stuur een bericht om verder te gaan.";
+    const d = new Date(reset);
+    const today = d.toDateString() === new Date(now).toDateString();
+    const clock = today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const wait = T.duration((reset - now) / 1000);
+    return run.autoResume ? `Gaat verder om ${clock} (over ${wait})` : `Vrij om ${clock} (over ${wait})`;
+  }
 
   // Nieuwe events volgen het einde, tenzij je weggescrold bent.
   $effect(() => {
@@ -215,7 +236,22 @@
       </div>
     {/if}
 
-    {#if run.status === "failed" || run.status === "stopped"}
+    {#if limited}
+      <div class="recovery">
+        <span class="rsym"><Icon name="hourglass" size={14} /></span>
+        <div class="rtext">
+          <strong>Gebruikslimiet bereikt</strong>
+          <span class="faint">{limitLine()}</span>
+        </div>
+        {#if run.limitResetAt}
+          <button class="ghost" title={'Stuurt "Continue where you left off." zodra de limiet vrij is. Een eigen bericht annuleert dit.'}
+            onclick={() => workspace.act(() => workspaceApi.setAutoResume(run.id, !run.autoResume))}>
+            {run.autoResume ? "Niet automatisch hervatten" : "Hervat bij reset"}
+          </button>
+        {/if}
+        <button onclick={onretry}>Opnieuw</button>
+      </div>
+    {:else if run.status === "failed" || run.status === "stopped"}
       <div class="recovery {run.status}">
         <span class="rsym"><Icon name={run.status === "failed" ? "alert" : "stop"} size={14} /></span>
         <div class="rtext">

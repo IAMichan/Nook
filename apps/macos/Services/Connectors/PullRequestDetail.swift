@@ -36,6 +36,10 @@ struct PullRequestDetail: Equatable, Sendable {
     var methods: [PullRequestMergeMethod] = PullRequestMergeMethod.allCases
     /// Whether the account may push to the repository, and so merge. Nil when GitHub did not say.
     var canPush: Bool? = nil
+    /// Whether the account may merge past the base branch's rules (checks still running, a review still missing) instead
+    /// of waiting for auto-merge, as `gh pr merge --admin` does: it administers the repository, and every ruleset on the
+    /// base branch lets it bypass and branch protection does not include administrators (`adminCanBypass`).
+    var canBypass = false
     /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
     var requestedReviewers: [String] = []
     /// The teams among `requestedReviewers`: a team has no picture of its own, so the page draws it differently.
@@ -153,6 +157,8 @@ struct PullRequestDetail: Equatable, Sendable {
     /// Whether the merge button can be pressed. GitHub has the last word (branch protection, an admin bypass), so only
     /// what certainly fails is held back here.
     var canMerge: Bool { state == .open && !conflicted && canPush != false && !methods.isEmpty }
+    /// Merging now goes past what holds it back (checks, reviews, an auto-merge that waits): only an admin may.
+    var bypassesRules: Bool { canBypass && (checkSummary == .pending || mergeState == "blocked" || autoMerge != nil) }
 
     /// The checks together: failing as soon as one fails, pending while one still runs.
     var checkSummary: PullRequestItem.CI {
@@ -489,8 +495,19 @@ enum PullRequestDetailParser {
         if let repository {
             detail.methods = methods(repository)
             detail.canPush = (repository["permissions"] as? [String: Any])?["push"] as? Bool
+            detail.canBypass = (repository["permissions"] as? [String: Any])?["admin"] as? Bool == true
         }
         return detail
+    }
+
+    /// Whether an admin may really merge past the base branch's rules. A ruleset GitHub says this account can never
+    /// bypass (no bypass list, or the admin role is not on it), or branch protection with "Include administrators",
+    /// makes GitHub refuse with "Repository rule violations found": then the page offers auto-merge instead. A
+    /// ruleset that does not say (`current_user_can_bypass` missing) leaves the choice to GitHub.
+    static func adminCanBypass(rulesets: [[String: Any]], protection: [String: Any]?) -> Bool {
+        if rulesets.contains(where: { ($0["current_user_can_bypass"] as? String) == "never" }) { return false }
+        if ((protection?["enforce_admins"] as? [String: Any])?["enabled"] as? Bool) == true { return false }
+        return true
     }
 
     /// The methods the repository allows. GitHub only sends the `allow_*` fields to accounts with write access; a

@@ -9,7 +9,16 @@ final class AgentAdviceTests: XCTestCase {
     func testSuggestsSameAgentOtherAccountFirst() {
         let s = LimitAdvisor.suggest(states: [st(.claude, "a", 0.95, reset: now.addingTimeInterval(600)), st(.codex, "c", 0.1),
                                               st(.claude, "b", 0.5)], current: (.claude, "a"), now: now)
-        XCTAssertEqual(s, LimitSuggestion(provider: .claude, profileID: "b", sameAgent: true, resumeIn: 600))
+        XCTAssertEqual(s, LimitSuggestion(provider: .claude, profileID: "b", sameAgent: true, usedFraction: 0.5, resumeIn: 600))
+    }
+
+    func testOptionsListEveryRoomyAccountBestFirst() {
+        let states = [st(.claude, "a", 0.95), st(.codex, "c", 0.1), st(.claude, "b", 0.5), st(.gemini, "g", nil),
+                      st(.claude, "u", nil), st(.codex, "full", 0.8)]
+        let ids = LimitAdvisor.options(states: states, current: (.claude, "a"), now: now).map(\.profileID)
+        XCTAssertEqual(ids, ["b", "c", "u", "g"])
+        XCTAssertEqual(LimitAdvisor.options(states: states, current: (.claude, "a"), now: now).first?.usedFraction, 0.5)
+        XCTAssertTrue(LimitAdvisor.options(states: [st(.claude, "a", 0.5), st(.codex, "c", 0.1)], current: (.claude, "a"), now: now).isEmpty)
     }
 
     func testOtherAgentWhenNoSameAgentAndThresholds() {

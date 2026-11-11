@@ -26,6 +26,9 @@ enum ArtifactKind: String, Equatable, Sendable, CaseIterable {
     /// Whether the file is text that can be read, copied and diffed as code (a picture or a PDF is not).
     var isText: Bool { self != .image && self != .pdf }
 
+    /// Whether the preview reads the file as a Markdown document (a notebook as its cells).
+    var rendersAsMarkdown: Bool { self == .markdown || self == .notebook }
+
     /// Whether the file is drawn by a web view in Nook's sandbox (a page or a vector picture), where it never reaches the
     /// network and cannot open a window.
     var rendersInSandbox: Bool { self == .html || self == .svg }

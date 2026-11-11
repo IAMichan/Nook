@@ -7,7 +7,9 @@ extension WorkspaceManager {
     /// What `run` runs now, as the timeline names it.
     func switchEndpoint(_ run: WorkspaceRun) -> ModelSwitch.Endpoint {
         let menu = modelMenu(for: run.provider, profileID: run.profileID)
-        let model = run.autoModel == true ? nil : menu.name(run.model)
+        // No model of your own: the agent's default, by name when Nook knows it ("Gemini 3 Pro" rather than "default model").
+        let model = run.autoModel == true ? nil
+            : menu.name(run.model) ?? (run.model.isEmpty ? menu.choices.first(where: \.isDefault)?.name : nil)
         return ModelSwitch.Endpoint(provider: run.provider.rawValue, agent: run.provider.displayName, model: model,
                                     effort: run.effort, profile: run.profileID, account: accountName(run.profileID))
     }

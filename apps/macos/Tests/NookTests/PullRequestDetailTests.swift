@@ -74,6 +74,41 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertFalse(detail.canMerge)
         XCTAssertEqual(detail.mergeNote, "agents.pr.note.noAccess")
         XCTAssertEqual(PullRequestDetailParser.methods([:]), PullRequestMergeMethod.allCases)
+        XCTAssertFalse(detail.canBypass)
+    }
+
+    func testAnAdminMayMergePastWhatHoldsItBack() throws {
+        var object = try json(pull)
+        object["mergeable_state"] = "blocked"
+        let admin = try json(#"{"permissions": {"push": true, "admin": true}}"#)
+        let blocked = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: admin))
+        XCTAssertTrue(blocked.canBypass)
+        XCTAssertTrue(blocked.canMerge)
+        XCTAssertTrue(blocked.bypassesRules)
+
+        let writer = try json(#"{"permissions": {"push": true, "admin": false}}"#)
+        let notAdmin = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: writer))
+        XCTAssertFalse(notAdmin.canBypass)
+        XCTAssertFalse(notAdmin.bypassesRules)
+
+        let clean = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull), repository: admin))
+        XCTAssertFalse(clean.bypassesRules, "Nothing holds a clean pull request back: a plain merge")
+    }
+
+    func testAdminBypassFollowsTheRulesetsOfTheBaseBranch() throws {
+        let bypassable = try json(#"{"name": "Protect main", "current_user_can_bypass": "always"}"#)
+        let viaPullRequest = try json(#"{"name": "Reviews", "current_user_can_bypass": "pull_requests_only"}"#)
+        let strict = try json(#"{"name": "Require Check", "bypass_actors": [], "current_user_can_bypass": "never"}"#)
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable, viaPullRequest], protection: nil))
+        XCTAssertFalse(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable, strict], protection: nil),
+                       "One ruleset nobody may bypass makes GitHub refuse the merge")
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [], protection: nil))
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [[:]], protection: nil), "Unknown: GitHub decides")
+
+        let includesAdmins = try json(#"{"enforce_admins": {"enabled": true}}"#)
+        let excludesAdmins = try json(#"{"enforce_admins": {"enabled": false}}"#)
+        XCTAssertFalse(PullRequestDetailParser.adminCanBypass(rulesets: [], protection: includesAdmins))
+        XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable], protection: excludesAdmins))
     }
 
     func testChecksPutFailuresFirst() throws {
