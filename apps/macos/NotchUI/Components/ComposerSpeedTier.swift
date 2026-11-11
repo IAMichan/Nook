@@ -23,7 +23,7 @@ struct ComposerUltracodeToggle: View {
 }
 
 /// "Main thread" (`MainThread`): the agent hands its work to sub-threads that report back. Every agent that may delegate.
-/// On, the pill is filled with a check, so the mode is plain to see; `ComposerMainThreadHint` says what it means.
+/// On, the pill is filled with a check, so the mode is plain to see.
 struct ComposerMainThreadToggle: View {
     let offered: Bool
     let on: Bool
@@ -40,28 +40,6 @@ struct ComposerMainThreadToggle: View {
             .buttonStyle(.plain)
             .composerTip(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
             .accessibilityValue(on ? tr("compose.mainThread.stateOn") : tr("compose.mainThread.stateOff"))
-        }
-    }
-}
-
-/// One calm line by a composer while Main thread is on (`ComposerMainThreadToggle`): what the session will do and where
-/// its sub-threads show up. The same line under a new session's box and a running one's, for every agent that offers it.
-struct ComposerMainThreadHint: View {
-    let offered: Bool
-    let on: Bool
-
-    var body: some View {
-        if offered && on {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                Image(icon: "arrow.triangle.branch")
-                    .foregroundStyle(NookTheme.iris)
-                Text(tr("compose.mainThread.hint"))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .font(NookTheme.TextStyle.detail)
-            .accessibilityElement(children: .combine)
         }
     }
 }
