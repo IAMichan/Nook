@@ -124,6 +124,7 @@ final class ChatCaptureService: ObservableObject {
         thread.account = chat.account
         thread.avatar = chat.avatar
         thread.members = chat.members
+        thread.faces = chat.faces
         return isShown(thread) ? thread : nil
     }
 

@@ -300,17 +300,26 @@ struct ChatPersonBadge: View {
     }
 }
 
-/// Who wrote a group message, beside its bubble: their photo in Contacts, else their initials on their own tint (the
-/// color of their name above the bubble). The same for every chat app, since each names a group message's sender. It
-/// watches the photos itself, so one that comes in redraws the faces only, not the bubbles.
+/// Who wrote a group message, beside its bubble: their picture as the chat's app shows it (`ChatBubble.senderFace`), else
+/// their photo in Contacts, else their initials on their own tint (the color of their name above the bubble). The same
+/// for every chat app, since each names a group message's sender. It watches the pictures itself, so one that comes in
+/// redraws the faces only, not the bubbles.
 struct ChatSenderFace: View {
     let name: String
+    /// Their picture on this Mac, from the chat's app; nil when it gave none.
+    var picture: String? = nil
     var size: CGFloat = 28
     @ObservedObject private var photos = ContactPhotos.shared
+    @ObservedObject private var avatars = ChatAvatarImages.shared
+
+    private var photo: NSImage? {
+        if let picture, let image = avatars.image(picture) { return image }
+        return photos.photo(handle: nil, name: name)
+    }
 
     var body: some View {
         Group {
-            if let photo = photos.photo(handle: nil, name: name) {
+            if let photo {
                 Image(nsImage: photo)
                     .resizable()
                     .interpolation(.high)
