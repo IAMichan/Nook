@@ -331,8 +331,11 @@ struct TranscriptLiveLine: View {
     @State private var ended = 0
 
     var body: some View {
-        let held = released ? nil : lastStep.flatMap { AgentActivity.holds($0.activity, before: activity) ? $0 : nil }
-        let line = held ?? Shown(activity: activity, openConsole: openConsole, help: help)
+        // Read through `self.`: the locals on the third line shadow these properties, and a bare name before them is a
+        // circular reference to the CI runner's compiler.
+        let current = self.activity
+        let held = released ? nil : lastStep.flatMap { AgentActivity.holds($0.activity, before: current) ? $0 : nil }
+        let line = held ?? Shown(activity: current, openConsole: self.openConsole, help: self.help)
         let activity = line.activity, openConsole = line.openConsole, help = line.help
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let tasks { TaskChecklistCard(steps: tasks) }
