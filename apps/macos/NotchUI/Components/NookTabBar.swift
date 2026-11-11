@@ -103,10 +103,9 @@ struct NookTabBar<Value: Hashable>: View {
         .padding(segmented ? NookTheme.Spacing.xxs : 0)
         .background {
             if segmented {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.control)
                     .fill(NookTheme.graphite)
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                        .stroke(NookTheme.line2, lineWidth: 1))
+                    .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.control)
             }
         }
         .animation(NookTheme.hover, value: hovered)
@@ -114,7 +113,7 @@ struct NookTabBar<Value: Hashable>: View {
     }
 
     private var shape: AnyShape {
-        segmented ? AnyShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)) : AnyShape(Capsule())
+        segmented ? AnyShape(NookTheme.shape(NookTheme.Radius.chip)) : AnyShape(NookTheme.shape(NookTheme.Radius.control))
     }
 
     /// The selected tab's title: dark on a light accent, as `onIris` says.

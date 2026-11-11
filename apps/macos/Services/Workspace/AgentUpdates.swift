@@ -47,7 +47,7 @@ struct AgentUpdateCommand: Equatable, Sendable {
 
     /// As the confirmation shows it: "brew upgrade --cask codex".
     var display: String {
-        ([URL(fileURLWithPath: executable).lastPathComponent] + arguments).joined(separator: " ")
+        ([(executable as NSString).lastPathComponent] + arguments).joined(separator: " ")
     }
 }
 

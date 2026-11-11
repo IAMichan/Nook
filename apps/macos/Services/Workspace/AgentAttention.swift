@@ -29,17 +29,26 @@ enum AgentAttention: Int, Comparable, Sendable {
         var pendingApprovals = 0
         var pendingQuestions = 0
         var limitedAt: Date?
-        /// Finished after you last opened it.
+        /// Finished after you last opened it (only read for a finished turn, or Nook's own summary).
         var unseen = false
         /// Marked finished by you, or snoozed.
         var settled = false
         /// The turn ended, but subagents it started still work in the background.
         var subagentsWorking = false
+        /// The running turn is a summary Nook sends on its own (idle or size compaction): it asks nothing of you.
+        var quietTurn = false
     }
 
     /// Approval beats question beats everything else. A pending request wins over `settled`: what waits for you is never
     /// hidden, and a snoozed session wakes when something needs you.
     static func resolve(_ input: Input) -> AgentAttention {
+        // Nook's own summary leaves the session as it was (idle): it does not jump up to the busy ones while it runs.
+        if input.quietTurn && input.status.isActive && input.status != .waitingApproval {
+            var input = input
+            input.status = .completed
+            input.quietTurn = false
+            return resolve(input)
+        }
         if input.pendingApprovals > 0 || input.status == .waitingApproval { return .approval }
         if input.pendingQuestions > 0 && input.status.isActive { return .input }
         if input.settled && !input.status.isActive { return .finished }
@@ -142,6 +151,113 @@ enum SnoozePolicy {
     }
 }
 
+/// What a restart stopped while a session waited on it after its turn (`WorkspaceRun.cutBackgroundWork`).
+struct CutBackgroundWork: Codable, Equatable, Sendable {
+    /// What each piece of work was, as its row named it.
+    var labels: [String]
+    /// When Nook quit.
+    var at: Date
+}
+
+/// One choice of the snooze menu, set in Settings › Sessions › Snooze options (as t3code): a duration ("3 hours") or a
+/// time on a day ("21:00 tomorrow", "09:00 Monday"). A weekday means the next one after today; a today option hides once
+/// its time has passed. The menus list them soonest first.
+struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable { case duration, time }
+
+    /// The day of a time option. A weekday is the next one after today, so "Monday" on a Monday is a week ahead.
+    enum Day: String, Codable, CaseIterable, Sendable {
+        case today, tomorrow, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+
+        /// `Calendar`'s weekday number (Sunday 1 … Saturday 7); nil for today and tomorrow.
+        var weekday: Int? {
+            switch self {
+            case .today, .tomorrow: return nil
+            case .sunday: return 1
+            case .monday: return 2
+            case .tuesday: return 3
+            case .wednesday: return 4
+            case .thursday: return 5
+            case .friday: return 6
+            case .saturday: return 7
+            }
+        }
+    }
+
+    var kind: Kind
+    /// A duration's length in minutes.
+    var minutes: Int = 60
+    /// A time option's day and clock time.
+    var day: Day = .tomorrow
+    var hour: Int = 9
+    var minute: Int = 0
+
+    var id: String {
+        switch kind {
+        case .duration: return "d\(minutes)"
+        case .time: return "t-\(day.rawValue)-\(hour)-\(minute)"
+        }
+    }
+
+    static func duration(minutes: Int) -> SnoozeOption { SnoozeOption(kind: .duration, minutes: minutes) }
+    static func time(_ day: Day, hour: Int, minute: Int = 0) -> SnoozeOption {
+        SnoozeOption(kind: .time, day: day, hour: hour, minute: minute)
+    }
+
+    /// What the menu offered before the options could be set: an hour, this evening, tomorrow morning.
+    static let defaults: [SnoozeOption] = [.duration(minutes: 60), .time(.today, hour: 18), .time(.tomorrow, hour: 9)]
+    /// The longest duration an option can hold: a month, as a custom snooze (`SnoozePolicy.maxCustom`).
+    static let maxMinutes = Int(SnoozePolicy.maxCustom / 60)
+    /// How many options the menu holds at most.
+    static let maxCount = 8
+
+    /// When the snooze ends if chosen at `now`; nil for a today option whose time has passed (the menu hides it).
+    func end(from now: Date, calendar: Calendar = .current) -> Date? {
+        switch kind {
+        case .duration:
+            guard minutes > 0 else { return nil }
+            return now.addingTimeInterval(TimeInterval(min(minutes, Self.maxMinutes)) * 60)
+        case .time:
+            let start = calendar.startOfDay(for: now)
+            let date: Date?
+            switch day {
+            case .today:
+                date = start
+            case .tomorrow:
+                date = calendar.date(byAdding: .day, value: 1, to: start)
+            default:
+                let today = calendar.component(.weekday, from: now)
+                let ahead = ((day.weekday ?? today) - today + 7) % 7
+                date = calendar.date(byAdding: .day, value: ahead == 0 ? 7 : ahead, to: start)
+            }
+            guard let date, let end = calendar.date(bySettingHour: min(max(hour, 0), 23), minute: min(max(minute, 0), 59),
+                                                    second: 0, of: date), end > now else { return nil }
+            return end
+        }
+    }
+
+    /// The options the menu shows at `now`: the ones still ahead, soonest first, each end once.
+    static func menu(_ options: [SnoozeOption], now: Date, calendar: Calendar = .current) -> [(option: SnoozeOption, end: Date)] {
+        var seen = Set<Date>()
+        return options.compactMap { option in option.end(from: now, calendar: calendar).map { (option, $0) } }
+            .sorted { $0.1 < $1.1 }
+            .filter { seen.insert($0.1).inserted }
+    }
+
+    /// The options as saved: valid ones only, each once, at most `maxCount`; none left falls back to the defaults.
+    static func cleaned(_ options: [SnoozeOption]) -> [SnoozeOption] {
+        var seen = Set<String>()
+        let valid = options.filter { option in
+            switch option.kind {
+            case .duration: return (1...maxMinutes).contains(option.minutes)
+            case .time: return (0...23).contains(option.hour) && (0...59).contains(option.minute)
+            }
+        }
+        .filter { seen.insert($0.id).inserted }
+        return valid.isEmpty ? defaults : Array(valid.prefix(maxCount))
+    }
+}
+
 /// Goes on with a session that a restart cut off: one "Continue where you left off.",
 /// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {
@@ -156,15 +272,44 @@ enum RestartContinuation {
 
     /// Never a session you archived, settled or snoozed, one that waits on you (a question, an approval that the restart
     /// cut off), or one stopped by a usage limit, which has its own resume.
+    /// Also a session whose turn had ended while it waited on work in the background that the restart stopped
+    /// (`cutBackgroundWork`): it is woken with a note of what will not report back (as t3code does).
     static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, settled: Bool = false,
                                now: Date = Date()) -> Bool {
         guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
         if run.interruptedWhileWaiting == true, !run.provider.capabilities.pendingRequestsSurviveRestart { return false }
         if let until = run.snoozedUntil, until > now { return false }
-        guard now.timeIntervalSince(run.updatedAt) <= maxAge else { return false }
-        guard run.status == .stopped, run.statusDetail == "interrupted" else { return false }
+        let interrupted = run.status == .stopped && run.statusDetail == "interrupted"
+        let waiting = run.status == .completed && !(run.cutBackgroundWork?.labels.isEmpty ?? true)
+        guard interrupted || waiting else { return false }
+        // A turn that ended long ago can still have waited until Nook quit: then the quit is what counts.
+        let since = interrupted ? run.updatedAt : (run.cutBackgroundWork?.at ?? run.updatedAt)
+        guard now.timeIntervalSince(since) <= maxAge else { return false }
         guard run.limitedAt == nil else { return false }
         return chainLength(run, now: now) < limit
+    }
+
+    /// The subagents still at work when the session's turn ended (any agent that reports them): what it waits on.
+    /// Commands and monitors left running are not: most are a dev server or its watcher that nobody waits for.
+    static func waitedOn(_ events: [RunEvent]) -> [String] {
+        Subagents.list(events.filter { $0.state == .running && Subagents.isLaunch($0) }).map(\.title)
+    }
+
+    /// At most this many items in the note, so a long list does not fill the agent's context.
+    static let noteLimit = 10
+
+    /// What the agent reads after the restart: the note of the work that stopped (if any), then the usual message.
+    static func message(for run: WorkspaceRun) -> String {
+        guard let labels = run.cutBackgroundWork?.labels, !labels.isEmpty else { return message }
+        return note(labels) + "\n\n" + message
+    }
+
+    /// The agent's own language is English: this goes to the agent, not to you.
+    static func note(_ labels: [String]) -> String {
+        let shown = labels.prefix(noteLimit).map { "- subagent: " + $0 }
+        let more = labels.count > noteLimit ? ["- and \(labels.count - noteLimit) more"] : []
+        return (["Note: Nook restarted, and this background work was stopped before it finished. It will not report back on "
+                 + "its own, so start again what you still need and wait for its result:"] + shown + more).joined(separator: "\n")
     }
 
     /// Continuations in a row that still count: none once the last one is older than `loopWindow`.

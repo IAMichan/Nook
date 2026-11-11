@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import UIKit
+import WidgetKit
 import UserNotifications
 
 /// The phone's side of the companion (docs/COMPANION.md, "Staying connected"). While the app is in front a supervisor
@@ -43,8 +44,17 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var launchOptions: LaunchOptions?
     /// The conversation of each session that was opened, by session id.
     @Published private(set) var timelines: [String: [TimelineEntry]] = [:]
+    /// Older pages of a session's conversation, asked for by scrolling up (`loadEarlier`), oldest first. Kept apart from
+    /// `timelines`, which the Mac replaces whole; the screen joins the two (`conversation`).
+    @Published private(set) var earlier: [String: [TimelineEntry]] = [:]
+    /// Sessions whose conversation was paged back to its start.
+    @Published private(set) var reachedStart: Set<String> = []
+    /// Entries the Mac clipped, in full once asked for (`loadFullEntry`), by entry id.
+    @Published private(set) var fullTexts: [String: String] = [:]
     /// The session on screen whose conversation follows live (`CompanionOp.watch`), kept across reconnects.
     private(set) var watchedSession: String?
+    /// The chat open in the Chats tab, followed live (`watchChat`); watched again after a reconnect.
+    private(set) var watchedChat: String?
     /// The changed files of a session (`CompanionOp.diff`).
     @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
     /// Messages your Mac refused, per session, to edit and send again or to drop, so a
@@ -90,6 +100,9 @@ final class CompanionClient: ObservableObject {
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
+    /// Connected, and still catching up on what changed while the phone was away (after connecting, and after the app
+    /// comes back to the front), as t3code's "synchronizing" before "live". The header says so while it lasts.
+    @Published private(set) var synchronizing = false
     /// The name of a Mac that removed this iPhone (`CompanionResponse.revoked`), until the user pairs again or lets it go.
     @Published var revokedMac: String?
     /// The conversation a question that waited in the outbox started, by its request id, once the Mac took it.
@@ -100,6 +113,15 @@ final class CompanionClient: ObservableObject {
     @Published var pullsAt: Date?
     @Published var linkedPulls: [String: [PullDigest]] = [:]
     @Published var pullDetails: [String: PullDetailDigest] = [:]
+    /// Sessions older than the live list (`CompanionOp.history`), paged in on request as the Mac's settled sessions;
+    /// where the next page starts, and whether the last one came.
+    @Published var olderSessions: [SessionDigest] = []
+    @Published var olderCursor: String?
+    @Published var olderEnded = false
+    /// Sessions the Mac found for the words in the search field, the older ones included, and where more start.
+    @Published var foundSessions: [SessionDigest] = []
+    @Published var foundCursor: String?
+    @Published var foundQuery = ""
     /// A gentle word when the Mac and this app work together but one speaks an older protocol (`CompanionVersionNotice`).
     @Published private(set) var versionNotice: CompanionVersionNotice?
     private(set) var pushToken: String?
@@ -133,18 +155,7 @@ final class CompanionClient: ObservableObject {
     // The connection: one supervisor while the app is in front, one live channel at a time.
     private var supervisor: Task<Void, Never>?
     private var supervisorGeneration = 0
-    private var channel: CompanionChannel? {
-        didSet {
-            let isLive = channel != nil
-            if isLive != live { live = isLive }
-        }
-    }
-    /// A live connection is open (`channel`): what shows follows every change (`CompanionFreshness.live`).
-    @Published private(set) var live = false
-    /// How current what the phone shows is, apart from whether it is connected (`CompanionFreshness`).
-    var freshness: CompanionFreshness {
-        CompanionFreshness.of(connected: phase == .connected, live: live, lastUpdated: lastUpdated, now: Date())
-    }
+    private var channel: CompanionChannel?
     private var failures = 0
     /// Set to connect again at once instead of after a backoff: a better route answered, or the app is back after a break.
     private var replacing = false
@@ -267,6 +278,9 @@ final class CompanionClient: ObservableObject {
         pairings.remove(id)
         PairingStore.save(pairings)
         otherSessions[id] = nil
+        // The widget showed this Mac's agents: they go with it (the next Mac's list fills it again).
+        AppGroup.remove(AgentActivitySnapshot.fileName)
+        WidgetCenter.shared.reloadTimelines(ofKind: AgentActivityWidgetKind.kind)
         loadActive()
         guard link != nil else { phase = .unpaired; return }
         phase = .offline("")
@@ -318,6 +332,12 @@ final class CompanionClient: ObservableObject {
         pullDetails = pullCache.details.mapValues(\.detail)
         versionNotice = nil
         home = nil
+        olderSessions = []
+        olderCursor = nil
+        olderEnded = false
+        foundSessions = []
+        foundCursor = nil
+        foundQuery = ""
         sessions = cache.sessions
         timelines = cache.allTimelines
         launchOptions = cache.launch
@@ -412,7 +432,10 @@ final class CompanionClient: ObservableObject {
             replacing = true
             channel.close()
         case .probe:
-            Task { await probe(channel) }
+            Task {
+                await probe(channel)
+                await resynchronize()
+            }
         }
     }
 
@@ -568,7 +591,11 @@ final class CompanionClient: ObservableObject {
             apply(response, to: CompanionRequest(op: .list))
             phase = .connected
             channel.startHeartbeat()
-            Task { await afterConnecting() }
+            synchronizing = true
+            Task {
+                await afterConnecting()
+                synchronizing = false
+            }
             await watch(channel)
             if self.channel === channel { self.channel = nil }
             CompanionDiagnosticsLog.phone.record("closed", ["route": route.logKind, "up": String(Int(Date().timeIntervalSince(since))),
@@ -604,7 +631,9 @@ final class CompanionClient: ObservableObject {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     if Task.isCancelled { return }
-                    await self?.refreshInbox()
+                    // A Mac that sends the inbox by itself (`liveChats`) needs no asking.
+                    let live = await self?.can(CompanionFeature.liveChats) ?? false
+                    if !live { await self?.refreshInbox() }
                     await self?.refreshOthers()
                 }
             }
@@ -634,6 +663,7 @@ final class CompanionClient: ObservableObject {
     private func afterConnecting() async {
         // A new connection has no session open on the Mac yet: the one on screen follows again.
         if let session = watchedSession { await watchSession(session) }
+        if let chat = watchedChat { await watchChat(chat) }
         await LiveActivities.shared.reconcile(sessions)
         takeShares()
         await drainOutbox()
@@ -654,6 +684,20 @@ final class CompanionClient: ObservableObject {
         if update.revoked == true { return revoked() }
         apply(update, to: CompanionRequest(op: .list))
         Task { await LiveActivities.shared.reconcile(sessions) }
+    }
+
+    /// Back in front after a glance elsewhere, on a connection that still answers: what is open is asked again from where
+    /// the phone left it (the session's last entry, the open chat, the lists), as t3code resubscribes from its last
+    /// sequence on every wakeup, so nothing an update lost while the phone slept stays behind.
+    func resynchronize() async {
+        guard phase == .connected, channel != nil, !synchronizing else { return }
+        synchronizing = true
+        defer { synchronizing = false }
+        await perform(CompanionRequest.versioned(.list), quiet: true)
+        if let session = watchedSession { await watchSession(session) }
+        if let chat = watchedChat { await watchChat(chat) }
+        await refreshInbox()
+        if can(CompanionFeature.chat), allows(.nookChat) { await loadChats() }
     }
 
     /// A quick look whether the channel still answers; if not, it is replaced at once.
@@ -932,6 +976,45 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .timeline, session: sessionID), quiet: true)
     }
 
+    /// A session's conversation as the screen shows it: the older pages, then the recent conversation, each entry once.
+    func conversation(_ sessionID: String) -> [TimelineEntry] {
+        let recent = timelines[sessionID] ?? []
+        guard let older = earlier[sessionID], !older.isEmpty else { return recent }
+        let ids = Set(recent.map(\.id))
+        return older.filter { !ids.contains($0.id) } + recent
+    }
+
+    /// The Mac can page back and send clipped entries in full (`CompanionFeature.fullTranscript`).
+    var canReadFullTranscript: Bool { can(CompanionFeature.fullTranscript) }
+
+    /// The page before the oldest entry the phone has. False when there is nothing older (or the Mac cannot say).
+    @discardableResult
+    func loadEarlier(_ sessionID: String) async -> Bool {
+        guard canReadFullTranscript, !reachedStart.contains(sessionID),
+              let oldest = conversation(sessionID).first?.id else { return false }
+        guard let response = await perform(CompanionRequest(op: .timeline, session: sessionID, item: oldest), quiet: true),
+              response.ok, let page = response.timeline else { return false }
+        let known = Set(conversation(sessionID).map(\.id))
+        let fresh = page.filter { !known.contains($0.id) }
+        if fresh.isEmpty {
+            reachedStart.insert(sessionID)
+            return false
+        }
+        earlier[sessionID] = fresh + (earlier[sessionID] ?? [])
+        return true
+    }
+
+    /// An entry the Mac clipped, in full (`CompanionOp.entry`); nil when the Mac cannot send it.
+    @discardableResult
+    func loadFullEntry(_ sessionID: String, entry: String) async -> String? {
+        if let known = fullTexts[entry] { return known }
+        guard canReadFullTranscript,
+              let text = await perform(CompanionRequest(op: .entry, session: sessionID, item: entry), quiet: true)?.entryText
+        else { return nil }
+        fullTexts[entry] = text
+        return text
+    }
+
     /// Opens a session's conversation live (`CompanionOp.watch`): the Mac answers with it whole, then sends what changes
     /// by itself. False when this Mac cannot, and the screen asks every few seconds instead.
     @discardableResult
@@ -1049,6 +1132,26 @@ final class CompanionClient: ObservableObject {
         guard await supports(CompanionFeature.inbox) else { return }
         await perform(CompanionRequest(op: .inboxChat, item: chatID), quiet: true)
     }
+
+    /// Opens a chat live (`CompanionOp.watchChat`): the Mac answers with its messages, then sends what changes by itself.
+    /// False when this Mac cannot, and the screen asks every few seconds instead.
+    @discardableResult
+    func watchChat(_ chatID: String) async -> Bool {
+        watchedChat = chatID
+        guard await supports(CompanionFeature.liveChats), phase == .connected else { return false }
+        return await perform(CompanionRequest(op: .watchChat, item: chatID), quiet: true)?.ok == true
+    }
+
+    /// The chat left the screen: the Mac stops sending its messages (unless another one opened meanwhile).
+    func unwatchChat(_ chatID: String) async {
+        guard watchedChat == chatID else { return }
+        watchedChat = nil
+        guard can(CompanionFeature.liveChats), phase == .connected else { return }
+        await perform(CompanionRequest(op: .watchChat), quiet: true)
+    }
+
+    /// Whether the Chats tab and Nook's conversations follow live right now, so their screens need not ask.
+    var chatsAreLive: Bool { can(CompanionFeature.liveChats) && phase == .connected && channel != nil }
 
     /// Your own words to a chat (a WhatsApp chat on the Mac), as an answer to `replyTo` when one is quoted. Through the
     /// outbox: it waits while the Mac cannot be reached, shown in the chat as waiting.
@@ -1195,12 +1298,14 @@ final class CompanionClient: ObservableObject {
     /// Takes in what an answer carries. Every poll answers, mostly with the same data: a value is only assigned when it
     /// changed, so the screens are not redrawn each time.
     private func apply(_ response: CompanionResponse, to req: CompanionRequest) {
-        // The badge is set on (re)connecting too, so one left from before is corrected.
-        if let list = response.sessions, list != sessions || phase != .connected {
+        // The badge is set on (re)connecting too, so one left from before is corrected. Older sessions (`history`) are
+        // no live list: they are taken in where they were asked for.
+        let live = req.op == .history ? nil : response.sessions
+        if let list = live, list != sessions || phase != .connected {
             if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
             if list != sessions { sessions = list }
         }
-        if let list = response.sessions { tookList(list) }
+        if let list = live { tookList(list) }
         if let name = response.macName, name != macName {
             macName = name
             if let id = pairings.active?.id {
@@ -1249,7 +1354,8 @@ final class CompanionClient: ObservableObject {
             cache.launch = options
             scheduleCacheSave()
         }
-        if let timeline = response.timeline, let session = response.timelineSession ?? req.session {
+        if let timeline = response.timeline, let session = response.timelineSession ?? req.session,
+           response.timelineBefore == nil, req.item == nil || req.op != .timeline {
             // An update builds on the entry the phone already has; missing it, the whole conversation is asked for once.
             if let merged = TimelineDelta.apply(timeline, after: response.timelineAfter, to: timelines[session]) {
                 if timelines[session] != merged {
@@ -1269,14 +1375,18 @@ final class CompanionClient: ObservableObject {
         }
         if let chats = response.inbox {
             if chats != inbox { inbox = chats }
+            // The chats' own pictures: the ones the phone does not have yet, or that changed (`CompanionFeature.avatars`).
+            if can(CompanionFeature.avatars) { ChatPictures.shared.update(chats, client: self) }
+            // The real logo of each chat app on its chats, as the Mac shows it.
+            if can(CompanionFeature.appIcons) { ChatPictures.shared.updateAppIcons(Set(chats.map(\.app)), client: self) }
             if response.message != inboxStatus { inboxStatus = response.message }
         }
-        if let lines = response.inboxLines, let chat = req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
+        if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
         takePulls(response, for: req)
         if let accounts = response.usage?.accounts ?? response.home?.accounts { keepUsage(accounts) }
         if response.sessions != nil || response.launch != nil || response.features != nil { writeShareTargets() }
         // A Mac that says nothing of typing leaves it empty, never standing from an earlier answer.
-        if response.inboxLines != nil, let chat = req.item {
+        if response.inboxLines != nil, let chat = response.inboxChat ?? req.item {
             let typing = response.inboxTyping ?? []
             if inboxTyping[chat] ?? [] != typing { inboxTyping[chat] = typing }
         }
@@ -1291,6 +1401,7 @@ final class CompanionClient: ObservableObject {
         if lastUpdated.map({ Int($0.timeIntervalSince1970 / 60) != Int(now.timeIntervalSince1970 / 60) }) ?? true { lastUpdated = now }
         cache.record(sessions: list, at: now)
         scheduleCacheSave()
+        keepAgentActivity(list, now: now)
         let pending = DeliveredNotifications.pending(list)
         guard pending != clearedPending, let mac = activeMacID else { return }
         clearedPending = pending
@@ -1485,7 +1596,7 @@ final class CompanionClient: ObservableObject {
         let framed = try CompanionChannel.frame(req, key: link.key, deviceID: PairedDevice.identifier(forKey: link.key))
         let reply = try await Exchange.run(route: route, key: link.key, payload: framed)
         let opened = try CompanionSeal.open(reply, pairingKey: link.key, direction: .response)
-        let response = try JSONDecoder().decode(CompanionResponse.self, from: opened)
+        let response = try CompanionWire.decode(CompanionResponse.self, from: opened)
         guard response.id == req.id else { throw CompanionClientError.badRequest }
         ClockOffsets.learn(from: response, mac: PairedDevice.identifier(forKey: link.key))
         return response
@@ -1746,8 +1857,9 @@ extension CompanionClient {
     func loadDemo() {
         let now = Date().timeIntervalSince1970
         macName = "MacBook Pro"
-        features = [CompanionFeature.start, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
-                    CompanionFeature.manage, CompanionFeature.steer, CompanionFeature.allowAlways]
+        features = [CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
+                    CompanionFeature.manage, CompanionFeature.steer,
+                    CompanionFeature.allowAlways]
         sessions = [
             SessionDigest(id: "s1", title: "Add the usage page to Settings", agent: "Claude Code", attention: "approval",
                           folder: "nook", branch: "feature/usage", updated: now - 60, excerpt: "",
@@ -1769,6 +1881,33 @@ extension CompanionClient {
             TimelineEntry(id: "t4", kind: .assistant, text: "The socket is closed on sleep, but **the backoff never resets**. I'll reset it when the network comes back.", date: now - 500, failed: false),
             TimelineEntry(id: "t5", kind: .user, text: "Good, go ahead.", date: now - 300, failed: false),
             TimelineEntry(id: "t6", kind: .tool, text: "Edited RelayClient.swift", date: now - 200, failed: false),
+            TimelineEntry(id: "t7", kind: .tool, text: "swift test --filter RelayClientTests", detail: "Bash", date: now - 150, failed: false,
+                          output: "Building for debugging...\nTest Suite 'RelayClientTests' started\nTest Case 'testBackoffResetsAfterWake' passed (0.012 seconds)\nExecuted 8 tests, with 0 failures"),
+            TimelineEntry(id: "t8", kind: .assistant, text: """
+            ## What changed
+
+            The backoff now resets when the network comes back:
+
+            1. `RelayClient` listens for `NWPathMonitor` updates.
+            2. On a satisfied path it calls `resetBackoff()` and reconnects.
+            - [x] Reset on wake
+            - [ ] Test on a real Mac sleep
+
+            ```swift
+            monitor.pathUpdateHandler = { [weak self] path in
+                guard path.status == .satisfied else { return }
+                self?.resetBackoff(); self?.reconnect(reason: .networkReturned)
+            }
+            ```
+
+            | Case | Before | After |
+            |---|---|---|
+            | Sleep 5 min | 64 s to reconnect | 1 s |
+            | Wi-Fi switch | 32 s | 1 s |
+
+            > [!NOTE]
+            > The old backoff still applies when the relay itself is down.
+            """, date: now - 100, failed: false, clipped: true),
         ]
         conversations = [
             ChatDigest(id: "c1", title: "Plan for tomorrow", updated: now - 3600, busy: false, waiting: false, preview: "You have three meetings…"),

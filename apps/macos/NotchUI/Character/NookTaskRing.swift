@@ -697,9 +697,9 @@ struct NookTaskRingLabel: View {
                     .fixedSize()
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Color(hex: 0x17171D)))
-                    .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-                    .contentShape(Capsule())
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(Color(hex: 0x17171D)))
+                    .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
+                    .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }
                 .buttonStyle(.plain)
                 .onHover { pointer?.onLabel($0) }

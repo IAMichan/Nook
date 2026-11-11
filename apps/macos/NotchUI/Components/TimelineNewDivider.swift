@@ -21,3 +21,28 @@ struct TimelineNewDivider: View {
         .accessibilityAddTraits(.isHeader)
     }
 }
+
+/// At the top of a long conversation that opened with only its latest turns (`HistoryWindow`): "Show earlier messages"
+/// between two hairlines, as a button that draws the turns before them.
+struct TimelineEarlierRow: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                NookDivider()
+                Label(tr("ws.timeline.showEarlier"), systemImage: "arrow.up")
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .fixedSize()
+                NookDivider()
+            }
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(tr("ws.timeline.showEarlier"))
+    }
+}

@@ -1523,8 +1523,7 @@ struct ChatsRow: View, Equatable {
                 // Where it stands, the same mark for every app; your own newest message has its ticks in front.
                 if entry.showsReadMark { ChatReadMark(state: entry.read) }
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1735,6 +1734,9 @@ private struct ChatsDetail: View, Equatable {
     /// The collected chat whose removal waits for a yes, and whether it goes in its app too (else from Nook only).
     @State private var removing: String?
     @State private var removingInApp = false
+    /// The chat's info (`ChatsInfoSheet`), open over its header.
+    @State private var infoOpen = false
+    @State private var nameHovering = false
     /// The message being forwarded and the chats it can go to, while the picker is open over the chat.
     @State private var forwarding: (bubble: ChatBubble, forward: ChatForward, targets: [ChatForwardPicker.Target])?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
@@ -2189,12 +2191,27 @@ private struct ChatsDetail: View, Equatable {
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
             if let onBack { PanelBackButton(action: onBack) }
-            ChatsFace(entry: entry, size: 36)
+            // The face and the name open the chat's info, as in a chat app.
+            Button { infoOpen = true } label: {
+                ChatsFace(entry: entry, size: 36)
+            }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .help(tr("chats.info.open"))
+            .accessibilityLabel(tr("chats.info.open"))
+            .popover(isPresented: $infoOpen, arrowEdge: .bottom) { infoSheet }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(entry.name)
-                    .font(NookTheme.TextStyle.title)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
+                Button { infoOpen = true } label: {
+                    Text(entry.name)
+                        .font(NookTheme.TextStyle.title)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .underline(nameHovering)
+                }
+                .buttonStyle(.plain)
+                .onHover { nameHovering = $0 }
+                .pointerStyle(.link)
+                .help(tr("chats.info.open"))
                 HStack(spacing: NookTheme.Spacing.xs) {
                     if let typingLine = typing.line(entry.id) {
                         // Someone typing says so where the chat's details are, as a chat app's header does.
@@ -2210,10 +2227,28 @@ private struct ChatsDetail: View, Equatable {
                 .animation(NookTheme.reveal, value: typing.line(entry.id))
             }
             Spacer(minLength: NookTheme.Spacing.sm)
-            // Opening the app stays in sight; the rest waits in the "…" menu.
+            // Calling where the chat's app calls, and opening the app, stay in sight; the rest waits in the "…" menu.
+            if app.canCallChat(entry) {
+                ToolbarIconButton("phone", tr("chats.call.voice")) { app.startChatCall(entry, kind: .voice) }
+                ToolbarIconButton("video", tr("chats.call.video")) { app.startChatCall(entry, kind: .video) }
+            }
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
             moreMenu
         }
+    }
+
+    /// Who the chat is with, calling them, what their app said, the groups you share and what can be done with the chat.
+    private var infoSheet: some View {
+        ChatsInfoSheet(entry: entry, capture: capture,
+                       openChat: { app.showChats(ChatsFocus(chat: $0)) },
+                       run: change,
+                       remove: { inApp in
+                           guard let thread = app.chatThread(entry) else { return }
+                           removingInApp = inApp
+                           removing = thread
+                       },
+                       afterArchive: onClose,
+                       close: { infoOpen = false })
     }
 
     /// The app (and whether Nook reads it or only saw its notifications), the group's people, and where it stands.
@@ -2227,9 +2262,10 @@ private struct ChatsDetail: View, Equatable {
         // A group's people, or what a person's app says of them: how many, and a click shows the chat's info.
         if ChatInfoButton.shows(members: entry.members, profile: entry.profile) {
             headerDot
-            ChatInfoButton(name: entry.name, members: entry.members ?? [], profile: entry.profile,
-                           isGroup: entry.kind == .group || (entry.members?.count ?? 0) > 1 || entry.profile?.admins != nil,
-                           appName: appName)
+            ChatInfoButton(members: entry.members ?? [], profile: entry.profile,
+                           isGroup: entry.kind == .group || (entry.members?.count ?? 0) > 1 || entry.profile?.admins != nil) {
+                infoOpen = true
+            }
         }
         // Read but not new: where it stands, small, instead of a strip above the answer field.
         if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {

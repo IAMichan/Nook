@@ -323,7 +323,7 @@ struct PullRequestActionPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.rowHover))
+        .roundedBackground(NookTheme.rowHover, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Composer
@@ -374,7 +374,7 @@ struct PullRequestActionPanel: View {
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .padding(NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
                 .onSubmit { review() }
             if state.candidates == nil {
                 ProgressView().controlSize(.small)
@@ -404,8 +404,8 @@ struct PullRequestActionPanel: View {
             .padding(.leading, NookTheme.Spacing.xxs)
             .padding(.trailing, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(chosen ? NookTheme.iris : NookTheme.smoke))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(chosen ? NookTheme.iris : NookTheme.smoke))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .help(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))
@@ -472,7 +472,7 @@ struct PullRequestActionPanel: View {
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.strong)
                 .padding(NookTheme.Spacing.sm)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
             field(placeholder: tr("agents.pr.edit.body"))
             HStack {
                 Spacer(minLength: 0)
@@ -505,7 +505,7 @@ struct PullRequestActionPanel: View {
         }
         .frame(height: 96)
         .padding(NookTheme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
     }
 
     private func send(title: String) -> some View {

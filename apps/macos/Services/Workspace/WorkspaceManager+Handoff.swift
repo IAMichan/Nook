@@ -70,6 +70,7 @@ extension WorkspaceManager {
             $0.pendingHandoff = handoff?.text
             // Another agent's conversation: what Nook followed of the old one does not apply to it.
             $0.conversation = nil
+            $0.mainThreadTold = nil
             $0.pendingRollback = nil
             $0.permission = $0.permission.steppedDown(within: provider.capabilities.policies)
         }
@@ -161,6 +162,7 @@ extension WorkspaceManager {
             run.pendingHandoff = nil
             run.pendingRollback = nil
             run.conversation = nil
+            run.mainThreadTold = nil
             run.goal = nil
             run.tasks = nil
             run.promptCache = nil
@@ -200,6 +202,7 @@ extension WorkspaceManager {
             handoff = ContextHandoff.render(events: events, source: source.provider.displayName,
                                             session: bridge(for: source.id) == nil ? nil : source.id)
             copy.pendingHandoff = handoff?.text
+            copy.mainThreadTold = nil
         }
         runs.insert(copy, at: 0)
         self.events[newID] = events
@@ -231,6 +234,7 @@ extension WorkspaceManager {
         copy.limitedAt = nil
         copy.limitResetAt = nil
         copy.autoResume = nil
+        copy.limitRetries = nil
         copy.continuations = nil
         copy.snoozedAt = nil
         copy.snoozedUntil = nil

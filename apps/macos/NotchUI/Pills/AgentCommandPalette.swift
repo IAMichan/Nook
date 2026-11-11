@@ -5,8 +5,8 @@ import SwiftUI
 /// ⇧⌘K in the Agents tab (⌘K searches everything): one field to jump to a session or run an action, in groups: the
 /// sessions you open often and lately, what you can do with the open session (pin, settle, snooze, rename, fork, copy,
 /// the diff, stop), getting around (new session, a new session in a project, back and forward, the pages and panels) and
-/// Settings. Each command shows its key (`Keybindings`, your own keys too). Typing filters, `>` first leaves only the
-/// actions; ↑/↓ move, Return runs, Esc closes (or goes back from the list of projects).
+/// Settings (with the appearance and the theme). Each command shows its key (`Keybindings`, your own keys too). Typing filters, `>` first leaves only the
+/// actions; ↑/↓ move, Return runs, Esc closes (or goes back from a list it stepped into).
 struct AgentCommandPalette: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var viewModel: NotchViewModel
@@ -18,12 +18,32 @@ struct AgentCommandPalette: View {
 
     @State private var query = ""
     @State private var index = 0
-    /// "New session in…" lists the projects in place of the commands.
-    @State private var choosingProject = false
+    /// A step into a list in place of the commands: "New session in…" lists the projects, "Change appearance…" System,
+    /// Light and Dark, "Change theme…" the themes (as t3code).
+    @State private var sublist: Sublist?
     @FocusState private var focused: Bool
 
+    private enum Sublist {
+        case projects, appearance, theme
+
+        var placeholder: String {
+            switch self {
+            case .projects: return tr("palette.projects.placeholder")
+            case .appearance: return tr("palette.appearance.placeholder")
+            case .theme: return tr("palette.theme.placeholder")
+            }
+        }
+
+        var emptyNote: String {
+            switch self {
+            case .projects: return tr("palette.projects.none")
+            case .appearance, .theme: return tr("palette.none")
+            }
+        }
+    }
+
     private enum Group: String, CaseIterable {
-        case recent, session, navigation, settings, projects
+        case recent, session, navigation, settings, projects, appearance, theme
 
         var title: String { tr("palette.group." + rawValue) }
     }
@@ -44,7 +64,12 @@ struct AgentCommandPalette: View {
 
     private var entries: [Entry] {
         let parsed = PaletteQuery(query)
-        if choosingProject { return filtered(projectEntries, parsed) }
+        switch sublist {
+        case .projects: return filtered(projectEntries, parsed)
+        case .appearance: return filtered(appearanceEntries, parsed)
+        case .theme: return filtered(themeEntries, parsed)
+        case nil: break
+        }
         var out: [Entry] = []
         if !parsed.actionsOnly { out += recentEntries(parsed) }
         out += filtered(sessionEntries, parsed)
@@ -97,10 +122,11 @@ struct AgentCommandPalette: View {
             })
         }
         if actions.canSnooze {
-            for choice in SnoozePolicy.Choice.allCases {
-                out.append(Entry(id: "s:snooze:" + choice.rawValue, group: .session, symbol: "clock",
-                                 title: tr("agents.snooze.menu") + ": " + tr("agents.snooze." + choice.rawValue)) {
-                    actions.snooze(choice); return false
+            // The snooze options of Settings › Sessions, soonest first, without a today one whose time has passed.
+            for item in SnoozeOption.menu(InboxStore.shared.snoozeOptions, now: Date()) {
+                out.append(Entry(id: "s:snooze:" + item.option.id, group: .session, symbol: "clock",
+                                 title: tr("agents.snooze.menu") + ": " + SnoozeText.title(item.option)) {
+                    actions.snooze(until: item.option.end(from: Date()) ?? item.end); return false
                 })
             }
             if let reset = actions.limitResetsAt {
@@ -165,9 +191,7 @@ struct AgentCommandPalette: View {
             Entry(id: "n:new", group: .navigation, symbol: "square.and.pencil", title: tr("agents.newSession"),
                   command: "session.new") { viewModel.selectedAgentID = "new"; return false },
             Entry(id: "n:newIn", group: .navigation, symbol: "folder.badge.plus", title: tr("palette.newSessionIn")) {
-                choosingProject = true
-                query = ""
-                return true
+                open(.projects)
             },
         ]
         if SessionHistory.shared.trail.canGoBack {
@@ -217,6 +241,10 @@ struct AgentCommandPalette: View {
             Entry(id: "x:shortcuts", group: .settings, symbol: "keyboard", title: tr("palette.shortcuts")) {
                 app.openSettings(section: .shortcuts); return false
             },
+            Entry(id: "x:appearance", group: .settings, symbol: "circle.lefthalf.filled", title: tr("palette.appearance"),
+                  detail: SettingsView.title(for: AppSettings.shared.appearanceMode)) { open(.appearance) },
+            Entry(id: "x:theme", group: .settings, symbol: "paintpalette", title: tr("palette.theme"),
+                  detail: currentThemeTitle) { open(.theme) },
             Entry(id: "x:usage", group: .settings, symbol: "chart.bar", title: tr("agents.footer.usage")) {
                 app.usageModalOpen = true; return false
             },
@@ -229,6 +257,61 @@ struct AgentCommandPalette: View {
         ]
     }
 
+    /// Steps into a list in place of the commands; the palette stays open.
+    private func open(_ list: Sublist) -> Bool {
+        sublist = list
+        query = ""
+        return true
+    }
+
+    /// Whether Nook's windows show the dark palette now.
+    private var showsDark: Bool {
+        AppSettings.shared.appearanceMode.isDark(systemIsDark: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+    }
+
+    /// The theme the windows show now.
+    private var currentThemeTitle: String {
+        let settings = AppSettings.shared
+        let id = showsDark ? settings.darkThemeID : settings.lightThemeID
+        return settings.themes.first { $0.id == id }.map(SettingsView.title(for:)) ?? ""
+    }
+
+    /// "Change appearance…": System, Light or Dark for Nook's windows (Settings › Appearance has the same choice).
+    private var appearanceEntries: [Entry] {
+        let current = AppSettings.shared.appearanceMode
+        return NookAppearanceMode.allCases.map { mode in
+            let symbol: String
+            switch mode {
+            case .system: symbol = "circle.lefthalf.filled"
+            case .light: symbol = "sun.max"
+            case .dark: symbol = "moon"
+            }
+            return Entry(id: "a:" + mode.rawValue, group: .appearance, symbol: symbol, title: SettingsView.title(for: mode),
+                         detail: mode == current ? tr("palette.current") : "") {
+                AppSettings.shared.appearanceMode = mode
+                return false
+            }
+        }
+    }
+
+    /// "Change theme…": every theme; the one chosen is used for the appearance that shows now, or for the only one it has.
+    private var themeEntries: [Entry] {
+        let settings = AppSettings.shared
+        let dark = showsDark
+        let currentID = dark ? settings.darkThemeID : settings.lightThemeID
+        return settings.themes.map { theme in
+            Entry(id: "t:" + theme.id, group: .theme, symbol: "paintpalette", title: SettingsView.title(for: theme),
+                  detail: theme.id == currentID ? tr("palette.current") : "") {
+                if (dark && theme.dark != nil) || theme.light == nil {
+                    settings.darkThemeID = theme.id
+                } else {
+                    settings.lightThemeID = theme.id
+                }
+                return false
+            }
+        }
+    }
+
     /// "New session in…": your favorite projects, then the recent ones.
     private var projectEntries: [Entry] {
         let settings = app.workspace.settings
@@ -236,7 +319,7 @@ struct AgentCommandPalette: View {
         let paths = (settings.favoriteProjects + settings.recentProjects)
             .filter { seen.insert($0).inserted && !settings.isArchivedProject($0) }
         return paths.map { path in
-            Entry(id: "p:" + path, group: .projects, symbol: "folder", title: URL(fileURLWithPath: path).lastPathComponent,
+            Entry(id: "p:" + path, group: .projects, symbol: "folder", title: (path as NSString).lastPathComponent,
                   detail: AgentPathFormat.tilde(path)) {
                 PromptLinkInbox.shared.requestProject(path)
                 viewModel.selectedAgentID = "new"
@@ -268,13 +351,13 @@ struct AgentCommandPalette: View {
     var body: some View {
         let list = entries
         VStack(spacing: 0) {
-            NookSearchField(prompt: choosingProject ? tr("palette.projects.placeholder") : tr("palette.placeholder"),
+            NookSearchField(prompt: sublist?.placeholder ?? tr("palette.placeholder"),
                             text: $query, style: .large, focus: $focused,
                             onSubmit: { perform(list) }, onEscape: escape)
                 .padding(.horizontal, NookTheme.Spacing.xs)
             NookDivider()
             if list.isEmpty {
-                ListEmptyNote(choosingProject ? tr("palette.projects.none") : tr("palette.none"), padding: NookTheme.Spacing.xl)
+                ListEmptyNote(sublist?.emptyNote ?? tr("palette.none"), padding: NookTheme.Spacing.xl)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
@@ -306,12 +389,12 @@ struct AgentCommandPalette: View {
         // As wide as a narrow tab allows, never wider than the usual 480.
         .frame(maxWidth: .infinity)
         .frame(maxWidth: 480)
-        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
+        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         .padding(.horizontal, NookTheme.Spacing.lg)
         .focusOnAppear($focused)
         .onChange(of: query) { _, _ in index = 0 }
-        .onChange(of: choosingProject) { _, _ in index = 0 }
+        .onChange(of: sublist) { _, _ in index = 0 }
         .onWindowKeyDown { event in
             guard event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return false }
             switch Int(event.keyCode) {
@@ -334,20 +417,20 @@ struct AgentCommandPalette: View {
             }
             Spacer(minLength: 0)
             if let keys = shortcut(entry.command) { NookKeyHint(text: keys) }
-            if entry.id == "n:newIn" {
+            if ["n:newIn", "x:appearance", "x:theme"].contains(entry.id) {
                 Image(icon: "chevron.right").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             }
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected ? NookTheme.smoke : .clear))
+        .roundedBackground(selected ? NookTheme.smoke : .clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
     }
 
     /// Escape: back from the list of projects, else closes.
     private func escape() {
-        if choosingProject {
-            choosingProject = false
+        if sublist != nil {
+            sublist = nil
             query = ""
         } else {
             close()

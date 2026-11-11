@@ -25,6 +25,7 @@ enum AgentActivityText {
         case .writing: return tr("ws.activity.writing")
         case .reviewing: return tr("ws.activity.reviewing")
         case .recovering: return tr("ws.activity.recovering")
+        case .compacting: return tr("ws.activity.compacting")
         }
     }
 
@@ -45,6 +46,7 @@ enum AgentActivityText {
         case .writing: return "text.cursor"
         case .reviewing: return "doc.text.magnifyingglass"
         case .recovering: return "arrow.triangle.2.circlepath"
+        case .compacting: return "arrow.down.right.and.arrow.up.left"
         }
     }
 
@@ -98,7 +100,7 @@ struct VerificationChips: View {
                 .foregroundStyle(Self.color(check.outcome))
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .padding(.vertical, NookTheme.Spacing.xxs)
-                .background(Capsule().fill(Self.color(check.outcome).opacity(0.12)))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(Self.color(check.outcome).opacity(0.12)))
                 .help(labelled ? check.command : Self.text(check) + " · " + check.command)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Self.text(check))

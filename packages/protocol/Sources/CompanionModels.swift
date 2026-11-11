@@ -98,7 +98,8 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     case register, unregister
     /// What a new session can start with (`launch` in the answer); `start` starts one (`launch` in the request).
     case options, start
-    /// The recent conversation of one session (`session`).
+    /// The recent conversation of one session (`session`). With `CompanionFeature.fullTranscript`, `item` may name the
+    /// oldest entry the phone has: the answer then holds the page before it (`timelineBefore`), empty at the start.
     case timeline
     /// The session the phone has open (`session`; nil when it closed it): its conversation follows by itself over the
     /// subscribed connection, as changes after the entry the phone has (`CompanionResponse.timelineAfter`), instead of
@@ -124,6 +125,13 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// `inboxLines` in the answer); your own words to a chat that can be answered from Nook (`item`, `text`, and
     /// `replyTo` when it answers one of its messages); and read or unread by hand (`item`, `allow`: true is read).
     case inbox, inboxChat, inboxSend, inboxMark
+    /// The chat the phone has open in the Chats tab (`item`; nil when it closed it): its messages follow by themselves over
+    /// the subscribed connection (`CompanionResponse.inboxChat`), instead of the phone asking every few seconds
+    /// (`CompanionFeature.liveChats`). Answered like `inboxChat`.
+    case watchChat
+    /// The pictures of chats (`items`: chat ids, at most `ChatAvatar.batch`), small enough to travel in one answer
+    /// (`CompanionResponse.avatars`, `CompanionFeature.avatars`).
+    case avatars
     /// Live Activities: the phone's push-to-start token, an activity's update token, an ended activity, or the switch
     /// turned off (`live`).
     case liveActivity
@@ -141,6 +149,17 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// in the answer); one pull request in full by its address (`item`; `pull` in the answer); an action on it
     /// (`item`, `pullAction`); and a new session that works on it (`pullWork`; `created` in the answer).
     case pulls, pull, pullAct, pullWork
+    /// Older sessions than the live list holds, a page at a time, and older sessions that match words
+    /// (`CompanionFeature.history`): `text` is the words (nil or empty pages through all of them), `item` the cursor
+    /// from the last page's `CompanionResponse.cursor` (nil: from the start). `sessions` in the answer, and `cursor`
+    /// while there are more.
+    case history
+    /// A piece of one file of a session's folder (`CompanionFeature.filePreview`), to preview on the phone: `item` is
+    /// its path as for `files`, `text` the byte offset to read from ("0" or nil for the start). `fileChunk` in the answer.
+    case fileData
+    /// One entry of a session's conversation in full (`session`, `item`: the entry's id), for an entry the timeline
+    /// clipped (`TimelineEntry.clipped`); `entryText` in the answer (`CompanionFeature.fullTranscript`).
+    case entry
     /// The phone's own device key (`CompanionDeviceKey`, `CompanionFeature.deviceKey`): `text` is its public half (X9.63,
     /// base64). The Mac keeps the first one it gets for a pairing; `message` in the answer is "bound", or "other" when it
     /// already holds a different one (the phone has to pair again).
@@ -156,6 +175,9 @@ enum SessionAction: String, Codable, Sendable, CaseIterable {
     case snoozeUntil, snoozeLimitReset
     /// Ends the process of an agent outside Nook; it saves its conversation, so it can be continued in Nook.
     case end
+    /// "Main thread" on or off: the agent hands its work to sub-threads that report back (`MainThread` on the Mac). The
+    /// Mac lists the one that applies, only for an agent that may delegate.
+    case mainThreadOn, mainThreadOff
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -208,15 +230,32 @@ enum CompanionFeature {
     static let pullRequests = "pullRequests"
     /// The Mac takes files with `send` and `start` (`CompanionRequest.attachments`), as from the share sheet.
     static let attachments = "attachments"
+    /// The Mac answers `history`: older sessions a page at a time, and a search through all of them.
+    static let history = "history"
+    /// The Mac opens compressed requests and compresses large answers for a phone that asks for it
+    /// (`CompanionRequest.compression`, `CompanionWire`).
+    static let compression = "compression"
+    /// The Mac answers `fileData`: any file of a session's folder in pieces, up to `FileChunk.maxFileBytes`.
+    static let filePreview = "filePreview"
+    /// The Mac sends the Chats tab's list (`inbox`) and Nook's conversations (`conversations`) over the subscribed
+    /// connection whenever they change, and takes `watchChat`: the open chat's messages follow by themselves.
+    static let liveChats = "liveChats"
+    /// The Mac says which picture each chat has (`InboxChatDigest.avatar`) and answers `avatars` with them.
+    static let avatars = "avatars"
+    /// The Mac answers `entry` with a clipped entry in full, marks clipped entries (`TimelineEntry.clipped`), and pages
+    /// back through older entries (`timeline` with `item`).
+    static let fullTranscript = "fullTranscript"
+    /// The Mac answers `avatars` for "app:<id>" with the chat app's icon (`ChatAvatar.appPrefix`), and lists a chat's
+    /// photo from Contacts as its picture when the chat has none of its own.
+    static let appIcons = "appIcons"
     /// `decide` may allow an item for good (`CompanionRequest.always`) where it says `canAlways`, as the Mac's "Always".
     static let allowAlways = "allowAlways"
-    /// The Mac compresses large answers for a phone that reads them (`CompanionRequest.accepts`, `CompanionDeflate`).
-    static let deflate = "deflate"
     /// The Mac takes `bindKey` and from then on wants the phone's requests signed (`CompanionDeviceKey`).
     static let deviceKey = "deviceKey"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
-                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, allowAlways,
-                      deflate, deviceKey]
+                      steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons,
+                      allowAlways, deviceKey]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -231,11 +270,13 @@ struct LaunchRequest: Codable, Equatable, Sendable {
     var worktree: Bool
     /// One of the agent's `LaunchOptions.Agent.models`; nil keeps the Mac's default for the agent.
     var model: String?
+    /// Start as a main thread (`LaunchOptions.Agent.canMainThread`); nil from a phone that does not offer it.
+    var mainThread: Bool? = nil
 
     init(agent: String, project: String, task: String, title: String? = nil, plan: Bool = false, worktree: Bool = false,
-         model: String? = nil) {
+         model: String? = nil, mainThread: Bool? = nil) {
         self.agent = agent; self.project = project; self.task = task; self.title = title; self.plan = plan; self.worktree = worktree
-        self.model = model
+        self.model = model; self.mainThread = mainThread
     }
 }
 
@@ -248,6 +289,8 @@ struct LaunchOptions: Codable, Equatable, Sendable {
         /// The models the phone may pick for this agent, the Mac's default first; nil from a Mac that keeps the choice.
         var models: [Model]? = nil
         var defaultModel: String? = nil
+        /// The agent may delegate, so a session can start as a main thread; nil from a Mac that does not know it.
+        var canMainThread: Bool? = nil
     }
 
     /// A model an agent can run on: the id the Mac starts it with, and its name as the Mac shows it.
@@ -308,22 +351,26 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// Files that go with `send` or `start` (`CompanionFeature.attachments`): the Mac saves them and gives their
     /// paths below the words, as it does with pictures.
     var attachments: [CompanionFile]? = nil
+    /// The chats of `avatars`.
+    var items: [String]? = nil
+    /// This phone opens compressed answers (`CompanionWire`): the Mac may compress a large one. Nil from a phone that
+    /// cannot, which always gets plain JSON; a Mac without `CompanionFeature.compression` ignores it.
+    var compression: Bool? = nil
     /// With an allowing `decide` (`CompanionFeature.allowAlways`): allow it for good, as the Mac's "Always". Only for an
     /// item with `SessionDigest.Item.canAlways`, and only where the phone may allow it at all (`CompanionPolicy`).
     var always: Bool? = nil
-    /// What the phone can read besides plain sealed JSON (`CompanionDeflate.name`). The Mac remembers it per phone.
-    var accepts: [String]? = nil
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
          replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
          steer: Bool? = nil, images: [CompanionImage]? = nil, foreground: Bool? = nil, pullAction: CompanionPullAction? = nil,
-         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil, always: Bool? = nil, accepts: [String]? = nil) {
+         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil, items: [String]? = nil,
+         always: Bool? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
         self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer; self.images = images
         self.foreground = foreground; self.pullAction = pullAction; self.pullWork = pullWork; self.attachments = attachments
-        self.always = always; self.accepts = accepts
+        self.items = items; self.always = always
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -391,6 +438,18 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var pulls: [PullDigest]? = nil
     /// The pull request of `pull`, and of `pullAct` after the action.
     var pull: PullDetailDigest? = nil
+    /// On an update the Mac sends by itself: the chat `inboxLines` belong to (`watchChat`).
+    var inboxChat: String? = nil
+    /// The pictures of `avatars`; a chat without one (any more) is left out.
+    var avatars: [ChatAvatar]? = nil
+    /// With `history`: where the next page starts, nil on the last page.
+    var cursor: String? = nil
+    /// The piece of a file `fileData` asked for.
+    var fileChunk: FileChunk? = nil
+    /// With `timeline` asked with `item`: `timeline` is the page before that entry, not the recent conversation.
+    var timelineBefore: String? = nil
+    /// The entry `entry` asked for, in full (cut at `TimelineEntry.fullLimit`).
+    var entryText: String? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -459,6 +518,29 @@ struct TimelineEntry: Codable, Equatable, Identifiable, Sendable {
     var detail: String?
     var date: Double
     var failed: Bool
+    /// What a step gave back (a command's output, what a search found, a change's patch), its end clipped to
+    /// `outputLimit`, for the step to open to on the phone; nil when there was none or from a Mac that does not send it.
+    var output: String? = nil
+    /// `text` was cut at `CompanionConstants.lineLimit`: the phone can ask for all of it (`CompanionOp.entry`). Nil from a
+    /// Mac without `CompanionFeature.fullTranscript`.
+    var clipped: Bool? = nil
+
+    /// The most of one entry `CompanionOp.entry` sends: well inside `CompanionConstants.maxFrame` once sealed.
+    static let fullLimit = 100_000
+
+    /// How much of a step's output travels: its last lines, enough to see how it ended.
+    static let outputLimit = 900
+
+    /// The end of a step's output, at most `outputLimit` characters, starting at a line; nil when it is empty.
+    static func outputTail(_ output: String?) -> String? {
+        guard let output else { return nil }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count > outputLimit else { return trimmed }
+        let tail = trimmed.suffix(outputLimit)
+        let fromLine = tail.firstIndex(of: "\n").map { tail[tail.index(after: $0)...] } ?? tail
+        return "…\n" + fromLine
+    }
 
     /// The `detail` of a compaction note, which the phone shows as a quiet word across the conversation rather than as
     /// a line of the work.
@@ -512,6 +594,30 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     var waitsInApp: Bool
     /// Who is typing in it now, the first to start first; nil from a Mac that does not say.
     var typing: [InboxTypist]? = nil
+    /// Which picture the chat has (`ChatAvatar.version`), so the phone asks for it once and again only when it changes;
+    /// nil when it has none or the Mac does not say (`CompanionFeature.avatars`).
+    var avatar: String? = nil
+}
+
+/// A chat's own picture (a contact's or a group's photo), as a small square JPEG.
+struct ChatAvatar: Codable, Equatable, Sendable {
+    /// The chat's id (`InboxChatDigest.id`).
+    var chat: String
+    /// The same as `InboxChatDigest.avatar` when it was made.
+    var version: String
+    /// Base64 JPEG, `side` pixels square; a PNG with its transparency for an app's icon (`appPrefix`).
+    var jpeg: String
+
+    /// `avatars` with `CompanionFeature.appIcons` also takes "app:<app id>" (`InboxChatDigest.app`): the icon of that chat
+    /// app as the Mac shows it, so the phone draws the real app logo on a chat.
+    static let appPrefix = "app:"
+
+    /// The pixel size of a picture: a 40-point avatar on a 3x screen, with room.
+    static let side = 120
+    /// How many pictures one `avatars` request asks for, so the answer stays well under a frame.
+    static let batch = 8
+    /// What one picture may weigh before base64: a batch stays well under `CompanionConstants.maxFrame`.
+    static let maxBytes = 16 * 1024
 }
 
 /// Someone typing in a chat, as the Mac's `ChatTypist`.
@@ -717,6 +823,11 @@ enum CompanionPolicy {
     /// A line of a conversation, cut at `limit` characters.
     static func clip(_ text: String, limit: Int = CompanionConstants.lineLimit) -> String {
         cut(text, limit: limit)
+    }
+
+    /// Whether `clip` cut `clipped`: a cut line is `limit` characters and the ellipsis, anything shorter went whole.
+    static func wasClipped(_ clipped: String, limit: Int = CompanionConstants.lineLimit) -> Bool {
+        clipped.count > limit
     }
 
     /// `text` without carriage returns and surrounding white space, cut at `limit` characters. Only its start is read: an

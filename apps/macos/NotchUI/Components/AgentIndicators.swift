@@ -166,7 +166,7 @@ struct PullRequestStateBadge: View {
                 .padding(.leading, NookTheme.Spacing.sm - NookTheme.Spacing.xxs)
                 .padding(.trailing, NookTheme.Spacing.sm)
                 .frame(height: 22)
-                .background(Capsule().fill(NookTheme.smoke))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
         }
         .fixedSize()
     }

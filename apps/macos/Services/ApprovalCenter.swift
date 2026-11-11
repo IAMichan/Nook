@@ -110,7 +110,7 @@ final class ApprovalCenter {
     static func make(_ request: BridgeRequest) -> AgentApproval {
         AgentApproval(
             origin: .bridge(requestID: request.id), agentName: request.caller.agent,
-            project: URL(fileURLWithPath: request.caller.directory).lastPathComponent, tool: request.tool.rawValue,
+            project: (request.caller.directory as NSString).lastPathComponent, tool: request.tool.rawValue,
             title: request.title, command: request.detail, diff: [], note: request.note, danger: request.danger,
             canAlways: false, canTerminal: false, created: request.created, prose: request.tool.approvalReadsAsProse,
             secretName: request.secretName, signInURL: request.signInURL, secretKeepable: request.secretKeepable

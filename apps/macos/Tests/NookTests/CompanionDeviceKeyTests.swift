@@ -3,8 +3,8 @@ import XCTest
 import CryptoKit
 #endif
 
-/// The phone's device key (`packages/protocol/Sources/CompanionDeviceKey.swift`) and what the seal carries besides the
-/// ciphertext (`CompanionSeal`: `z` for compression, `g` for the signature). CryptoKit: on the Mac only.
+/// The phone's device key (`packages/protocol/Sources/CompanionDeviceKey.swift`) and the signature the seal carries next to
+/// the ciphertext (`CompanionSeal` field `g`). CryptoKit: on the Mac only.
 final class CompanionDeviceKeyTests: XCTestCase {
     #if canImport(CryptoKit)
     private let pairingKey = Data(repeating: 7, count: 32)
@@ -42,23 +42,9 @@ final class CompanionDeviceKeyTests: XCTestCase {
         XCTAssertTrue(CompanionDeviceKey.needsSignature(.bindKey))
     }
 
-    func testCompressedSealOpensAndItsMarkCannotBeTakenAway() throws {
-        try XCTSkipUnless(CompanionDeflate.isAvailable)
-        let text = String(repeating: #"{"id":"e","kind":"assistant","text":"the same words again"},"#, count: 200)
-        let envelope = try CompanionSeal.seal(Data(text.utf8), pairingKey: pairingKey, deviceID: "dev", direction: .response, compress: true)
-        var parsed = try JSONDecoder().decode(CompanionSeal.Envelope.self, from: envelope)
-        XCTAssertEqual(parsed.z, CompanionDeflate.name)
-        XCTAssertEqual(try CompanionSeal.open(envelope, pairingKey: pairingKey, direction: .response), Data(text.utf8))
-        parsed.z = nil
-        XCTAssertThrowsError(try CompanionSeal.open(JSONEncoder().encode(parsed), pairingKey: pairingKey, direction: .response))
-        parsed.z = "brotli"
-        XCTAssertThrowsError(try CompanionSeal.open(JSONEncoder().encode(parsed), pairingKey: pairingKey, direction: .response))
-    }
-
-    func testWithoutCompressionTheEnvelopeIsAsBefore() throws {
-        let envelope = try CompanionSeal.seal(Data("short".utf8), pairingKey: pairingKey, deviceID: "dev", direction: .request, compress: true)
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: envelope) as? [String: Any])
-        XCTAssertEqual(Set(object.keys), ["d", "s"], "a small message is not compressed, and nothing new is added")
+    func testWithoutASignatureTheEnvelopeIsAsBefore() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try sealed()) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["d", "s"], "nothing new is added to an unsigned envelope")
     }
     #endif
 }

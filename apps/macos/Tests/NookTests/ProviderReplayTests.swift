@@ -229,9 +229,7 @@ final class ProviderReplayTests: XCTestCase {
     }
 
     func testTrafficLogIsOffByDefaultAndPerSession() throws {
-        let suite = "nook-traffic-tests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let defaults = scratchDefaults("nook-traffic-tests")
         let folder = temporaryFolder()
         let run = UUID()
         XCTAssertNil(ProviderTrafficLog.forLaunch(spec(prompt: "x", runID: run), defaults: defaults, directory: folder))

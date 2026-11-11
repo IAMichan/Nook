@@ -16,8 +16,8 @@ struct NookCompanionApp: App {
                 .onOpenURL { url in
                     if let session = ActivityLink.session(from: url) {
                         client.openSession = session
-                    } else if url.scheme == "nook", url.host == "usage" {
-                        // The usage widget: opening the app is all it asks.
+                    } else if url.scheme == "nook", url.host == "usage" || url.host == "agents" {
+                        // The usage and agent activity widgets: opening the app is all they ask.
                     } else if let prompt = PromptLink.parse(url: url) {
                         client.pendingPrompt = prompt
                     } else {

@@ -62,10 +62,77 @@ final class DelegationTests: XCTestCase {
     }
 
     func testChildOnlySeesTheTaskAndItsRole() {
-        XCTAssertEqual(DelegationPolicy.prompt(task: "  Fix the login bug \n", role: .general), "Fix the login bug")
+        XCTAssertEqual(DelegationPolicy.prompt(task: "  Fix the login bug \n", role: .general),
+                       "Fix the login bug\n\n" + DelegationPolicy.childNote)
         let review = DelegationPolicy.prompt(task: "Check the diff", role: .review)
         XCTAssertTrue(review.hasPrefix("Check the diff"))
         XCTAssertTrue(review.contains("Role: review"))
+        XCTAssertTrue(review.hasSuffix(DelegationPolicy.childNote), "a child does the work itself and ends with a report")
+    }
+
+    // MARK: Main thread
+
+    func testMainThreadNoteGoesOnceForEachChange() {
+        XCTAssertNil(MainThread.pending(on: nil, told: nil))
+        XCTAssertNil(MainThread.pending(on: false, told: nil), "off is what an agent assumes")
+        XCTAssertEqual(MainThread.pending(on: true, told: nil), MainThread.note)
+        XCTAssertNil(MainThread.pending(on: true, told: true))
+        XCTAssertEqual(MainThread.pending(on: nil, told: true), MainThread.offNote)
+    }
+
+    func testMainThreadNoteStaysOutOfYourBubble() {
+        let plain = MainThread.attach(MainThread.note, to: "Build the login page")
+        XCTAssertEqual(ContextRefs.visible(plain), "Build the login page")
+        XCTAssertTrue(plain.contains("delegate_task"))
+        let withRefs = ContextRefs.project("Look at [Login.swift](nook-context://v1/file/Login.swift)")
+        let both = MainThread.attach(MainThread.note, to: withRefs)
+        XCTAssertEqual(both.components(separatedBy: "<nook_context>").count, 2, "one envelope")
+        XCTAssertEqual(ContextRefs.visible(both), ContextRefs.visible(withRefs))
+        XCTAssertTrue(both.contains("<mode id=\"main-thread\">"))
+    }
+
+    func testMainThreadIsKnownFromTheFirstMessageOnly() {
+        var config = NewRunConfig()
+        config.mainThread = true
+        XCTAssertNil(MainThread.toldAtStart(config), "an idle start has no message yet")
+        config.task = "Do it"
+        XCTAssertEqual(MainThread.toldAtStart(config), true)
+        config.mainThread = nil
+        XCTAssertNil(MainThread.toldAtStart(config))
+    }
+
+    func testMainThreadOnlyForAgentsThatMayDelegate() {
+        var access = BridgeAccess()
+        XCTAssertTrue(MainThread.offered(provider: .codex, access: access))
+        access.set(.delegation, on: false, agent: RunProvider.codex.rawValue)
+        XCTAssertFalse(MainThread.offered(provider: .codex, access: access))
+        XCTAssertTrue(MainThread.offered(provider: .claude, access: access))
+    }
+
+    func testSubThreadStripKeepsEndedTasksUntilYourNextMessage() {
+        let since = Date(timeIntervalSince1970: 1_000)
+        func child(_ status: RunStatus, updated: TimeInterval, created: TimeInterval) -> WorkspaceRun {
+            var run = TestData.run(status: status)
+            run.updatedAt = Date(timeIntervalSince1970: updated)
+            run.createdAt = Date(timeIntervalSince1970: created)
+            return run
+        }
+        let working = child(.running, updated: 10, created: 3)
+        let endedBefore = child(.completed, updated: 900, created: 1)
+        let endedAfter = child(.failed, updated: 1_100, created: 2)
+        let asking = child(.completed, updated: 10, created: 4)
+        let shown = DelegatedTask.shown([working, endedBefore, endedAfter, asking], asking: { $0 == asking.id }, since: since)
+        XCTAssertEqual(shown.map(\.id), [endedAfter.id, working.id, asking.id], "in the order they started; seen ones go")
+    }
+
+    func testQuestionMessageNamesWhatToAnswerWith() {
+        let snapshot = DelegatedTask.Snapshot(taskID: "abc", title: "Fix", state: .waiting, summary: nil,
+                                              hasPendingQuestion: true, model: nil, provider: "Codex")
+        let text = DelegatedTask.questionMessage(snapshot, questionID: "q1", question: "Which branch?")
+        XCTAssertTrue(text.contains("Which branch?"))
+        XCTAssertTrue(text.contains("session_questions"))
+        XCTAssertTrue(text.contains("session_id abc"))
+        XCTAssertTrue(text.contains("question_id q1"))
     }
 
     // MARK: Task state and result
@@ -123,7 +190,10 @@ final class DelegationTests: XCTestCase {
         XCTAssertTrue(text.contains("\"Fix\""))
         XCTAssertTrue(text.contains("failed"))
         XCTAssertTrue(text.contains("Boom"))
-        XCTAssertTrue(text.contains("task_status"))
+        XCTAssertFalse(text.contains("task_status"), "the message has it all: no call to make")
+        var branched = snapshot
+        branched.branch = "nook/fix"
+        XCTAssertTrue(DelegatedTask.wakeMessage(branched).contains("git merge nook/fix"))
     }
 
     func testLinkSurvivesAnOldFileAndRoundTrips() throws {

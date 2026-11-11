@@ -32,6 +32,17 @@ enum TranscriptRow: Identifiable {
         }
     }
 
+    /// Whether the entry `id` is this row or folded inside it.
+    func holds(_ id: String) -> Bool {
+        switch self {
+        case .user(let entry), .answer(let entry, _), .notice(let entry): return entry.id == id
+        case .work(_, let steps): return steps.contains { $0.id == id }
+        case .fold(_, _, let rows): return rows.contains { $0.holds(id) }
+        case .live(let entry): return entry?.id == id
+        case .working: return false
+        }
+    }
+
     /// A turn starts at each message of yours. A finished turn shows your message, "Worked for …" and its final
     /// answer; the turn that runs shows how long it goes, the work so far and the step that runs now.
     static func rows(_ entries: [TimelineEntry], working: Bool) -> [TranscriptRow] {
@@ -112,11 +123,13 @@ extension TimelineEntry {
 
 /// The whole conversation: the rows, the folds and groups you opened, and the end in sight while the agent works.
 struct TranscriptConversation: View {
+    @EnvironmentObject private var client: CompanionClient
+    let sessionID: String
     let entries: [TimelineEntry]
     let working: Bool
-    /// Tapping an option in the agent's last answer answers it; nil when the session cannot be written to.
-    var onChoose: ((String) -> Void)? = nil
     @State private var open: Set<String> = []
+    /// Clipped entries whose full text is on its way from the Mac.
+    @State private var fetching: Set<String> = []
 
     var body: some View {
         let rows = TranscriptRow.rows(entries, working: working)
@@ -132,11 +145,14 @@ struct TranscriptConversation: View {
         switch row {
         case .user(let entry):
             // Each turn starts as a block of its own, as on the Mac.
-            TranscriptUserMessage(text: entry.text)
-                .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
-                .padding(.bottom, Theme.Spacing.xxs)
+            VStack(alignment: .trailing, spacing: Theme.Spacing.xs) {
+                TranscriptUserMessage(text: text(entry), date: Date(timeIntervalSince1970: entry.date))
+                more(entry)
+            }
+            .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.xxs)
         case .answer(let entry, let isFinal):
-            TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
+            answer(entry, isFinal: isFinal)
                 .padding(.bottom, isFinal ? Theme.Spacing.lg : Theme.Spacing.xxs)
         case .work(let id, let steps):
             work(id: id, steps: steps)
@@ -173,8 +189,8 @@ struct TranscriptConversation: View {
     @ViewBuilder
     private func flat(_ row: TranscriptRow) -> some View {
         switch row {
-        case .user(let entry): TranscriptUserMessage(text: entry.text)
-        case .answer(let entry, let isFinal): TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
+        case .user(let entry): TranscriptUserMessage(text: text(entry))
+        case .answer(let entry, let isFinal): answer(entry, isFinal: isFinal)
         case .work(let id, let steps): work(id: id, steps: steps)
         case .notice(let entry): TranscriptNotice(entry: entry)
         default: EmptyView()
@@ -202,11 +218,66 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// "Ran npm test": what the agent did, then what it did that to, as on the Mac.
+    /// "Ran npm test": what the agent did, then what it did that to, as on the Mac. A step that gave something back (a
+    /// command's output, a search's results, an edit's patch) opens to it, as a click opens it on the Mac.
+    @ViewBuilder
     private func stepLine(_ step: TimelineEntry) -> some View {
         let text = TranscriptStepText.parts(step)
-        return TranscriptWorkLine(symbol: step.kind == .change ? "square.and.pencil" : TranscriptSymbols.symbol(step.detail ?? ""),
-                                  label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed)
+        let symbol = step.kind == .change ? "square.and.pencil" : TranscriptSymbols.symbol(step.detail ?? "")
+        if let output = step.output {
+            let key = "step:" + step.id
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                TranscriptWorkLine(symbol: symbol, label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed,
+                                   open: open.contains(key)) { toggle(key) }
+                if open.contains(key) {
+                    TranscriptStepOutput(text: output, failed: step.failed)
+                        .padding(.leading, 24 + Theme.Spacing.sm)
+                        .transition(.opacity)
+                }
+            }
+        } else {
+            TranscriptWorkLine(symbol: symbol, label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed)
+        }
+    }
+
+    /// An answer, in full once the Mac sent all of a clipped one, with the way to ask for the rest under it.
+    private func answer(_ entry: TimelineEntry, isFinal: Bool) -> some View {
+        TranscriptReply(text: text(entry), date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal) {
+            more(entry)
+        }
+    }
+
+    private func text(_ entry: TimelineEntry) -> String {
+        client.fullTexts[entry.id] ?? entry.text
+    }
+
+    /// "Read the whole message" under an entry the Mac clipped for the trip, until its full text is here.
+    @ViewBuilder
+    private func more(_ entry: TimelineEntry) -> some View {
+        if entry.clipped == true, client.fullTexts[entry.id] == nil, client.canReadFullTranscript {
+            Button {
+                fetching.insert(entry.id)
+                Task {
+                    await client.loadFullEntry(sessionID, entry: entry.id)
+                    fetching.remove(entry.id)
+                }
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    if fetching.contains(entry.id) {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(icon: "text.append")
+                    }
+                    Text("Read the whole message")
+                }
+                .font(Theme.TextStyle.label)
+                .foregroundStyle(Theme.blue)
+                .padding(.vertical, Theme.Spacing.xs)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .disabled(fetching.contains(entry.id))
+        }
     }
 
     private func toggle(_ key: String) {
@@ -285,6 +356,46 @@ struct TranscriptWorkLine: View {
     }
 }
 
+/// What a step gave back, opened under its line: the end of it in the code font on the well, a patch's lines in their
+/// colors, as the Mac shows a step's result. Scrolls sideways for long lines; selectable to copy.
+struct TranscriptStepOutput: View {
+    let text: String
+    var failed = false
+
+    private var isPatch: Bool { text.contains("\n@@") || text.hasPrefix("@@") || text.hasPrefix("--- ") }
+
+    var body: some View {
+        // Both ways: long lines sideways, and at most 240 points tall (t3code's cap), so an opened step never pushes
+        // the conversation out of sight.
+        ScrollView([.horizontal, .vertical], showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()), id: \.offset) { _, line in
+                    Text(verbatim: line.isEmpty ? " " : String(line))
+                        .foregroundStyle(color(line))
+                        .fixedSize()
+                }
+            }
+            .font(Theme.TextStyle.code)
+            .textSelection(.enabled)
+            .padding(Theme.Spacing.md)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxWidth: .infinity, maxHeight: 240, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .roundedBackground(Theme.well, radius: Theme.Radius.control)
+        .overlay(Theme.shape(Theme.Radius.control)
+            .strokeBorder(failed ? Theme.coral.opacity(0.35) : Theme.hairline, lineWidth: 0.5))
+    }
+
+    private func color(_ line: Substring) -> Color {
+        guard isPatch else { return Theme.textSecondary }
+        if line.hasPrefix("+"), !line.hasPrefix("+++") { return Theme.mint }
+        if line.hasPrefix("-"), !line.hasPrefix("---") { return Theme.coral }
+        if line.hasPrefix("@@") { return Theme.textTertiary }
+        return Theme.textSecondary
+    }
+}
+
 /// Something that happened to the conversation, the Mac's `TranscriptNotice`: a compaction is a quiet word across the
 /// column with room around it; an error is the timeline's problem card; any other note from a session Nook runs is a
 /// quiet line, as on the Mac.
@@ -305,7 +416,7 @@ struct TranscriptNotice: View {
             }
             .padding(Theme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .roundedBackground(Theme.surface, radius: Theme.Radius.card)
             .padding(.vertical, Theme.Spacing.xs)
         } else {
             HStack(spacing: Theme.Spacing.sm) {

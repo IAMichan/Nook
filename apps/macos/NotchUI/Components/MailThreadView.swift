@@ -185,9 +185,9 @@ struct MailMessageCard: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-            .fill(isOpen ? NookTheme.field : NookTheme.rowFill(selected: false, hovering: hovering, rest: NookTheme.rowRest)))
-        .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        .roundedBackground(isOpen ? NookTheme.field : NookTheme.rowFill(selected: false, hovering: hovering, rest: NookTheme.rowRest),
+                           radius: NookTheme.Radius.panel)
+        .roundedHitShape(NookTheme.Radius.panel)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .contextMenu { menu }
@@ -311,7 +311,7 @@ struct MailMessageCard: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .padding(.horizontal, NookTheme.Spacing.sm)
                         .padding(.vertical, NookTheme.Spacing.xxs)
-                        .background(Capsule().fill(NookTheme.smoke))
+                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
                 }
                 .buttonStyle(.plain)
                 if showsQuoted {
@@ -366,7 +366,7 @@ struct MailMessageCard: View {
                             .lineLimit(1)
                             .padding(.horizontal, NookTheme.Spacing.sm)
                             .padding(.vertical, NookTheme.Spacing.xs)
-                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
+                            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.chip)
                             .help(tr("chats.mail.attachmentInMail"))
                     }
                 }

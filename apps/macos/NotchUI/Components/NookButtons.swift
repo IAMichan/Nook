@@ -18,7 +18,7 @@ struct SmallPrimaryButton: View {
             .foregroundStyle(NookTheme.onPrimary)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
         }
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.45)
@@ -50,8 +50,8 @@ struct NookAcknowledgeButton: View {
             .padding(.leading, countdown == nil ? (compact ? 12 : 16) : (compact ? 7 : 9))
             .padding(.trailing, compact ? 12 : 16)
             .frame(height: height ?? (compact ? 30 : 38))
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
+            .roundedHitShape(NookTheme.Radius.control)
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -128,8 +128,8 @@ struct NookActionBar: View {
         .padding(.horizontal, 3)
         .frame(height: barHeight)
         .background(
-            Capsule().fill(NookTheme.graphite)
-                .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+            NookTheme.shape(NookTheme.Radius.panel).fill(NookTheme.graphite)
+                .overlay(NookTheme.shape(NookTheme.Radius.panel).strokeBorder(NookTheme.line2, lineWidth: 1))
         )
     }
 }
@@ -155,8 +155,8 @@ private struct NookActionBarItem: View {
             .padding(.horizontal, compact ? 10 : 14)
             .frame(maxWidth: .infinity)
             .frame(height: height)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -175,11 +175,14 @@ struct ToolbarIconButton: View {
     var selected: Bool = false
     /// The symbol's size: larger in a diff's toolbar, whose buttons are 28 pt.
     var symbolSize: CGFloat = 11
+    /// Shows its label as the composer's own tip (`composerTip`) instead of a system tooltip: a button under a composer.
+    var inComposer = false
     let action: () -> Void
     @State private var hovering = false
 
     init(_ symbol: String, _ label: String, height: CGFloat = 24, width: CGFloat = 24, enabled: Bool = true,
-         selected: Bool = false, symbolSize: CGFloat = 11, _ action: @escaping () -> Void) {
+         selected: Bool = false, symbolSize: CGFloat = 11, inComposer: Bool = false, _ action: @escaping () -> Void) {
+        self.inComposer = inComposer
         self.symbol = symbol
         self.label = label
         self.height = height
@@ -197,15 +200,15 @@ struct ToolbarIconButton: View {
                 .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5)
                                  : (hovering || selected ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: width, height: height)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(hovering && enabled ? NookTheme.graphite : (selected ? NookTheme.rowSelected : Color.clear)))
+                .roundedBackground(hovering && enabled ? NookTheme.graphite : (selected ? NookTheme.rowSelected : Color.clear),
+                                   radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .help(label)
+        .composerTip(label, inComposer: inComposer)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -237,6 +240,7 @@ final class CopiedMoment: ObservableObject {
 /// checkmark, and its tooltip into "Copied", for a moment after the click. `text` is read on the click, so a long text
 /// is not joined on every redraw. `showing` follows that moment, for a row that keeps the button in sight meanwhile.
 struct CopyIconButton: View {
+    let symbol: String
     let label: String
     let copiedLabel: String
     let height: CGFloat
@@ -245,8 +249,10 @@ struct CopyIconButton: View {
     let text: () -> String
     @StateObject private var moment = CopiedMoment()
 
-    init(_ label: String, copiedLabel: String? = nil, height: CGFloat = 24, width: CGFloat = 24,
-         showing: Binding<Bool>? = nil, text: @escaping () -> String) {
+    /// `symbol` sets the icon apart when a second copy button sits next to the plain one (a link, not the words).
+    init(_ label: String, symbol: String = "doc.on.doc", copiedLabel: String? = nil, height: CGFloat = 24,
+         width: CGFloat = 24, showing: Binding<Bool>? = nil, text: @escaping () -> String) {
+        self.symbol = symbol
         self.label = label
         self.copiedLabel = copiedLabel ?? tr("button.copied")
         self.height = height
@@ -256,7 +262,7 @@ struct CopyIconButton: View {
     }
 
     var body: some View {
-        ToolbarIconButton(moment.copied ? "checkmark" : "doc.on.doc", moment.copied ? copiedLabel : label,
+        ToolbarIconButton(moment.copied ? "checkmark" : symbol, moment.copied ? copiedLabel : label,
                           height: height, width: width) { moment.copy(text()) }
             .onChange(of: moment.copied) { _, copied in showing?.wrappedValue = copied }
     }
@@ -322,7 +328,7 @@ struct SmallGhostButton: View {
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.graphite : Color.clear))
+                .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

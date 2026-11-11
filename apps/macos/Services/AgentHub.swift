@@ -125,6 +125,8 @@ final class AgentHub: ObservableObject {
         var lineage: [Int32] = []
         /// The agent process among them, once the process scan has seen it.
         var pid: Int32? = nil
+        /// When the agent started compacting the conversation (`HookCompaction`); nil when it does not.
+        var compactingSince: Date? = nil
     }
 
     private enum PendingKind {
@@ -674,6 +676,21 @@ final class AgentHub: ObservableObject {
             }
         }
 
+        // A compaction shows while it runs, and is over at the agent's next event: its end (PostCompact, Claude Code's
+        // SessionStart from "compact"), or a prompt, a tool or Stop for an agent that does not say when it is done.
+        switch HookCompaction.change(kind: kind) {
+        case .start:
+            if record.compactingSince == nil {
+                record.compactingSince = Date()
+                Self.push(&record, .running, tr("ws.activity.compacting"))
+            }
+        case .end:
+            if record.compactingSince != nil {
+                record.compactingSince = nil
+                Self.complete(&record, as: .done)
+            }
+        }
+
         let tool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
         let input = (event["tool_input"] as? [String: Any]) ?? (event["toolArgs"] as? [String: Any]) ?? [:]
 
@@ -749,7 +766,8 @@ final class AgentHub: ObservableObject {
 
         switch kind {
         case "SessionStart":
-            record.status = .running
+            // Claude Code starts again after a compaction (`source: "compact"`): the session works no more than before.
+            if (event["source"] as? String) != "compact" { record.status = .running }
         case "UserPromptSubmit":
             record.status = .running
             record.turnStarted = Date()
@@ -1064,6 +1082,14 @@ final class AgentHub: ObservableObject {
 
     private func prune() {
         let now = Date()
+        // A compaction no event ended (an agent that only says when it starts) stops showing after `HookCompaction.timeout`.
+        for (key, record) in records where record.compactingSince != nil && !HookCompaction.isLive(since: record.compactingSince, now: now) {
+            records[key]?.compactingSince = nil
+            if let last = records[key]?.steps.last, last.mark == .running, last.text == tr("ws.activity.compacting") {
+                records[key]?.steps.removeLast()
+            }
+            rebuild()
+        }
         let kept = records.filter { key, record in
             if pendingApprovals.values.contains(where: { $0.request.sessionKey == key }) { return true }
             let settled = Self.isSettled(key: key, agent: record.agent, sessionID: record.sessionID, cwd: record.cwd,
@@ -1113,7 +1139,9 @@ final class AgentHub: ObservableObject {
 
     /// What of the sessions must show at once, in no particular order.
     private static func shape(_ sessions: [AgentSession]) -> [String] {
-        sessions.map { "\($0.id)|\($0.status)|\($0.approvalID ?? "")|\($0.turnStarted == nil)|\($0.lastPrompt)" }.sorted()
+        sessions.map {
+            "\($0.id)|\($0.status)|\($0.approvalID ?? "")|\($0.turnStarted == nil)|\($0.compactingSince == nil)|\($0.lastPrompt)"
+        }.sorted()
     }
 
     private func makeSessions() -> [AgentSession] {
@@ -1167,6 +1195,7 @@ final class AgentHub: ObservableObject {
                     lastReply: record.lastMessage,
                     started: record.started,
                     turnStarted: record.turnStarted,
+                    compactingSince: HookCompaction.isLive(since: record.compactingSince) ? record.compactingSince : nil,
                     updated: record.updated
                 )
             }
@@ -1222,7 +1251,7 @@ final class AgentHub: ObservableObject {
             "stop": "Stop", "agentStop": "Stop", "agent-turn-complete": "Stop",
             "notification": "Notification", "permissionRequest": "PermissionRequest"
         ]
-        return map[name] ?? name
+        return map[name] ?? HookCompaction.canonical[name] ?? name
     }
 
     private static func cleanAgentID(_ raw: String) -> String {
@@ -1251,7 +1280,7 @@ final class AgentHub: ObservableObject {
 
     /// The folder a session's row names: for an agent's own worktree, the repository it was made from (see `WorktreeOrigin`).
     static func projectName(_ cwd: String) -> String {
-        let name = URL(fileURLWithPath: cwd).lastPathComponent
+        let name = (cwd as NSString).lastPathComponent
         guard !(name.isEmpty || cwd.isEmpty || name == "/") else { return "no folder" }
         return WorktreeOrigin.repositoryName(of: cwd) ?? name
     }
@@ -1302,7 +1331,7 @@ final class AgentHub: ObservableObject {
     static func commandText(_ input: [String: Any]) -> String? {
         if let text = input["command"] as? String { return text }
         if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains(URL(fileURLWithPath: parts[0]).lastPathComponent),
+            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
                parts[1].hasPrefix("-") {
                 return parts[2...].joined(separator: " ")
             }
@@ -1371,7 +1400,7 @@ final class AgentHub: ObservableObject {
             return assessment
         }
         if let edit {
-            let file = filePath(input).map { URL(fileURLWithPath: $0).lastPathComponent } ?? "a file"
+            let file = filePath(input).map { ($0 as NSString).lastPathComponent } ?? "a file"
             return CommandAssessment(level: .review, title: "", note: "Modifies \(file) · +\(edit.added) −\(edit.removed)")
         }
         if let url = input["url"] as? String {
@@ -1396,7 +1425,7 @@ final class AgentHub: ObservableObject {
             case "Write", "write_file": verb = "Writes"
             default: verb = "Modifies"
             }
-            return "\(verb) \(URL(fileURLWithPath: path).lastPathComponent)"
+            return "\(verb) \((path as NSString).lastPathComponent)"
         case "Grep", "Glob", "search_file_content", "glob":
             return "Searches \(shorten((input["pattern"] as? String) ?? "", 40))"
         case "WebFetch", "web_fetch":

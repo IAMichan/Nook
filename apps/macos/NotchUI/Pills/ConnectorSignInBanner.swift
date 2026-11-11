@@ -41,7 +41,7 @@ struct ConnectorSignInBanner: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
         }
     }
 }
@@ -70,7 +70,7 @@ struct ConnectorSignInMenu: View {
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .padding(.horizontal, 10)
             .frame(height: 30)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
         .menuStyle(.button)

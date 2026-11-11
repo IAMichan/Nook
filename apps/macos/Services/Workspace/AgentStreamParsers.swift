@@ -64,6 +64,9 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case permissionRequest(requestID: String, tool: String, input: JSONBox, suggestions: JSONBox?, toolUseID: String?)
     case result(ClaudeTurnResult)
     case notice(String)
+    /// Claude Code started compacting the conversation (`system/status` with `status: "compacting"`), or a compaction
+    /// failed (`compact_result: "failed"`); the result itself is the `compact` notice (`compact_boundary`).
+    case compaction(CompactionPhase)
     /// Claude Code reports a change in the subscription limits (`rate_limit_event`).
     /// A limit changed; with the details when Claude Code gave them (a blocked window and when it resets).
     case rateLimits(UsageLimits.ClaudeEvent?)
@@ -154,6 +157,11 @@ enum ClaudeStreamParser {
                 return events
             }
             if subtype == "compact_boundary" { return [.notice("compact")] }
+            if subtype == "status" {
+                if object["status"] as? String == "compacting" { return [.compaction(.started)] }
+                if object["compact_result"] as? String == "failed" { return [.compaction(.failed(object["compact_error"] as? String))] }
+                return []
+            }
             if subtype == "task_started" || subtype == "task_notification" {
                 let update = BackgroundTaskUpdate(
                     taskID: object["task_id"] as? String, toolUseID: object["tool_use_id"] as? String,
@@ -465,6 +473,9 @@ enum CodexStreamEvent: Equatable, Sendable {
     case turnFinished(status: String, error: String?, durationSeconds: Double?)
     case approval(CodexApprovalRequest)
     case question(rpcID: RPCID, questions: [RunQuestion])
+    /// A question Codex asks while it goes on working (an `agentMessage` with `delivery: "async"`): nothing waits for
+    /// the answer, which goes to Codex as a message of yours.
+    case asyncQuestion(id: String, questions: [RunQuestion])
     /// A server request Nook does not handle: answered with an error so Codex does not wait forever.
     case unsupportedRequest(RPCID)
     case plan(String)
@@ -477,6 +488,9 @@ enum CodexStreamEvent: Equatable, Sendable {
     /// How Codex's subagents are doing, per thread (from any `collabAgentToolCall`, `wait` above all).
     case subagentStates([String: CodexAgentState])
     case notice(String)
+    /// The app-server started compacting the thread (`item/started` of a `contextCompaction` item); its
+    /// `item/completed` is the `compact` notice.
+    case compaction(CompactionPhase)
     case rateLimits(JSONBox)
     /// The turn stopped on a usage limit (`usageLimitExceeded`, `rateLimitExceeded`).
     case usageLimited

@@ -49,6 +49,8 @@ struct AgentRunPanel: View {
     @State private var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
+    @State private var drawnRows = DrawnRows()
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State private var sentCount = 0
@@ -60,6 +62,9 @@ struct AgentRunPanel: View {
     @State private var newSince: UUID?
     /// The session opened before its timeline was read from disk (`requestTimeline`): it lands once that is here.
     @State private var landsOnLoad = false
+    /// The first turn drawn (`HistoryWindow`): a long session opens with its latest turns, "Show earlier messages" and
+    /// any jump to an earlier event widen it. Nil until the session has landed.
+    @State private var historyStart: Int?
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -257,17 +262,13 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
+    /// "nook / Agents-pagina rustiger maken" (click the folder for a new session in it, double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
             // of pushing the header past it (under a wide side panel).
-            Text(run.projectName)
-                .fontWeight(.medium)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
+            FolderCrumb(name: run.projectName, directory: run.projectPath, local: run.remote == nil)
                 .layoutPriority(1)
-                .help(AgentPathFormat.tilde(run.workingDirectory))
             Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
                 TextField(tr("ws.title.placeholder"), text: $titleDraft)
@@ -606,10 +607,11 @@ struct AgentRunPanel: View {
         // ArrowUp walks through what you sent this session, also after a relaunch.
         composerModel.history.seed(workspace.timeline(runID).filter { $0.kind == .user }.map { ContextRefs.visible($0.text) })
         composerModel.onStashChanged = { [composerModel] in store.setStash(composerModel.stash) }
-        let folder = URL(fileURLWithPath: run.workingDirectory, isDirectory: true)
+        let (working, project) = (run.workingDirectory, run.projectPath)
         Task {
             skills = await Task.detached(priority: .utility) {
-                SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
+                let folder = SkillIndex.projectFolder(workingDirectory: working, projectPath: project)
+                return SkillIndex.scan(roots: SkillIndex.defaultRoots(home: FileManager.default.homeDirectoryForCurrentUser, project: folder))
             }.value
         }
     }
@@ -634,7 +636,7 @@ struct AgentRunPanel: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         } else if !levels.isEmpty {
             ComposerDivider()
             ComposerDropdown(width: 220, command: "effortPicker.toggle") {
@@ -653,7 +655,7 @@ struct AgentRunPanel: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         }
     }
 
@@ -674,18 +676,22 @@ struct AgentRunPanel: View {
         return true
     }
 
-    /// The context ring once the window starts to fill, and the microphone next to it.
+    /// The context ring once the window starts to fill (the microphone is the composer's own, `dictating()`).
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
+            // Back at a long session whose prompt cache ran out: summarize before your message, or keep it all.
+            if workspace.offersCompactFirst(run), let tokens = run.usage.contextTokens {
+                CompactFirstChip(tokens: tokens, compacts: workspace.compactsFirst(run)) { workspace.toggleCompactFirst(runID) }
+            }
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0,
                ContextMeter.worthShowing(Double(used) / Double(window)) {
                 // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
                 let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
+                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") },
+                                    autoCompactAt: workspace.autoCompactAt(run))
             }
-            ComposerMic(text: $composerState.draft)
         }
     }
 
@@ -770,7 +776,15 @@ struct AgentRunPanel: View {
         // that runs now only in the live line at the end, not also in the list above it.
         let active = run.status.isActive
         let workingUnder = active ? events.last(where: { $0.kind == .user })?.id : nil
-        let liveStep = active ? events.last.flatMap { $0.kind == .tool && $0.state == .running ? $0.id : nil } : nil
+        // A compaction that runs is the live line too ("Compacting the conversation…"); once done it is a row of its own.
+        let liveStep = active ? events.last.flatMap {
+            ($0.kind == .tool && $0.state == .running) || CompactionProgress.isRunning($0) ? $0.id : nil
+        } : nil
+        // Only the latest turns of a long session are drawn, from the turn the window starts at.
+        let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: memo.rowsPerTurn),
+                                          turnCount: memo.rowsPerTurn.count)
+        let firstRow = min(blocks.count, HistoryWindow.firstRow(rowsPerTurn: memo.rowsPerTurn, start: start))
+        let shownBlocks = firstRow > 0 ? Array(blocks[firstRow...]) : blocks
         let context = TimelineRowContext(structure: memo.revision, status: run.status,
                                          directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
                                          openEvents: expanded, shownFile: sideLink.shownFile, counted: countedLines)
@@ -785,8 +799,17 @@ struct AgentRunPanel: View {
                             PatientSpinner().frame(height: 160)
                         }
                     }
+                    if firstRow > 0 {
+                        TimelineEarlierRow {
+                            // What you looked at stays where it is: the earlier turns go above it.
+                            let anchor = shownBlocks.first?.id
+                            scroll.userScrolled()
+                            historyStart = HistoryWindow.earlier(from: start)
+                            if let anchor { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } }
+                        }
+                    }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
-                    ForEach(blocks) { block in
+                    ForEach(shownBlocks) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
@@ -808,13 +831,14 @@ struct AgentRunPanel: View {
                                         if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
-                                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                                    .roundedBackground(NookTheme.iris.opacity(current == event.id ? 0.16 : 0), radius: NookTheme.Radius.control)
                                 )
                             }
                             // While the agent writes, only the block it writes into is drawn again.
                             .equatable()
                         }
                         .pinProbe(block.id.uuidString, room: pinRoom)
+                        .countsAsDrawnRow(drawnRows)
                         .id(block.id)
                     }
                     if active {
@@ -857,7 +881,11 @@ struct AgentRunPanel: View {
                     TranscriptPromptRail(marks: memo.marks) { mark in
                         scroll.userScrolled()
                         guard let id = UUID(uuidString: mark.row) else { return }
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                        if revealTurn(of: id) {
+                            DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) } }
+                        } else {
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                        }
                     }
                     .padding(.vertical, NookTheme.Spacing.md)
                     .transition(.opacity)
@@ -896,14 +924,21 @@ struct AgentRunPanel: View {
                 overflows = now
             }
             // Never a black conversation: at rest with none of its blocks in view, back to the one you last saw (or the end).
-            .recoversBlankRows(UUID.self, rows: blocks.count, idle: { scrollPhase.value == .idle }) { last in
+            .recoversBlankRows(UUID.self, rows: shownBlocks.count, drawn: drawnRows, idle: { scrollPhase.value == .idle }) { last, attempt in
                 var still = Transaction()
                 still.disablesAnimations = true
                 withTransaction(still) {
                     if let last, !scroll.shouldFollowEnd, !atEnd {
                         proxy.scrollTo(last, anchor: .top)
-                    } else {
+                    } else if attempt == 0 {
                         proxy.scrollTo("bottom", anchor: .bottom)
+                    } else {
+                        // Still blank at the end: let go of the room held under a sent message, land on the last block
+                        // itself (a row the lazy stack must draw), and only then on the very end.
+                        scroll.jumpedToEnd()
+                        pinRoom.release()
+                        if let lastBlock = shownBlocks.last?.id { proxy.scrollTo(lastBlock, anchor: .bottom) }
+                        DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     }
                 }
             }
@@ -923,6 +958,7 @@ struct AgentRunPanel: View {
                 guard let id else { return }
                 conversationFocus = nil
                 scroll.userScrolled()
+                revealTurn(of: id)
                 for key in TimelineContainers.keys(blocks)[id] ?? [] { openBlocks.insert(key) }
                 flashed = id
                 DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
@@ -941,7 +977,10 @@ struct AgentRunPanel: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
                 DispatchQueue.main.async { land(proxy) }
             }
-            .onChange(of: runID) { _, _ in DispatchQueue.main.async { land(proxy) } }
+            .onChange(of: runID) { _, _ in
+                historyStart = nil
+                DispatchQueue.main.async { land(proxy) }
+            }
             .onChange(of: workspace.isTimelineLoaded(runID)) { _, loaded in
                 if loaded, landsOnLoad { DispatchQueue.main.async { land(proxy) } }
             }
@@ -1017,6 +1056,10 @@ struct AgentRunPanel: View {
     private func land(_ proxy: ScrollViewProxy) {
         landsOnLoad = !workspace.isTimelineLoaded(runID)
         guard !landsOnLoad else { return }
+        // The window opens on the latest turns and stays there as new ones come in.
+        if historyStart == nil, !derived.rowsPerTurn.isEmpty {
+            historyStart = HistoryWindow.initialStart(rowsPerTurn: derived.rowsPerTurn)
+        }
         newSince = visit.flatMap { TimelineLanding.firstNew(visitRows, since: $0.lastViewedAt) }.flatMap(UUID.init(uuidString:))
         settleAtEnd(proxy)
     }
@@ -1080,6 +1123,17 @@ struct AgentRunPanel: View {
         return true
     }
 
+    /// Widens the window (`HistoryWindow`) to hold the turn of an event it leaves out; true when it had to.
+    @discardableResult
+    private func revealTurn(of eventID: UUID) -> Bool {
+        guard let turn = derived.turn(of: eventID) else { return false }
+        let start = historyStart ?? HistoryWindow.initialStart(rowsPerTurn: derived.rowsPerTurn)
+        let widened = HistoryWindow.revealing(turn, from: start)
+        guard widened < start else { return false }
+        historyStart = widened
+        return true
+    }
+
     // MARK: Find
 
     private func openFind() {
@@ -1104,6 +1158,8 @@ struct AgentRunPanel: View {
     private func reveal(_ found: TimelineSearchResult, at index: Int, blocks: [TimelineBlock], proxy: ScrollViewProxy) {
         guard found.matches.indices.contains(index) else { return }
         let id = found.matches[index].eventID
+        // Find searches the whole session: a match in a turn the window leaves out widens it.
+        revealTurn(of: id)
         for key in TimelineContainers.keys(blocks)[id] ?? [] { openBlocks.insert(key) }
         DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
     }
@@ -1128,6 +1184,7 @@ struct AgentRunPanel: View {
             if let failure = FailureJump.firstFailure(in: events) {
                 NookGhostButton(title: tr("timeline.goToFailure")) {
                     scroll.userScrolled()
+                    revealTurn(of: failure)
                     for key in TimelineContainers.keys(blocks)[failure] ?? [] { openBlocks.insert(key) }
                     DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(failure, anchor: .center) } }
                 }
@@ -1146,7 +1203,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
     }
 
     @ViewBuilder
@@ -1242,7 +1299,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     /// "Edit from here": go back to before the message, keeping the files as they are or putting them back too (only
@@ -1269,7 +1326,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     private func editFromHere(_ target: RunEvent, revertingFiles: Bool) {
@@ -1382,7 +1439,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 
     // MARK: Composer
@@ -1411,8 +1468,11 @@ struct AgentRunPanel: View {
             images = []
             let message = quotes.message(outgoing.send)
             quotes.removeAll()
-            // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them.
-            workspace.submit(runID, text: message, fromYou: true)
+            // Still finishing the last turn (or messages wait in line): this one waits too, never sent past them. Back
+            // at a long session whose cache ran out, the chip may say to summarize first.
+            if !workspace.submitAfterCompacting(runID, text: message) {
+                workspace.submit(runID, text: message, fromYou: true)
+            }
             sentCount += 1
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
@@ -1463,6 +1523,9 @@ struct AgentRunPanel: View {
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)
             if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }
+            // The tasks it delegated: at work, asking something, or ended since your last message (its sub-threads).
+            let subThreads = workspace.subThreads(of: runID)
+            if !subThreads.isEmpty { SubThreadStrip(workspace: workspace, threads: subThreads) }
             GuestStrip(id: runID, shares: GuestShares.shared)
             if let goal = run.goal {
                 GoalStrip(goal: goal, canPause: workspace.takesGoalOutsideTurns(runID)) { workspace.goalControl(runID, $0) }
@@ -1510,10 +1573,15 @@ struct AgentRunPanel: View {
                     ComposerSpeedTier(tiers: workspace.speedTiers(for: run), chosen: workspace.speedTier(run)) {
                         workspace.setSpeedTier(runID, $0)
                     }
+                    ComposerUltracodeToggle(offered: Ultracode.offered(provider: run.provider, model: run.model),
+                                            on: run.ultracode == true) { workspace.setUltracode(runID, $0) }
+                    ComposerMainThreadToggle(offered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
+                                             on: run.mainThread == true) { workspace.setMainThread(runID, $0) }
                     ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
                 .trailing { composerTrailing(run) }
+                .dictating()
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
                           alternate: active ? deliver(preferred == .steer ? .queue : .steer, now: true) : nil,
@@ -1695,7 +1763,7 @@ struct AgentRunPanel: View {
                 workspace.applySelection(runID, provider: provider, profileID: profileID, model: chosen, resumeIfLimited: true)
             }
         }
-        .help(run.resolvedModel ?? tr("ws.new.model"))
+        .composerTip(run.resolvedModel ?? tr("ws.new.model"))
     }
 
     private func modeMenu(_ run: WorkspaceRun) -> some View {
@@ -1718,7 +1786,7 @@ struct AgentRunPanel: View {
             }
         }
         .disabled(run.mode == .plan)
-        .help(run.permission.help(for: run.provider))
+        .composerTip(run.permission.help(for: run.provider))
     }
 }
 
@@ -1869,10 +1937,16 @@ private final class RunTimelineDerived {
     private(set) var revision = 0
     /// Your messages, for the marks on the rail beside the session.
     private(set) var marks: [PromptMark] = []
+    /// The blocks of each turn, oldest first: what `HistoryWindow` leaves out when only the latest turns are drawn.
+    private(set) var rowsPerTurn: [Int] = []
+    /// The turn of each shown event, made when first asked after the turns changed.
+    private var turnOfEvent: [UUID: Int]?
     /// The pull request the events before the last one link, so a streamed answer only has to look at itself.
     private var pullRequestBeforeLast: URL?
     /// Each turn's blocks, so only the turn that changed is laid out again.
     private var blockCache = TimelineBlockCache()
+    /// Each finished turn's changed files, so only a turn whose events changed is read again.
+    private var turnCache = TurnDiffCache()
     /// The last search in the find bar, for the events it searched.
     private var found: (query: String, events: [RunEvent], result: TimelineSearchResult)?
 
@@ -1882,6 +1956,17 @@ private final class RunTimelineDerived {
         let result = TimelineSearch.search(events, query: query)
         found = (query, events, result)
         return result
+    }
+
+    /// The turn an event is in (by `TimelinePresentation.split` of the shown events), for revealing it in the window.
+    func turn(of eventID: UUID) -> Int? {
+        if let turnOfEvent { return turnOfEvent[eventID] }
+        var made: [UUID: Int] = [:]
+        for (index, turn) in blockCache.turns.enumerated() {
+            for event in turn.events { made[event.id] = index }
+        }
+        turnOfEvent = made
+        return made[eventID]
     }
 
     @discardableResult
@@ -1899,13 +1984,15 @@ private final class RunTimelineDerived {
         // Only what is shown is filtered: the turns, outputs and subagents below still read every event.
         events = detail.filter(all.filter { !($0.kind == .system && $0.tool == "launch") })
         blocks = TimelinePresentation.blocks(events, active: active, cache: &blockCache)
+        rowsPerTurn = blockCache.turns.map(\.blocks.count)
         if streamed, let last = all.last {
             createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast
             return self
         }
         revision &+= 1
+        turnOfEvent = nil
         // Also the turns without an edit: git may find files they changed by a command (`countTurns`).
-        turns = TurnDiff.collect(events: all, keepEmpty: true)
+        turns = TurnDiff.collect(events: all, keepEmpty: true, cache: &turnCache)
         finalAnswers = []
         cards = [:]
         let byTurn = Dictionary(turns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -1962,7 +2049,15 @@ final class RunPullRequestLinks {
 
     func url(_ id: UUID, events: [RunEvent]) -> URL? {
         if let hit = memo[id], hit.count == events.count, hit.last == events.last?.id { return hit.url }
-        let url = Self.last(in: events)
+        let url: URL?
+        if let hit = memo[id], hit.count > 0, hit.count < events.count, events[hit.count - 1].id == hit.last {
+            // Events came after the ones read: only those (and the last one read, which may have grown while it streamed)
+            // can hold a newer link. Reading the whole session again on every event of a long run cost the inbox list
+            // a scan of thousands of events per update.
+            url = Self.last(in: Array(events[(hit.count - 1)...])) ?? hit.url
+        } else {
+            url = Self.last(in: events)
+        }
         memo[id] = (events.count, events.last?.id, url)
         return url
     }
@@ -1978,9 +2073,11 @@ final class RunPullRequestLinks {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)
         case .tool:
-            guard let output = event.output,
+            // The link first: a substring check rules out almost every tool call, and the command regex below is dear
+            // when the whole session is read again on each change.
+            guard let output = event.output, let url = MarkdownBlock.lastGitHubPullRequest(in: output),
                   PullRequestToolCall.showsPullRequest(tool: event.tool, command: [event.text, event.detail]) else { return nil }
-            return MarkdownBlock.lastGitHubPullRequest(in: output)
+            return url
         default:
             return nil
         }
@@ -1994,9 +2091,9 @@ final class RunPullRequestLinks {
                 if let url = MarkdownBlock.lastGitHubPullRequest(in: message.text) { return url }
             case .tools:
                 for step in message.steps.reversed() {
-                    guard let output = step.output,
+                    guard let output = step.output, let url = MarkdownBlock.lastGitHubPullRequest(in: output),
                           PullRequestToolCall.showsPullRequest(tool: step.name, command: [step.summary, step.command]) else { continue }
-                    if let url = MarkdownBlock.lastGitHubPullRequest(in: output) { return url }
+                    return url
                 }
             default:
                 continue

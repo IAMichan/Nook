@@ -379,7 +379,7 @@ struct CommandReceipts: Sendable {
              .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork, .bindKey:
             return true
         case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff,
-             .pulls, .pull:
+             .pulls, .pull, .history, .fileData, .watchChat, .avatars, .entry:
             return false
         }
     }

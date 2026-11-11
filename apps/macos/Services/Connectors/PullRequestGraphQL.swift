@@ -202,7 +202,12 @@ extension AccountPullRequests {
         return accounts.map { account in
             var account = account
             if let found = watched[account.id] {
-                account.watched = found.items
+                // The rows of entries whose search did not get through this time stay until it does.
+                let listed = Set(found.items.map(\.id))
+                let kept = account.watched.filter { item in
+                    !listed.contains(item.id) && found.failed.contains { PullRequestWatchList.covers($0, repo: item.repo) }
+                }
+                account.watched = found.items + kept
                 account.unreadable = found.unreadable
                 account.watchedFailed = false
             }
@@ -217,6 +222,8 @@ struct WatchedPullRequests: Equatable, Sendable {
     var items: [PullRequestItem]
     /// Typed entries this account could not search.
     var unreadable: [String]
+    /// Entries whose search did not get through this time (timed out, no connection); their last rows stay.
+    var failed: [String] = []
 }
 
 /// The organizations ("acme") and repositories ("acme/web") whose pull requests show in the list as well, beyond the
@@ -293,6 +300,13 @@ enum PullRequestWatchList {
 
     private static let userPrefix = "user:"
 
+    /// Whether a pull request in `repo` ("acme/web") is one an entry's search finds.
+    static func covers(_ entry: String, repo: String) -> Bool {
+        let entry = entry.lowercased(), repo = repo.lowercased()
+        if entry.hasPrefix(userPrefix) { return repo.hasPrefix(String(entry.dropFirst(userPrefix.count)) + "/") }
+        return isRepository(entry) ? repo == entry : repo.hasPrefix(entry + "/")
+    }
+
     /// The search for one entry's open or closed pull requests.
     static func search(_ entry: String, closed: Bool) -> String {
         let scope = entry.hasPrefix(userPrefix) ? entry : isRepository(entry) ? "repo:" + entry : "org:" + entry
@@ -311,7 +325,8 @@ enum PullRequestWatchList {
 }
 
 /// The whole list in one GraphQL request per account: four aliased searches (yours and the ones waiting for your
-/// review while open; yours and the ones you reviewed once closed or merged), your login, and each pull request's state,
+/// review while open; yours and the ones you reviewed once closed or merged), your own pull requests listed straight
+/// from your account as well (see `parse`), your login, and each pull request's state,
 /// lines added and removed, and CI as one rolled-up state of its latest commit, instead of a request per pull request. Foundation only, so tests can use it.
 enum PullRequestGraphQL {
     static let query = """
@@ -321,12 +336,14 @@ enum PullRequestGraphQL {
       reviews: search(query: $reviews, type: ISSUE, first: 50) { nodes { ...row } }
       mineClosed: search(query: $mineClosed, type: ISSUE, first: 30) { nodes { ...row } }
       reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) { nodes { ...row } }
+      mineListed: viewer { pullRequests(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...row } } }
+      mineClosedListed: viewer { pullRequests(states: [CLOSED, MERGED], first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...row } } }
     }
     fragment row on PullRequest {
       id number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
       labels(first: 6) { nodes { name color } }
       author { login }
-      repository { nameWithOwner }
+      repository { nameWithOwner isArchived }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     }
     """
@@ -346,8 +363,9 @@ enum PullRequestGraphQL {
         let names = closed ? ["mineClosed", "reviewsClosed"] : ["mine", "reviews"]
         let all = (try? JSONSerialization.jsonObject(with: body())) as? [String: Any]
         let variables = ((all?["variables"] as? [String: String]) ?? [:]).filter { names.contains($0.key) }
+        let lines = names + [closed ? "mineClosedListed" : "mineListed"]
         let fields = query.split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { line in names.contains { line.trimmingCharacters(in: .whitespaces).hasPrefix($0 + ":") } }
+            .filter { line in lines.contains { line.trimmingCharacters(in: .whitespaces).hasPrefix($0 + ":") } }
             .joined(separator: "\n")
         let declarations = names.map { "$\($0): String!" }.joined(separator: ", ")
         let fragment = query[query.range(of: "fragment row")!.lowerBound...]
@@ -357,13 +375,35 @@ enum PullRequestGraphQL {
 
     /// The answer: your login and both lists, open pull requests first, then the closed and merged ones. Throws GitHub's
     /// own message when the query failed as a whole.
+    ///
+    /// GitHub's search lags behind: a pull request opened (or merged) a moment ago can be missing from it for minutes,
+    /// and a search that runs out of time quietly answers fewer rows. Your own pull requests are therefore also read
+    /// straight from your account (`mineListed`, `mineClosedListed`), which is never behind, and both are joined.
     static func parse(_ data: Data) throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw NookError("GitHub returned an unexpected response.")
         }
         guard let payload = root["data"] as? [String: Any] else { throw failure(root) }
         let login = ((payload["viewer"] as? [String: Any])?["login"] as? String) ?? ""
-        return (login, rows(payload["mine"]) + rows(payload["mineClosed"]), rows(payload["reviews"]) + rows(payload["reviewsClosed"]))
+        func listed(_ field: String) -> [PullRequestItem] { rows((payload[field] as? [String: Any])?["pullRequests"]) }
+        let mine = joined(rows(payload["mine"]), listed("mineListed")) + joined(rows(payload["mineClosed"]), listed("mineClosedListed"))
+        return (login, unique(mine), rows(payload["reviews"]) + rows(payload["reviewsClosed"]))
+    }
+
+    /// The search rows with the listed ones it missed, newest first; a row both found keeps its place among the newest.
+    static func joined(_ searched: [PullRequestItem], _ listed: [PullRequestItem]) -> [PullRequestItem] {
+        guard !listed.isEmpty else { return searched }
+        let all = unique(searched + listed)
+        return all.enumerated().sorted { a, b in
+            let (left, right) = (a.element.updated ?? .distantPast, b.element.updated ?? .distantPast)
+            return left != right ? left > right : a.offset < b.offset
+        }.map(\.element)
+    }
+
+    /// Each pull request once, the first time it comes.
+    private static func unique(_ items: [PullRequestItem]) -> [PullRequestItem] {
+        var seen = Set<String>()
+        return items.filter { seen.insert($0.id).inserted }
     }
 
     /// The watched entries in one request: an open and a closed search per entry, aliased by position.
@@ -468,7 +508,10 @@ enum PullRequestGraphQL {
     private static func rows(_ search: Any?) -> [PullRequestItem] {
         (((search as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []).compactMap { node in
             guard let number = (node["number"] as? NSNumber)?.intValue,
-                  let repo = (node["repository"] as? [String: Any])?["nameWithOwner"] as? String else { return nil }
+                  let repository = node["repository"] as? [String: Any],
+                  let repo = repository["nameWithOwner"] as? String,
+                  // The searches leave archived repositories out; the listed rows do the same.
+                  (repository["isArchived"] as? Bool) != true else { return nil }
             let commits = ((node["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
             let commit = commits.last?["commit"] as? [String: Any]
             let rollup = (commit?["statusCheckRollup"] as? [String: Any])?["state"] as? String

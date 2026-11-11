@@ -55,6 +55,28 @@ final class CompanionScopesTests: XCTestCase {
         XCTAssertTrue(features.contains(CompanionFeature.retry))
     }
 
+    /// Live chats and the chats' pictures are the Chats tab's: a phone without it gets neither, nor learns of them.
+    func testLiveChatsAndPicturesNeedTheChatsScope() {
+        XCTAssertTrue(CompanionScopes.allows(.watchChat, granted: [.chats]))
+        XCTAssertTrue(CompanionScopes.allows(.avatars, granted: [.chats]))
+        XCTAssertFalse(CompanionScopes.allows(.avatars, granted: [.read, .nookChat]))
+        var response = CompanionResponse(id: "r", ok: true, features: CompanionFeature.all)
+        response.inboxChat = "c"
+        response.avatars = [ChatAvatar(chat: "c", version: "v", jpeg: "")]
+        let redacted = CompanionScopes.redact(response, granted: [.read])
+        XCTAssertNil(redacted.inboxChat)
+        XCTAssertNil(redacted.avatars)
+        let features = Set(redacted.features ?? [])
+        XCTAssertFalse(features.contains(CompanionFeature.liveChats))
+        XCTAssertFalse(features.contains(CompanionFeature.avatars))
+    }
+
+    /// A full batch of pictures, at their largest and in base64, still fits one frame with room for the rest.
+    func testABatchOfPicturesFitsOneFrame() {
+        let base64 = (ChatAvatar.maxBytes * 4 + 2) / 3
+        XCTAssertLessThan(ChatAvatar.batch * base64, CompanionConstants.maxFrame * 3 / 4)
+    }
+
     func testEverythingGrantedChangesNothingButTheScopes() {
         let response = CompanionResponse(id: "r", ok: true, sessions: [], features: CompanionFeature.all)
         var expected = response

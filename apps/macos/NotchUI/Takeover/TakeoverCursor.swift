@@ -99,7 +99,7 @@ struct TakeoverCursorView: View {
                     .lineLimit(1)
                     .padding(.horizontal, NookTheme.Spacing.sm)
                     .padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.violet.opacity(0.85)))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.violet.opacity(0.85)))
                     .offset(x: 30, y: 30)
             }
         }

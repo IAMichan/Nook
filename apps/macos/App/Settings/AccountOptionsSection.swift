@@ -64,7 +64,7 @@ struct AccountOptionsSection: View {
             .scrollContentBackground(.hidden)
             .padding(NookTheme.Spacing.xs)
             .frame(height: 64)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
             .onChange(of: text.wrappedValue) { onChange($0) }
     }
 

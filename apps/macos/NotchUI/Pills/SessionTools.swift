@@ -1133,8 +1133,8 @@ struct ToolSurface<Content: View>: View {
     var body: some View {
         content()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.field))
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedClip(NookTheme.Radius.panel)
     }
 }
 
@@ -1185,7 +1185,7 @@ struct DevServerStrip: View {
                                         .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                                         .padding(.horizontal, 9)
                                         .frame(height: 22)
-                                        .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                                        .background(NookTheme.shape(NookTheme.Radius.control).fill(open ? NookTheme.smoke : NookTheme.field))
                                 }
                                 .buttonStyle(.plain)
                                 .help(server.url.absoluteString)

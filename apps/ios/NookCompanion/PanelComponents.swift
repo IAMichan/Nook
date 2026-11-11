@@ -26,7 +26,7 @@ struct HomeLogo: View {
             }
         }
         .frame(width: size, height: size)
-        .background(tileFill, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        .roundedBackground(tileFill, radius: size * 0.28)
         .accessibilityHidden(true)
     }
 
@@ -40,24 +40,29 @@ struct HomeLogo: View {
 
 // MARK: Headers
 
-/// The panel's tabs, in the Mac's order (`PanelTab.visible`): Nook, Agents, Chats.
+/// The tabs along the bottom, as t3code's iPhone app has them, in Nook's order: the Mac's three (Nook, Agents, Chats),
+/// then pull requests and Settings, always last.
 enum CompanionTab: Hashable, CaseIterable {
-    case nook, agents, chats
+    case nook, agents, chats, pulls, settings
 
     var title: LocalizedStringKey {
         switch self {
         case .nook: return "Nook"
         case .agents: return "Agents"
         case .chats: return "Chats"
+        case .pulls: return "Pull requests"
+        case .settings: return "Settings"
         }
     }
 
-    /// Its icon in the tab bar.
-    var symbol: String {
+    /// The tab's icon; the filled form when it is the chosen tab where one exists.
+    func symbol(selected: Bool) -> String {
         switch self {
         case .nook: return "sparkles"
-        case .agents: return "terminal"
-        case .chats: return "bubble.left"
+        case .agents: return selected ? "square.stack.3d.up.fill" : "square.stack.3d.up"
+        case .chats: return selected ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right"
+        case .pulls: return "arrow.triangle.pull"
+        case .settings: return selected ? "gearshape.fill" : "gearshape"
         }
     }
 }
@@ -67,21 +72,33 @@ enum CompanionTab: Hashable, CaseIterable {
 final class TabRouter: ObservableObject {
     @Published var tab = CompanionTab.nook
 
-    /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`) is left out.
+    /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`), or cannot serve, is left out.
     func available(_ client: CompanionClient) -> [CompanionTab] {
         CompanionTab.allCases.filter { tab in
             switch tab {
             case .nook: return client.allows(.nookChat)
-            case .agents: return true
+            case .agents, .settings: return true
             case .chats: return client.allows(.chats)
+            case .pulls: return client.allows(.read) && client.can(CompanionFeature.pullRequests)
             }
+        }
+    }
+
+    /// The badge on a tab: what waits for you there.
+    func count(_ tab: CompanionTab, _ client: CompanionClient) -> Int {
+        switch tab {
+        case .nook: return client.conversations.filter(\.waiting).count
+        case .agents: return client.sessions.filter(SessionListView.needsYou).count
+        // Chats with something unread, not every message: one busy group is one.
+        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+        case .pulls, .settings: return 0
         }
     }
 }
 
-/// The row on top of every tab, after t3code's iPhone app: Nook's orb on the left (its menu holds the Mac, the connection
-/// and Live Activities), the tab's title in the middle with how current what it shows is under it (`FreshnessLine`), and
-/// the tab's own round buttons on the right. The tabs themselves are at the bottom (`PhoneTabBar`).
+/// The row on top of every tab: Nook's orb (its menu holds the Mac, the connection and Live Activities), the tab's name
+/// large with the Mac's name and how it is connected under it, as t3code's header says the machine and "Reconnecting…",
+/// and the tab's own round button on the right. The tabs themselves are along the bottom.
 struct PanelHeader<Trailing: View>: View {
     @EnvironmentObject private var router: TabRouter
     @ViewBuilder var trailing: () -> Trailing
@@ -89,21 +106,19 @@ struct PanelHeader<Trailing: View>: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             MacMenu()
-            Spacer(minLength: 0)
-            HStack(spacing: Theme.Spacing.sm) { trailing() }
-        }
-        .frame(minHeight: 44)
-        .overlay {
-            VStack(spacing: 0) {
-                Text(router.tab.title).font(Theme.TextStyle.screenTitle).foregroundStyle(Theme.paper).lineLimit(1)
-                FreshnessLine()
+            VStack(alignment: .leading, spacing: 0) {
+                Text(router.tab.title)
+                    .font(Theme.TextStyle.display)
+                    .foregroundStyle(Theme.paper)
+                    .lineLimit(1)
+                ConnectionTitle()
             }
-            .padding(.horizontal, 96)
-            .allowsHitTesting(false)
+            Spacer(minLength: 0)
+            trailing()
         }
         .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.top, Theme.Spacing.xs)
-        .padding(.bottom, Theme.Spacing.md)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.lg)
     }
 }
 
@@ -111,139 +126,45 @@ extension PanelHeader where Trailing == EmptyView {
     init() { self.init { EmptyView() } }
 }
 
-/// A round button in a header, t3code's: an icon on floating glass, 40 pt, so it reads as one with the orb beside it.
-struct HeaderButton: View {
-    let symbol: String
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button {
-            Haptics.tap()
-            action()
-        } label: {
-            Image(icon: symbol)
-                .font(Theme.font(16, .semibold))
-                .foregroundStyle(Theme.paper)
-                .frame(width: 40, height: 40)
-                .floatingGlass(Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressFade())
-        .accessibilityLabel(label)
-    }
-}
-
-/// Under a tab's title: which Mac, and how current what shows is (`CompanionFreshness`), apart from whether it is
-/// connected: "Live" with a live connection, "Updated 3 min ago" when answers stopped coming, "Not connected" when the Mac
-/// cannot be reached. A dot carries the state: mint when current, amber when not.
-struct FreshnessLine: View {
+/// Under the tab's name: the Mac and how the phone has it, as t3code's header title. "MacBook · live" while connected,
+/// "Catching up…" while it synchronizes, and "Looking for MacBook…" once it has been away for a moment (not at a short
+/// drop). A tap on it while away explains why.
+struct ConnectionTitle: View {
     @EnvironmentObject private var client: CompanionClient
+    @State private var diagnosing = false
+
+    private var mac: String { client.macName.isEmpty ? String(localized: "your Mac") : client.macName }
 
     var body: some View {
-        let freshness = client.freshness
-        HStack(spacing: Theme.Spacing.xs) {
-            Circle().fill(Self.current(freshness) ? Theme.mint : Theme.amber).frame(width: 6, height: 6)
-            Text(verbatim: text(freshness)).lineLimit(1).truncationMode(.middle)
-        }
-        .font(Theme.TextStyle.caption)
-        .foregroundStyle(Theme.textTertiary)
-        .accessibilityElement(children: .combine)
-    }
-
-    static func current(_ freshness: CompanionFreshness) -> Bool {
-        switch freshness {
-        case .live, .current: return true
-        case .behind, .offline: return false
-        }
-    }
-
-    private func text(_ freshness: CompanionFreshness) -> String {
-        let state: String
-        switch freshness {
-        case .live: state = String(localized: "Live")
-        case .current: state = String(localized: "Connected")
-        case .behind(let minutes): state = String(localized: "Updated \(minutes) min ago")
-        case .offline(let since):
-            state = since.map { String(localized: "Not connected · from \($0.formatted(date: .omitted, time: .shortened))") }
-                ?? String(localized: "Not connected")
-        }
-        return client.macName.isEmpty ? state : client.macName + " · " + state
-    }
-}
-
-/// The tabs, at the bottom as in t3code's iPhone app: one glass bar over the content, an icon and a word per tab, the
-/// chosen one lit in blue on a raised pill that slides to the next; what waits for you as a count on its icon (amber for
-/// what you have to act on, blue for unread chats). Hidden while a tab shows a pushed screen (a session, a chat).
-struct PhoneTabBar: View {
-    @EnvironmentObject private var client: CompanionClient
-    @EnvironmentObject private var router: TabRouter
-    @Namespace private var selection
-
-    var body: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            ForEach(router.available(client), id: \.self) { tab in
-                item(tab)
-            }
-        }
-        .padding(Theme.Spacing.xs)
-        .frame(height: 62)
-        .floatingGlass(RoundedRectangle(cornerRadius: PhoneRadius.glass, style: .continuous))
-        .padding(.horizontal, Theme.Spacing.xxl)
-        .padding(.bottom, Theme.Spacing.xs)
-    }
-
-    private func item(_ tab: CompanionTab) -> some View {
-        let selected = router.tab == tab
-        return Button {
-            guard !selected else { return }
-            Haptics.tap()
-            withAnimation(Theme.reveal) { router.tab = tab }
-        } label: {
-            VStack(spacing: Theme.Spacing.xxs) {
-                Image(icon: tab.symbol)
-                    .font(Theme.font(19, selected ? .semibold : .regular))
-                    .frame(height: 24)
-                    .overlay(alignment: .topTrailing) { badge(tab).offset(x: 12, y: -6) }
-                Text(tab.title).font(Theme.TextStyle.tabBar).lineLimit(1)
-            }
-            .foregroundStyle(selected ? Theme.blue : Theme.textTertiary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: PhoneRadius.glass - Theme.Spacing.xs, style: .continuous)
-                        .fill(Theme.paper.opacity(0.1))
-                        .matchedGeometryEffect(id: "selection", in: selection)
+        Group {
+            switch client.phase {
+            case .connected where client.synchronizing:
+                label(String(localized: "\(mac) · catching up…"), dot: Theme.blue)
+            case .connected:
+                label(String(localized: "\(mac) · live"), dot: Theme.mint)
+            case .offline:
+                Button { diagnosing = true } label: {
+                    label(String(localized: "Looking for \(mac)…"), dot: Theme.amber)
                 }
+                .buttonStyle(PressFade())
+                .appearsAfterDelay()
+            default:
+                EmptyView()
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(count(tab) > 0 ? Text("\(count(tab))") : Text(""))
+        .animation(Theme.reveal, value: client.phase)
+        .animation(Theme.reveal, value: client.synchronizing)
+        .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
     }
 
-    @ViewBuilder
-    private func badge(_ tab: CompanionTab) -> some View {
-        let count = count(tab)
-        if count > 0 {
-            Text(count, format: .number)
-                .font(Theme.textFont(9, .bold))
-                .monospacedDigit()
-                .foregroundStyle(tab == .chats ? Theme.paper : Theme.ink)
-                .padding(.horizontal, Theme.Spacing.xs)
-                .frame(minWidth: 16, minHeight: 16)
-                .background(Capsule().fill(tab == .chats ? Theme.blue : Theme.amber))
+    private func label(_ text: String, dot: Color) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Circle().fill(dot).frame(width: 6, height: 6)
+            Text(text).lineLimit(1)
         }
-    }
-
-    private func count(_ tab: CompanionTab) -> Int {
-        switch tab {
-        case .nook: return client.conversations.filter(\.waiting).count
-        case .agents: return client.sessions.needingYou
-        // Chats with something unread, not every message: one busy group is one.
-        case .chats: return client.inbox.filter { $0.unread > 0 }.count
-        }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
+        .transition(.opacity)
     }
 }
 
@@ -357,8 +278,7 @@ struct RowPress: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(configuration.isPressed ? Theme.rowHover : Color.clear,
-                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .roundedBackground(configuration.isPressed ? Theme.rowHover : Color.clear, radius: radius)
             .animation(Theme.hover, value: configuration.isPressed)
     }
 }
@@ -402,8 +322,8 @@ struct NookSearchField: View {
         .padding(.trailing, Theme.Spacing.xxs)
         .frame(minHeight: 40)
         // t3code's input: the field a step above the screen with a faint edge.
-        .background(Theme.field, in: RoundedRectangle(cornerRadius: PhoneRadius.row, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: PhoneRadius.row, style: .continuous).strokeBorder(Theme.fieldStroke, lineWidth: 1))
+        .roundedBackground(Theme.field, radius: PhoneRadius.row)
+        .roundedStrokeBorder(Theme.fieldStroke, radius: PhoneRadius.row)
     }
 }
 
@@ -469,9 +389,7 @@ struct SessionComposer<Controls: View>: View {
     }
 
     /// t3code's 27 pt for one line; a box with choices under its text is a card (`PhoneRadius.card`).
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: hasControls ? PhoneRadius.card : PhoneRadius.composer, style: .continuous)
-    }
+    private var shape: RoundedRectangle { Theme.shape(hasControls ? PhoneRadius.card : PhoneRadius.composer) }
 
     private func field(_ focused: FocusState<Bool>.Binding) -> some View {
         TextField(prompt, text: $text, axis: .vertical)
@@ -632,8 +550,8 @@ struct SuggestionGrid: View {
                     }
                     .padding(Theme.Spacing.md)
                     .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+                    .roundedBackground(Theme.field, radius: Theme.Radius.panel)
+                    .roundedHitShape(Theme.Radius.panel)
                 }
                 .buttonStyle(RowPress(radius: Theme.Radius.panel))
             }

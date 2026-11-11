@@ -341,7 +341,7 @@ private struct CardStatusPill: View {
         .foregroundStyle(status.tone.color)
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 20)
-        .background(Capsule().fill(status.tone.color.opacity(0.12)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(status.tone.color.opacity(0.12)))
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(status.text)
@@ -408,7 +408,7 @@ private struct EventDetail: View {
                     .foregroundStyle(NookTheme.paper)
             }
             .frame(width: 40, height: 40)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
+            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.card)
 
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(line)
@@ -446,7 +446,7 @@ private struct CommandDetail: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
 
             Text(note)
                 .font(NookTheme.TextStyle.detail)
@@ -470,7 +470,7 @@ private struct ProseDetail: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
 
             Text(note)
                 .font(NookTheme.TextStyle.detail)
@@ -638,8 +638,7 @@ private struct ChoiceRow: View {
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
+            .roundedBackground(hovering || checked ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -669,7 +668,7 @@ private struct DiffDetail: View {
             .frame(maxHeight: 150)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
 
             Text(note)
                 .font(NookTheme.TextStyle.detail)

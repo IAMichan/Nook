@@ -84,8 +84,22 @@ final class UIConsistencyTests: XCTestCase {
 
     /// Corners sit on the radius scale: `NookTheme.Radius.chip … pill`, not a number that happens to look right.
     func testCornerRadiiComeFromTheScale() {
-        let found = offenders(#"cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)(?![.0-9])|cardBackground\(.*radius:\s*[0-9]"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        let found = offenders(#"(cornerRadius:\s*|(roundedClip|roundedHitShape|NookTheme\.shape)\(\s*)(6|7|8|9|10|12|13|14|16|20)(?![.0-9])|(cardBackground|roundedBackground|roundedStroke|roundedStrokeBorder)\(.*radius:\s*[0-9]"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
         XCTAssertEqual(found, [], "use NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20, composer 24)")
+    }
+
+    /// A rounded shape is Nook's: `NookTheme.shape(_:)` or a `.rounded…` helper (a continuous corner on a radius from the
+    /// scale), never a `RoundedRectangle(cornerRadius:)` built at the call site with a corner style of its own.
+    func testRoundedShapesComeFromTheTheme() {
+        let found = offenders(#"RoundedRectangle\(cornerRadius:"#) { $0 == "NotchUI/Theme/NookTheme.swift" }
+        XCTAssertEqual(found, [], "use NookTheme.shape(_:) or .roundedBackground / .roundedStroke / .roundedClip / .roundedHitShape")
+    }
+
+    /// Chips, badges and buttons are rounded rectangles on the chip or control radius, as t3code's are, never a pill:
+    /// `Capsule()` is only for shapes without words (progress tracks, indicator bars, drag handles).
+    func testChipsAndButtonsAreNotPills() {
+        let found = offenders(#"\.(background|overlay|contentShape|clipShape)\(Capsule\("#) { _ in false }
+        XCTAssertEqual(found, [], "use NookTheme.shape(NookTheme.Radius.chip) or .control instead of a Capsule behind words")
     }
 
     /// Text sits on the type scale: SwiftUI's own styles (`.caption`, `.callout`, `.headline`, `.system(.body)`) have

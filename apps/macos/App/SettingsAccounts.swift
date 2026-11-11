@@ -337,7 +337,7 @@ private struct ManageAccountSheet: View {
                 }
             }
             .padding(NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
         } else {
             HStack {
                 SecureField(tr("accounts.keyPlaceholder"), text: $key)
@@ -521,7 +521,7 @@ private struct AddAccountSheet: View {
                             }
                         }
                         .padding(NookTheme.Spacing.md)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+                        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
                     }
                 }
 

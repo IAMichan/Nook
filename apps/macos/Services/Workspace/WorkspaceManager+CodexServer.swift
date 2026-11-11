@@ -223,7 +223,7 @@ extension WorkspaceManager {
             : codexServers[id]?.turnID != nil
         return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive && turns[id] != nil,
                                  ending: turns[id]?.stopping == true || turns[id]?.finished == true,
-                                 waitingOnYou: run.status == .waitingApproval || !(questions[id] ?? []).isEmpty)
+                                 waitingOnYou: run.status == .waitingApproval || waitsOnQuestion(id))
     }
 
     /// Steering an agent that cannot take a message into its turn: the turn is interrupted and the message goes out as the
@@ -277,7 +277,7 @@ extension WorkspaceManager {
         approvals[runID]?.removeAll { $0.id == requestID }
         recap?.decision(allowed: decision != .deny)
         if let pending { mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed } }
-        if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+        if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
         return true
     }
@@ -286,24 +286,36 @@ extension WorkspaceManager {
     func answer(_ runID: UUID, questionID: String, answers: [String: [String]]) {
         guard let question = questions[runID]?.first(where: { $0.id == questionID }) else { return }
         // Nobody left to answer (the process ended): drop the question instead of pretending the agent works on.
-        if case .claude = question.origin, processes[runID] == nil {
-            questions[runID] = nil
-            return
+        switch question.origin {
+        case .claude, .pi:
+            guard processes[runID] != nil else {
+                questions[runID] = nil
+                return
+            }
+        case .codex, .message:
+            break
         }
         questions[runID]?.removeAll { $0.id == questionID }
         if questions[runID]?.isEmpty == true { questions[runID] = nil }
+        let shown = question.questions.map { item in
+            "\(item.question) → \((answers[item.id] ?? []).joined(separator: ", "))"
+        }.joined(separator: "\n")
         switch question.origin {
         case .codex(let rpcID):
             codexServers[runID]?.respond(rpcID, CodexRPC.answers(answers))
         case .claude(let requestID, let input):
             processes[runID]?.send(ClaudeStreamParser.questionAnswer(requestID: requestID, input: input, questions: question.questions,
                                                                      answers: answers))
+        case .pi(let requestID):
+            processes[runID]?.send(PiRPC.dialogResponse(requestID: requestID,
+                                                        value: question.questions.first.flatMap { answers[$0.id]?.first }))
+        case .message:
+            // Into the turn when the agent takes it there, else as the next message: your bubble shows it either way.
+            _ = deliver(runID, text: shown, mode: .auto)
+            return
         }
-        let shown = question.questions.map { item in
-            "\(item.question) → \((answers[item.id] ?? []).joined(separator: ", "))"
-        }.joined(separator: "\n")
         append(runID, RunEvent(kind: .user, text: shown))
-        if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+        if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
     }
 
     // MARK: Messages
@@ -323,7 +335,13 @@ extension WorkspaceManager {
                 let pending = PendingQuestion(id: "codexq-" + rpcID.text, runID: id, questions: items, origin: .codex(rpcID), created: Date())
                 questions[id, default: []].append(pending)
                 update(id) { $0.move(to: .waitingApproval) }
-                if let run = run(id) { onQuestion?(run, pending) }
+                asked(id, pending)
+            case .asyncQuestion(let itemID, let items):
+                // Codex goes on working: the question waits for you without holding the turn.
+                let pending = PendingQuestion(id: "codexasync-" + itemID, runID: id, questions: items, origin: .message, created: Date())
+                guard !(questions[id] ?? []).contains(where: { $0.id == pending.id }) else { continue }
+                questions[id, default: []].append(pending)
+                asked(id, pending)
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not support this request.")
             case .rateLimits(let limits):
@@ -461,7 +479,9 @@ extension WorkspaceManager {
                 codexSubagents[id]?[thread] = nil
             }
         case .notice(let text):
-            append(id, RunEvent(kind: .system, text: text == "compact" ? tr("ws.event.compacted") : text))
+            if text == "compact" { compactionFinished(id) } else { append(id, RunEvent(kind: .system, text: text)) }
+        case .compaction(let phase):
+            noteCompaction(id, phase)
         default:
             break
         }

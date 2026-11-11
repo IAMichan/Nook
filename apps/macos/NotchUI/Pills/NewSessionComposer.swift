@@ -48,6 +48,8 @@ struct NewSessionComposer: View {
     @State private var composerModel = ComposerModel()
     @ObservedObject private var promptLinks = PromptLinkInbox.shared
     @State private var linkNotice: String?
+    /// A pull request link's branch is being checked out (`promptLinks.pendingCheckout`).
+    @State private var checkingOut = false
     /// Set once the session started: what is left in the box then is not worth bringing back.
     @State private var started = false
     /// The other models the prompt also goes to, each in a session and worktree of its own (`ModelComparison`).
@@ -82,11 +84,6 @@ struct NewSessionComposer: View {
             start(background: true)
             return true
         }], enabled: focused)
-    }
-
-    /// The box's words, read and written outside of `body` so that typing does not redraw the panel.
-    private var taskBinding: Binding<String> {
-        Binding(get: { task.text }, set: { setTask($0) })
     }
 
     private func setTask(_ text: String) {
@@ -198,7 +195,7 @@ struct NewSessionComposer: View {
                     }
                 }
             }
-            .help(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
+            .composerTip(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
             .sheet(item: $newProjectPlan) { plan in
                 PublishRepositorySheet(plan: plan) { _ in newProjectPlan = nil }
                     .environmentObject(workspace)
@@ -212,7 +209,7 @@ struct NewSessionComposer: View {
 
     private func projectRow(_ path: String) -> some View {
         let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
-        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: URL(fileURLWithPath: path).lastPathComponent,
+        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: (path as NSString).lastPathComponent,
                            detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
     }
 
@@ -228,7 +225,7 @@ struct NewSessionComposer: View {
                 .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 .onSubmit(clone)
             SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
@@ -240,7 +237,7 @@ struct NewSessionComposer: View {
     /// "app", "buildbox:app", or the invitation to pick one.
     private var projectLabel: String {
         if let remoteMachine {
-            let folder = remoteFolder.isEmpty ? "…" : URL(fileURLWithPath: remoteFolder).lastPathComponent
+            let folder = remoteFolder.isEmpty ? "…" : (remoteFolder as NSString).lastPathComponent
             return remoteMachine.name + ":" + folder
         }
         if let project, ScratchProjects.isScratch(project.path) { return tr("ws.new.noProject") }
@@ -260,7 +257,7 @@ struct NewSessionComposer: View {
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(minWidth: 140)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
         }
         .font(NookTheme.TextStyle.body)
@@ -271,6 +268,14 @@ struct NewSessionComposer: View {
 
     /// The same composer a running session answers in, with the choices for the new session inside it.
     private var box: some View {
+        // The words are read in `TaskField`, not here: SwiftUI reads a binding's value when it compares the composer it
+        // was given with the last one, and a binding made in this `body` would then redraw the whole panel per key.
+        TaskField(task: task, set: setTask) { taskBinding in
+            composer(taskBinding)
+        }
+    }
+
+    private func composer(_ taskBinding: Binding<String>) -> some View {
         SessionComposer(
             text: taskBinding,
             prompt: tr("compose.prompt"),
@@ -291,11 +296,15 @@ struct NewSessionComposer: View {
             permissionMenu
             effortMenu
             ComposerSpeedTier(tiers: speedTiers, chosen: config.speedTier) { config.speedTier = $0 }
+            ComposerUltracodeToggle(offered: Ultracode.offered(provider: config.provider, model: config.model),
+                                    on: config.ultracode == true) { config.ultracode = $0 }
+            ComposerMainThreadToggle(offered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
+                                     on: config.mainThread == true) { config.mainThread = $0 ? true : nil }
             usageLimits
         }
         .rich(composerModel, composerConfig)
         .images($images)
-        .trailing { ComposerMic(text: taskBinding) }
+        .dictating()
         // One step more or less effort without opening the picker.
         .keyCommands(["effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
     }
@@ -350,7 +359,7 @@ struct NewSessionComposer: View {
                 }
             }
         }
-        .help(tr("ws.new.accountPinned"))
+        .composerTip(tr("ws.new.accountPinned"))
     }
 
     private var modeMenu: some View {
@@ -374,7 +383,7 @@ struct NewSessionComposer: View {
             }
         }
         .disabled(config.mode == .plan)
-        .help(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
+        .composerTip(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
     }
 
     /// How hard the agent thinks, only for agents that have it; "Default" leaves it to the agent.
@@ -404,7 +413,7 @@ struct NewSessionComposer: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         }
     }
 
@@ -432,7 +441,7 @@ struct NewSessionComposer: View {
                     }
                 }
             }
-            .help(tr("compose.effort.help"))
+            .composerTip(tr("compose.effort.help"))
         }
     }
 
@@ -476,7 +485,7 @@ struct NewSessionComposer: View {
             if let remoteMachine {
                 // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
                 ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
-                    .help(tr("ws.remote.limits"))
+                    .composerTip(tr("ws.remote.limits"))
                 isolationDropdown(worktreeAllowed: true, reason: "")
                 Spacer(minLength: 8)
                 if config.isolation == .worktree {
@@ -529,13 +538,25 @@ struct NewSessionComposer: View {
                 remember()
             }
         }
-        .help(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
+        .composerTip(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
     }
 
     /// One line, only when something needs saying: why you cannot start yet, or what went wrong.
     @ViewBuilder
     private var notice: some View {
-        if let error {
+        if let link = promptLinks.pendingCheckout, let pull = link.pullRequest {
+            // A pull request link no session works on: the checkout waits for you, as it runs the project's setup.
+            PanelNoticeBar(title: tr("promptLink.pr.title", "\(pull.repository)#\(pull.number)"),
+                           detail: tr("promptLink.pr.detail"), symbol: PullRequestIcon.generic, tone: NookTheme.amber) {
+                if checkingOut {
+                    ProgressView().controlSize(.small)
+                } else {
+                    NookNoticeActions(primary: NookNoticeAction(tr("promptLink.pr.checkout")) { checkOutLinkedPullRequest(link, pull) },
+                                      secondary: NookNoticeAction(tr("button.cancel")) { promptLinks.pendingCheckout = nil })
+                }
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+        } else if let error {
             Text(error)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coralSoft)
@@ -687,6 +708,28 @@ struct NewSessionComposer: View {
             if let model = link.model { config.model = model }
         }
         linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
+    }
+
+    /// "Check out" on a pull request link: the branch in a worktree of its own, the composer on it with the link's words
+    /// as the draft (nothing is sent), and the checkout in the action log.
+    private func checkOutLinkedPullRequest(_ link: PromptLink, _ pull: PromptLink.PullRequest) {
+        checkingOut = true
+        Task {
+            let label = "\(pull.repository)#\(pull.number)"
+            do {
+                let path = try await app.pullRequestLinkWorktree(pull)
+                app.store.audit(tool: "prompt_link_pr_checkout", args: label, result: path)
+                promptLinks.pendingCheckout = nil
+                var draft = link
+                draft.pullRequest = nil
+                if !draft.text.isEmpty { promptLinks.pending = draft }
+                promptLinks.requestProject(path)
+            } catch {
+                app.store.audit(tool: "prompt_link_pr_checkout", args: label, result: "error: " + error.localizedDescription)
+                ToastCenter.shared.error(error, title: tr("agents.pr.checkout.failed"))
+            }
+            checkingOut = false
+        }
     }
 
     /// A project's "+" in the Agents list opens the composer on that folder.
@@ -1040,4 +1083,15 @@ private struct NewSessionDraft {
 @Observable
 private final class NewSessionTask {
     var text = ""
+}
+
+/// Hands the composer a binding to the box's words, so only this view, not the panel around it, observes them.
+private struct TaskField<Content: View>: View {
+    let task: NewSessionTask
+    let set: (String) -> Void
+    @ViewBuilder let content: (Binding<String>) -> Content
+
+    var body: some View {
+        content(Binding(get: { task.text }, set: set))
+    }
 }

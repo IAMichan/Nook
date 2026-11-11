@@ -468,7 +468,7 @@ private struct CalloutBlock: View {
         }
         .padding(NookTheme.Spacing.lg)
         // Tinted, without an edge: the color says what kind of note it is, the fill keeps it apart from the text.
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(callout.kind.color.opacity(0.08)))
+        .roundedBackground(callout.kind.color.opacity(0.08), radius: NookTheme.Radius.panel)
     }
 }
 
@@ -536,7 +536,7 @@ private struct MarkdownCodeBlock: View {
             if rendered {
                 CodeRenderView(language: language, code: code)
                     .frame(height: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip))
+                    .roundedClip(NookTheme.Radius.chip)
                     .padding(8)
             } else if wraps {
                 codeText.fixedSize(horizontal: false, vertical: true)
@@ -546,7 +546,7 @@ private struct MarkdownCodeBlock: View {
                 }
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
     }
 
     /// The code in the colors of its language (`SyntaxTokenizer`), or plain when Nook does not know it.
@@ -688,9 +688,8 @@ private struct ChoiceRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.graphite : NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
