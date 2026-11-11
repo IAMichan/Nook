@@ -17,6 +17,15 @@ struct MusicPlay: Codable, Equatable {
     var listened: Int
     var playedAt: Date
 
+    /// `false` for a play no player could have made: a Spotify track id is 22 letters and digits, and sample data written by
+    /// a preview or test harness (`spotify:track:GetLucky`) is not. Such plays would crown an artist the user never heard.
+    var isReal: Bool {
+        let prefix = "spotify:track:"
+        guard id.hasPrefix(prefix) else { return true }
+        let rest = id.dropFirst(prefix.count)
+        return rest.count == 22 && rest.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
+
     /// The same recording, also when the player gave no id.
     var key: String { id.isEmpty ? "\(artist)|\(title)" : id }
 
@@ -72,6 +81,14 @@ struct MusicHistory: Codable, Equatable {
 
     mutating func forget(search text: String) {
         searches.removeAll { $0 == text }
+    }
+
+    /// Drops plays no player made (see `MusicPlay.isReal`). `true` when any went, so the file is written again.
+    @discardableResult
+    mutating func dropUnrealPlays() -> Bool {
+        let count = plays.count
+        plays.removeAll { !$0.isReal }
+        return plays.count != count
     }
 
     private mutating func trim() {
