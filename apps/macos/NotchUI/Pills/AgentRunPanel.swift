@@ -991,8 +991,10 @@ struct AgentRunPanel: View {
                 still.disablesAnimations = true
                 withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            // You sent something: it is the newest thing and shows again, also when you had scrolled up.
-            .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
+            // You sent something: it is the newest thing and shows again, also when you had scrolled up. Not while the
+            // message you sent before still stands near the top: going to the end gave up its room, so the conversation
+            // dropped and then rose again once the new message came in and took that room over (`pinSent`).
+            .onChange(of: sentCount) { _, _ in if scroll.goesToEndOnSend { settleAtEnd(proxy) } }
             .onChange(of: scroll.anchorMessageID) { _, id in if id == nil { pinRoom.release() } }
             .onChange(of: events.last(where: { $0.kind == .user })?.id) { old, new in
                 // A message that came in at the end stands near the top with the reply under it. The timeline loading
