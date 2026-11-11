@@ -1,4 +1,7 @@
 name: Nook
+# The end-to-end scenarios' targets and scheme (docs/SCENARIOS.md).
+include:
+  - Scenarios/scenarios.yml
 options:
   bundleIdPrefix: nl.imdigital
   deploymentTarget:

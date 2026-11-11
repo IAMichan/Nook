@@ -1,0 +1,7 @@
+// The default recording: a short tour of a small project. Each turn reads a file, searches, and streams a reply.
+{"replay":"text","text":"The project has a single math module. Let me look at it before I explain anything.","ms":45}
+{"replay":"tool","id":"toolu_read_{{turn}}","name":"Read","input":{"file_path":"{{cwd}}/Sources/Math.swift"},"result":"     1\tenum Math {\n     2\t    static func sum(_ a: Int, _ b: Int) -> Int {\n     3\t        a + b\n     4\t    }\n     5\t}\n","ms":1500}
+{"replay":"tool","id":"toolu_grep_{{turn}}","name":"Grep","input":{"pattern":"sum","path":"{{cwd}}"},"result":"Sources/Math.swift:2:    static func sum(_ a: Int, _ b: Int) -> Int {","ms":1500}
+{"replay":"text","text":"`Math.sum` adds two numbers, and nothing else calls it yet. This turn is a replay: no model was asked.","ms":45}
+{"replay":"turn"}
+{"replay":"text","text":"Second turn of the showcase. This turn is a replay as well.","ms":30}
