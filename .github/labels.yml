@@ -46,6 +46,49 @@
 - name: skip changelog
   color: "ededed"
   description: Leave this pull request out of the release notes
+- name: needs more info
+  color: "d876e3"
+  description: Waiting for the reporter; closed by workflows/stale.yml after 7 days without a reply
+- name: stale
+  color: "ededed"
+  description: No activity for a while; closed by workflows/stale.yml unless something happens
+- name: keep open
+  color: "0e8a16"
+  description: Never marked stale or closed by workflows/stale.yml
+- name: agent-context-increase
+  color: "fef2c0"
+  description: A maintainer accepts that AGENTS.md or CLAUDE.md grows (workflows/agent-context-budget.yml)
+
+# Pull request size (set by workflows/pr-size.yml: changed lines, tests excluded)
+- name: "size:XS"
+  color: "0e8a16"
+  description: Fewer than 10 changed lines
+- name: "size:S"
+  color: "5ebd3e"
+  description: 10 to 29 changed lines
+- name: "size:M"
+  color: "fbca04"
+  description: 30 to 99 changed lines
+- name: "size:L"
+  color: "e99695"
+  description: 100 to 499 changed lines
+- name: "size:XL"
+  color: "d93f0b"
+  description: 500 to 999 changed lines
+- name: "size:XXL"
+  color: "b60205"
+  description: 1000 or more changed lines
+
+# Pull request author trust (set by workflows/pr-vouch.yml from .github/VOUCHED.td)
+- name: "vouch:trusted"
+  color: "1f883d"
+  description: Author has write access, is a bot, or is in VOUCHED.td
+- name: "vouch:unvouched"
+  color: "fbca04"
+  description: Author is not yet in VOUCHED.td
+- name: "vouch:denounced"
+  color: "d1242f"
+  description: Author is blocked in VOUCHED.td
 
 # Area: which part of the monorepo
 - name: "area: macos"
