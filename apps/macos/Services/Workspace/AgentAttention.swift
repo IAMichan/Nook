@@ -268,7 +268,8 @@ enum RestartContinuation {
     static let message = "Continue where you left off."
 
     /// Should this run get the continue message after Nook started?
-    /// Only a session cut off just now: one that sat interrupted for a day is yours to pick up.
+    /// A session your quit stopped (`stoppedByQuit`) goes on the next time you open Nook, however long that took. Any other
+    /// only when it was cut off just now: one that sat interrupted for a day is yours to pick up.
     static let maxAge: TimeInterval = 30 * 60
     /// Continuations count towards the cap only while they follow each other this closely.
     static let loopWindow: TimeInterval = 5 * 60
@@ -287,7 +288,7 @@ enum RestartContinuation {
         guard interrupted || waiting else { return false }
         // A turn that ended long ago can still have waited until Nook quit: then the quit is what counts.
         let since = interrupted ? run.updatedAt : (run.cutBackgroundWork?.at ?? run.updatedAt)
-        guard now.timeIntervalSince(since) <= maxAge else { return false }
+        guard run.stoppedByQuit == true || now.timeIntervalSince(since) <= maxAge else { return false }
         guard run.limitedAt == nil else { return false }
         return chainLength(run, now: now) < limit
     }
