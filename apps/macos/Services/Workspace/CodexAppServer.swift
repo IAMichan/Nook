@@ -309,6 +309,11 @@ enum CodexAppServerMapper {
             return [.messageCompleted(id: id, text: text)]
         case "imageGeneration":
             return [generatedImage(id, item, finished: finished)]
+        case "imageView":
+            // A picture Codex looked at (`view_image`): a read step, with the picture under it (`ViewedImages`).
+            guard let path = (item["path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else { return [] }
+            return [.toolCall(id: id, name: "view_image", detail: (path as NSString).lastPathComponent, finished: finished,
+                              failed: false, input: JSONBox(["path": path]))]
         case "reasoning":
             guard finished else { return [] }
             let parts = ((item["summary"] as? [String]) ?? []).isEmpty ? ((item["content"] as? [String]) ?? []) : ((item["summary"] as? [String]) ?? [])

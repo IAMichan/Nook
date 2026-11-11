@@ -534,7 +534,16 @@ private struct TranscriptRowView: View, Equatable {
             SharedFilesRow(input: AgentActivity.input(step.input) ?? [:], directory: directory ?? "", showFile: side.showFile,
                            shownFile: side.shownFile)
         case .step(let step):
-            stepLine(step)
+            // A picture the step looked at shows under it.
+            let images = ViewedImages.resolved(ViewedImages.paths(step), in: directory)
+            if images.isEmpty {
+                stepLine(step)
+            } else {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    stepLine(step)
+                    ViewedImagesRow(paths: images)
+                }
+            }
         case .group(let id, let steps, let thoughts):
             group(id: id, steps: steps, thoughts: thoughts)
         case .fold, .continued, .superseded:
@@ -564,7 +573,9 @@ private struct TranscriptRowView: View, Equatable {
     private func group(id: String, steps: [AgentToolStep], thoughts: [String: [AgentChatMessage]]) -> some View {
         let key = "group:" + id
         let tally = ToolTally(steps: steps)
-        return TranscriptWorkGroup(tally: tally, open: open.contains(key), toggle: { toggle(key) }) {
+        // The pictures its steps looked at stay in sight under the group, open or folded: one row for all of them.
+        return TranscriptWorkGroup(tally: tally, open: open.contains(key), toggle: { toggle(key) },
+                                   images: ViewedImages.resolved(steps.flatMap { ViewedImages.paths($0) }, in: directory)) {
             ForEach(steps) { step in
                 ForEach(thoughts[step.id] ?? []) { thinking($0) }
                 stepLine(step)

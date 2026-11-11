@@ -494,8 +494,8 @@ extension WorkspaceManager {
                 turns[id]?.acpThought += text
                 feed(id, .thinkingDelta(text))
             case .toolCall(let call):
-                // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput).
-                let input = call.editInput ?? call.input
+                // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput), a read's file as its path.
+                let input = call.editInput ?? call.readInput
                 feed(id, .toolStarted(AgentToolCall(id: call.id, name: call.toolName, title: call.title.isEmpty ? call.toolName : call.title,
                                                     detail: input.map { ToolSummary.json($0.object) }, input: input,
                                                     output: call.output, state: Self.state(call.status) ?? .running, paths: call.paths)))

@@ -25,10 +25,21 @@ struct TimelineBlockView: View, Equatable {
     var body: some View {
         switch block {
         case .event(let event):
-            eventRow(event)
+            // A picture the step looked at shows under it.
+            let images = ViewedImages.resolved(ViewedImages.paths(event), in: context?.directory)
+            if images.isEmpty {
+                eventRow(event)
+            } else {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    eventRow(event)
+                    ViewedImagesRow(paths: images)
+                }
+            }
         case .tools(let id, let events, let tally):
             let key = "group:" + id.uuidString
-            TranscriptWorkGroup(tally: tally, open: expanded.contains(key), toggle: { toggle(key) }) {
+            // The pictures its steps looked at stay in sight under the group, open or folded: one row for all of them.
+            TranscriptWorkGroup(tally: tally, open: expanded.contains(key), toggle: { toggle(key) },
+                                images: ViewedImages.resolved(events.flatMap { ViewedImages.paths($0) }, in: context?.directory)) {
                 ForEach(events) { eventRow($0) }
             }
         case .fold(let id, let seconds, let blocks, let checks):
