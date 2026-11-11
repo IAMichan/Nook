@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The new-session drafts you typed in and did not start, floating over the top of the Agents list, newest first, as
-/// lists its draft threads: a pen, the project, and the first line of the words. A click opens the composer on that draft; the ×
-/// under the pointer throws it away. The draft open in the composer stays in its place, lit as the open one.
+/// The new-session drafts you typed in and did not start, at the top of the Agents list, newest first lists
+/// its draft threads. Each one is drawn as a session row (`AgentRowLayout`): the project on the first line with a quiet
+/// "Draft" badge where a session shows its status, and the first line of the words as its name. A click opens the
+/// composer on that draft; the × under the pointer throws it away. The draft open in the composer is lit as the open one.
 struct UnsentDraftRows: View {
     @ObservedObject private var store = ComposerDraftStore.shared
     /// Whether the new-session composer is what is open now.
@@ -11,25 +12,22 @@ struct UnsentDraftRows: View {
 
     var body: some View {
         Group { drafts }
-            .animation(NookTheme.reveal, value: store.unsentNewSessions.isEmpty)
+            .animation(NookTheme.reveal, value: store.unsentNewSessions.map(\.key))
     }
 
     @ViewBuilder private var drafts: some View {
         if !store.unsentNewSessions.isEmpty {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 ForEach(store.unsentNewSessions) { draft in
-                    UnsentDraftRow(draft: draft, place: placeName(draft.place),
+                    UnsentDraftRow(draft: draft, place: placeName(draft.place), placeHelp: placeHelp(draft.place),
                                    selected: composerOpen && store.openNewSession == draft.key) {
                         reopen(draft)
                     } discard: {
                         NewSessionComposer.discardDraft(draft.key)
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .padding(NookTheme.Spacing.xxs)
-            // Lifted a step above the list it floats over, as the undo notice is, so the rows under it don't read through.
-            .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
-            .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
             .transition(.opacity)
         }
     }
@@ -51,16 +49,25 @@ struct UnsentDraftRows: View {
             return RemoteMachines.load().first { $0.id == id }?.name ?? id
         }
     }
+
+    private func placeHelp(_ place: NewSessionDraftKey.Place) -> String {
+        switch place {
+        case .folder(let path): ScratchProjects.isScratch(path) ? "" : AgentPathFormat.tilde(path)
+        case .machine: ""
+        }
+    }
 }
 
 private struct UnsentDraftRow: View {
     let draft: UnsentDraft
     let place: String
+    let placeHelp: String
     let selected: Bool
     let action: () -> Void
     let discard: () -> Void
     @State private var hovering = false
 
+    /// No fill at rest, as the session rows under it: only the one under the pointer or the open one lifts.
     private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear) }
 
     var body: some View {
@@ -70,7 +77,8 @@ private struct UnsentDraftRow: View {
             if hovering {
                 ToolbarIconButton("xmark", tr("inbox.draft.discard"), height: 22, width: 22, discard)
                     .rowActionsBackdrop(background)
-                    .padding(.top, NookTheme.Spacing.sm)
+                    // Level with the first line, where the badge it replaces sits.
+                    .padding(.top, NookTheme.Spacing.md - 1)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .transition(.opacity)
             }
@@ -84,29 +92,20 @@ private struct UnsentDraftRow: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(icon: "square.and.pencil")
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.amber)
-                Text(place)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text(tr("inbox.draft.unsent"))
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(hovering ? 0 : 1)
+        AgentRowLayout(folder: place, folderHelp: placeHelp, hasMeta: false) {
+            StatusBadgeLabel(word: tr("inbox.draft.unsent"), tint: NookTheme.amber) {
+                Image(icon: "pencil")
             }
-            Text(draft.preview)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            .opacity(hovering ? 0 : 1)
+        } title: {
+            AgentRowTitle(title: draft.preview)
+        } logo: {
+            EmptyView()
+        } meta: {
+            EmptyView()
         }
         .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .padding(.vertical, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .roundedBackground(background, radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
