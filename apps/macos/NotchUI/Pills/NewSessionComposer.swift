@@ -152,21 +152,60 @@ struct NewSessionComposer: View {
     // MARK: Heading
 
     /// One line while it fits; in a narrow column the folder moves to a line of its own under the question, instead of
-    /// the question being squeezed to a word per line beside a long folder name.
+    /// the question being squeezed to a word per line beside a long folder name. Under it, a quiet way out of the project ("or start without a project"); once without one, the question drops
+    /// the folder and the line under it ("No project") opens the projects to pick one again.
     private var heading: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 0) {
-                headingLead
-                projectPicker
+        VStack(spacing: NookTheme.Spacing.sm) {
+            Group {
+                if startsWithoutProject {
+                    Text(tr("compose.headingNoProject")).foregroundStyle(NookTheme.paper)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 0) {
+                            headingLead
+                            projectPicker
+                        }
+                        VStack(spacing: NookTheme.Spacing.xxs) {
+                            headingLead
+                            projectPicker
+                        }
+                    }
+                }
             }
-            VStack(spacing: NookTheme.Spacing.xxs) {
-                headingLead
-                projectPicker
-            }
+            .font(NookTheme.TextStyle.display)
+            subheading
         }
-        .font(NookTheme.TextStyle.display)
         .multilineTextAlignment(.center)
         .padding(.horizontal, NookTheme.Spacing.lg)
+        // On the heading, not the picker: "New project…" is also in the "No project" line's menu.
+        .sheet(item: $newProjectPlan) { plan in
+            PublishRepositorySheet(plan: plan) { _ in newProjectPlan = nil }
+                .environmentObject(workspace)
+        }
+    }
+
+    /// The session works in a folder of its own under ~/.nook/scratch, not in a project.
+    private var startsWithoutProject: Bool {
+        remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)
+    }
+
+    /// "or start without a project" under a project; "No project", with the projects to go back to, without one.
+    @ViewBuilder
+    private var subheading: some View {
+        if startsWithoutProject {
+            ComposerDropdown(width: 320) {
+                HoverUnderlinedLabel(title: tr("ws.new.noProject"), color: NookTheme.paper)
+            } content: {
+                projectMenuContent
+            }
+            .composerTip(tr("compose.noProject.help"))
+        } else if remoteMachine == nil {
+            Button(action: chooseNoProject) {
+                HoverUnderlinedLabel(title: tr("compose.startWithoutProject"), color: NookTheme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .composerTip(tr("ws.new.noProjectDetail"))
+        }
     }
 
     private var headingLead: some View {
@@ -182,50 +221,52 @@ struct NewSessionComposer: View {
                     .foregroundStyle(NookTheme.paper)
                     .underline(true, pattern: .dot, color: NookTheme.textTertiary)
             } content: {
-                let menu = projectMenu
-                if !menu.favorites.isEmpty {
-                    DropdownHeader(title: tr("ws.new.favorites"))
-                    ForEach(menu.favorites, id: \.self) { path in
-                        projectRow(path)
-                    }
-                }
-                if !menu.recent.isEmpty {
-                    DropdownHeader(title: tr("ws.new.recent"))
-                    ForEach(menu.recent, id: \.self) { path in
-                        projectRow(path)
-                    }
-                }
-                if !menu.favorites.isEmpty || !menu.recent.isEmpty {
-                    DropdownDivider()
-                }
-                DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
-                // A folder of its own under ~/.nook/scratch, for a question or a try-out that belongs to no project.
-                DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
-                            chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
-                DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
-                // A new folder with a repository in it, offered to publish on GitHub at once.
-                DropdownRow(symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"), detail: tr("sc.newProject.detail")) {
-                    chooseNewProject()
-                }
-                // Another machine over SSH (Settings › Agents › Workspace › Machines).
-                let machines = RemoteMachines.load()
-                if !machines.isEmpty {
-                    DropdownDivider()
-                    DropdownHeader(title: tr("ws.remote.header"))
-                    ForEach(machines) { machine in
-                        DropdownRow(symbol: "server.rack", title: machine.name, detail: machine.host,
-                                    chosen: remoteMachine?.id == machine.id) { pickMachine(machine) }
-                    }
-                }
+                projectMenuContent
             }
             .composerTip(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
-            .sheet(item: $newProjectPlan) { plan in
-                PublishRepositorySheet(plan: plan) { _ in newProjectPlan = nil }
-                    .environmentObject(workspace)
-            }
             Text("?").foregroundStyle(NookTheme.paper)
             if inspecting {
                 ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
+            }
+        }
+    }
+
+    /// The projects to pick from, shared by the folder in the question and the "No project" line under it.
+    @ViewBuilder
+    private var projectMenuContent: some View {
+        let menu = projectMenu
+        if !menu.favorites.isEmpty {
+            DropdownHeader(title: tr("ws.new.favorites"))
+            ForEach(menu.favorites, id: \.self) { path in
+                projectRow(path)
+            }
+        }
+        if !menu.recent.isEmpty {
+            DropdownHeader(title: tr("ws.new.recent"))
+            ForEach(menu.recent, id: \.self) { path in
+                projectRow(path)
+            }
+        }
+        if !menu.favorites.isEmpty || !menu.recent.isEmpty {
+            DropdownDivider()
+        }
+        DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
+        // A folder of its own under ~/.nook/scratch, for a question or a try-out that belongs to no project.
+        DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
+                    chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
+        DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
+        // A new folder with a repository in it, offered to publish on GitHub at once.
+        DropdownRow(symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"), detail: tr("sc.newProject.detail")) {
+            chooseNewProject()
+        }
+        // Another machine over SSH (Settings › Agents › Workspace › Machines).
+        let machines = RemoteMachines.load()
+        if !machines.isEmpty {
+            DropdownDivider()
+            DropdownHeader(title: tr("ws.remote.header"))
+            ForEach(machines) { machine in
+                DropdownRow(symbol: "server.rack", title: machine.name, detail: machine.host,
+                            chosen: remoteMachine?.id == machine.id) { pickMachine(machine) }
             }
         }
     }
@@ -1282,5 +1323,21 @@ private struct TaskField<Content: View>: View {
 
     var body: some View {
         content(Binding(get: { task.text }, set: set))
+    }
+}
+
+/// A quiet line under the composer's question that is underlined while the pointer is on it, like a link.
+private struct HoverUnderlinedLabel: View {
+    let title: String
+    let color: Color
+    @State private var hovering = false
+
+    var body: some View {
+        Text(title)
+            .font(NookTheme.TextStyle.body)
+            .foregroundStyle(color)
+            .underline(hovering, color: color)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
     }
 }

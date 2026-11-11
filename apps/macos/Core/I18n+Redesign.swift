@@ -20,6 +20,9 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.agents.tab.workspace": "Werkruimte",
         // Everything in the notch
         "compose.heading": "Wat zullen we bouwen in ",
+        "compose.headingNoProject": "Waar zullen we aan werken?",
+        "compose.startWithoutProject": "of begin zonder project",
+        "compose.noProject.help": "Kies een project om in te werken",
         "compose.pickProject": "welke map",
         "compose.prompt": "Beschrijf wat de agent moet doen. Return start de sessie.",
         "compose.readOnly": "Alleen lezen",
@@ -284,6 +287,9 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.agents.tab.workspace": "Workspace",
         // Everything in the notch
         "compose.heading": "What should we build in ",
+        "compose.headingNoProject": "What should we work on?",
+        "compose.startWithoutProject": "or start without a project",
+        "compose.noProject.help": "Pick a project to work in",
         "compose.pickProject": "which folder",
         "compose.prompt": "Describe what the agent should do. Return starts the session.",
         "compose.readOnly": "Read only",
@@ -544,6 +550,9 @@ let redesignTranslations: [AppLanguage: [String: String]] = [
         "settings.agents.tab.workspace": "Arbeitsbereich",
         // Everything in the notch
         "compose.heading": "Was bauen wir in ",
+        "compose.headingNoProject": "Woran arbeiten wir?",
+        "compose.startWithoutProject": "oder ohne Projekt beginnen",
+        "compose.noProject.help": "Wähle ein Projekt zum Arbeiten",
         "compose.pickProject": "welchem Ordner",
         "compose.prompt": "Beschreibe, was der Agent tun soll. Return startet die Sitzung.",
         "compose.readOnly": "Nur lesen",
