@@ -256,6 +256,8 @@ struct PullRequestsPanel: View {
                         .padding(.bottom, NookTheme.Spacing.lg)
                     }
                     }
+                    // ⇧- or ⌘-clicked rows: merge or close them together.
+                    PullRequestSelectionBar(shown: Self.requests(in: shown))
                 }
             }
         }
@@ -454,6 +456,14 @@ struct PullRequestsPanel: View {
                 .equatable()
             }
         }
+    }
+
+    /// Every pull request the list shows, each once with the first account that lists it, for select all.
+    static func requests(in shown: [AccountPullRequests]) -> [PullRequestOpenRequest] {
+        var seen = Set<String>()
+        return shown.flatMap { account in
+            (account.reviews + account.mine + account.watched).map { PullRequestOpenRequest(account: account.id, item: $0) }
+        }.filter { seen.insert($0.item.id).inserted }
     }
 
     private func toggleRepo(_ key: String, open: Bool) {

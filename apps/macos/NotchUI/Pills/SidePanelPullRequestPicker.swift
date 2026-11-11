@@ -130,6 +130,8 @@ struct SidePanelPullRequestPicker: View {
                     .padding(.bottom, NookTheme.Spacing.md)
                 }
             }
+            // ⇧- or ⌘-clicked rows: merge or close them together.
+            PullRequestSelectionBar(shown: groups.flatMap(\.items), inset: NookTheme.Spacing.sm)
             NookDivider()
             footer(all)
         }
