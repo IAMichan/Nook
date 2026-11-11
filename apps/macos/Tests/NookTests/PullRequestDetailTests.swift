@@ -74,6 +74,25 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertFalse(detail.canMerge)
         XCTAssertEqual(detail.mergeNote, "agents.pr.note.noAccess")
         XCTAssertEqual(PullRequestDetailParser.methods([:]), PullRequestMergeMethod.allCases)
+        XCTAssertFalse(detail.canBypass)
+    }
+
+    func testAnAdminMayMergePastWhatHoldsItBack() throws {
+        var object = try json(pull)
+        object["mergeable_state"] = "blocked"
+        let admin = try json(#"{"permissions": {"push": true, "admin": true}}"#)
+        let blocked = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: admin))
+        XCTAssertTrue(blocked.canBypass)
+        XCTAssertTrue(blocked.canMerge)
+        XCTAssertTrue(blocked.bypassesRules)
+
+        let writer = try json(#"{"permissions": {"push": true, "admin": false}}"#)
+        let notAdmin = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: writer))
+        XCTAssertFalse(notAdmin.canBypass)
+        XCTAssertFalse(notAdmin.bypassesRules)
+
+        let clean = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull), repository: admin))
+        XCTAssertFalse(clean.bypassesRules, "Nothing holds a clean pull request back: a plain merge")
     }
 
     func testChecksPutFailuresFirst() throws {
