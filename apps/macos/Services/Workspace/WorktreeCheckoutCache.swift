@@ -184,6 +184,8 @@ struct WorktreeCheckoutCache: Sendable {
         if entry.tree != target {
             guard (try? git.run(["-c", "core.hooksPath=/dev/null", "read-tree", "-m", "-u", entry.tree, target],
                                 in: path, timeout: 120)) != nil else { return false }
+            // The files read-tree wrote are stamped in the index's own second: rewrite it once, or every status re-reads them.
+            git.refreshNewWorktreeIndex(path)
         }
         // The worktree must be exactly what `git worktree add` would make: nothing changed, nothing extra.
         guard let status = try? git.run(["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=all"],
