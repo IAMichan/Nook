@@ -34,6 +34,8 @@ struct AgentApproval: Identifiable {
     var signInURL: URL? = nil
     /// Whether the typed secret may be kept in Nook's keychain (not for a sudo password).
     var secretKeepable = true
+    /// What "Always" would allow and how far it reaches, as a line for under the buttons (`PermissionScope.preview`).
+    var alwaysScope: String? = nil
 
     var id: String {
         switch origin {
@@ -98,13 +100,15 @@ final class ApprovalCenter {
         let title = mcp.map { tr("ws.approval.mcpTitle", run.provider.kind.shortName, $0.toolLabel, $0.serverLabel) }
             ?? tr("ws.approval.title", run.provider.kind.shortName, pending.tool)
         let arguments = mcp == nil ? "" : McpToolName.arguments(input)
-        return AgentApproval(
+        var approval = AgentApproval(
             origin: .run(runID: run.id, requestID: pending.id), agentName: run.provider.displayName, project: run.title,
             tool: pending.tool, title: title,
             command: arguments.isEmpty ? command ?? pending.summary : arguments, diff: edit?.lines ?? [],
             note: mcp == nil || assessment.level == .danger ? assessment.note : tr("ws.approval.mcpNote"),
             danger: assessment.level == .danger, canAlways: pending.canAlways, canTerminal: false, created: pending.created
         )
+        approval.alwaysScope = PermissionScope.preview(PermissionScope.rules(from: pending.suggestions?.object))
+        return approval
     }
 
     static func make(_ request: BridgeRequest) -> AgentApproval {

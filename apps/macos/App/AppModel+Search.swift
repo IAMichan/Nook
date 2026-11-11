@@ -34,7 +34,9 @@ extension AppModel {
             ("recordCall", NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start")),
             ("window", tr("menu.window")),
             ("settings", tr("agents.footer.settings")),
-        ]
+            ("cheatSheet", tr("search.action.cheatSheet")),
+            ("instructions", tr("search.action.instructions")),
+        ] + ResponseStyle.allCases.map { (id: "style." + $0.rawValue, title: tr("search.action.style." + $0.rawValue)) }
         return actions.map { SearchDocument(id: "action:" + $0.id, kind: .action, title: $0.title, boost: 0.2) }
     }
 
@@ -410,6 +412,19 @@ extension AppModel {
         case "settings":
             openSettings()
             return nil
+        case "cheatSheet":
+            cheatSheetOpen = true
+            return nil
+        case "instructions":
+            openSettings(section: .instructions)
+            return nil
+        case let style where style.hasPrefix("style."):
+            // The answer style of the conversation on screen (a new one when none is open).
+            if let wanted = ResponseStyle(rawValue: String(style.dropFirst("style.".count))) {
+                if chat.activeID == nil { chat.startNew() }
+                if let active = chat.activeID { ResponseStyleStore.shared.set(wanted, for: active) }
+            }
+            return .chat
         default:
             return nil
         }
