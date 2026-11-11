@@ -414,7 +414,7 @@ struct AgentSessionDetail: View {
                     choice = next == original ? nil : next
                 }
             }
-            .help(tr("agents.reply.switchHelp"))
+            .composerTip(tr("agents.reply.switchHelp"))
         } else {
             agentPill(name: name, profile: profile)
         }
@@ -450,7 +450,7 @@ struct AgentSessionDetail: View {
                 }
             }
             .disabled(turnSettings.mode == .plan)
-            .help(permission.help(for: provider))
+            .composerTip(permission.help(for: provider))
             let levels = app.workspace.effortLevels(for: provider, profileID: choice?.profileID, model: choice?.model ?? "")
             if !levels.isEmpty {
                 ComposerDivider()
@@ -466,7 +466,7 @@ struct AgentSessionDetail: View {
                                  text: app.workspace.effortTitle(turnSettings.effort, for: provider, profileID: choice?.profileID))
                 }
                 .composerMenu()
-                .help(tr("compose.effort.help"))
+                .composerTip(tr("compose.effort.help"))
             }
         }
     }
