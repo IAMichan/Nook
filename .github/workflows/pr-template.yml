@@ -27,6 +27,7 @@ jobs:
         with:
           sparse-checkout: scripts/pr-body-check.py
           sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Check description
         env:
           PR_BODY: ${{ github.event.pull_request.body }}

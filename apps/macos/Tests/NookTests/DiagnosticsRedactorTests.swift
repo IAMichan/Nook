@@ -12,11 +12,11 @@ final class DiagnosticsRedactorTests: XCTestCase {
     }
 
     func testPersonalDetailsAreRemoved() {
-        let out = DiagnosticsRedactor.redact("mail sam@example.com call +31 6 1234 5678 at /Users/sam/Nook and C:\\Users\\sam\\Nook")
+        let out = DiagnosticsRedactor.redact(#"mail sam@example.com call +31 6 1234 5678 at /Users/sam/Nook and C:\Users\sam\Nook"#)
         XCTAssertFalse(out.contains("sam@example.com"))
         XCTAssertFalse(out.contains("1234 5678"))
         XCTAssertFalse(out.contains("/Users/sam"))
-        XCTAssertFalse(out.contains("Users\\sam"))
+        XCTAssertFalse(out.contains(#"Users\sam"#))
         XCTAssertTrue(out.contains("[email]"))
     }
 

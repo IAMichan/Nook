@@ -5,13 +5,14 @@
 #   Reads one changed path per line on stdin and prints `area=true|false` lines for $GITHUB_OUTPUT.
 #   --all (or a change to the CI entry point itself) turns every area on: detection fails open.
 #
-# The path lists here are the single source of truth for which change starts which workflow. When a reusable
-# workflow builds from a new directory, add it here and to the `paths` of its verified-check step.
+# The path lists here are the single source of truth for which change starts which job. When a reusable workflow
+# builds from a new directory, add it here and to the `paths` of its verified-check step.
 set -euo pipefail
 
-AREAS=(macos ios packages relay tauri)
+AREAS=(macos ios packages relay tauri workflows github_scripts docs dependencies)
 
-# Prefixes (directories end in /) whose change needs the area.
+# Patterns whose change needs the area: a directory ends in /, a pattern with * is a glob over the whole path
+# (* also matches /), anything else is one file.
 paths_for() {
   case "$1" in
     macos) echo "apps/macos/ packages/protocol/ scripts/ui-lint.sh scripts/perf-lint.sh .github/workflows/build.yml .github/actions/" ;;
@@ -19,11 +20,28 @@ paths_for() {
     packages) echo "packages/core/ .github/workflows/packages.yml .github/actions/" ;;
     relay) echo "apps/relay/ .github/workflows/relay.yml" ;;
     tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;
+    # zizmor: security audit of the workflows, actions and Dependabot settings.
+    workflows) echo ".github/workflows/ .github/actions/ .github/zizmor.yml .github/dependabot.yml" ;;
+    # node --test for the scripts the community workflows load (PR overview, welcome).
+    github_scripts) echo ".github/scripts/" ;;
+    # lychee: relative links and #anchors in Markdown. A renamed heading or moved file breaks links elsewhere too.
+    docs) echo "*.md" ;;
+    # GitHub's dependency review: new dependencies with known vulnerabilities or a disallowed license.
+    dependencies) echo "*package.json *package-lock.json *Cargo.toml *Cargo.lock *Package.swift *Package.resolved apps/macos/project.yml apps/ios/project.yml" ;;
   esac
 }
 
 # A change to how CI decides runs everything, so a broken mapping cannot hide a failing build.
 ALWAYS_ALL=(.github/workflows/ci.yml scripts/ci-changes.sh)
+
+# shellcheck disable=SC2053 # in the glob branch the unquoted pattern is meant as a glob
+matches() { # file pattern
+  case "$2" in
+    */) [[ "$1" == "$2"* ]] ;;
+    *\**) [[ "$1" == $2 ]] ;;
+    *) [ "$1" = "$2" ] ;;
+  esac
+}
 
 all=false
 [ "${1:-}" = "--all" ] && all=true
@@ -44,14 +62,13 @@ done
 for area in "${AREAS[@]}"; do
   needed=$all
   if [ "$needed" = false ]; then
-    for prefix in $(paths_for "$area"); do
+    set -f # keep the * in patterns from expanding against the working directory
+    for pattern in $(paths_for "$area"); do
       for file in ${files[@]+"${files[@]}"}; do
-        case "$prefix" in
-          */) [[ "$file" == "$prefix"* ]] && needed=true ;;
-          *) [ "$file" = "$prefix" ] && needed=true ;;
-        esac
+        matches "$file" "$pattern" && needed=true
       done
     done
+    set +f
   fi
   echo "$area=$needed"
 done

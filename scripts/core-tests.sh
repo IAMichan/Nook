@@ -59,7 +59,7 @@ EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "TextGeneratorTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
   "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "WhatsAppExportTests" "LocalAgentScannerTests"
-  "ChatImageRenderTests"
+  "ChatImageRenderTests" "DayBucketsTests"
 )
 
 python3 - "$ROOT" "$WORK" "${EXCLUDE_SOURCES[@]}" <<'PY'
@@ -105,6 +105,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 public final class I18n: @unchecked Sendable {
     public static let shared = I18n()
     public var currentLanguage: AppLanguage = .en
+    public var language: AppLanguage = .en
+    static func text(_ key: String, _ args: [CVarArg], for lang: AppLanguage) -> String { ([key] + args.map { "\($0)" }).joined(separator: " ") }
 }
 SWIFT
 

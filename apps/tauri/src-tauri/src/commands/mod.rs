@@ -159,7 +159,14 @@ pub fn nook_delete(app: AppHandle, state: State<'_, AppState>, id: String) {
 }
 
 #[tauri::command]
-pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pinned: Option<bool>, archived: Option<bool>, title: Option<String>) {
+pub fn nook_set_flags(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    pinned: Option<bool>,
+    archived: Option<bool>,
+    title: Option<String>,
+) {
     state.with_chat(|c| {
         if let Some(conv) = c.get_mut(&id) {
             if let Some(p) = pinned {

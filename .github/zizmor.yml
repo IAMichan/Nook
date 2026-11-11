@@ -1,0 +1,5 @@
+# zizmor (https://docs.zizmor.sh) audits the workflows for security problems; ci.yml runs it when .github changes.
+rules:
+  # `uses: ./.github/...` is the documented way to call this repository's own actions and reusable workflows.
+  self-repository:
+    disable: true

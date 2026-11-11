@@ -808,7 +808,10 @@ struct AgentRunPanel: View {
                                            },
                                            help: TimelinePresentation.live(turn).tool)
                     }
-                    if run.status == .failed || run.status == .stopped {
+                    // A usage limit ended the turn: its own card, with the reset and how to go on.
+                    if UsageLimitCard.shows(run) {
+                        UsageLimitCard(run: run)
+                    } else if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
                     TurnPinSpacer(room: pinRoom)
@@ -1541,7 +1544,6 @@ struct AgentRunPanel: View {
         let primary = ComposerDispatch.resolve(busy: true, intent: preferred, canSteer: canSteer)
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
-            UsageLimitBanner(run: run)
             ConnectorSignInBanner(runID: runID)
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)

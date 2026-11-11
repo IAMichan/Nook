@@ -7,9 +7,10 @@ name: PR vouch
 # on main. It runs on pull_request_target so fork pull requests get a label too, and never checks out the pull request's
 # code. Runs on ubuntu and takes seconds. The labels are defined in .github/labels.yml.
 on:
-  pull_request_target:
+  # Safe: the jobs only read the author and VOUCHED.td from main through the API and never run pull request code.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, reopened, synchronize, ready_for_review]
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] only reads the comment body for /recheck-vouch
     types: [created]
   push:
     branches: [main]
@@ -17,10 +18,7 @@ on:
       - '.github/VOUCHED.td'
       - '.github/workflows/pr-vouch.yml'
 
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   targets:
@@ -31,6 +29,8 @@ jobs:
       (github.event.issue.pull_request && contains(github.event.comment.body, '/recheck-vouch'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      pull-requests: read
     outputs:
       targets: ${{ steps.collect.outputs.targets }}
     steps:
@@ -57,6 +57,10 @@ jobs:
     name: Label #${{ matrix.target.number }}
     needs: targets
     if: needs.targets.outputs.targets != '[]'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:
