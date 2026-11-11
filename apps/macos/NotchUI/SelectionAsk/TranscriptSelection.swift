@@ -9,7 +9,7 @@ import SwiftUI
 @MainActor
 final class TranscriptSelection: ObservableObject {
     /// The coordinate space of the transcript's messages, the same as its `TranscriptSelectionAnchor`'s (y going down).
-    static let space = "transcript.selection"
+    nonisolated static let space = "transcript.selection"
     /// The transcripts on screen: each adds itself when its anchor is in a window.
     private static let live = NSHashTable<TranscriptSelection>.weakObjects()
 

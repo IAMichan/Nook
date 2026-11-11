@@ -112,7 +112,7 @@ extension WorkspaceManager {
     /// Before the first turn of a new goal: it is set paused, so Codex cannot start a turn of its own first.
     func prepareCodexGoal(_ id: UUID, _ client: CodexAppServerClient, thread: String, then done: @escaping @MainActor (String?) -> Void) {
         guard case .set(let objective)? = codexGoalStarting[id] else { done(nil); return }
-        client.request("thread/goal/clear", CodexRPC.goalParams(threadID: thread)) { _ in
+        client.request("thread/goal/clear", CodexRPC.goalParams(threadID: thread)) { [weak self] _ in
             client.request("thread/goal/set", CodexRPC.goalParams(threadID: thread, objective: objective, status: .paused)) { [weak self] result in
                 Task { @MainActor in
                     guard let self else { return }

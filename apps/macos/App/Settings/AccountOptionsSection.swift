@@ -65,7 +65,7 @@ struct AccountOptionsSection: View {
             .padding(NookTheme.Spacing.xs)
             .frame(height: 64)
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
-            .onChange(of: text.wrappedValue) { onChange($0) }
+            .onChange(of: text.wrappedValue) { _, new in onChange(new) }
     }
 
     private var variablesView: some View {

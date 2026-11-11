@@ -291,7 +291,7 @@ struct SelectableProse: NSViewRepresentable {
         let cache = NSCache<NSString, NSAttributedString>()
         cache.countLimit = 400
         cache.totalCostLimit = 8 * 1024 * 1024
-        MemoryPressure.shared.register("selectableProse") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("selectableProse", emptying: cache)
         return cache
     }()
 

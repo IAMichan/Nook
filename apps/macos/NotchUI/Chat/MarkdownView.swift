@@ -147,7 +147,7 @@ private enum InlineCache {
         let cache = NSCache<NSString, Entry>()
         cache.countLimit = 3_000
         cache.totalCostLimit = 8 * 1024 * 1024
-        MemoryPressure.shared.register("markdownInline") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("markdownInline", emptying: cache)
         return cache
     }()
 }
@@ -203,7 +203,7 @@ enum MarkdownCache {
         let cache = NSCache<NSString, ParsedMarkdown>()
         cache.countLimit = 400
         cache.totalCostLimit = 16 * 1024 * 1024
-        MemoryPressure.shared.register("markdownBlocks") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("markdownBlocks", emptying: cache)
         return cache
     }()
 
@@ -308,8 +308,9 @@ struct MarkdownView: View, Equatable {
     @Environment(\.answerReferences) private var answerReferences
     let text: String
     var size: CGFloat = 14
-    /// When set, the options of a question at the end of the answer become buttons that answer it.
-    var onChoose: ((String) -> Void)? = nil
+    /// When set, the options of a question at the end of the answer become buttons that answer it. Read off the main
+    /// actor only by `==`, and only for whether it is set.
+    nonisolated(unsafe) var onChoose: ((String) -> Void)? = nil
 
     /// The same text at the same size draws the same: a row that redraws on hover or while scrolling past skips it.
     nonisolated static func == (a: MarkdownView, b: MarkdownView) -> Bool {
