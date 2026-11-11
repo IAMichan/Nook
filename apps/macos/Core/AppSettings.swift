@@ -134,6 +134,11 @@ enum SecretStore {
 
     // MARK: - Keychain items
 
+    /// Only Nook itself uses the Keychain. Render harnesses and other tools that link Nook's code are unsigned programs
+    /// of their own, rebuilt often, and macOS asks for the login password for every build of them (the prompt names
+    /// the executable, such as "r"). They keep secrets in memory only: reads find nothing and writes go to the caches.
+    static let usesKeychain = Bundle.main.bundleURL.pathExtension == "app"
+
     private static func base(_ account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
@@ -143,6 +148,7 @@ enum SecretStore {
     }
 
     private static func item(_ account: String) -> (Data?, OSStatus) {
+        guard usesKeychain else { return (nil, errSecItemNotFound) }
         var query = base(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -153,6 +159,7 @@ enum SecretStore {
 
     /// Account names of every item under `service`. Only attributes are read, which never asks for access.
     private static func legacyAccounts() -> [String] {
+        guard usesKeychain else { return [] }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -166,6 +173,7 @@ enum SecretStore {
     }
 
     private static func store(_ data: Data, account: String) -> OSStatus {
+        guard usesKeychain else { return errSecSuccess }
         let status = SecItemUpdate(base(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
             var add = base(account)
@@ -176,6 +184,7 @@ enum SecretStore {
     }
 
     private static func delete(_ account: String) -> OSStatus {
+        guard usesKeychain else { return errSecSuccess }
         let status = SecItemDelete(base(account) as CFDictionary)
         return status == errSecItemNotFound ? errSecSuccess : status
     }
