@@ -178,8 +178,11 @@ extension PullRequestDetailView {
             ComposerDropdown(width: 240) {
                 Image(icon: "chevron.down")
                     .font(NookTheme.font(9, .bold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .frame(width: 16, height: 24)
+                    .foregroundStyle(NookTheme.onPrimary)
+                    .frame(width: 24, height: 24)
+                    // The same fill as Merge beside it, so the pair reads as one split button.
+                    .roundedBackground(NookTheme.primary, radius: NookTheme.Radius.control)
+                    .opacity(merging ? 0.45 : 1)
                     .contentShape(Rectangle())
             } content: {
                 DropdownHeader(title: tr("agents.pr.mergeMethod.title"))
