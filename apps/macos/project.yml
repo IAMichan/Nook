@@ -281,6 +281,9 @@ targets:
       - path: Core/I18n+SessionControls.swift
       - path: Core/I18n+Secrets.swift
       - path: Core/I18n+LookThemes.swift
+      - path: Core/I18n+SettingsFlowsA.swift
+      - path: Core/I18n+SettingsFlowsB.swift
+      - path: Core/I18n+SettingsFlowsC.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
