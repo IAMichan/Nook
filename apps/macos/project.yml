@@ -424,6 +424,8 @@ targets:
       - path: Services/Workspace/CompactionProgress.swift
       - path: Services/HookCompaction.swift
       - path: Services/Workspace/TimelineHandles.swift
+      - path: Services/Workspace/PermissionScope.swift
+      - path: Services/Workspace/PlanChecklist.swift
       - path: Services/Workspace/SkillIndex.swift
       - path: Services/Workspace/ComposerDrafts.swift
       - path: Services/Workspace/ComposerChips.swift

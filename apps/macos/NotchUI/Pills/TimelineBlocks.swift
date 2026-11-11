@@ -311,7 +311,11 @@ struct PlanCard: View {
     /// "Implement in a new session": the plan goes to a fork, this session stays as it is.
     var implementInNew: (() -> Void)? = nil
     let implement: () -> Void
+    /// "Implement" with only the steps you kept (see `PlanChecklist`); nil falls back to `implement`.
+    var implementSelected: ((String) -> Void)? = nil
     @State private var open = false
+    @State private var checklist: PlanChecklist? = nil
+    @State private var editing = false
 
     private var title: String { PlanPreview.title(from: text) ?? tr("ws.plan.title") }
     private var collapsible: Bool { PlanPreview.needsExpand(text) }
@@ -328,8 +332,12 @@ struct PlanCard: View {
                 iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
             .foregroundStyle(NookTheme.paper)
-            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 14)
-            if collapsible {
+            if editing, let list = checklist {
+                checklistView(list)
+            } else {
+                MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 14)
+            }
+            if collapsible && !editing {
                 Button { withAnimation(NookTheme.reveal) { open.toggle() } } label: {
                     Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
                         .font(NookTheme.TextStyle.label)
@@ -344,11 +352,49 @@ struct PlanCard: View {
                     if let implementInNew {
                         NookGhostButton(title: tr("ws.plan.implementNew"), action: implementInNew)
                     }
-                    NookPrimaryButton(title: tr("ws.plan.implement"), action: implement)
+                    if PlanChecklist(markdown: text).isUseful, implementSelected != nil {
+                        NookGhostButton(title: editing ? tr("ws.plan.editDone") : tr("ws.plan.edit")) {
+                            if checklist == nil { checklist = PlanChecklist(markdown: text) }
+                            withAnimation(NookTheme.reveal) { editing.toggle() }
+                        }
+                    }
+                    NookPrimaryButton(title: tr("ws.plan.implement")) {
+                        if let checklist, editing, !checklist.allKept, checklist.keptCount > 0, let implementSelected {
+                            implementSelected(checklist.text)
+                        } else {
+                            implement()
+                        }
+                    }
                 }
             }
         }
         .conversationCard()
+    }
+
+    /// The plan's steps as a list you can tick: a step left out is not carried out.
+    private func checklistView(_ list: PlanChecklist) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            ForEach(list.steps) { step in
+                Button {
+                    checklist?.toggle(step.id)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                        Image(icon: step.kept ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(step.kept ? NookTheme.mint : NookTheme.textTertiary)
+                        Text(step.text)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(step.kept ? NookTheme.paper : NookTheme.textTertiary)
+                            .strikethrough(!step.kept)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding(.leading, CGFloat(step.indent) * 4)
+                }
+                .buttonStyle(.plain)
+            }
+            Text(tr("ws.plan.kept", list.keptCount, list.steps.count))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+        }
     }
 
     private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
