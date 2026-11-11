@@ -25,7 +25,9 @@ extension NowPlayingService {
             guard let self, var merged = saved, self.keepsHistory else { return }
             for play in self.history.plays { merged.add(play) }
             for track in self.history.recent.tracks.reversed() { merged.recent.add(track) }
+            let cleaned = merged.dropUnrealPlays()
             self.history = merged
+            if cleaned { self.saveHistorySoon() }
         }
     }
 

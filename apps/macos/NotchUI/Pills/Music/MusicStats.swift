@@ -392,57 +392,48 @@ private struct MusicRecapCard: View {
     let listener: String?
 
     var body: some View {
-        let shape = NookTheme.shape(NookTheme.Radius.sheet)
-        HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
+        HStack(alignment: .center, spacing: NookTheme.Spacing.xl) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("music.stats.recapTitle", periodTitle))
-                    .font(NookTheme.TextStyle.label)
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.textStrong)
                 Text(musicListeningTime(stats.seconds))
-                    .font(NookTheme.rounded(42, .bold))
+                    .font(NookTheme.rounded(40, .bold))
                     .monospacedDigit()
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Text([change, listener].compactMap { $0 }.joined(separator: " · "))
                     .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textStrong)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let artist = stats.topArtists.first {
-                VStack(spacing: NookTheme.Spacing.sm) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
+                        Text(tr("music.stats.topArtist"))
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                        Text(artist.name)
+                            .font(NookTheme.TextStyle.strong)
+                            .foregroundStyle(NookTheme.paper)
+                            .lineLimit(1)
+                        Text(musicListeningTime(artist.seconds))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .monospacedDigit()
+                    }
+                    .frame(maxWidth: 180, alignment: .trailing)
                     MusicArtwork(url: artist.artworkURL, seed: artist.name, symbol: "music.mic", cornerRadius: 0)
-                        .frame(width: 96, height: 96)
+                        .frame(width: 64, height: 64)
                         .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(NookTheme.music.opacity(0.5), lineWidth: 3))
-                        .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
-                    Text(tr("music.stats.topArtist"))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.textSecondary)
-                    Text(artist.name)
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                        .frame(maxWidth: 140)
                 }
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(NookTheme.Spacing.xxl)
-        .background {
-            shape
-                .fill(NookTheme.surface)
-                .overlay(LinearGradient(colors: [NookTheme.music.opacity(0.22), NookTheme.violet.opacity(0.12), .clear],
-                                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay {
-                    if let artist = stats.topArtists.first {
-                        MusicArtworkGlow(url: artist.artworkURL, seed: artist.name, opacity: 0.35, center: .trailing, reach: 0.5)
-                    }
-                }
-                .clipShape(shape)
-                .overlay(shape.strokeBorder(NookTheme.paper.opacity(0.06), lineWidth: 1))
-        }
+        .padding(NookTheme.Spacing.xl)
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
     }
 }
 
