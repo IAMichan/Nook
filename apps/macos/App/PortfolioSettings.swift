@@ -62,7 +62,7 @@ struct PortfolioSettings: View {
                     Image(icon: "minus.circle.fill")
                         .foregroundStyle(NookTheme.coral)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.nookBorderless)
                 .help(tr("portfolio.removeAddress"))
             }
             if let message = portfolio.error(for: wallet) {

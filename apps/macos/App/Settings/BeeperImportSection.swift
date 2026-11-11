@@ -68,7 +68,7 @@ struct BeeperImportSheet: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
         .confirmationDialog(tr("beeper.import.finish"), isPresented: $confirmFinish) {
@@ -104,7 +104,7 @@ struct BeeperImportSheet: View {
             .frame(maxWidth: .infinity)
             .onSubmit { saveToken() }
         Button(tr("chats.slack.save")) { saveToken() }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 

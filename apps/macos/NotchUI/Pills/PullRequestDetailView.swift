@@ -304,7 +304,7 @@ struct PullRequestDetailView: View {
                 } label: {
                     Text(item.repo).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("agents.pr.openRepository", item.repo))
                 numberLink
             }
@@ -323,7 +323,7 @@ struct PullRequestDetailView: View {
             .foregroundStyle(PullRequestIcon.tint(glyph))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .fixedSize()
         .help(tr("agents.pulls.open"))
         .accessibilityLabel(tr("agents.pulls.open"))
@@ -442,7 +442,7 @@ struct PullRequestDetailView: View {
         } label: {
             Text(command).font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.textMuted).lineLimit(1).truncationMode(.tail)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr("agents.pr.action.copyCheckout"))
         .layoutPriority(-1)
     }
@@ -501,7 +501,7 @@ struct PullRequestDetailView: View {
                 .foregroundStyle(NookTheme.amber)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(behindText(detail))
             .popover(isPresented: $showBehind, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -557,7 +557,7 @@ struct PullRequestDetailView: View {
                     // A fork's branch carries its owner, as on GitHub: "ada:feature".
                     Text((detail.headOwner.map { $0 + ":" } ?? "") + detail.headBranch).lineLimit(1).truncationMode(.middle)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("agents.pr.copyBranch"))
             }
             .font(NookTheme.mono(11.5))
@@ -612,7 +612,7 @@ struct PullRequestDetailView: View {
                     .frame(width: 40, height: 38)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("agents.pr.write.open"))
             .accessibilityLabel(tr("agents.pr.write.open"))
             Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
@@ -747,7 +747,7 @@ struct PullRequestDetailView: View {
             .font(NookTheme.TextStyle.caption)
             .foregroundStyle(NookTheme.textTertiary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 
     @ViewBuilder

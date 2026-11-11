@@ -73,8 +73,8 @@ struct ConnectorSignInMenu: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
+        .menuStyle(.nookButton)
+        .buttonStyle(.nookPlain)
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { hovering = $0 }

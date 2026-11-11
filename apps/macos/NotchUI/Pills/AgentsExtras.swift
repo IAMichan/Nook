@@ -122,7 +122,7 @@ private struct FooterIcon<Glyph: View>: View {
             .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(hint.map { label + "\n" + $0 } ?? label)
         .accessibilityLabel(label)

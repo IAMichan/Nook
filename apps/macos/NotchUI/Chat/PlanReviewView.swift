@@ -154,7 +154,7 @@ struct PlanReview: View {
                         .foregroundStyle(included(index) ? color(step.tone) : NookTheme.textTertiary)
                         .frame(width: 18)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(included(index) ? tr("chat.plan.exclude") : tr("chat.plan.include"))
             } else {
                 Text("\(step.number)")

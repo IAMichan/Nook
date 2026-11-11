@@ -216,7 +216,7 @@ struct RunQuestionPanel: View {
                     .padding(.vertical, 4)
                     .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.35)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
@@ -359,7 +359,7 @@ private struct QuestionOptionRow: View {
             .roundedStroke(borderColor, radius: NookTheme.Radius.control, lineWidth: isHovered || isPicked ? 1.2 : 1)
             .roundedHitShape(NookTheme.Radius.control)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering in
             isHovered = hovering
             if hovering {

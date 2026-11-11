@@ -41,7 +41,7 @@ struct TimelineEarlierRow: View {
             .padding(.vertical, NookTheme.Spacing.sm)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .accessibilityLabel(tr("ws.timeline.showEarlier"))
     }

@@ -108,7 +108,7 @@ struct SourcesDisclosure: View {
                     .padding(.vertical, 3)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(message.scopeLabel.isEmpty ? tr("chat.sources.detailsHelp") : tr("chat.sources.scope", message.scopeLabel))
                 .accessibilityLabel(summary(used: used, failed: failed, running: running)
                                     + (failed > 0 ? ", " + tr("chat.sources.unread", failed) : ""))
@@ -335,7 +335,7 @@ private struct SourceFixButton: View {
                 .frame(height: 26)
                 .background(NookTheme.shape(NookTheme.Radius.control).fill(prominent ? NookTheme.amber : NookTheme.smoke))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 }
 
@@ -417,7 +417,7 @@ struct PrivateBriefDisclosure: View {
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             if expanded {
                 Text(brief)
                     .font(NookTheme.TextStyle.detail)
@@ -518,7 +518,7 @@ private struct ReferenceRow: View {
             .roundedBackground(hovering && openable ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!openable)
         .onHover { hovering = $0 }
         .help(openable ? tr("chat.references.open") : tr("chat.references.noLink"))

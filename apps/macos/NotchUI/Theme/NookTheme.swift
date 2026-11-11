@@ -442,17 +442,86 @@ struct NookPressStyle: ButtonStyle {
     var scale: CGFloat = 0.97
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(NookTheme.Motion.quick, value: configuration.isPressed)
+            .pointerStyle(isEnabled ? .link : nil)
     }
 }
 
 extension ButtonStyle where Self == NookPressStyle {
     /// Nook's press feedback: `.buttonStyle(.nookPress)`.
     static var nookPress: NookPressStyle { NookPressStyle() }
+}
+
+/// A system button style that also shows the pointing hand while the pointer is on an enabled button, so every button
+/// in Nook reads as clickable. macOS keeps the arrow over a plain or borderless button, which made Nook's icon buttons,
+/// rows and chips look like static text. Use `.nookPlain`, `.nookBorderless`, `.nookProminent` or `.nookLink` instead
+/// of the system `.plain`, `.borderless`, `.borderedProminent` or `.link` (`UIConsistencyTests` enforces it).
+struct NookPointerButtonStyle<Base: PrimitiveButtonStyle>: PrimitiveButtonStyle {
+    var base: Base
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button(configuration)
+            .buttonStyle(base)
+            .pointerStyle(isEnabled ? .link : nil)
+    }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<PlainButtonStyle> {
+    /// `.plain` with the pointing hand.
+    static var nookPlain: Self { NookPointerButtonStyle(base: .plain) }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<BorderlessButtonStyle> {
+    /// `.borderless` with the pointing hand.
+    static var nookBorderless: Self { NookPointerButtonStyle(base: .borderless) }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<BorderedProminentButtonStyle> {
+    /// `.borderedProminent` with the pointing hand.
+    static var nookProminent: Self { NookPointerButtonStyle(base: .borderedProminent) }
+}
+
+extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<LinkButtonStyle> {
+    /// `.link` with the pointing hand.
+    static var nookLink: Self { NookPointerButtonStyle(base: .link) }
+}
+
+/// A system menu style that also shows the pointing hand over an enabled menu button, like `NookPointerButtonStyle`.
+/// Use `.nookBorderlessButton` / `.nookButton` instead of `.borderlessButton` / `.button`.
+struct NookPointerMenuStyle<Base: MenuStyle>: MenuStyle {
+    var base: Base
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Menu(configuration)
+            .menuStyle(base)
+            .pointerStyle(isEnabled ? .link : nil)
+    }
+}
+
+extension MenuStyle where Self == NookPointerMenuStyle<BorderlessButtonMenuStyle> {
+    /// `.borderlessButton` with the pointing hand.
+    static var nookBorderlessButton: Self { NookPointerMenuStyle(base: .borderlessButton) }
+}
+
+extension MenuStyle where Self == NookPointerMenuStyle<ButtonMenuStyle> {
+    /// `.button` with the pointing hand.
+    static var nookButton: Self { NookPointerMenuStyle(base: .button) }
+}
+
+extension View {
+    /// The pointing hand over a view that acts on a click without being a `Button` (a row or tab with
+    /// `.onTapGesture`), so it reads as clickable like every button. `enabled: false` keeps the arrow.
+    func nookClickable(_ enabled: Bool = true) -> some View {
+        pointerStyle(enabled ? .link : nil)
+    }
 }
 
 /// Lifts a control a hair while the pointer is on it (see `View.hoverLift`). With Reduce Motion on it stays put: the

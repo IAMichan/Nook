@@ -77,7 +77,7 @@ struct LineageControl: View {
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("lineage.stop", node.title))
                 .accessibilityLabel(tr("lineage.stop", node.title))
             }

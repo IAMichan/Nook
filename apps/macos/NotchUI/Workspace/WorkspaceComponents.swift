@@ -585,7 +585,7 @@ struct DiffLineRow: View, Equatable {
                         .padding(.horizontal, 7)
                         .padding(.vertical, NookTheme.Spacing.xxs)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("ws.review.add"))
             }
         }

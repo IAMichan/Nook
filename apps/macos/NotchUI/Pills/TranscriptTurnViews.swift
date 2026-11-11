@@ -103,7 +103,7 @@ struct TurnChangesCard: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             Spacer(minLength: NookTheme.Spacing.sm)
             if !all.isEmpty {
                 ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -119,7 +119,7 @@ struct TurnChangesCard: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("agents.turn.openDiff"))
         }
         .font(NookTheme.TextStyle.label)
@@ -166,7 +166,7 @@ private struct TurnChangesRow: View {
             .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(row.isDirectory ? row.path : tr("agents.turn.showFile", row.path))
     }

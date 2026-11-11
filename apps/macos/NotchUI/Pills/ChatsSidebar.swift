@@ -275,7 +275,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
             .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(count > 0 ? "\(title): \(count)" : title)
@@ -381,7 +381,7 @@ struct ChatReadStatus: View {
                         .lineLimit(1)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .pointerStyle(.link)
             .help("\(tr("chats.markReadInApp", appName)): \(explanation)")
@@ -434,7 +434,7 @@ struct ChatMarkButton: View {
             .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.separator, lineWidth: 1))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .fixedSize()
@@ -494,7 +494,7 @@ struct ChatLimitsLine: View {
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("chats.limits.hide"))
             .accessibilityLabel(tr("chats.limits.hide"))
         }

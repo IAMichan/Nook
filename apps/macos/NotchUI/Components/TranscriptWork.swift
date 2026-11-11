@@ -93,7 +93,7 @@ struct TranscriptWorkLine: View {
 
         if let action, clickable {
             Button(action: action) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
                 .accessibilityAddTraits(open == true || reveals == true ? .isSelected : [])
         } else {
@@ -275,7 +275,7 @@ struct TranscriptFoldLine: View {
             .overlay(alignment: .bottom) { if ruled { NookDivider() } }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(open ? .isSelected : [])
     }
@@ -484,7 +484,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
                 .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2,
                                 radius: NookTheme.Radius.control)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .accessibilityAddTraits(open ? .isSelected : [])
             if open {

@@ -247,6 +247,7 @@ struct SearchPanel: View {
                 ForEach(Array(list.enumerated()), id: \.element.id) { offset, row in
                     rowView(row, selected: offset == index)
                         .onHover { if $0 { index = offset } }
+                        .nookClickable()
                         .onTapGesture { index = offset; open(list) }
                 }
             }
@@ -269,6 +270,7 @@ struct SearchPanel: View {
                                 .id(row.id)
                                 // The pointer and the arrow keys share one chosen row.
                                 .onHover { if $0 { index = offset } }
+                                .nookClickable()
                                 .onTapGesture { index = offset; open(list) }
                         }
                     }
@@ -514,7 +516,7 @@ struct SearchPanel: View {
                         Button { openHit(hit) } label: {
                             hitRow(hit, selected: false).modifier(SearchHoverFill())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                     }
                     .padding(.bottom, NookTheme.Spacing.md)
                 }
@@ -537,7 +539,7 @@ struct SearchPanel: View {
                             .modifier(SearchHoverFill())
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                     }
                     .padding(.bottom, NookTheme.Spacing.md)
                 }
@@ -558,7 +560,7 @@ struct SearchPanel: View {
                         .modifier(SearchHoverFill())
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                 }
             }
             .padding(NookTheme.Spacing.sm)

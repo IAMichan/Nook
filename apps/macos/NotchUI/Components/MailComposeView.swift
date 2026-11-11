@@ -75,7 +75,7 @@ struct MailComposeView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.nookBorderlessButton)
             // A long "account — address" is cut in the middle instead of running past a narrow chat.
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)

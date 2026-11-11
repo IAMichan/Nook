@@ -634,7 +634,7 @@ private struct SheetBackButton: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .keyboardShortcut(.cancelAction)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)

@@ -349,7 +349,7 @@ private struct WorkflowJobRow: View {
             .padding(.vertical, NookTheme.Spacing.sm)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: NookTheme.rowRest),
                            radius: NookTheme.Radius.control)
         .onHover { hovering = $0 }

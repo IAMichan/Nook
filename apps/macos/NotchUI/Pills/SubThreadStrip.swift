@@ -64,7 +64,7 @@ struct SubThreadStrip: View {
             .roundedBackground(isOpen ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr(isOpen ? "ws.subthread.close" : side.subThreadRoom ? "ws.subthread.open" : "ws.subthread.openHere"))
         .accessibilityAddTraits(isOpen ? .isSelected : [])
         .contextMenu {

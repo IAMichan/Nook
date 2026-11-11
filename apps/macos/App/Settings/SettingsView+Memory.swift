@@ -201,7 +201,7 @@ struct MemorySettingsSection: View {
             }
             .labelled(tr("memory.settings.delete"))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.nookBorderless)
     }
 
     /// Keeps the edited text, or leaves the field open with the reason when Nook would not keep it.

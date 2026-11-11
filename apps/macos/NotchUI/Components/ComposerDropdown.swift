@@ -25,7 +25,7 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
     var body: some View {
         let flexible = takesRoom && density.logosTakeRoom
         Button { open.toggle() } label: { trigger() }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .fixedSize(horizontal: !flexible, vertical: true)
             .modifier(DropdownKeyCommand(command: command, others: alsoOpenedBy, open: $open))
             .popover(isPresented: $open, arrowEdge: .bottom) {
@@ -223,7 +223,7 @@ struct DropdownRow: View {
                                radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .overlay(alignment: .trailing) { star }
         .opacity(disabledReason == nil ? 1 : 0.64)
         .onHover { hovering = $0 }
@@ -241,7 +241,7 @@ struct DropdownRow: View {
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .padding(.trailing, NookTheme.Spacing.xs)
             .help(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
             .accessibilityLabel(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
@@ -297,7 +297,7 @@ struct DropdownTile: View {
             .roundedBackground(hovering ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityLabel(title)
@@ -434,7 +434,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(help(place))
     }
 }
@@ -700,7 +700,7 @@ struct ModeToggle: View {
             ComposerPill(symbol: mode == .plan ? "list.bullet.clipboard" : "sparkles", dot: nil, text: mode.label,
                          tint: mode == .plan ? NookTheme.iris : nil, showsChevron: false)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .fixedSize()
         .composerTip(mode.help + " · " + tr("compose.modeSwitch"))
     }

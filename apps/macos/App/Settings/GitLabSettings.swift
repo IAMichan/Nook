@@ -123,7 +123,7 @@ struct GitLabSetupSheet: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
         .confirmationDialog(tr("connect.disconnectTitle", "GitLab"), isPresented: $confirmDisconnect) {
@@ -224,7 +224,7 @@ struct GitLabSetupSheet: View {
                 Button { pasteFromClipboard() } label: {
                     Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 Button(tr("button.save"), action: save)
                     .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty || checking)
                 Spacer()

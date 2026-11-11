@@ -62,7 +62,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
                             Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
                                 withAnimation(NookTheme.reveal) { expanded.toggle() }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.nookPlain)
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                         }

@@ -342,7 +342,7 @@ struct ChatTranscript: View, Equatable {
             .padding(.vertical, NookTheme.Spacing.md)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(loadingOlder)
         .accessibilityLabel(tr("chat.loadOlder"))
     }
@@ -598,7 +598,7 @@ private struct ChatBubbleView: View, Equatable {
                 } else {
                     // In a group: a click on the ticks says who read it, who has it, and who does not yet.
                     Button { showingInfo = true } label: { MessageTicksMark(ticks: ticks) }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .pointerStyle(.link)
                         .help(tr("chat.info.title"))
                         .accessibilityLabel(tr("chat.info.title"))
@@ -642,7 +642,7 @@ private struct ChatBubbleView: View, Equatable {
                 AttachmentButton(name: attachment, action: onOpen)
             } else {
                 Button(action: onOpen) { ChatPhotoPlaceholder(name: attachment) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .help(tr("card.attachment.view"))
             }
         case .video(let url):
@@ -844,7 +844,7 @@ private struct ChatBubbleView: View, Equatable {
                             Button(expanded ? tr("chat.showLess") : tr("chat.readMore")) {
                                 withAnimation(NookTheme.swap) { expanded.toggle() }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.nookPlain)
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.blue)
                         }
@@ -1080,7 +1080,7 @@ private struct ChatJumpButton: View {
                 }
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("chat.jumpToNewest"))
@@ -1165,7 +1165,7 @@ private struct ReactionChips: View {
     var body: some View {
         // A click shows who put which emoji there, as the chat apps do; there yours can be taken back or another added.
         Button { showingPeople = true } label: { pill }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .pointerStyle(.link)
             .help(Self.summary(reactions))
             .accessibilityLabel(Self.summary(reactions))
@@ -1273,6 +1273,7 @@ private struct ReactionPeopleView: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .contentShape(Rectangle())
+                .nookClickable(row.mine)
                 .onTapGesture { if row.mine { onReact?(row.emoji) } }
                 .accessibilityElement(children: .combine)
             }
@@ -1287,7 +1288,7 @@ private struct ReactionPeopleView: View {
                                 .frame(width: 30, height: 30)
                                 .background(Circle().fill(NookTheme.smoke))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .help(tr("chat.react"))
                     }
                 }
@@ -1315,7 +1316,7 @@ private struct BubbleActionButton: View {
                 .background(Circle().fill(NookTheme.smoke))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .hoverLift(hovering, scale: 1.03)
         .help(label)
@@ -1364,7 +1365,7 @@ private struct MoreEmojiButton: View {
                 .background(Circle().fill(NookTheme.smoke))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .hoverLift(hovering, scale: 1.03)
         .help(tr("chat.react.more"))
@@ -1386,7 +1387,7 @@ private struct ReactionPickerButton: View {
                 .background(Circle().fill(chosen ? NookTheme.mint.opacity(0.2) : (hovering ? NookTheme.smoke : Color.clear)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .hoverLift(hovering, scale: 1.06)
         .help(chosen ? tr("chat.react.takeBack") : emoji)
@@ -1484,7 +1485,7 @@ struct VideoTile: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("card.video.play"))
                 .accessibilityLabel("\(tr("card.video.play")): \(name)")
             }
@@ -1499,7 +1500,7 @@ struct VideoTile: View {
                         .background(Circle().fill(Color.black.opacity(0.55)))
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .padding(6)
                 .help(enlargeLabel)
                 .accessibilityLabel("\(enlargeLabel): \(name)")
@@ -1844,7 +1845,7 @@ struct PhotoButton: View {
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(tr("card.video.enlarge"))
         .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
@@ -1900,7 +1901,7 @@ struct AttachmentButton: View {
             .roundedBackground(NookTheme.ink.opacity(hovering ? 0.32 : 0.22), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .task(id: file) {
             guard let file else { bytes = nil; return }

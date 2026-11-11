@@ -320,12 +320,12 @@ struct MCPServiceRow: View {
             } else {
                 if keyAlternative != nil {
                     Button(tr("connect.useKey")) { showKeySetup = true }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.nookBorderless)
                         .controlSize(.small)
                         .help(tr("connect.useKeyHelp"))
                 }
                 Button(failure == nil ? tr("connect.connect") : tr("connector.retry")) { signIn.connect(service, app: app) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.small)
             }
         }

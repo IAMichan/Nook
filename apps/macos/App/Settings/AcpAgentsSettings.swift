@@ -149,7 +149,7 @@ private struct AcpRegistrySheet: View {
                 .controlSize(.large)
             Button(chosen?.command == nil && chosen?.binary != nil ? tr("acp.install") : tr("acp.add")) { confirm() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
                 .disabled(!(chosen?.isSupported ?? false) || installing)
         }
@@ -257,7 +257,7 @@ private struct AcpManualSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
             .disabled(!canAdd)
         }

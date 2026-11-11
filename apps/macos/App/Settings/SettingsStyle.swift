@@ -348,7 +348,7 @@ struct SettingsPickRow: View {
                                radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }
@@ -405,7 +405,7 @@ struct StepAction: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if prominent {
-                Button(button, action: action).buttonStyle(.borderedProminent).disabled(disabled)
+                Button(button, action: action).buttonStyle(.nookProminent).disabled(disabled)
             } else {
                 Button(button, action: action).disabled(disabled)
             }

@@ -224,6 +224,7 @@ struct MailMessageCard: View {
             }
         }
         .contentShape(Rectangle())
+        .nookClickable()
         .onTapGesture(perform: onToggle)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
@@ -313,7 +314,7 @@ struct MailMessageCard: View {
                         .padding(.vertical, NookTheme.Spacing.xxs)
                         .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 if showsQuoted {
                     ChatMessageText(text: text.quoted)
                         .opacity(0.75)

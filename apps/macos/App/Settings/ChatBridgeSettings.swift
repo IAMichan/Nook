@@ -99,7 +99,7 @@ struct TelegramSettingsRows: View {
                 SecureField("", text: $password).labelsHidden().textFieldStyle(.roundedBorder)
                     .onSubmit { telegram.sendPassword(password) }
                 Button(tr("chats.telegram.logIn")) { telegram.sendPassword(password) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .disabled(password.isEmpty)
                 loginError
             }
@@ -123,7 +123,7 @@ struct TelegramSettingsRows: View {
             TextField("", text: text, prompt: Text(prompt)).labelsHidden().textFieldStyle(.roundedBorder).onSubmit(action)
             // The step's button, under its field.
             Button(button, action: action)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
             loginError
         }
@@ -156,7 +156,7 @@ struct TelegramSettingsRows: View {
             Button(tr("chats.telegram.openSite")) {
                 if let url = URL(string: "https://my.telegram.org/apps") { NSWorkspace.shared.open(url) }
             }
-            .buttonStyle(.link)
+            .buttonStyle(.nookLink)
             HStack(spacing: NookTheme.Spacing.sm) {
                 TextField("", text: $apiID, prompt: Text("api_id")).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 110)
                 SecureField("", text: $apiHash, prompt: Text("api_hash")).labelsHidden().textFieldStyle(.roundedBorder)
@@ -164,7 +164,7 @@ struct TelegramSettingsRows: View {
             }
             // The step's button, under its fields.
             Button(tr("chats.slack.save")) { saveKeys() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(!keysValid)
         }
     }
@@ -195,7 +195,7 @@ struct TelegramKeysButton: View {
 
     var body: some View {
         Button(tr("chats.telegram.changeKeys")) { Self.reset(telegram) }
-            .buttonStyle(.link)
+            .buttonStyle(.nookLink)
     }
 
     /// Forgets the keys Nook keeps, so Telegram asks for new ones.
@@ -273,7 +273,7 @@ struct TeamsSettingsRows: View {
                 }
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Button(tr("chats.teams.openPage")) { NSWorkspace.shared.open(code.verificationURL) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                     Button(tr("chats.teams.cancel")) { teams.cancelSignIn() }
                     ProgressView().controlSize(.small)
                 }
@@ -355,7 +355,7 @@ struct SlackTokenRows: View {
                 .onSubmit { save() }
             // Save under the field; disconnecting is its own line under the token's state, never beside Save.
             Button(tr("chats.slack.save")) { save() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
             if slackSet {
                 if let problem = capture.bridgeProblems[capture.slackBridge.app] {

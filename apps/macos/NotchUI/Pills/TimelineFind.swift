@@ -122,7 +122,7 @@ struct TimelineToEndPill: View {
             .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 }

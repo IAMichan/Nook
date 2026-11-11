@@ -511,7 +511,7 @@ private struct UsageBlockRows: View {
                 Button(all ? tr("usage.chats.fewer") : tr("usage.chats.more", blocks.count - 4)) {
                     withAnimation(NookTheme.swap) { all.toggle() }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
             }
@@ -567,7 +567,7 @@ private struct UsageBlockRows: View {
                 .padding(.vertical, NookTheme.Spacing.md)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(block.reported ? tr("limits.block.reported") : tr("limits.block.estimated"))
             if open {
                 VStack(spacing: 0) {
@@ -758,7 +758,7 @@ private struct LimitSegment: View {
                 .roundedStroke(open || hovering ? NookTheme.line2 : Color.clear, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .help(summary(used: used, elapsed: elapsed, resetsIn: resetsIn, credits: credits))
             .accessibilityLabel(summary(used: used, elapsed: elapsed, resetsIn: resetsIn, credits: credits))
@@ -857,7 +857,7 @@ private struct LimitLegendRow: View {
             .roundedBackground(hovering || open ? NookTheme.wash.opacity(0.08) : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .popover(isPresented: $open, arrowEdge: .top) {
             LimitSegmentDetails(member: member, window: window, details: section.details[member.accountID],
@@ -951,7 +951,7 @@ private struct RedactedText: View {
                 .blur(radius: revealed ? 0 : 4)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(revealed ? tr("limits.hide") : tr("limits.reveal"))
         .accessibilityLabel(revealed ? value : tr("limits.reveal"))
     }
