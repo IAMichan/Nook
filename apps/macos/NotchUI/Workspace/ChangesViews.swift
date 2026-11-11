@@ -293,7 +293,7 @@ struct CommitSheet: View {
                 .cardBackground(WS.surface, stroke: WS.border, radius: NookTheme.Radius.chip)
             if let run, message.isEmpty {
                 Button(tr("ws.commit.useTitle")) { message = run.title }
-                    .buttonStyle(.link)
+                    .buttonStyle(.nookLink)
                     .font(NookTheme.TextStyle.detail)
             }
             if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
@@ -401,7 +401,7 @@ struct PullRequestSheet: View {
             if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
             if let created {
                 Button(tr("ws.pr.created")) { PullRequestViewer.show(created) }
-                    .buttonStyle(.link)
+                    .buttonStyle(.nookLink)
                     .font(NookTheme.TextStyle.strong)
             }
             HStack {

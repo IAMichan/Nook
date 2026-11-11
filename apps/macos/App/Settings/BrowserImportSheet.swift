@@ -187,7 +187,7 @@ struct BrowserImportSheet: View {
             SettingNote(tr("cookieImport.into.note"))
             // The step's button, under what it imports.
             Button(tr("cookieImport.import")) { Task { await importChosen() } }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(phase != .picking || chosen.isEmpty)
         }
     }
@@ -198,7 +198,7 @@ struct BrowserImportSheet: View {
         Spacer()
         Button(tr("settings2.done")) { dismiss() }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
     }
 

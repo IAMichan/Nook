@@ -245,7 +245,7 @@ struct SidePanelPullRequestPicker: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("agents.pr.linked.add"))
             }
         }

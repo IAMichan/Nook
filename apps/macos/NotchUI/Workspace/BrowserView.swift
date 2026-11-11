@@ -882,7 +882,7 @@ struct BrowserView: View {
                     .frame(height: SidePanelMetrics.toolbar)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
         }
         .frame(maxWidth: 320)
@@ -1053,7 +1053,7 @@ private struct BrowserPopupView: View {
                 Button(action: expand) { Image(icon: "arrow.up.left.and.arrow.down.right") }
                     .help(tr("browser.popup.expand"))
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.nookBorderless)
             // Room for the window's own buttons on the left.
             .padding(.leading, 64)
             .padding(.trailing, 10)

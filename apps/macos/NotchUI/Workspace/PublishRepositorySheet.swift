@@ -38,7 +38,7 @@ struct PublishRepositorySheet: View {
             } label: {
                 if working { ProgressView().controlSize(.small) } else { Text(tr("sc.publish.action")) }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .keyboardShortcut(.defaultAction)
             .disabled(working || !RepositoryPublish.isValidName(name))
         }

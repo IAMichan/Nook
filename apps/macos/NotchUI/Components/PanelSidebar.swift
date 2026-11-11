@@ -248,7 +248,7 @@ private struct PanelSidebarTabButton: View {
             }
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         // A tab torn off into a window of its own (`TabWindowController`).
         .contextMenu {
             if PanelSplitChoice.choices.contains(TabWindowController.key(tab)) {

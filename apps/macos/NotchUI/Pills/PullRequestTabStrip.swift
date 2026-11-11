@@ -71,7 +71,7 @@ private struct PullRequestTab: View {
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("agents.pulls.tabs.close"))
             .accessibilityLabel(tr("agents.pulls.tabs.close"))
             Button(action: select) {
@@ -82,7 +82,7 @@ private struct PullRequestTab: View {
                     .lineLimit(1)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
         }
         .padding(.leading, NookTheme.Spacing.xs)
         .padding(.trailing, NookTheme.Spacing.md)
@@ -90,6 +90,7 @@ private struct PullRequestTab: View {
         .frame(maxWidth: 144)
         .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
+        .nookClickable()
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
         .help(tab.item.repo + " #\(tab.item.number)" + (tab.item.title.isEmpty ? "" : " · " + tab.item.title))

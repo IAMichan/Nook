@@ -566,7 +566,7 @@ private struct FileLineNumber: View {
                 Button { comment(number) } label: {
                     Image(icon: "plus.bubble").font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.paper)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("file.viewer.comment"))
                 .accessibilityLabel(tr("file.viewer.comment"))
             } else {

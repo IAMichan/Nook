@@ -19,7 +19,7 @@ struct ShortcutCheatSheetView: View {
                 Text(tr("cheatsheet.title")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
                 Spacer()
                 Button(tr("cheatsheet.change"), action: openSettings)
-                    .buttonStyle(.plain).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.iris)
+                    .buttonStyle(.nookPlain).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.iris)
                 ToolbarIconButton("xmark", tr("button.close"), height: 24, width: 24) { close() }
             }
             .padding(NookTheme.Spacing.lg)

@@ -142,7 +142,7 @@ struct UsageOverviewBlocks: View {
                     Button(allChats ? tr("usage.chats.fewer") : tr("usage.chats.more", min(chats.count, 50) - 8)) {
                         withAnimation(NookTheme.swap) { allChats.toggle() }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                 }
@@ -457,7 +457,7 @@ struct UsageModelRow: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }
@@ -490,7 +490,7 @@ struct UsageChatRow: View {
                     .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .help(tr("usage.chat.open", target.title))
         } else {

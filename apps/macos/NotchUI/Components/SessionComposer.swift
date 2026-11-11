@@ -896,7 +896,7 @@ struct SessionComposer<Controls: View>: View {
             .background(Circle().fill(active ? tint : NookTheme.smoke))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .composerTip(label)
         .accessibilityLabel(label)
     }
@@ -1153,8 +1153,8 @@ struct ComposerDivider: View {
 extension View {
     /// A menu that looks like its label only: no button chrome, no arrow.
     func composerMenu() -> some View {
-        self.menuStyle(.button)
-            .buttonStyle(.plain)
+        self.menuStyle(.nookButton)
+            .buttonStyle(.nookPlain)
             .menuIndicator(.hidden)
             .fixedSize()
     }

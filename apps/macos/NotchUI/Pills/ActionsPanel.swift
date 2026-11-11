@@ -297,7 +297,7 @@ struct WorkflowRunRow: View {
             .padding(.vertical, NookTheme.Spacing.sm)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)

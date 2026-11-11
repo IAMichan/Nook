@@ -1286,7 +1286,7 @@ struct DevServerStrip: View {
                                         .frame(height: 22)
                                         .background(NookTheme.shape(NookTheme.Radius.control).fill(open ? NookTheme.smoke : NookTheme.field))
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.nookPlain)
                                 .help(server.url.absoluteString)
                                 if server.pid > 0 { stopButton(server) }
                             }
@@ -1367,7 +1367,7 @@ struct DevServerStrip: View {
                 .frame(width: 18, height: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(server.startedByNook ? tr("automation.server.stop", String(server.port)) : tr("automation.server.stopUnavailable"))
         .accessibilityLabel(tr("automation.server.stop", String(server.port)))
     }

@@ -69,7 +69,7 @@ struct ImageModal: View {
                 .background(Circle().fill(Color.black.opacity(0.55)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(label)
         .accessibilityLabel(label)
     }
@@ -94,7 +94,7 @@ struct ImageModalButton<Label: View>: View {
                 .opacity(hovering && preview != nil ? 0.85 : 1)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(preview == nil)
         .onHover { hovering = $0 }
         .contextMenu {

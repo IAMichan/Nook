@@ -319,7 +319,7 @@ struct AgentRunPanel: View {
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(tr("ws.remote.terminal", remote.host))
             } else {
                 FolderGitButton(directory: run.workingDirectory, runID: runID, agentWorking: run.status.isActive, showChanges: {
@@ -1705,7 +1705,7 @@ struct AgentRunPanel: View {
                 .foregroundStyle(NookTheme.textTertiary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .padding(.leading, NookTheme.Spacing.xs)
             .padding(.vertical, NookTheme.Spacing.xxs)
         }

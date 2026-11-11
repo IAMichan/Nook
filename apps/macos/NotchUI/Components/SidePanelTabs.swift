@@ -97,7 +97,7 @@ private struct SidePanelTab<Value: Hashable>: View {
                         .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .opacity(hovering && !item.pinned ? 1 : 0)
                 .allowsHitTesting(hovering && !item.pinned)
                 .help(tr("tab.close"))
@@ -112,7 +112,7 @@ private struct SidePanelTab<Value: Hashable>: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(item.help ?? item.title)
             if item.pinned {
                 Image(icon: "pin.fill")
@@ -128,6 +128,7 @@ private struct SidePanelTab<Value: Hashable>: View {
         .frame(height: 24)
         .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
+        .nookClickable()
         .onTapGesture(perform: select)
         // In the main window the tabs lie in the title bar's row, where `onHover` hears nothing.
         .trackedHover { hovering = $0 }
@@ -269,7 +270,7 @@ struct SidePanelLauncher: View {
             .roundedBackground(lit ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.5)
         .help(item.disabledReason ?? item.title)

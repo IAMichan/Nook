@@ -519,7 +519,7 @@ private struct TerminalGroupHeader: View {
             .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
@@ -568,7 +568,7 @@ private struct TerminalRow: View {
             .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .overlay(alignment: .trailing) {
             Button(action: close) {
                 Image(icon: "xmark")
@@ -577,7 +577,7 @@ private struct TerminalRow: View {
                     .frame(width: 14, height: 14)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .padding(.trailing, NookTheme.Spacing.sm)
             .opacity(hovering ? 1 : 0)
             .allowsHitTesting(hovering)
@@ -652,7 +652,7 @@ private struct TerminalActionButton: View {
                 .background(hovering && enabled ? NookTheme.smoke : Color.clear)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
@@ -800,7 +800,7 @@ struct SessionTerminalActions: View {
                         .frame(width: TerminalMetrics.action.width, height: TerminalMetrics.action.height)
                         .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.nookBorderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help(tr("workbench.scripts"))

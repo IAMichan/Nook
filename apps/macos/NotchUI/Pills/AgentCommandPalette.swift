@@ -379,6 +379,7 @@ struct AgentCommandPalette: View {
                                     .id(entry.id)
                                     // The pointer and the arrow keys share one highlighted row.
                                     .onHover { if $0 { index = offset } }
+                                    .nookClickable()
                                     .onTapGesture { index = offset; perform(list) }
                                     // Dragged onto the composer under the palette, a session becomes its chip, as a
                                     // row of the Agents list does; the palette closes as the drag starts so the

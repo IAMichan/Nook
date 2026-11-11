@@ -161,7 +161,7 @@ private struct AddPromptSheet: View {
                 .controlSize(.large)
             Button(tr("instructions.prompts.add"), action: save)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
                 .disabled(!canSave)
         }
@@ -205,7 +205,7 @@ private struct AddSpaceSheet: View {
                 .controlSize(.large)
             Button(tr("instructions.spaces.add"), action: save)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
                 .disabled(cleanName.isEmpty)
         }

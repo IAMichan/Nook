@@ -178,7 +178,7 @@ struct CaptureAnnotationView: View {
                         .frame(width: 30, height: 26)
                         .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(tool == t ? 0.16 : 0.05)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
             Divider().frame(height: 18)
             ForEach(0..<Self.colors.count, id: \.self) { i in
@@ -188,7 +188,7 @@ struct CaptureAnnotationView: View {
                         .frame(width: 16, height: 16)
                         .overlay(Circle().stroke(Color.white.opacity(color == i ? 0.9 : 0), lineWidth: 2).padding(-3))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
             Divider().frame(height: 18)
             Button { if !marks.isEmpty { marks.removeLast() } } label: {
@@ -196,7 +196,7 @@ struct CaptureAnnotationView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 30, height: 26)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .keyboardShortcut("z", modifiers: .command)
             .disabled(marks.isEmpty)
             Spacer()
@@ -204,7 +204,7 @@ struct CaptureAnnotationView: View {
                 .keyboardShortcut(.cancelAction)
             Button(tr("capture.done")) { onDone(render()) }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .tint(NookTheme.iris)
         }
         .foregroundColor(Color(white: 0.96))

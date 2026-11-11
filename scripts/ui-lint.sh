@@ -20,6 +20,9 @@
 #      PullRequestStateIcon or NookSymbol.
 #   9. Icons are drawn with Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift), which turns an SF Symbol
 #      name into Nook's Lucide icon; never Image(systemName:) or NSImage(systemSymbolName:) directly.
+#  10. Buttons use Nook's pointer styles (.nookPlain / .nookBorderless / .nookProminent / .nookLink), which show the
+#      pointing hand, never the system .plain / .borderless / .borderedProminent / .link, which keep the arrow; menus
+#      likewise use .nookBorderlessButton / .nookButton.
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
 # `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
@@ -97,5 +100,11 @@ grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\
 grep -rnE '"arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\(' NotchUI App --include='*.swift' \
   | grep -v -e '^NotchUI/Components/PullRequestIcons.swift:' -e '^NotchUI/Components/NookSymbol.swift:' -e '^NotchUI/Pills/AgentsExtras.swift:' \
   | report "pull request icons come from PullRequestIcon / PullRequestStateIcon (no arrow.triangle.pull or a hand-sized mark)"
+
+grep -rnE '\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link)\s*\)' NotchUI App --include='*.swift' \
+  | report "buttons show the pointing hand (.nookPlain / .nookBorderless / .nookProminent / .nookLink, not the system styles)"
+
+grep -rnE '\.menuStyle\(\s*\.(borderlessButton|button)\s*\)' NotchUI App --include='*.swift' \
+  | report "menus show the pointing hand (.nookBorderlessButton / .nookButton, not the system menu styles)"
 
 exit $status

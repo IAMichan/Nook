@@ -35,7 +35,7 @@ struct MarkdownDetailsBlock: View {
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .accessibilityAddTraits(open ? .isSelected : [])
             if open, !text.isEmpty {
@@ -184,7 +184,7 @@ struct TableCopyMenu: View {
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.nookBorderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .help(copied ? tr("button.copied") : tr("table.copy"))

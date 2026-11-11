@@ -26,7 +26,7 @@ struct GitQuickButton: View {
                             Text(progress ?? tr(action.labelKey))
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .disabled(progress != nil || active)
                     .help(active ? tr("ws.error.busy") : tr("ws.quick.help"))
                     if progress == nil, let state {

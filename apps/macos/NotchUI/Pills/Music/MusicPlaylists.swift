@@ -192,7 +192,7 @@ private struct MusicPlaylistDetailView: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.nookBorderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .help(tr("music.playlists.more"))
@@ -316,7 +316,7 @@ struct MusicTrackRow: View {
             .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
@@ -415,7 +415,7 @@ struct MusicAddToPlaylistButton: View {
                     .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
                     .contentShape(Circle())
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.nookBorderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .onHover { hovering = $0 }

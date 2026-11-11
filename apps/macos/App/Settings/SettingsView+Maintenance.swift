@@ -69,7 +69,7 @@ extension SettingsView {
                     Button(tr("settings.about.licenseValue")) {
                         NSWorkspace.shared.open(Self.repository.appendingPathComponent("blob/main/LICENSE"))
                     }
-                    .buttonStyle(.link)
+                    .buttonStyle(.nookLink)
                 } label: {
                     SettingText("settings.about.license")
                 }
