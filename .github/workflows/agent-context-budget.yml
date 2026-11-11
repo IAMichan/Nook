@@ -1,0 +1,59 @@
+name: Agent context budget
+
+# Fails when a pull request makes the text every coding agent reads first (the root AGENTS.md and CLAUDE.md, measured by
+# scripts/agent-context-size.sh) larger than it is on main. That text is paid for in every session, so it should only
+# grow on purpose: a maintainer adds the `agent-context-increase` label to accept it. It reads files only, never runs the
+# pull request's code, and takes seconds on ubuntu.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - 'scripts/agent-context-size.sh'
+      - '.github/workflows/agent-context-budget.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  budget:
+    name: Agent context does not grow
+    if: "!github.event.pull_request.draft"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ALLOW_INCREASE: ${{ contains(github.event.pull_request.labels.*.name, 'agent-context-increase') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: Compare with the base branch
+        run: |
+          git fetch --quiet --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          before=$(scripts/agent-context-size.sh "${{ github.event.pull_request.base.sha }}" | tail -n1 | awk '{print $1}')
+          after=$(scripts/agent-context-size.sh HEAD | tail -n1 | awk '{print $1}')
+          {
+            echo "### Agent context"
+            echo
+            echo "Base: $before bytes, this pull request: $after bytes."
+            echo
+            echo '```'
+            scripts/agent-context-size.sh HEAD
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$after" -le "$before" ]; then
+            echo "Agent context is not larger than the base ($before -> $after bytes)."
+            exit 0
+          fi
+          echo "Agent context grew by $((after - before)) bytes ($before -> $after)."
+          if [ "$ALLOW_INCREASE" = "true" ]; then
+            echo "Accepted by the agent-context-increase label."
+            exit 0
+          fi
+          echo "::error file=AGENTS.md::Agent context grew by $((after - before)) bytes. Cut the added text, or ask a maintainer to add the agent-context-increase label."
+          exit 1

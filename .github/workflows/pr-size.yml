@@ -1,0 +1,71 @@
+name: PR size
+
+# Labels every pull request size:XS to size:XXL from the lines it changes, so a maintainer sees at a glance what a
+# review costs. Test files do not count, unless the pull request only changes tests. It runs on pull_request_target so
+# pull requests from forks get a label too; it only asks the GitHub API for the list of changed files and never checks
+# out or runs the pull request's code. Runs on ubuntu and takes seconds. The labels themselves are defined in
+# .github/labels.yml.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const number = context.payload.pull_request.number;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo, pull_number: number, per_page: 100,
+            });
+
+            // Tests, fixtures and generated lock files say little about the cost of a review.
+            const isTest = (path) =>
+              /(^|\/)(Tests|__tests__|tests|test|Scenarios)\//.test(path) ||
+              /(Tests?\.swift|\.test\.[a-z]+|\.spec\.[a-z]+|_test\.rs)$/.test(path);
+            const isGenerated = (path) =>
+              /(^|\/)(package-lock\.json|Package\.resolved|Cargo\.lock|pnpm-lock\.yaml)$/.test(path);
+
+            let code = 0;
+            let tests = 0;
+            for (const file of files) {
+              if (isGenerated(file.filename)) continue;
+              if (isTest(file.filename)) tests += file.changes;
+              else code += file.changes;
+            }
+            const lines = code > 0 ? code : tests;
+
+            const sizes = [
+              [10, 'size:XS'], [30, 'size:S'], [100, 'size:M'],
+              [500, 'size:L'], [1000, 'size:XL'], [Infinity, 'size:XXL'],
+            ];
+            const next = sizes.find(([limit]) => lines < limit)[1];
+
+            const current = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              ...context.repo, issue_number: number, per_page: 100,
+            });
+            const managed = new Set(sizes.map(([, name]) => name));
+            for (const label of current) {
+              if (managed.has(label.name) && label.name !== next) {
+                await github.rest.issues.removeLabel({
+                  ...context.repo, issue_number: number, name: label.name,
+                }).catch((error) => { if (error.status !== 404) throw error; });
+              }
+            }
+            if (!current.some((label) => label.name === next)) {
+              await github.rest.issues.addLabels({
+                ...context.repo, issue_number: number, labels: [next],
+              });
+            }
+            core.info(`PR #${number}: ${code} code lines, ${tests} test lines -> ${next}`);
