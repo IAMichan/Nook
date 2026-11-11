@@ -26,6 +26,8 @@ enum WhatsAppExport {
         var activity: Date? = nil
         /// The file fetched for each message so far (photos, videos, documents, voice messages), by message id.
         var files: [String: String] = [:]
+        /// In a group: the profile photo on this Mac of each person who wrote one of `messages`, by their JID.
+        var faces: [String: String] = [:]
     }
 
     /// A chat of the link as the shared inbox keeps it: its messages as every app's, each person by the name your
@@ -45,6 +47,7 @@ enum WhatsAppExport {
         chat.activity = max(conversation.lastActivity, facts.activity ?? .distantPast)
         chat.waitsInApp = facts.waitsInApp
         chat.ephemeral = true
+        if group, !facts.faces.isEmpty { chat.faces = facts.faces }
         if group, let members = conversation.members { chat.profile = profile(conversation.profile, members: members, names: &names) }
         if kind == .person {
             // Their number (not for an @lid, which is no number), and what the gateway said of them.

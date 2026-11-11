@@ -1394,7 +1394,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     let deleted = ChatServiceData.deleted(answer, chat: chat)
                     let shows = !messages.isEmpty || !deleted.isEmpty
                     return .success(ServiceRead(messages: messages, deleted: deleted,
-                                                picture: shows ? await local(chat.picture, token: token) : nil))
+                                                picture: shows ? await local(chat.picture, token: token) : nil,
+                                                faces: await faces(of: messages, in: chat, token: token)))
                 } catch {
                     return .failure(error)
                 }
@@ -1438,6 +1439,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 var bridged = BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
                                           members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account)
                 bridged.profile = chat.profile
+                if !read.faces.isEmpty { bridged.faces = read.faces }
                 result.append(bridged)
             }
             if let failure {
@@ -1458,6 +1460,19 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         var messages: [InboxMessage]
         var deleted: [String]
         var picture: String?
+        /// The pictures of who wrote `messages` in a group, by their id (`BridgedChat.faces`).
+        var faces: [String: String] = [:]
+    }
+
+    /// The pictures on this Mac of the people who wrote these messages in a group, by their id: the helper downloads
+    /// each once (`local`).
+    private func faces(of messages: [InboxMessage], in chat: ChatServiceData.Chat, token: String) async -> [String: String] {
+        guard chat.isGroup, !chat.pictures.isEmpty else { return [:] }
+        var faces: [String: String] = [:]
+        for id in Set(messages.compactMap(\.senderID)) {
+            if let path = await local(chat.pictures[id], token: token) { faces[id] = path }
+        }
+        return faces
     }
 
     /// How many older messages one scroll back asks for: the helper's batch (`paginateBatch` in apps/chatd).
@@ -1475,9 +1490,11 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         let millis = Int64((before.timeIntervalSince1970 * 1000).rounded(.down))
         let read = try await get(Self.path(id) + "/messages", ["limit": String(Self.olderStep), "before": String(millis)], token: token)
         let messages = await withFiles(ChatServiceData.messages(read, chat: chat).filter { $0.date < before }, token: token)
-        let bridged = BridgedChat(app: app, name: name, messages: messages, unread: nil,
+        var bridged = BridgedChat(app: app, name: name, messages: messages, unread: nil,
                                   members: chat.members.isEmpty ? nil : chat.members,
                                   account: chat.account ?? ChatLinker.shared.accountName(for: app))
+        let faces = await faces(of: messages, in: chat, token: token)
+        if !faces.isEmpty { bridged.faces = faces }
         // The helper may still hold older ones it brought in earlier, even when the app has nothing more to send.
         let stored = (read["items"] as? [Any])?.count ?? 0
         return (messages.isEmpty ? nil : bridged, more || stored >= Self.olderStep)
@@ -1893,6 +1910,14 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
                                           messages: messages, unread: unread(conversation.id, marks: marks), avatar: picture,
                                           members: members.isEmpty ? nil : members, deleted: deleted)
                 bridged.profile = profile(of: conversation)
+                if conversation.isGroup {
+                    // Each sender's profile photo, for the face beside their messages.
+                    var faces: [String: String] = [:]
+                    for user in Set(messages.compactMap(\.senderID)) {
+                        if let face = await avatar(of: user) { faces[user] = face }
+                    }
+                    if !faces.isEmpty { bridged.faces = faces }
+                }
                 chats.append(bridged)
             }
             // A chat read (or marked unread) in Slack since, without a new message: its count follows.
@@ -2047,7 +2072,7 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
         return ChatHistorySearch.chats(found)
     }
 
-    /// A direct message's picture: the other person's profile photo, fetched once per picture (a public address, no
+    /// A person's profile photo (a direct message's picture, a group sender's face), fetched once per picture (a public address, no
     /// token sent). A changed photo has another address in the people list (read again every hour), so it is saved as
     /// another file and the list shows the new one; one that cannot be fetched keeps the photo before.
     private func avatar(of user: String?) async -> String? {
