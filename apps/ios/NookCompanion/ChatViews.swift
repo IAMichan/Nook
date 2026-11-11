@@ -45,20 +45,31 @@ struct ChatListView: View {
                             WaitingRow(symbol: "sparkles", title: entry.request.text ?? "",
                                        detail: String(localized: "New chat · waiting for your Mac")) { client.discardWaiting(entry.id) }
                         }
-                        if client.conversations.isEmpty {
-                            AskNook { ask($0) }
-                        }
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
+                // What the overview does not show: the next meetings and what plays, from the Mac's home.
+                if let home = client.home, !TodaySection.isEmpty(home) {
+                    SectionHeader(title: String(localized: "Today"))
+                        .padding(.horizontal, Theme.Spacing.md)
+                    TodaySection(home: home)
+                        .padding(.horizontal, Theme.Spacing.xl)
+                }
+                if client.can(CompanionFeature.chat), client.conversations.isEmpty {
+                    AskNook { ask($0) }
+                        .padding(.horizontal, Theme.Spacing.xl)
+                        .padding(.top, Theme.Spacing.xl)
+                }
                 if !client.conversations.isEmpty {
                     SectionHeader(title: String(localized: "Recent"))
-                        .padding(.horizontal, Theme.Spacing.xl)
-                        .padding(.bottom, Theme.Spacing.xs)
-                    VStack(spacing: Theme.Spacing.xxs) {
+                        .padding(.horizontal, Theme.Spacing.md)
+                    VStack(spacing: 0) {
                         ForEach(client.conversations) { conversation in
                             NavigationLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
-                                .buttonStyle(RowPress())
+                                .buttonStyle(RowPress(radius: PhoneRadius.row))
+                            if conversation.id != client.conversations.last?.id {
+                                NookDivider(inset: Theme.Spacing.lg, tint: Theme.separator)
+                            }
                         }
                     }
                     .padding(.horizontal, Theme.Spacing.md)
@@ -95,6 +106,13 @@ struct ChatListView: View {
                 repeat { try? await Task.sleep(for: .seconds(5)) } while !Task.isCancelled && client.chatsAreLive
             }
         }
+        // Today changes slowly (the agenda, what plays): every half minute is enough.
+        .task {
+            while !Task.isCancelled {
+                await client.loadHome()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
     }
 
     /// The overview shows once there is something to tell: sessions, chats, or earlier conversations with Nook.
@@ -127,7 +145,7 @@ struct ChatRow: View {
             }
             if conversation.busy {
                 HStack(spacing: Theme.Spacing.sm) {
-                    PulseDot(color: Theme.blue, size: 6)
+                    PulseDot(color: Theme.sky, size: 6)
                     Text("Writing…")
                 }
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
@@ -314,5 +332,109 @@ private struct ThinkingLine: View {
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
             PulseDot(color: Theme.textSecondary, size: 5)
         }
+    }
+}
+
+// MARK: Today
+
+/// The Mac's agenda and music as one grouped section of the Nook tab (t3code's grouped list, 24 pt corners), under the
+/// overview of what waits (`AttentionOverview`): the next meetings, and what plays with play/pause. Rows are an icon on a
+/// tinted tile, a title and a quiet line.
+struct TodaySection: View {
+    @EnvironmentObject private var client: CompanionClient
+    let home: HomeDigest
+
+    static func isEmpty(_ home: HomeDigest) -> Bool { upcoming(home).isEmpty && home.track == nil }
+
+    /// The meetings still to come, at most two.
+    static func upcoming(_ home: HomeDigest, now: Date = Date()) -> [HomeDigest.Event] {
+        Array(home.events.filter { $0.end > now.timeIntervalSince1970 }.sorted { $0.start < $1.start }.prefix(2))
+    }
+
+    var body: some View {
+        let rows = rowCount
+        VStack(spacing: 0) {
+            ForEach(Array(Self.upcoming(home).enumerated()), id: \.element.id) { index, event in
+                row(icon: "symbol:calendar", tint: Theme.blue, title: event.title, subtitle: when(event),
+                    last: index == rows - 1, action: nil)
+            }
+            if let track = home.track {
+                trackRow(track)
+            }
+        }
+        .roundedBackground(Theme.surface, radius: PhoneRadius.group)
+    }
+
+    private var rowCount: Int { Self.upcoming(home).count + (home.track == nil ? 0 : 1) }
+
+    @ViewBuilder
+    private func row(icon: String, tint: Color, title: String, subtitle: String, last: Bool, action: (() -> Void)?) -> some View {
+        let content = HStack(spacing: Theme.Spacing.lg) {
+            tile(icon, tint: tint)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(verbatim: title).font(Theme.TextStyle.rowTitle).foregroundStyle(Theme.paper).lineLimit(1)
+                if !subtitle.isEmpty {
+                    Text(verbatim: subtitle).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: Theme.Spacing.md)
+            if action != nil {
+                Image(icon: "chevron.right").font(Theme.font(12, .bold)).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.lg)
+        .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            if let action {
+                Button(action: action) { content }.buttonStyle(PressFade())
+            } else {
+                content
+            }
+            if !last { NookDivider(inset: 60, tint: Theme.separator) }
+        }
+    }
+
+    private func trackRow(_ track: HomeDigest.Track) -> some View {
+        HStack(spacing: Theme.Spacing.lg) {
+            tile("symbol:music.note", tint: Theme.music)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(verbatim: track.title).font(Theme.TextStyle.rowTitle).foregroundStyle(Theme.paper).lineLimit(1)
+                Text(verbatim: track.artist.isEmpty ? track.app : track.artist)
+                    .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+            Spacer(minLength: Theme.Spacing.md)
+            if client.can(CompanionFeature.music), client.allows(.music) {
+                Button {
+                    Haptics.tap()
+                    Task { await client.music("playpause") }
+                } label: {
+                    Image(icon: track.playing ? "pause.fill" : "play.fill")
+                        .font(Theme.font(13, .bold))
+                        .foregroundStyle(Theme.paper)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(Theme.graphite))
+                }
+                .buttonStyle(PressFade())
+                .accessibilityLabel(track.playing ? Text("Pause") : Text("Play"))
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.lg)
+    }
+
+    /// An icon on a tile tinted with its color, the 32 pt box every row of Today starts with (`HomeLogo`).
+    private func tile(_ icon: String, tint: Color) -> some View {
+        if icon.hasPrefix("agent:") {
+            return HomeLogo(content: .agent(String(icon.dropFirst("agent:".count))), size: 32)
+        }
+        let name = icon.hasPrefix("symbol:") ? String(icon.dropFirst("symbol:".count)) : "circle.grid.2x2"
+        return HomeLogo(content: .symbol(name), tint: tint, size: 32)
+    }
+
+    private func when(_ event: HomeDigest.Event) -> String {
+        let start = Date(timeIntervalSince1970: event.start)
+        let time = start.formatted(date: Calendar.current.isDateInToday(start) ? .omitted : .abbreviated, time: .shortened)
+        return event.location.isEmpty ? time : time + " · " + event.location
     }
 }

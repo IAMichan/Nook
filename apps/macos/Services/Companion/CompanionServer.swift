@@ -249,6 +249,14 @@ final class CompanionServer: ObservableObject {
             connection.cancel()
             return
         }
+        // A phone that bound its device key signs every request with it (`CompanionDeviceKey`): without a valid signature
+        // the pairing key alone (a copy of it) is not enough.
+        if !pairing, CompanionDeviceKey.needsSignature(request.op), let deviceKey = store.deviceKey(of: claimed),
+           !CompanionDeviceKey.verify(envelope: frame, publicKey: deviceKey) {
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "signature", "device": claimed])
+            send(.failure(request.id, .notAllowedFromPhone, message: "signature"), key: key, deviceID: claimed, on: connection)
+            return
+        }
         // Every answer to this request, and on a subscribe all that follows on it, compressed when large.
         let compress = request.compression == true
         peer.compression = compress
@@ -597,6 +605,7 @@ final class CompanionServer: ObservableObject {
                 let allow = request.allow == true
                 // On a denial the request's text is the reason you gave with it.
                 if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow,
+                                                      always: allow && request.always == true,
                                                       reason: allow ? "" : request.text ?? "") {
                     return .failure(request.id, error)
                 }
@@ -610,7 +619,10 @@ final class CompanionServer: ObservableObject {
             }
             let allow = request.allow == true
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
-            app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone,
+            // "Always" only where the request offers it, as on the Mac (`ApprovalRequest.canAlways`).
+            let always = allow && request.always == true
+            if always, !pending.canAlways { return .failure(request.id, .notAllowedFromPhone) }
+            app.approvals.decide(run: runID, requestID: pending.id, allow ? (always ? .always : .allow) : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
@@ -718,6 +730,12 @@ final class CompanionServer: ObservableObject {
             return await fileData(request, app: app)
         case .entry:
             return await entry(request, app: app)
+        case .bindKey:
+            guard let text = request.text, let publicKey = Data(base64Encoded: text),
+                  CompanionDeviceKey.isValidPublicKey(publicKey) else { return .failure(request.id, .badRequest) }
+            let bound = CompanionStore.shared.bindKey(device: deviceID, publicKey: publicKey)
+            if bound { audit("device_key", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "") }
+            return CompanionResponse(id: request.id, ok: true, message: bound ? "bound" : "other")
         }
     }
 
@@ -791,8 +809,10 @@ final class CompanionServer: ObservableObject {
     private func digest(_ run: WorkspaceRun, workspace: WorkspaceManager, now: Date) -> SessionDigest {
         var items: [SessionDigest.Item] = []
         for pending in workspace.approvals[run.id] ?? [] {
+            let allowed = canAllow(pending)
             items.append(.init(id: pending.id, kind: .approval, title: CompanionPolicy.excerpt(pending.summary),
-                               detail: CompanionPolicy.excerpt(pending.tool), canAllow: canAllow(pending), options: []))
+                               detail: CompanionPolicy.excerpt(pending.tool), canAllow: allowed, options: [],
+                               canAlways: allowed && pending.canAlways))
         }
         for question in workspace.questions[run.id] ?? [] {
             let first = question.questions.first

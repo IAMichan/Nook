@@ -92,6 +92,7 @@ enum Base64URL {
 
 enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// `decide`: `allow` answers the request `item` of `session`; with a denial `text` is the reason the agent is told.
+    /// With `always` (`CompanionFeature.allowAlways`) an allow is the Mac's "Always" for an item with `canAlways`.
     case hello, list, decide, answer, send, stop
     /// The phone's APNs token (`text`, hex) and its environment (`item`: "production" or "development"); `unregister` removes it.
     case register, unregister
@@ -159,6 +160,10 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// One entry of a session's conversation in full (`session`, `item`: the entry's id), for an entry the timeline
     /// clipped (`TimelineEntry.clipped`); `entryText` in the answer (`CompanionFeature.fullTranscript`).
     case entry
+    /// The phone's own device key (`CompanionDeviceKey`, `CompanionFeature.deviceKey`): `text` is its public half (X9.63,
+    /// base64). The Mac keeps the first one it gets for a pairing; `message` in the answer is "bound", or "other" when it
+    /// already holds a different one (the phone has to pair again).
+    case bindKey
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -243,9 +248,14 @@ enum CompanionFeature {
     /// The Mac answers `avatars` for "app:<id>" with the chat app's icon (`ChatAvatar.appPrefix`), and lists a chat's
     /// photo from Contacts as its picture when the chat has none of its own.
     static let appIcons = "appIcons"
+    /// `decide` may allow an item for good (`CompanionRequest.always`) where it says `canAlways`, as the Mac's "Always".
+    static let allowAlways = "allowAlways"
+    /// The Mac takes `bindKey` and from then on wants the phone's requests signed (`CompanionDeviceKey`).
+    static let deviceKey = "deviceKey"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons]
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons,
+                      allowAlways, deviceKey]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -346,17 +356,21 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// This phone opens compressed answers (`CompanionWire`): the Mac may compress a large one. Nil from a phone that
     /// cannot, which always gets plain JSON; a Mac without `CompanionFeature.compression` ignores it.
     var compression: Bool? = nil
+    /// With an allowing `decide` (`CompanionFeature.allowAlways`): allow it for good, as the Mac's "Always". Only for an
+    /// item with `SessionDigest.Item.canAlways`, and only where the phone may allow it at all (`CompanionPolicy`).
+    var always: Bool? = nil
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
          replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
          steer: Bool? = nil, images: [CompanionImage]? = nil, foreground: Bool? = nil, pullAction: CompanionPullAction? = nil,
-         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil, items: [String]? = nil) {
+         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil, items: [String]? = nil,
+         always: Bool? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
         self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer; self.images = images
         self.foreground = foreground; self.pullAction = pullAction; self.pullWork = pullWork; self.attachments = attachments
-        self.items = items
+        self.items = items; self.always = always
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -454,6 +468,9 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
         /// The phone may allow this one. When false it can only deny it or leave it to the Mac.
         var canAllow: Bool
         var options: [String]
+        /// It may also be allowed for good (`CompanionRequest.always`), as the Mac's "Always" offers: the agent remembers
+        /// the rule (Claude Code for the project, Codex for the session). Only with `canAllow`; nil from an older Mac.
+        var canAlways: Bool? = nil
     }
 
     var id: String
@@ -868,6 +885,9 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     var appVersion: String?
     /// What it may do (`CompanionScope` names, `grantedScopes`); nil for a phone paired before scopes: everything.
     var scopes: [String]?
+    /// The public half of the phone's device key (X9.63, base64; `CompanionDeviceKey`): once set, the Mac takes only
+    /// requests signed with it. Nil until the phone bound one (an older app never does).
+    var deviceKey: String?
 
     init(id: String, name: String, pairedAt: Date, lastSeen: Date? = nil, pushToken: String? = nil, pushProduction: Bool? = nil) {
         self.id = id; self.name = name; self.pairedAt = pairedAt; self.lastSeen = lastSeen

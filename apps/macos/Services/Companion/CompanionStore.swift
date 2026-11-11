@@ -145,6 +145,22 @@ final class CompanionStore: ObservableObject {
         save()
     }
 
+    /// The public half of a phone's device key (`CompanionDeviceKey`), once it bound one.
+    func deviceKey(of id: String) -> Data? {
+        devices.first { $0.id == id }?.deviceKey.flatMap { Data(base64Encoded: $0) }
+    }
+
+    /// Keeps the phone's device key: the first one it sends for this pairing (trust on first use). True when it is the one
+    /// kept now (new, or the same again); false when the phone already bound another, which only pairing again replaces.
+    func bindKey(device id: String, publicKey: Data) -> Bool {
+        guard let index = devices.firstIndex(where: { $0.id == id }) else { return false }
+        let encoded = publicKey.base64EncodedString()
+        if let bound = devices[index].deviceKey { return bound == encoded }
+        devices[index].deviceKey = encoded
+        save()
+        return true
+    }
+
     func touch(_ id: String, now: Date = Date()) {
         guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
         // Not on every request: a minute is fine for "last seen".

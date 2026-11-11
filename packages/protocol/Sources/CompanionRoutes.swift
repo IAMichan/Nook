@@ -206,8 +206,21 @@ enum CompanionTiming {
     static let pingEvery: TimeInterval = 5
     /// … and gives up on a connection that sent nothing back for this long.
     static let silenceLimit: TimeInterval = 15
-    /// A quick look whether the connection still works (after a network change, or back from a short break).
+    /// A quick look whether the connection still works (after a network change, or back from a short break), on the local
+    /// network …
     static let probeTimeout: TimeInterval = 3
+    /// … and over Tailscale, a VPN, the internet or the relay, where a phone on mobile data easily needs longer for one
+    /// round trip: a slow answer there is not a dead connection.
+    static let remoteProbeTimeout: TimeInterval = 15
+
+    /// How long a probe over `route` may take before the connection is given up and replaced.
+    static func probeTimeout(for route: CompanionRoute) -> TimeInterval {
+        if route.isRelay { return remoteProbeTimeout }
+        switch route.kind {
+        case .lan, .loopback: return probeTimeout
+        case .tailnet, .vpn, .internet: return remoteProbeTimeout
+        }
+    }
     /// How long each route may take to answer a check, and how long the earlier routes get before a later one is used.
     static let routeCheckTimeout: TimeInterval = 2.5
     static let routeHeadStart: TimeInterval = 0.5
@@ -363,7 +376,7 @@ struct CommandReceipts: Sendable {
     static func keeps(_ op: CompanionOp) -> Bool {
         switch op {
         case .send, .answer, .decide, .stop, .start, .ask, .inboxSend, .manage, .chatStop, .music, .inboxMark,
-             .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork:
+             .register, .unregister, .liveActivity, .requestUpdate, .pullAct, .pullWork, .bindKey:
             return true
         case .hello, .list, .options, .timeline, .terminals, .files, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping, .watch, .diff,
              .pulls, .pull, .history, .fileData, .watchChat, .avatars, .entry:

@@ -9,6 +9,9 @@ import WidgetKit
 
 @main
 struct NookActivityBundle: WidgetBundle {
+    /// The phone's palette, as in the app, before anything is drawn.
+    init() { Theme.applyPhoneLook() }
+
     var body: some Widget {
         NookLiveActivity()
         UsageWidget()
@@ -29,7 +32,7 @@ struct NookLiveActivity: Widget {
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label {
-                        Text(look.agent).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.paper).lineLimit(1)
+                        Text(look.agent).font(Theme.textFont(13, .semibold)).foregroundStyle(Theme.paper).lineLimit(1)
                     } icon: {
                         Image(systemName: look.symbol).foregroundStyle(look.color)
                     }
@@ -40,9 +43,9 @@ struct NookLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(look.title).font(.headline).foregroundStyle(Theme.paper).lineLimit(1)
+                        Text(look.title).font(Theme.textFont(14, .bold)).foregroundStyle(Theme.paper).lineLimit(1)
                         if !look.detail.isEmpty {
-                            Text(look.detail).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            Text(look.detail).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -54,7 +57,7 @@ struct NookLiveActivity: Widget {
                 if look.counts {
                     Text(look.since, style: .timer).monospacedDigit().foregroundStyle(look.color).frame(maxWidth: 44)
                 } else {
-                    Text(look.word).font(.caption2.weight(.semibold)).foregroundStyle(look.color).lineLimit(1)
+                    Text(look.word).font(Theme.textFont(10, .bold)).foregroundStyle(look.color).lineLimit(1)
                         .minimumScaleFactor(0.6).frame(maxWidth: 64)
                 }
             } minimal: {
@@ -106,9 +109,9 @@ private struct PhaseLine: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {
-            Text(look.word).font(.caption.weight(.semibold)).foregroundStyle(look.color).lineLimit(1)
+            Text(look.word).font(Theme.textFont(11.5, .bold)).foregroundStyle(look.color).lineLimit(1)
             if look.counts {
-                Text(look.since, style: .timer).font(.caption).monospacedDigit().foregroundStyle(Theme.textSecondary)
+                Text(look.since, style: .timer).font(Theme.TextStyle.detail).monospacedDigit().foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.trailing)
             }
         }
@@ -126,15 +129,15 @@ private struct LockScreenActivity: View {
                 Circle()
                     .strokeBorder(look.color.opacity(0.28), lineWidth: 0.5)
                 Image(systemName: look.symbol)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(Theme.font(16, .semibold))
                     .foregroundStyle(look.color)
             }
             .frame(width: 38, height: 38)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(look.title).font(.headline).foregroundStyle(Theme.paper).lineLimit(1)
+                Text(look.title).font(Theme.textFont(14, .bold)).foregroundStyle(Theme.paper).lineLimit(1)
                 Text([look.agent, look.detail].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer(minLength: Theme.Spacing.md)
             PhaseLine(look: look)

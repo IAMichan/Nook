@@ -11,11 +11,22 @@ The phone sees two kinds of sessions:
 
 ## Starting from the phone
 
-The app is laid out as Nook's panel on the Mac: three tabs, **Nook**, **Agents** and **Chats**, switched in one
-quiet capsule at the top of every tab (`PanelHeader`, `PanelTabBar`), with what waits for you as an amber count on each.
-There is no tab bar along the bottom. Nook's orb on the left of that row opens the menu with the paired Macs, how the
-phone reaches the Mac, checking the connection, Live Activities and unpairing (`MacMenu`); a small amber dot on the orb
-means the Mac cannot be reached.
+The app follows t3code's iPhone app in look and layout. Its tabs, **Nook**, **Agents**, **Chats**, **Pull requests** and
+**Settings**, sit in the system tab bar along the bottom, each with what waits there as a badge. Every tab starts with
+the same header (`PanelHeader`): Nook's orb on the left opens the menu with the paired Macs, how the phone reaches the
+Mac, checking the connection, Live Activities and unpairing (`MacMenu`; a small amber dot on the orb means the Mac cannot
+be reached), then the tab's name with the Mac and the connection's state under it (`ConnectionTitle`: live, catching
+up, looking for it), and the tab's own round button on the right.
+
+The phone's look is t3code's too: its dark palette (a #0a0a0a screen, #111111 cards, #191919 lines, blue for links;
+`NookPalette.companionDark`), DM Sans for text (`NookTheme.textFont`, bundled in `apps/ios/NookCompanion/Fonts`), its
+rounder shapes (`PhoneRadius`), capitalized section labels (`SectionHeader`) and Liquid Glass for what floats
+(`floatingGlass`). Sky marks work in progress and indigo a question for you, as in t3code's list. The Mac keeps its own
+`NookTheme` palette.
+
+The **Agents** list can be narrowed to one project (`ProjectChips`) once sessions work in more than one. Under the
+overview of what waits, the **Nook** tab shows the next meetings and what plays on the Mac with play/pause
+(`CompanionOp.home`, `TodaySection`).
 
 The **Nook** tab asks Nook something straight from its composer at the bottom (a new chat); the **Agents** tab's round
 button opens the New session sheet. The quick actions on the app's icon start a session, ask Nook or open Chats. An
@@ -100,7 +111,7 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 - **Snooze:** besides an hour, this evening and tomorrow morning, *Pick a time…* snoozes to any moment up to a month ahead (`snoozeUntil`) and *Until the limit resets* to when the usage limit that stopped the session resets (`snoozeLimitReset`, offered while the Mac knows that moment, `SessionDigest.limitResetsAt`).
 - **Main thread:** a session's menu turns its main thread on or off (`mainThreadOn` / `mainThreadOff` in `SessionDigest.actions`), as the Mac composer's switch does; the Mac lists the one that applies, only for an agent that may delegate. A phone that predates them leaves the two names out.
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`, `allowAlways`, `deviceKey`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only. The Tauri app (`apps/tauri`) does not list `allowAlways` or `deviceKey` yet: with it the phone offers Allow once and Decline and sends its requests unsigned, as before.
 
 ## Compression
 
@@ -140,6 +151,14 @@ Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/S
 
 ## Security Architecture
 
+- **Device key:** with a Mac that lists `deviceKey`, the phone makes a P-256 signing key of its own for that pairing, in
+  the Secure Enclave where the phone has one (`DeviceKeyStore`; a software key in the simulator), and tells the Mac its
+  public half once, right after pairing (`CompanionOp.bindKey`). From the Mac's "bound" on, every request carries a
+  signature over its sealed bytes (envelope field `g`, `CompanionDeviceKey`), and the Mac refuses an unsigned or wrongly
+  signed request from that phone (`notAllowedFromPhone`, message `signature`), except `ping`. A copy of the pairing key
+  alone (a backup, a leaked file) can then no longer act. The first key a Mac hears for a pairing is the one it keeps;
+  a phone that lost its own is told to pair again. Unpairing forgets the key on both sides.
+
 - **Out-of-band key exchange:** The 32-byte random key is transferred exclusively via the QR code and never sent over the network.
 - **End-to-end authenticated encryption:** Every message is sealed with **ChaCha20-Poly1305** (keys derived via HKDF from the pairing key, with device ID and direction bound in the associated data). Anyone on the same Wi-Fi network cannot read session titles or commands, nor modify or forge requests.
 - **Replay & rate protection (`RequestGuard`):** Every request carries a timestamp (max 60 s skew; a phone whose clock is further off corrects for it, see *When the Mac is out of reach*) and a unique nonce. The Mac rejects stale or replayed requests and enforces a limit of 120 requests/minute per device, up to 8 concurrent connections, 256 KB max message size, and a 30 s connection timeout.
@@ -161,10 +180,9 @@ The phone keeps one live connection to the Mac while the app is in front, modele
 - **Moving back to a better route:** while connected over a later route (Tailscale), the phone checks the earlier ones every minute and on a network change, and moves over as soon as one answers. A route that answered but then failed to connect is left alone for 5 minutes (`RouteCooldowns`), so a flaky network cannot bounce the connection.
 - **Outbox and retries:** with a Mac that lists `retry`, what you write goes through an outbox on the phone (`CompanionOutbox`, a protected file): a message to a session, a new session, a question to Nook and a message to a chat. Each shows where it belongs as waiting (in its session; *New session · waiting for your Mac* at the top of the Agents list; *New chat · waiting for your Mac* in the Nook tab, or dimmed in its chat; dimmed in a chat of the Chats tab; a long press lets it go), goes as soon as the Mac answers, and keeps its request id. A new chat whose first question waited becomes that chat once the Mac took it. The Mac remembers its answer to every request that changes something (`CommandReceipts`: messages, approvals, answers, stops, starts, questions to Nook, chat messages and marks, the player, session management and token registrations), so a repeat of the same id (a lost answer, a message sent again from the outbox) gets that answer and is never carried out twice; a repeat that arrives while the first is still running waits for its answer. The repeat must still be fresh and within the rate. The Mac keeps at most 256 answers per phone, the least recently asked for dropped first, each for at most 25 hours (longer than a message may wait in the outbox). A message to a session that waited more than a day is dropped; a new session, a question to Nook or a chat message after an hour, since started or sent much later it would surprise more than help (`CompanionOutbox.maxAge(for:)`). A refusal that will not pass (a folder another session works in, no brain on the Mac) takes a new session, a question or a chat message out of the outbox with why, so it never holds up what waits behind it; only a busy session keeps a message waiting (`CompanionOutbox.waitsAfter`). Approvals, answers and stops never wait in the outbox: they mean something only now (a button on a notification is the one exception, see below).
 
-## When the Mac is out of reach
-
-What keeps the phone useful while it cannot reach the Mac, or reaches it late (`packages/protocol/Sources/CompanionResilience.swift`, tested in `CompanionResilienceTests`; on the phone `CompanionStores.swift` and `CompanionClient.swift`).
-
+- **Probe deadline per route:** coming back to the app, the connection is checked with a ping that may take 3 seconds on
+  the local network and 15 over Tailscale, a VPN, the internet or the relay (`CompanionTiming.probeTimeout(for:)`), as
+  t3code's app does: a phone on mobile data easily needs longer for one round trip, and that is not a dead connection.
 - **Buttons on notifications reach their Mac from anywhere.** A push names the pairing it went out for (`mac` under `nook`, `APNsPayload.make`, and in the sealed relay content, `RelayPushContent.mac`): the pairing key's public identifier, which the Mac knows the phone by and the phone knows the Mac by. Allow, Deny and Reply go to that Mac, also when another Mac is active and from a cold start (the pairings are read again once the phone is unlocked; the buttons ask to unlock, since the pairings only open then). With a live connection to that Mac the request goes over it; otherwise the app keeps running in the background for it (`beginBackgroundTask`), looks for the best route over all of that Mac's routes, Tailscale and the relay included (`RouteProbe.pick`, with a `list`), and sends the request once over the route that answered. When nothing answers it posts a notification of its own, *Couldn't reach <Mac>. Tap to try again.* A Deny or a Reply is kept for 15 minutes (`NotificationRetries`, `companion-notification-retries.json`) and tried again on that tap, when the app comes to the front and when the phone connects to that Mac; a Reply also waits in that Mac's outbox. The request keeps its id, so trying again is safe (`CommandReceipts`). An Allow is never kept: allowing later than you meant is another decision; its notification says to answer again.
 - **No stale notifications.** On every list a Mac answers, the phone removes the delivered notifications of that Mac about an approval or a question that no longer waits (answered on the Mac or elsewhere), and sets the badge to what still waits on the active Mac (`DeliveredNotifications`). A notification from a Mac that does not name itself counts as the active Mac's only when the phone is paired with one Mac.
 - **What the phone saw last.** The phone keeps, per Mac, the last list with the time the Mac answered it, what a new session can start with, and the conversations of the last five sessions that were open (the newest 200 entries each) in `companion-cache-<id>.json` (readable after the first unlock; `CompanionCache`, `CacheStore`). At launch they show at once; while the Mac cannot be reached the Agents list says *Last updated HH:mm · not connected*, so it never looks live, and a live answer always replaces it (an older list never replaces a newer one). With a Mac that lists `resume`, opening a session sends the last entry the phone has with `watch` (`item`), and the Mac answers with that entry and what came after it (`TimelineDelta.resume`), so only the change travels.

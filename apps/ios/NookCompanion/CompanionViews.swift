@@ -392,6 +392,8 @@ struct SessionListView: View {
     @State private var link: PromptLink?
     /// Words to find a session by (its title, folder, branch or agent).
     @State private var query = ""
+    /// The project (folder) the list is narrowed to, as t3code's project filter; nil shows every one.
+    @State private var project: String?
     /// Recent sessions beyond the first few, shown on request so the list stays short.
     @State private var showsAllRecent = false
     /// The Working and Recent shelves, open or folded; remembered.
@@ -402,11 +404,21 @@ struct SessionListView: View {
     private var ordered: [SessionDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.sessions
+            .filter { project == nil || $0.folder == project }
             .filter { session in
                 words.isEmpty || [session.title, session.folder, session.branch ?? "", session.agent]
                     .contains { $0.localizedCaseInsensitiveContains(words) }
             }
             .sorted { $0.updated > $1.updated }
+    }
+    /// The folders the sessions work in, the most recent first, for the project filter (at most eight).
+    private var projects: [String] {
+        var seen = Set<String>()
+        return client.sessions.sorted { $0.updated > $1.updated }
+            .map(\.folder)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .prefix(8)
+            .map { $0 }
     }
     private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
     private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
@@ -451,6 +463,10 @@ struct SessionListView: View {
                     // With a Mac that searches its older sessions too, also while the list is short.
                     if client.sessions.count > 8 || hasOlder {
                         NookSearchField(prompt: "Search sessions", text: $query)
+                    }
+                    // Narrowing to one project, as t3code's list does, once sessions work in more than one.
+                    if projects.count > 1 {
+                        ProjectChips(projects: projects, chosen: $project)
                     }
                     if ordered.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")

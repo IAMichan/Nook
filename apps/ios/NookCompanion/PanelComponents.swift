@@ -227,14 +227,16 @@ struct MacMenu: View {
                 Button("Unpair from this Mac", role: .destructive) { client.unpair() }
             }
         } label: {
-            NookMark(size: 30)
+            // On a glass disc, as t3code's header buttons, so the orb and the buttons across from it read as one row.
+            NookMark(size: 26)
+                .frame(width: 40, height: 40)
+                .floatingGlass(Circle())
                 .overlay(alignment: .bottomTrailing) {
                     if offline {
                         Circle().fill(Theme.amber).frame(width: 9, height: 9)
                             .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: 2))
                     }
                 }
-                .frame(width: 36, height: 36)
                 .contentShape(Circle())
         }
         .accessibilityLabel("Nook and your Mac")
@@ -272,7 +274,7 @@ struct PressFade: ButtonStyle {
 
 /// A list row: lit with `rowHover` while your finger is on it, as the Mac lights the row under the pointer.
 struct RowPress: ButtonStyle {
-    var radius = Theme.Radius.card
+    var radius = PhoneRadius.row
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -293,7 +295,7 @@ struct NookSearchField: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
             Image(icon: "magnifyingglass")
-                .font(Theme.textFont(11, .medium))
+                .font(Theme.font(14, .medium))
                 .foregroundStyle(Theme.textTertiary)
             TextField(prompt, text: $text)
                 .font(Theme.TextStyle.body)
@@ -316,10 +318,12 @@ struct NookSearchField: View {
                 .accessibilityLabel("Clear")
             }
         }
-        .padding(.leading, Theme.Spacing.md)
+        .padding(.leading, Theme.Spacing.lg)
         .padding(.trailing, Theme.Spacing.xxs)
-        .frame(minHeight: 38)
-        .roundedBackground(Theme.field, radius: Theme.Radius.control)
+        .frame(minHeight: 40)
+        // t3code's input: the field a step above the screen with a faint edge.
+        .roundedBackground(Theme.field, radius: PhoneRadius.row)
+        .roundedStrokeBorder(Theme.fieldStroke, radius: PhoneRadius.row)
     }
 }
 
@@ -375,16 +379,17 @@ struct SessionComposer<Controls: View>: View {
         .padding(.trailing, Theme.Spacing.md)
         .padding(.top, hasControls ? Theme.Spacing.xl : Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.md)
-        .background(shape.fill(Theme.surface))
-        .overlay(shape.strokeBorder(focused.wrappedValue ? Theme.iris.opacity(0.28) : Theme.fieldStroke, lineWidth: 1))
-        .overlay(shape.strokeBorder(LinearGradient(colors: [Theme.paper.opacity(0.06), Theme.paper.opacity(0)],
-                                                   startPoint: .top, endPoint: .center), lineWidth: 1).allowsHitTesting(false))
+        // t3code's composer: a grouped surface at 90 % over a blur, so the conversation shows faintly through it.
+        .background(.ultraThinMaterial, in: shape)
+        .background(shape.fill(Theme.graphite.opacity(0.9)))
+        .overlay(shape.strokeBorder(focused.wrappedValue ? Theme.blue.opacity(0.42) : Theme.paper.opacity(0.06), lineWidth: 1))
         .animation(Theme.reveal, value: focused.wrappedValue)
         .contentShape(shape)
         .onTapGesture { focused.wrappedValue = true }
     }
 
-    private var shape: RoundedRectangle { Theme.shape(Theme.Radius.composer) }
+    /// t3code's 27 pt for one line; a box with choices under its text is a card (`PhoneRadius.card`).
+    private var shape: RoundedRectangle { Theme.shape(hasControls ? PhoneRadius.card : PhoneRadius.composer) }
 
     private func field(_ focused: FocusState<Bool>.Binding) -> some View {
         TextField(prompt, text: $text, axis: .vertical)
@@ -414,15 +419,15 @@ struct SessionComposer<Controls: View>: View {
         } label: {
             // The Mac's round button (`SessionComposer.roundButton`): Nook's color when it can go, `smoke` when not.
             ZStack {
-                Circle().fill(active ? Theme.iris : Theme.smoke)
+                Circle().fill(active ? Theme.primary : Theme.smoke)
                 if sending {
-                    ProgressView().controlSize(.small).tint(Theme.onIris)
+                    ProgressView().controlSize(.small).tint(Theme.onPrimary)
                 } else {
-                    Image(icon: symbol).font(Theme.font(13, .bold))
-                        .foregroundStyle(active ? Theme.onIris : Theme.textTertiary)
+                    Image(icon: symbol).font(Theme.font(14, .bold))
+                        .foregroundStyle(active ? Theme.onPrimary : Theme.textTertiary)
                 }
             }
-            .frame(width: 34, height: 34)
+            .frame(width: 38, height: 38)
             .contentShape(Circle())
         }
         .buttonStyle(PressFade())
@@ -551,5 +556,159 @@ struct SuggestionGrid: View {
                 .buttonStyle(RowPress(radius: Theme.Radius.panel))
             }
         }
+    }
+}
+
+// MARK: t3code's buttons and chips
+
+/// A full-width or compact button in t3code's three kinds: `prominent` (the main action, white on dark), `secondary`
+/// (a step above the surface, with an edge) and `danger` (coral on a dark coral wash). A card that asks something stacks
+/// them full width, a row puts them side by side (`compact`).
+struct PhoneActionButton: View {
+    enum Style { case prominent, secondary, danger }
+
+    let title: String
+    var symbol: String? = nil
+    var style: Style = .secondary
+    var compact = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.sm) {
+                if let symbol { Image(icon: symbol).font(Theme.font(compact ? 12 : 14, .bold)) }
+                Text(title).lineLimit(1)
+            }
+            .font(Theme.textFont(compact ? 13 : 14, style == .secondary ? .medium : .bold))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, compact ? Theme.Spacing.xl : Theme.Spacing.lg)
+            .frame(maxWidth: compact ? nil : .infinity)
+            .frame(height: compact ? 34 : 46)
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().strokeBorder(edge, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressFade())
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .prominent: return Theme.onPrimary
+        case .secondary: return Theme.paper
+        case .danger: return Theme.coral
+        }
+    }
+
+    private var fill: Color {
+        switch style {
+        case .prominent: return Theme.primary
+        case .secondary: return Theme.graphite
+        case .danger: return Theme.coral.opacity(0.14)
+        }
+    }
+
+    private var edge: Color {
+        switch style {
+        case .prominent: return .clear
+        case .secondary: return Theme.line2
+        case .danger: return Theme.coral.opacity(0.32)
+        }
+    }
+}
+
+/// The project filter above the Agents list, as t3code's: "All" and each folder the sessions work in, one row that
+/// scrolls sideways; the chosen chip is white.
+struct ProjectChips: View {
+    let projects: [String]
+    @Binding var chosen: String?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                chip(String(localized: "All"), selected: chosen == nil) { chosen = nil }
+                ForEach(projects, id: \.self) { project in
+                    chip(project, selected: chosen == project) { chosen = chosen == project ? nil : project }
+                }
+            }
+        }
+        .scrollClipDisabled()
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            withAnimation(Theme.reveal) { action() }
+        } label: {
+            Text(verbatim: title)
+                .font(Theme.textFont(12, selected ? .bold : .medium))
+                .foregroundStyle(selected ? Theme.onPrimary : Theme.paper)
+                .lineLimit(1)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .frame(height: 30)
+                .background(Capsule().fill(selected ? Theme.primary : Theme.surface))
+                .overlay(Capsule().strokeBorder(selected ? Color.clear : Theme.line, lineWidth: 1))
+        }
+        .buttonStyle(PressFade())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+// MARK: Grouped sections (sheets)
+
+/// Rows that belong together in a sheet, as t3code's grouped list: one surface with 24 pt corners, the rows on it
+/// separated by inset hairlines (`SheetDivider`).
+struct SheetGroup<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: PhoneRadius.group, style: .continuous))
+    }
+}
+
+/// The hairline between two rows of a `SheetGroup`, inset to their text.
+struct SheetDivider: View {
+    var body: some View {
+        NookDivider(inset: Theme.Spacing.xl, tint: Theme.separator)
+    }
+}
+
+/// A choice in a `SheetGroup`: its name, the value chosen (an agent with its mark) and a chevron; a tap opens the menu.
+struct SheetMenuRow<Items: View>: View {
+    let title: String
+    let value: String
+    var agent: String? = nil
+    @ViewBuilder let items: () -> Items
+
+    var body: some View {
+        Menu(content: items) {
+            HStack(spacing: Theme.Spacing.md) {
+                Text(verbatim: title).font(Theme.TextStyle.rowTitle).foregroundStyle(Theme.paper)
+                Spacer(minLength: Theme.Spacing.md)
+                if let agent { AgentMark(agent: agent, size: 16) }
+                Text(verbatim: value).font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Image(icon: "chevron.up.chevron.down").font(Theme.font(11, .semibold)).foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .frame(minHeight: 50)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "\(title), \(value)"))
+    }
+}
+
+/// A switch in a `SheetGroup`, in t3code's blue when on.
+struct SheetToggleRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Text(verbatim: title).font(Theme.TextStyle.rowTitle).foregroundStyle(Theme.paper)
+        }
+        .tint(Theme.blue)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .frame(minHeight: 50)
     }
 }

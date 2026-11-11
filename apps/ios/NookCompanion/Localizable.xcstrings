@@ -1607,6 +1607,34 @@
         }
       }
     },
+    "Always allow" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immer erlauben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir siempre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours autoriser"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altijd toestaan"
+          }
+        }
+      }
+    },
     "Answer" : {
       "localizations" : {
         "de" : {
@@ -4404,6 +4432,34 @@
         }
       }
     },
+    "How" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comment"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoe"
+          }
+        }
+      }
+    },
     "How much of each agent's limits you used, and when they reset." : {
       "localizations" : {
         "nl" : {
@@ -4486,6 +4542,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In een aparte worktree"
+          }
+        }
+      }
+    },
+    "Input" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pregunta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Question"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vraag"
           }
         }
       }
@@ -7612,6 +7696,34 @@
         }
       }
     },
+    "Own branch (worktree)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eigener Branch (Worktree)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rama propia (worktree)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Branche à part (worktree)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eigen branch (worktree)"
+          }
+        }
+      }
+    },
     "Pair again" : {
       "localizations" : {
         "de" : {
@@ -8008,6 +8120,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vorig nummer"
+          }
+        }
+      }
+    },
+    "Project" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projekt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proyecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project"
           }
         }
       }
@@ -12519,6 +12659,34 @@
         }
       }
     },
+    "Where and who" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wo und wer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dónde y quién"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Où et qui"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waar en wie"
+          }
+        }
+      }
+    },
     "Why can't I connect?" : {
       "localizations" : {
         "de" : {
@@ -13139,6 +13307,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Je Mac antwoordt niet. Staat de metgezel aan, en zit je op hetzelfde wifi?"
+          }
+        }
+      }
+    },
+    "Your Mac knows another key for this iPhone. Pair again in Nook › Settings › iPhone." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Mac kennt einen anderen Schlüssel für dieses iPhone. Kopple es neu unter Nook › Einstellungen › iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Mac conoce otra clave para este iPhone. Vuelve a vincularlo en Nook › Ajustes › iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton Mac connaît une autre clé pour cet iPhone. Associe-le à nouveau dans Nook › Réglages › iPhone."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je Mac kent een andere sleutel voor deze iPhone. Koppel opnieuw via Nook › Instellingen › iPhone."
           }
         }
       }

@@ -93,6 +93,10 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
     /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
     @Published var addingMac = false
+    /// Nook's home on the Mac (`CompanionOp.home`): what waits, the agenda and what plays, for the Nook tab's Today.
+    @Published private(set) var home: HomeDigest?
+    /// A `bindKey` request is on its way (`bindDeviceKey`): answers to hello, list and subscribe meanwhile send no second.
+    private var bindingKey = false
     /// When the active Mac last answered the list, live or (at launch) from what the phone kept (`CompanionCache`):
     /// while it cannot be reached the list says "Last updated HH:mm · not connected".
     @Published private(set) var lastUpdated: Date?
@@ -268,6 +272,7 @@ final class CompanionClient: ObservableObject {
         CacheStore.remove(mac: id)
         PullCacheStore.remove(mac: id)
         ClockOffsets.forget(id)
+        DeviceKeyStore.forget(id)
         for entry in retries.waiting(for: id) { retries.remove(entry.id) }
         RetryStore.save(retries)
         pairings.remove(id)
@@ -326,6 +331,7 @@ final class CompanionClient: ObservableObject {
         linkedPulls = pullCache.linked
         pullDetails = pullCache.details.mapValues(\.detail)
         versionNotice = nil
+        home = nil
         olderSessions = []
         olderCursor = nil
         olderEnded = false
@@ -442,7 +448,7 @@ final class CompanionClient: ObservableObject {
         guard let channel, channel.isOpen, can(CompanionFeature.foreground) else { return }
         let work = BackgroundWork("Nook: going to the background")
         Task {
-            _ = try? await channel.request(CompanionRequest(op: .ping, foreground: false), timeout: CompanionTiming.probeTimeout)
+            _ = try? await channel.request(CompanionRequest(op: .ping, foreground: false), timeout: CompanionTiming.probeTimeout(for: channel.route))
             work.end()
         }
     }
@@ -699,7 +705,7 @@ final class CompanionClient: ObservableObject {
         do {
             // Says too whether the app is in front, which may have changed since the connection was made.
             _ = try await channel.request(CompanionRequest(op: .ping, foreground: can(CompanionFeature.foreground) ? inFront : nil),
-                                          timeout: CompanionTiming.probeTimeout)
+                                          timeout: CompanionTiming.probeTimeout(for: channel.route))
         } catch {
             guard self.channel === channel else { return }
             CompanionDiagnosticsLog.phone.record("probeFailed", ["route": channel.route.logKind, "error": error.localizedDescription])
@@ -900,9 +906,12 @@ final class CompanionClient: ObservableObject {
     }
 
     /// `reason`: with a denial, what the agent is told (the Mac passes it on; an older Mac only denies).
-    func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool, reason: String = "") async {
+    /// Allows or denies what waits on you; `always` allows it for good, as the Mac's "Always" (an item that offers it, on
+    /// a Mac with `CompanionFeature.allowAlways`).
+    func decide(_ session: SessionDigest, item: SessionDigest.Item, allow: Bool, always: Bool = false, reason: String = "") async {
+        let forGood = allow && always && item.canAlways == true && can(CompanionFeature.allowAlways)
         await perform(CompanionRequest(op: .decide, session: session.id, item: item.id,
-                                       text: allow || reason.isEmpty ? nil : reason, allow: allow))
+                                       text: allow || reason.isEmpty ? nil : reason, allow: allow, always: forGood ? true : nil))
     }
 
     func answer(_ session: SessionDigest, item: SessionDigest.Item, text: String) async {
@@ -1054,6 +1063,18 @@ final class CompanionClient: ObservableObject {
 
     // MARK: Nook's own chats
 
+    /// Nook's home from the Mac, for the Nook tab's Today (`CompanionFeature.home`).
+    func loadHome() async {
+        guard allows(.read), await supports(CompanionFeature.home) else { return }
+        await perform(CompanionRequest(op: .home), quiet: true)
+    }
+
+    /// Play/pause, next or previous on the Mac (`CompanionFeature.music`); answered with the home, so Today follows.
+    func music(_ command: String) async {
+        guard allows(.music), can(CompanionFeature.music) else { return }
+        await perform(CompanionRequest(op: .music, text: command), quiet: true)
+    }
+
     func loadChats() async {
         guard await supports(CompanionFeature.chat) else { return }
         await perform(CompanionRequest(op: .chats), quiet: true)
@@ -1183,6 +1204,28 @@ final class CompanionClient: ObservableObject {
         ])
     }
 
+    // MARK: Device key
+
+    /// Tells the active Mac this phone's device key (`CompanionOp.bindKey`); from its "bound" on, every request to it is
+    /// signed. "other" means the Mac already holds a different key for this pairing (this phone lost its own): only
+    /// pairing again helps.
+    private func bindDeviceKey(_ id: String) async {
+        defer { bindingKey = false }
+        guard let publicKey = DeviceKeyStore.publicKey(for: id) else { return }
+        let response = await perform(CompanionRequest(op: .bindKey, text: publicKey.base64EncodedString()), quiet: true)
+        guard id == pairings.active?.id else { return }
+        switch response?.message {
+        case "bound":
+            DeviceKeyStore.markBound(id)
+            CompanionDiagnosticsLog.phone.record("deviceKey", ["state": "bound"])
+        case "other":
+            CompanionDiagnosticsLog.phone.record("deviceKey", ["state": "other"])
+            notice = String(localized: "Your Mac knows another key for this iPhone. Pair again in Nook › Settings › iPhone.")
+        default:
+            break
+        }
+    }
+
     // MARK: Versions
 
     /// Opens Nook's update panel on the Mac, where the update waits for a click there; nothing is installed from the
@@ -1228,6 +1271,8 @@ final class CompanionClient: ObservableObject {
             switch response.error {
             case .notAllowedFromPhone where req.op == .inboxSend:
                 notice = String(localized: "Nook can only read this chat: answer it in its own app.")
+            case .notAllowedFromPhone where response.message == "signature":
+                notice = String(localized: "Your Mac knows another key for this iPhone. Pair again in Nook › Settings › iPhone.")
             case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
             case .unknownSession where req.conversation != nil: notice = String(localized: "This chat is gone."); await loadChats()
             case .unknownItem where req.op == .inboxSend || req.op == .inboxMark:
@@ -1290,6 +1335,12 @@ final class CompanionClient: ObservableObject {
             self.features = Set(features)
             UserDefaults.standard.set(features, forKey: featuresKey)
         }
+        // A Mac that takes device keys gets this phone's once, right after pairing (`CompanionDeviceKey`).
+        if response.features?.contains(CompanionFeature.deviceKey) == true, let id = pairings.active?.id,
+           !DeviceKeyStore.isBound(id), !bindingKey {
+            bindingKey = true
+            Task { await bindDeviceKey(id) }
+        }
         if let endpoints = response.endpoints { learn(endpoints) }
         // The relay the Mac uses now ("" when none): the route through it follows.
         if let relay = CompanionRoutes.withRelay(routes, relay: response.relay) {
@@ -1318,6 +1369,7 @@ final class CompanionClient: ObservableObject {
         }
         if let files = response.diff, let session = req.session, diffs[session] != files { diffs[session] = files }
         if let list = response.conversations, list != conversations { conversations = list }
+        if let digest = response.home, digest != home { home = digest }
         if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
             chatLines[conversation] = lines
         }
@@ -1806,12 +1858,13 @@ extension CompanionClient {
         let now = Date().timeIntervalSince1970
         macName = "MacBook Pro"
         features = [CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
-                    CompanionFeature.manage, CompanionFeature.steer]
+                    CompanionFeature.manage, CompanionFeature.steer,
+                    CompanionFeature.allowAlways]
         sessions = [
             SessionDigest(id: "s1", title: "Add the usage page to Settings", agent: "Claude Code", attention: "approval",
                           folder: "nook", branch: "feature/usage", updated: now - 60, excerpt: "",
-                          items: [.init(id: "i1", kind: .approval, title: "Run swift test", detail: "swift test --filter UsageTests",
-                                        canAllow: true, options: [])]),
+                          items: [.init(id: "i1", kind: .approval, title: "swift test --filter UsageTests", detail: "Bash",
+                                        canAllow: true, options: [], canAlways: true)]),
             SessionDigest(id: "s2", title: "Fix the flaky relay reconnect", agent: "Codex", attention: "working",
                           folder: "nook", branch: "fix/relay", updated: now - 180, excerpt: "", items: []),
             SessionDigest(id: "s3", title: "Translate the onboarding", agent: "Gemini CLI", attention: "ready",

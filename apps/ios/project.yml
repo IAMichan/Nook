@@ -107,6 +107,8 @@ targets:
             CFBundleURLSchemes: [nook]
         # One Live Activity per session that works on the Mac (NookActivity, docs/COMPANION.md › Live Activities).
         NSSupportsLiveActivities: true
+        # DM Sans, the phone's type (NookTheme.textFont), as in t3code's iPhone app. License: Fonts/OFL.txt.
+        UIAppFonts: [DMSans-Regular.ttf, DMSans-Medium.ttf, DMSans-SemiBold.ttf, DMSans-Bold.ttf]
     settings:
       base:
         PRODUCT_NAME: Nook Companion
@@ -140,6 +142,8 @@ targets:
         createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
       - path: NookCompanion/Localizable.xcstrings
+      # DM Sans, so the Lock Screen and the Dynamic Island read as the app (`UIAppFonts` below).
+      - path: NookCompanion/Fonts
       # The only shared protocol files it needs: the activity's attributes and content, the usage widget's timeline and
       # the agent activity widget's snapshot.
       - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
@@ -156,6 +160,7 @@ targets:
         CFBundleDisplayName: Nook Companion
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UIAppFonts: [DMSans-Regular.ttf, DMSans-Medium.ttf, DMSans-SemiBold.ttf, DMSans-Bold.ttf]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

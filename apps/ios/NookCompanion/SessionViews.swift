@@ -55,6 +55,8 @@ struct SessionDetailView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: entries.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
+                // A light texture while the agent's answer comes in, at most every 320 ms (t3code's streaming haptics).
+                .modifier(StreamTicks(last: entries.last, working: session.attention == "working"))
                 .onChange(of: session.items.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
                 .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                 .defaultScrollAnchor(.bottom)
@@ -64,6 +66,7 @@ struct SessionDetailView: View {
                     FloatingWorkingControl(
                         workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
                         working: session.attention == "working",
+                        waiting: !session.items.isEmpty,
                         snoozed: actions(session).contains(.unsnooze),
                         onWake: { manage(session, .unsnooze) },
                         showScrollToEnd: !atEnd) {
@@ -329,6 +332,19 @@ private struct EarlierMessagesButton: View {
     }
 }
 
+/// Plays `Haptics.stream` as the conversation grows while the agent works, as often as `StreamCadence` allows.
+private struct StreamTicks: ViewModifier {
+    let last: TimelineEntry?
+    let working: Bool
+    @State private var cadence = StreamCadence(openedAt: Date())
+
+    func body(content: Content) -> some View {
+        content.onChange(of: last) { _, _ in
+            if cadence.tick(working: working, now: Date()) { Haptics.stream() }
+        }
+    }
+}
+
 /// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
 private struct ScrollEndTracker: ViewModifier {
     @Binding var atEnd: Bool
@@ -388,7 +404,7 @@ private struct PendingItemDock: View {
                 ItemView(session: session, item: item)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(maxHeight: 360)
+            .frame(maxHeight: 460)
             .fixedSize(horizontal: false, vertical: true)
             if more > 0 {
                 Text("\(more) more wait after this one")
@@ -402,7 +418,8 @@ private struct PendingItemDock: View {
     }
 }
 
-/// What waits on you in a session: an approval with Deny/Allow, or a question with its options and your own answer.
+/// What waits on you in a session: an approval with Deny/Allow (and Always allow where the agent offers it), or a
+/// question with its options and your own answer.
 struct ItemView: View {
     @EnvironmentObject private var client: CompanionClient
     let session: SessionDigest
@@ -445,6 +462,12 @@ struct ItemView: View {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
+                // Where the agent offers it, as the Mac's "Always": allowed now and from then on (`CompanionFeature.allowAlways`).
+                if item.canAllow, item.canAlways == true, client.can(CompanionFeature.allowAlways) {
+                    PhoneActionButton(title: String(localized: "Always allow"), style: .secondary) {
+                        Haptics.success(); Task { await client.decide(session, item: item, allow: true, always: true) }
+                    }
+                }
                 // What you type denies it and tells the agent why, or what to do instead.
                 SessionComposer(text: $text, prompt: "Or deny with a reason") {
                     let reason = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -473,7 +496,10 @@ struct ItemView: View {
                 }
             }
         }
-        .card(tint: Theme.amber)
+        .padding(Theme.Spacing.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .roundedBackground(Theme.surface, radius: PhoneRadius.card)
+        .roundedStrokeBorder(Theme.line, radius: PhoneRadius.card)
     }
 
     /// Typed, so both words go through the String Catalog.
@@ -561,9 +587,10 @@ struct NewSessionView: View {
                 }
             }
             .screen()
+            .navigationTitle(Text("New session"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Theme.paper) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Theme.blue) }
             }
             .onAppear(perform: prepare)
             .task {
@@ -574,6 +601,10 @@ struct NewSessionView: View {
         }
         .preferredColorScheme(.dark)
         .tint(Theme.paper)
+        // t3code's form sheet: a grabber, its round glass corners, the screen's own black.
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(PhoneRadius.glass)
+        .presentationBackground(Theme.canvas)
     }
 
     @ViewBuilder
@@ -586,31 +617,46 @@ struct NewSessionView: View {
                        message: String(localized: "Start a session on your Mac once: its folder then shows up here."))
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                    NookMark(size: 44)
-                    heading(options)
+                VStack(alignment: .leading, spacing: 0) {
                     ImageTray(images: $images)
-                    VStack(spacing: 0) {
-                        SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,
-                                        canSend: canStart, sending: starting, focus: $focused, onSend: start) {
-                            agentMenu(options)
-                            if let models = chosenAgent?.models, models.count > 1 {
-                                ComposerDivider()
-                                modelMenu(models)
-                            }
-                            if client.can(CompanionFeature.images) {
-                                ComposerDivider()
-                                AttachPictureButton(images: $images)
-                            }
-                            if chosenAgent?.canPlan == true {
-                                ComposerDivider()
-                                Button { withAnimation(Theme.reveal) { plan.toggle() } } label: {
-                                    ComposerPill(symbol: "list.bullet.clipboard", text: String(localized: "Plan first"),
-                                                 tint: plan ? Theme.paper : nil, showsChevron: false)
-                                        .roundedBackground(plan ? Theme.smoke : Color.clear, radius: Theme.Radius.control)
+                    SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,
+                                    canSend: canStart, sending: starting, focus: $focused, onSend: start) {
+                        if client.can(CompanionFeature.images) {
+                            AttachPictureButton(images: $images)
+                        }
+                    }
+                    SectionHeader(title: String(localized: "Where and who"))
+                    SheetGroup {
+                        SheetMenuRow(title: String(localized: "Project"), value: chosenProject?.name ?? "") {
+                            ForEach(options.projects) { option in
+                                Button { withAnimation(Theme.reveal) { project = option.path } } label: {
+                                    if project == option.path { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
                                 }
-                                .buttonStyle(.plain)
-                                .accessibilityAddTraits(plan ? .isSelected : [])
+                            }
+                        }
+                        SheetDivider()
+                        SheetMenuRow(title: String(localized: "Agent"), value: chosenAgent?.name ?? "", agent: chosenAgent?.name) {
+                            ForEach(options.agents) { option in
+                                Button {
+                                    withAnimation(Theme.reveal) {
+                                        agent = option.id
+                                        // Another agent starts on its own default model.
+                                        model = option.defaultModel ?? ""
+                                    }
+                                } label: {
+                                    if agent == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
+                                }
+                            }
+                        }
+                        if let models = chosenAgent?.models, models.count > 1 {
+                            SheetDivider()
+                            SheetMenuRow(title: String(localized: "Model"),
+                                         value: models.first { $0.id == model }?.name ?? models.first?.name ?? "") {
+                                ForEach(models) { option in
+                                    Button { withAnimation(Theme.reveal) { model = option.id } } label: {
+                                        if model == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
+                                    }
+                                }
                             }
                             // The Mac composer's "Main thread": the agent hands its work to sub-threads that report back.
                             if chosenAgent?.canMainThread == true {
@@ -625,106 +671,48 @@ struct NewSessionView: View {
                                 .accessibilityHint("The agent hands its work to sub-threads that report back here.")
                             }
                         }
-                        .zIndex(1)
-                        ComposerTray(edge: .bottom) { whereRow }
                     }
-                    Label("Nook uses your account, model and permissions for this agent. Anything risky still waits for your approval.",
-                          systemImage: "lock.shield")
+                    if chosenAgent?.canPlan == true || chosenProject?.canWorktree == true {
+                        SectionHeader(title: String(localized: "How"))
+                        SheetGroup {
+                            if chosenAgent?.canPlan == true {
+                                SheetToggleRow(title: String(localized: "Plan first"), isOn: $plan)
+                            }
+                            if chosenAgent?.canPlan == true, chosenProject?.canWorktree == true { SheetDivider() }
+                            if chosenProject?.canWorktree == true {
+                                SheetToggleRow(title: String(localized: "Own branch (worktree)"), isOn: $worktree)
+                            }
+                        }
+                    }
+                    Text("Nook uses your account, model and permissions for this agent. Anything risky still waits for your approval.")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
                         .padding(.horizontal, Theme.Spacing.xs)
+                        .padding(.top, Theme.Spacing.md)
+                    if let chosenProject {
+                        Text(verbatim: Self.tilde(chosenProject.path)).font(Theme.mono(11.5)).foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1).truncationMode(.head)
+                            .padding(.horizontal, Theme.Spacing.xs)
+                            .padding(.top, Theme.Spacing.xs)
+                    }
                     if let failure {
                         Banner(text: failure, symbol: "exclamationmark.triangle.fill", color: Theme.coral)
+                            .padding(.top, Theme.Spacing.lg)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.md)
                 .padding(.bottom, Theme.Spacing.xxl)
             }
             .scrollDismissesKeyboard(.interactively)
-        }
-    }
-
-    /// "What should we build in Nook?": the project is the menu, underlined with dots as on the Mac.
-    private func heading(_ options: LaunchOptions) -> some View {
-        Menu {
-            ForEach(options.projects) { option in
-                Button { withAnimation(Theme.reveal) { project = option.path } } label: {
-                    if project == option.path {
-                        Label(option.name, systemImage: "checkmark")
-                    } else {
-                        Text(option.name)
-                    }
-                }
-            }
-        } label: {
-            (Text("What should we build in ").foregroundStyle(Theme.paper)
-             + Text(verbatim: chosenProject?.name ?? "…").foregroundStyle(Theme.paper).underline(true, pattern: .dot, color: Theme.textTertiary)
-             + Text(verbatim: "?").foregroundStyle(Theme.paper))
-                .font(Theme.TextStyle.display)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// The model, as the Mac's composer offers it for this agent ("Default" is the agent's own choice).
-    private func modelMenu(_ models: [LaunchOptions.Model]) -> some View {
-        Menu {
-            ForEach(models) { option in
-                Button { withAnimation(Theme.reveal) { model = option.id } } label: {
-                    if model == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
-                }
-            }
-        } label: {
-            ComposerPill(symbol: "cpu", text: models.first { $0.id == model }?.name ?? models.first?.name ?? "")
-        }
-        .accessibilityLabel("Model")
-    }
-
-    /// The agent, with its logo, as a menu in the composer.
-    private func agentMenu(_ options: LaunchOptions) -> some View {
-        Menu {
-            ForEach(options.agents) { option in
-                Button {
-                    withAnimation(Theme.reveal) {
-                        agent = option.id
-                        // Another agent starts on its own default model.
-                        model = option.defaultModel ?? ""
-                    }
-                } label: {
-                    if agent == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
-                }
-            }
-        } label: {
-            ComposerPill(agent: chosenAgent?.name ?? agent, text: chosenAgent?.name ?? "")
-        }
-    }
-
-    /// Where it works, in the tray under the box: the folder as it is or a new worktree, and the folder's place.
-    private var whereRow: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            if chosenProject?.canWorktree == true {
-                Menu {
-                    Button { worktree = false } label: {
-                        if worktree { Text("Current checkout") } else { Label("Current checkout", systemImage: "checkmark") }
-                    }
-                    Button { worktree = true } label: {
-                        if worktree { Label("New worktree", systemImage: "checkmark") } else { Text("New worktree") }
-                    }
-                } label: {
-                    ComposerPill(symbol: worktree ? "square.stack.3d.up" : "folder",
-                                 text: worktree ? String(localized: "New worktree") : String(localized: "Current checkout"))
-                }
-            } else {
-                ComposerPill(symbol: "folder", text: String(localized: "Current checkout"), showsChevron: false)
-            }
-            Spacer(minLength: Theme.Spacing.md)
-            if let chosenProject {
-                Text(Self.tilde(chosenProject.path)).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1).truncationMode(.head)
+            .safeAreaInset(edge: .bottom) {
+                PhoneActionButton(title: String(localized: "Start session"), style: .prominent, action: start)
+                    .disabled(!canStart || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .opacity(canStart && !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 1 : 0.5)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.md)
+                    .background(Theme.canvas.opacity(0.92))
             }
         }
-        .padding(.leading, -Theme.Spacing.md)
     }
 
     /// Your defaults from the Mac, once.

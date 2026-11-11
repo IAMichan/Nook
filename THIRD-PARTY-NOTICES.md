@@ -142,6 +142,19 @@ SOFTWARE.
 
 ---
 
+## Typeface (DM Sans)
+
+Nook Companion on the iPhone sets its text in [DM Sans](https://github.com/googlefonts/dm-fonts) (version 4.004), as
+t3code's iPhone app does. The four weights in `apps/ios/NookCompanion/Fonts` are the unmodified static files, licensed
+under the SIL Open Font License 1.1; the full license ships next to them (`apps/ios/NookCompanion/Fonts/OFL.txt`) and in
+the app:
+
+```text
+Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+```
+
 ## Swift Package Dependencies
 
 Nook uses the following open-source Swift packages:
