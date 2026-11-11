@@ -2649,3 +2649,36 @@ private extension ChatSources.Added {
         return false
     }
 }
+
+/// The faces beside a group's messages (`BridgedChat.faces`, `InboxThread.face(of:)`): each sender's picture from their
+/// app, by their id, else by their name, kept across reads.
+final class ChatSenderFaceTests: XCTestCase {
+    private func message(_ id: String, sender: String, senderID: String? = nil, mine: Bool = false) -> InboxMessage {
+        var message = InboxMessage(id: id, sender: sender, text: "hi", date: Date(timeIntervalSince1970: 1_800_000_000),
+                                   fromMe: mine)
+        message.senderID = senderID
+        return message
+    }
+
+    func testFacesGoByIDThenByName() {
+        var thread = InboxThread(id: "signal|team", app: "signal", name: "Team")
+        thread.faces = ["u1": "/a.jpg", "Bob": "/b.jpg"]
+        XCTAssertEqual(thread.face(of: message("1", sender: "Anna", senderID: "u1")), "/a.jpg")
+        XCTAssertEqual(thread.face(of: message("2", sender: "Bob")), "/b.jpg")
+        XCTAssertNil(thread.face(of: message("3", sender: "Cleo", senderID: "u3")))
+        XCTAssertNil(thread.face(of: message("4", sender: "", mine: true)))
+    }
+
+    func testAReadsFacesAddToWhatTheGroupHad() {
+        var inbox = ChatInbox()
+        var first = BridgedChat(app: "signal", name: "Team", messages: [message("1", sender: "Anna", senderID: "u1")], unread: nil)
+        first.faces = ["u1": "/a.jpg"]
+        inbox.merge(first)
+        // A later read with only someone else's new photo: Anna's stays.
+        var later = BridgedChat(app: "signal", name: "Team", messages: [], unread: nil)
+        later.faces = ["u2": "/b.jpg"]
+        XCTAssertTrue(inbox.merge(later), "a new face alone is a change")
+        XCTAssertEqual(inbox.threads.values.first?.faces, ["u1": "/a.jpg", "u2": "/b.jpg"])
+        XCTAssertFalse(inbox.merge(later), "the same faces again change nothing")
+    }
+}
