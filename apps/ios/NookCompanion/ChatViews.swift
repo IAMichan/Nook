@@ -31,6 +31,8 @@ struct ChatListView: View {
                 PanelHeader()
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
+                    // What needs you across agents and chats, at a glance; an empty first visit leaves the stage to Nook.
+                    if showsOverview { AttentionOverview() }
                     if !client.can(CompanionFeature.chat) {
                         WSEmptyState(symbol: "arrow.down.circle", title: String(localized: "Update Nook on your Mac"),
                                    message: String(localized: "Update Nook on your Mac to chat with Nook from your phone."))
@@ -63,6 +65,7 @@ struct ChatListView: View {
                 }
             }
             .padding(.bottom, Theme.Spacing.xxl)
+            .animation(Theme.reveal, value: client.conversations)
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
@@ -86,11 +89,17 @@ struct ChatListView: View {
         }
         .screen()
         .task {
+            // A Mac that sends Nook's conversations by itself (`liveChats`) needs one look; otherwise every few seconds.
             while !Task.isCancelled {
                 await client.loadChats()
-                try? await Task.sleep(for: .seconds(5))
+                repeat { try? await Task.sleep(for: .seconds(5)) } while !Task.isCancelled && client.chatsAreLive
             }
         }
+    }
+
+    /// The overview shows once there is something to tell: sessions, chats, or earlier conversations with Nook.
+    private var showsOverview: Bool {
+        !client.sessions.isEmpty || !client.conversations.isEmpty || (client.allows(.chats) && !client.inbox.isEmpty)
     }
 
     /// A new chat that opens with this question.
@@ -140,7 +149,9 @@ private struct AskNook: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                NookMark(size: 44).padding(.bottom, Theme.Spacing.md)
+                NookMark(size: 44)
+                    .background(NookAura(size: 150))
+                    .padding(.bottom, Theme.Spacing.md)
                 Text("Ask Nook anything").font(Theme.TextStyle.display).foregroundStyle(Theme.paper)
                 Text("Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.")
                     .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)

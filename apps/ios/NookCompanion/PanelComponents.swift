@@ -40,15 +40,29 @@ struct HomeLogo: View {
 
 // MARK: Headers
 
-/// The panel's tabs, in the Mac's order (`PanelTab.visible`): Nook, Agents, Chats.
+/// The tabs along the bottom, as t3code's iPhone app has them, in Nook's order: the Mac's three (Nook, Agents, Chats),
+/// then pull requests and Settings, always last.
 enum CompanionTab: Hashable, CaseIterable {
-    case nook, agents, chats
+    case nook, agents, chats, pulls, settings
 
     var title: LocalizedStringKey {
         switch self {
         case .nook: return "Nook"
         case .agents: return "Agents"
         case .chats: return "Chats"
+        case .pulls: return "Pull requests"
+        case .settings: return "Settings"
+        }
+    }
+
+    /// The tab's icon; the filled form when it is the chosen tab where one exists.
+    func symbol(selected: Bool) -> String {
+        switch self {
+        case .nook: return "sparkles"
+        case .agents: return selected ? "square.stack.3d.up.fill" : "square.stack.3d.up"
+        case .chats: return selected ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right"
+        case .pulls: return "arrow.triangle.pull"
+        case .settings: return selected ? "gearshape.fill" : "gearshape"
         }
     }
 }
@@ -58,28 +72,47 @@ enum CompanionTab: Hashable, CaseIterable {
 final class TabRouter: ObservableObject {
     @Published var tab = CompanionTab.nook
 
-    /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`) is left out.
+    /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`), or cannot serve, is left out.
     func available(_ client: CompanionClient) -> [CompanionTab] {
         CompanionTab.allCases.filter { tab in
             switch tab {
             case .nook: return client.allows(.nookChat)
-            case .agents: return true
+            case .agents, .settings: return true
             case .chats: return client.allows(.chats)
+            case .pulls: return client.allows(.read) && client.can(CompanionFeature.pullRequests)
             }
+        }
+    }
+
+    /// The badge on a tab: what waits for you there.
+    func count(_ tab: CompanionTab, _ client: CompanionClient) -> Int {
+        switch tab {
+        case .nook: return client.conversations.filter(\.waiting).count
+        case .agents: return client.sessions.filter(SessionListView.needsYou).count
+        // Chats with something unread, not every message: one busy group is one.
+        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+        case .pulls, .settings: return 0
         }
     }
 }
 
-/// The row on top of every tab, the Mac's panel header: Nook's orb (its menu holds the Mac, the connection and Live
-/// Activities), the tabs in one quiet capsule, and the tab's own round button on the right. Every tab starts with this
-/// same row, so it stays put when you switch.
+/// The row on top of every tab: Nook's orb (its menu holds the Mac, the connection and Live Activities), the tab's name
+/// large with the Mac's name and how it is connected under it, as t3code's header says the machine and "Reconnecting…",
+/// and the tab's own round button on the right. The tabs themselves are along the bottom.
 struct PanelHeader<Trailing: View>: View {
+    @EnvironmentObject private var router: TabRouter
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             MacMenu()
-            PanelTabBar()
+            VStack(alignment: .leading, spacing: 0) {
+                Text(router.tab.title)
+                    .font(Theme.TextStyle.display)
+                    .foregroundStyle(Theme.paper)
+                    .lineLimit(1)
+                ConnectionTitle()
+            }
             Spacer(minLength: 0)
             trailing()
         }
@@ -93,53 +126,45 @@ extension PanelHeader where Trailing == EmptyView {
     init() { self.init { EmptyView() } }
 }
 
-/// The panel's tabs as the Mac's `NookTabBar`: plain words in a quiet capsule, the selected one on a raised capsule
-/// that slides to the next; what waits for you as an amber count.
-struct PanelTabBar: View {
+/// Under the tab's name: the Mac and how the phone has it, as t3code's header title. "MacBook · live" while connected,
+/// "Catching up…" while it synchronizes, and "Looking for MacBook…" once it has been away for a moment (not at a short
+/// drop). A tap on it while away explains why.
+struct ConnectionTitle: View {
     @EnvironmentObject private var client: CompanionClient
-    @EnvironmentObject private var router: TabRouter
-    @Namespace private var selection
+    @State private var diagnosing = false
+
+    private var mac: String { client.macName.isEmpty ? String(localized: "your Mac") : client.macName }
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.xxs) {
-            ForEach(router.available(client), id: \.self) { tab in
-                let selected = router.tab == tab
-                Button {
-                    guard !selected else { return }
-                    Haptics.tap()
-                    withAnimation(Theme.reveal) { router.tab = tab }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Text(tab.title).lineLimit(1)
-                        NookCountBadge(count: count(tab))
-                    }
-                    .font(Theme.TextStyle.tab)
-                    .foregroundStyle(selected ? Theme.paper : Theme.textTertiary)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .frame(height: 32)
-                    .background {
-                        if selected {
-                            Capsule().fill(Theme.smoke).matchedGeometryEffect(id: "selection", in: selection)
-                        }
-                    }
-                    .contentShape(Capsule())
+        Group {
+            switch client.phase {
+            case .connected where client.synchronizing:
+                label(String(localized: "\(mac) · catching up…"), dot: Theme.blue)
+            case .connected:
+                label(String(localized: "\(mac) · live"), dot: Theme.mint)
+            case .offline:
+                Button { diagnosing = true } label: {
+                    label(String(localized: "Looking for \(mac)…"), dot: Theme.amber)
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
+                .buttonStyle(PressFade())
+                .appearsAfterDelay()
+            default:
+                EmptyView()
             }
         }
-        .padding(Theme.Spacing.xxs)
-        .background(Theme.surface, in: Capsule())
-        .fixedSize()
+        .animation(Theme.reveal, value: client.phase)
+        .animation(Theme.reveal, value: client.synchronizing)
+        .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
     }
 
-    private func count(_ tab: CompanionTab) -> Int {
-        switch tab {
-        case .nook: return client.conversations.filter(\.waiting).count
-        case .agents: return client.sessions.needingYou
-        // Chats with something unread, not every message: one busy group is one.
-        case .chats: return client.inbox.filter { $0.unread > 0 }.count
+    private func label(_ text: String, dot: Color) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Circle().fill(dot).frame(width: 6, height: 6)
+            Text(text).lineLimit(1)
         }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
+        .transition(.opacity)
     }
 }
 

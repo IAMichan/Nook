@@ -93,7 +93,51 @@ extension CompanionServer {
         InboxChatDigest(id: entry.id, app: entry.app, appName: MessagingApps.app(id: entry.app)?.name ?? entry.app,
                                name: CompanionPolicy.clip(entry.name, limit: 120), preview: CompanionPolicy.clip(entry.preview, limit: 200),
                                last: entry.last.timeIntervalSince1970, unread: entry.unread, canSend: canSend,
-                               ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp, typing: typing(entry.id))
+                               ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp, typing: typing(entry.id),
+                               avatar: CompanionAvatars.version(entry.avatar))
+    }
+
+    /// The chat the phone has open (`CompanionOp.watchChat`): read as `inboxChat` reads it, and from now on its messages
+    /// follow over the live connection (`pushChats`). Nil `item` closes it.
+    func watchChat(_ request: CompanionRequest, deviceID: String, app: AppModel) async -> CompanionResponse {
+        let peer = streams.first { $0.deviceID == deviceID }
+        guard request.item?.isEmpty == false else {
+            peer?.watchChat = nil
+            peer?.sentChatLines = nil
+            return CompanionResponse(id: request.id, ok: true)
+        }
+        var response = await inboxChat(request, app: app)
+        guard response.ok, let id = request.item else { return response }
+        if let peer {
+            peer.watchChat = id
+            peer.sentChatLines = response.inboxLines
+            peer.sentChatTyping = response.inboxTyping
+        }
+        response.inboxChat = id
+        return response
+    }
+
+    /// The chats' pictures the phone asks for (`CompanionOp.avatars`): only of chats it can list, as small JPEGs.
+    func avatars(_ request: CompanionRequest) async -> CompanionResponse {
+        let wanted = Array((request.items ?? []).prefix(ChatAvatar.batch))
+        guard !wanted.isEmpty else { return .failure(request.id, .badRequest) }
+        let chats = wanted.compactMap { id -> (chat: String, path: String, version: String)? in
+            guard let entry = inboxEntry(id), let path = entry.avatar, let version = CompanionAvatars.version(path) else { return nil }
+            return (id, path, version)
+        }
+        return CompanionResponse(id: request.id, ok: true, avatars: await CompanionAvatars.pictures(chats))
+    }
+
+    /// The lines of the chat a live phone has open, as `inboxChat` answers them, without reading the chat from its app
+    /// again: what came in since is in the shared inbox already. Nil when the chat is gone.
+    func liveChatLines(_ id: String) -> (lines: [InboxLine], typing: [InboxTypist])? {
+        guard let entry = inboxEntry(id) else { return nil }
+        return (inboxLines(entry), Self.typing(entry.id))
+    }
+
+    /// The Chats tab's list as the phone gets it, for the live connection.
+    func liveInbox(app: AppModel) -> CompanionResponse {
+        inbox(CompanionRequest(op: .inbox), app: app)
     }
 
     /// Who is typing in a chat now, as the Chats tab on the Mac shows it.

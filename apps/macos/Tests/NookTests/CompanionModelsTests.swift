@@ -457,4 +457,19 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(CompanionScopes.table[.watch], .scope(.read))
         XCTAssertEqual(CompanionScopes.table[.diff], .scope(.read))
     }
+
+    /// A step's output travels as its end, from the start of a line, so the phone shows how it ended.
+    func testStepOutputKeepsItsEndFromALine() throws {
+        XCTAssertNil(TimelineEntry.outputTail(nil))
+        XCTAssertNil(TimelineEntry.outputTail("  \n "))
+        XCTAssertEqual(TimelineEntry.outputTail(" ok\n"), "ok")
+        let long = (1...400).map { "line \($0)" }.joined(separator: "\n")
+        let tail = try XCTUnwrap(TimelineEntry.outputTail(long))
+        XCTAssertTrue(tail.hasPrefix("…\nline "))
+        XCTAssertTrue(tail.hasSuffix("line 400"))
+        XCTAssertLessThanOrEqual(tail.count, TimelineEntry.outputLimit + 2)
+        // An older phone reads an entry with output, and a newer one reads an entry without.
+        let old = try JSONDecoder().decode(TimelineEntry.self, from: Data(#"{"id":"a","kind":"tool","text":"Ran","date":0,"failed":false}"#.utf8))
+        XCTAssertNil(old.output)
+    }
 }

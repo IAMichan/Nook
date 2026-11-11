@@ -625,7 +625,7 @@ struct ScopeMenu: View {
                          tint: current.isRestricted ? NookTheme.iris : nil)
         }
         .composerMenu()
-        .help(tr("scope.help"))
+        .composerTip(tr("scope.help"))
     }
 
     /// A source in the menu with its real icon: the app or the service's logo, else its own symbol (screen, web…).
