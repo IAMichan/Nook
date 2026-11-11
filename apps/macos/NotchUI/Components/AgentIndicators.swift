@@ -188,6 +188,22 @@ struct PullRequestLiveStateBadge: View {
     }
 }
 
+/// A pull request's state mark (no number) as it is now, for a tab: read from `PullRequestStatusStore` and read again
+/// while it shows, so a tab opened before the pull request merged turns purple without being opened again.
+struct PullRequestLiveStateIcon: View {
+    let item: PullRequestItem
+    @ObservedObject private var statuses = PullRequestStatusStore.shared
+    @State private var gate = AttentionGate()
+
+    private var url: URL? { item.url ?? URL(string: "https://github.com/\(item.repo)/pull/\(item.number)") }
+
+    var body: some View {
+        PullRequestStateIcon(glyph: url.flatMap { statuses.status($0)?.glyph } ?? item.stateGlyph)
+            .attentionGate(gate)
+            .task(id: url) { if let url { await PullRequestStatusStore.follow(url, gate: gate) } }
+    }
+}
+
 extension PullRequestStatusStore {
     /// Keeps a shown pull request current until the task that runs it ends, every `followInterval`. Places showing the
     /// same one share the reads: a read by any of them, the branch sync or a watch counts for all (`refresh` skips while
