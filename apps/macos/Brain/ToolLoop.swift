@@ -112,6 +112,9 @@ final class ToolRunner {
     var perform: (@MainActor (_ tool: String, _ input: [String: Any]) async -> (output: String, isError: Bool))?
     /// Pictures the tools of this round took, for a brain that can see (`look_ui` while taking over a task).
     var pictures: (@MainActor () -> [PromptImage])?
+    /// Read tools whose answer changes by itself (a window that is still loading): read again on every call instead of
+    /// from the cache, so "wait and read again" sees what is there now.
+    var liveReads: Set<String> = []
 
     private(set) var actions: [PlannedAction] = []
     private(set) var callCount = 0
@@ -147,10 +150,11 @@ final class ToolRunner {
         switch tool.kind {
         case .read:
             let key = Self.cacheKey(name, input)
-            if let cached = cache[key] { return (cached, false) }
+            let live = liveReads.contains(name)
+            if !live, let cached = cache[key] { return (cached, false) }
             do {
                 let output = UntrustedText.wrap(shield(try await tool.run(input)))
-                cache[key] = output
+                if !live { cache[key] = output }
                 return (output, false)
             } catch {
                 return ("Error: \(error.localizedDescription)", true)

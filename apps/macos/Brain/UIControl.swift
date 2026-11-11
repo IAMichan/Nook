@@ -44,7 +44,29 @@ enum UIControl {
 
     static let maxSteps = 15
     static let maxText = 500
-    static let maxWait = 5.0
+    static let maxWait = 10.0
+    /// The longest side of a picture `look_ui` hands a brain: brains shrink larger pictures themselves, after which
+    /// their pixels no longer match the screen points Nook gave.
+    static let maxPictureSide = 1_400
+
+    /// How much a picture of `width`×`height` pixels is made smaller to fit `maxSide` (1: not at all).
+    static func pictureScale(width: Int, height: Int, maxSide: Int) -> Double {
+        let longest = max(width, height)
+        guard longest > maxSide, longest > 0 else { return 1 }
+        return Double(maxSide) / Double(longest)
+    }
+
+    /// The sentence that tells the brain which screen point a pixel of the picture is, for a window at `originX`,
+    /// `originY` whose picture was scaled by `scale` (pixels per point).
+    static func pictureMapping(originX: Double, originY: Double, scale: Double) -> String {
+        let x = Int(originX.rounded())
+        let y = Int(originY.rounded())
+        guard scale < 0.999 else {
+            return "In the picture, pixel (px, py) is screen point (\(x) + px, \(y) + py)."
+        }
+        let factor = String(format: "%.3f", 1 / scale)
+        return "The picture is scaled down: pixel (px, py) is screen point (\(x) + px × \(factor), \(y) + py × \(factor))."
+    }
     static let maxScroll = 30
 
     // MARK: Reading the proposal

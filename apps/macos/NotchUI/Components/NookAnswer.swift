@@ -155,13 +155,15 @@ struct AnswerSourceChip: View {
 /// the notch's card.
 struct AnswerOfferChip: View {
     let text: String
+    /// The chip's symbol: the arrow of a next step by default, or what the request does (the Double Tap field's chips).
+    var symbol: String = "arrow.turn.down.right"
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                Image(icon: "arrow.turn.down.right")
+                Image(icon: symbol)
                     .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                 Text(text)
