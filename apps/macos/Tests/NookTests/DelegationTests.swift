@@ -347,4 +347,34 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual(object["worktree"] as? String, "/Users/x/.nook/worktrees/app/fix")
         XCTAssertTrue((object["merge"] as? String)?.contains("git merge nook/fix") == true)
     }
+
+    // MARK: Busy through sub-threads
+
+    func testWorkingSubThreadsCountEveryLevelAndNothingElse() {
+        let parent = UUID(), child = UUID(), grandchild = UUID(), done = UUID(), stranger = UUID(), other = UUID()
+        let parents = [child: parent, grandchild: child, done: parent, stranger: other]
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: parent, parents: parents, active: [child, grandchild, stranger]), 2)
+        // A sub-thread that finished still counts its own working sub-thread.
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: parent, parents: parents, active: [grandchild]), 1)
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: parent, parents: parents, active: []), 0)
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: child, parents: parents, active: [child, grandchild]), 1)
+    }
+
+    func testWorkingSubThreadsSurviveALoop() {
+        let a = UUID(), b = UUID()
+        XCTAssertEqual(DelegatedTask.workingSubThreads(of: a, parents: [a: b, b: a], active: [a, b]), 1)
+    }
+
+    func testIdleParentWithAWorkingSubThreadIsBusyAndQuietOnceTheyAreDone() {
+        var input = AgentAttention.Input(status: .completed, unseen: true, subThreadsWorking: 2)
+        XCTAssertEqual(AgentAttention.resolve(input), .working)
+        input.subThreadsWorking = 0
+        XCTAssertEqual(AgentAttention.resolve(input), .ready)
+        input.unseen = false
+        XCTAssertEqual(AgentAttention.resolve(input), .idle)
+        // What waits for you, a failure and your own settle still win.
+        XCTAssertEqual(AgentAttention.resolve(AgentAttention.Input(status: .completed, pendingApprovals: 1, subThreadsWorking: 1)), .approval)
+        XCTAssertEqual(AgentAttention.resolve(AgentAttention.Input(status: .failed, subThreadsWorking: 1)), .failed)
+        XCTAssertEqual(AgentAttention.resolve(AgentAttention.Input(status: .completed, settled: true, subThreadsWorking: 1)), .finished)
+    }
 }

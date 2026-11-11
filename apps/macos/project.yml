@@ -513,6 +513,7 @@ targets:
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
       - path: Services/Workspace/PanelReopening.swift
+      - path: Services/Workspace/SubThreadBeside.swift
       - path: Services/Workspace/KeybindingEdits.swift
       - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift

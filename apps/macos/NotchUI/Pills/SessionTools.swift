@@ -8,7 +8,7 @@ import SwiftUI
 /// what each thought, did and answered (`subagents`).
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, outputs, subagents, pullRequest, artifact, file, picker
+    case conversation, terminal, browser, changes, outputs, subagents, pullRequest, artifact, file, subThread, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.outputs, .subagents, .terminal, .browser, .changes]
@@ -18,7 +18,8 @@ enum SessionTool: String {
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
     /// + menu, and not kept across launches). An artifact (a Claude artifact, a ChatGPT canvas) clicked in the conversation
     /// opens the same way, in the signed-in web version of the app that made it, and a file link in Nook's own viewer.
-    static let sideTabs: [SessionTool] = panelTools + [.pullRequest, .artifact, .file]
+    /// A sub-thread the session delegated opens there too, live, from the strip above its composer (`SubThreadStrip`).
+    static let sideTabs: [SessionTool] = panelTools + [.pullRequest, .artifact, .file, .subThread]
 
     var symbol: String {
         switch self {
@@ -31,6 +32,7 @@ enum SessionTool: String {
         case .pullRequest: return PullRequestIcon.generic
         case .artifact: return "square.on.square"
         case .file: return "doc.text"
+        case .subThread: return "arrow.turn.down.right"
         case .picker: return "square.grid.2x2"
         }
     }
@@ -38,7 +40,7 @@ enum SessionTool: String {
     /// Whether the tool works for a session in `directory`: without a folder there is only the browser, the outputs and
     /// the subagents.
     func available(in directory: String) -> Bool {
-        if self == .pullRequest || self == .outputs || self == .subagents || self == .artifact || self == .file { return true }
+        if self == .pullRequest || self == .outputs || self == .subagents || self == .artifact || self == .file || self == .subThread { return true }
         return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
@@ -54,7 +56,7 @@ enum SessionTool: String {
         case .changes: return "c"
         case .pullRequest: return "p"
         case .file: return "f"
-        case .conversation, .artifact, .picker: return " "
+        case .conversation, .artifact, .subThread, .picker: return " "
         }
     }
     /// What the icon in the session's header does.
@@ -301,7 +303,15 @@ struct SessionWorkbench<Conversation: View>: View {
 
     /// Whether this session can show a tool. Without a folder the agent's turns still have a diff.
     private func usable(_ tool: SessionTool) -> Bool {
-        tool.available(in: directory) || (tool == .changes && !outputs.turns.isEmpty)
+        if tool == .subThread { return shownSubThread != nil }
+        return tool.available(in: directory) || (tool == .changes && !outputs.turns.isEmpty)
+    }
+
+    /// The sub-thread the Sub-thread tab shows: only one this session delegated (`SubThreadBeside.belongs`).
+    private var shownSubThread: UUID? {
+        let id = viewModel.sideSubThread
+        let children = runID.map { workspace.children(of: $0).map(\.id) } ?? []
+        return SubThreadBeside.belongs(id, to: runID, children: children) ? id : nil
     }
 
     /// The open tabs this session can show in a panel.
@@ -364,7 +374,9 @@ struct SessionWorkbench<Conversation: View>: View {
                         .environment(\.sessionPanelDocked, docked)
                         // A diff or file the conversation opens is a tab of the side panel.
                         .environment(\.sessionSide, SessionSideLink(shownFile: shownFile, panelOpen: sideOpen, hasPanel: true, showFile: showFile, openDiff: openDiff,
-                                                                     toggleConsole: toggleConsole))
+                                                                     toggleConsole: toggleConsole,
+                                                                     shownSubThread: side == .subThread ? shownSubThread : nil,
+                                                                     subThreadRoom: !tooNarrow, showSubThread: showSubThread))
                         .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         // Where the page this session's agent opened rests: the conversation above its composer. The card
@@ -489,7 +501,9 @@ struct SessionWorkbench<Conversation: View>: View {
         .onChange(of: runID) { _, _ in
             diffSelection = nil
             consoleEventID = nil
+            dropStaleSubThread()
         }
+        .onAppear { dropStaleSubThread() }
         // A task, not onChange: it also runs for the workbench a row's card just opened, after the change above.
         .task(id: viewModel.sessionDiffToOpen) {
             guard let selection = viewModel.sessionDiffToOpen else { return }
@@ -648,6 +662,37 @@ struct SessionWorkbench<Conversation: View>: View {
         }
     }
 
+    /// Shows a sub-thread of this session in the side panel's Sub-thread tab (in place of the one it showed), or with nil
+    /// puts that tab away, and the panel with it when it was its only tab.
+    private func showSubThread(_ id: UUID?) {
+        withAnimation(NookTheme.reveal) {
+            guard let id else {
+                putAway(.subThread, in: .side)
+                viewModel.sideSubThread = nil
+                return
+            }
+            viewModel.sideSubThread = id
+            viewModel.sessionTool = .subThread
+        }
+    }
+
+    /// Opens the sub-thread beside in place of this session, as its own session; the tab beside closes first, so coming
+    /// back here does not show it a second time.
+    private func openSubThreadHere(_ id: UUID) {
+        closeTab(.subThread, in: .side)
+        if viewModel.sessionTool == .picker, tabs(.side).isEmpty { viewModel.sessionTool = .conversation }
+        viewModel.selectedAgentID = "run:" + id.uuidString
+    }
+
+    /// A Sub-thread tab that does not belong to this session (it was deleted, or the tab came along from elsewhere)
+    /// goes away instead of showing beside the wrong thread.
+    private func dropStaleSubThread() {
+        guard viewModel.sessionTabs.contains(.subThread) || viewModel.sideSubThread != nil, shownSubThread == nil else { return }
+        viewModel.sideSubThread = nil
+        viewModel.sessionTabs.removeAll { $0 == .subThread }
+        if viewModel.sessionTool == .subThread { viewModel.sessionTool = viewModel.sessionTabs.first ?? .conversation }
+    }
+
     /// Opens the Changes tab on a turn (and a file): where it is open already, otherwise in the side panel.
     private func openDiff(_ selection: TurnDiffSelection) {
         withAnimation(NookTheme.reveal) {
@@ -734,6 +779,8 @@ struct SessionWorkbench<Conversation: View>: View {
                          close: {
                              if slot.tool == \NotchViewModel.sessionTool { viewModel.toggleSidePanel() } else { viewModel.bottomTool = .conversation }
                          },
+                         subThread: slot.tool == \NotchViewModel.sessionTool ? shownSubThread : nil,
+                         openSubThreadHere: openSubThreadHere,
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          showConsole: { id in withAnimation(NookTheme.reveal) { consoleEventID = id } },
                          closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } },
@@ -785,6 +832,7 @@ struct SessionWorkbench<Conversation: View>: View {
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
             if item == .artifact { EmbeddedAppStore.shared.closeArtifact() }
+            if item == .subThread { viewModel.sideSubThread = nil }
             if item == .pullRequest {
                 viewModel.sidePullRequestTabs = []
                 viewModel.activeSidePullRequest = nil
@@ -890,6 +938,9 @@ private struct SessionToolPanel: View {
     let showPullRequestList: () -> Void
     let closeTab: (SessionTab) -> Void
     let close: () -> Void
+    /// The sub-thread the Sub-thread tab shows, live with its own composer, and the way to open it as the main view.
+    var subThread: UUID? = nil
+    var openSubThreadHere: (UUID) -> Void = { _ in }
     /// A command the agent runs, opened from the conversation: the Terminal tab shows it in place of your shells.
     var console: CommandConsoleRef? = nil
     /// Shows another command of the agent in the Terminal tab: the one it runs now, when you ask for it.
@@ -965,6 +1016,17 @@ private struct SessionToolPanel: View {
                     SessionArtifactPanel()
                 case .file:
                     SessionFilePanel(directory: directory)
+                case .subThread:
+                    if let subThread {
+                        // The whole session: its transcript and its own composer, to answer its questions right here.
+                        AgentRunPanel(workspace: workspace, timelines: workspace.timelineChanges(for: subThread), runID: subThread,
+                                      headerAccessory: AnyView(ToolbarIconButton("arrow.up.forward.square", tr("ws.subthread.openHere")) {
+                                          openSubThreadHere(subThread)
+                                      }))
+                            .id(subThread)
+                    } else {
+                        SessionToolPicker(directory: directory) { launch($0) }
+                    }
                 default:
                     let browser = browsers.store(browserSession)
                     // Its own view for each browser: it counts itself as showing that browser.
@@ -1094,6 +1156,10 @@ private struct SessionToolPanel: View {
             return SidePanelTabItem(value: .tool(item), title: path.map { ($0 as NSString).lastPathComponent } ?? item.title,
                                     icon: AnyView(SidePanelSymbol(symbol: item.symbol)), fresh: fresh,
                                     help: path.map(AgentPathFormat.tilde) ?? item.help)
+        case .subThread:
+            let title = subThread.flatMap { workspace.run($0)?.title }.flatMap { $0.isEmpty ? nil : $0 }
+            return SidePanelTabItem(value: .tool(item), title: title ?? item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
+                                    fresh: fresh, help: title ?? item.help)
         default:
             return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
                                     fresh: fresh, help: item.help)

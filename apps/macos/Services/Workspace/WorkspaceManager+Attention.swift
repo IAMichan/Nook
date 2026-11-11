@@ -72,6 +72,8 @@ extension WorkspaceManager {
             unseen: unseen,
             settled: settled,
             subagentsWorking: subagentsWorking.contains(run.id),
+            // Only read for a turn that ended: a running one is busy anyway.
+            subThreadsWorking: run.status == .completed ? workingSubThreads(of: run.id) : 0,
             quietTurn: idleCompacting.contains(run.id)
         )
         let base = AgentAttention.resolve(input)

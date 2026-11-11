@@ -18,6 +18,8 @@ struct SessionLayout {
     var activePullRequest: UUID?
     /// The file its File tab showed.
     var file: FileTarget?
+    /// The sub-thread its Sub-thread tab showed.
+    var subThread: UUID? = nil
 
     /// Only the conversation was in view: nothing to bring back.
     var isEmpty: Bool { sideTool == .conversation && sideTabs.isEmpty && bottomTool == .conversation }
@@ -147,6 +149,9 @@ final class NotchViewModel: ObservableObject {
     /// put away (`toggleSidePanel`), so it opens again on what it showed; with none it opens on the list of tools.
     @Published var sessionTabs: [SessionTool] = []
 
+    /// The sub-thread the side panel's Sub-thread tab shows beside its session (`SubThreadStrip`), nil with none.
+    @Published var sideSubThread: UUID?
+
     /// The tools pinned to the front of the tab row (a tab's menu): `SidePanelTabOrder` keeps them there while you drag
     /// the others. Kept while Nook runs, for the side and the bottom panel alike.
     @Published var pinnedTabs: Set<SessionTool> = []
@@ -170,6 +175,7 @@ final class NotchViewModel: ObservableObject {
         sessionTool = .conversation
         hiddenSideTool = nil
         sessionTabs = []
+        sideSubThread = nil
         sidePullRequestTabs = []
         activeSidePullRequest = nil
     }
@@ -183,7 +189,8 @@ final class NotchViewModel: ObservableObject {
         let layout = SessionLayout(
             sideTool: sessionTool, sideTabs: sessionTabs, bottomTool: bottomTool, bottomTabs: bottomTabs,
             pullRequestTabs: sidePullRequestTabs, activePullRequest: activeSidePullRequest,
-            file: sessionTabs.contains(.file) ? FileViewerStore.shared.target : nil)
+            file: sessionTabs.contains(.file) ? FileViewerStore.shared.target : nil,
+            subThread: sessionTabs.contains(.subThread) ? sideSubThread : nil)
         return layout.isEmpty ? nil : layout
     }
 
@@ -203,6 +210,7 @@ final class NotchViewModel: ObservableObject {
         sessionTabs = layout.sideTabs.filter { $0 != .artifact }
         sidePullRequestTabs = layout.pullRequestTabs
         activeSidePullRequest = layout.activePullRequest
+        sideSubThread = layout.subThread
         sessionTool = layout.sideTool == .artifact ? (sessionTabs.first ?? .picker) : layout.sideTool
     }
 
