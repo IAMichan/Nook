@@ -121,7 +121,7 @@ Core logic (source scoping, action validation, tool loop, session registry, work
 
 ## Releases
 
-A maintainer publishes a release from **Actions › Release (macOS) › Run workflow**, choosing what to bump: the next beta
+A maintainer publishes a release from **Actions › Release › Run workflow**, choosing what to bump: the next beta
 (`v0.1.0-beta.1` → `v0.1.0-beta.2`, the default), or the first beta of the next patch, minor, or major version
 (`scripts/next-release-tag.sh` picks the tag). A tag with a `-beta.N` suffix becomes a pre-release. The release page lists
 the merged pull requests grouped by label (`.github/release.yml`); before releasing, move the **Unreleased** section of

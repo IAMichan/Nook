@@ -643,9 +643,9 @@ extension GitHubConnector {
             ),
             ToolSpec(
                 name: "github_merge_pr",
-                description: "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; default to 'merge'. To merge several pull requests at once, use github_merge_prs instead.",
+                description: "Merges a pull request. This is difficult to undo: only use when the user clearly asks, and check with github_pr_details first whether CI is green and the PR is not a draft. Choose the method requested by the user; without one, the repository's default (merge when its settings and rulesets allow it). To merge several pull requests at once, use github_merge_prs instead.",
                 schema: GitHubPR.schema([
-                    "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to merge."]
+                    "method": ["type": "string", "enum": ["merge", "squash", "rebase"], "description": "Merge method. Defaults to the first one the repository allows (merge when allowed)."]
                 ]),
                 kind: .action,
                 summarize: { input in
@@ -656,9 +656,17 @@ extension GitHubConnector {
                 run: { [weak self] input in
                     guard let self = self else { throw CloudHelp.notSetUp("GitHub") }
                     let target = try GitHubPR.target(input)
-                    let method = (GitHubPR.text(input, "method") ?? "merge").lowercased()
-                    guard ["merge", "squash", "rebase"].contains(method) else {
+                    let requested = GitHubPR.text(input, "method")?.lowercased()
+                    if let requested, PullRequestMergeMethod(rawValue: requested) == nil {
                         throw NookError("The method must be merge, squash, or rebase.")
+                    }
+                    // Without a method: the first one the repository and its rulesets allow (merge when allowed), so a
+                    // repository that only allows squash does not answer "Merge commits are not allowed".
+                    var method = requested ?? "merge"
+                    if requested == nil, let token = try? self.credentials(input).token,
+                       let detail = try? await GitHubPullRequestDetail.loadForMerge(repo: target.repo, number: target.number, token: token),
+                       let chosen = PullRequestQuickAction.mergeMethod(preferred: .merge, allowed: detail.methods) {
+                        method = chosen.rawValue
                     }
                     let result = try await self.send("PUT", "/repos/\(target.repo)/pulls/\(target.number)/merge",
                                                      body: ["merge_method": method], input: input)
