@@ -1,9 +1,15 @@
 name: Tauri (Windows, Linux, Android)
 
 # Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only
-# the Tauri checks and installers.
+# the Tauri checks and installers. release.yml calls it with `version` to build the Windows and Linux installers of a
+# release; it then attaches the `nook-Windows` and `nook-Linux` artifacts to the GitHub Release.
 on:
   workflow_call:
+    inputs:
+      version:
+        description: Release version without the leading v and the pre-release suffix (0.3.0). Empty for CI runs.
+        type: string
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -130,7 +136,17 @@ jobs:
       - run: npm ci
       # The tests already ran in the checks and windows jobs; this job only builds and packages.
       - name: Build and package the app
-        run: npx tauri build --ci --bundles ${{ matrix.bundles }}
+        env:
+          BUNDLES: ${{ matrix.bundles }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          # A release stamps its own version into the installers; CI builds keep the one in tauri.conf.json.
+          if [ -n "$VERSION" ]; then
+            npx tauri build --ci --bundles "$BUNDLES" --config "{\"version\":\"$VERSION\"}"
+          else
+            npx tauri build --ci --bundles "$BUNDLES"
+          fi
       - name: Verify Windows installers and write checksums
         if: runner.os == 'Windows'
         shell: pwsh
@@ -162,7 +178,8 @@ jobs:
   android:
     name: Android
     needs: checks
-    if: github.event_name != 'pull_request'
+    # Not for releases: the APK is unsigned, so it is not something to hand out yet.
+    if: github.event_name != 'pull_request' && inputs.version == ''
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

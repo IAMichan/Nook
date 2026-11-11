@@ -1,0 +1,108 @@
+name: chatd
+
+# Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only the
+# chat helper's checks.
+#
+# nook-chatd (apps/chatd) is Go and links the Signal connector, which needs libsignal's Rust library (libsignal_ffi.a)
+# at exactly the commit mautrix-signal pins (the same lookup as scripts/build-chatd.sh). Formatting and `go vet` need
+# none of that and run first; the tests then link against a libsignal that is built once per commit and cached.
+# A cold libsignal build takes about 10 minutes on ubuntu; it only happens when go.mod moves to another mautrix-signal.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # verified-check looks up the markers of earlier runs
+
+jobs:
+  test:
+    name: Format, vet and test
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/chatd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Keep this list in sync with scripts/ci-changes.sh.
+      - name: Already verified on these inputs?
+        id: verified
+        uses: ./.github/actions/verified-check
+        with:
+          name: chatd
+          paths: apps/chatd .github/workflows/chatd.yml .github/actions
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.verified.outputs.verified != 'true'
+        with:
+          go-version-file: apps/chatd/go.mod
+          # No module cache: setup-go would save one from every pull request into the repository's cache quota, and the
+          # download takes well under a minute.
+          cache: false
+      - name: gofmt
+        if: steps.verified.outputs.verified != 'true'
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Run gofmt -w on: $unformatted"
+            exit 1
+          fi
+      - name: go vet
+        if: steps.verified.outputs.verified != 'true'
+        run: go vet ./...
+      - name: Which libsignal
+        id: libsignal
+        if: steps.verified.outputs.verified != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(go list -m -f '{{.Version}}' go.mau.fi/mautrix-signal)"
+          # The libsignal submodule of mautrix-signal at that version; the API returns the submodule's commit as `sha`.
+          ref="$(gh api "repos/mautrix/signal/contents/pkg/libsignalgo/libsignal?ref=$version" --jq .sha)"
+          [ -n "$ref" ] || { echo "::error::Could not read libsignal's commit from mautrix-signal $version"; exit 1; }
+          echo "mautrix-signal $version uses libsignal $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Restore libsignal
+        id: cache
+        if: steps.verified.outputs.verified != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/libsignal-lib
+          key: chatd-libsignal-${{ runner.os }}-${{ steps.libsignal.outputs.ref }}
+      - name: Build libsignal
+        if: steps.verified.outputs.verified != 'true' && steps.cache.outputs.cache-hit != 'true'
+        env:
+          REF: ${{ steps.libsignal.outputs.ref }}
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends protobuf-compiler clang cmake
+          src="$RUNNER_TEMP/libsignal"
+          git init --quiet "$src"
+          git -C "$src" fetch --quiet --depth 1 https://github.com/signalapp/libsignal.git "$REF"
+          git -C "$src" checkout --quiet FETCH_HEAD
+          # libsignal's own rust-toolchain file picks the Rust version; rustup installs it on first use.
+          (cd "$src" && RUSTFLAGS="-Ctarget-feature=-crt-static" cargo build -p libsignal-ffi --profile=release)
+          mkdir -p "$RUNNER_TEMP/libsignal-lib"
+          cp "$src/target/release/libsignal_ffi.a" "$RUNNER_TEMP/libsignal-lib/"
+      # Only main saves, so pull requests cannot push each other's entries out of the repository's cache quota.
+      - name: Save libsignal
+        if: >-
+          steps.verified.outputs.verified != 'true' && steps.cache.outputs.cache-hit != 'true' &&
+          github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/libsignal-lib
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - name: go test
+        if: steps.verified.outputs.verified != 'true'
+        run: CGO_ENABLED=1 CGO_LDFLAGS="-L$RUNNER_TEMP/libsignal-lib" go test ./...
+      - uses: ./.github/actions/verified-mark
+        if: steps.verified.outputs.verified != 'true'
+        with:
+          name: chatd
+          fingerprint: ${{ steps.verified.outputs.fingerprint }}
