@@ -128,8 +128,8 @@ struct NookActionBar: View {
         .padding(.horizontal, 3)
         .frame(height: barHeight)
         .background(
-            Capsule().fill(NookTheme.graphite)
-                .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+            NookTheme.shape(NookTheme.Radius.panel).fill(NookTheme.graphite)
+                .overlay(NookTheme.shape(NookTheme.Radius.panel).strokeBorder(NookTheme.line2, lineWidth: 1))
         )
     }
 }
@@ -155,8 +155,8 @@ private struct NookActionBarItem: View {
             .padding(.horizontal, compact ? 10 : 14)
             .frame(maxWidth: .infinity)
             .frame(height: height)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

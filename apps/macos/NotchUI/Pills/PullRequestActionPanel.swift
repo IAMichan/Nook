@@ -404,8 +404,8 @@ struct PullRequestActionPanel: View {
             .padding(.leading, NookTheme.Spacing.xxs)
             .padding(.trailing, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(chosen ? NookTheme.iris : NookTheme.smoke))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(chosen ? NookTheme.iris : NookTheme.smoke))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .help(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))

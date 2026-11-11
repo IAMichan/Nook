@@ -618,10 +618,10 @@ struct PullRequestDetailView: View {
             .help(tr("agents.pr.write.choose"))
             .accessibilityLabel(tr("agents.pr.write.choose"))
         }
-        .background(Capsule().fill(NookTheme.smoke))
-        .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+        .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.smoke))
+        .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.line2, lineWidth: 1))
         .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
-        .clipShape(Capsule())
+        .clipShape(NookTheme.shape(NookTheme.Radius.control))
         .disabled(actions.sending)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.bottom, NookTheme.Spacing.md)

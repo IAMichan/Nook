@@ -324,7 +324,7 @@ struct PullRequestTag: View {
             .foregroundStyle(color)
             .padding(.horizontal, NookTheme.Spacing.xs)
             .padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.14)))
+            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.14)))
             .fixedSize()
     }
 }

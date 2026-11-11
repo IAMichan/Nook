@@ -1185,7 +1185,7 @@ struct DevServerStrip: View {
                                         .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
                                         .padding(.horizontal, 9)
                                         .frame(height: 22)
-                                        .background(Capsule().fill(open ? NookTheme.smoke : NookTheme.field))
+                                        .background(NookTheme.shape(NookTheme.Radius.control).fill(open ? NookTheme.smoke : NookTheme.field))
                                 }
                                 .buttonStyle(.plain)
                                 .help(server.url.absoluteString)

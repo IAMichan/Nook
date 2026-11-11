@@ -118,8 +118,8 @@ struct TimelineToEndPill: View {
             .foregroundStyle(NookTheme.paper)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 28)
-            .background(Capsule().fill(NookTheme.smoke))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.smoke))
+            .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
         }
         .buttonStyle(.plain)

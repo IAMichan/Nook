@@ -740,7 +740,7 @@ struct MacAppMirrorPane: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Capsule().fill(Color.black.opacity(0.75)))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(Color.black.opacity(0.75)))
                     .padding(.bottom, 12)
                     .allowsHitTesting(false)
             }

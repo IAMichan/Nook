@@ -430,9 +430,9 @@ struct ChatMarkButton: View {
             }
             .padding(.horizontal, compact || !showsTitle ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
             .frame(height: compact ? 22 : 26)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : (compact ? NookTheme.surface : Color.clear)))
-            .overlay(Capsule().strokeBorder(NookTheme.separator, lineWidth: 1))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : (compact ? NookTheme.surface : Color.clear)))
+            .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.separator, lineWidth: 1))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

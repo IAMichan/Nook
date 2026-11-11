@@ -953,8 +953,8 @@ struct BackgroundCommandLink: View {
             .font(NookTheme.TextStyle.caption)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(hovering ? NookTheme.rowHover : NookTheme.field))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : NookTheme.field))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
