@@ -166,3 +166,46 @@ extension WorkspaceManager {
         for child in activeChildren(of: id) { cancelDelegated(child.id) }
     }
 }
+
+// MARK: Lineage
+
+extension WorkspaceRun {
+    /// The session this one came from: the one that delegated it, or the one it was forked, compared or asked beside.
+    var parentRunID: UUID? { delegation?.parentID ?? lineage?.parentID }
+
+    /// How it came from `parentRunID` (`SubThreadLineage`).
+    var subThreadRelation: SubThreadRelation? {
+        if delegation != nil { return .delegated }
+        switch lineage?.kind {
+        case .fork?: return .fork
+        case .comparison?: return .comparison
+        case .side?: return .side
+        case nil: return nil
+        }
+    }
+}
+
+extension WorkspaceManager {
+    /// The sessions related to `id`, in the groups of its Lineage control: its parent and forks, the tasks it delegated
+    /// (at work, or ended), and its side chats.
+    func lineageGroups(of id: UUID) -> LineageGroups {
+        guard let me = run(id) else { return LineageGroups() }
+        // Only the sessions that can show up: this one, its parent, and its own children.
+        let related = runs.filter { $0.id == id || $0.id == me.parentRunID || $0.parentRunID == id }
+        let nodes = related.map { run in
+            LineageNode(id: run.id, parentID: run.parentRunID, relation: run.subThreadRelation, title: run.title,
+                        status: lineageStatus(run), createdAt: run.createdAt)
+        }
+        return LineageLayout.groups(for: id, nodes: nodes)
+    }
+
+    private func lineageStatus(_ run: WorkspaceRun) -> LineageStatus {
+        switch attention(run, unseen: false, includeSnooze: false) {
+        case .approval: return .approval
+        case .input: return .question
+        case .working: return .working
+        case .failed: return .failed
+        case .limited, .ready, .idle, .finished: return run.status == .stopped ? .stopped : .done
+        }
+    }
+}
