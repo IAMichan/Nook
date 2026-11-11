@@ -702,7 +702,7 @@ private struct PanelRow: View {
         HStack(spacing: 0) {
             if let action {
                 Button(action: action) { content }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .disabled(!enabled)
                     .opacity(enabled ? 1 : 0.55)
                 if let menu {
@@ -720,8 +720,8 @@ private struct PanelRow: View {
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
+                .menuStyle(.nookButton)
+                .buttonStyle(.nookPlain)
                 .menuIndicator(.hidden)
                 .frame(maxWidth: .infinity)
             } else {

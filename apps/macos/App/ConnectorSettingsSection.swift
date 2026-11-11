@@ -259,7 +259,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
         .confirmationDialog(tr("connect.disconnectTitle", connector.title), isPresented: $confirmDisconnect) {
@@ -335,7 +335,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), systemImage: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
             .disabled(gitHubSignIn.phase == .checkingCLI || gitHubSignIn.phase == .waitingForCLI)
             if gitHubSignIn.phase == .waitingForCLI {
@@ -472,7 +472,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     Button { pasteFromClipboard() } label: {
                         Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 }
                 Button(tr("button.save")) { save() }
                     .disabled(!hasDraft)
@@ -541,7 +541,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), systemImage: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
         }
     }
@@ -675,7 +675,7 @@ struct ExtraAccountsView: View {
                     ConfirmedButton(symbol: "trash", title: tr("button.delete"), question: tr("confirm.remove", account.label),
                                     detail: tr("confirm.keychain.detail")) { remove(account) }
                         .labelled(tr("button.delete"))
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.nookBorderless)
                 }
             }
             HStack {

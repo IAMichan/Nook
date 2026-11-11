@@ -102,7 +102,7 @@ private struct MusicConnectionForm: View {
                         } label: {
                             Label(tr("music.connect.spotifyButton"), systemImage: "person.badge.key.fill")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                         .disabled(clientID.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                     if case .failed(let message) = spotify.phase {
@@ -122,7 +122,7 @@ private struct MusicConnectionForm: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
         .confirmationDialog(tr("confirm.logout", "Spotify"), isPresented: $confirmSignOut) {

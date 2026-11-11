@@ -60,7 +60,7 @@ struct UpdateFooterButton<Idle: View>: View {
                         pill(look, showLabel: false, showCount: false)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
                 .help(look.help)
                 .accessibilityLabel(look.help)

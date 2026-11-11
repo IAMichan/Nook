@@ -832,7 +832,7 @@ struct TranscriptPromptRail: View {
                 .frame(width: Self.width, height: pitch, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .frame(width: Self.width, height: pitch)
         .hoverCard(instant: true) { PromptCard(text: Self.prompt(mark.text), answer: mark.answer.map(Self.answer)) }
         .onHover { inside in

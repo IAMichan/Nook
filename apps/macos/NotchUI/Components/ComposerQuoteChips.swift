@@ -47,7 +47,7 @@ private struct QuoteChip: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .disabled(jump == nil)
             .onHover { hovering = $0 }
             .help(quote.note.isEmpty ? quote.text : "\(quote.text)\n\n\(quote.note)")

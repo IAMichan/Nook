@@ -313,7 +313,7 @@ struct SharedFileTile: View {
         Button(action: action) {
             if compact { compactLabel } else { label }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(tr(compact ? "ws.viewed.show" : "ws.shared.show") + " · " + AgentPathFormat.tilde(path))
         .accessibilityLabel(name)
@@ -566,7 +566,7 @@ struct CodeBlock: View {
                 } label: {
                     Image(icon: "doc.on.doc").font(NookTheme.font(10))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .foregroundStyle(WS.tertiary)
                 .help(tr("button.copy"))
             }
@@ -624,6 +624,7 @@ struct ApprovalRow: View {
         .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         // Calm: the state label carries the color, the row itself stays neutral.
         .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+        .nookClickable()
         .onTapGesture { toggle() }
     }
 

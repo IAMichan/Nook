@@ -90,7 +90,7 @@ extension SettingsView {
                 ForEach(items) { item in
                     StatusRow(title: item.title, detail: item.detail, state: item.state) {
                         Button(item.button, action: item.action)
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.nookProminent)
                             .controlSize(.small)
                     }
                 }
@@ -99,7 +99,7 @@ extension SettingsView {
                     Text(tr("hub.overview.attention"))
                     Spacer()
                     Button(tr("settings.setup.open")) { app.startOnboarding() }
-                        .buttonStyle(.link)
+                        .buttonStyle(.nookLink)
                 }
             }
             .onAppear { permissions.watch() }

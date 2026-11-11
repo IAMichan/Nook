@@ -72,13 +72,13 @@ private struct ChatPersonCard: View {
                         Button { open(chat.chat) } label: {
                             SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 15, source: chat.app)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .help(MessagingApps.app(id: chat.app)?.name ?? chat.app)
                     }
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             if expanded {
                 TextField(tr("chats.people.notePlaceholder"), text: $note, axis: .vertical)
                     .textFieldStyle(.plain)

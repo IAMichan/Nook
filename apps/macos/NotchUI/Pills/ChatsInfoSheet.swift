@@ -233,7 +233,7 @@ private struct ChatsInfoTile: View {
             .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.line2))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(help)
         .accessibilityLabel(help)
@@ -253,7 +253,7 @@ private struct ChatsInfoLink: View {
                 .foregroundStyle(NookTheme.mint)
                 .underline(hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .pointerStyle(.link)
     }
@@ -284,7 +284,7 @@ private struct ChatsInfoRow: View {
             .background(NookTheme.shape(NookTheme.Radius.card).fill(hovering ? NookTheme.graphite : Color.clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }
@@ -322,7 +322,7 @@ private struct ChatsInfoGroupRow: View {
             .background(NookTheme.shape(NookTheme.Radius.card).fill(hovering ? NookTheme.graphite : Color.clear))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
     }
 }

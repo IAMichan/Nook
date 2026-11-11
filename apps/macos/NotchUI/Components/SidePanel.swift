@@ -287,7 +287,7 @@ struct SidePanelToggle: View {
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .animation(NookTheme.reveal, value: fresh)
         .help(help)
         .accessibilityLabel(help)

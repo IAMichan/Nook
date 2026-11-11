@@ -84,7 +84,7 @@ private struct SelectionBarButton: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(title)

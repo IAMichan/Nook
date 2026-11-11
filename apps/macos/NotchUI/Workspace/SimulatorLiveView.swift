@@ -127,8 +127,8 @@ struct SimulatorView: View {
             } label: { Image(icon: "ellipsis") }
             .help(tr("a11y.more"))
             .accessibilityLabel(tr("a11y.more"))
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
+            .menuStyle(.nookButton)
+            .buttonStyle(.nookBorderless)
             .menuIndicator(.hidden)
             .fixedSize()
         }
@@ -136,7 +136,7 @@ struct SimulatorView: View {
 
     private func iconButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(icon: symbol).font(NookTheme.font(12)).frame(width: 26, height: 24) }
-            .buttonStyle(.borderless)
+            .buttonStyle(.nookBorderless)
             .help(label)
             .accessibilityLabel(label)
     }

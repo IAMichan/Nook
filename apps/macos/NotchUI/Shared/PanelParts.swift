@@ -69,7 +69,7 @@ struct NookFilterChip: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(selected ? NookTheme.iris : NookTheme.smoke))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -252,7 +252,7 @@ struct NookShelfHeader<Accessory: View>: View {
             .frame(minHeight: SharedMetrics.isPhone ? 36 : 32, maxHeight: SharedMetrics.isPhone ? nil : 32)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .accessibilityAddTraits(.isHeader)
         .accessibilityValue(open ? sharedText("compose.queue.expanded", "expanded") : "")
     }

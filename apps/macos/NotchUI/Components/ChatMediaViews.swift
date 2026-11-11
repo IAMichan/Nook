@@ -602,7 +602,7 @@ struct ChatAudioView: View {
                     .background(Circle().fill(fromMe ? NookTheme.mint : NookTheme.paper))
                     .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(player.failed ? tr("card.attachment.open") : (player.playing ? tr("chat.media.pause") : tr("chat.media.play")))
             .accessibilityLabel("\(player.playing ? tr("chat.media.pause") : tr("chat.media.play")): \(name)")
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -752,7 +752,7 @@ struct ChatVideoControls: View {
                         .background(Circle().fill(Color.black.opacity(0.5)))
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(label)
                 .accessibilityLabel("\(label): \(name)")
             }
@@ -775,7 +775,7 @@ struct ChatVideoControls: View {
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(label)
             .accessibilityLabel("\(label): \(name)")
             Text(ChatAudioPlayer.clock(playback.elapsed))

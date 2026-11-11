@@ -38,7 +38,7 @@ private struct ChatLinkCard: View {
 
     var body: some View {
         Button { NSWorkspace.shared.open(url) } label: { card }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }
             .animation(NookTheme.hover, value: hovering)
             .help(url.absoluteString)
@@ -164,7 +164,7 @@ private struct ChatRemotePicture: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
                 .contextMenu {
                     Button {

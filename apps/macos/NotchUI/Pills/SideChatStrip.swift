@@ -39,10 +39,10 @@ struct SideChatStrip: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("ws.side.open"))
             Button(tr("ws.side.bringBack")) { workspace.mergeBack(chat.id) }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(workspace.canTransfer(chat.id) ? NookTheme.iris : NookTheme.textTertiary)
                 .disabled(!workspace.canTransfer(chat.id))

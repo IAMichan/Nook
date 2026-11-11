@@ -203,7 +203,7 @@ struct NookList: View {
                 .frame(height: 30)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .accessibilityValue(showArchived ? tr("compose.queue.expanded") : "")
         }
     }
@@ -315,7 +315,7 @@ private struct NookRow: View, Equatable {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: action) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             hoverActions
                 // Only the buttons themselves hold the card back, not the backdrop's fade or the padding around them.
                 .onHover { onActions = $0 }

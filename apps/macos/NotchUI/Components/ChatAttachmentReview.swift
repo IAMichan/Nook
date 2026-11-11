@@ -238,7 +238,7 @@ private struct ChatInkButton: View {
                 .overlay(Circle().strokeBorder(selected ? NookTheme.paper : .clear, lineWidth: 1.5))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr("chat.review.ink." + ink.rawValue))
         .accessibilityLabel(tr("chat.review.ink." + ink.rawValue))
         .accessibilityAddTraits(selected ? .isSelected : [])

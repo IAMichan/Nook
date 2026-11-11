@@ -18,7 +18,7 @@ struct FolderCrumb: View {
     var body: some View {
         if local, !directory.isEmpty, !app.demoMode {
             Button(action: start) { label(hovering ? NookTheme.paper : NookTheme.textSecondary) }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { hovering = $0 }
                 // A session in a worktree: another session can carry on in that same worktree and branch.
                 // Read from disk only when the menu opens.

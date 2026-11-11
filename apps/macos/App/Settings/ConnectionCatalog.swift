@@ -199,7 +199,7 @@ struct AddConnectionSheet: View {
                         Button { self.chosen = nil } label: {
                             Label(tr("hub.picker.back"), systemImage: "chevron.left")
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(.nookLink)
                         .padding(.horizontal, NookTheme.Spacing.xl)
                         .padding(.top, NookTheme.Spacing.lg)
                     }
@@ -239,7 +239,7 @@ struct AddConnectionSheet: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
     }
@@ -301,7 +301,7 @@ struct ConnectionCategoryChips: View {
                 .background(NookTheme.shape(NookTheme.Radius.control).fill(active ? NookTheme.iris : NookTheme.smoke))
                 .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
@@ -355,7 +355,7 @@ struct ConnectionOptionTile: View {
             .roundedBackground(hovering ? NookTheme.smoke : NookTheme.graphite, radius: NookTheme.Radius.card)
             .roundedHitShape(NookTheme.Radius.card)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
@@ -518,7 +518,7 @@ struct ServiceSignInSheet: View {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
             .controlSize(.large)
     }
 
@@ -568,7 +568,7 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         })
     }

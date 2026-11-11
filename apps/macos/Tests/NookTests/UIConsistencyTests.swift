@@ -146,6 +146,19 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift)")
     }
 
+    /// Every button shows the pointing hand, so it reads as clickable: buttons use Nook's pointer styles
+    /// (`.nookPlain`, `.nookBorderless`, `.nookProminent`, `.nookLink`) instead of the system ones, which keep the arrow.
+    func testButtonsShowThePointingHand() {
+        let found = offenders(#"\.buttonStyle\(\s*\.(plain|borderless|borderedProminent|bordered|link)\s*\)"#)
+        XCTAssertEqual(found, [], "use .nookPlain / .nookBorderless / .nookProminent / .nookLink (NotchUI/Theme/NookTheme.swift)")
+    }
+
+    /// Menu buttons show the pointing hand too: `.nookBorderlessButton` / `.nookButton`, not the system menu styles.
+    func testMenusShowThePointingHand() {
+        let found = offenders(#"\.menuStyle\(\s*\.(borderlessButton|button)\s*\)"#)
+        XCTAssertEqual(found, [], "use .nookBorderlessButton / .nookButton (NotchUI/Theme/NookTheme.swift)")
+    }
+
     /// A line between rows or regions is a `NookDivider`, so every divider has the same weight and color.
     func testDividersAreTheSharedComponent() {
         let found = offenders(#"Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)"#) {

@@ -223,7 +223,7 @@ struct ChatVideoFailure: View {
                 .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.ink.opacity(0.6)))
                 .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(label)
     }
 }

@@ -229,7 +229,7 @@ private struct MCPServerDetailSheet: View {
             Spacer()
             Button(tr("settings2.done"), action: done)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
     }
@@ -313,7 +313,7 @@ struct AddMCPServerWizardSheet: View {
                 .controlSize(.large)
             Button(tr("mcp.addButton"), action: add)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
                 .disabled(trimmedName.isEmpty || trimmedCommand.isEmpty || !allRequiredEnvFilled)
         }
