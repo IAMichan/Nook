@@ -407,6 +407,16 @@ final class MusicHistoryTests: XCTestCase {
         XCTAssertEqual(history.plays.map(\.id), ["2", "1", "1"])
     }
 
+    func testSamplePlaysAreDropped() {
+        var history = MusicHistory()
+        history.add(play("spotify:track:GetLucky"))
+        history.add(play("spotify:track:4E63weMCaNZuGPEFMnuEi8"))
+        history.add(play("1"))
+        XCTAssertTrue(history.dropUnrealPlays())
+        XCTAssertEqual(history.plays.map(\.id), ["spotify:track:4E63weMCaNZuGPEFMnuEi8", "1"])
+        XCTAssertFalse(history.dropUnrealPlays())
+    }
+
     func testSearchesKeepTheNewestOnce() {
         var history = MusicHistory()
         for index in 0..<12 { history.remember(search: "q\(index)") }
