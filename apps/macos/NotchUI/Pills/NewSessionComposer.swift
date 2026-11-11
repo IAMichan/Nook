@@ -316,7 +316,7 @@ struct NewSessionComposer: View {
             onSend: { start() }
         ) {
             // The same row as in a running session and in the chat: plus menu, the agent and model, then mode and rights.
-            ComposerPlusMenu(attach: attachFile) {}
+            ComposerPlusMenu(attach: attachFile, screenshot: { app.captureFrontWindow() }) {}
             agentMenu
             ComposerDivider()
             modeMenu
