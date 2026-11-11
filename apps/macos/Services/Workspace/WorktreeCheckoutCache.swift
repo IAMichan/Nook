@@ -376,7 +376,8 @@ struct WorktreeCheckoutCache: Sendable {
         #if canImport(CryptoKit)
         return Array(SHA256.hash(data: data))
         #else
-        return Array(data.prefix(32))
+        // The core tests on Linux have no CryptoKit: the protocol package's pure SHA-256 (WebhookSecurity.swift).
+        return Array(PureSHA256.hash(data))
         #endif
     }
 

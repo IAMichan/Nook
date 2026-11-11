@@ -327,6 +327,9 @@ final class SourceControlGitTests: XCTestCase {
     }
 
     func testFastWorktreeEqualsAPlainOne() throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("APFS clones (clonefile) are the Mac's")
+        #endif
         let repo = root.appendingPathComponent("repo").path
         try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
         try git.run(["init", "-q", "-b", "main"], in: repo)
