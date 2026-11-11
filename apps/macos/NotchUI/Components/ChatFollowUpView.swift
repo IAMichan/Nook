@@ -32,7 +32,7 @@ struct ChatFollowUpView: View {
         .accessibilityLabel(tr("chats.followUp.title"))
     }
 
-    private func group(title: String, turns: [ChatTurn], now: Date, waiting: Bool) -> some View {
+    private func group(title: String, turns: [ChatFollowUpTurn], now: Date, waiting: Bool) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             HStack {
                 NookSectionLabel(title)
@@ -52,7 +52,7 @@ struct ChatFollowUpView: View {
 
 /// One chat in the follow-up list: who, where, what they said last and how long ago, with the ways to deal with it.
 private struct ChatFollowUpRow: View {
-    let turn: ChatTurn
+    let turn: ChatFollowUpTurn
     let now: Date
     let waiting: Bool
     let open: (String) -> Void
