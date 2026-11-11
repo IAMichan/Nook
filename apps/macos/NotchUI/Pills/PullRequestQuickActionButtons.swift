@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// Whether Shift is held, for the quick actions on pull request rows. One local monitor for the app, started on first use.
@@ -21,7 +22,9 @@ final class ShiftKeyMonitor: ObservableObject {
 
 /// The quick actions at the end of a pull request's row, shown while you hold Shift: close, merge, ready for review or
 /// reopen. The first click arms one (its button asks "Confirm …?"), the second sends it; an armed button disarms itself
-/// after a few seconds. Every action goes to GitHub with the account the row is listed under and into the action log.
+/// after a few seconds. Once a merge is confirmed, Merge on the other rows goes on one click for as long as Shift stays
+/// down (`PullRequestQuickMerges`), so a handful of pull requests merge in a handful of clicks. Every action goes to
+/// GitHub with the account the row is listed under and into the action log.
 struct PullRequestQuickActionButtons: View {
     @EnvironmentObject private var app: AppModel
     let item: PullRequestItem
@@ -29,14 +32,17 @@ struct PullRequestQuickActionButtons: View {
     @ObservedObject private var shift = ShiftKeyMonitor.shared
     @ObservedObject private var sweep = PullRequestCloseSweep.shared
     @ObservedObject private var tracker = PullRequestCloseSweep.shared.tracker
+    @ObservedObject private var merges = PullRequestQuickMerges.shared
     @State private var armed: PullRequestQuickAction?
     @State private var running: PullRequestQuickAction?
 
     var body: some View {
         let actions = PullRequestQuickAction.actions(for: item)
-        if !actions.isEmpty && (shift.held || armed != nil || running != nil) {
+        let merging = merges.queue.phase(item.id)
+        if !actions.isEmpty && (shift.held || armed != nil || running != nil || merging != nil) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                ForEach(actions) { action in
+                // A row in the merge queue shows only how its merge goes.
+                ForEach(merging == nil ? actions : [.merge]) { action in
                     button(action)
                 }
             }
@@ -56,9 +62,15 @@ struct PullRequestQuickActionButtons: View {
 
     private func button(_ action: PullRequestQuickAction) -> some View {
         let confirming = armed == action || (action == .close && sweep.isSwept(item.id))
-        let tint = confirming ? (action == .close ? NookTheme.coral : NookTheme.amber) : NookTheme.textSecondary
+        let phase = action == .merge ? merges.queue.phase(item.id) : nil
+        // After a confirmed merge in this Shift hold, Merge goes on one click: it shows in the confirm color already.
+        let oneClick = action == .merge && phase == nil && merges.queue.unlocked
+        let tint = confirming || oneClick || phase != nil ? (action == .close ? NookTheme.coral : NookTheme.amber) : NookTheme.textSecondary
         return Button {
-            if confirming {
+            if action == .merge, phase != nil { return }
+            if action == .merge, merges.add(item, accountID: accountID, confirmed: confirming, app: app) {
+                armed = nil
+            } else if confirming {
                 armed = nil
                 run(action)
             } else {
@@ -66,23 +78,25 @@ struct PullRequestQuickActionButtons: View {
             }
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
-                if running == action {
+                if running == action || phase == .merging {
                     ProgressView().controlSize(.mini)
+                } else if phase == .waiting {
+                    NookSymbol("clock", size: 11)
                 } else {
                     NookSymbol(Self.symbol(action), size: 11)
                 }
-                Text(confirming ? tr("agents.pulls.quick.confirm." + action.rawValue) : tr("agents.pulls.quick." + action.rawValue))
+                Text(Self.title(action, confirming: confirming, oneClick: oneClick, phase: phase))
             }
             .font(NookTheme.TextStyle.caption)
             .foregroundStyle(tint)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 22)
-            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(confirming ? tint : NookTheme.line2))
+            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(confirming || oneClick ? tint : NookTheme.line2))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
-        .disabled(running != nil)
-        .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
+        .disabled(running != nil || merges.queue.phase(item.id) != nil)
+        .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : oneClick ? "agents.pulls.quick.oneClickHelp" : "agents.pulls.quick.help"))
         // Close, dragged up or down over other rows, takes those along.
         .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
     }
@@ -93,13 +107,24 @@ struct PullRequestQuickActionButtons: View {
             do {
                 try await PullRequestQuickRunner.run(action, item: item, accountID: accountID, app: app)
                 ToastCenter.shared.success(tr("agents.pulls.quick.done." + action.rawValue, "#\(item.number)"))
-                // A merge changes other rows too (a stack, what conflicts): the rest was in GitHub's answer.
-                if action == .merge { await PullRequestStore.shared.refresh(force: true) }
             } catch {
                 ToastCenter.shared.error(error, title: tr("agents.pulls.quick.failed", "#\(item.number)"))
             }
             running = nil
         }
+    }
+
+    private static func title(_ action: PullRequestQuickAction, confirming: Bool, oneClick: Bool,
+                              phase: PullRequestQuickMergeQueue.Phase?) -> String {
+        switch phase {
+        case .waiting: return tr("agents.pulls.quick.queued")
+        case .merging: return tr("agents.pulls.quick.merging")
+        case .merged: return tr("agents.pulls.quick.merged")
+        case nil: break
+        }
+        if confirming { return tr("agents.pulls.quick.confirm." + action.rawValue) }
+        if oneClick { return tr("agents.pulls.quick.mergeNow") }
+        return tr("agents.pulls.quick." + action.rawValue)
     }
 
     static func symbol(_ action: PullRequestQuickAction) -> String {
@@ -109,6 +134,70 @@ struct PullRequestQuickActionButtons: View {
         case .merge: return PullRequestIcon.symbol(.merged)
         case .ready: return PullRequestIcon.symbol(.open)
         case .reopen: return PullRequestIcon.symbol(.open)
+        }
+    }
+}
+
+/// The quick merges of the Pull request rows: the queue's rules are in `PullRequestQuickMergeQueue`; this sends them to
+/// GitHub one at a time, says how it went once the queue is empty, and reads the list again then.
+@MainActor
+final class PullRequestQuickMerges: ObservableObject {
+    static let shared = PullRequestQuickMerges()
+
+    @Published private(set) var queue = PullRequestQuickMergeQueue()
+    private var requests: [String: (item: PullRequestItem, account: String)] = [:]
+    private var working = false
+    private var shiftWatch: AnyCancellable?
+
+    private init() {
+        shiftWatch = ShiftKeyMonitor.shared.$held.removeDuplicates().sink { [weak self] held in
+            if !held { self?.queue.shiftReleased() }
+        }
+    }
+
+    /// A click on a row's Merge; `confirmed` when it was the armed button's second click. Returns false when the click
+    /// should arm the button instead (the first merge of a Shift hold).
+    func add(_ item: PullRequestItem, accountID: String, confirmed: Bool, app: AppModel) -> Bool {
+        // Shift already up (the second click of an armed button): this merge goes, the next one asks again.
+        let wasUnlocked = queue.unlocked
+        guard confirmed || (wasUnlocked && ShiftKeyMonitor.shared.held) else { return false }
+        guard queue.add(item.id, confirmed: true) else { return queue.phase(item.id) != nil }
+        if !ShiftKeyMonitor.shared.held { queue.shiftReleased() }
+        requests[item.id] = (item, accountID)
+        work(app: app)
+        return true
+    }
+
+    private func work(app: AppModel) {
+        guard !working else { return }
+        working = true
+        Task {
+            while true {
+                while let id = queue.next() {
+                    guard let request = requests[id] else {
+                        queue.finish(success: false)
+                        continue
+                    }
+                    do {
+                        try await PullRequestQuickRunner.run(.merge, item: request.item, accountID: request.account, app: app)
+                        queue.finish(success: true)
+                    } catch {
+                        queue.finish(success: false)
+                        ToastCenter.shared.error(error, title: tr("agents.pulls.quick.failed", "#\(request.item.number)"))
+                    }
+                }
+                // Read the list again before the rows let go of "Merged", so they do not flash Merge for a moment.
+                if !queue.merged.isEmpty { await PullRequestStore.shared.refresh(force: true) }
+                // A merge clicked while the list was read goes in this same run.
+                if queue.isIdle { break }
+            }
+            working = false
+            if let result = queue.drain(), !result.merged.isEmpty {
+                let numbers = result.merged.compactMap { requests[$0].map { "#\($0.item.number)" } }
+                ToastCenter.shared.success(numbers.count == 1 ? tr("agents.pulls.quick.done.merge", numbers[0])
+                                                                : tr("agents.pulls.stack.merged", numbers.count))
+            }
+            requests = [:]
         }
     }
 }
