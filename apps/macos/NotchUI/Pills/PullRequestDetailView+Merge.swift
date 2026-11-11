@@ -131,7 +131,8 @@ extension PullRequestDetailView {
         case .draft: return !detail.nodeID.isEmpty && detail.canPush != false
         case .open:
             if detail.conflicted { return sessionContext != nil }
-            return detail.autoMerge == nil && detail.canPush != false && !detail.methods.isEmpty
+            // An admin keeps Merge beside a waiting auto-merge, to merge now instead of waiting for it.
+            return (detail.autoMerge == nil || detail.canBypass) && detail.canPush != false && !detail.methods.isEmpty
         }
     }
 
@@ -148,8 +149,9 @@ extension PullRequestDetailView {
                 ComposerInbox.shared.add(SessionPrompts.resolveConflicts(detail.sessionRef), to: sessionContext)
             }
             .help(tr("agents.pr.note.conflict"))
-        } else if detail.features.autoMerge, detail.autoMergeAllowed, detail.mergeable != nil, detail.checkSummary == .pending || detail.mergeState == "blocked", !detail.nodeID.isEmpty {
-            // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done.
+        } else if !detail.canBypass, detail.features.autoMerge, detail.autoMergeAllowed, detail.mergeable != nil, detail.checkSummary == .pending || detail.mergeState == "blocked", !detail.nodeID.isEmpty {
+            // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done. An
+            // admin gets Merge instead, which goes past them; auto-merge stays in the ⋯ menu.
             SmallPrimaryButton(title: tr("agents.pr.action.enableAutoMerge"), systemName: "bolt", compact: true) {
                 actions.close()
                 actions.pending = .enableAutoMerge(nodeID: detail.nodeID, method: method)
@@ -164,7 +166,8 @@ extension PullRequestDetailView {
     func mergeButton(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             if merging { ProgressView().controlSize(.small) }
-            SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge") : tr("agents.pr.merge"),
+            SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge")
+                                   : detail.bypassesRules ? tr("agents.pr.mergeAdmin") : tr("agents.pr.merge"),
                                systemName: armedMerge ? "checkmark" : PullRequestIcon.symbol(.merged), compact: true) {
                 if armedMerge {
                     armedMerge = false
@@ -242,6 +245,7 @@ extension PullRequestDetailView {
     var confirmMessage: String {
         var text = tr("agents.pr.confirmMessage", detail?.headBranch ?? "", tr(method.titleKey))
         if let detail, detail.checkSummary != .passing, !detail.checks.isEmpty { text += "\n" + tr("agents.pr.confirmChecks") }
+        if let detail, detail.bypassesRules { text += "\n" + tr("agents.pr.confirmBypass") }
         return text
     }
 
