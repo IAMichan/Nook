@@ -171,10 +171,10 @@
 </aside>
 
 <style>
-  .list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--graphite); }
-  header { display: flex; align-items: center; gap: 8px; min-height: 64px; padding: 16px 20px; font-weight: 600; }
+  .list { display: flex; flex-direction: column; min-height: 0; background: transparent; }
+  header { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 8px 12px; font-weight: 600; font-size: 12px; color: var(--text2); }
   .count { color: var(--text3); background: var(--smoke); border-radius: var(--radius-control); padding: 2px 6px; font-size: 10px; font-weight: 500; }
-  .new-nook { margin: 4px 14px 16px; display: flex; align-items: center; gap: 8px; min-height: 38px; background: var(--smoke); box-shadow: var(--shadow-control); }
+  .new-nook { margin: 4px 4px 12px; display: flex; align-items: center; gap: 8px; min-height: 34px; background: var(--surface); border-color: var(--line2); }
   .new-nook kbd { margin-left: auto; color: var(--text3); font-size: 10px; }
   .search { display: flex; align-items: center; gap: 8px; margin: 0 14px; padding: 0 10px; color: var(--text3); background: var(--field); border: 1px solid var(--line2); border-radius: var(--radius-control); }
   .search:focus-within { border-color: var(--iris); }
@@ -184,7 +184,7 @@
   .items { overflow-y: auto; flex: 1; padding: 0 10px 14px; }
   .item { border: 1px solid transparent; border-radius: var(--radius-control); margin-bottom: 3px; }
   .item:hover { background: var(--row-hover); }
-  .item.active { background: var(--smoke); border-color: var(--line2); }
+  .item.active { background: var(--row-selected); border-color: transparent; }
   .line { display: flex; align-items: flex-start; gap: 4px; }
   .conversation { min-width: 0; flex: 1; text-align: left; border: 0; background: transparent; padding: 10px; border-radius: var(--radius-control); }
   .heading { display: flex; align-items: center; gap: 8px; }
