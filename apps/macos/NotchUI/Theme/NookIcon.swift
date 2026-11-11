@@ -23,6 +23,7 @@ enum NookIcon {
         "app": "square",
         "app.badge": "bell-dot",
         "app.badge.fill": "bell-dot",
+        "app.connected.to.app.below.fill": "workflow",
         "app.dashed": "square-dashed",
         "archivebox": "archive",
         "archivebox.fill": "archive",
