@@ -174,6 +174,11 @@ struct AgentInboxList: View {
             // The list and its docked shelves, with the undo notice floating over their foot: it covers the last rows for
             // a few seconds instead of pushing the whole list up and back down.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                // What you typed for a new session and did not start yet, one per project (`UnsentDraftRows`), drawn as
+                // session rows at the top of the list so they read as part of it.
+                if !app.demoMode, store.query.isEmpty {
+                    UnsentDraftRows(composerOpen: current == "new") { select("new") }
+                }
                 if showsEmptyState(sections) {
                     // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
                     // session at all it sets up an agent, otherwise it starts a new session.
@@ -225,13 +230,6 @@ struct AgentInboxList: View {
                 }
             }
             .overlay(alignment: .bottom) { undoNotice }
-            // What you typed for a new session and did not start yet, one per project (`UnsentDraftRows`). It floats over
-            // the top of the list, so a draft coming or going never pushes the rows under it down and back up.
-            .overlay(alignment: .top) {
-                if !app.demoMode, store.query.isEmpty {
-                    UnsentDraftRows(composerOpen: current == "new") { select("new") }
-                }
-            }
             .animation(NookTheme.reveal, value: store.canUndo)
             if selection.isActive {
                 selectionBar(rows: rows, byID: byID, shown: shown)
