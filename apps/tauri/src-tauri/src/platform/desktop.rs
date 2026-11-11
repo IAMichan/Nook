@@ -94,6 +94,21 @@ pub fn start_local_brain(_app: &AppHandle, provider: nook_core::provider::AIProv
     });
 }
 
+/// The first time the main window is closed: a note that Nook keeps running, so it does not look like it quit (or
+/// like it is still open by mistake).
+pub fn closed_main(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if state.settings().tray_hint_shown {
+        return;
+    }
+    state.update_settings(|s| s.tray_hint_shown = true);
+    super::notify(
+        app,
+        "Nook draait verder",
+        "Nook blijft bovenaan je scherm en in het systeemvak. Alt+Ctrl+W opent het venster weer; stoppen doe je via het systeemvak.",
+    );
+}
+
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, BAR, WebviewUrl::App("index.html#bar".into()))
         .title("Nook")

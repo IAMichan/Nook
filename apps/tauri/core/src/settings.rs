@@ -121,6 +121,8 @@ pub struct Settings {
     pub inbox_seen_at: Option<String>,
     /// Start a local brain (Ollama, LM Studio) that is installed but not running, at launch and from a chat error.
     pub start_local_brain: bool,
+    /// The one-time note that closing the main window keeps Nook running in the tray was shown.
+    pub tray_hint_shown: bool,
 }
 
 impl Default for Settings {
@@ -175,6 +177,7 @@ impl Default for Settings {
             focus_mode: "all".into(),
             inbox_seen_at: None,
             start_local_brain: true,
+            tray_hint_shown: false,
         }
     }
 }
