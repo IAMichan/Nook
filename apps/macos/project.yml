@@ -662,6 +662,9 @@ targets:
       - path: Services/Autocomplete/CompletionLearning.swift
       - path: Services/Autocomplete/CompletionPlacement.swift
       - path: Services/Autocomplete/CompletionSealing.swift
+      - path: Services/Autocomplete/CompletionGGUFWriter.swift
+      - path: Services/Autocomplete/CompletionAdapter.swift
+      - path: Services/Autocomplete/CompletionAdapterExamples.swift
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift
