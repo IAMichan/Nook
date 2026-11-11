@@ -555,7 +555,7 @@ struct SessionPanel: View {
                 } else {
                     link = try await workspace.performQuickGit(folder: root ?? directory, action, progress: { _ in localProgress = nil })
                 }
-                ToastCenter.shared.gitQuick(action, result: .success(link))
+                ToastCenter.shared.gitQuick(action, result: .success(link), run: runID)
             } catch let failure {
                 ToastCenter.shared.gitQuick(action, result: .failure(failure))
             }

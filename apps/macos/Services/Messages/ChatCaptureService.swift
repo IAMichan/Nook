@@ -124,6 +124,7 @@ final class ChatCaptureService: ObservableObject {
         thread.account = chat.account
         thread.avatar = chat.avatar
         thread.members = chat.members
+        thread.faces = chat.faces
         return isShown(thread) ? thread : nil
     }
 
@@ -162,8 +163,8 @@ final class ChatCaptureService: ObservableObject {
     private var noOlder: Set<String> = []
     private var bridgeDue: [String: Date] = [:]
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
-    /// message a few seconds after it notified, so one read right away may still miss it.
-    private var bridgeNudges: [String: Int] = [:]
+    /// message a few seconds (sometimes much longer) after it notified, so it reads again until the message is there.
+    private var catchUp = ChatCatchUp()
     /// Reads in a row that failed, per app: each one waits longer before the next try (`ChatBackoff`).
     private var bridgeFailures: [String: Int] = [:]
 
@@ -276,7 +277,7 @@ final class ChatCaptureService: ObservableObject {
             inbox.lookedBack = Self.firstLook
         }
         bridgeDue = [:]
-        bridgeNudges = [:]
+        catchUp.reset()
         // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Connections.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
         timer = nil
@@ -368,7 +369,7 @@ final class ChatCaptureService: ObservableObject {
                           let notice = ChatCapture.notice(notification, webAppName: webAppName), !skips(notice) else { continue }
                     // A bridged app's notification says its bridge has something new: read it now, not at its next turn.
                     if isBridged(notice.app) {
-                        if !replaying { nudge(notice.app) }
+                        if !replaying { nudge(notice.app, at: notice.date) }
                         // An app whose bridge reads no emoji (WhatsApp on this Mac) still says them in its notification:
                         // they go on the message. A bridge that reads them puts what the app says over it at its next read.
                         let placed = next.placed(notice)
@@ -452,8 +453,6 @@ final class ChatCaptureService: ObservableObject {
             || (serviceBridge.isReady && serviceBridge.isWorking && serviceBridge.covered.contains(app))
     }
 
-    /// Time between the quick reads after a bridged app's notification.
-    private static let nudgeGap: TimeInterval = 5
     /// Time between two reads at most of an app with a chat card up or a chat open: its card (or chat) shows a new
     /// message soon, also for an app that is otherwise read once a minute (Slack, Teams) and without its notifications.
     /// Not shorter: one Slack read asks for up to a dozen conversations, and Slack allows about fifty a minute.
@@ -472,17 +471,23 @@ final class ChatCaptureService: ObservableObject {
         bridge === serviceBridge ? !apps.isDisjoint(with: serviceBridge.covered) : apps.contains(bridge.app)
     }
 
-    /// Something was sent from Nook to a bridged app's chat: its bridge reads now, and twice more shortly after, so the
-    /// message shows in the chat.
-    func readSoon(_ app: String) { nudge(app) }
+    /// Something was sent from Nook to a bridged app's chat: its bridge reads now, and again shortly after until the
+    /// message is there, so it shows in the chat.
+    func readSoon(_ app: String) {
+        nudge(app, at: Date())
+        // At once, not at the next tick of the timer. A notification needs no such call: the tick that read it reads the
+        // bridges right after.
+        Task { await pollBridges() }
+    }
 
-    /// A notification of a bridged app came in: its bridge reads now, and twice more shortly after.
-    private func nudge(_ app: String) {
+    /// A notification of a bridged app came in: its bridge reads now, and again after a growing gap until a read brings
+    /// the message (`ChatCatchUp`), so the message shows in Nook moments after its app showed it.
+    private func nudge(_ app: String, at date: Date) {
         // A bridge that keeps failing waits out its backoff: a nudge would otherwise ask a refusing service every second.
         // The chat helper reads the apps it covers: a notification of one of them nudges it, as any other bridge.
         for bridge in bridges where watches(bridge, [app]) && bridgeFailures[bridge.bridgeID] == nil {
             bridgeDue[bridge.bridgeID] = nil
-            bridgeNudges[bridge.bridgeID] = 3
+            catchUp.expect(bridge.bridgeID, at: date)
         }
     }
 
@@ -535,10 +540,8 @@ final class ChatCaptureService: ObservableObject {
             let id = bridge.bridgeID
             guard !reading.contains(id) else { continue }
             if let due = bridgeDue[id], due > Date() { continue }
-            let nudges = bridgeNudges[id] ?? 0
-            bridgeNudges[id] = nudges > 1 ? nudges - 1 : nil
             let interval = watches(bridge, watched) ? min(bridge.interval, Self.watchGap) : bridge.interval
-            bridgeDue[id] = Date().addingTimeInterval(nudges > 1 ? min(interval, Self.nudgeGap) : interval)
+            bridgeDue[id] = Date().addingTimeInterval(catchUp.next(id).map { min(interval, $0) } ?? interval)
             reading.insert(id)
             started.append(Task { await self.read(bridge) })
         }
@@ -568,6 +571,10 @@ final class ChatCaptureService: ObservableObject {
             let mergedAny = merged.merge(chats)
             let told = (bridge as? ChatNewsBridge)?.takeNews()
             if mergedAny {
+                if catchUp.isOwed(bridge.bridgeID) {
+                    let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
+                    catchUp.read(bridge.bridgeID, brought: ChatInbox.added(before: before, after: merged, apps: apps))
+                }
                 inbox = merged
                 save()
                 if let told { announce(told) } else { announce(since: before) }
@@ -594,6 +601,8 @@ final class ChatCaptureService: ObservableObject {
             // Try again later, and later still each time it fails again: a minute, two, four… up to a quarter of an hour.
             // A database on this Mac that failed for a passing reason (a lock) starts at seconds, not a minute.
             let failures = (bridgeFailures[bridge.bridgeID] ?? 0) + 1
+            // A failing bridge waits out its backoff, not the quick reads.
+            catchUp.forget(bridge.bridgeID)
             bridgeFailures[bridge.bridgeID] = failures
             bridgeDue[bridge.bridgeID] = Date().addingTimeInterval(ChatBackoff.delay(
                 interval: bridge.interval, failures: failures, local: bridge.readsLocally && !signedOut))

@@ -523,13 +523,16 @@ struct GitService: Sendable {
     /// `--diff-merges=remerge`): then nothing is left out.
     func authoredPaths(_ directory: String, from: String, to: String, since: Date) -> Set<String>? {
         guard let start = snapshotHead(directory, from), let end = snapshotHead(directory, to), start != end else { return nil }
+        // Typed step by step: as one literal, the CI runner's compiler gave up type-checking it in reasonable time.
         let names: [String] = ["--name-only", "-z", "--no-renames", "--no-ext-diff", "--relative"]
+        let diff: [String] = ["diff"] + names
         let commits: [String] = ["log", "--format=", "--diff-merges=remerge"] + names
+        let sinceArgument = "--since=@" + String(Int(since.timeIntervalSince1970))
         let lists: [[String]] = [
-            ["diff"] + names + [start, from + "^{commit}"],
-            ["diff"] + names + [end, to + "^{commit}"],
-            commits + ["\(end)..\(start)"],
-            commits + ["--since=@\(Int(since.timeIntervalSince1970))", "\(start)..\(end)"],
+            diff + [start, from + "^{commit}"],
+            diff + [end, to + "^{commit}"],
+            commits + [end + ".." + start],
+            commits + [sinceArgument, start + ".." + end],
         ]
         var paths = Set<String>()
         for arguments in lists {

@@ -62,6 +62,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
     private static let shownPriority = 32
     /// Chat pictures asked of TDLib, by their file id: whose picture it is.
     private var pictures: [Int64: Int64] = [:]
+    /// Each person's profile photo as TDLib names it (its small file, and where it is once downloaded), by user id: the
+    /// face beside their messages in a group.
+    private var userPhotos: [Int64: (file: Int64, path: String?)] = [:]
+    /// Profile photos asked of TDLib, by their file id: whose photo it is.
+    private var facePictures: [Int64: Int64] = [:]
     /// Your own user id, to leave you out of a group's people.
     private var meID: Int64?
     /// Each group's people by user id, asked once per chat.
@@ -213,6 +218,10 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
             var bridged = BridgedChat(app: app, name: shownName(chat), messages: messages[id] ?? [], unread: chat.unread,
                                       avatar: chat.avatar, members: named.isEmpty ? nil : named, deleted: gone[id] ?? [])
             bridged.profile = profile(of: chat)
+            if chat.isGroup {
+                let faces = faces(of: messages[id] ?? [])
+                if !faces.isEmpty { bridged.faces = faces }
+            }
             return bridged
         }
     }
@@ -472,6 +481,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
                let name = TelegramData.userName(user) {
                 users[id] = name
                 people[id] = TelegramData.person(user)
+                userPhotos[id] = TelegramData.photo(user["profile_photo"]).map { (file: $0.id, path: $0.path) }
             }
         case "updateMessageContent":
             // A poll's votes moved (or a message was edited): the chat shows the new content.
@@ -877,11 +887,35 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         send(["@type": "downloadFile", "file_id": file, "priority": 1, "offset": 0, "limit": 0, "synchronous": true])
     }
 
+    /// The profile photos of the people who wrote these group messages, by their user id; one not downloaded yet is
+    /// asked of TDLib once, and its group is handed over again when it is in (`downloaded`).
+    private func faces(of messages: [InboxMessage]) -> [String: String] {
+        var faces: [String: String] = [:]
+        for id in Set(messages.compactMap(\.senderID)) {
+            guard let user = Int64(id), let photo = userPhotos[user] else { continue }
+            if let path = photo.path {
+                faces[id] = path
+            } else if !facePictures.keys.contains(photo.file) {
+                facePictures[photo.file] = user
+                send(["@type": "downloadFile", "file_id": photo.file, "priority": 1, "offset": 0, "limit": 0, "synchronous": true])
+            }
+        }
+        return faces
+    }
+
     /// A file TDLib finished downloading: the message it belongs to shows it from now on.
     private func downloaded(_ file: Int64, path: String) {
         if let chat = pictures.removeValue(forKey: file) {
             chats[chat]?.avatar = path
             changed.insert(chat)
+            return
+        }
+        if let user = facePictures.removeValue(forKey: file) {
+            userPhotos[user]?.path = path
+            // The groups they wrote in show their face from now on.
+            for (chat, list) in messages where chats[chat]?.isGroup == true && list.contains(where: { $0.senderID == String(user) }) {
+                changed.insert(chat)
+            }
             return
         }
         hurried.remove(file)

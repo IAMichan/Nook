@@ -63,6 +63,9 @@ struct ChatBubble: Equatable, Identifiable {
     var date: Date? = nil
     /// In a group: who wrote it. Empty in a private chat, where the card's title already says who.
     var sender: String = ""
+    /// In a group: the sender's picture on this Mac as their app shows it (`InboxThread.face(of:)`); nil shows their
+    /// photo in Contacts, else their initials.
+    var senderFace: String? = nil
     var fromMe: Bool = false
     /// A file that came with the message (a document's name, "photo"…): the bubble shows it as a button that opens it.
     var attachment: String? = nil

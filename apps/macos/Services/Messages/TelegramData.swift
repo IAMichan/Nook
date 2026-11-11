@@ -318,6 +318,8 @@ enum TelegramData {
         var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
                                    media: attached?.media, poll: asked)
         message.receipt = receipt(object, readOutbox: chat.readOutbox)
+        // Who wrote it in a group, by their Telegram user id: their face beside the bubble goes by it.
+        if !mine, chat.isGroup, let user = senderUser(object) { message.senderID = String(user) }
         message.quote = quote(object, chat: chat.id)
         if let info = object["interaction_info"] { message.reactions = reactions(info, users: users) }
         // Changed after it was sent: Telegram dates the last change (`edit_date`, 0 when there was none).

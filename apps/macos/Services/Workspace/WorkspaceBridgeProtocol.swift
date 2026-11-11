@@ -29,6 +29,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case sessionList = "session_list"
     case sessionSend = "session_send"
     case sessionStart = "session_start"
+    case sessionSuggest = "session_suggest"
     case sessionWait = "session_wait"
     case sessionSearch = "session_search"
     case sessionOrganize = "session_organize"
@@ -68,7 +69,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
              .nookChatRead, .sessionSearch, .sessionWait: return .read
         case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .sessionStart, .deviceOpen, .deviceClose,
              .browserClick, .browserType, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest,
-             .requestSecret, .nookChatSend, .takeOverScreen, .sessionOrganize, .renderPage: return .local
+             .requestSecret, .nookChatSend, .takeOverScreen, .sessionOrganize, .renderPage, .sessionSuggest: return .local
         // Reading other sessions' questions is reading; answering one is decided per call (`BridgePolicy`).
         case .sessionQuestions: return .local
         // A Nook tool can send a message or create an event: what it may do is decided per call (`BridgePolicy`).
@@ -114,6 +115,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .sessionList: return "Nook sessions"
         case .sessionSend: return "Message session"
         case .sessionStart: return "Start session"
+        case .sessionSuggest: return "Suggest session"
         case .sessionWait: return "Wait for sessions"
         case .sessionSearch: return "Search sessions"
         case .sessionOrganize: return "Organize session"
@@ -194,6 +196,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Keeps the user's Agents list tidy, the same actions the list offers on a session: pin or unpin it, settle it (done, to the shelf) or reopen it, snooze it until later (until: hour, evening or tomorrow) or wake it, archive or unarchive it, mark it unread or read. A session that is working or waiting cannot be settled, snoozed or archived. The user approves it in Nook unless the session has full rights."
         case .sessionQuestions:
             return "The questions other Nook sessions are waiting on (an agent asking the user to choose). action list (default): every pending question, or only session_id's. action read: one question with its options, by session_id and question_id. action answer: answers it with answers, an object from each question's id to the chosen option label(s) or, where the question allows it, your own text. Answering a session you delegated runs directly; any other session's question the user approves in Nook unless your session has full rights. Permission requests (commands, file changes, tools) are never listed here and cannot be answered by an agent."
+        case .sessionSuggest:
+            return "Offers the user a side task you noticed as a new session: a card in your timeline they start, hand back to you, or dismiss. Do not wait for it. prompt must stand alone."
         case .renderPage:
             return "Shows an HTML page inline in your session's timeline in Nook, where the user reads along: a chart, a diagram, a table, a mock-up or a small interactive view of your results. Give a page or fragment with inline <style> and <script> as html, or path to an .html file in your working directory (its local images, CSS and scripts get embedded); it runs sandboxed, with no network (load nothing from the web: inline data, SVG and data: URLs work), no access to Nook, the user's files or other pages, no forms, popups or links that go anywhere, at the height you ask (default 360, at most 1200 points; it does not grow with its content). At most 512 KB of HTML. The page is kept with the session. Use it to show, not to ask: the page cannot send anything back."
         case .sessionSend:
@@ -354,6 +358,13 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "answers": ["type": "object", "description": "With answer: each question's id to the chosen option label, a list of labels for several, or your own text.",
                             "additionalProperties": ["anyOf": [["type": "string"], ["type": "array", "items": ["type": "string"]]]]]
             ])
+        case .sessionSuggest:
+            return object([
+                "title": ["type": "string"],
+                "prompt": ["type": "string"],
+                "summary": ["type": "string", "description": "One sentence."],
+                "worktree": ["type": "boolean", "description": "Default: the project's choice."]
+            ], required: ["prompt"])
         case .renderPage:
             return object([
                 "html": ["type": "string", "description": "The page: an HTML document or fragment with inline CSS and JavaScript, at most 512 KB."],
@@ -616,6 +627,9 @@ enum BridgePolicy {
         case .renderPage:
             // A page written into the caller's own folder and shown in its own side panel.
             return .allow
+        case .sessionSuggest:
+            // Only a card in the caller's own timeline: nothing starts until you choose on it.
+            return .allow
         case .watchPullRequest:
             // Reads a pull request's state now and then; what it finds goes back to the caller only.
             return .allow
@@ -640,7 +654,7 @@ extension BridgeTool {
             return true
         case .workspaceInfo, .terminalRead, .terminalList, .terminalStop, .browserRead, .browserScreenshot,
              .browserSnapshot, .browserWaitFor, .orchestratorCapabilities, .taskStatus, .taskWait, .taskCancel,
-             .sessionRead, .sessionList, .sessionSearch, .sessionWait, .renderPage, .deviceList, .deviceOpen, .deviceScreenshot,
+             .sessionRead, .sessionList, .sessionSearch, .sessionWait, .renderPage, .sessionSuggest, .deviceList, .deviceOpen, .deviceScreenshot,
              .deviceClose, .listScheduledTasks, .watchPullRequest, .getPullRequestStatus, .nookTools, .nookChatList,
              .nookChatRead:
             return false
@@ -961,7 +975,7 @@ extension BridgeTool {
         case .pullRequestCreate, .watchPullRequest, .getPullRequestStatus: return .pullRequests
         case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel: return .delegation
         case .sessionRead, .sessionList, .sessionSend, .sessionStart, .sessionSearch, .sessionOrganize, .sessionQuestions,
-             .sessionWait:
+             .sessionWait, .sessionSuggest:
             return .sessions
         case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return .devices
         case .scheduleTask, .listScheduledTasks, .updateScheduledTask, .runScheduledTaskNow: return .scheduling

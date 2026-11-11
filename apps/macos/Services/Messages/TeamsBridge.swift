@@ -502,6 +502,13 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         var messages: [InboxMessage]
     }
 
+    /// A bubble in view waits for its picture: the chat's history (with its pictures) is read again at the next read,
+    /// also when its newest message stayed the same, so a picture whose first fetch failed is asked for again.
+    func hurryFiles(name: String) {
+        guard case .web(_, let chat) = sources[ChatInbox.key(app: app, chat: name)] else { return }
+        changedHere.insert(chat.id)
+    }
+
     // MARK: Scrolling back
 
     func canLoadOlder(name: String) -> Bool { sources[ChatInbox.key(app: app, chat: name)] != nil }

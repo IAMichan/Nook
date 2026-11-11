@@ -732,20 +732,42 @@ final class TimelineViewport {
     var frame = ScrollFrame()
 }
 
-/// Your messages as a ladder of short marks along the leading edge of the conversation, always in sight: one per
+/// Your messages as a ladder of short marks along the leading edge of the conversation: one per
 /// message, in order and the same distance apart, however far apart the messages are. A click scrolls to the
 /// message and hovering shows the prompt you wrote. There is no scroll bar: the conversation scrolls on its own. When
-/// there are more messages than marks fit, the newest ones show.
+/// there are more messages than marks fit, the newest ones show. In a conversation too narrow for a margin beside its
+/// column the marks would lie over the messages: there they show only while the pointer is on the leading edge.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
     let onSelect: (PromptMark) -> Void
     @State private var hovered: String?
+    /// The width of the conversation the rail lies over (the overlay is offered all of it).
+    @State private var room: CGFloat = 0
+    /// Whether the pointer is on the rail's strip.
+    @State private var onRail = false
 
     private static let width: CGFloat = 20
     /// The height each mark takes, and so the distance between two marks, while they fit.
     private static let pitch: CGFloat = NookTheme.Spacing.md
 
     var body: some View {
+        let inSight = onRail || room == 0
+            || TranscriptPresentation.railAlwaysShown(room: room, column: PanelLayout.chatColumn, rail: Self.width)
+        // The full width only to measure it: clicks pass through to the conversation.
+        Color.clear
+            .allowsHitTesting(false)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { room = $0 }
+            .overlay(alignment: .leading) {
+                rail
+                    .opacity(inSight ? 1 : 0)
+                    // A hidden mark takes no pointer: the strip under the marks is what notices it coming.
+                    .background(Color.clear.contentShape(Rectangle()))
+                    .onHover { onRail = $0 }
+                    .animation(NookTheme.hover, value: inSight)
+            }
+    }
+
+    private var rail: some View {
         GeometryReader { geometry in
             let layout = TranscriptPresentation.railLayout(count: marks.count, height: geometry.size.height, pitch: Self.pitch)
             let shown = Array(marks.suffix(layout.fit))

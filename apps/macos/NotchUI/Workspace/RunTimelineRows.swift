@@ -25,6 +25,8 @@ struct EventRow: View {
     /// Opens a command the agent left running in the background in the bar above the composer, where it goes on; nil
     /// where there is no such bar.
     var showBackground: (() -> Void)? = nil
+    /// What you chose on a suggested session's card (`SessionSuggestion`); nil where the card cannot act.
+    var onSuggestion: ((SessionSuggestion.Choice) -> Void)? = nil
 
     var body: some View {
         switch event.kind {
@@ -91,6 +93,12 @@ struct EventRow: View {
         case .page:
             // A page the agent showed (`render_page`), sandboxed and at its own height.
             RenderedPageRow(event: event).equatable()
+
+        case .system where event.tool == SessionSuggestion.tool:
+            // A side task the agent suggests as a new session (`session_suggest`), as Claude's "New session" card.
+            if let suggestion = SessionSuggestion(event: event) {
+                SessionSuggestionCard(suggestion: suggestion, state: event.state, startedID: event.output, choose: onSuggestion)
+            }
 
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
