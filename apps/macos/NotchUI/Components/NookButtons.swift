@@ -237,6 +237,7 @@ final class CopiedMoment: ObservableObject {
 /// checkmark, and its tooltip into "Copied", for a moment after the click. `text` is read on the click, so a long text
 /// is not joined on every redraw. `showing` follows that moment, for a row that keeps the button in sight meanwhile.
 struct CopyIconButton: View {
+    let symbol: String
     let label: String
     let copiedLabel: String
     let height: CGFloat
@@ -245,8 +246,10 @@ struct CopyIconButton: View {
     let text: () -> String
     @StateObject private var moment = CopiedMoment()
 
-    init(_ label: String, copiedLabel: String? = nil, height: CGFloat = 24, width: CGFloat = 24,
-         showing: Binding<Bool>? = nil, text: @escaping () -> String) {
+    /// `symbol` sets the icon apart when a second copy button sits next to the plain one (a link, not the words).
+    init(_ label: String, symbol: String = "doc.on.doc", copiedLabel: String? = nil, height: CGFloat = 24,
+         width: CGFloat = 24, showing: Binding<Bool>? = nil, text: @escaping () -> String) {
+        self.symbol = symbol
         self.label = label
         self.copiedLabel = copiedLabel ?? tr("button.copied")
         self.height = height
@@ -256,7 +259,7 @@ struct CopyIconButton: View {
     }
 
     var body: some View {
-        ToolbarIconButton(moment.copied ? "checkmark" : "doc.on.doc", moment.copied ? copiedLabel : label,
+        ToolbarIconButton(moment.copied ? "checkmark" : symbol, moment.copied ? copiedLabel : label,
                           height: height, width: width) { moment.copy(text()) }
             .onChange(of: moment.copied) { _, copied in showing?.wrappedValue = copied }
     }

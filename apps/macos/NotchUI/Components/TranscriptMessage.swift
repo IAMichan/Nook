@@ -68,7 +68,7 @@ struct TranscriptUserMessage<Attachments: View>: View {
                 TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: true) {
                     // A nook://prompt link that opens this prompt as a draft in a new session, to share or keep.
                     if let link = PromptLink.build(text: parts.text, project: fileLinkBase.map { ($0 as NSString).lastPathComponent }) {
-                        CopyIconButton(tr("agents.message.copyPromptLink"), copiedLabel: tr("agents.message.promptLinkCopied"),
+                        CopyIconButton(tr("agents.message.copyPromptLink"), symbol: "link", copiedLabel: tr("agents.message.promptLinkCopied"),
                                        height: 22, width: 22) { link.absoluteString }
                     }
                     if let onEdit {
