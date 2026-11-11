@@ -16,11 +16,16 @@ final class PromptLinkInbox: ObservableObject {
     struct ProjectRequest: Equatable {
         let id = UUID()
         let path: String
+        /// Set by "New session in this worktree": the new session works in that folder as it is, never a worktree of it.
+        var isolation: IsolationMode?
+        /// Words for that folder's draft (a suggested session's "Options"): they replace an empty draft, and a draft
+        /// with other words goes to the stash first.
+        var text: String?
     }
 
     /// Asks the composers for `path`, also when one already shows another folder or the same request came before.
-    func requestProject(_ path: String) {
-        let request = ProjectRequest(path: path)
+    func requestProject(_ path: String, isolation: IsolationMode? = nil, text: String? = nil) {
+        let request = ProjectRequest(path: path, isolation: isolation, text: text)
         pendingProject = request
         // Long enough for a composer that opens for it to appear; after that a composer that appears later (another
         // session's, after you moved on) must not jump back to this folder.

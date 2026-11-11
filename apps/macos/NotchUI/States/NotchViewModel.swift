@@ -78,10 +78,15 @@ final class NotchViewModel: ObservableObject {
     }
     /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
     @Published private(set) var panelNotice: PanelNotice?
+    /// The page open just before the new-session composer, read once by the composer when it appears.
+    var newSessionOrigin: String?
     @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
         didSet {
             guard selectedAgentID != oldValue else { return }
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
+            // A new session opened from a session starts in that session's project, as a thread carries its
+            // project (`NewSessionComposer.openOriginProject`).
+            newSessionOrigin = selectedAgentID == "new" ? oldValue : nil
             // Leaving a session counts as having seen what it finished, wherever the switch came from (the ring, a
             // notice, search), also while the Agents tab is not on screen to notice it: otherwise "done" came back on its
             // row until you opened it once more.

@@ -267,7 +267,8 @@ struct AgentRunPanel: View {
         HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
             // of pushing the header past it (under a wide side panel).
-            FolderCrumb(name: run.projectName, directory: run.projectPath, local: run.remote == nil)
+            FolderCrumb(name: run.projectName, directory: run.projectPath, workingDirectory: run.workingDirectory,
+                        local: run.remote == nil)
                 .layoutPriority(1)
             Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
@@ -1383,7 +1384,8 @@ struct AgentRunPanel: View {
             // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
             showBackground: {
                 if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.openSubagents() }
-            }
+            },
+            onSuggestion: { app.chooseSuggestion($0, event: event, in: runID) }
         )
         // Undone by going back to before an earlier message: the agent no longer remembers it.
         .opacity(event.rolledBack == true ? 0.45 : 1)
