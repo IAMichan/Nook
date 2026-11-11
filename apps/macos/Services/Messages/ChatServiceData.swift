@@ -22,6 +22,9 @@ enum ChatServiceData {
         var me: String? = nil
         /// Everyone's name by their id in it, to say who read your message.
         var people: [String: String] = [:]
+        /// In a group: the other people's pictures as the service gives them (a file or an `mxc://` address), by their
+        /// id, for the face beside their messages.
+        var pictures: [String: String] = [:]
         /// Everyone's name by their number (`ChatMentions.key`), to show a tag by name instead of by number.
         var tags: [String: String] = [:]
         /// Pinned or muted in its app.
@@ -93,6 +96,7 @@ enum ChatServiceData {
             return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
                         last: ChatJSON.date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
                         me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String, people: names(people),
+                        pictures: isGroup ? pictures(people) : [:],
                         tags: tags(people), isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
                         canReact: supports(abilities?["reaction"]), canVote: chat["canVote"] as? Bool == true,
@@ -288,6 +292,16 @@ enum ChatServiceData {
         return names
     }
 
+    /// The people of a chat by their id with their picture (`imgURL`), yourself left out.
+    static func pictures(_ people: [[String: Any]]) -> [String: String] {
+        var pictures: [String: String] = [:]
+        for person in people where person["isSelf"] as? Bool != true {
+            guard let id = person["id"] as? String, let picture = person["imgURL"] as? String, !picture.isEmpty else { continue }
+            pictures[id] = picture
+        }
+        return pictures
+    }
+
     /// The people of a chat by their number, for tags: the phone number the service gives, else the digits in their id
     /// ("@whatsapp_31612345678:nook.local", "whatsapp-lid-123456789012"). Yourself too: a tag of you shows your name.
     static func tags(_ people: [[String: Any]]) -> [String: String] {
@@ -338,9 +352,13 @@ enum ChatServiceData {
                 line.groupChange = ChatGroupChange(kind, by: by, text: change["text"] as? String)
                 return line
             }
+            // Who wrote it in a group, by the service's id for them: their face beside the bubble goes by it.
+            let senderID = mine || !chat.isGroup ? nil : (message["senderID"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             if message["isDeleted"] as? Bool == true {
                 let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
-                return InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: "", date: sent, fromMe: mine).withdrawn()
+                var gone = InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: "", date: sent, fromMe: mine)
+                gone.senderID = senderID
+                return gone.withdrawn()
             }
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             // Only invisible marks (what an app sends around a reaction): nothing to show.
@@ -354,6 +372,7 @@ enum ChatServiceData {
             let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
             var inbox = InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: text, date: sent, fromMe: mine,
                                      media: media)
+            inbox.senderID = senderID
             if mine {
                 inbox.receipt = receipt(message)
                 inbox.readers = readers(message, chat: chat)

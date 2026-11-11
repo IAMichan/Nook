@@ -661,9 +661,10 @@ private struct ChatBubbleView: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             if bubble.fromMe { Spacer(minLength: 70) }
-            // In a group, who wrote it shows beside each of their messages: their photo from Contacts, else their initials.
+            // In a group, who wrote it shows beside each of their messages: their picture in the chat's app, else their
+            // photo from Contacts, else their initials.
             if !bubble.fromMe, !bubble.sender.isEmpty {
-                ChatSenderFace(name: bubble.sender, size: Self.faceSize)
+                ChatSenderFace(name: bubble.sender, picture: bubble.senderFace, size: Self.faceSize)
             }
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {

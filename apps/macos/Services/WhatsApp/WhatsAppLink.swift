@@ -954,6 +954,21 @@ final class WhatsAppLink: ObservableObject {
         inbox.applyVote(WAPollVote(poll: poll, choice: choice), chat: key, voter: WAPoll.me)
     }
 
+    /// The profile photos of the people who wrote a group's newest messages, newest first, for the faces beside their
+    /// messages (`WhatsAppExport.Facts.faces`). Asked the same way as a chat's picture, so each person is asked at most
+    /// once an hour.
+    func loadSenderAvatars(_ group: String, limit: Int = 40) async {
+        let key = WAJID.normalized(group)
+        guard WAJID.isGroup(key), let conversation = inbox.conversations[key] else { return }
+        var senders: [String] = []
+        for message in conversation.messages.reversed() where !message.fromMe && !message.sender.isEmpty {
+            let jid = WAJID.normalized(message.sender)
+            if !senders.contains(jid) { senders.append(jid) }
+            if senders.count >= limit { break }
+        }
+        if !senders.isEmpty { await loadAvatars(senders) }
+    }
+
     /// Fetches the pictures of these chats, and a picture again when it changed: the gateway says where each one is on
     /// WhatsApp's own picture server, and only that server is asked for it. A changed picture has another address there,
     /// so it is saved as another file (`ChatMedia.avatarDestination`) and the list shows the new one. A chat is asked
@@ -1463,8 +1478,13 @@ final class WhatsAppLink: ObservableObject {
         let listed = known(key)
         facts.listed = listed != nil
         facts.activity = listed?.last
+        let group = WAJID.isGroup(key)
         for message in messages {
             if let file = previews[message.id]?.file.path { facts.files[message.id] = file }
+            // Each sender's profile photo, once fetched (`loadSenderAvatars`), for the face beside their messages.
+            if group, !message.fromMe, let face = avatars[WAJID.normalized(message.sender)] {
+                facts.faces[WAJID.normalized(message.sender)] = face
+            }
         }
         return facts
     }

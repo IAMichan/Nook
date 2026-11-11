@@ -41,6 +41,19 @@ final class WhatsAppExportTests: XCTestCase {
         XCTAssertNil(chat.handle, "a group has no number")
     }
 
+    func testAGroupsSendersShowTheirProfilePhotos() {
+        var facts = WhatsAppExport.Facts(key: group)
+        facts.faces = [anna: "/pictures/anna.jpg"]
+        let chat = export(groupChat([message("1", chat: group, from: anna, at: 1, name: "Anna"),
+                                     message("2", chat: group, from: bob, at: 2, name: "Bob")]), facts: facts)
+        XCTAssertEqual(chat.faces, [anna: "/pictures/anna.jpg"])
+        var inbox = ChatInbox()
+        inbox.merge(chat)
+        let thread = inbox.threads.values.first { $0.app == "whatsapp" }
+        XCTAssertEqual(thread.map { $0.face(of: $0.messages[0]) }, "/pictures/anna.jpg", "Anna's own photo beside her message")
+        XCTAssertEqual(thread.map { $0.face(of: $0.messages[1]) }, .some(nil), "Bob has none: his Contacts photo or initials")
+    }
+
     func testTagsShowTheNameInsteadOfTheNumber() {
         let cor = "45600000000001@lid"
         var tagged = message("1", chat: group, from: anna, text: "Geldt dat voor jullie ook @31622222222 @45600000000001 @31699999999?",
