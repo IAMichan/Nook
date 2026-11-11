@@ -26,6 +26,10 @@ struct PullRequestForgeFeatures: Equatable, Sendable {
     static let github = PullRequestForgeFeatures()
 }
 
+/// A label to choose from: its name, its color as six hex digits, and what it is for, as the forge describes it ("" when
+/// it says nothing).
+typealias PullRequestLabelChoice = (name: String, color: String, description: String)
+
 /// One forge's API for pull requests in Nook's own types. GitHub has its own path (`GitHubPullRequestDetail`); every other
 /// forge implements this for one repository, in a file of its own, so the page, the session lists and the watches stay
 /// the same code. A client only exists with a token for its host.
@@ -44,7 +48,7 @@ protocol PullRequestForgeClient: Sendable {
     /// Merges exactly `sha` when the forge can hold it to that. Returns the merge commit's sha, or "".
     func merge(number: Int, method: PullRequestMergeMethod, sha: String) async throws -> String
     func commitFiles(sha: String) async throws -> [PullRequestFile]
-    func labels() async -> [(name: String, color: String)]
+    func labels() async -> [PullRequestLabelChoice]
     /// Your name on the forge, as comments show their author: it decides which comments you can edit. "" when unknown.
     func viewer() async -> String
 }
