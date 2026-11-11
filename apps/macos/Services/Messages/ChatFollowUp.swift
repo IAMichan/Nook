@@ -1,11 +1,11 @@
 // What you owe in your chats and what you wait for, the same for every chat app: a chat whose last word is theirs and
 // has waited a while ("owed"), a chat you marked "waiting for reply" (with a reminder), a chat you snoozed until later,
-// and a message you scheduled to go later. Each app's bridge only fills `ChatTurn` from its own data; the rules here are
+// and a message you scheduled to go later. Each app's bridge only fills `ChatFollowUpTurn` from its own data; the rules here are
 // shared (docs/INTEGRATIONS.md). Foundation only, so it is tested anywhere.
 import Foundation
 
 /// A chat reduced to what follow-up needs: whose word is last, and since when.
-struct ChatTurn: Equatable, Sendable {
+struct ChatFollowUpTurn: Equatable, Sendable {
     /// The chat's key in `ChatInbox` (`InboxThread.id`).
     var chat: String
     var app: String
@@ -23,7 +23,7 @@ struct ChatTurn: Equatable, Sendable {
     var asksQuestion: Bool { lastText.contains("?") }
 }
 
-extension ChatTurn {
+extension ChatFollowUpTurn {
     /// The same reduction for every app: an `InboxThread` already is the shared shape.
     init(_ thread: InboxThread) {
         let last = thread.messages.last { !$0.isNotice }
@@ -98,7 +98,7 @@ struct ChatFollowUps: Codable, Equatable, Sendable {
     /// The chats where the last word is theirs and has waited since `owedAfter` (and not longer than `owedUntil`):
     /// questions first, then the oldest. A group, a status update or a channel is not a person waiting on you, and a
     /// snoozed chat comes back when its time is up.
-    func owed(_ turns: [ChatTurn], now: Date) -> [ChatTurn] {
+    func owed(_ turns: [ChatFollowUpTurn], now: Date) -> [ChatFollowUpTurn] {
         turns.filter { turn in
             guard turn.kind == .person, !turn.lastIsMine, let date = turn.date, !isSnoozed(turn.chat, now: now) else { return false }
             let age = now.timeIntervalSince(date)
@@ -110,7 +110,7 @@ struct ChatFollowUps: Codable, Equatable, Sendable {
     }
 
     /// The chats you wait on, with whether they answered yet: their word after you marked it settles it.
-    func answered(_ turn: ChatTurn) -> Bool {
+    func answered(_ turn: ChatFollowUpTurn) -> Bool {
         guard let entry = waiting[turn.chat], let date = turn.date else { return false }
         return !turn.lastIsMine && date > entry.since
     }
@@ -118,7 +118,7 @@ struct ChatFollowUps: Codable, Equatable, Sendable {
     /// Forgets what is settled: a wait they answered, a chat gone from the list, a snooze past its time. Returns whether
     /// anything changed, so the caller writes only then.
     @discardableResult
-    mutating func settle(with turns: [ChatTurn], now: Date) -> Bool {
+    mutating func settle(with turns: [ChatFollowUpTurn], now: Date) -> Bool {
         let before = self
         let byChat = Dictionary(turns.map { ($0.chat, $0) }, uniquingKeysWith: { first, _ in first })
         for chat in Array(waiting.keys) {
