@@ -351,18 +351,18 @@ struct SessionSubagentsPanel: View {
                 WSEmptyState(symbol: SessionTool.subagents.symbol, title: tr("ws.subagents.empty.title"),
                              message: tr("ws.subagents.empty.body"))
             } else {
-                ToolSurface {
-                    ScrollView {
-                        // Commands still at work come first: they are what keeps the session going.
-                        let commandsFirst = commands.contains(where: \.isRunning)
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-                            if commandsFirst { BackgroundCommandList(commands: commands) }
-                            if !agents.isEmpty { SubagentList(agents: agents) }
-                            if !commandsFirst, !commands.isEmpty { BackgroundCommandList(commands: commands) }
-                        }
-                            .padding(NookTheme.Spacing.lg)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                // Flat on the panel, like a pull request's page: no card around the list or around each entry.
+                ScrollView {
+                    // Commands still at work come first: they are what keeps the session going.
+                    let commandsFirst = commands.contains(where: \.isRunning)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
+                        if commandsFirst { BackgroundCommandList(commands: commands) }
+                        if !agents.isEmpty { SubagentList(agents: agents) }
+                        if !commandsFirst, !commands.isEmpty { BackgroundCommandList(commands: commands) }
                     }
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .padding(.bottom, NookTheme.Spacing.lg)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -371,7 +371,7 @@ struct SessionSubagentsPanel: View {
 }
 
 /// Every subagent of a session, as the Subagents tab in the side panel shows them: a card each with its state, what
-/// it was asked, its steps and what it answered, the running ones counting their time.
+/// it was asked, its steps and what it answered, the running ones counting their time, parted by lines.
 struct SubagentList: View {
     let agents: [SubagentInfo]
 
@@ -389,7 +389,9 @@ struct SubagentList: View {
                 }
             }
             // Those still at work first, then the rest, newest first.
-            ForEach(agents.filter(\.isRunning) + agents.filter { !$0.isRunning }.reversed()) { agent in
+            let ordered = agents.filter(\.isRunning) + agents.filter { !$0.isRunning }.reversed()
+            ForEach(Array(ordered.enumerated()), id: \.element.id) { index, agent in
+                if index > 0 { NookDivider() }
                 SubagentCard(agent: agent)
             }
         }
@@ -418,13 +420,8 @@ private struct SubagentCard: View {
             }
             SubagentTranscript(agent: agent)
         }
-        .conversationCard(padding: NookTheme.Spacing.lg)
-        .overlay {
-            if agent.isRunning {
-                NookTheme.shape(NookTheme.Radius.conversationCard)
-                    .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, NookTheme.Spacing.xs)
     }
 }
 
@@ -990,13 +987,15 @@ struct BackgroundCommandList: View {
                 }
             }
             // Those still at work first, then the failed ones, then the rest, newest first.
-            ForEach(BackgroundCommands.ordered(commands)) { command in
-                card(command)
+            ForEach(Array(BackgroundCommands.ordered(commands).enumerated()), id: \.element.id) { index, command in
+                if index > 0 { NookDivider() }
+                row(command)
             }
         }
     }
 
-    private func card(_ command: BackgroundCommandInfo) -> some View {
+    /// One command, flat in the list: its state mark says whether it still runs.
+    private func row(_ command: BackgroundCommandInfo) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.md) {
                 SubagentStatusMark(command: command, size: 11)
@@ -1033,12 +1032,7 @@ struct BackgroundCommandList: View {
                     .padding(.leading, 20)
             }
         }
-        .conversationCard(padding: NookTheme.Spacing.lg)
-        .overlay {
-            if command.isRunning {
-                NookTheme.shape(NookTheme.Radius.conversationCard)
-                    .strokeBorder(NookTheme.iris.opacity(0.35), lineWidth: 1)
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, NookTheme.Spacing.xs)
     }
 }

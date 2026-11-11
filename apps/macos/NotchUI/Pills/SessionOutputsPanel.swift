@@ -20,14 +20,13 @@ struct SessionOutputsPanel: View {
                 WSEmptyState(symbol: SessionTool.outputs.symbol, title: tr("ws.outputs.empty.title"),
                              message: tr("ws.outputs.empty.body"))
             } else if let current {
-                ToolSurface {
-                    VStack(spacing: 0) {
-                        if outputs.count > 1 {
-                            OutputTabStrip(outputs: outputs, current: current.id) { selection = $0 }
-                            NookDivider()
-                        }
-                        OutputViewer(output: current).id(current.id)
+                // Flat on the panel, like a pull request's page: no card of its own around it, lines part the rows.
+                VStack(spacing: 0) {
+                    if outputs.count > 1 {
+                        OutputTabStrip(outputs: outputs, current: current.id) { selection = $0 }
+                        NookDivider()
                     }
+                    OutputViewer(output: current).id(current.id)
                 }
             }
         }
@@ -35,10 +34,9 @@ struct SessionOutputsPanel: View {
     }
 }
 
-/// The outputs side by side as tabs, newest first, on top of the surface that shows the chosen one. They belong to
-/// that surface, not to the side panel's tab bar above it: they sit inside it, on its own fill, and the chosen one is
-/// underlined instead of filled, so the two rows of tabs never read as one. The strip scrolls sideways when they do
-/// not fit.
+/// The outputs side by side as tabs, newest first, above the one that is shown. They belong to that output, not to the
+/// side panel's tab bar above them: the chosen one is underlined instead of filled and a line parts them from what it
+/// shows, so the two rows of tabs never read as one. The strip scrolls sideways when they do not fit.
 private struct OutputTabStrip: View {
     let outputs: [SessionOutput]
     let current: String
@@ -153,9 +151,9 @@ private struct OutputViewer: View {
     private var content: some View {
         switch output.kind {
         case .tasks(let steps):
-            ScrollView { TaskListRows(steps: steps).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { TaskListRows(steps: steps).padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.lg).frame(maxWidth: .infinity, alignment: .leading) }
         case .plan(let text):
-            ScrollView { MarkdownView(text: text, size: 14).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { MarkdownView(text: text, size: 14).padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.lg).frame(maxWidth: .infinity, alignment: .leading) }
         case .design:
             if let path = output.path {
                 // Written again: the page loads again.
