@@ -136,7 +136,8 @@ struct MusicPageView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .pageColumn()
+        // The whole width of the window, as a session's page: the header runs from edge to edge and the shelves and
+        // grids fill what they get, not a centered column.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(MusicSection.fold, value: showsBar)
         .task(id: "\(info?.trackKey ?? "")|\(section.rawValue)") { load() }
@@ -190,7 +191,7 @@ struct MusicPageView: View {
     // MARK: Header band
 
     /// In the main window (`sidebar != nil`) the band sits in the title bar's row like the header of every other page:
-    /// where you are ("Music › Statistics") on the left, the page's own controls on the right, and a hairline under it.
+    /// where you are ("Music / Statistics") on the left and the page's own controls on the right.
     /// In the notch or split view it holds the section tabs.
     private var band: some View {
         VStack(spacing: 0) {
@@ -210,30 +211,28 @@ struct MusicPageView: View {
             }
             .frame(height: MusicLayout.bandHeight)
             .padding(.horizontal, MusicLayout.edge)
-            if sidebar != nil {
-                NookDivider()
-                    .padding(.top, NookTheme.Spacing.md)
-            }
         }
         .conversationHeaderBackground()
         .animation(NookTheme.reveal, value: showsOpenPlaylist)
         .animation(NookTheme.reveal, value: section)
     }
 
-    /// "Music › Good morning": Home greets, the rest names what shows.
+    /// "Music / Good morning": Home greets, the rest names what shows. Set as a conversation's "folder / title" header,
+    /// so the Music page reads like every other page of the window.
     private var crumbs: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             Text(tr("tab.music"))
-                .foregroundStyle(NookTheme.textTertiary)
-            Image(icon: "chevron.right")
-                .font(NookTheme.font(10, .semibold))
+                .fontWeight(.medium)
+                .foregroundStyle(NookTheme.textSecondary)
+            Text("/")
                 .foregroundStyle(NookTheme.textTertiary)
                 .accessibilityHidden(true)
             Text(section == .home ? musicGreeting() : section.title)
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
                 .contentTransition(.opacity)
         }
-        .font(NookTheme.TextStyle.title)
+        .font(NookTheme.TextStyle.body)
         .lineLimit(1)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)

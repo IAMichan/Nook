@@ -427,7 +427,7 @@ struct AgentsTab: View {
         return ListEntries(running: sorted(built), earlier: earlier, busyKeys: busyKeys, standIn: standIn)
     }
 
-    /// The list keeps it: flat. A delegated task or side chat has no row while its parent has one (the parent's
+    /// The list stays flat. A delegated task or side chat has no row while its parent has one (the parent's
     /// Lineage control lists it); the parent's row stands in for it while it is open, and shows the approval it waits for,
     /// and for a side chat its question too. A fork or a comparison keeps a row of its own, at the same level.
     private static func subThreadsUnderParents(_ items: [AgentListItem], runs: [WorkspaceRun])
@@ -726,7 +726,7 @@ enum SessionSweep {
     static let rows = RowSweep<String>()
 }
 
-/// A session a thread: its folder with the status or how long ago, its name, and a line of what it did
+/// A session row: its folder with the status or how long ago, its name, and a line of what it did
 /// (branch, changes, pull request) with the agent's logo. A row that asks nothing of you recedes (lighter text, normal
 /// weight, working rows dimmed) so what needs you is the only loud thing.
 struct AgentListRow: View, Equatable {
@@ -739,7 +739,7 @@ struct AgentListRow: View, Equatable {
     /// One line, for the snoozed and settled shelves.
     var slim = false
     /// Under its project's header, which already names the folder: the agent's logo, the name and the status, and under
-    /// it the branch, changes and pull request when there are any, as a thread sits under its project in.
+    /// it the branch, changes and pull request when there are any.
     var grouped = false
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
@@ -849,7 +849,7 @@ struct AgentListRow: View, Equatable {
         .opacity(restOpacity)
     }
 
-    /// Three lines, as a thread card in: the folder with the status or how long ago on the right; the session's
+    /// Three lines: the folder with the status or how long ago on the right; the session's
     /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
@@ -1184,7 +1184,8 @@ struct AgentConversation: View {
 enum WorkspaceRunsSection {
     static let settledLimit = 12
 
-    static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions = .shared, now: Date = Date()) -> [WorkspaceRun] {
+    static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions? = nil, now: Date = Date()) -> [WorkspaceRun] {
+        let finished = finished ?? .shared
         let list = workspace.runs
             .filter { !$0.archived }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }

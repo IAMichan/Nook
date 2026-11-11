@@ -542,7 +542,7 @@ private struct NotchCard: View {
             paused: paused,
             onHeight: { viewModel.fitCompactCard(id: card.id, height: $0) }
         )
-        .environment(\.chatFetchFile) { await app.fetchCardChatFile($0, card: card) }
+        .environment(\.chatFetchFile, ChatFileFetch(chat: "card:\(card.id)") { await app.fetchCardChatFile($0, card: card) })
     }
 }
 

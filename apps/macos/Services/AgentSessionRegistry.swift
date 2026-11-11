@@ -115,7 +115,7 @@ enum AgentSessionRegistry {
     }
 
     /// A hooked session whose conversation you continued in Nook (as it was, or as a copy): the Nook session is that chat
-    /// now, so the lists show it once, also while its own app still works on it (an app such keeps the chat
+    /// now, so the lists show it once, also while its own app still works on it (an app may keep the chat
     /// open, and a prompt typed there runs the same conversation). Only one that waits for you there (a question or an
     /// approval) stays, so you can answer it.
     /// `runs`: the agent and the conversation ids (current and earlier) of each session Nook runs.

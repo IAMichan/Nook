@@ -110,7 +110,7 @@ enum SessionJump {
     }
 }
 
-/// The open model picker's keys (as): ⌘1–⌘9 pick the nth model the shown place lists, ⇧⌘↑ and ⇧⌘↓ show the
+/// The open model picker's keys: ⌘1–⌘9 pick the nth model the shown place lists, ⇧⌘↑ and ⇧⌘↓ show the
 /// place before or after it in the rail.
 enum ModelPickerKeys {
     static let count = 9

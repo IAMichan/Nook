@@ -125,7 +125,7 @@ struct SessionDetailView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Who works where, in the bar, so the conversation starts at the top.
+                // Who works where, in the bar as the thread's header, so the conversation starts at the top.
                 ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: Self.subtitle(session)) }
                 if client.can(CompanionFeature.diff) {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -411,7 +411,7 @@ struct ItemView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            //: a small capitalized heading in the waiting color, then what is asked, large.
+            // An approval card: a small capitalized heading in the waiting color, then what is asked, large.
             Label {
                 Text(heading).textCase(.uppercase).tracking(1.1)
             } icon: {

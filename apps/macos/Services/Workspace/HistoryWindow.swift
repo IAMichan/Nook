@@ -1,6 +1,6 @@
 import Foundation
 
-// Bounded history opens a long thread from its latest segments: a conversation opens with only its latest
+// Bounded history, opening a long thread from its latest segments: a conversation opens with only its latest
 // turns drawn, and "Show earlier messages" at the top widens that by a page of turns. The window always starts at a turn
 // (a message of yours), so no turn is cut in half. A few long turns open with fewer of them (`maxRows`), but always with
 // at least the last one.

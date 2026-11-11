@@ -9,7 +9,7 @@ enum AutoSettlePolicy {
         /// Quiet for longer than this many days settles; 0 or less switches the inactivity rule off.
         var inactivityDays = 3
         var settleOnMergedPullRequest = false
-        /// A pull request closed without merging settles its idle session too (as).
+        /// A pull request closed without merging settles its idle session too.
         var settleOnClosedPullRequest = false
         /// A session whose pull request is still open never settles for inactivity ("Keep sessions with an open PR").
         var keepWithOpenPullRequest = false

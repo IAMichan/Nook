@@ -86,8 +86,8 @@ final class NotchViewModel: ObservableObject {
         didSet {
             guard selectedAgentID != oldValue else { return }
             UserDefaults.standard.set(selectedAgentID, forKey: "notch.lastAgentPage")
-            // A new session opened from a session starts in that session's project, as a thread carries its
-            // project (`NewSessionComposer.openOriginProject`).
+            // A new session opened from a session starts in that session's project
+            // (`NewSessionComposer.openOriginProject`).
             newSessionOrigin = selectedAgentID == "new" ? oldValue : nil
             // Leaving a session counts as having seen what it finished, wherever the switch came from (the ring, a
             // notice, search), also while the Agents tab is not on screen to notice it: otherwise "done" came back on its

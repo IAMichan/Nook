@@ -184,7 +184,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         return Self.mergedSHA(answer as? [String: Any] ?? [:])
     }
 
-    /// What GitLab's own Revert button does (as): the merged commit reverted onto a new branch off the target, and a
+    /// What GitLab's own Revert button does: the merged commit reverted onto a new branch off the target, and a
     /// merge request of that branch. Returns its link. The branch goes again when a later step fails, or a retry would
     /// fail on making it.
     private func revert(_ number: Int) async throws -> String? {

@@ -734,7 +734,7 @@ enum TerminalText {
     }
 
     /// Whether Option with a key typed a character of its own (`characters` of the key event): Option+L is "@" on a
-    /// German layout, Option+5 is "[" on a US one., that character is typed instead of being sent
+    /// German layout, Option+5 is "[" on a US one. That character is typed instead of being sent
     /// as Meta (Esc + the key), so those layouts can type @ | { [. Option with an arrow, a function key, or a dead key
     /// (no text yet) has no character of its own and stays Meta, so Option-arrow still moves a word.
     static func optionTypesText(_ characters: String?) -> Bool {

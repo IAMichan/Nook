@@ -3,7 +3,7 @@
 A scenario shows one behavior in the real app: Nook's own `WorkspaceManager`, `AgentProcess`, stream parsing and the
 main window's views (`WorkspaceView`, with the real `NookTheme`), with a replay agent standing in for the model. A run
 costs nothing and plays the same way every time. Use one as the proof of a fix: it fails on the base commit and passes
-on the fix. The idea and the shape come from scenarios (`docs/operations/scenarios.md` there).
+on the fix.
 
 Scenarios live in [`apps/macos/Scenarios`](../apps/macos/Scenarios):
 

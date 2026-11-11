@@ -1,6 +1,6 @@
 import Foundation
 
-// Sub-threads treats them: a delegated task and a side chat live inside their parent's view, never as rows
+// Sub-threads: a delegated task and a side chat live inside their parent's view, never as rows
 // of their own in the Agents list. The list stays flat; a fork or a comparison is a session of its own and gets a plain
 // row. A sub-thread is still seen in the list through its parent: the parent's row stands in for it while it is open,
 // and an approval it waits for shows on the parent's row. The parent's Lineage control lists them all. Foundation only.
@@ -16,7 +16,7 @@ enum SubThreadRelation: String, Codable, Sendable {
     /// The same prompt as the parent, with another model (`ModelComparison`).
     case comparison
 
-    /// Lives inside its parent's view instead of as a row of the list (`isListedThreadLineage`).
+    /// Lives inside its parent's view instead of as a row of the list.
     var livesUnderParent: Bool { self == .delegated || self == .side }
 }
 
@@ -54,7 +54,7 @@ enum SubThreadListing {
         return hidden.contains(current) ? id : current
     }
 
-    /// The rows to flag for what their sub-threads wait for (`pendingSubagentRequestsByThread`). A side chat asks
+    /// The rows to flag for what their sub-threads wait for. A side chat asks
     /// you directly, so its approval and its question both go to its parent. A delegated task's question goes to the agent
     /// that delegated it (`deliverDelegatedQuestion`), so only its approval needs you: that one goes up the chain, through
     /// every parent that is itself a delegated task or a side chat. An approval wins over a question.
@@ -103,7 +103,7 @@ struct LineageNode: Equatable, Sendable {
     var createdAt: Date
 }
 
-/// The sessions related to one session, in the groups of lineage panel.
+/// The sessions related to one session, in the groups of the lineage panel.
 struct LineageGroups: Equatable, Sendable {
     struct Row: Equatable, Sendable {
         enum Role: Equatable, Sendable {

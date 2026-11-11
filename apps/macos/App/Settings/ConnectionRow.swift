@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - One row for every connection
 //
-// Laid out lays out its providers, environments and source control: the icon, the name (and a version), one
+// Every connection is laid out the same way: the icon, the name (and a version), one
 // line that starts with the state ("Connected · michan@…"), a dot only when something is wrong, and on the right a
 // switch (switching off keeps it) and a "…" menu whose last item, after a line, removes it after asking. Managing
 // happens in the row itself: a click opens it in place and shows what the sheet used to show, so the page stays the page.

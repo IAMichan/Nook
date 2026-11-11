@@ -97,8 +97,8 @@ final class TabRouter: ObservableObject {
 }
 
 /// The row on top of every tab: Nook's orb (its menu holds the Mac, the connection and Live Activities), the tab's name
-/// large with the Mac's name and how it is connected under it header says the machine and "Reconnecting…",
-/// and the tab's own round button on the right. The tabs themselves are along the bottom.
+/// large with the Mac's name and how it is connected (such as "Reconnecting…") under it, and the tab's own round button
+/// on the right. The tabs themselves are along the bottom.
 struct PanelHeader<Trailing: View>: View {
     @EnvironmentObject private var router: TabRouter
     @ViewBuilder var trailing: () -> Trailing

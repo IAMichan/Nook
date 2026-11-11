@@ -823,7 +823,7 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, laid out as a card row, in Nook's colors: the agent's
+/// A session in a list, laid out as a card row in Nook's colors: the agent's
 /// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
 /// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
 /// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.

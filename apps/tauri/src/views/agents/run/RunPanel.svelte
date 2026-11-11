@@ -93,7 +93,7 @@
   <p class="faint">Deze sessie bestaat niet meer.</p>
 {:else}
   <div class="panel">
-    <!-- thread header: the project, a slash, the thread's name, and the thread's tools on the right. -->
+    <!-- The thread header: the project, a slash, the thread's name, and the thread's tools on the right. -->
     <header class="thread-head">
       <span class="project" title={run.workingDirectory}>{projectName(run.projectPath)}</span>
       <span class="slash">/</span>

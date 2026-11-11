@@ -28,7 +28,7 @@ extension Color {
     }
 }
 
-/// Nook design system look: a true black canvas, 8 % white lines, neutral text, a white main action and
+/// Nook design system: a true black canvas, 8 % white lines, neutral text, a white main action and
 /// Lucide icons (`NookIcon`). Color consistently represents state:
 /// iris = Nook itself and the main action, mint = listening or done, amber = waiting on you, coral = error.
 ///
@@ -146,12 +146,12 @@ enum NookTheme {
     /// The theme's own accent, whatever the user picked (the first swatch in Settings › Appearance).
     static let themeAccent = adaptive { palette(dark: $0).accent }
 
-    /// The main action of a card, a notice or a sheet, shaped: a filled accent button (Nook's soft white by
-    /// default, where has blue) with `onPrimary` text, a shade deeper under the pointer. Secondary actions stay quiet (ghost or outline).
+    /// The main action of a card, a notice or a sheet: a filled accent button (Nook's soft white by
+    /// default) with `onPrimary` text, a shade deeper under the pointer. Secondary actions stay quiet (ghost or outline).
     static let primary = iris
     static let primaryHover = adaptive { NookColor.mix(accent(dark: $0), palette(dark: $0).canvas, 0.12) }
     static let onPrimary = onIris
-    /// The outline button's fill and edge (`outline` variant): a faint fill a step off the surface it is on.
+    /// The outline button's fill and edge (the `outline` variant): a faint fill a step off the surface it is on.
     static let outlineFill = themed(\.field)
     static let outlineStroke = themed(\.fieldStroke)
 
@@ -279,8 +279,8 @@ enum NookTheme {
 
     /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
     /// different sizes. Running text is a `TextStyle`; use `font(_:_:)` only for a symbol's size or a numeral the scale
-    /// does not cover. The sizes follow: what you read is 14 pt (its `text-sm`), the dense UI around it 12 pt
-    /// (`text-xs`), badges 11.5 and the smallest metadata 10.5, so reading text stands a clear step above the chrome.
+    /// does not cover. The sizes: what you read is 14 pt, the dense UI around it 12 pt,
+    /// badges 11.5 and the smallest metadata 10.5, so reading text stands a clear step above the chrome.
     ///
     /// Picking one: a timestamp or a count is `caption`; the line under a title (a hint, a setting's explanation, a
     /// row's second line) is `detail`; a badge, a chip or metadata is `label`; what you read is `body`; a row's title

@@ -4,7 +4,7 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// Settings pages, in the order of the sidebar, laid out lays out its settings: Nook's own pages first, then
+/// Settings pages, in the order of the sidebar: Nook's own pages first, then
 /// what it thinks with, the coding agents, code, everything it is linked to, and maintenance and About last. Each subject
 /// lives in exactly one place and each page holds one subject, short enough to take in at once: a page that grew past a
 /// few groups is split into pages of its own (never tabs), and a list that grows with your data can be
@@ -125,7 +125,7 @@ struct SettingsView: View {
         let problems = ConnectionProblems.current(app)
         let needs = attention(problems: problems)
         let section = app.settingsSection
-        //: a sidebar of pages on the left, and on the right a bar with where you are over the page itself,
+        // A sidebar of pages on the left, and on the right a bar with where you are over the page itself,
         // a centered column of titled groups.
         HStack(spacing: 0) {
             SettingsSidebar(badges: [

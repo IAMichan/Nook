@@ -61,7 +61,7 @@ struct SettingsSidebar: View {
         NookSearchField(prompt: tr("settings.search.prompt"), text: $query, focus: $searchFocused,
                         onSubmit: { open(hits) }, onEscape: { searchFocused = false })
             .overlay(alignment: .trailing) {
-                // The key that finds a setting it, until you type.
+                // The key that finds a setting, shown until you type.
                 if query.isEmpty {
                     NookKeyHint(text: "/").padding(.trailing, NookTheme.Spacing.sm)
                 }
@@ -222,7 +222,7 @@ struct SettingsPageBar: View {
             if let info = section.info { SettingsInfoButton(text: info) }
             Spacer(minLength: NookTheme.Spacing.lg)
             if let restore = SettingsRestore(section) {
-                //: put this page's own settings back to how Nook ships, after asking.
+                // Put this page's own settings back to how Nook ships, after asking.
                 ConfirmedButton(question: tr("settings.restore.question", section.title), confirmTitle: tr("settings.general.restore"),
                                 action: {
                                     restore.run()

@@ -100,7 +100,7 @@ struct LineageControl: View {
         }
     }
 
-    /// relationship labels: "Parent agent" for the session that delegated this one, "Parent thread" otherwise.
+    /// The relationship labels: "Parent agent" for the session that delegated this one, "Parent thread" otherwise.
     static func roleKey(_ role: LineageGroups.Row.Role) -> String {
         switch role {
         case .parent(.delegated): return "lineage.role.parentAgent"

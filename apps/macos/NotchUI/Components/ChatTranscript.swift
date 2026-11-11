@@ -733,7 +733,7 @@ private struct ChatBubbleView: View, Equatable {
             for wait in [0.0, 1.5, 3, 6, 10, 15, 25] {
                 if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
                 if Task.isCancelled { return }
-                await fetchFile(bubble.id)
+                await fetchFile.fetch(bubble.id)
             }
             // The same for every app: a picture its app cannot give (expired, removed, too large) is named, and opens there.
             try? await Task.sleep(for: .seconds(10))

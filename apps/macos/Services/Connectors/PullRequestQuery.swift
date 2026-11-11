@@ -7,7 +7,7 @@ import Foundation
 /// leave a repository out). A qualifier
 /// typed here wins over the same choice in the Filters dropdown. A query pasted from github.com works too: GitHub's own
 /// scope and order qualifiers (`is:pr`, `state:open`, `sort:updated-desc` …, see `githubOnlyKeys`) are skipped, two
-/// different authors mean any author (GitHub ORs them), and `-draft:true` reads as `draft:false`..
+/// different authors mean any author (GitHub ORs them), and `-draft:true` reads as `draft:false`.
 /// Foundation only, so tests can use it.
 struct PullRequestQuery: Equatable, Sendable {
     /// The words left over, lowercased; every one must appear in the row.

@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › General: the languages, how the session list is laid out, and what Nook asks before it acts
-/// General has its sidebar and confirmations. How much Nook does on its own and updates are under Maintenance. Settings › Notch & windows: where
+/// Settings › General: the languages, how the session list is laid out, and what Nook asks before it acts.
+/// How much Nook does on its own and updates are under Maintenance. Settings › Notch & windows: where
 /// Nook shows (the notch and the main window) and how it behaves in meetings and while you share your screen. The look is
 /// under Appearance; the language dictation is translated to is with dictation.
 extension SettingsView {

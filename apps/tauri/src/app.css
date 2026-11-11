@@ -38,7 +38,7 @@
   --music: #f0936a;
   /* Your own message in a conversation (NookPalette.bubble): a soft fill a step off the canvas. */
   --bubble: #1e1e1e;
-  /* The width a coding agent's conversation reads at --chat-content-max-width. */
+  /* The width a coding agent's conversation reads at. */
   --thread-width: 768px;
   --radius: 12px;
   --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", "Cantarell", "Noto Sans", sans-serif;

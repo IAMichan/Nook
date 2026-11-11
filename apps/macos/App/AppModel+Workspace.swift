@@ -86,8 +86,8 @@ final class WorkspaceWindowController {
             // Dock and ⌘Tab.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            // An empty unified toolbar makes the title bar a taller row with the traffic lights in its middle, as in
-            //: the sidebar's head (Nook, talk, split view) and a session's header share that row
+            // An empty unified toolbar makes the title bar a taller row with the traffic lights in its middle: the
+            // sidebar's head (Nook, talk, split view) and a session's header share that row
             // (`PanelSidebarMetrics.titleBand`). Clicks in it still reach the content.
             window.toolbar = NSToolbar(identifier: "NookWorkspace")
             window.toolbarStyle = .unified
@@ -96,7 +96,13 @@ final class WorkspaceWindowController {
             window.minSize = NSSize(width: 900, height: 580)
             window.isReleasedWhenClosed = false
             let frameMemory = WindowFrameMemory(window: window, name: "NookWorkspace")
-            if !frameMemory.restore() { window.center() }
+            if !frameMemory.restore() {
+                // First launch: about three quarters of the screen, never below the window's minimum.
+                let visible = (screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1600, height: 1000)
+                window.setContentSize(NSSize(width: max(window.minSize.width, (visible.width * 0.75).rounded()),
+                                             height: max(window.minSize.height, (visible.height * 0.75).rounded())))
+                window.center()
+            }
             self.frameMemory = frameMemory
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {

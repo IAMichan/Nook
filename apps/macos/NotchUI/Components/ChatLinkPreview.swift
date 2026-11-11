@@ -231,7 +231,7 @@ final class ChatLinkPreviews {
     nonisolated private static let maxBytes = 12_000_000
 
     private init() {
-        MemoryPressure.shared.register("chatLinkPreviews") { [previews] _ in previews.removeAllObjects() }
+        MemoryPressure.shared.register("chatLinkPreviews", emptying: previews)
     }
 
     func preview(_ url: URL) async -> Preview {
@@ -307,7 +307,7 @@ enum ChatVideoStills {
     private static let stills: NSCache<NSURL, Box> = {
         let cache = NSCache<NSURL, Box>()
         cache.totalCostLimit = 32 * 1024 * 1024
-        MemoryPressure.shared.register("chatVideoStills") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("chatVideoStills", emptying: cache)
         return cache
     }()
     private static var failed: [URL: Date] = [:]

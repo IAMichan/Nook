@@ -162,7 +162,7 @@ struct CutBackgroundWork: Codable, Equatable, Sendable {
     var at: Date
 }
 
-/// One choice of the snooze menu, set in Settings › Sessions › Snooze options (as): a duration ("3 hours") or a
+/// One choice of the snooze menu, set in Settings › Sessions › Snooze options: a duration ("3 hours") or a
 /// time on a day ("21:00 tomorrow", "09:00 Monday"). A weekday means the next one after today; a today option hides once
 /// its time has passed. The menus list them soonest first.
 struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
@@ -276,7 +276,7 @@ enum RestartContinuation {
     /// Never a session you archived, settled or snoozed, one that waits on you (a question, an approval that the restart
     /// cut off), or one stopped by a usage limit, which has its own resume.
     /// Also a session whose turn had ended while it waited on work in the background that the restart stopped
-    /// (`cutBackgroundWork`): it is woken with a note of what will not report back (as does).
+    /// (`cutBackgroundWork`): it is woken with a note of what will not report back.
     static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, settled: Bool = false,
                                now: Date = Date()) -> Bool {
         guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
