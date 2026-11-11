@@ -3,13 +3,14 @@
     name: "chat" | "agents" | "workspace" | "phone" | "settings" | "plus" | "search" | "sidebar" | "arrow" | "back" | "attach" | "mic" | "copy" | "lock" | "unlock" | "gamepad"
       | "home" | "memory" | "link" | "brain" | "pull" | "chart" | "globe" | "note" | "voice" | "check" | "calendar" | "message"
       | "code" | "sparkle" | "x" | "grip" | "tasks"
-      | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check";
+      | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check" | "hourglass";
     size?: number;
   } = $props();
 </script>
 
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   {#if name === "chat"}<path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 0 1 18 0Z" /><path d="M7 9h8M7 13h5" />
+  {:else if name === "hourglass"}<path d="M6 3h12M6 21h12M7 3v3a5 5 0 0 0 5 5 5 5 0 0 0 5-5V3M7 21v-3a5 5 0 0 1 5-5 5 5 0 0 1 5 5v3" />
   {:else if name === "agents"}<rect x="4" y="6" width="16" height="14" rx="4" /><path d="M12 3v3M8 12h.01M16 12h.01M9 16h6M1 11v4M23 11v4" />
   {:else if name === "workspace"}<rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 9h18M9 9v11M6 6.5h.01M9 6.5h.01" />
   {:else if name === "phone"}<rect x="6" y="2" width="12" height="20" rx="3" /><path d="M10 18h4" />
