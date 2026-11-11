@@ -12,7 +12,7 @@ to search all of Nook at once:
 | Memory | What Nook remembers | Settings › Memory |
 | Notices | Nook's notice history | Whatever the notice was about |
 | Settings | Every setting by its on-screen name, and by its English name | The right Settings page |
-| Actions | New conversation, new session, pull requests, usage, terminals, browser, worktrees, record a call, open the window, Settings | Runs it |
+| Actions | New conversation, new session, pull requests, usage, terminals, browser, worktrees, record a call, open the window, Settings, the shortcut cheat sheet, Instructions, and the answer style of the open conversation (standard, concise, explanatory, formal, casual) | Runs it |
 
 Everything works from the keyboard while you type: **Return** opens the chosen row (the top hit unless you moved), and
 pressed before the results are in it opens the best one as soon as they arrive. **↑/↓** (or **⌃N/⌃P**) move, **⌘1–⌘9**
@@ -55,3 +55,11 @@ top; the rest are grouped by kind, and a chip (or Tab) keeps one kind.
 | Background indexing and debounced searching; session transcripts and the agents' own transcript files read from disk once (again only when they change) and kept, the index filling in as they are read | `apps/macos/Services/Search/SearchCenter.swift` |
 | What is searched and where a hit opens | `apps/macos/App/AppModel+Search.swift` |
 | The panel | `apps/macos/NotchUI/Pills/SearchPanel.swift` |
+
+## Deep links
+
+`nook://` links open places inside Nook (`NookDeepLink`, `apps/macos/Services/Workspace/NookDeepLink.swift`):
+`nook://conversation/<uuid>` (a Nook conversation), `nook://settings/<page>` (a Settings page by its id, e.g. `memory`,
+`shortcuts`, `instructions`), `nook://memory` and `nook://shortcuts` (the cheat sheet). A link only names a place; an id
+that is not a UUID or a page that does not exist opens nothing. `nook://session/…` and `nook://prompt?…` keep their own
+links (`SessionLink`, `PromptLink`).

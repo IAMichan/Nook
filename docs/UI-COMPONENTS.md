@@ -356,6 +356,12 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 Workspace-only blocks (`InfoRow`, `WSSectionTitle`, `StatusBadge`) live in
 `NotchUI/Workspace/WorkspaceComponents.swift`; `WSEmptyState`, used by the iPhone too, is in `NotchUI/Shared/PanelParts.swift`.
 
+## Shortcut cheat sheet
+
+`ShortcutCheatSheetView` (`NotchUI/Pills`) is the one overlay that lists every key (`?` or ⌘/): it reads the live rules from
+`KeyCommandCenter`, so remapped keys show at once. A window adds it with `.shortcutCheatSheet()` next to its search; do not
+build a second list of shortcuts. A new command appears in it by being in `Keybindings.commandIDs` with a key.
+
 ## The panel — notch and main window
 
 The main window (`WorkspaceView`) is the open notch with more room: it shows the same `PanelView` (with

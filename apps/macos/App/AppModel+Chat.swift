@@ -409,6 +409,11 @@ extension AppModel {
         var brainContext = outsideFound.isEmpty ? prepared.context
             : "What Nook's main brain found for this question, without the screen:\n\(outsideFound.prefix(settings.brainProfile.isSmall ? 2_000 : 8_000))\n\n" + prepared.context
         if !ReplyContext.brief.isEmpty { brainContext = PrivateBrief.context(ReplyContext.brief) + "\n\n" + brainContext }
+        // The answer style and the space's instructions of this conversation, then what the context inspector shows.
+        let instructionLines = InstructionStore.shared.instructionLines(for: conversation)
+        if !instructionLines.isEmpty { brainContext = instructionLines.joined(separator: "\n\n") + "\n\n" + brainContext }
+        InstructionStore.shared.noteContext(Self.contextBreakdown(instructions: instructionLines, prepared: prepared,
+                                                                  budget: settings.brainProfile.contextTokens))
 
         var request = text
         if let correction {
