@@ -141,9 +141,6 @@ struct NewSessionComposer: View {
                 }
                 // The tray's choices show their tips like the box's own (`composerTip`), not as slow system tooltips.
                 .composerTips()
-                ComposerMainThreadHint(offered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
-                                       on: config.mainThread == true)
-                    .padding(.horizontal, NookTheme.Spacing.md)
                 notice
             }
             .frame(maxWidth: 640)
@@ -322,8 +319,10 @@ struct NewSessionComposer: View {
             ComposerPlusMenu(attach: attachFile, screenshot: { app.captureFrontWindow() }) {}
             agentMenu
             ComposerDivider()
-            modeMenu
-            ComposerDivider()
+            if config.mode == .plan {
+                modeMenu
+                ComposerDivider()
+            }
             usageLimits
         }
         .rich(composerModel, composerConfig)
@@ -374,7 +373,7 @@ struct NewSessionComposer: View {
                 DropdownHeader(title: tr(app.connectedProviders.isEmpty ? "agents.noneConnected" : "sc.agents.allOff"))
             } else {
                 AgentModelPicker(providers: providers, provider: config.provider, profileID: config.profileID,
-                                 model: config.model, comparing: remoteMachine == nil ? $comparing : nil,
+                                 model: config.model,
                                  footer: AnyView(options), trailing: reasoning.map { AnyView(ModelPickerReasoning(effort: $0)) }) { provider, account, model in
                     if provider != config.provider || (account != nil && account != config.profileID) {
                         choose(provider, account: account ?? rememberedProfile(for: provider) ?? config.profileID)
@@ -391,9 +390,10 @@ struct NewSessionComposer: View {
         ModeToggle(mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }))
     }
 
-    /// Access, effort, speed and sub-threads, in the footer of the model picker.
+    /// Agent or Plan, access, speed and sub-threads, in the footer of the model picker.
     private var options: some View {
         ModelPickerOptions(
+            mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }),
             access: .init(provider: config.provider, chosen: config.permission, readOnly: config.mode == .plan,
                           pick: { config.permission = $0; remember() }),
             speedTiers: speedTiers, speed: config.speedTier, pickSpeed: { config.speedTier = $0 },
@@ -794,7 +794,6 @@ struct NewSessionComposer: View {
         pendingID = draft.pendingID
         remoteMachine = draft.remoteMachine
         remoteFolder = draft.remoteFolder
-        comparing = draft.comparing
         keepCheckout = draft.keepCheckout
         for (id, text) in draft.excerpts { composerModel.keep(id, text: text) }
         // A project still being inspected when the notch closed is looked at again.

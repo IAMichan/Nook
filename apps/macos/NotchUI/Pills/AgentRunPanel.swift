@@ -1553,8 +1553,10 @@ struct AgentRunPanel: View {
                     actionsMenu(run)
                     modelMenu(run)
                     ComposerDivider()
-                    modeMenu(run)
-                    ComposerDivider()
+                    if run.mode == .plan {
+                        modeMenu(run)
+                        ComposerDivider()
+                    }
                     ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
@@ -1597,8 +1599,6 @@ struct AgentRunPanel: View {
                               return true
                           },
                           "effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
-            ComposerMainThreadHint(offered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
-                                   on: run.mainThread == true)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.TextStyle.detail)
@@ -1776,9 +1776,10 @@ struct AgentRunPanel: View {
         ModeToggle(mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }))
     }
 
-    /// Access, effort, speed and sub-threads, in the footer of the model picker.
+    /// Agent or Plan, access, speed and sub-threads, in the footer of the model picker.
     private func options(_ run: WorkspaceRun) -> some View {
         ModelPickerOptions(
+            mode: Binding(get: { run.mode }, set: { workspace.configure(runID, mode: $0) }),
             access: .init(provider: run.provider, chosen: run.permission, readOnly: run.mode == .plan,
                           pick: { workspace.configure(runID, permission: $0) }),
             speedTiers: workspace.speedTiers(for: run), speed: workspace.speedTier(run),
