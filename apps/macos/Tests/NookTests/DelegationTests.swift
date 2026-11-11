@@ -149,6 +149,37 @@ final class DelegationTests: XCTestCase {
         XCTAssertFalse(DelegatedTask.State.waiting.isTerminal)
     }
 
+    func testATaskWithWorkInItsQueueIsNotDoneYet() {
+        // t3code: a follow-up waits for a run its child queued on its own thread.
+        XCTAssertEqual(DelegatedTask.state(.completed, hasQueuedWork: true), .running)
+        XCTAssertEqual(DelegatedTask.state(.stopped, hasQueuedWork: true), .running, "a restart goes out right after its stop")
+        XCTAssertEqual(DelegatedTask.state(.running, hasPendingQuestion: true, hasQueuedWork: true), .waiting)
+        XCTAssertFalse(DelegatedTask.mayDeliver(.completed, hasQueuedWork: true))
+        XCTAssertTrue(DelegatedTask.mayDeliver(.completed, hasQueuedWork: false))
+        XCTAssertTrue(DelegatedTask.mayDeliver(.failed, hasQueuedWork: false))
+        XCTAssertFalse(DelegatedTask.mayDeliver(.running, hasQueuedWork: false))
+        XCTAssertFalse(DelegatedTask.mayDeliver(.stopped, hasQueuedWork: false))
+    }
+
+    func testOnlyAnUnrelatedSessionLeavesTheParentOutOfAFollowUp() {
+        let parent = UUID(), child = UUID(), other = UUID()
+        // You, a client without a session of its own, and the task's own parent: the parent hears of the new turn.
+        XCTAssertNil(DelegatedTask.origin(sender: nil, senderParent: nil, target: child, targetParent: parent))
+        XCTAssertNil(DelegatedTask.origin(sender: parent, senderParent: nil, target: child, targetParent: parent))
+        XCTAssertTrue(QueuedMessage.Origin.rearmsParent(nil))
+        XCTAssertTrue(QueuedMessage.Origin.rearmsParent(.notice), "Nook's notice of the task's own work counts too")
+        // Another agent's session does not.
+        XCTAssertEqual(DelegatedTask.origin(sender: other, senderParent: nil, target: child, targetParent: parent), .agent)
+        XCTAssertFalse(QueuedMessage.Origin.rearmsParent(.agent))
+        // A task writing to the session that delegated it carries on that session's work.
+        XCTAssertEqual(DelegatedTask.origin(sender: child, senderParent: parent, target: parent, targetParent: nil), .child)
+        XCTAssertFalse(QueuedMessage.Origin.rearmsParent(.child))
+        XCTAssertTrue(QueuedMessage.Origin.continuesWork(.child))
+        XCTAssertTrue(QueuedMessage.Origin.continuesWork(.notice))
+        XCTAssertFalse(QueuedMessage.Origin.continuesWork(.agent))
+        XCTAssertFalse(QueuedMessage.Origin.continuesWork(nil))
+    }
+
     func testSummaryIsTheLastThingTheChildSaid() {
         let events = [RunEvent(kind: .assistant, text: "First"), RunEvent(kind: .tool, text: "Bash"),
                       RunEvent(kind: .assistant, text: "  Done: 3 files changed.  "), RunEvent(kind: .result, text: "ok")]

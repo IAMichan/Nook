@@ -497,7 +497,19 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
 /// One step of the task list an agent keeps while it works: Claude Code's TodoWrite, Codex's `turn/plan/updated`,
 /// an ACP `plan` update.
 struct RunTaskStep: Codable, Equatable, Sendable {
-    enum Status: String, Codable, Sendable { case pending, active, done }
+    enum Status: String, Codable, Sendable {
+        case pending, active, done
+        /// Dropped: the agent will not do it (Gemini, Cursor and OpenCode say so in their todo lists).
+        case cancelled
+
+        /// A value this Nook does not know (written by a later one) reads as still to do, so the list still loads.
+        init(from decoder: Decoder) throws {
+            self = Status(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .pending
+        }
+
+        /// Nothing more comes of it: done, or dropped.
+        var isSettled: Bool { self == .done || self == .cancelled }
+    }
     var text: String
     var status: Status
 }
@@ -507,17 +519,20 @@ enum RunTasks {
         switch raw {
         case "completed", "done": return .done
         case "in_progress", "inProgress", "running", "active": return .active
+        case "cancelled", "canceled": return .cancelled
         default: return .pending
         }
     }
 
-    /// Claude Code's TodoWrite input: `todos` with `content`, `status` and, for the running one, `activeForm`.
+    /// Claude Code's TodoWrite input: `todos` with `content`, `status` and, for the running one, `activeForm`. The same
+    /// shape from Cursor's `todo_write` and OpenCode's `todowrite`, and Gemini CLI's `write_todos` (`description`).
     static func claude(_ input: [String: Any]) -> [RunTaskStep]? {
         guard let todos = input["todos"] as? [[String: Any]] else { return nil }
         return todos.compactMap { todo in
             let state = Self.status(todo["status"] as? String)
             let active = (todo["activeForm"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            guard let text = (state == .active ? active : nil) ?? (todo["content"] as? String), !text.isEmpty else { return nil }
+            guard let text = (state == .active ? active : nil) ?? (todo["content"] as? String) ?? (todo["description"] as? String),
+                  !text.isEmpty else { return nil }
             return RunTaskStep(text: text, status: state)
         }
     }
@@ -540,14 +555,25 @@ enum RunTasks {
     }
 
     /// How far the list is, and the step that matters now: the running one, else the next, else the last.
+    /// A dropped step counts in neither number: the list is through when every step left is done.
     static func progress(_ steps: [RunTaskStep]) -> (done: Int, total: Int, current: String) {
-        let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending } ?? steps.last
-        return (steps.filter { $0.status == .done }.count, steps.count, current?.text ?? "")
+        let current = steps.first { $0.status == .active } ?? steps.first { $0.status == .pending }
+            ?? steps.last { $0.status != .cancelled } ?? steps.last
+        return (steps.filter { $0.status == .done }.count, steps.filter { $0.status != .cancelled }.count, current?.text ?? "")
     }
 
     static func isFinished(_ steps: [RunTaskStep]?) -> Bool {
         guard let steps, !steps.isEmpty else { return true }
-        return steps.allSatisfy { $0.status == .done }
+        return steps.allSatisfy(\.status.isSettled)
+    }
+}
+
+/// Where the "working for …" timer of a turn starts (`WorkspaceRun.turnStartedAt`). A new prompt starts it again; the
+/// agent carrying on by itself (background work it waited for ended, a task it delegated reported back) keeps the start
+/// of the work it continues, so the timer does not jump back to zero mid-work (t3code: continuations keep the start).
+enum TurnTimer {
+    static func start(continuing: Bool, previous: Date?, now: Date = Date()) -> Date {
+        continuing ? (previous ?? now) : now
     }
 }
 
