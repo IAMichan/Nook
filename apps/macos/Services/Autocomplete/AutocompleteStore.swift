@@ -167,6 +167,50 @@ final class AutocompleteStore: ObservableObject {
         }
     }
 
+    // MARK: Personal adapter
+
+    /// The personal adapter's folder: the adapter sealed (it is learned from the user's writing, and can give some of it
+    /// back) and what is known about it, plain.
+    static var adapterFolder: URL { folder.appendingPathComponent("Adapter", isDirectory: true) }
+    private static var adapterFile: URL { adapterFolder.appendingPathComponent("adapter.gguf.sealed") }
+    private static var adapterInfoFile: URL { adapterFolder.appendingPathComponent("adapter.json") }
+
+    /// The trained adapter, when there is one (see `CompletionAdapterTraining`).
+    @Published private(set) var adapter: CompletionAdapterInfo? = AutocompleteStore.readAdapterInfo()
+
+    private static func readAdapterInfo() -> CompletionAdapterInfo? {
+        guard let data = try? Data(contentsOf: adapterInfoFile) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(CompletionAdapterInfo.self, from: data)
+    }
+
+    /// Keeps a trained adapter, sealed. Without the Keychain's key it is not kept at all: it is never written plain.
+    func saveAdapter(_ gguf: Data, info: CompletionAdapterInfo) throws {
+        guard let key else { throw NookError(tr("autocomplete.adapter.noKey")) }
+        try FileManager.default.createDirectory(at: Self.adapterFolder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try SafeStorage.write(try CompletionSealing.seal(gguf, key: key), to: Self.adapterFile)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try SafeStorage.write(try encoder.encode(info), to: Self.adapterInfoFile)
+        adapter = info
+    }
+
+    /// The adapter opened into a file only this user can read, for llama.cpp to load: the caller deletes it once loaded
+    /// (llama.cpp keeps the weights in memory). Nil without an adapter or the key.
+    func openedAdapter() -> URL? {
+        guard adapter != nil, let key, let sealed = try? Data(contentsOf: Self.adapterFile),
+              let gguf = CompletionSealing.open(sealed, key: key) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("nook-adapter-\(UUID().uuidString).gguf")
+        guard FileManager.default.createFile(atPath: url.path, contents: gguf, attributes: [.posixPermissions: 0o600]) else { return nil }
+        return url
+    }
+
+    func forgetAdapter() {
+        try? FileManager.default.removeItem(at: Self.adapterFolder)
+        adapter = nil
+    }
+
     // MARK: Pausing
 
     func isPaused(app bundleID: String?, now: Date = Date()) -> Bool {

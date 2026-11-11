@@ -140,6 +140,11 @@ struct CompletionPreferences: Codable, Equatable {
     /// field already held or a paste.
     var learnWithoutSuggestion = true
     var personalStrength = 0.3
+    /// Write with the personal adapter trained on this Mac (see `CompletionAdapter`), when there is one for the model.
+    var personalAdapter = true
+    /// Train the personal adapter on the messages you sent in the chats Nook reads too, not only on what autocomplete
+    /// recorded.
+    var adapterFromChats = true
     /// The hints on the General page to turn on learning and to fill in instructions were put away with "Not now".
     var personalHintsDismissed = false
 

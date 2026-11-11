@@ -57,6 +57,7 @@ struct AutocompleteSettingsSection: View {
                 case .style:
                     contextSection
                     personalSection
+                    AutocompleteAdapterSection()
                     extrasSection
                 case .playground:
                     AutocompletePlaygroundSection()
