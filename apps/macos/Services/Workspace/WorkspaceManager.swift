@@ -264,6 +264,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var modelManifest: ModelManifest?
     /// What `claude --version` and `codex --version` printed, for the models that need a newer agent.
     @Published var agentVersions: [RunProvider: String] = [:]
+    /// Nook is quitting (`shutdown()` ran): agents are being stopped and nothing new starts.
+    private(set) var quitting = false
     /// When the repository was last asked for the manifest, and when each agent's version was read (with its path).
     var manifestAttempted: Date?
     /// The model list of each agent (see `modelMenu`), by `effortKey`.
@@ -1766,6 +1768,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
+        guard !quitting else { return }
         cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
         if waitForCapacity(id, prompt: prompt, executable: executable, showPrompt: showPrompt) { return }
@@ -1870,7 +1873,7 @@ final class WorkspaceManager: ObservableObject {
     /// straight in instead of waiting for a process to start: Claude Code waits on stdin, Codex has its thread open, an
     /// ACP agent has its session loaded. Like a session parked after a turn, it closes when left alone.
     func prewarm(_ id: UUID) {
-        guard let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
+        guard !quitting, let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
               (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
               let executable = launchExecutable(run),
               run.provider != .claude || run.pendingRollback == nil,
@@ -2196,6 +2199,8 @@ final class WorkspaceManager: ObservableObject {
     }
 
     private func processExited(_ id: UUID, status: Int32, stderr: String, process: AgentProcess? = nil) {
+        // Quitting: `shutdown()` already settled every session; an exit now must not send queued messages or start a turn.
+        guard !quitting else { return }
         // A Claude Code process that waited between turns ended (closed when idle, or gone): nothing else to do.
         if let process, claudeIdle[id]?.process === process {
             claudeIdle[id] = nil
@@ -3094,6 +3099,9 @@ final class WorkspaceManager: ObservableObject {
 
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
+        // Called again once the agents exited (`QuitShutdown`): what they wrote while Nook waited is saved too.
+        guard !quitting else { return saveForQuit() }
+        quitting = true
         let kept = detachKeptRuns()
         // Nothing is announced on the way out: a completion held for a monitor ends with Nook.
         heldWakeCompletions.removeAll()
@@ -3121,6 +3129,10 @@ final class WorkspaceManager: ObservableObject {
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
         }
+        saveForQuit()
+    }
+
+    private func saveForQuit() {
         // Saves still queued go first: one that ran after these would write an older timeline over the newer one.
         store.flush()
         if runsLoaded { try? store.saveRuns(runs) }
@@ -3141,6 +3153,8 @@ final class WorkspaceManager: ObservableObject {
         var run = runs[index]
         change(&run)
         guard run != runs[index] else { return }
+        // A version the API refused while a custom endpoint is in between: the failure says what really happened.
+        if run.status == .failed, runs[index].status != .failed, let note = versionRejectionNote(run) { run.statusDetail = note }
         let freedPlace = runs[index].status.isActive && !run.status.isActive
         // A turn starts: the suggestion for the one before it no longer fits.
         if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(id) }

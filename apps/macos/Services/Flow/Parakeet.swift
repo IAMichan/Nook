@@ -6,7 +6,8 @@ import os
 /// NVIDIA's Parakeet speech recognition and a speaker diarizer, run on the Mac's Neural Engine by FluidAudio (Apache-2.0):
 /// more accurate than the Mac's own recognizer, 25 languages, entirely offline. The models (≈ 650 MB) are downloaded once
 /// from Hugging Face when you click Download (Settings › Voice & sound), kept in Application Support/Nook/Models, and
-/// then everything runs on this Mac. Used for Flow dictation and the Notetaker, which then also tells the other people
+/// then everything runs on this Mac. A copy another app already keeps (FluidAudio's folder, the Hugging Face cache) is
+/// linked instead of downloaded again (`VoiceModelCopies`). Used for Flow dictation and the Notetaker, which then also tells the other people
 /// in a call apart.
 ///
 /// Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md).
@@ -117,11 +118,29 @@ final class Parakeet: ObservableObject {
 
     nonisolated private static func fetchModels(progress: @escaping @Sendable (Double) -> Void) async throws {
         try FileManager.default.createDirectory(at: modelsRoot, withIntermediateDirectories: true)
+        // The same models already on this Mac (another FluidAudio app, the Hugging Face cache) are linked, not fetched.
+        if let source = linkExistingCopy() {
+            Log.app.info("Parakeet: using the models already in \(source.path, privacy: .public)")
+        }
         _ = try await AsrModels.download(to: asrDirectory, version: version, progressHandler: { update in
             progress(min(0.92, update.fractionCompleted * 0.92))
         })
         try await prepareDiarizer()
         progress(1)
+    }
+
+    /// Links a complete copy of Parakeet that another app or the Hugging Face cache keeps (`VoiceModelCopies`) into
+    /// Nook's models folder; returns where it lives, nil when there is none (or Nook's own copy is complete).
+    nonisolated static func linkExistingCopy() -> URL? {
+        let manager = FileManager.default
+        let folder = asrDirectory.lastPathComponent
+        // FluidAudio names the folder after the model's Hugging Face repository ("FluidInference/parakeet-ultra-coreml").
+        guard let repository = Repo.allCases.first(where: { $0.folderName == folder })?.rawValue else { return nil }
+        let candidates = VoiceModelCopies.candidates(
+            repository: repository, folder: folder, home: manager.homeDirectoryForCurrentUser,
+            applicationSupport: manager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
+            environment: ProcessInfo.processInfo.environment)
+        return VoiceModelCopies.link(from: candidates, to: asrDirectory) { AsrModels.modelsExist(at: $0, version: version) }
     }
 
     /// Downloads (once) and loads the Notetaker's speaker diarizer.
@@ -130,7 +149,7 @@ final class Parakeet: ObservableObject {
         try await diarizer.prepareModels(directory: modelsRoot)
     }
 
-    /// Removes the models from this Mac.
+    /// Removes the models from this Mac. A linked copy (`linkExistingCopy`) loses only its link; the other app's files stay.
     func remove() {
         loading?.cancel()
         loading = nil
