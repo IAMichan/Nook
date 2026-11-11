@@ -92,6 +92,28 @@ final class PullRequestSync: ObservableObject {
         save()
     }
 
+    /// Links a pull request the session works on (`PullRequestMentions`): unlike `add`, one you took off stays off,
+    /// and one already linked keeps its place.
+    func mention(_ link: PullRequestLink, session key: String) {
+        guard dismissed[key]?.contains(link.id) != true, !(added[key] ?? []).contains(where: { $0.id == link.id }) else { return }
+        added[key] = (added[key] ?? []) + [link]
+        PullRequestStatusStore.shared.seed([(link.url, PullRequestStatus.glyph(state: link.state, conflicted: link.conflicted))])
+        save()
+    }
+
+    /// The pull requests linked to a session besides its branches' (by you, or because it works on them), newest status
+    /// first, the ones you took off left out: for the tray above its composer.
+    func others(run: UUID) -> [PullRequestLink] {
+        let key = run.uuidString
+        let gone = dismissed[key] ?? []
+        return PullRequestStatusStore.shared.current(added[key] ?? []).filter { !gone.contains($0.id) }
+    }
+
+    /// Whether a session's list already has a pull request, or you took it off: then it is not looked up again.
+    func knows(_ id: String, session key: String) -> Bool {
+        dismissed[key]?.contains(id) == true || (added[key] ?? []).contains { $0.id == id }
+    }
+
     /// Takes a pull request off a session's list: one you linked goes, one a branch found stays away.
     func remove(_ link: PullRequestLink, session key: String) {
         let yours = added[key] ?? []

@@ -312,49 +312,6 @@ struct SidePanelPullRequestPicker: View {
 
     private func resolve(_ text: String) async -> PullRequestLink? {
         guard let ref = PullRequestRef.parse(text.allSatisfy(\.isNumber) ? "#" + text : text) else { return nil }
-        let repository = await sync.repository(directory: directory)
-        // The session's forge, unless the link names its own.
-        guard let host = ref.host ?? repository?.host, let path = ref.repository ?? repository?.path,
-              let url = ref.url ?? { () -> URL? in
-                  var target = repository
-                  target?.path = path
-                  return target?.pullRequestURL(number: ref.number)
-              }() else { return nil }
-        var link = PullRequestLink(host: host, repository: path, number: ref.number, url: url.absoluteString)
-        if let request = listed(link) { return Self.link(link, from: request.item) }
-        // Another forge with a token answers the same way.
-        if let found = ref.forgeRepository ?? repository, let client = PullRequestForges.client(found) {
-            guard let detail = try? await client.summary(number: ref.number) else { return nil }
-            link.title = detail.title
-            link.state = PullRequestState(rawValue: detail.state.rawValue) ?? .open
-            link.conflicted = detail.conflicted
-            link.headBranch = detail.headBranch
-            link.baseBranch = detail.baseBranch
-            link.updatedAt = detail.updated
-            return link
-        }
-        guard host == .github, ref.hostName ?? repository?.hostName == "github.com",
-              let account = AccountRegistry.shared.accounts(for: "github").first,
-              let token = GitHubPullRequestDetail.token(accountID: account.id) else { return link }
-        // GitHub can say whether it exists and what it is called.
-        guard let detail = try? await GitHubPullRequestDetail.loadForMerge(repo: path, number: ref.number, token: token) else { return nil }
-        link.title = detail.title
-        link.state = PullRequestState(rawValue: detail.state.rawValue) ?? .open
-        link.conflicted = detail.conflicted
-        link.headBranch = detail.headBranch
-        link.baseBranch = detail.baseBranch
-        link.updatedAt = detail.updated
-        return link
-    }
-
-    private static func link(_ link: PullRequestLink, from item: PullRequestItem) -> PullRequestLink {
-        var link = link
-        link.title = item.title
-        link.state = item.state == .merged ? .merged : item.state == .closed ? .closed : item.draft ? .draft : .open
-        link.conflicted = item.conflict
-        link.headBranch = item.headBranch.isEmpty ? nil : item.headBranch
-        link.baseBranch = item.baseBranch.isEmpty ? nil : item.baseBranch
-        link.updatedAt = item.updated
-        return link
+        return await PullRequestResolver.resolve(ref, repository: await sync.repository(directory: directory))
     }
 }

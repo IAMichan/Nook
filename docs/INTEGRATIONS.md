@@ -65,6 +65,13 @@ member cannot do:
   `cafe pr merge`, `az repos pr update --status completed`) reads the session's linked pull requests again at once
   (`PullRequestToolCall.closesPullRequest`, `PullRequestSync.recheck`), for every coding agent Nook runs. Bitbucket has no
   such CLI. A session Nook only sees (an agent in a terminal) waits for the next round.
+- A pull request the agent works on with `gh pr …` or `glab mr …` (`checks 3877`, `checkout`, `view`, `-R owner/repo`) or
+  that you name in your message ("#3877", a link) is linked to the session (`PullRequestMentions`,
+  `WorkspaceManager.noticePullRequests`, `PullRequestSync.mention`), and the tray above its composer lists it next to the
+  branch's own, with every pull request it watches. A "#12" from your message is linked only once the forge confirms it
+  is a pull request; one you took off the list stays off. It reads the shared timeline, so it holds for every coding
+  agent Nook runs; `tea`, `fj`, `cafe` and `az` commands are not read yet, and a session Nook only sees (an agent in a
+  terminal) has no tray above a composer of Nook's.
 - The other platform apps (`apps/tauri`, `apps/ios`, `apps/android`, `apps/windows`, `apps/linux`) have no session side
   panel with a pull request tab, so there is nothing there to change.
 
