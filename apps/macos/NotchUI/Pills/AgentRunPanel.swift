@@ -751,7 +751,8 @@ struct AgentRunPanel: View {
             // token, which redraws the conversation (`timelines`) but changes nothing the composer shows.
             RunComposerHost(state: composerState, workspace: workspace, app: app, pullRequests: pullRequestSync,
                             key: RunComposerHost.Key(run: run, subagents: derived.subagents, commands: derived.commands, skills: skills,
-                                                     repository: repository, shownSubagents: outputsLink.subagentsShown)) {
+                                                     repository: repository, shownSubagents: outputsLink.subagentsShown,
+                                                     olderBranchesShown: showsOlderBranches)) {
                 composer(run)
             }
             .equatable()
@@ -1866,9 +1867,12 @@ struct RunComposerHost<Content: View>: View, Equatable {
         var skills: [Skill]
         var repository: String?
         var shownSubagents: Bool
+        /// The panel's own state the tray reads (the folded earlier branches): without it here a click on the fold row
+        /// changes the state but the composer is never drawn again, so the list never opens.
+        var olderBranchesShown: Bool
 
         init(run: WorkspaceRun, subagents: [SubagentInfo], commands: [BackgroundCommandInfo], skills: [Skill], repository: String?,
-             shownSubagents: Bool) {
+             shownSubagents: Bool, olderBranchesShown: Bool) {
             // A streaming turn moves `updatedAt` every two seconds; the composer does not show it.
             var run = run
             run.updatedAt = .distantPast
@@ -1878,6 +1882,7 @@ struct RunComposerHost<Content: View>: View, Equatable {
             self.skills = skills
             self.repository = repository
             self.shownSubagents = shownSubagents
+            self.olderBranchesShown = olderBranchesShown
         }
     }
 
