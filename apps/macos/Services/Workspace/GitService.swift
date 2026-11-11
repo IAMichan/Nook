@@ -523,18 +523,21 @@ struct GitService: Sendable {
     /// `--diff-merges=remerge`): then nothing is left out.
     func authoredPaths(_ directory: String, from: String, to: String, since: Date) -> Set<String>? {
         guard let start = snapshotHead(directory, from), let end = snapshotHead(directory, to), start != end else { return nil }
-        let names = ["--name-only", "-z", "--no-renames", "--no-ext-diff", "--relative"]
-        let commits = ["log", "--format=", "--diff-merges=remerge"] + names
-        let lists = [
-            ["diff"] + names + [start, from + "^{commit}"],
-            ["diff"] + names + [end, to + "^{commit}"],
+        let names: [String] = ["--name-only", "-z", "--no-renames", "--no-ext-diff", "--relative"]
+        let diff: [String] = ["diff"] + names
+        let commits: [String] = ["log", "--format=", "--diff-merges=remerge"] + names
+        let sinceArgument = "--since=@\(Int(since.timeIntervalSince1970))"
+        let lists: [[String]] = [
+            diff + [start, from + "^{commit}"],
+            diff + [end, to + "^{commit}"],
             commits + ["\(end)..\(start)"],
-            commits + ["--since=@\(Int(since.timeIntervalSince1970))", "\(start)..\(end)"],
+            commits + [sinceArgument, "\(start)..\(end)"],
         ]
         var paths = Set<String>()
         for arguments in lists {
             guard let text = try? run(arguments, in: directory) else { return nil }
-            paths.formUnion(text.split(separator: "\0").map { $0.trimmingCharacters(in: .newlines) }.filter { !$0.isEmpty })
+            let found: [String] = text.split(separator: "\0").map { String($0).trimmingCharacters(in: CharacterSet.newlines) }
+            paths.formUnion(found.filter { !$0.isEmpty })
         }
         return paths
     }

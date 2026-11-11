@@ -145,10 +145,7 @@ struct ComposerDictationBar: View {
                     .lineLimit(1)
                 // Set straight on layers from the measured voice level: no SwiftUI update per frame.
                 LayerLevelBars(count: 12, barWidth: 2, spacing: 2, color: tint,
-                               fps: dictator.state.phase == .listening ? 20 : 0) {
-                    let level = VoiceLevel.shared.current
-                    return (0..<12).map { index in 0.2 + 0.8 * level * (0.4 + 0.6 * abs(sin(Double(index) * 1.7))) }
-                }
+                               fps: dictator.state.phase == .listening ? 20 : 0, levels: Self.barLevels)
                 .frame(width: 46, height: 12)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 NookIconButton(systemName: "xmark", label: tr("compose.dictate.discard"), size: 22, action: discard)
@@ -159,6 +156,15 @@ struct ComposerDictationBar: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(status)
             .transition(.opacity)
+        }
+    }
+
+    /// The height of each of the 12 bars from the current voice level, each bar at its own fixed share of it.
+    private static func barLevels() -> [Double] {
+        let level: Double = Double(VoiceLevel.shared.current)
+        return (0..<12).map { (index: Int) -> Double in
+            let share: Double = 0.4 + 0.6 * abs(sin(Double(index) * 1.7))
+            return 0.2 + 0.8 * level * share
         }
     }
 
