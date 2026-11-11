@@ -767,6 +767,36 @@ pub fn merge_methods(repository: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The repository's `methods` narrowed by the base branch's rules (`GET /repos/{repo}/rules/branches/{branch}`): every
+/// `pull_request` rule with `allowed_merge_methods` must allow a method. A rule without that list allows all.
+pub fn rule_methods(methods: Vec<String>, rules: &Value) -> Vec<String> {
+    let allowed: Vec<Vec<&str>> = list(rules)
+        .iter()
+        .filter(|rule| rule["type"].as_str() == Some("pull_request"))
+        .filter_map(|rule| rule["parameters"]["allowed_merge_methods"].as_array())
+        .map(|methods| methods.iter().filter_map(Value::as_str).collect())
+        .collect();
+    methods.into_iter().filter(|method| allowed.iter().all(|a| a.contains(&method.as_str()))).collect()
+}
+
+/// The path of the rules GitHub applies to `branch`, under the repository's address.
+fn rules_path(branch: &str) -> String {
+    const BRANCH: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC.remove(b'/').remove(b'-').remove(b'.').remove(b'_');
+    format!("/rules/branches/{}", percent_encoding::utf8_percent_encode(branch, BRANCH))
+}
+
+/// The merge methods an open pull request can use: the repository's settings narrowed by its base branch's rulesets.
+/// GitHub refuses the others with 405 ("Merge commits are not allowed"). None when the pull request could not be read.
+pub async fn allowed_methods(env: &Env, token: &str, repo: &str, number: i64) -> Option<Vec<String>> {
+    let base = format!("{}/repos/{repo}", api());
+    let headers = super::github::headers(token);
+    let pull = env.http.json("GET", &format!("{base}/pulls/{number}"), &headers, None, "GitHub").await.ok()?;
+    let repository = env.http.json("GET", &base, &headers, None, "GitHub").await.ok().filter(Value::is_object);
+    let detail = parse_detail(&pull, repository.as_ref())?;
+    let rules = env.http.json("GET", &format!("{base}{}", rules_path(&detail.base_branch)), &headers, None, "GitHub").await;
+    Some(rule_methods(detail.methods, &rules.unwrap_or(Value::Null)))
+}
+
 /// Check runs (GitHub Actions and apps) and the older commit statuses in one list: failing first, then running.
 pub fn parse_checks(runs: &[Value], statuses: &[Value]) -> Vec<PullRequestCheck> {
     let bad = ["failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale"];
@@ -1073,6 +1103,11 @@ pub async fn load_detail(env: &Env, token: &str, repo: &str, number: i64) -> CRe
     if let Some(facts) = &viewer {
         detail.apply_viewer(facts);
     }
+    // A ruleset can allow fewer merge methods than the repository's own settings.
+    if detail.state == DetailState::Open && !detail.base_branch.is_empty() {
+        let rules = get(rules_path(&detail.base_branch)).await.unwrap_or(Value::Null);
+        detail.methods = rule_methods(std::mem::take(&mut detail.methods), &rules);
+    }
     if !detail.head_sha.is_empty() {
         let sha = detail.head_sha.clone();
         let (runs, status) =
@@ -1378,6 +1413,19 @@ mod tests {
             base[k] = v.clone();
         }
         base
+    }
+
+    #[test]
+    fn rulesets_narrow_the_merge_methods() {
+        let all: Vec<String> = MERGE_METHODS.iter().map(|m| m.to_string()).collect();
+        let rules = json!([
+            {"type": "deletion"},
+            {"type": "pull_request", "parameters": {"allowed_merge_methods": ["squash"]}}
+        ]);
+        assert_eq!(rule_methods(all.clone(), &rules), vec!["squash"]);
+        assert_eq!(rule_methods(all.clone(), &json!([{"type": "pull_request", "parameters": {}}])), all);
+        assert_eq!(rule_methods(all.clone(), &Value::Null), all);
+        assert_eq!(rules_path("feature/a b"), "/rules/branches/feature/a%20b");
     }
 
     #[test]
