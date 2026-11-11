@@ -25,6 +25,10 @@ copying it again.
 | `NookTheme.Spacing.xxs … xxxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24, 32 (`xxxl` between the sections of a page) |
 | `NookTheme.open`, `close`, `swap`, `hover`, `reveal`, `scroll` | Animations: opening and closing the notch, switching tabs, hover feedback, showing or hiding part of a panel (a section, a preview, a selection), and scrolling to a line. Never an inline `.easeOut(duration:)` |
 | `.hoverLift(_:scale:)` | The shared hover lift of buttons and chips |
+| `NookTheme.Motion.quick`, `standard`, `slow`, `panel`, `list`, `reduced`, `.nookAnimation(_:value:)`, `withNookAnimation` | One motion language: 150 ms (a press, a checkmark), 200 ms (a color, a fade), 250 ms (a cross-fade of a surface), a no-bounce spring for panels and lists. With Reduce Motion they all become a 120 ms fade. Prefer these over the older `open`/`close`/`swap`/`reveal` names in new work |
+| `.buttonStyle(.nookPress)`, `.nookFocusRing(_:radius:)` | Press feedback (a hair smaller and dimmer, none of the scale with Reduce Motion) and an intentional keyboard focus ring (2 pt accent just outside the edge) for custom controls |
+| `NookTheme.density`, `NookDensity`, `Spacing.scaled(_:)`, `Spacing.huge`, `LineHeight`, `readingMeasure` | Settings › Appearance › Density (compact / comfortable / spacious) scales the type scale and, through `Spacing.scaled`, the padding of rows and cards. `LineHeight.reading` (1.55) and `readingMeasure` (70 characters) are for running text |
+| `NookColorTheme.warm`, `mono` | Built-in themes beside Nook, Midnight, Paper and High contrast: Warm (ivory and soft charcoal with a clay accent, after the Claude app) and Mono (grey only). Every built-in theme is checked for WCAG AA text in both appearances |
 
 Appearance and themes (Settings › Appearance): `NookTheme`'s named colors resolve through the `NookPalette` of the theme
 in effect (`NookPalette.swift`): `NookAppearanceMode` (System / Light / Dark) picks light or dark, `NookColorTheme` is a
@@ -258,6 +262,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `.sessionLinkDrag(id:title:onStart:)` | `SessionLinkDrag.swift` | Makes a session row drag onto a composer as that session's chip (the Agents list, the ⇧⌘K palette); `onStart` gets what floats over the composer out of the way |
 | `.rowActionsBackdrop(_:)` | `NookButtons.swift` | Puts a list row's hover buttons on the row's own fill, fading in from the left, so the title runs out softly underneath them instead of colliding with them |
 | `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
+| `NookSkeleton`, `NookSkeletonLines`, `CopiedBadge` | `NookFeedback.swift` | Loading and copy feedback: a soft breathing placeholder in the shape of the content to come (use a few instead of a spinner where the layout is known; `PatientSpinner` stays for a pane of unknown shape), and the "Copied" chip for a place with no button to turn into a checkmark |
 | `PatientSpinner` | `PatientSpinner.swift` | What a panel or pane shows while its content loads: invisible for the first 350 ms, then a small spinner that fades in |
 | `ListEmptyNote` | `Shared/ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
 | `.cardBackground(_:stroke:radius:style:)` | `Shared/CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
