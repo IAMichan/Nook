@@ -341,6 +341,7 @@ targets:
       - path: Brain/AIProvider.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
+      - path: Core/LineDiff.swift
       - path: Core/ArchivePurge.swift
       - path: Core/NookLook.swift
       - path: NotchUI/Theme/NookPalette.swift
@@ -540,6 +541,10 @@ targets:
       - path: Services/SelectionAsk.swift
       - path: Services/Workspace/UnifiedDiff.swift
       - path: Services/Workspace/DiffDisplay.swift
+      - path: Services/Workspace/ArtifactKind.swift
+      - path: Services/Workspace/ArtifactHistory.swift
+      - path: Services/Workspace/HunkPatch.swift
+      - path: Services/Workspace/SidePanelTabOrder.swift
       - path: Services/Workspace/ScratchProjects.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
