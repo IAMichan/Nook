@@ -286,4 +286,27 @@ final class LookThemesTests: XCTestCase {
         quotes.add("cache is warm", source: c)
         XCTAssertEqual(quotes.items.first?.source, c)
     }
+
+    // MARK: Diff colors
+
+    func testDiffColorsComeFromTheThemesPalette() {
+        for theme in NookColorTheme.builtIn {
+            for palette in [theme.dark, theme.light].compactMap({ $0 }) {
+                XCTAssertEqual(NookDiffColors.redGreen.added(palette), palette.mint, theme.id)
+                XCTAssertEqual(NookDiffColors.redGreen.removed(palette), palette.coral, theme.id)
+                XCTAssertEqual(NookDiffColors.blueOrange.added(palette), palette.blue, theme.id)
+                XCTAssertNotEqual(NookDiffColors.blueOrange.added(palette), NookDiffColors.blueOrange.removed(palette), theme.id)
+                XCTAssertNotEqual(NookDiffColors.blueOrange.modified(palette), palette.blue,
+                                  "\(theme.id): a changed file is not drawn as an added one")
+            }
+        }
+    }
+
+    func testBlueOrangeRemovedIsAnOrange() throws {
+        let palette = try XCTUnwrap(NookColorTheme.nook.dark)
+        let removed = NookColor.components(NookDiffColors.blueOrange.removed(palette))
+        XCTAssertGreaterThan(removed.r, removed.g)
+        XCTAssertGreaterThan(removed.g, removed.b)
+        XCTAssertGreaterThan(removed.g, 0.4, "orange, not the red that red-green color blindness mixes up with green")
+    }
 }

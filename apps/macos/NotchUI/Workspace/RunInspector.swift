@@ -105,8 +105,8 @@ struct RunInspector: View {
                     let added = files.compactMap(\.added).reduce(0, +)
                     let removed = files.compactMap(\.removed).reduce(0, +)
                     HStack(spacing: NookTheme.Spacing.md) {
-                        Text("+\(added)").foregroundStyle(NookTheme.mint)
-                        Text("−\(removed)").foregroundStyle(NookTheme.coral)
+                        Text("+\(added)").foregroundStyle(NookTheme.diffAdded)
+                        Text("−\(removed)").foregroundStyle(NookTheme.diffRemoved)
                         Text(tr("ws.inspector.filesChanged", files.count)).foregroundStyle(WS.tertiary)
                     }
                     .font(NookTheme.mono(11.5))
@@ -283,8 +283,8 @@ struct FileChangeRow: View {
                 .lineLimit(1)
                 .truncationMode(.head)
             Spacer(minLength: 4)
-            if let added = file.added { Text("+\(added)").foregroundStyle(NookTheme.mint.opacity(0.85)) }
-            if let removed = file.removed, removed > 0 { Text("−\(removed)").foregroundStyle(NookTheme.coral.opacity(0.85)) }
+            if let added = file.added { Text("+\(added)").foregroundStyle(NookTheme.diffAdded.opacity(0.85)) }
+            if let removed = file.removed, removed > 0 { Text("−\(removed)").foregroundStyle(NookTheme.diffRemoved.opacity(0.85)) }
         }
         .font(NookTheme.mono(10.5))
         .padding(.vertical, 3)
