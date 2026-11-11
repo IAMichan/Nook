@@ -11,6 +11,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Settings › Maintenance can copy a redacted diagnostics report: versions and set-up facts with secrets, mail
+  addresses, phone numbers, IBANs, link queries and your name in file paths taken out. Nothing is sent anywhere.
+  Nook also has a shared last-synced and offline line, and plural-aware texts, for every surface.
+
 - A new session remembers your choices per folder: its agent, account, model, effort, mode, permissions and whether
   it works in a worktree come back whenever you start in that folder, instead of the choices you last used elsewhere.
   A folder you have not used yet starts with your last choices, and what a project sets in Settings still wins. Also
