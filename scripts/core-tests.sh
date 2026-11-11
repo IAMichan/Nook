@@ -90,6 +90,51 @@ public protocol ObservableObject: AnyObject {}
 }
 #endif
 
+// URLRequest, URLSession and HTTPURLResponse live in FoundationNetworking on Linux.
+#if canImport(FoundationNetworking)
+@_exported import FoundationNetworking
+#endif
+
+// Linux's Foundation has no NSDataDetector. Links and mail addresses are found with a pattern close to what Apple's
+// detector finds (for ChatFormat's "Copy link"); dates are not detected here, so their tests skip or run on a Mac.
+#if !canImport(Darwin)
+extension NSTextCheckingResult.CheckingType {
+    public static let date = NSTextCheckingResult.CheckingType(rawValue: 1 << 3)
+    public static let link = NSTextCheckingResult.CheckingType(rawValue: 1 << 5)
+}
+
+public final class NSDataDetector {
+    public struct Match {
+        public let range: NSRange
+        public let url: URL?
+        public let date: Date? = nil
+    }
+
+    private let types: NSTextCheckingResult.CheckingType
+    private static let links = try! NSRegularExpression(pattern:
+        #"(?:mailto:)?[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}|(?:https?://|www\.)[^\s<>"'`()\[\]]*[^\s<>"'`()\[\].,;:!?]"#)
+
+    public init(types: NSTextCheckingResult.CheckingType.RawValue) throws {
+        self.types = NSTextCheckingResult.CheckingType(rawValue: types)
+    }
+
+    public func matches(in string: String, options: NSRegularExpression.MatchingOptions = [], range: NSRange) -> [Match] {
+        guard types.contains(.link) else { return [] }
+        let text = string as NSString
+        return Self.links.matches(in: string, options: options, range: range).compactMap { match in
+            let written = text.substring(with: match.range)
+            let address: String
+            if written.contains("@") && !written.contains("/") {
+                address = written.hasPrefix("mailto:") ? written : "mailto:" + written
+            } else {
+                address = written.hasPrefix("www.") ? "http://" + written : written
+            }
+            return URL(string: address).map { Match(range: match.range, url: $0) }
+        }
+    }
+}
+#endif
+
 // `tr` lives in Core/I18n.swift, which needs SwiftUI and is not part of this package: a text is its key here.
 func tr(_ key: String, _ args: CVarArg...) -> String { key }
 
