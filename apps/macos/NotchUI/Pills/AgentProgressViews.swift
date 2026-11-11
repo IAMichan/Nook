@@ -100,7 +100,7 @@ struct VerificationChips: View {
                 .foregroundStyle(Self.color(check.outcome))
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .padding(.vertical, NookTheme.Spacing.xxs)
-                .background(Capsule().fill(Self.color(check.outcome).opacity(0.12)))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(Self.color(check.outcome).opacity(0.12)))
                 .help(labelled ? check.command : Self.text(check) + " · " + check.command)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Self.text(check))

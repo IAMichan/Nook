@@ -132,8 +132,8 @@ struct PullRequestCommitEntry: View {
                             .font(NookTheme.font(9, .bold))
                             .foregroundStyle(NookTheme.textTertiary)
                             .frame(width: 20, height: 14)
-                            .background(Capsule().fill(expanded ? NookTheme.rowSelected : NookTheme.rowHover))
-                            .contentShape(Capsule())
+                            .background(NookTheme.shape(NookTheme.Radius.control).fill(expanded ? NookTheme.rowSelected : NookTheme.rowHover))
+                            .contentShape(NookTheme.shape(NookTheme.Radius.control))
                     }
                     .buttonStyle(.plain)
                     .help(tr("agents.pr.timeline.commitDetails"))

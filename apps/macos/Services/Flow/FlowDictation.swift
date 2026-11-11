@@ -493,8 +493,8 @@ private struct FlowPillView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 40)
-        .background(Capsule().fill(Color.black.opacity(0.82)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12)))
+        .background(NookTheme.shape(NookTheme.Radius.panel).fill(Color.black.opacity(0.82)))
+        .overlay(NookTheme.shape(NookTheme.Radius.panel).strokeBorder(Color.white.opacity(0.12)))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

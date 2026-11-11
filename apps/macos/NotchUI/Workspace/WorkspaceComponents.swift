@@ -100,7 +100,7 @@ struct StatusBadge: View {
         .padding(.horizontal, compact ? 0 : 8)
         .frame(height: compact ? 16 : 22)
         .background {
-            if !compact { Capsule().fill(status.color.opacity(0.13)) }
+            if !compact { NookTheme.shape(NookTheme.Radius.chip).fill(status.color.opacity(0.13)) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(status.label)

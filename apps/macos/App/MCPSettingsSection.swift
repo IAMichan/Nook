@@ -216,7 +216,7 @@ private struct MCPServerDetailSheet: View {
                                         .font(NookTheme.TextStyle.label)
                                         .padding(.horizontal, NookTheme.Spacing.sm)
                                         .padding(.vertical, NookTheme.Spacing.xxs)
-                                        .background(Capsule().fill(NookTheme.smoke))
+                                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
                                         .foregroundStyle(NookTheme.textSecondary)
                                 }
                             }

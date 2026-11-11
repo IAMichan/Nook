@@ -778,7 +778,7 @@ private struct SessionQuestionOptionButton: View {
                                 .foregroundStyle(NookTheme.amber)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 1.5)
-                                .background(Capsule().fill(NookTheme.amber.opacity(0.18)))
+                                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.18)))
                         }
                     }
 

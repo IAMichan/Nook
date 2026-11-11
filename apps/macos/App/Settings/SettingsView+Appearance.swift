@@ -117,8 +117,8 @@ extension SettingsView {
                             .padding(.horizontal, NookTheme.Spacing.md)
                             .padding(.vertical, NookTheme.Spacing.xs)
                             .foregroundStyle(selected ? NookTheme.onIris : NookTheme.textStrong)
-                            .background(Capsule().fill(selected ? NookTheme.iris : NookTheme.smoke))
-                            .contentShape(Capsule())
+                            .background(NookTheme.shape(NookTheme.Radius.control).fill(selected ? NookTheme.iris : NookTheme.smoke))
+                            .contentShape(NookTheme.shape(NookTheme.Radius.control))
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])

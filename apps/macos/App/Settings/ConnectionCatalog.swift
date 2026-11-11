@@ -299,8 +299,8 @@ struct ConnectionCategoryChips: View {
                 .foregroundStyle(active ? NookTheme.onIris : NookTheme.textStrong)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .padding(.vertical, NookTheme.Spacing.xs + 1)
-                .background(Capsule().fill(active ? NookTheme.iris : NookTheme.smoke))
-                .contentShape(Capsule())
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(active ? NookTheme.iris : NookTheme.smoke))
+                .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(active ? .isSelected : [])

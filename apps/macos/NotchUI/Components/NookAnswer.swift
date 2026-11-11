@@ -139,8 +139,8 @@ struct AnswerSourceChip: View {
             .padding(.trailing, NookTheme.Spacing.md)
             .frame(height: 24)
             .frame(maxWidth: 220, alignment: .leading)
-            .background(Capsule().fill(hovering && openable ? NookTheme.smoke : NookTheme.field))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering && openable ? NookTheme.smoke : NookTheme.field))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .disabled(!openable)
@@ -171,8 +171,8 @@ struct AnswerOfferChip: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 28)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : NookTheme.field))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

@@ -553,7 +553,7 @@ private struct ChatBubbleView: View, Equatable {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
-        .background(Capsule().fill(NookTheme.ink.opacity(0.55)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.55)))
         .padding(NookTheme.Spacing.sm)
         .allowsHitTesting(false)
     }
@@ -1073,7 +1073,7 @@ private struct ChatJumpButton: View {
                 .overlay(alignment: .topTrailing) {
                     if missed > 0 {
                         NookCountBadge(count: missed)
-                            .background(Capsule().fill(NookTheme.canvas))
+                            .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.canvas))
                             .offset(x: NookTheme.Spacing.xs, y: -NookTheme.Spacing.xs)
                     }
                 }
@@ -1194,11 +1194,11 @@ private struct ReactionChips: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
         .background {
-            Capsule()
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(NookTheme.chatTheirs)
-                .overlay(Capsule().fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
+                .overlay(NookTheme.shape(NookTheme.Radius.chip).fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
         }
-        .contentShape(Capsule())
+        .contentShape(NookTheme.shape(NookTheme.Radius.chip))
     }
 
     /// Who put each emoji there, in one line for the tooltip: "👍 Anna, You · ❤️ Jan".
@@ -1513,7 +1513,7 @@ struct VideoTile: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, NookTheme.Spacing.xs)
                     .padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.ink.opacity(0.6)))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.6)))
                     .padding(NookTheme.Spacing.sm)
                     .allowsHitTesting(false)
             }

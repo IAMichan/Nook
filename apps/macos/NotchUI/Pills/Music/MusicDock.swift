@@ -108,7 +108,7 @@ struct MusicShowAllButton: View {
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 26)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
