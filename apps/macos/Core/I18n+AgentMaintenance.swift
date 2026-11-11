@@ -56,6 +56,8 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.failed": "Updating %@ failed",
         "agentUpdate.pickerTitle": "Update %@",
         "agentUpdate.pickerDetail": "Unlocks the models that need %@ or newer",
+        "ws.recovery.updateAgent": "Update %@",
+        "ws.versionRejected.endpoint": "The custom API endpoint %@ reported %@ %@, but this session runs %@. Updating will not fix this: the endpoint, or a proxy behind it, rewrote the version.",
     ],
     .nl: [
         "ws.subthread.done": "Klaar",
@@ -109,6 +111,8 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.failed": "Bijwerken van %@ mislukt",
         "agentUpdate.pickerTitle": "%@ bijwerken",
         "agentUpdate.pickerDetail": "Ontgrendelt de modellen die %@ of nieuwer nodig hebben",
+        "ws.recovery.updateAgent": "%@ bijwerken",
+        "ws.versionRejected.endpoint": "Het eigen API-adres %@ meldde %@ %@, maar deze sessie draait %@. Bijwerken lost dit niet op: het adres, of een proxy erachter, heeft de versie herschreven.",
     ],
     .de: [
         "ws.subthread.done": "Fertig",
@@ -162,6 +166,8 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.failed": "Aktualisierung von %@ fehlgeschlagen",
         "agentUpdate.pickerTitle": "%@ aktualisieren",
         "agentUpdate.pickerDetail": "Schaltet die Modelle frei, die %@ oder neuer brauchen",
+        "ws.recovery.updateAgent": "%@ aktualisieren",
+        "ws.versionRejected.endpoint": "Der eigene API-Endpunkt %@ meldete %@ %@, aber diese Sitzung läuft mit %@. Ein Update hilft hier nicht: Der Endpunkt oder ein Proxy dahinter hat die Version umgeschrieben.",
     ],
     .fr: [
         "ws.subthread.done": "Terminé",
@@ -215,6 +221,8 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.failed": "La mise à jour de %@ a échoué",
         "agentUpdate.pickerTitle": "Mettre à jour %@",
         "agentUpdate.pickerDetail": "Débloque les modèles qui demandent %@ ou plus récent",
+        "ws.recovery.updateAgent": "Mettre à jour %@",
+        "ws.versionRejected.endpoint": "Le point d’accès API personnalisé %@ a indiqué %@ %@, mais cette session utilise %@. Une mise à jour n’y changera rien : le point d’accès, ou un proxy derrière lui, a réécrit la version.",
     ],
     .es: [
         "ws.subthread.done": "Hecho",
@@ -268,5 +276,7 @@ let agentMaintenanceTranslations: [AppLanguage: [String: String]] = [
         "agentUpdate.failed": "No se pudo actualizar %@",
         "agentUpdate.pickerTitle": "Actualizar %@",
         "agentUpdate.pickerDetail": "Desbloquea los modelos que necesitan %@ o posterior",
+        "ws.recovery.updateAgent": "Actualizar %@",
+        "ws.versionRejected.endpoint": "El endpoint de API personalizado %@ indicó %@ %@, pero esta sesión usa %@. Actualizar no lo arreglará: el endpoint, o un proxy detrás de él, reescribió la versión.",
     ],
 ]

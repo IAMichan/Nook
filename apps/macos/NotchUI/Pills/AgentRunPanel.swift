@@ -1191,6 +1191,13 @@ struct AgentRunPanel: View {
                 }
                 .disabled(signingIn)
             }
+            // The API refused this agent's version for the model: Settings › Agents updates it after you confirm.
+            if run.status == .failed, !run.isRemote, AgentUpdates.updatable(run.provider),
+               AgentVersionRejection.parse(run.statusDetail) != nil {
+                NookPrimaryButton(title: tr("ws.recovery.updateAgent", run.provider.displayName), symbol: "arrow.down.circle") {
+                    app.requestAgentUpdate([run.provider])
+                }
+            }
         }
         .padding(10)
         .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
