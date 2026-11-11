@@ -6,7 +6,7 @@ name: PR size
 # out or runs the pull request's code. Runs on ubuntu and takes seconds. The labels themselves are defined in
 # .github/labels.yml.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] reads the file list through the API, runs no PR code
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:

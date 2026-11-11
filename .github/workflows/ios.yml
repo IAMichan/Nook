@@ -21,6 +21,8 @@ jobs:
       verified: ${{ steps.verified.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Keep this list in sync with scripts/ci-changes.sh.
       - name: Already verified on these inputs?
         id: verified
@@ -39,6 +41,8 @@ jobs:
         working-directory: apps/ios
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Select newest Xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"

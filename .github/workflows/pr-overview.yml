@@ -1,0 +1,54 @@
+name: PR overview
+
+# Keeps one comment at the top of every open pull request up to date: size, author, areas, CI, description, review,
+# and the next steps before it can merge (.github/scripts/pr-overview.cjs). Contributors see what to do without reading
+# every check, and a maintainer sees at a glance whether a pull request is ready.
+#
+# It wakes up on pull request changes and whenever one of the pull request workflows finishes. The script is loaded
+# from the default branch and only calls the GitHub API: no pull request code is checked out or run, which is what
+# makes pull_request_target and workflow_run (both with a write token, also for forks) safe here.
+# Reviews on pull requests from forks only refresh the comment at the next push or CI result: GitHub gives the
+# pull_request_review event of a fork a read-only token.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] runs only the trusted script from main, never PR code
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+  workflow_run: # zizmor: ignore[dangerous-triggers] same: reads check results through the API only
+    workflows: [CI, PR template, PR size, PR vouch, Labeler, Agent context budget]
+    types: [requested, completed]
+
+permissions: {}
+
+# One update at a time per commit; the newest event wins, because the script always reads the current state.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish overview
+    # workflow_run: only when it came from a pull request. pull_request_review: only for branches of this repository
+    # (a fork's review event has a read-only token; the next push or CI result refreshes the comment instead).
+    if: >-
+      (github.event_name == 'workflow_run' && contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event)) ||
+      (github.event_name == 'pull_request_review' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write
+      issues: write # the overview is an issue comment on the pull request
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const overview = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/pr-overview.cjs`);
+            await overview.run({ github, context, core });

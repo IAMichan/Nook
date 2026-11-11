@@ -447,7 +447,7 @@ New here? Look for issues labeled [`good first issue`](https://github.com/IAMich
 
 ## Community & Support
 
-- **Questions, bugs, and feature requests:** [open an issue](https://github.com/IAMichan/nook/issues/new/choose).
+- **Bugs:** [open an issue](https://github.com/IAMichan/nook/issues/new/choose). **Ideas and questions:** [Discussions](https://github.com/IAMichan/nook/discussions).
 - **Security vulnerabilities:** report privately via [SECURITY.md](SECURITY.md), not in public issues.
 - **Like Nook?** Give the repo a ⭐ and tell a friend.
 
