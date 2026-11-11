@@ -61,6 +61,23 @@ enum BrandLogo: String, CaseIterable {
         }
     }
 
+    /// The colors of the mark, for things drawn in the brand's colors (the glow over a browser an agent drives). A mark
+    /// in one plain color gets its ink and a neutral grey, so the glow still reads on a white page as on a dark one.
+    var palette: [Color] {
+        switch self {
+        case .claude: return [Color(hex: 0xD97757), Color(hex: 0xF0A07C)]
+        case .gemini, .gemma: return [Color(hex: 0x4F8BF7), Color(hex: 0x9B72F2)]
+        case .mistral: return [Color(hex: 0xFA520F), Color(hex: 0xFFB000)]
+        case .groq: return [Color(hex: 0xF55036)]
+        case .openrouter: return [Color(hex: 0x8B8EFF)]
+        case .deepseek: return [Color(hex: 0x5B7BFF)]
+        case .qwen: return [Color(hex: 0x7C78F5)]
+        case .kimi: return [Color(hex: 0x3A9BFF)]
+        case .meta: return [Color(hex: 0x1D9BF0), Color(hex: 0x0866FF)]
+        case .openai, .ollama, .grok, .lmstudio, .opencode, .cursor: return [Self.ink, Color(hex: 0x8E8E98)]
+        }
+    }
+
     /// Whether the mark is one plain color (black or white in the brand's own art), so it can follow the text color.
     var isMonochrome: Bool { [.openai, .ollama, .grok, .lmstudio, .opencode, .cursor].contains(self) }
 
