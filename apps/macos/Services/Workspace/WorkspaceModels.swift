@@ -1382,3 +1382,14 @@ enum ModelSwitchText {
         return side(change.from, model: model, effort: effort) + " → " + side(change.to, model: model, effort: effort)
     }
 }
+
+extension RunEvent {
+    /// Does this event move the session's "last active" time (its place in the list and its unread state)? The launch
+    /// line never does. A note Nook adds on its own to a quiet session (its pull request merged, its worktree cleaned up
+    /// after that) is no activity either: a chat finished long ago would otherwise jump to the top of the list. Notes
+    /// during a turn do count, and so does what the agent or you write.
+    func countsAsActivity(runActive: Bool) -> Bool {
+        guard kind == .system else { return true }
+        return tool != "launch" && runActive
+    }
+}
