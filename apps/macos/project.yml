@@ -265,6 +265,7 @@ targets:
       - path: Core/I18n+MailSend.swift
       - path: Core/I18n+FileViewer.swift
       - path: Core/I18n+PolishLists.swift
+      - path: Core/I18n+LineageControl.swift
       - path: Core/I18n+PolishComposers.swift
       - path: Core/I18n+PolishNotch.swift
       - path: Core/I18n+PolishRendering.swift
@@ -421,6 +422,7 @@ targets:
       - path: Services/Workspace/AgentStatusStyle.swift
       - path: Services/Workspace/TimelineCopy.swift
       - path: Services/Workspace/InboxLayout.swift
+      - path: Services/Workspace/SubThreadLineage.swift
       - path: Services/Workspace/UndoLog.swift
       - path: Services/Workspace/AutoSettlePolicy.swift
       - path: Services/Workspace/MessageQueue.swift

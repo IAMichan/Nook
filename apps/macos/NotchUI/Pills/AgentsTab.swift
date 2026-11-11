@@ -253,7 +253,7 @@ struct AgentsTab: View {
     private func step(_ offset: Int, in entries: ListEntries, current: String) -> Bool {
         let ids = (entries.running + entries.earlier).map(\.id)
         guard !ids.isEmpty else { return false }
-        let next = ids.firstIndex(of: current).map { $0 + offset } ?? (offset > 0 ? 0 : ids.count - 1)
+        let next = ids.firstIndex(of: entries.rowID(current)).map { $0 + offset } ?? (offset > 0 ? 0 : ids.count - 1)
         guard ids.indices.contains(next) else { return false }
         open(ids[next])
         return true
@@ -275,7 +275,7 @@ struct AgentsTab: View {
     /// The keys that act on the list and the open session. Each lets the key go (false) when it has nothing to act on.
     /// Whether a session on the back and forward trail is still in the list.
     private func exists(_ id: String, in entries: ListEntries) -> Bool {
-        entries.running.contains { $0.id == id } || entries.earlier.contains { $0.id == id }
+        entries.standIn[id] != nil || entries.running.contains { $0.id == id } || entries.earlier.contains { $0.id == id }
     }
 
     @discardableResult
@@ -405,6 +405,12 @@ struct AgentsTab: View {
         let running: [AgentListItem]
         let earlier: [AgentListItem]
         let busyKeys: Set<String>
+        /// The sub-threads that live inside their parent's view instead of as rows (`SubThreadListing`), each with the
+        /// row that stands in for it while it is open.
+        var standIn: [String: String] = [:]
+
+        /// The row for `id`: its own, or for a sub-thread its nearest listed ancestor's.
+        func rowID(_ id: String) -> String { standIn[id] ?? id }
     }
 
     private func listEntries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession]) -> ListEntries {
@@ -414,39 +420,54 @@ struct AgentsTab: View {
         for run in app.workspace.runs where run.lineage?.kind == .comparison {
             if let parent = run.lineage?.parentID { comparisons[parent, default: 0] += 1 }
         }
-        let built = sorted(runs.map { item($0, comparisons: comparisons) } + live.map { item($0, transcript: transcripts[$0.id]) })
-        let busyKeys = Set(built.filter(\.isBusy).map(\.finishKey))
-        let (running, earlier) = Self.linkSpawned(running: built,
-                                                  past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) })
-        return ListEntries(running: running, earlier: earlier, busyKeys: busyKeys)
+        let all = runs.map { item($0, comparisons: comparisons) } + live.map { item($0, transcript: transcripts[$0.id]) }
+        let busyKeys = Set(all.filter(\.isBusy).map(\.finishKey))
+        let (built, standIn) = Self.subThreadsUnderParents(all, runs: app.workspace.runs)
+        let earlier = past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) }
+        return ListEntries(running: sorted(built), earlier: earlier, busyKeys: busyKeys, standIn: standIn)
+    }
+
+    /// The list keeps it: flat. A delegated task or side chat has no row while its parent has one (the parent's
+    /// Lineage control lists it); the parent's row stands in for it while it is open, and shows the approval it waits for,
+    /// and for a side chat its question too. A fork or a comparison keeps a row of its own, at the same level.
+    private static func subThreadsUnderParents(_ items: [AgentListItem], runs: [WorkspaceRun])
+        -> (items: [AgentListItem], standIn: [String: String]) {
+        var links: [String: SubThreadLink] = [:]
+        for run in runs {
+            guard let parent = run.parentRunID, let relation = run.subThreadRelation else { continue }
+            links["run:" + run.id.uuidString] = SubThreadLink(parent: "run:" + parent.uuidString, relation: relation)
+        }
+        let hidden = SubThreadListing.hidden(links, listed: Set(items.map(\.id)))
+        var open: [String: SubThreadRequest] = [:]
+        for item in items where links[item.id] != nil {
+            if item.status == .waiting { open[item.id] = .approval } else if item.status == .input { open[item.id] = .question }
+        }
+        let flagged = SubThreadListing.requests(links, open: open)
+        let shown = items.filter { !hidden.contains($0.id) }.map { item -> AgentListItem in
+            var item = item
+            // Flat: no row sits under another one.
+            item.parentID = nil
+            switch flagged[item.id] {
+            case .approval?: item.status = .waiting
+            case .question? where item.status != .waiting: item.status = .input
+            default: break
+            }
+            return item
+        }
+        var standIn: [String: String] = [:]
+        for id in hidden { standIn[id] = SubThreadListing.rowID(for: id, links: links, hidden: hidden) }
+        return (shown, standIn)
     }
 
     private func sessionList(_ entries: ListEntries, selection: Selection) -> some View {
-        let current = selectedID(selection)
+        // An open sub-thread has no row: its parent's row is the one that shows as open.
+        let current = entries.rowID(selectedID(selection))
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.nookTicks(every: 30)) { context in
                 AgentInboxList(items: entries.running, past: entries.earlier, current: current, now: context.date,
                                headerActions: sidebar == nil ? nil : AnyView(listActions(selection, isNew: current == "new"))) { open($0) }
             }
         }
-    }
-
-    /// Gives a session another one spawned (Claude desktop's suggested tasks) that one as its parent, so the list shows it
-    /// underneath. A parent Nook already knows (delegated, forked) stays.
-    private static func linkSpawned(running: [AgentListItem], past: [AgentListItem]) -> ([AgentListItem], [AgentListItem]) {
-        let all = running + past
-        guard all.contains(where: { !$0.spawnedTasks.isEmpty }) else { return (running, past) }
-        let parents = SpawnedSessions.parents(
-            firstPrompts: Dictionary(all.map { ($0.id, $0.firstPrompt) }, uniquingKeysWith: { first, _ in first }),
-            tasks: Dictionary(all.filter { !$0.spawnedTasks.isEmpty }.map { ($0.id, $0.spawnedTasks) }, uniquingKeysWith: { first, _ in first }))
-        func linked(_ items: [AgentListItem]) -> [AgentListItem] {
-            items.map { item in
-                var item = item
-                if item.parentID == nil { item.parentID = parents[item.id] }
-                return item
-            }
-        }
-        return (linked(running), linked(past))
     }
 
     /// Waiting for you first, then working, then the rest; newest first within each.
