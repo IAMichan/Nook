@@ -80,3 +80,41 @@ struct ConnectorSignInMenu: View {
         .onHover { hovering = $0 }
     }
 }
+
+/// The connectors in the session menu: a few are listed as they are; a longer list folds into one row that opens a
+/// short scrolling list in place, so twenty plugin connectors do not push the rest of the menu off the screen.
+struct ConnectorSignInGroup: View {
+    @EnvironmentObject private var workspace: WorkspaceManager
+    let runID: UUID
+    let connectors: [ConnectorSignIn]
+    @State private var expanded = false
+
+    /// Up to this many show without folding.
+    private static let inlineLimit = 3
+
+    var body: some View {
+        if connectors.count <= Self.inlineLimit {
+            DropdownHeader(title: tr("ws.connector.menu"))
+            rows
+        } else {
+            DropdownRow(symbol: "powerplug", title: tr("ws.connector.menu"),
+                        trailing: "\(connectors.count)", staysOpen: true, expanded: expanded) {
+                expanded.toggle()
+            }
+            if expanded {
+                DropdownList(maxHeight: 186) { rows }
+            }
+        }
+    }
+
+    private var rows: some View {
+        ForEach(connectors) { connector in
+            DropdownRow(symbol: connector.waiting ? "hourglass" : "person.badge.key",
+                        title: connector.waiting ? tr("ws.connector.waiting", connector.title) : connector.title,
+                        trailing: connector.waiting ? nil : tr("ws.connector.signIn"),
+                        disabledReason: connector.waiting ? tr("ws.connector.waitingHelp") : nil) {
+                workspace.signInConnector(runID, name: connector.name)
+            }
+        }
+    }
+}
