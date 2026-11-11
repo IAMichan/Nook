@@ -74,6 +74,7 @@ struct ConnectionsPage: View {
             ChatOptionsSection()
         case .services:
             Group {
+                ConnectorHealthSection(hub: app.connectors)
                 if !services.isEmpty || query.isEmpty {
                     servicesSection(services, popular: nothingLinked ? featured(ConnectionCatalog.featuredServices, in: options) : [])
                 }
