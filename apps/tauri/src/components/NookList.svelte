@@ -5,7 +5,13 @@
   import { nook } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
   import { conversationGroups, recoverDeletedConversation } from "../lib/conversation-list";
+  import { tr } from "../lib/i18n.svelte";
   import type { ConversationSummary } from "../lib/types";
+
+  const groupTitle: Record<string, [string, string]> = {
+    pinned: ["Vastgezet", "Pinned"], today: ["Vandaag", "Today"], yesterday: ["Gisteren", "Yesterday"],
+    previous7: ["Afgelopen 7 dagen", "Previous 7 days"], older: ["Ouder", "Older"],
+  };
 
   type SearchState = { kind: "idle" } | { kind: "loading" } | { kind: "error" } | { kind: "ready"; items: ConversationSummary[] };
   let query = $state("");
@@ -20,7 +26,7 @@
   const deleted = new Set<string>();
 
   const groups = $derived(query.trim()
-    ? search.kind === "ready" ? [{ title: "Search results", items: search.items }] : []
+    ? search.kind === "ready" ? [{ id: "search", title: "Search results", items: search.items }] : []
     : conversationGroups(nook.nooks, nook.activeId));
   const list = $derived(groups.flatMap((group) => group.items));
 
@@ -137,7 +143,7 @@
       <div class="state" role="alert"><p>{query.trim() ? "Could not search conversations." : "Could not load conversations."}</p><button class="ghost" onclick={() => query.trim() ? retry++ : refresh()}>Try again</button></div>
     {/if}
     {#each groups as group}
-      {#if group.items.length}<h2 class="section-label">{group.title}<span>{group.items.length}</span></h2>{/if}
+      {#if group.items.length}<h2 class="section-label">{groupTitle[group.id] ? tr(...groupTitle[group.id]) : group.title}<span>{group.items.length}</span></h2>{/if}
       {#each group.items as item (item.id)}
         <div class="item" class:active={item.id === nook.activeId}>
           <div class="line">
@@ -165,7 +171,7 @@
       {/each}
     {/each}
     {#if !list.length && (query.trim() ? search.kind === "ready" : !loading && !listError)}
-      <div class="list-empty"><Icon name="chat" size={24} /><p>{query.trim() ? "No conversations found" : "A little room to think"}</p><span>{query.trim() ? "Search titles and messages, including archived Nooks." : "Start a Nook. Your conversations will appear here."}</span>{#if query.trim()}<button class="ghost" onclick={() => query = ""}>Clear search</button>{/if}</div>
+      <div class="list-empty"><Icon name="chat" size={24} /><p>{query.trim() ? tr("Niets gevonden", "No conversations found") : tr("Ruimte om na te denken", "A little room to think")}</p><span>{query.trim() ? tr("Zoek in titels en berichten, ook in gearchiveerde Nooks.", "Search titles and messages, including archived Nooks.") : tr("Begin een Nook. Je gesprekken verschijnen hier.", "Start a Nook. Your conversations will appear here.")}</span>{#if query.trim()}<button class="ghost" onclick={() => query = ""}>{tr("Zoekopdracht wissen", "Clear search")}</button>{:else}<button class="ghost" onclick={newNook}>{tr("Nieuwe Nook", "New Nook")}</button>{/if}</div>
     {/if}
   </div>
 </aside>
@@ -180,7 +186,7 @@
   .search:focus-within { border-color: var(--iris); }
   .search input { min-width: 0; width: 100%; border: 0; background: transparent; padding: 9px 0; font-size: 12px; box-shadow: none; }
   .search button { padding: 0 4px; }
-  .section-label { display: flex; justify-content: space-between; margin: 0; padding: 20px 12px 10px; font-size: 10px; color: var(--text3); letter-spacing: 1px; font-weight: 600; }
+  .section-label { display: flex; justify-content: space-between; margin: 0; padding: 16px 12px 6px; font-size: 11px; color: var(--text3); font-weight: 500; }
   .items { overflow-y: auto; flex: 1; padding: 0 10px 14px; }
   .item { border: 1px solid transparent; border-radius: var(--radius-control); margin-bottom: 3px; }
   .item:hover { background: var(--row-hover); }

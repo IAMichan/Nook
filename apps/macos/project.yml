@@ -336,6 +336,7 @@ targets:
       - path: Brain/QueryPlan.swift
       - path: Brain/Memory.swift
       - path: Brain/NookDates.swift
+      - path: Core/DayBuckets.swift
       - path: Brain/AppData.swift
       - path: Brain/BrainSelection.swift
       - path: Brain/PrivateBrief.swift

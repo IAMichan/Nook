@@ -3,13 +3,13 @@
   // die naar de drie instelstappen leidt.
   import { brainApi } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
-  import { tr } from "../lib/i18n.svelte";
+  import { english, tr } from "../lib/i18n.svelte";
   import Composer from "./Composer.svelte";
   import MessageView from "./MessageView.svelte";
   import Onboarding from "./Onboarding.svelte";
   import Orb from "./Orb.svelte";
 
-  let { compact = false, autofocus = false }: { compact?: boolean; autofocus?: boolean } = $props();
+  let { compact = false, autofocus = false, onattention }: { compact?: boolean; autofocus?: boolean; onattention?: () => void } = $props();
   let scroller: HTMLDivElement;
   let starters = $state<string[]>([]);
   let onboarding = $state(false);
@@ -40,6 +40,13 @@
     if (atEnd) queueMicrotask(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
   });
 
+  // A calm greeting for the time of day, the date, and one line on what waits for the user.
+  const hour = new Date().getHours();
+  const greeting = $derived(hour < 6 ? tr("Goedenacht", "Good night") : hour < 12 ? tr("Goedemorgen", "Good morning") : hour < 18 ? tr("Goedemiddag", "Good afternoon") : tr("Goedenavond", "Good evening"));
+  const dateLine = $derived(new Date().toLocaleDateString(english() ? "en" : "nl", { weekday: "long", day: "numeric", month: "long" }));
+  const waiting = $derived(nook.waiting);
+  const attention = $derived(waiting === 1 ? tr("1 gesprek wacht op je", "1 conversation is waiting for you") : tr(`${waiting} gesprekken wachten op je`, `${waiting} conversations are waiting for you`));
+
   const lastId = $derived(nook.active?.messages[nook.active.messages.length - 1]?.id);
 </script>
 
@@ -48,7 +55,10 @@
     {#if empty}
       <div class="empty">
         <div class="welcome-orb"><Orb size={compact ? 44 : 64} movable /></div>
-        <div class="greeting"><span class="eyebrow">{tr("EEN RUIMTE VOOR ALLES", "A LITTLE SPACE FOR EVERYTHING")}</span><h1>{tr("Waar denk je aan?", "What is on your mind?")}</h1><p>{tr("Denk het door. Maak een plan. Zet de volgende stap.", "Think it through. Make a plan. Take the next step.")}</p></div>
+        <div class="greeting"><span class="eyebrow">{dateLine}</span><h1>{greeting}</h1><p>{tr("Denk het door. Maak een plan. Zet de volgende stap.", "Think it through. Make a plan. Take the next step.")}</p></div>
+        {#if waiting && !compact}
+          <button class="attention" onclick={() => onattention?.()}><span class="dot waiting"></span>{attention}<span class="go">{tr("Bekijk", "Review")} →</span></button>
+        {/if}
         {#if welcome}
           <div class="welcome">
             <p>{tr("Koppel een brein om te beginnen. Voeg je tools toe als je er klaar voor bent, zodat Nook je dag kan helpen.", "Connect a brain to get started. Add your tools when you're ready, so Nook can help with your day.")}</p>
@@ -98,7 +108,11 @@
   .err { color: var(--coral); padding: 6px 0; }
   .welcome-orb { padding: 12px; }
   .greeting { text-align: center; }
-  .eyebrow { font-size: 9px; font-weight: 600; letter-spacing: 2px; color: var(--text3); }
+  .eyebrow { font-size: 12px; color: var(--text3); }
+  .attention { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-card); background: var(--surface); border: 1px solid var(--line2); color: var(--text2); font-size: 12px; }
+  .attention:hover { color: var(--paper); }
+  .attention .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex: none; }
+  .attention .go { color: var(--text3); }
   h1 { font-size: clamp(24px, 3vw, 34px); font-weight: 550; letter-spacing: -1.1px; margin: 12px 0 10px; }
   .greeting p, .empty-note { font-size: 12px; line-height: 1.6; color: var(--text2); margin: 0; text-align: center; }
   .empty-note { display: none; }

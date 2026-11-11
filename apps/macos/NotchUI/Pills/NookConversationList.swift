@@ -59,11 +59,14 @@ struct NookList: View {
                                 if !pinned.isEmpty {
                                     sectionLabel(tr("nooks.section.pinned"))
                                     rows(pinned, now: context.date, shown: shown)
-                                    if !rest.isEmpty {
-                                        sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
-                                    }
                                 }
-                                rows(rest, now: context.date, shown: shown)
+                                // The rest by age, as the Claude app groups it: Today, Yesterday, Previous 7 days, Older.
+                                let groups = DayBucket.group(rest, date: \.updated, now: context.date)
+                                ForEach(groups, id: \.bucket) { group in
+                                    sectionLabel(tr(group.bucket.titleKey))
+                                        .padding(.top, pinned.isEmpty && group.bucket == groups.first?.bucket ? 0 : NookTheme.Spacing.md)
+                                    rows(group.items, now: context.date, shown: shown)
+                                }
                             }
                         }
                         .frame(maxHeight: .infinity, alignment: .top)
