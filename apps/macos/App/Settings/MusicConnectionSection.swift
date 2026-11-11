@@ -46,32 +46,26 @@ private struct MusicConnectionForm: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
     @AppStorage("spotifyClientID") private var clientID = ""
     @State private var copiedRedirect = false
+    @State private var confirmSignOut = false
 
     @Environment(\.dismiss) private var dismiss
 
-    /// The same sheet as every connection: numbered steps until Spotify is linked, then its account; Apple Music needs
-    /// nothing, said last.
+    /// The same sheet as every connection: numbered steps until Spotify is linked, ending in Nook's check, then its
+    /// account with signing out on the left of the buttons; Apple Music needs nothing, said last.
     var body: some View {
         SetupSheet(title: "Spotify", subtitle: tr("music.connect.rowDetail"), status: spotify.isSignedIn ? .working : nil) {
             ServiceTile(domain: "spotify.com", fallback: "music.note", tint: NookTheme.iris, size: 48)
         } content: {
             if spotify.isSignedIn {
                 SheetPart(tr("chats.manage.accounts")) {
-                    HStack {
-                        Label(tr("music.connect.spotifyConnected"), systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(NookTheme.mint)
-                        Spacer()
-                        ConfirmedButton(tr("music.connect.signOut"), question: tr("confirm.logout", "Spotify")) { spotify.signOut() }
-                    }
+                    Label(tr("music.connect.spotifyConnected"), systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(NookTheme.mint)
                     SettingNote(tr("music.connect.spotifyConnectedDetail"))
                 }
             } else {
                 SetupStep(number: 1, title: tr("music.connect.stepApp")) {
-                    SettingNote(tr("music.connect.spotifySteps"))
-                    Button {
+                    StepAction(detail: tr("music.connect.spotifySteps"), button: tr("music.connect.dashboard"), prominent: false) {
                         NSWorkspace.shared.open(SpotifyWebAPI.dashboardURL)
-                    } label: {
-                        Label(tr("music.connect.dashboard"), systemImage: "arrow.up.forward.app")
                     }
                     // The redirect the user pastes into the Spotify dashboard: selectable, and one click to copy.
                     HStack(spacing: NookTheme.Spacing.sm) {
@@ -100,8 +94,8 @@ private struct MusicConnectionForm: View {
                         HStack(spacing: NookTheme.Spacing.md) {
                             ProgressView().controlSize(.small)
                             Text(tr("connect.waiting", "Spotify")).font(NookTheme.TextStyle.detail)
-                            Button(tr("button.cancel")) { spotify.cancel() }
                         }
+                        Button(tr("button.cancel")) { spotify.cancel() }
                     default:
                         Button {
                             spotify.signIn(clientID: clientID)
@@ -115,16 +109,27 @@ private struct MusicConnectionForm: View {
                         SettingNote(message, tone: .error)
                     }
                 }
+                SetupCheckStep(number: 4, detail: tr("settings2.step.checkAfterSignIn"),
+                               state: spotify.isSignedIn ? .passed(tr("music.connect.spotifyConnected")) : .idle)
             }
             SheetPart(tr("music.connect.appleMusicTitle")) {
                 SettingNote(tr("music.connect.appleMusic"))
             }
         } footer: {
+            if spotify.isSignedIn {
+                Button(tr("music.connect.signOut"), role: .destructive) { confirmSignOut = true }
+            }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+        }
+        .confirmationDialog(tr("confirm.logout", "Spotify"), isPresented: $confirmSignOut) {
+            Button(tr("music.connect.signOut"), role: .destructive) { spotify.signOut() }
+            Button(tr("button.cancel"), role: .cancel) {}
+        } message: {
+            Text(tr("connection.signOutDetail", "Spotify"))
         }
     }
 }

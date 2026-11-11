@@ -2,10 +2,57 @@ import SwiftUI
 import AppKit
 import Security
 
-/// Settings › Connections › Telegram: the app id and hash from my.telegram.org, then logging in as on a new device (your
-/// number, the code Telegram sends, your password when you set one). Telegram's own library has to be in this build.
+/// Linking Telegram in numbered steps, in the order Telegram asks: the app id and hash from my.telegram.org, your phone
+/// number, the code Telegram sends, and your password only when you set one. The current step shows its part of
+/// `TelegramSettingsRows`; the check after them is the sheet's (`ChatLinkCheckStep`).
+struct TelegramLinkSteps: View {
+    @ObservedObject var telegram: TelegramBridge
+    let onReady: () -> Void
+
+    /// How many steps there are now: one more while Telegram asks for your password.
+    static func count(_ telegram: TelegramBridge) -> Int { stage(telegram) == 4 ? 4 : 3 }
+
+    /// The current step: 1 the keys, 2 the phone number, 3 the code, 4 the password, 5 logged in.
+    static func stage(_ telegram: TelegramBridge) -> Int {
+        switch telegram.state {
+        case .noLibrary, .noKeys: return 1
+        case .stopped, .starting, .failed: return 2
+        case .login(let step):
+            switch step {
+            case .code: return 3
+            case .password: return 4
+            case .ready: return 5
+            case .parameters, .encryptionKey, .phone, .loggingOut, .closed, .other: return 2
+            }
+        }
+    }
+
+    var body: some View {
+        let stage = Self.stage(telegram)
+        SetupStep(number: 1, title: tr("chats.telegram.keys"), done: stage > 1) { current(stage == 1) }
+            // Logged in: its chats are switched on and read right away.
+            .onChange(of: telegram.isReady) { _, ready in if ready { onReady() } }
+        SetupStep(number: 2, title: tr("chats.telegram.phone"), done: stage > 2) { current(stage == 2) }
+        SetupStep(number: 3, title: tr("chats.telegram.code"), done: stage > 3) { current(stage == 3) }
+        if stage == 4 {
+            SetupStep(number: 4, title: tr("chats.telegram.password")) { current(true) }
+        }
+    }
+
+    @ViewBuilder
+    private func current(_ isCurrent: Bool) -> some View {
+        if isCurrent {
+            TelegramSettingsRows(telegram: telegram, inStep: true, onReady: onReady)
+        }
+    }
+}
+
+/// Telegram's link as it stands: the app id and hash from my.telegram.org, then logging in as on a new device (your
+/// number, the code Telegram sends, your password when you set one), then the account. Telegram's own library has to be
+/// in this build. Inside a numbered step (`inStep`) the step's title names the field, so only its line shows.
 struct TelegramSettingsRows: View {
     @ObservedObject var telegram: TelegramBridge
+    var inStep = false
     let onReady: () -> Void
     @State private var apiID = ""
     @State private var apiHash = ""
@@ -16,9 +63,8 @@ struct TelegramSettingsRows: View {
     var body: some View {
         switch telegram.state {
         case .noLibrary:
-            StatusRow(title: tr("chats.telegram.noLibrary"), detail: tr("chats.telegram.noLibraryDetail"), state: .todo) {
-                Button(tr("chats.telegram.checkAgain")) { telegram.resume() }
-            }
+            StepAction(title: tr("chats.telegram.noLibrary"), detail: tr("chats.telegram.noLibraryDetail"),
+                       button: tr("chats.telegram.checkAgain"), prominent: false) { telegram.resume() }
         case .noKeys:
             keys
         case .stopped, .failed:
@@ -48,13 +94,13 @@ struct TelegramSettingsRows: View {
                   button: tr("chats.telegram.logIn")) { telegram.sendCode(code) }
         case .password(let hint):
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                SettingLabel(tr("chats.telegram.password"),
-                             detail: hint.isEmpty ? tr("chats.telegram.passwordDetail") : tr("chats.telegram.passwordHint", hint))
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    SecureField("", text: $password).labelsHidden().textFieldStyle(.roundedBorder)
-                        .onSubmit { telegram.sendPassword(password) }
-                    Button(tr("chats.telegram.logIn")) { telegram.sendPassword(password) }.disabled(password.isEmpty)
-                }
+                heading(tr("chats.telegram.password"),
+                        detail: hint.isEmpty ? tr("chats.telegram.passwordDetail") : tr("chats.telegram.passwordHint", hint))
+                SecureField("", text: $password).labelsHidden().textFieldStyle(.roundedBorder)
+                    .onSubmit { telegram.sendPassword(password) }
+                Button(tr("chats.telegram.logIn")) { telegram.sendPassword(password) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(password.isEmpty)
                 loginError
             }
         case .ready:
@@ -73,12 +119,26 @@ struct TelegramSettingsRows: View {
     private func field(_ title: String, detail: String, text: Binding<String>, prompt: String, button: String,
                        action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            SettingLabel(title, detail: detail)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                TextField("", text: text, prompt: Text(prompt)).labelsHidden().textFieldStyle(.roundedBorder).onSubmit(action)
-                Button(button, action: action).disabled(text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
+            heading(title, detail: detail)
+            TextField("", text: text, prompt: Text(prompt)).labelsHidden().textFieldStyle(.roundedBorder).onSubmit(action)
+            // The step's button, under its field.
+            Button(button, action: action)
+                .buttonStyle(.borderedProminent)
+                .disabled(text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
             loginError
+        }
+    }
+
+    /// What a field asks for: its name and line, or only the line inside a step whose title is the name.
+    @ViewBuilder
+    private func heading(_ title: String, detail: String) -> some View {
+        if inStep {
+            Text(detail)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            SettingLabel(title, detail: detail)
         }
     }
 
@@ -92,21 +152,29 @@ struct TelegramSettingsRows: View {
     /// The app id and hash: Telegram gives every app its own at my.telegram.org › API development tools.
     private var keys: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            SettingLabel(tr("chats.telegram.keys"), detail: tr("chats.telegram.keysDetail"))
-            HStack(spacing: NookTheme.Spacing.sm) {
-                TextField("", text: $apiID, prompt: Text("api_id")).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 110)
-                SecureField("", text: $apiHash, prompt: Text("api_hash")).labelsHidden().textFieldStyle(.roundedBorder)
-                Button(tr("chats.slack.save")) { saveKeys() }
-                    .disabled(Int(apiID.trimmingCharacters(in: .whitespaces)) == nil || apiHash.trimmingCharacters(in: .whitespaces).count < 16)
-            }
+            heading(tr("chats.telegram.keys"), detail: tr("chats.telegram.keysDetail"))
             Button(tr("chats.telegram.openSite")) {
                 if let url = URL(string: "https://my.telegram.org/apps") { NSWorkspace.shared.open(url) }
             }
             .buttonStyle(.link)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                TextField("", text: $apiID, prompt: Text("api_id")).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 110)
+                SecureField("", text: $apiHash, prompt: Text("api_hash")).labelsHidden().textFieldStyle(.roundedBorder)
+                    .onSubmit { saveKeys() }
+            }
+            // The step's button, under its fields.
+            Button(tr("chats.slack.save")) { saveKeys() }
+                .buttonStyle(.borderedProminent)
+                .disabled(!keysValid)
         }
     }
 
+    private var keysValid: Bool {
+        Int(apiID.trimmingCharacters(in: .whitespaces)) != nil && apiHash.trimmingCharacters(in: .whitespaces).count >= 16
+    }
+
     private func saveKeys() {
+        guard keysValid else { return }
         let id = apiID.trimmingCharacters(in: .whitespaces)
         let hash = apiHash.trimmingCharacters(in: .whitespaces)
         guard Int(id) != nil, Keychain.write(id, account: TelegramBridge.apiIDAccount) == errSecSuccess,
@@ -126,13 +194,16 @@ struct TelegramKeysButton: View {
     @ObservedObject var telegram: TelegramBridge
 
     var body: some View {
-        Button(tr("chats.telegram.changeKeys")) {
-            Keychain.remove(TelegramBridge.apiIDAccount)
-            Keychain.remove(TelegramBridge.apiHashAccount)
-            telegram.stop()
-            telegram.resume()
-        }
-        .buttonStyle(.link)
+        Button(tr("chats.telegram.changeKeys")) { Self.reset(telegram) }
+            .buttonStyle(.link)
+    }
+
+    /// Forgets the keys Nook keeps, so Telegram asks for new ones.
+    static func reset(_ telegram: TelegramBridge) {
+        Keychain.remove(TelegramBridge.apiIDAccount)
+        Keychain.remove(TelegramBridge.apiHashAccount)
+        telegram.stop()
+        telegram.resume()
     }
 }
 
@@ -193,15 +264,18 @@ struct TeamsSettingsRows: View {
         case .code(let code):
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 SettingLabel(tr("chats.teams.typeCode"), detail: tr("chats.teams.typeCodeDetail", code.verificationURL.host ?? ""))
+                // The code with its copy button, then what to do with it under them.
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Text(code.userCode)
                         .font(NookTheme.mono(18, .semibold))
                         .textSelection(.enabled)
                     Button(tr("chats.teams.copyCode")) { Pasteboard.copy(code.userCode) }
+                }
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Button(tr("chats.teams.openPage")) { NSWorkspace.shared.open(code.verificationURL) }
-                    Spacer()
-                    ProgressView().controlSize(.small)
+                        .buttonStyle(.borderedProminent)
                     Button(tr("chats.teams.cancel")) { teams.cancelSignIn() }
+                    ProgressView().controlSize(.small)
                 }
             }
         case .noClient:
@@ -274,23 +348,15 @@ struct SlackTokenRows: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
-            HStack(spacing: NookTheme.Spacing.sm) {
-                SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
-                    .onSubmit { save() }
-                Button(tr("chats.slack.save")) { save() }
-                    .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
-                if slackSet {
-                    ConfirmedButton(tr("chats.slack.disconnect"), question: tr("confirm.logout", "Slack"),
-                                    detail: tr("confirm.keychain.detail")) {
-                        Keychain.remove(SlackBridge.tokenAccount)
-                        slackSet = false
-                        capture.slackTokenChanged()
-                    }
-                }
-            }
+            SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…"))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+                .onSubmit { save() }
+            // Save under the field; disconnecting is its own line under the token's state, never beside Save.
+            Button(tr("chats.slack.save")) { save() }
+                .buttonStyle(.borderedProminent)
+                .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
             if slackSet {
                 if let problem = capture.bridgeProblems[capture.slackBridge.app] {
                     StatusRow(title: tr("chats.slack.problem"), detail: problem, state: .error) { EmptyView() }
@@ -301,6 +367,14 @@ struct SlackTokenRows: View {
                 }
             }
             SettingNote(tr("chats.slack.footer"))
+            if slackSet {
+                ConfirmedButton(tr("chats.slack.disconnect"), question: tr("confirm.logout", "Slack"),
+                                detail: tr("confirm.keychain.detail")) {
+                    Keychain.remove(SlackBridge.tokenAccount)
+                    slackSet = false
+                    capture.slackTokenChanged()
+                }
+            }
         }
         .padding(.top, NookTheme.Spacing.xs)
     }

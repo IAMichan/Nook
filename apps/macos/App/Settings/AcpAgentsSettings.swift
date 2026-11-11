@@ -15,8 +15,7 @@ struct AcpAgentsSection: View {
     var body: some View {
         Section {
             if agents.isEmpty {
-                ConnectionListEmpty(title: tr("acp.empty.title"), detail: tr("acp.empty.detail"),
-                                    add: (tr("acp.fromRegistry"), { showRegistry = true }))
+                ConnectionListEmpty(title: tr("acp.empty.title"), detail: tr("acp.empty.detail"))
             }
             ForEach(agents) { agent in
                 let commandLine = ([agent.command] + agent.arguments).joined(separator: " ")
@@ -136,25 +135,9 @@ private struct AcpRegistrySheet: View {
                     }
                 }
             }
-            SetupStep(number: 2, title: tr("acp.step.check")) {
-                if let chosen, let command = chosen.command {
-                    // What will run, before you add it: the agent is a program from the internet.
-                    Text(tr("acp.registry.runs", ([command] + chosen.arguments).joined(separator: " ")))
-                        .font(NookTheme.mono(11))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .textSelection(.enabled)
-                } else if let chosen, let binary = chosen.binary {
-                    Text(tr("acp.registry.downloads", binary.archive.absoluteString, String(binary.sha256.prefix(12)) + "…"))
-                        .font(NookTheme.mono(11))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .textSelection(.enabled)
-                } else {
-                    SettingNote(tr("acp.step.checkHint"))
-                }
-            }
-            if let installError {
-                SettingNote(installError, tone: .warning)
-            }
+            // What will run or be downloaded, before you add it: the agent is a program from the internet. Installing a
+            // download is the check: its SHA-256 must match.
+            SetupCheckStep(number: 2, title: tr("acp.step.check"), detail: checkDetail, state: checkState)
         } footer: {
             if installing {
                 ProgressView().controlSize(.small)
@@ -180,6 +163,22 @@ private struct AcpRegistrySheet: View {
             }
             loading = false
         }
+    }
+
+    private var checkDetail: String {
+        if let chosen, let command = chosen.command {
+            return tr("acp.registry.runs", ([command] + chosen.arguments).joined(separator: " "))
+        }
+        if let chosen, let binary = chosen.binary {
+            return tr("acp.registry.downloads", binary.archive.absoluteString, String(binary.sha256.prefix(12)) + "…")
+        }
+        return tr("acp.step.checkHint")
+    }
+
+    private var checkState: SetupCheckState {
+        if installing { return .checking }
+        if let installError { return .failed(installError) }
+        return .idle
     }
 
     /// The line under an agent in the list: its version, how it comes, and what it does.
@@ -217,12 +216,13 @@ private struct AcpRegistrySheet: View {
     }
 }
 
-/// An ACP agent by hand: a name and the command that starts its ACP server.
+/// An ACP agent by hand: a name, the command that starts its ACP server, and Nook checks that the program is there.
 private struct AcpManualSheet: View {
     @Environment(\.dismiss) private var dismiss
     let add: (String, String, [String]) -> Void
     @State private var name = ""
     @State private var command = ""
+    @State private var check: SetupCheckState = .idle
 
     private var parsed: (command: String, arguments: [String])? { CustomAgents.parseCommand(command) }
     private var canAdd: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty && parsed != nil }
@@ -231,7 +231,7 @@ private struct AcpManualSheet: View {
         SetupSheet(title: tr("acp.manual.title"), subtitle: tr("acp.manual.subtitle"), width: 460) {
             SettingsTile(.agents, size: 40)
         } content: {
-            // Two steps, as every add sheet: what to call it, then the command that starts its ACP server.
+            // Three steps, as every add sheet: what to call it, the command that starts its ACP server, and the check.
             SetupStep(number: 1, title: tr("acp.manual.name"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 TextField("", text: $name, prompt: Text(tr("acp.manual.namePlaceholder"))).textFieldStyle(.roundedBorder)
             }
@@ -239,15 +239,19 @@ private struct AcpManualSheet: View {
                 TextField("", text: $command, prompt: Text("npx -y @vendor/agent-acp@1.0.0"))
                     .textFieldStyle(.roundedBorder)
                     .font(NookTheme.TextStyle.code)
+                    .onChange(of: command) { _, _ in check = .idle }
                 if !command.isEmpty, parsed == nil {
                     SettingNote(tr("acp.manual.badCommand"), tone: .warning)
                 }
             }
+            SetupCheckStep(number: 3, title: tr("acp.manual.checkTitle"), detail: tr("acp.manual.checkDetail"), state: check,
+                           check: runCheck, disabled: parsed == nil)
         } footer: {
             Spacer()
             Button(tr("button.cancel")) { dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .controlSize(.large)
+            // A program Nook could not find is still added: it may only be on the PATH of the shell sessions start in.
             Button(tr("acp.add")) {
                 if let parsed { add(name.trimmingCharacters(in: .whitespaces), parsed.command, parsed.arguments) }
                 dismiss()
@@ -257,5 +261,37 @@ private struct AcpManualSheet: View {
             .controlSize(.large)
             .disabled(!canAdd)
         }
+    }
+
+    /// Looks the program up the way a session starts it, through your login shell (nvm, Homebrew, asdf), off the main
+    /// thread.
+    private func runCheck() {
+        guard let program = parsed?.command else { return }
+        check = .checking
+        Task {
+            let path = await Self.locate(program)
+            // The command changed while Nook looked: that answer is for the old one.
+            guard parsed?.command == program else { return }
+            if let path {
+                check = .passed(tr("acp.manual.found", AgentProfile.tildePath(path)))
+            } else {
+                check = .failed(tr("acp.manual.notFound", program))
+            }
+        }
+    }
+
+    /// The full path of `program`: a path as typed when it is executable, else what `command -v` says in the login shell.
+    nonisolated static func locate(_ program: String) async -> String? {
+        await Task.detached { () -> String? in
+            if program.contains("/") {
+                let path = (program as NSString).expandingTildeInPath
+                return FileManager.default.isExecutableFile(atPath: path) ? path : nil
+            }
+            let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+            guard let output = try? ProcessRunner.run(shell, ["-lc", "command -v " + TerminalLauncher.shellQuote(program)], timeout: 15),
+                  output.status == 0 else { return nil }
+            let path = output.stdout.split(separator: "\n").last.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
+            return path.hasPrefix("/") ? path : nil
+        }.value
     }
 }

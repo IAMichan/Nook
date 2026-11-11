@@ -279,7 +279,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "remote.password.lock.help": "Vergeet het wachtwoord, ook in de sleutelhanger; Nook vraagt het opnieuw bij de volgende sessie",
         "remote.test.failed": "ssh stopte met code %ld",
         "remote.remove": "Verwijder deze machine",
-        "remote.add": "Voeg machine toe",
+        "remote.add": "Machine toevoegen",
         "remote.addTitle": "Een machine toevoegen",
         "remote.addSubtitle": "Een naam, en hoe je hem met ssh bereikt.",
         "remote.name": "Naam",

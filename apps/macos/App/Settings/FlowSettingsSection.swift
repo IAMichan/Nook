@@ -103,31 +103,41 @@ struct ParakeetSettingsSection: View {
 
     var body: some View {
         Section {
-            HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
-                SettingLabel(tr("parakeet.title"), detail: parakeet.state == .unsupported ? tr("parakeet.unsupported") : tr("parakeet.detail"))
-                Spacer()
+            // One status row, as a model download on the Brain page: what it is and its state, the button on the right.
+            StatusRow(title: tr("parakeet.title"), detail: detail, state: state) {
                 switch parakeet.state {
                 case .unsupported:
                     EmptyView()
-                case .missing:
+                case .missing, .failed:
                     Button(tr("parakeet.download")) { parakeet.download() }
                 case .downloading(let fraction):
-                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
-                        ProgressView(value: fraction).frame(width: 110)
-                        Text(tr("parakeet.downloading", Int(fraction * 100))).font(NookTheme.TextStyle.detail.monospacedDigit()).foregroundStyle(NookTheme.textSecondary)
-                    }
+                    ProgressView(value: fraction).frame(width: 90)
+                    Text(tr("parakeet.downloading", Int(fraction * 100)))
+                        .font(NookTheme.TextStyle.detail.monospacedDigit())
+                        .foregroundStyle(NookTheme.textSecondary)
                 case .ready:
                     ConfirmedButton(tr("parakeet.remove"), question: tr("confirm.remove", "Parakeet")) { parakeet.remove() }
-                case .failed(let why):
-                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
-                        Button(tr("parakeet.download")) { parakeet.download() }
-                        SettingNote(why, tone: .warning).lineLimit(2)
-                    }
                 }
             }
             if parakeet.isReady {
                 Toggle(tr("parakeet.use"), isOn: $parakeet.enabled)
             }
+        }
+    }
+
+    private var detail: String {
+        switch parakeet.state {
+        case .unsupported: return tr("parakeet.unsupported")
+        case .failed(let why): return why
+        default: return tr("parakeet.detail")
+        }
+    }
+
+    private var state: StatusState {
+        switch parakeet.state {
+        case .ready: return .done
+        case .failed: return .warning
+        default: return .todo
         }
     }
 }

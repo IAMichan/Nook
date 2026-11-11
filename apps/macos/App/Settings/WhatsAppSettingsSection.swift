@@ -127,11 +127,10 @@ extension WhatsAppLink {
 
 /// Every WhatsApp account, the first one included, as the rows of every other connected service: its name, its number or
 /// where its link stands, and what can be done (Rename, Retry, Remove). An account waiting to be linked shows its QR under
-/// its row. Below them, adding another account (a business number, a second phone), which gets a QR of its own.
+/// its row. Below them, adding another account (a business number, a second phone), in a sheet of steps of its own.
 struct WhatsAppAccountList: View {
     @ObservedObject private var accounts = WhatsAppAccounts.shared
     @State private var adding = false
-    @State private var newName = ""
     @State private var removing: WAAccount?
 
     var body: some View {
@@ -142,35 +141,86 @@ struct WhatsAppAccountList: View {
         }
         // Another account once the first is linked: before that, its QR comes first.
         if WhatsAppLink.shared.isConnected || accounts.links.count > 1 {
-            Group {
-                if adding {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        TextField("", text: $newName, prompt: Text(tr("whatsapp.accounts.namePrompt")))
-                            .labelsHidden()
-                            .onSubmit(add)
-                        Button(tr("whatsapp.accounts.link"), action: add)
-                            .buttonStyle(.borderedProminent)
-                        Button(tr("button.cancel")) { adding = false; newName = "" }
-                    }
-                } else {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        SettingLabel(tr("whatsapp.accounts.add"), detail: tr("whatsapp.accounts.addDetail"))
-                        Spacer()
-                        Button(tr("whatsapp.accounts.addButton")) { adding = true }
-                    }
+            StepAction(title: tr("whatsapp.accounts.add"), detail: tr("whatsapp.accounts.addDetail"),
+                       button: tr("whatsapp.accounts.addButton"), prominent: false) { adding = true }
+                .sheet(isPresented: $adding) { WhatsAppAddAccountSheet() }
+                .confirmDelete($removing, question: { tr("whatsapp.accounts.removeTitle", $0.name.isEmpty ? "WhatsApp" : $0.name) },
+                               detail: tr("whatsapp.accounts.removeDetail"), confirmTitle: tr("whatsapp.accounts.remove")) { account in
+                    accounts.remove(account.id)
+                }
+        }
+    }
+}
+
+/// Adding another WhatsApp account (a business number, a second phone) in numbered steps: its name, the QR code its
+/// phone scans, and Nook's check that it linked.
+struct WhatsAppAddAccountSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var accounts = WhatsAppAccounts.shared
+    @State private var name = ""
+    @State private var added: WhatsAppLink?
+
+    var body: some View {
+        SetupSheet(title: tr("whatsapp.accounts.add"), subtitle: tr("whatsapp.accounts.addDetail")) {
+            ServiceTile(domain: "whatsapp.com", fallback: "bubble.left.and.bubble.right.fill", tint: NookTheme.iris, size: 48,
+                        source: "whatsapp")
+        } content: {
+            SetupStep(number: 1, title: tr("whatsapp.accounts.nameStep"), done: added != nil) {
+                if added == nil {
+                    TextField("", text: $name, prompt: Text(tr("whatsapp.accounts.namePrompt")))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(add)
+                    // The step's button, under its field.
+                    Button(tr("whatsapp.accounts.link"), action: add)
+                        .buttonStyle(.borderedProminent)
                 }
             }
-            .confirmDelete($removing, question: { tr("whatsapp.accounts.removeTitle", $0.name.isEmpty ? "WhatsApp" : $0.name) },
-                           detail: tr("whatsapp.accounts.removeDetail"), confirmTitle: tr("whatsapp.accounts.remove")) { account in
-                accounts.remove(account.id)
+            if let added {
+                WhatsAppNewAccountSteps(link: added)
+            } else {
+                SetupStep(number: 2, title: tr("chats.own.whatsapp.scan")) {
+                    SettingNote(tr("whatsapp.accounts.scan"))
+                }
+                SetupCheckStep(number: 3, detail: tr("whatsapp.accounts.checkDetail"), state: .idle)
             }
+        } footer: {
+            Spacer()
+            Button(tr("settings2.done")) { dismiss() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         }
     }
 
     private func add() {
-        accounts.add(name: newName)
-        newName = ""
-        adding = false
+        guard added == nil else { return }
+        added = accounts.add(name: name)
+    }
+}
+
+/// The new account's QR code and Nook's check, following its link as it goes.
+private struct WhatsAppNewAccountSteps: View {
+    @ObservedObject var link: WhatsAppLink
+    @ObservedObject private var accounts = WhatsAppAccounts.shared
+
+    var body: some View {
+        SetupStep(number: 2, title: tr("chats.own.whatsapp.scan"), done: link.isConnected) {
+            if link.link == .needsQR, let data = link.qrPNG, let image = NSImage(data: data) {
+                SettingNote(tr("whatsapp.accounts.scan"))
+                QRCodeView(image: image, side: 160, label: tr("chats.link.qr"))
+            } else if !link.isConnected {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    Text(link.statusLine).foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+        }
+        // While this step shows, the new account's gateway is asked every few seconds, so a scanned code links at once.
+        .onAppear { link.linkViewAppeared() }
+        .onDisappear { link.linkViewDisappeared() }
+        SetupCheckStep(number: 3, detail: tr("whatsapp.accounts.checkDetail"),
+                       state: link.isConnected ? .passed(tr("chats.link.step.checkDone", accounts.name(of: link))) : .idle)
     }
 }
 

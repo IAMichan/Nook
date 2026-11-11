@@ -64,14 +64,30 @@ struct BrowserImportSheet: View {
                 SetupStep(number: 1, title: tr("cookieImport.step.source"), done: phase != .choosing && phase != .reading) {
                     sourcePickers
                 }
-                SetupStep(number: 2, title: tr("cookieImport.step.sites"), done: { if case .done = phase { return true }; return false }()) {
+                SetupStep(number: 2, title: tr("cookieImport.step.sites"), done: isDone) {
                     sitePicker
                 }
+                SetupCheckStep(number: 3, title: tr("import.check.title"), detail: tr("cookieImport.step.checkDetail"),
+                               state: checkState)
             }
         } footer: {
             footer
         }
         .onAppear(perform: load)
+    }
+
+    private var isDone: Bool {
+        if case .done = phase { return true }
+        return false
+    }
+
+    /// The last step says what came over once the import ran.
+    private var checkState: SetupCheckState {
+        switch phase {
+        case .importing: return .checking
+        case .done(let count, let siteCount): return .passed(tr("cookieImport.done", count, siteCount))
+        case .choosing, .reading, .picking: return .idle
+        }
     }
 
     // MARK: Step 1
@@ -130,8 +146,8 @@ struct BrowserImportSheet: View {
         switch phase {
         case .choosing, .reading:
             SettingNote(tr("cookieImport.sites.waiting"))
-        case .done(let count, let siteCount):
-            SettingNote(tr("cookieImport.done", count, siteCount), tone: .success)
+        case .done:
+            EmptyView()
         case .picking, .importing:
             if sites.isEmpty {
                 ListEmptyNote(tr("cookieImport.sites.empty"))
@@ -169,27 +185,21 @@ struct BrowserImportSheet: View {
                 }
             }
             SettingNote(tr("cookieImport.into.note"))
+            // The step's button, under what it imports.
+            Button(tr("cookieImport.import")) { Task { await importChosen() } }
+                .buttonStyle(.borderedProminent)
+                .disabled(phase != .picking || chosen.isEmpty)
         }
     }
 
+    /// The steps do the work: one button, Done.
     @ViewBuilder
     private var footer: some View {
         Spacer()
-        if case .done = phase {
-            Button(tr("cookieImport.finish")) { dismiss() }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-        } else {
-            Button(tr("button.cancel")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
-            Button(tr("cookieImport.import")) { Task { await importChosen() } }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(phase != .picking || chosen.isEmpty)
-        }
+        Button(tr("settings2.done")) { dismiss() }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
     }
 
     // MARK: Actions

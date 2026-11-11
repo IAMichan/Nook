@@ -43,7 +43,7 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "companion.neverSeen": "Nog niet verbonden",
         "companion.remove": "Ontkoppel",
         "companion.none": "Nog geen iPhone gekoppeld.",
-        "companion.pair": "Koppel een iPhone",
+        "companion.pair": "iPhone koppelen",
         "companion.listening": "Luistert op poort %ld in je lokale netwerk.",
         "companion.relay.setup.severalAccounts": "Deze sleutel ziet meerdere Cloudflare-accounts. Maak hem voor één account (Account Resources › Include › dat account) en plak hem opnieuw.",
         "companion.reachable.tailnet": "%@ (Tailscale)",

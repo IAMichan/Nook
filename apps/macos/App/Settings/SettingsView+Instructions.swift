@@ -2,16 +2,13 @@ import SwiftUI
 
 /// Settings › Instructions: how Nook words its answers (the default style; each conversation can pick its own), the
 /// prompts you saved, the spaces with their instructions, and the context inspector that shows what the last answer
-/// sent to the model and how big it was.
+/// sent to the model and how big it was. A new prompt or space is added from its list's header, in a sheet.
 struct InstructionsSettingsSection: View {
     @ObservedObject private var store = InstructionStore.shared
     @State private var style = ResponseStyleStore.shared.defaultStyle
 
-    @State private var promptTitle = ""
-    @State private var promptTrigger = ""
-    @State private var promptBody = ""
-    @State private var promptRejected = false
-    @State private var spaceName = ""
+    @State private var addingPrompt = false
+    @State private var addingSpace = false
 
     var body: some View {
         Group {
@@ -40,7 +37,9 @@ struct InstructionsSettingsSection: View {
 
     private var promptsSection: some View {
         Section {
-            if store.prompts.prompts.isEmpty { SettingNote(tr("instructions.prompts.empty")) }
+            if store.prompts.prompts.isEmpty {
+                ConnectionListEmpty(title: tr("instructions.prompts.empty"), detail: tr("instructions.prompts.emptyDetail"))
+            }
             ForEach(store.prompts.prompts) { prompt in
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -55,27 +54,20 @@ struct InstructionsSettingsSection: View {
                     .labelled(tr("instructions.delete"))
                 }
             }
-            TextField(tr("instructions.prompts.name"), text: $promptTitle)
-            TextField(tr("instructions.prompts.trigger"), text: $promptTrigger)
-            TextField(tr("instructions.prompts.body"), text: $promptBody, axis: .vertical).lineLimit(2...6)
-            Button(tr("instructions.prompts.add")) {
-                let saved = store.savePrompt(SavedPrompt(title: promptTitle, body: promptBody, trigger: promptTrigger))
-                promptRejected = !saved
-                if saved { promptTitle = ""; promptTrigger = ""; promptBody = "" }
-            }
-            .disabled(promptTitle.trimmingCharacters(in: .whitespaces).isEmpty || promptBody.trimmingCharacters(in: .whitespaces).isEmpty)
-            if promptRejected { SettingNote(tr("instructions.prompts.rejected"), tone: .warning) }
-            SettingNote(tr("instructions.prompts.detail"))
         } header: {
-            SettingsSectionTitle(tr("instructions.prompts.title"))
+            ConnectionListHeader(title: tr("instructions.prompts.title"), info: tr("instructions.prompts.detail"),
+                                 add: (tr("instructions.prompts.new"), { addingPrompt = true }))
         }
+        .sheet(isPresented: $addingPrompt) { AddPromptSheet() }
     }
 
     // MARK: Spaces
 
     private var spacesSection: some View {
         Section {
-            if store.spaces.spaces.isEmpty { SettingNote(tr("instructions.spaces.empty")) }
+            if store.spaces.spaces.isEmpty {
+                ConnectionListEmpty(title: tr("instructions.spaces.emptyTitle"), detail: tr("instructions.spaces.empty"))
+            }
             ForEach(store.spaces.spaces) { space in
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     HStack {
@@ -91,15 +83,11 @@ struct InstructionsSettingsSection: View {
                     TextField(tr("instructions.spaces.instructions"), text: instructions(of: space), axis: .vertical).lineLimit(2...8)
                 }
             }
-            HStack {
-                TextField(tr("instructions.spaces.name"), text: $spaceName).onSubmit(addSpace)
-                Button(tr("instructions.spaces.add"), action: addSpace)
-                    .disabled(spaceName.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            SettingNote(tr("instructions.spaces.detail"))
         } header: {
-            SettingsSectionTitle(tr("instructions.spaces.title"))
+            ConnectionListHeader(title: tr("instructions.spaces.title"), info: tr("instructions.spaces.detail"),
+                                 add: (tr("instructions.spaces.add"), { addingSpace = true }))
         }
+        .sheet(isPresented: $addingSpace) { AddSpaceSheet() }
     }
 
     private func instructions(of space: NookSpace) -> Binding<String> {
@@ -109,11 +97,6 @@ struct InstructionsSettingsSection: View {
                     current.instructions = value
                     store.saveSpace(current)
                 })
-    }
-
-    private func addSpace() {
-        store.saveSpace(NookSpace(name: spaceName))
-        spaceName = ""
     }
 
     // MARK: Context inspector
@@ -146,5 +129,96 @@ struct InstructionsSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("instructions.context.title"))
         }
+    }
+}
+
+/// A new saved prompt: its name, the trigger that fills it in, and its text. A form, so Cancel and Save.
+private struct AddPromptSheet: View {
+    @State private var title = ""
+    @State private var trigger = ""
+    @State private var text = ""
+    @State private var rejected = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        SetupSheet(title: tr("instructions.prompts.sheetTitle"), subtitle: tr("instructions.prompts.detail")) {
+            SettingsTile(.instructions, size: 40)
+        } content: {
+            Text(tr("instructions.prompts.name")).font(NookTheme.TextStyle.strong)
+            TextField("", text: $title).textFieldStyle(.roundedBorder)
+            Text(tr("instructions.form.trigger")).font(NookTheme.TextStyle.strong)
+            TextField("", text: $trigger, prompt: Text(tr("instructions.prompts.trigger"))).textFieldStyle(.roundedBorder)
+                .font(NookTheme.TextStyle.code)
+            Text(tr("instructions.form.prompt")).font(NookTheme.TextStyle.strong)
+            TextField("", text: $text, prompt: Text(tr("instructions.prompts.body")), axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(4...10)
+            if rejected { SettingNote(tr("instructions.prompts.rejected"), tone: .warning) }
+        } footer: {
+            Spacer()
+            Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(tr("instructions.prompts.add"), action: save)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!canSave)
+        }
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespaces).isEmpty && !text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func save() {
+        guard canSave else { return }
+        let prompt = SavedPrompt(title: title, body: text, trigger: trigger)
+        rejected = !InstructionStore.shared.savePrompt(prompt)
+        if !rejected {
+            ToastCenter.shared.success(tr("connection.added", prompt.title))
+            dismiss()
+        }
+    }
+}
+
+/// A new space: its name and the instructions sent with every question in it. A form, so Cancel and Add.
+private struct AddSpaceSheet: View {
+    @State private var name = ""
+    @State private var instructions = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        SetupSheet(title: tr("instructions.spaces.sheetTitle"), subtitle: tr("instructions.spaces.detail")) {
+            SettingsTile(.instructions, size: 40)
+        } content: {
+            Text(tr("instructions.prompts.name")).font(NookTheme.TextStyle.strong)
+            TextField("", text: $name, prompt: Text(tr("instructions.spaces.name"))).textFieldStyle(.roundedBorder)
+            Text(tr("instructions.form.instructions")).font(NookTheme.TextStyle.strong)
+            TextField("", text: $instructions, prompt: Text(tr("instructions.spaces.instructions")), axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(4...10)
+        } footer: {
+            Spacer()
+            Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+            Button(tr("instructions.spaces.add"), action: save)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(cleanName.isEmpty)
+        }
+    }
+
+    private var cleanName: String { name.trimmingCharacters(in: .whitespaces) }
+
+    private func save() {
+        guard !cleanName.isEmpty else { return }
+        var space = NookSpace(name: cleanName)
+        space.instructions = instructions
+        InstructionStore.shared.saveSpace(space)
+        ToastCenter.shared.success(tr("connection.added", cleanName))
+        dismiss()
     }
 }

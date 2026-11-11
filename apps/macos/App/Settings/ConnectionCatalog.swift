@@ -237,15 +237,16 @@ struct AddConnectionSheet: View {
             }
         } footer: {
             Spacer()
-            Button(tr("button.close")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
+            Button(tr("settings2.done")) { dismiss() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
         }
     }
 
     /// What Nook does not link by itself yet, and how to get it in anyway: folded away at the end.
     private var notListed: some View {
-        DisclosureGroup {
+        SettingsFold(tr("connect.notListed")) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 SettingNote(tr("settings2.connections.missingDetail"))
                 ForEach(NotYetBuiltIn.all, id: \.name) { item in
@@ -267,8 +268,6 @@ struct AddConnectionSheet: View {
                 Button(tr("mcp.custom.button")) { chosen = ConnectionCatalog.customServer }
             }
             .padding(.top, NookTheme.Spacing.sm)
-        } label: {
-            Text(tr("connect.notListed"))
         }
     }
 }
@@ -465,60 +464,47 @@ struct ServiceSignInSheet: View {
 
     @ViewBuilder
     private var signInSteps: some View {
-            SetupStep(number: 1, title: tr("hub.signIn.step", service.name), done: status == .connected) {
-                Text(service.tagline)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                switch status {
-                case .connecting:
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        ProgressView().controlSize(.small)
-                        Text(tr("connect.waiting", service.name))
-                            .font(NookTheme.TextStyle.detail)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Button(tr("button.cancel")) { signIn.cancel() }
-                case .connected:
-                    EmptyView()
-                default:
-                    Button {
-                        started = true
-                        if let config, status == .expired { signIn.signIn(config, app: app) } else { signIn.connect(service, app: app) }
-                    } label: {
-                        Label(status == .expired ? tr("connect.reauthorize") : tr("hub.signIn.button", service.name),
-                              systemImage: "person.badge.key.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+        SetupStep(number: 1, title: tr("hub.signIn.step", service.name), done: status == .connected) {
+            switch status {
+            case .connecting:
+                tagline
+                HStack(spacing: NookTheme.Spacing.md) {
+                    ProgressView().controlSize(.small)
+                    Text(tr("connect.waiting", service.name))
+                        .font(NookTheme.TextStyle.detail)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if let failure {
-                    SettingNote(failure, tone: .error)
+                Button(tr("button.cancel")) { signIn.cancel() }
+            case .connected:
+                tagline
+            default:
+                StepAction(detail: service.tagline,
+                           button: status == .expired ? tr("connect.reauthorize") : tr("hub.signIn.button", service.name)) {
+                    started = true
+                    if let config, status == .expired { signIn.signIn(config, app: app) } else { signIn.connect(service, app: app) }
                 }
             }
-            SetupStep(number: 2, title: tr("settings2.step.check"), done: status == .connected) {
-                if status == .connected {
-                    Label(tr("connect.justConnected", service.name), systemImage: "checkmark.seal.fill")
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.mint)
-                } else {
-                    Text(tr("settings2.step.checkAfterSignIn"))
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
+            if let failure {
+                SettingNote(failure, tone: .error)
             }
-            // Signing in is the way; a key or token is only for whoever needs one, folded away.
-            if hasKeyWay, status == .notLinked {
-                DisclosureGroup(tr("settings.fold.keyInstead")) {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        SettingNote(tr(service.id == "gitlab" ? "hub.signIn.gitlabToken" : "hub.signIn.keyInstead"))
-                        Spacer(minLength: 0)
-                        Button(tr("connect.useKey")) { showKey = true }
-                    }
+        }
+        SetupCheckStep(number: 2, detail: tr("settings2.step.checkAfterSignIn"),
+                       state: status == .connected ? .passed(tr("connect.justConnected", service.name)) : .idle)
+        // Signing in is the way; a key or token is only for whoever needs one, folded away.
+        if hasKeyWay, status == .notLinked {
+            DisclosureGroup(tr("settings.fold.keyInstead")) {
+                StepAction(detail: tr(service.id == "gitlab" ? "hub.signIn.gitlabToken" : "hub.signIn.keyInstead"),
+                           button: tr("connect.useKey"), prominent: false) { showKey = true }
                     .padding(.top, NookTheme.Spacing.xs)
-                }
             }
+        }
+    }
+
+    private var tagline: some View {
+        Text(service.tagline)
+            .font(NookTheme.TextStyle.body)
+            .foregroundStyle(NookTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -561,8 +547,8 @@ struct ServiceSignInSheet: View {
 
 // MARK: - Sheets with settings rows
 
-/// A sheet whose content is plain settings rows (the iPhone's pairing, push and relay): the header and footer of
-/// `SetupSheet`, with a grouped form in between instead of a scroll view.
+/// A sheet whose content is plain settings rows (one app's own autocomplete settings): `SetupSheet` with its header and
+/// Done, the rows in one card in between, so it is the same sheet as every other in Settings.
 struct SettingsFormSheet<Icon: View, Content: View>: View {
     let title: String
     let subtitle: String
@@ -571,46 +557,19 @@ struct SettingsFormSheet<Icon: View, Content: View>: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.lg) {
-                icon()
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(title).font(NookTheme.TextStyle.heading)
-                    Text(subtitle)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
+        SetupSheet(title: title, subtitle: subtitle, icon: icon, content: {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                content()
             }
-            .padding(NookTheme.Spacing.xxl)
-            Divider()
-            Form { content() }
-                .formStyle(.grouped)
-                .font(NookTheme.TextStyle.body)
-                .scrollContentBackground(.hidden)
-            Divider()
-            HStack {
-                Spacer()
-                Button(tr("settings2.done")) { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-            }
-            .padding(NookTheme.Spacing.xl)
-        }
-        .frame(width: 560, height: 640)
-        // Escape closes the sheet the way Done does.
-        .onExitCommand { dismiss() }
-    }
-}
-
-/// The iPhone companion: switching it on, pairing a phone, push, and reaching it away from home.
-struct IPhoneSheet: View {
-    var body: some View {
-        SettingsFormSheet(title: tr("settings.devices.iphone"), subtitle: tr("hub.iphone.tagline")) {
-            SettingsTile(symbol: "iphone", colors: (NookTheme.smoke, NookTheme.graphite), size: 48)
-        } content: {
-            CompanionSettingsRows()
-        }
+            .padding(NookTheme.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
+        }, footer: {
+            Spacer()
+            Button(tr("settings2.done")) { dismiss() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        })
     }
 }

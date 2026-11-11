@@ -1,11 +1,9 @@
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
 
 /// Settings for the iPhone companion, in the order you meet it: switch it on, the phones already paired (one
-/// `ConnectionRow` each, which opens to its permissions and details), pairing another in numbered steps (QR code or link,
-/// valid for five minutes), what the phones are told, and reaching this Mac away from home, folded because most people
-/// pair at home and never need it.
+/// `ConnectionRow` each, which opens to its permissions and details; "+ Pair an iPhone" opens `PairPhoneSheet`), what the
+/// phones are told, and reaching this Mac away from home, folded because most people pair at home and never need it.
 struct CompanionSettingsRows: View {
     @ObservedObject private var store = CompanionStore.shared
     @ObservedObject private var server = CompanionServer.shared
@@ -13,18 +11,15 @@ struct CompanionSettingsRows: View {
     @ObservedObject private var relay = CompanionRelayClient.shared
     @ObservedObject private var awake = KeepAwake.shared
     @ObservedObject private var relayPush = RelayPushClient.shared
-    @State private var keyProblem = false
-    @State private var link: PairingLink?
-    @StateObject private var copied = CopiedMoment()
     @StateObject private var diagnosticsCopied = CopiedMoment()
-    /// The Cloudflare token being pasted, and the address of a relay set up some other way.
-    @State private var token = ""
-    @State private var manualAddress = ""
+    /// The setup sheets this page opens: pairing a phone, the user's own relay, and the user's own Apple key.
+    @State private var pairing = false
+    @State private var settingUpRelay = false
+    @State private var settingUpKey = false
 
     var body: some View {
         Section {
             Toggle(isOn: Binding(get: { store.enabled }, set: { store.enabled = $0; server.apply() })) { SettingText("companion.enable") }
-            SettingNote(tr("companion.hint"))
             if store.enabled {
                 status
                 // The local connection log, redacted (no addresses, names or keys), for the user to paste where they choose.
@@ -36,21 +31,18 @@ struct CompanionSettingsRows: View {
                 }
             }
         } header: {
-            SettingText("settings.devices.iphone")
+            SettingsSectionTitle(tr("settings.devices.iphone"), info: tr("companion.hint"))
         }
-        // The window closes by itself; also when a phone completes it. A phone that just paired through this page's
-        // code is announced, as every other connection that is added.
-        .onChange(of: store.devices) { old, new in
-            if link != nil, let added = new.first(where: { device in !old.contains { $0.id == device.id } }) {
-                ToastCenter.shared.success(tr("connection.added", added.name))
-            }
-            link = nil
-        }
-        .onChange(of: store.enabled) { _, on in if !on { link = nil } }
+        // The sheets hang on this section, which is always there: the row that opened one may go once it is done
+        // (the relay row turns into its address), and the sheet must stay to show that.
+        .sheet(isPresented: $pairing) { PairPhoneSheet() }
+        .sheet(isPresented: $settingUpRelay) { OwnRelaySheet() }
+        .sheet(isPresented: $settingUpKey) { APNsKeySheet() }
+        // Switching the companion off closes a pairing that was under way.
+        .onChange(of: store.enabled) { _, on in if !on { pairing = false } }
 
         if store.enabled {
             pairedPhones
-            pairNew
             Section { pushSection } header: { SettingText("pairedPhone.pushTitle") }
             if store.push.enabled {
                 Section { pushRoute } header: { Text(tr("companion.push.keyTitle")) }
@@ -64,17 +56,15 @@ struct CompanionSettingsRows: View {
 
     // MARK: Paired iPhones
 
-    /// "+ Pair iPhone" shows the code in the steps below; there is nothing to show while this Mac does not listen, or
-    /// while a code is already up.
-    private var pairAction: (title: String, action: () -> Void)? {
-        guard isListening, link == nil else { return nil }
-        return (tr("companion.pair"), { link = server.pairingLink() })
+    /// "+ Pair an iPhone" opens the pairing steps in a sheet.
+    private var pairAction: (title: String, action: () -> Void) {
+        (tr("companion.pair"), { pairing = true })
     }
 
     private var pairedPhones: some View {
         Section {
             if store.devices.isEmpty {
-                ConnectionListEmpty(title: tr("pairedPhone.empty.title"), detail: tr("pairedPhone.empty.detail"), add: pairAction)
+                ConnectionListEmpty(title: tr("pairedPhone.empty.title"), detail: tr("pairedPhone.empty.detail"))
             } else {
                 ForEach(store.devices) { deviceRow($0) }
             }
@@ -110,7 +100,7 @@ struct CompanionSettingsRows: View {
                 SettingNote(tr("companion.phone.behind"), tone: .info)
             }
             SheetPart(tr("companion.scopes.title")) {
-                scopeToggles(Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))
+                CompanionScopeToggles(scopes: Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))
             }
             SheetPart(tr("pairedPhone.details")) {
                 LabeledContent(tr("pairedPhone.lastSeen")) {
@@ -137,36 +127,6 @@ struct CompanionSettingsRows: View {
     /// When the phone was last seen, for the line under its name.
     private func lastSeen(_ device: PairedDevice) -> String {
         device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) } ?? tr("companion.neverSeen")
-    }
-
-    // MARK: Pair a new iPhone
-
-    /// Pairing in the numbered steps every setup in Settings uses: the app, what the phone may do (asked before the
-    /// code, because the phone gets it the moment it scans), and the code itself.
-    private var pairNew: some View {
-        Section {
-            SetupStep(number: 1, title: tr("pairedPhone.step.install")) {
-                Text(tr("pairedPhone.step.installDetail"))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            SetupStep(number: 2, title: tr("pairedPhone.step.scopes")) {
-                scopeToggles($store.pendingScopes)
-            }
-            SetupStep(number: 3, title: tr("pairedPhone.step.scan")) {
-                if let link {
-                    pairing(link)
-                } else {
-                    Button(tr("pairedPhone.showCode")) { link = server.pairingLink() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!isListening)
-                    if !isListening { SettingNote(tr("pairedPhone.notListening")) }
-                }
-            }
-        } header: {
-            SettingText("pairedPhone.pairTitle")
-        }
     }
 
     /// What the folded "Away from home" group says while closed: whether a relay carries the phones there, and how.
@@ -240,63 +200,12 @@ struct CompanionSettingsRows: View {
         if let result = notifier.lastResult { SettingNote(result) }
     }
 
-    @ViewBuilder
+    /// The user's own Apple key: one row with its state; making, importing and testing it happen in `APNsKeySheet`.
     private var apnsSetup: some View {
-        SettingNote(tr("companion.push.keyHint"))
-        HStack {
-            TextField(tr("companion.push.keyID"), text: $store.apnsKeyID).textFieldStyle(.roundedBorder)
-            TextField(tr("companion.push.teamID"), text: $store.apnsTeamID).textFieldStyle(.roundedBorder)
-        }
-        HStack {
-            if store.hasAPNsKey {
-                InUseLabel(tr("companion.push.keySaved"))
-                ConfirmedButton(tr("companion.push.removeKey"), question: tr("confirm.removePush"), detail: tr("confirm.removePush.detail")) {
-                    store.removeAPNsKey(); APNsClient.shared.forgetToken(); keyProblem = false
-                }
-            } else {
-                Button(tr("companion.push.importKey")) { importKey() }
-            }
-            Button(tr("companion.push.test")) { notifier.sendTest() }
-                .disabled(!store.canPush || !store.devices.contains { $0.pushToken != nil })
-        }
-        if keyProblem { SettingNote(tr("companion.push.keyInvalid"), tone: .error) }
-        if !store.canPush { SettingNote(tr("companion.push.notReady")) }
-        if let result = notifier.lastResult { SettingNote(result) }
-    }
-
-    /// Reads the .p8 file the user downloaded from Apple; its contents go to the Keychain and are not shown.
-    private func importKey() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "p8") ?? .data]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url,
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        keyProblem = !store.saveAPNsKey(pem: text)
-        APNsClient.shared.forgetToken()
-    }
-
-    /// One switch per `CompanionScope`: what a phone may do from afar.
-    @ViewBuilder
-    private func scopeToggles(_ scopes: Binding<Set<CompanionScope>>) -> some View {
-        ForEach(CompanionScope.allCases, id: \.self) { scope in
-            Toggle(Self.scopeLabel(scope), isOn: Binding(
-                get: { scopes.wrappedValue.contains(scope) },
-                set: { on in
-                    var next = scopes.wrappedValue
-                    if on { next.insert(scope) } else { next.remove(scope) }
-                    scopes.wrappedValue = next
-                }))
-        }
-    }
-
-    private static func scopeLabel(_ scope: CompanionScope) -> String {
-        switch scope {
-        case .read: return tr("companion.scope.read")
-        case .approve: return tr("companion.scope.approve")
-        case .operate: return tr("companion.scope.operate")
-        case .chats: return tr("companion.scope.chats")
-        case .music: return tr("companion.scope.music")
-        case .nookChat: return tr("companion.scope.nookChat")
+        StatusRow(title: tr("companion.push.keyRow"),
+                  detail: store.canPush ? tr("companion.push.keySaved") : tr("companion.push.notReady"),
+                  state: store.canPush ? .done : .todo) {
+            Button(store.canPush ? tr("companion.push.keyChange") : tr("companion.push.keySetUp")) { settingUpKey = true }
         }
     }
 
@@ -311,8 +220,6 @@ struct CompanionSettingsRows: View {
         }
         return about
     }
-
-    private var isListening: Bool { if case .listening = server.state { return true }; return false }
 
     /// Reaching this Mac outside the home network: one switch for a relay (Nook's, or one Settings sets up on the user's
     /// own Cloudflare account), and whether Tailscale runs here.
@@ -361,36 +268,15 @@ struct CompanionSettingsRows: View {
         }
     }
 
-    /// The user's own relay: set up in two steps (open Cloudflare, paste the token), or the one already set up.
+    /// The user's own relay: one row that opens `OwnRelaySheet` while there is none, or the one already set up.
     @ViewBuilder
     private var ownRelay: some View {
         if relay.address.isEmpty {
-            SettingNote(tr("companion.relay.setup.intro"))
-            Button(tr("companion.relay.setup.open")) { NSWorkspace.shared.open(CloudflareRelaySetup.tokenPage) }
             HStack(spacing: NookTheme.Spacing.md) {
-                SecureField(tr("companion.relay.setup.token"), text: $token).textFieldStyle(.roundedBorder)
-                Button(tr("companion.relay.setup.go")) {
-                    relay.setUp(token: token)
-                    token = ""
-                }
-                .disabled(token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || settingUp)
-            }
-            switch relay.setup {
-            case .working(.account): SettingNote(tr("companion.relay.setup.account"))
-            case .working(.uploading): SettingNote(tr("companion.relay.setup.uploading"))
-            case .working(.starting): SettingNote(tr("companion.relay.setup.starting"))
-            case .failed(let message): SettingNote(tr("companion.relay.setup.failed", message), tone: .error)
-            case .idle: EmptyView()
-            }
-            DisclosureGroup(tr("companion.relay.setup.manual")) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    TextField(tr("companion.relay.address"), text: $manualAddress).textFieldStyle(.roundedBorder)
-                    Button(tr("companion.relay.setup.use")) {
-                        relay.address = manualAddress
-                        manualAddress = ""
-                    }
-                    .disabled(CompanionRelay.normalize(manualAddress) == nil)
-                }
+                SettingLabel(tr("companion.relay.sheet.title"), detail: tr("companion.relay.setup.intro"))
+                Spacer(minLength: NookTheme.Spacing.md)
+                Button(tr("companion.relay.setup.go")) { settingUpRelay = true }
+                    .controlSize(.small)
             }
         } else {
             HStack(spacing: NookTheme.Spacing.md) {
@@ -399,11 +285,6 @@ struct CompanionSettingsRows: View {
                 Button(tr("companion.relay.own.change")) { relay.forgetOwnRelay() }
             }
         }
-    }
-
-    private var settingUp: Bool {
-        if case .working = relay.setup { return true }
-        return false
     }
 
     @ViewBuilder
@@ -461,21 +342,6 @@ struct CompanionSettingsRows: View {
             if !places.isEmpty { SettingNote(tr("companion.reachable", places.joined(separator: ", "))) }
         case .failed(let message): SettingNote(tr("companion.failed", message), tone: .error)
         case .stopped: EmptyView()
-        }
-    }
-
-    private func pairing(_ link: PairingLink) -> some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
-            if let url = link.url, let code = QRCodeView(text: url.absoluteString, side: 140, label: tr("companion.qr")) {
-                code
-            }
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).fixedSize(horizontal: false, vertical: true)
-                Button(copied.copied ? tr("companion.copied") : tr("companion.copyLink")) {
-                    if let url = link.url { copied.copy(url.absoluteString) }
-                }
-                Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil }
-            }
         }
     }
 }
