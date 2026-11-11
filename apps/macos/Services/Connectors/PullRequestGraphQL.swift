@@ -30,6 +30,8 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     var labels: [String] = []
     /// Each label's color as GitHub's six hex digits ("d73a4a"), for the colored chips and the Labels filter.
     var labelColors: [String: String] = [:]
+    /// What each label is for, where GitHub has a description, for the chip's tooltip. Saved lists before it have none.
+    var labelDescriptions: [String: String] = [:]
     /// The branch the changes come from, so the search finds a pull request by its branch name too.
     var headBranch = ""
     /// The branch it merges into; a pull request whose base is another one's head stands on it (a stack).
@@ -44,7 +46,7 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
 
 extension PullRequestItem {
     private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions, review, conflict, labels,
-                                            labelColors, headBranch, baseBranch, nodeID }
+                                            labelColors, labelDescriptions, headBranch, baseBranch, nodeID }
 
     /// A list saved before states existed only held open pull requests.
     init(from decoder: Decoder) throws {
@@ -60,6 +62,7 @@ extension PullRequestItem {
                   conflict: try c.decodeIfPresent(Bool.self, forKey: .conflict) ?? false,
                   labels: try c.decodeIfPresent([String].self, forKey: .labels) ?? [],
                   labelColors: try c.decodeIfPresent([String: String].self, forKey: .labelColors) ?? [:],
+                  labelDescriptions: try c.decodeIfPresent([String: String].self, forKey: .labelDescriptions) ?? [:],
                   headBranch: try c.decodeIfPresent(String.self, forKey: .headBranch) ?? "",
                   baseBranch: try c.decodeIfPresent(String.self, forKey: .baseBranch) ?? "",
                   nodeID: try c.decodeIfPresent(String.self, forKey: .nodeID) ?? "")
@@ -341,7 +344,7 @@ enum PullRequestGraphQL {
     }
     fragment row on PullRequest {
       id number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
-      labels(first: 6) { nodes { name color } }
+      labels(first: 6) { nodes { name color description } }
       author { login }
       repository { nameWithOwner isArchived }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -528,6 +531,7 @@ enum PullRequestGraphQL {
                                    conflictKnown: (node["mergeable"] as? String).map { $0 != "UNKNOWN" } ?? false,
                                    labels: labels.compactMap { $0["name"] as? String },
                                    labelColors: labelColors(labels),
+                                   labelDescriptions: labelDescriptions(labels),
                                    headBranch: (node["headRefName"] as? String) ?? "",
                                    baseBranch: (node["baseRefName"] as? String) ?? "",
                                    nodeID: (node["id"] as? String) ?? "")
@@ -541,6 +545,17 @@ enum PullRequestGraphQL {
             if let name = label["name"] as? String, let color = label["color"] as? String, !color.isEmpty { colors[name] = color }
         }
         return colors
+    }
+
+    /// Name to description for label nodes (GitHub's GraphQL and REST, Gitea and Forgejo); labels without one are left out.
+    static func labelDescriptions(_ labels: [[String: Any]]) -> [String: String] {
+        var descriptions: [String: String] = [:]
+        for label in labels {
+            guard let name = label["name"] as? String, let text = (label["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { continue }
+            descriptions[name] = text
+        }
+        return descriptions
     }
 
     static func review(_ decision: String?) -> PullRequestItem.Review {

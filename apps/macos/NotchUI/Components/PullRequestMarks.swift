@@ -1,14 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// A pull request label: a dot in the label's own GitHub color and its name in a faint capsule.
-/// Used on list rows, on a pull request's Summary, and in the Labels filter.
+/// A pull request label: a dot in the label's own GitHub color and its name in a faint capsule. Resting the pointer on it
+/// shows what the label is for, where the forge describes it. Used on list rows, on a pull request's Summary, and in the
+/// Labels filter.
 struct LabelChip: View {
     let name: String
     /// GitHub's six hex digits; a label without one gets a grey dot.
     var color: String? = nil
     /// Text after the name ("+2" for labels that did not fit).
     var suffix: String? = nil
+    /// What the label is for, as its forge describes it.
+    var description: String? = nil
+
+    private var detail: String? {
+        guard let text = description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
@@ -21,7 +29,9 @@ struct LabelChip: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, 1)
         .background(NookTheme.shape(NookTheme.Radius.chip).strokeBorder(NookTheme.line2))
-        .help(name)
+        .help(detail.map { name + ": " + $0 } ?? name)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(detail ?? "")
     }
 }
 

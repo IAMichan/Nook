@@ -59,6 +59,8 @@ struct PullRequestDetail: Equatable, Sendable {
     var labels: [String] = []
     /// Each label's color as six hex digits, as the list's rows have them.
     var labelColors: [String: String] = [:]
+    /// What each label is for, where the forge describes it; shown when the pointer rests on its chip.
+    var labelDescriptions: [String: String] = [:]
     /// GitHub's node id, for the actions only GraphQL offers (marking a draft ready for review).
     var nodeID = ""
     /// The repository the head branch lives in ("ada/app" for a fork); nil when the fork was deleted.
@@ -476,6 +478,7 @@ enum PullRequestDetailParser {
         }
         detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.labelColors = PullRequestGraphQL.labelColors((pull["labels"] as? [[String: Any]]) ?? [])
+        detail.labelDescriptions = PullRequestGraphQL.labelDescriptions((pull["labels"] as? [[String: Any]]) ?? [])
         detail.nodeID = (pull["node_id"] as? String) ?? ""
         detail.headRepository = (head["repo"] as? [String: Any])?["full_name"] as? String
         detail.maintainerEdits = (pull["maintainer_can_modify"] as? Bool) == true

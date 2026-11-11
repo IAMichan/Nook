@@ -249,7 +249,16 @@ final class WorkspaceManager: ObservableObject {
     var pullRequestCreated: ((_ run: UUID?, _ url: URL) -> Void)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
+    /// The host's change feed of a watched pull request (GitHub's event stream): emits when it may have changed and once
+    /// per (re)connect; nil where the host offers none. Set by AppModel.
+    var pullRequestEvents: ((URL) -> AsyncStream<Void>?)?
     var watchesInFlight: Set<String> = []
+    /// Watches whose host reported a change while they were being read: read once more when that read is done.
+    var watchRechecks: Set<String> = []
+    /// One change feed per watched pull request (by its link), shared by every session watching it.
+    var pullRequestFeeds: [String: Task<Void, Never>] = [:]
+    /// When a feed ended by itself (GitHub refused it, or it kept failing): it starts again a sweep later at the earliest.
+    var pullRequestFeedEnded: [String: Date] = [:]
     /// Sessions whose queue waits for a fresh look at a pull request before its next message goes out.
     var queueLooks: Set<UUID> = []
     /// Codex's subagents per session: the thread each runs on, and the timeline event that stands for it.
@@ -2409,6 +2418,7 @@ final class WorkspaceManager: ObservableObject {
                 $0.prWatch = nil
                 $0.extraPRWatches = nil
             }
+            followPullRequestFeeds()
             return
         }
         guard !isWatching(id, url: url) else { return }
@@ -2439,32 +2449,92 @@ final class WorkspaceManager: ObservableObject {
             run.prWatch = rest.isEmpty ? nil : rest.removeFirst()
             run.extraPRWatches = rest.isEmpty ? nil : rest
         }
+        // Its host change feed ends with the last watch on it; the subscription is deleted.
+        followPullRequestFeeds()
     }
 
     /// Looks at each watched pull request at most every two minutes, stretched by the energy plan. A watch that wakes its
     /// agent keeps going while nobody is at the Mac (the agent answers a review or a failed check by itself), only slower;
-    /// one that only updates a badge waits until someone is back.
+    /// one that only updates a badge waits until someone is back. Host change feeds start and stop here too.
     func checkPullRequestWatches(force: Bool = false) {
-        guard let fetch = pullRequestSnapshot else { return }
+        guard pullRequestSnapshot != nil else { return }
         let now = Date()
         let energy = EnergyMonitor.shared
         let gap = 120 * energy.plan.slowdown
         for run in runs {
             guard !run.archived else { continue }
             for watch in run.prWatches {
-                let key = run.id.uuidString + " " + watch.url
-                guard watch.state == "open", !watchesInFlight.contains(key),
-                      force || watch.wakeAgent || !energy.signals.idle,
-                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true,
-                      let url = URL(string: watch.url) else { continue }
-                let id = run.id
-                watchesInFlight.insert(key)
-                Task { [weak self] in
-                    let snapshot = await fetch(url)
-                    self?.watchesInFlight.remove(key)
-                    guard let self, let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == watch.url }) else { return }
-                    self.pullRequestChanged(id, old: current, new: snapshot)
+                guard force || watch.wakeAgent || !energy.signals.idle,
+                      force || watch.checkedAt.map({ now.timeIntervalSince($0) >= gap || $0 > now }) ?? true else { continue }
+                checkPullRequestWatch(run.id, url: watch.url, recheck: false)
+            }
+        }
+        followPullRequestFeeds()
+    }
+
+    /// Reads every watch on the pull request at `url` now: its host just said it changed.
+    func checkPullRequestWatches(url: String) {
+        for run in runs where !run.archived && run.prWatches.contains(where: { $0.url == url }) {
+            checkPullRequestWatch(run.id, url: url, recheck: true)
+        }
+    }
+
+    /// Reads one watched pull request and turns what changed into news. With `recheck` (the host reported a change), a
+    /// read already under way is followed by one more, so the change is not missed; the sweep just skips it.
+    private func checkPullRequestWatch(_ id: UUID, url link: String, recheck: Bool) {
+        guard let fetch = pullRequestSnapshot, let watch = run(id)?.prWatches.first(where: { $0.url == link }),
+              watch.state == "open", let url = URL(string: link) else { return }
+        let key = id.uuidString + " " + link
+        guard !watchesInFlight.contains(key) else {
+            if recheck { watchRechecks.insert(key) }
+            return
+        }
+        watchesInFlight.insert(key)
+        Task { [weak self] in
+            let snapshot = await fetch(url)
+            guard let self else { return }
+            self.watchesInFlight.remove(key)
+            if let snapshot, let current = self.run(id)?.prWatches.first(where: { $0.url == link }) {
+                self.pullRequestChanged(id, old: current, new: snapshot)
+            }
+            if self.watchRechecks.remove(key) != nil { self.checkPullRequestWatch(id, url: link, recheck: false) }
+        }
+    }
+
+    /// Keeps one host change feed per open watched pull request that the sweep would read now: none while the energy plan
+    /// pauses background work, and none for a watch that only updates a badge while nobody is at the Mac. A feed that
+    /// ended by itself waits a sweep (two minutes) before it is asked for again, as in t3code.
+    private func followPullRequestFeeds() {
+        guard let events = pullRequestEvents else { return }
+        let now = Date()
+        let energy = EnergyMonitor.shared
+        var wanted = Set<String>()
+        if energy.plan.pace != .paused {
+            for run in runs where !run.archived {
+                for watch in run.prWatches where watch.state == "open" && (watch.wakeAgent || !energy.signals.idle) {
+                    wanted.insert(watch.url)
                 }
+            }
+        }
+        for (url, feed) in pullRequestFeeds where !wanted.contains(url) {
+            feed.cancel()
+            pullRequestFeeds[url] = nil
+        }
+        pullRequestFeedEnded = pullRequestFeedEnded.filter { wanted.contains($0.key) && now.timeIntervalSince($0.value) < 120 }
+        for url in wanted where pullRequestFeeds[url] == nil && pullRequestFeedEnded[url] == nil {
+            // No feed for this host or account: asked again a sweep later, not every half minute.
+            guard let link = URL(string: url), let changes = events(link) else {
+                pullRequestFeedEnded[url] = now
+                continue
+            }
+            pullRequestFeeds[url] = Task { [weak self] in
+                for await _ in changes {
+                    guard !Task.isCancelled else { break }
+                    self?.checkPullRequestWatches(url: url)
+                }
+                guard !Task.isCancelled, let self else { return }
+                self.pullRequestFeeds[url] = nil
+                self.pullRequestFeedEnded[url] = Date()
             }
         }
     }
@@ -2486,6 +2556,8 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         settleQueuedNews(id, url: old.url, with: new)
+        // A merged or closed pull request has nothing more to report: its change feed ends.
+        if new.state != "open" { followPullRequestFeeds() }
         guard !lines.isEmpty else { return }
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }

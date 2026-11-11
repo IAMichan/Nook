@@ -4,15 +4,14 @@ import Foundation
 /// numbers, and gives no patch: a file is only a path and a kind of change (see `files`).
 struct AzureDevOpsPullRequestForge: PullRequestForgeClient {
     /// Azure's API has no diff, so a commit's own changes would be a list of names. It has no emoji, and a branch update
-    /// and a revert have no call of their own. Reviewers and labels stay readable: adding a reviewer needs an identity
-    /// lookup on another host, and labels have no list of a repository's own to choose from.
+    /// has no call of its own. Reviewers and labels stay readable: adding a reviewer needs an identity lookup on another
+    /// host, and labels have no list of a repository's own to choose from, nor descriptions.
     static let forgeFeatures: PullRequestForgeFeatures = {
         var features = PullRequestForgeFeatures()
         features.labels = false
         features.reviewers = false
         features.reactions = false
         features.updateBranch = false
-        features.revert = false
         features.commitView = false
         return features
     }()
@@ -75,7 +74,7 @@ struct AzureDevOpsPullRequestForge: PullRequestForgeClient {
 
     func commitFiles(sha: String) async throws -> [PullRequestFile] { throw PullRequestForgeError.unsupported(Self.name) }
 
-    func labels() async -> [(name: String, color: String)] { [] }
+    func labels() async -> [PullRequestLabelChoice] { [] }
 
     /// What the latest iteration (push) changed, in pages of Azure's own making.
     private func changes(_ number: Int) async throws -> [[String: Any]] {
@@ -131,7 +130,9 @@ struct AzureDevOpsPullRequestForge: PullRequestForgeClient {
             try await patch(pull(number), ["autoCompleteSetBy": ["id": Self.noIdentity]])
         case .deleteBranch(_, let branch):
             try await deleteBranch(branch, head: detail.headSHA)
-        case .requestReviewers, .updateBranch, .addLabels, .removeLabel, .approveWorkflow, .rebaseBranch, .revert, .setMaintainerEdits:
+        case .revert:
+            return try await revert(number, detail: detail)
+        case .requestReviewers, .updateBranch, .addLabels, .removeLabel, .approveWorkflow, .rebaseBranch, .setMaintainerEdits:
             throw PullRequestForgeError.unsupported(Self.name)
         }
         return nil
@@ -169,6 +170,51 @@ struct AzureDevOpsPullRequestForge: PullRequestForgeClient {
         guard let vote = Self.vote(verdict) else { return }
         let me = RemoteRepository.encode(try await viewerID())
         _ = try await http.json(pull(number, "/reviewers/\(me)"), method: "PUT", body: ["vote": vote])
+    }
+
+    /// What Azure's own Revert button does: a revert of the pull request's changes onto a new branch off its target (an
+    /// operation Azure runs by itself, asked after until it finished), then a pull request of that branch. Returns its link.
+    private func revert(_ number: Int, detail: PullRequestDetail) async throws -> String? {
+        guard detail.state == .merged else { throw PullRequestForgeError.refused("Only a merged pull request can be reverted.") }
+        guard !detail.baseBranch.isEmpty else { throw PullRequestForgeError.refused("\(Self.name) did not say which branch this merged into.") }
+        let branch = Self.revertBranch(number: number, at: Date())
+        let started = try await http.json("/reverts?\(Self.apiVersion)", method: "POST",
+                                          body: Self.revertBody(number: number, branch: branch, onto: detail.baseBranch)) as? [String: Any] ?? [:]
+        var answer = started
+        for _ in 0..<60 {
+            switch Self.revertOutcome(answer) {
+            case .done:
+                do {
+                    let made = try await http.json("/pullrequests?\(Self.apiVersion)", method: "POST",
+                                                   body: Self.revertPullRequestBody(number: number, title: detail.title, branch: branch,
+                                                                                    onto: detail.baseBranch)) as? [String: Any]
+                    let id = Self.int(made?["pullRequestId"]) ?? 0
+                    return repo.pullRequestURL(number: id)?.absoluteString
+                } catch {
+                    await removeBranch(branch)
+                    throw error
+                }
+            case .failed(let reason):
+                throw PullRequestForgeError.refused(reason)
+            case .pending:
+                guard let id = Self.int(started["revertId"]) else {
+                    throw PullRequestForgeError.refused("\(Self.name) did not start the revert.")
+                }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                answer = try await http.json("/reverts/\(id)?\(Self.apiVersion)") as? [String: Any] ?? [:]
+            }
+        }
+        throw PullRequestForgeError.refused("\(Self.name) is still making the revert; it shows as branch \(branch) once done.")
+    }
+
+    /// A revert branch that no pull request came of goes again, so it does not linger. Detached: also on cancellation.
+    private func removeBranch(_ branch: String) async {
+        let http = http
+        await Task.detached {
+            let refs = (try? await http.json("/refs?filter=" + RemoteRepository.encode("heads/" + branch) + "&\(Self.apiVersion)")) as? [String: Any]
+            guard let head = Self.rows(refs ?? [:]).first(where: { ($0["name"] as? String) == "refs/heads/" + branch })?["objectId"] as? String else { return }
+            _ = try? await http.json("/refs?\(Self.apiVersion)", method: "POST", body: [Self.deleteBranchBody(branch, head: head)])
+        }.value
     }
 
     /// Azure votes and sets auto-complete by identity, and the token is the only thing that says who that is.
@@ -238,6 +284,38 @@ struct AzureDevOpsPullRequestForge: PullRequestForgeClient {
             ] as [String: Any]
         }
         return body
+    }
+
+    /// A new branch per try: Azure refuses a revert onto a branch name that is taken.
+    static func revertBranch(number: Int, at date: Date) -> String {
+        "revert-pr-\(number)-" + String(Int(date.timeIntervalSince1970), radix: 36)
+    }
+
+    static func revertBody(number: Int, branch: String, onto: String) -> [String: Any] {
+        ["generatedRefName": "refs/heads/" + branch, "ontoRefName": "refs/heads/" + onto, "source": ["pullRequestId": number]]
+    }
+
+    static func revertPullRequestBody(number: Int, title: String, branch: String, onto: String) -> [String: Any] {
+        ["sourceRefName": "refs/heads/" + branch, "targetRefName": "refs/heads/" + onto, "title": "Revert \"\(title)\"",
+         "description": "This reverts pull request !\(number)"]
+    }
+
+    enum RevertOutcome: Equatable {
+        case pending, done
+        case failed(String)
+    }
+
+    /// Where Azure's revert operation stands. A conflict or a refusal fails with Azure's reason.
+    static func revertOutcome(_ answer: [String: Any]) -> RevertOutcome {
+        let detail = answer["detailedStatus"] as? [String: Any]
+        switch (answer["status"] as? String)?.lowercased() {
+        case "completed": return .done
+        case "failed", "abandoned":
+            if (detail?["conflict"] as? Bool) == true { return .failed("The revert conflicts with later changes on the target branch.") }
+            let message = (detail?["failureMessage"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return .failed(message ?? "\(name) could not revert this pull request.")
+        default: return .pending
+        }
     }
 
     static func deleteBranchBody(_ branch: String, head: String) -> [String: Any] {
