@@ -351,6 +351,42 @@ final class PullRequestLinksTests: XCTestCase {
                        "going back to a branch takes it out of the earlier ones")
     }
 
+    /// An agent made four branches in one turn, one pull request each; Nook's reads only caught the last two.
+    func testPassedFindsBranchesBetweenTwoReads() {
+        let reflog = [
+            "commit: fix: use label-micro",
+            "checkout: moving from fix/icon-spacing to fix/label-micro",
+            "commit: fix: icon spacing",
+            "checkout: moving from fix/search-input to fix/icon-spacing",
+            "commit: fix: search input",
+            "checkout: moving from fix/ellipsis to fix/search-input",
+            "commit: fix: ellipsis",
+            "checkout: moving from nook/fix-ui to fix/ellipsis",
+            "Branch: renamed refs/heads/nook/kijk-ui to refs/heads/nook/fix-ui",
+            "reset: moving to HEAD",
+        ]
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "fix/icon-spacing", to: "fix/label-micro"), [])
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "nook/fix-ui", to: "fix/label-micro"),
+                       ["fix/ellipsis", "fix/search-input", "fix/icon-spacing"])
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "nook/kijk-ui", to: "fix/label-micro"),
+                       ["fix/ellipsis", "fix/search-input", "fix/icon-spacing"], "a rename of the known branch counts as it")
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "somewhere-else", to: "fix/label-micro"), [],
+                       "a history that never shows the known branch adds nothing")
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: nil, to: "fix/label-micro"), [])
+    }
+
+    func testPassedSkipsDetachedCommitsAndRepeats() {
+        let reflog = [
+            "checkout: moving from feat-b to feat-c",
+            "checkout: moving from 3be533f11 to feat-b",
+            "checkout: moving from feat-b to 3be533f11",
+            "checkout: moving from feat-c to feat-b",
+            "checkout: moving from feat-a to feat-c",
+        ]
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "feat-a", to: "feat-c"), ["feat-b"],
+                       "going back to the current branch and a detached commit are no branches passed")
+    }
+
     func testKeepingReplacesAnOlderReadOfTheSameRequest() {
         var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
         var merged = first; merged.state = .merged
