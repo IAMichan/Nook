@@ -1,0 +1,105 @@
+name: macOS preview
+
+# Builds an unsigned (ad-hoc signed) Nook.app of a pull request for hands-on testing, only when a maintainer adds the
+# `preview` label: macOS runners are scarce, so this never runs by itself. While the label stays on, every new push
+# builds a fresh preview. Download `nook-macOS-preview` from the run's artifacts (kept 14 days); the job summary says how
+# to open it. Not a release: no update key, no notarization, and it shares settings with an installed Nook.
+#
+# It runs on pull_request (read-only token, no secrets), so a pull request from a fork builds its own code without
+# access to anything else.
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Build preview app
+    if: >-
+      !github.event.pull_request.draft &&
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview')
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DERIVED_DATA: ${{ github.workspace }}/.derived-data
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select newest Xcode
+        id: xcode
+        run: |
+          XCODE="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -1)"
+          if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
+          xcodebuild -version
+          echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+      # The same Debug package cache build.yml saves on main, so a preview mostly compiles Nook's own sources.
+      - name: Restore Swift package build cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .derived-data
+            !.derived-data/Logs
+            !.derived-data/Build/Intermediates.noindex/Nook.build
+          key: macos-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
+          restore-keys: macos-dd-${{ steps.xcode.outputs.build }}-
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen
+      - name: Build
+        timeout-minutes: 40
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            xcodebuild -resolvePackageDependencies -project Nook.xcodeproj -scheme Nook -derivedDataPath "$DERIVED_DATA" && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep $((attempt * 20))
+          done
+          xcodebuild build -project Nook.xcodeproj -scheme Nook -configuration Debug -destination platform=macOS \
+            -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee build.log
+      - name: Errors and warnings
+        if: failure()
+        run: grep -E "error:" build.log | sort -u | head -100 || true
+      - name: Sign ad hoc and package
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          APP="$DERIVED_DATA/Build/Products/Debug/Nook.app"
+          PLIST="$APP/Contents/Info.plist"
+          # The stamp points at this runner's checkout; without it the app offers no "rebuild from source" update.
+          for KEY in NookSourceCommit NookSourceBranch NookSourceRoot NookDeveloperDir; do
+            /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+          done
+          # Apple Silicon runs only signed code: nested code first, then the app with its entitlements.
+          SIGN=(--force --sign - --timestamp=none)
+          find "$APP/Contents" -depth \( -name '*.framework' -o -name '*.dylib' -o -name '*.xpc' -o -name '*.appex' \) -print |
+            while IFS= read -r ITEM; do codesign "${SIGN[@]}" "$ITEM"; done
+          codesign "${SIGN[@]}" --entitlements App/Nook.entitlements "$APP"
+          codesign --verify --deep --strict "$APP"
+          mkdir -p "$RUNNER_TEMP/preview"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/preview/Nook-PR$PR_NUMBER-${HEAD_SHA:0:7}.zip"
+          {
+            echo "## macOS preview of #$PR_NUMBER"
+            echo "Download **nook-macOS-preview** below, unzip it, then in Terminal run \`xattr -cr Nook.app\` and open it."
+            echo "It is signed ad hoc (not notarized), so macOS asks again for permissions, and it shares settings with an"
+            echo "installed Nook: quit that one first. Commit: \`$HEAD_SHA\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nook-macOS-preview
+          path: ${{ runner.temp }}/preview/*.zip
+          retention-days: 14
+          if-no-files-found: error

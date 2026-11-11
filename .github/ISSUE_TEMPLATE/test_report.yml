@@ -1,6 +1,6 @@
 name: Platform Test Report
 description: Tried Nook on Windows, Linux, Android, or another setup? Tell us what worked and what didn't
-labels: [testing]
+labels: [testing, needs triage]
 body:
   - type: markdown
     attributes:

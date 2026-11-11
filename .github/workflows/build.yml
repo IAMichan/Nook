@@ -21,6 +21,8 @@ jobs:
       verified: ${{ steps.verified.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Colors, type, and radii come from NookTheme
         run: scripts/ui-lint.sh
       - name: No self-feeding subscriptions or endless animations
@@ -51,6 +53,8 @@ jobs:
         working-directory: apps/macos
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Select newest Xcode (the MLX packages need Xcode 26)
         id: xcode
         run: |

@@ -1,0 +1,129 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { MARKER, summarize, render, nextSteps, findPullNumber } = require("./pr-overview.cjs");
+
+test("summarize: basic draft PR with no runs", () => {
+  const pr = {
+    number: 10,
+    draft: true,
+    mergeable_state: "clean",
+    labels: [{ name: "size:S" }, { name: "vouch:trusted" }, { name: "area: macos" }],
+    user: { login: "alice" },
+  };
+  const checkRuns = [];
+  const reviews = [];
+
+  const summary = summarize({ pr, checkRuns, reviews });
+  assert.equal(summary.number, 10);
+  assert.equal(summary.draft, true);
+  assert.equal(summary.size, "S");
+  assert.equal(summary.vouch, "trusted");
+  assert.deepEqual(summary.areaLabels, ["macos"]);
+  assert.equal(summary.gate.state, "missing");
+  assert.equal(summary.approved, 0);
+
+  const rendered = render(summary);
+  assert.ok(rendered.startsWith(MARKER));
+  assert.ok(rendered.includes("Not started: CI does not run on drafts."));
+  assert.ok(rendered.includes("Mark the pull request **ready for review**"));
+});
+
+test("summarize: running CI with partial failures", () => {
+  const pr = {
+    number: 11,
+    draft: false,
+    mergeable_state: "clean",
+    labels: [{ name: "size:M" }, { name: "vouch:unvouched" }],
+    user: { login: "bob" },
+  };
+  const checkRuns = [
+    { name: "Check", status: "in_progress", conclusion: null },
+    { name: "macos / Build", status: "completed", conclusion: "failure", html_url: "https://ci/fail" },
+    { name: "relay / Deploy", status: "in_progress", conclusion: null },
+  ];
+  const reviews = [];
+
+  const summary = summarize({ pr, checkRuns, reviews });
+  assert.equal(summary.draft, false);
+  assert.equal(summary.ciRunning, true);
+  assert.equal(summary.failedJobs.length, 1);
+  assert.equal(summary.failedJobs[0].name, "macos / Build");
+
+  const rendered = render(summary);
+  assert.ok(rendered.includes("Running. Already failing: [macos / Build](https://ci/fail)."));
+  assert.ok(rendered.includes("Fix the failing CI job: [macos / Build](https://ci/fail)."));
+});
+
+test("summarize: all green, 1 approval -> ready to merge", () => {
+  const pr = {
+    number: 12,
+    draft: false,
+    mergeable_state: "clean",
+    labels: [{ name: "size:XS" }, { name: "vouch:trusted" }],
+    user: { login: "alice" },
+  };
+  const checkRuns = [
+    { name: "Check", status: "completed", conclusion: "success" },
+    { name: "Description follows template", status: "completed", conclusion: "success" },
+    { name: "macos / Build", status: "completed", conclusion: "success" },
+  ];
+  const reviews = [{ user: { login: "reviewer1" }, state: "APPROVED" }];
+
+  const summary = summarize({ pr, checkRuns, reviews });
+  assert.equal(summary.gate.state, "passed");
+  assert.equal(summary.approved, 1);
+
+  const rendered = render(summary);
+  assert.ok(rendered.includes("Passed (macos)."));
+  assert.ok(rendered.includes("**Ready to merge.**"));
+});
+
+test("summarize: review handling (author excluded, changes requested overrides approved)", () => {
+  const pr = {
+    number: 13,
+    draft: false,
+    labels: [],
+    user: { login: "author1" },
+  };
+  const checkRuns = [];
+  const reviews = [
+    { user: { login: "author1" }, state: "APPROVED" }, // author self-approval ignored
+    { user: { login: "rev1" }, state: "APPROVED" },
+    { user: { login: "rev2" }, state: "APPROVED" },
+    { user: { login: "rev2" }, state: "CHANGES_REQUESTED" }, // rev2 changed mind
+  ];
+
+  const summary = summarize({ pr, checkRuns, reviews });
+  assert.equal(summary.approved, 1);
+  assert.deepEqual(summary.changesRequested, ["rev2"]);
+
+  const steps = nextSteps(summary);
+  assert.ok(steps.some((s) => s.includes("Address the changes requested by @rev2")));
+});
+
+test("findPullNumber: finds from pull_request payload, workflow_run, or head_sha", async () => {
+  // from pull_request
+  const num1 = await findPullNumber({
+    context: { payload: { pull_request: { number: 42 } } },
+  });
+  assert.equal(num1, 42);
+
+  // from workflow_run.pull_requests
+  const num2 = await findPullNumber({
+    context: { payload: { workflow_run: { pull_requests: [{ number: 99 }] } } },
+  });
+  assert.equal(num2, 99);
+
+  // from workflow_run matching head_sha via paginate
+  const num3 = await findPullNumber({
+    github: {
+      paginate: async () => [{ head: { sha: "abc123" }, number: 77 }],
+      rest: { pulls: { list: () => {} } },
+    },
+    context: {
+      repo: { owner: "owner", repo: "repo" },
+      payload: { workflow_run: { pull_requests: [], head_sha: "abc123" } },
+    },
+  });
+  assert.equal(num3, 77);
+});

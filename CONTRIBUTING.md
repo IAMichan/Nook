@@ -29,7 +29,7 @@ Looking for something concrete? Check the issues labeled [`good first issue`](ht
 6. **Open a pull request** using the [PR template](.github/pull_request_template.md). Commits, branches, code, comments, and docs are written in English.
 7. **Link the issues it resolves.** Before opening the pull request, check the [open issues](https://github.com/IAMichan/nook/issues) for any your change resolves, and list them under *Related issues* as `Closes #123` so they close on merge. Use `Part of #123` when the issue stays open.
 
-CI runs on every pull request, and an automated reviewer (CodeRabbit) leaves comments. Don't worry if CI or a review asks for changes; that's normal, and maintainers are happy to help you get it green.
+CI runs on every pull request, and an automated reviewer (CodeRabbit) leaves comments. Don't worry if CI or a review asks for changes; that's normal, and maintainers are happy to help you get it green. The **Pull request overview** comment at the top of your pull request keeps itself up to date and lists exactly what is still needed before it can merge; the required check is called `Check`. Don't commit screenshots or logs as proof: drag them into the pull request description instead. To let others try a macOS change without building it, a maintainer can add the `preview` label, which attaches a downloadable app to the run.
 
 ## Building Locally
 
@@ -142,6 +142,6 @@ the merged pull requests grouped by label (`.github/release.yml`); before releas
 
 ## Reporting Issues
 
-Please use the GitHub issue templates for bug reports and feature requests. **Do not** report security vulnerabilities in public issues—see [SECURITY.md](SECURITY.md) for private disclosure instructions.
+Please use the GitHub issue templates for bug reports and platform test reports. Ideas and feature requests go to [Discussions → Ideas](https://github.com/IAMichan/nook/discussions/categories/ideas), questions to [Q&A](https://github.com/IAMichan/nook/discussions/categories/q-a). **Do not** report security vulnerabilities in public issues—see [SECURITY.md](SECURITY.md) for private disclosure instructions.
 
 By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
