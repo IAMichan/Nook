@@ -81,10 +81,13 @@ struct AgentCommandPalette: View {
     /// Keeps the entries that match every word, the best match first, in their order otherwise.
     private func filtered(_ list: [Entry], _ parsed: PaletteQuery) -> [Entry] {
         guard !parsed.isEmpty else { return list }
-        return list.enumerated()
-            .compactMap { offset, entry in parsed.match(title: entry.title, detail: entry.detail).map { (entry, $0, offset) } }
-            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
-            .map(\.0)
+        // Typed step by step: as one chain of tuples, the CI runner's compiler gave up type-checking it in reasonable time.
+        var hits: [(entry: Entry, score: Int, offset: Int)] = []
+        for (offset, entry) in list.enumerated() {
+            if let score = parsed.match(title: entry.title, detail: entry.detail) { hits.append((entry, score, offset)) }
+        }
+        hits.sort { a, b in a.score != b.score ? a.score > b.score : a.offset < b.offset }
+        return hits.map { $0.entry }
     }
 
     /// The sessions you open often and lately (from `SessionHistory`), the open one left out.
