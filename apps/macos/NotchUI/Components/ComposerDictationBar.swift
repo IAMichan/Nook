@@ -67,7 +67,7 @@ final class ComposerDictator: ObservableObject {
         let folders = [folder].compactMap { $0 } + workspace.settings.favoriteProjects + workspace.settings.recentProjects
         let branches = (ownRuns + runs).compactMap(\.branch)
         return DictationContext.strings(dictionary: FlowStore.shared.words,
-                                        projects: folders.map { URL(fileURLWithPath: $0).lastPathComponent },
+                                        projects: folders.map { ($0 as NSString).lastPathComponent },
                                         branches: Array(branches.prefix(40)))
     }
 

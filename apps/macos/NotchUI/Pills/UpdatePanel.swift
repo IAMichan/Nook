@@ -129,7 +129,13 @@ struct UpdatePanel: View {
                 }
             }
             .font(NookTheme.mono(11.5))
-            if updater.runningSessions > 0 {
+            if !release.changes.isEmpty {
+                changeList(release.changes, total: release.changeCount,
+                           github: updater.release.flatMap { GitHubRepository(remoteURL: "https://github.com/\($0.repository)") })
+            }
+            if updater.isTranslocated {
+                note(tr("update.translocated.note"), symbol: "folder.badge.questionmark", tint: NookTheme.amber)
+            } else if updater.runningSessions > 0 {
                 note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)
             }
             Text(tr("update.release.how"))
@@ -139,8 +145,15 @@ struct UpdatePanel: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 Spacer(minLength: 0)
                 SmallGhostButton(title: tr("update.later"), action: close)
-                SmallPrimaryButton(title: tr("update.install"), systemName: "arrow.down.circle") { updater.install() }
-                    .keyboardShortcut(.defaultAction)
+                if updater.isTranslocated {
+                    if updater.moving { ProgressView().controlSize(.small) }
+                    SmallPrimaryButton(title: tr("update.moveToApplications"), systemName: "folder") { updater.moveToApplications() }
+                        .disabled(updater.moving)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    SmallPrimaryButton(title: tr("update.install"), systemName: "arrow.down.circle") { updater.install() }
+                        .keyboardShortcut(.defaultAction)
+                }
             }
         }
     }
@@ -175,6 +188,16 @@ struct UpdatePanel: View {
                 ForEach(updater.steps, id: \.self) { step in
                     stepRow(step, current: current)
                 }
+            }
+            if current == .download, let fraction = updater.downloadProgress {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    ProgressView(value: fraction).progressViewStyle(.linear).tint(NookTheme.iris)
+                    Text(verbatim: "\(Int(fraction * 100))%")
+                        .font(NookTheme.TextStyle.detail)
+                        .monospacedDigit()
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                .padding(.leading, NookTheme.Spacing.xxl)
             }
             if current == .build {
                 VStack(alignment: .leading, spacing: 3) {
@@ -313,6 +336,10 @@ struct UpdatePanel: View {
                     // The new build is already in place: trying again only needs the restart, not a new build.
                     SmallGhostButton(title: tr("update.forceRestart")) { updater.forceRestart() }
                     SmallPrimaryButton(title: tr("update.tryAgain"), systemName: "arrow.clockwise") { updater.restart() }
+                        .keyboardShortcut(.defaultAction)
+                } else if failure.reason == .translocated {
+                    SmallPrimaryButton(title: tr("update.moveToApplications"), systemName: "folder") { updater.moveToApplications() }
+                        .disabled(updater.moving)
                         .keyboardShortcut(.defaultAction)
                 } else if updater.hasUpdate {
                     SmallPrimaryButton(title: tr("update.tryAgain"), systemName: "arrow.clockwise") {
