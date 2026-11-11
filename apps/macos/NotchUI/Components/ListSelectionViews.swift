@@ -136,7 +136,8 @@ struct SelectionBar: View {
         let usable = action.enabled && count > 0
         let asking = confirming == action.id
         return Button { run(action) } label: {
-            Image(icon: action.symbol)
+            // NookSymbol: an SF Symbol name, or one of Nook's own marks (a pull request's merged or closed state).
+            NookSymbol(action.symbol, size: 12)
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(asking ? NookTheme.paper : (action.destructive ? NookTheme.coral : NookTheme.paper))
                 .frame(width: 30, height: 26)

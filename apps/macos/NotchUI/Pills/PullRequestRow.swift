@@ -50,7 +50,14 @@ struct PullRequestRow: View, Equatable {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: onOpen) { content }
+            // ⇧- or ⌘-click picks the row for the selection bar instead of opening it.
+            Button {
+                if readable, PullRequestSelection.picks() {
+                    PullRequestSelection.shared.toggle(item, account: accountID)
+                } else {
+                    onOpen()
+                }
+            } label: { content }
                 .buttonStyle(.plain)
             // Shift shows the quick actions; outside the row's own button, so their clicks stay theirs.
             if readable { PullRequestQuickActionButtons(item: item, accountID: accountID) }
@@ -66,6 +73,7 @@ struct PullRequestRow: View, Equatable {
             }
         }
         .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+        .overlay { if readable { PullRequestSelectionRing(id: item.id) } }
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         // Resting on a row reads it ahead, so the click opens it at once.
@@ -74,7 +82,7 @@ struct PullRequestRow: View, Equatable {
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !Task.isCancelled { PullRequestDetailModel.prefetch(accountID: accountID, item: item) }
         }
-        .help(tr("agents.pulls.view"))
+        .help(tr(readable ? "agents.pulls.viewOrSelect" : "agents.pulls.view"))
         .accessibilityAddTraits(selected ? .isSelected : [])
         // Into a composer, or anywhere else that takes a link.
         .onDrag { NSItemProvider(object: (item.url?.absoluteString ?? "#\(item.number)") as NSString) }
