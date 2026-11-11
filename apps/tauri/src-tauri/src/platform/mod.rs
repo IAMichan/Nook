@@ -4,6 +4,8 @@ pub mod secrets;
 
 #[cfg(desktop)]
 pub mod desktop;
+#[cfg(desktop)]
+pub mod local_brain;
 
 #[cfg(desktop)]
 pub mod audio;

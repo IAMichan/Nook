@@ -26,6 +26,10 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     create_tray(app)?;
     register_shortcuts(app);
     watch_fullscreen(app);
+    let settings = app.state::<AppState>().settings();
+    if settings.start_local_brain {
+        start_local_brain(app, settings.provider);
+    }
     Ok(())
 }
 
@@ -73,6 +77,21 @@ fn fullscreen_app_in_front() -> bool {
     use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN};
     unsafe { SHQueryUserNotificationState() }
         .is_ok_and(|state| state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)
+}
+
+/// A local brain that is installed but not running is started in the background, so the first question just works.
+pub fn start_local_brain(_app: &AppHandle, provider: nook_core::provider::AIProvider) {
+    use super::local_brain::{ensure_running, Server};
+    use nook_core::provider::AIProvider;
+    let server = match provider {
+        AIProvider::Ollama => Server::Ollama,
+        AIProvider::Lmstudio => Server::LmStudio,
+        _ => return,
+    };
+    tauri::async_runtime::spawn(async move {
+        let outcome = ensure_running(server).await;
+        log::info!("Local brain at launch: {outcome:?}");
+    });
 }
 
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {

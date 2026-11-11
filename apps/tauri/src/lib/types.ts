@@ -69,6 +69,8 @@ export interface Settings {
   focusMode: string;
   /** When the inbox was last looked at (ISO); "Catch me up" summarises what came after. */
   inboxSeenAt: string | null;
+  /// Start an installed local brain (Ollama, LM Studio) that is not running.
+  startLocalBrain: boolean;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.
