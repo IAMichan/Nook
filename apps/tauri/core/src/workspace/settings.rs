@@ -152,10 +152,8 @@ impl WorkspaceSettings {
                 effort: config.effort.clone().filter(|e| !e.is_empty()),
             },
         );
-        self.folder_choices.insert(
-            path,
-            FolderChoices { provider: config.provider, mode: config.mode, permission, isolation: config.isolation, agents },
-        );
+        self.folder_choices
+            .insert(path, FolderChoices { provider: config.provider, mode: config.mode, permission, isolation: config.isolation, agents });
     }
 
     pub fn forget_project(&mut self, path: &str) {
