@@ -1517,6 +1517,9 @@ struct AgentRunPanel: View {
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)
             if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }
+            // The tasks it delegated: at work, asking something, or ended since your last message (its sub-threads).
+            let subThreads = workspace.subThreads(of: runID)
+            if !subThreads.isEmpty { SubThreadStrip(workspace: workspace, threads: subThreads) }
             GuestStrip(id: runID, shares: GuestShares.shared)
             if let goal = run.goal {
                 GoalStrip(goal: goal, canPause: workspace.takesGoalOutsideTurns(runID)) { workspace.goalControl(runID, $0) }
@@ -1566,6 +1569,8 @@ struct AgentRunPanel: View {
                     }
                     ComposerUltracodeToggle(offered: Ultracode.offered(provider: run.provider, model: run.model),
                                             on: run.ultracode == true) { workspace.setUltracode(runID, $0) }
+                    ComposerMainThreadToggle(offered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
+                                             on: run.mainThread == true) { workspace.setMainThread(runID, $0) }
                     ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))

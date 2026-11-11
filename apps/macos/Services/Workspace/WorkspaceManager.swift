@@ -777,8 +777,13 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     func start(_ config: NewRunConfig, allowSharedFolder: Bool = false) async throws -> UUID {
         // "Auto": the agent and account that fit the task and limits best (see `autoTarget`).
-        let config = config.model == AutoModel.id ? autoTarget(config) : config
+        var config = config.model == AutoModel.id ? autoTarget(config) : config
         if let problem = config.problem { throw StartError.config(problem) }
+        // A main thread knows it from its first message (`MainThread`); an idle start learns it with your first message.
+        if let note = MainThread.pending(on: config.mainThread, told: nil),
+           !config.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            config.task = MainThread.attach(note, to: config.task)
+        }
         // On another machine: no folder, git or worktree to prepare here.
         if let remote = config.remote { return try await startRemote(config, on: remote) }
         let projectPath = WorkspacePathPolicy.normalize(config.projectPath)
@@ -854,6 +859,8 @@ final class WorkspaceManager: ObservableObject {
         run.effort = config.effort
         run.speedTier = config.speedTier
         run.ultracode = config.ultracode
+        run.mainThread = config.mainThread
+        run.mainThreadTold = MainThread.toldAtStart(config)
         run.lineage = config.lineage
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
@@ -1433,6 +1440,7 @@ final class WorkspaceManager: ObservableObject {
             return false
         }
         let fresh = (fromYou && takeFreshArm(id)) || fresh
+        let text = fromYou ? withMainThreadNote(id, text) : text
         let waiting = queued[id].map { !$0.isEmpty && !$0.isHeld } ?? false
         let busy = run.status.isActive || processes[id] != nil || checkpointing.contains(id) || waiting
         var cleared = false
@@ -2000,7 +2008,7 @@ final class WorkspaceManager: ObservableObject {
                                                   origin: .claude(requestID: requestID, input: input), created: Date())
                     questions[id, default: []].append(pending)
                     update(id) { $0.move(to: .waitingApproval) }
-                    if let run = run(id) { onQuestion?(run, pending) }
+                    asked(id, pending)
                     return
                 }
             }
