@@ -175,6 +175,8 @@ enum UpdateText {
         case .badBundle(let found): return tr("update.reason.badBundle", found)
         case .rolledBack(let build): return tr("update.reason.rolledBack", build)
         case .notRestarted: return tr("update.reason.notRestarted")
+        case .notApplied(let version): return tr("update.reason.notApplied", version)
+        case .translocated: return tr("update.reason.translocated")
         case .other(let message): return message
         }
     }

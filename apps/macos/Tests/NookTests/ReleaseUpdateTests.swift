@@ -149,4 +149,47 @@ final class ReleaseUpdateTests: XCTestCase {
         XCTAssertFalse(Ed25519Verifier().isValid(signature: signature, of: Data([0]), publicKey: publicKey))
     }
     #endif
+
+    func testReadsPullRequestsFromReleaseNotes() {
+        let body = """
+        ## What's new
+        ### What's Changed
+        * Add force restart for failed app updates by @IAMichan in https://github.com/IAMichan/Nook/pull/689
+        * Distinguish checks running from checks failing by @someone-else in https://github.com/IAMichan/Nook/pull/690
+        * Not a pull request line
+        **Full Changelog**: https://github.com/IAMichan/Nook/compare/v0.1.0-beta.1...v0.1.0-beta.2
+        """
+        let changes = ReleaseNotes.parse(body, date: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(changes.map(\.pullRequest), [689, 690])
+        XCTAssertEqual(changes.first?.title, "Add force restart for failed app updates")
+        XCTAssertEqual(changes.last?.author, "someone-else")
+    }
+
+    func testCandidateListsWhatEveryNewerReleaseBrought() {
+        func notes(_ numbers: [Int]) -> String {
+            numbers.map { "* Change \($0) by @a in https://github.com/IAMichan/Nook/pull/\($0)" }.joined(separator: "\n")
+        }
+        var older = release("v0.2.0-beta.2")
+        older = GitHubRelease(tag: older.tag, name: older.name, prerelease: true, page: older.page, assets: older.assets, body: notes([1, 2]))
+        var newer = release("v0.2.0-beta.3")
+        newer = GitHubRelease(tag: newer.tag, name: newer.name, prerelease: true, page: newer.page, assets: newer.assets, body: notes([3, 2]))
+        let current = GitHubRelease(tag: "v0.2.0-beta.1", prerelease: true, assets: [], body: notes([0]))
+        let build = ReleaseBuild(version: ReleaseVersion("0.2.0-beta.1")!, publicKey: key)
+        guard case .available(let candidate) = ReleaseSelection.check([newer, older, current], for: build) else { return XCTFail() }
+        XCTAssertEqual(candidate.changes.map(\.pullRequest), [2, 3, 1], "newest release first, each pull request once, not this build's")
+        XCTAssertEqual(candidate.changeCount, 3)
+    }
+
+    func testSeesTranslocation() {
+        XCTAssertTrue(ReleaseInstallLocation.isTranslocated("/private/var/folders/x/T/AppTranslocation/ABC/d/Nook.app"))
+        XCTAssertFalse(ReleaseInstallLocation.isTranslocated("/Applications/Nook.app"))
+    }
+
+    func testNoticesAnUpdateThatDidNotTake() {
+        let now = Date()
+        let receipt = UpdateReceipt(from: "0.2.0-beta.1", to: "0.2.0-beta.2", changes: [], installedAt: now)
+        XCTAssertEqual(UpdateApplied.notApplied(receipt, running: "0.2.0-beta.1", now: now), "0.2.0-beta.2")
+        XCTAssertNil(UpdateApplied.notApplied(receipt, running: "0.2.0-beta.2", now: now), "it took")
+        XCTAssertNil(UpdateApplied.notApplied(receipt, running: "0.2.0-beta.1", now: now.addingTimeInterval(2 * 86_400)), "too old")
+    }
 }
