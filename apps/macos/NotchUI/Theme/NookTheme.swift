@@ -495,14 +495,27 @@ extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<LinkButtonSt
 
 /// A system menu style that also shows the pointing hand over an enabled menu button, like `NookPointerButtonStyle`.
 /// Use `.nookBorderlessButton` / `.nookButton` instead of `.borderlessButton` / `.button`.
+///
+/// `.nookButton` draws its label without chrome. A `.button` menu takes its look from the button style around it, but
+/// it only recognizes the system styles: under a Nook pointer style (`.nookPlain`) it falls back to a bordered,
+/// padded button, so the menu sets the system plain style on itself.
 struct NookPointerMenuStyle<Base: MenuStyle>: MenuStyle {
     var base: Base
+    var plainLabel = false
     @Environment(\.isEnabled) private var isEnabled
 
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        Menu(configuration)
-            .menuStyle(base)
-            .pointerStyle(isEnabled ? .link : nil)
+        if plainLabel {
+            Menu(configuration)
+                .menuStyle(base)
+                .buttonStyle(PlainButtonStyle())
+                .pointerStyle(isEnabled ? .link : nil)
+        } else {
+            Menu(configuration)
+                .menuStyle(base)
+                .pointerStyle(isEnabled ? .link : nil)
+        }
     }
 }
 
@@ -512,8 +525,8 @@ extension MenuStyle where Self == NookPointerMenuStyle<BorderlessButtonMenuStyle
 }
 
 extension MenuStyle where Self == NookPointerMenuStyle<ButtonMenuStyle> {
-    /// `.button` with the pointing hand.
-    static var nookButton: Self { NookPointerMenuStyle(base: .button) }
+    /// `.button` with the pointing hand and a plain label (no button chrome).
+    static var nookButton: Self { NookPointerMenuStyle(base: .button, plainLabel: true) }
 }
 
 extension View {
