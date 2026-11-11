@@ -180,7 +180,7 @@ struct FileViewer: View {
 
     /// A Markdown or notebook preview reads as a document on the panel itself, without the code background.
     private var rendersAsDocument: Bool {
-        previewing && !editor.editing && !comparing && (kind == .markdown || kind == .notebook)
+        previewing && !editor.editing && !comparing && kind.rendersAsMarkdown
     }
 
     var body: some View {
@@ -215,8 +215,15 @@ struct FileViewer: View {
         }
         .background(rendersAsDocument ? Color.clear : WS.code)
         .task(id: "\(target.path)|\(reloads)") {
-            let path = target.path
-            let loaded = await Task.detached(priority: .userInitiated) { FileViewing.load(path: path) }.value
+            let path = target.path, kind = kind
+            let loaded = await Task.detached(priority: .userInitiated) { () -> FileViewContent in
+                let loaded = FileViewing.load(path: path)
+                // Parsed here, off the main thread: the preview then finds the file's blocks in the cache.
+                if kind.rendersAsMarkdown, case .text(let lines, _) = loaded {
+                    _ = MarkdownCache.blocks(MarkdownPreview.document(lines.joined(separator: "\n"), kind: kind))
+                }
+                return loaded
+            }.value
             guard !Task.isCancelled else { return }
             content = loaded
             if case .text(let lines, _) = loaded { histories.record(lines.joined(separator: "\n") + "\n", path: path) }
@@ -264,9 +271,12 @@ struct FileViewer: View {
             SandboxedPageView(html: kind.sandboxPage(for: source))
         } else if previewing && kind == .mermaid {
             CodeRenderView(language: "mermaid", code: source)
-        } else if previewing && (kind == .markdown || kind == .notebook) {
+        } else if previewing && kind.rendersAsMarkdown {
             ScrollView(.vertical) {
-                MarkdownView(text: kind == .notebook ? (NotebookDocument.markdown(from: source) ?? source) : source)
+                // Lazy: only the blocks in view are built, so a long document with big tables opens at once. Equatable:
+                // the session redrawing around the panel leaves an unchanged document alone.
+                MarkdownView(text: MarkdownPreview.document(source, kind: kind), lazy: true)
+                    .equatable()
                     .environment(\.fileLinkBase, folder)
                     .environment(\.pullRequestLinksBeside, beside)
                     .padding([.horizontal, .top], NookTheme.Spacing.xl)
@@ -599,6 +609,20 @@ struct QuickLookView: NSViewRepresentable {
 
     static func dismantleNSView(_ view: QLPreviewView, coordinator: ()) {
         view.close()
+    }
+}
+
+/// The Markdown a file's preview draws: the file itself, or a notebook's cells as one document. A notebook's JSON is read
+/// once per text, not on every redraw of the panel.
+enum MarkdownPreview {
+    private static let notebooks = BoundedCache<String, String>(limit: 4)
+
+    static func document(_ source: String, kind: ArtifactKind) -> String {
+        guard kind == .notebook else { return source }
+        if let hit = notebooks.value(for: source) { return hit }
+        let document = NotebookDocument.markdown(from: source) ?? source
+        notebooks.set(document, for: source)
+        return document
     }
 }
 
