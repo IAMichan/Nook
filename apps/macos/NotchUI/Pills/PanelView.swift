@@ -177,6 +177,7 @@ struct PanelView: View {
         }
         // ⌘K (a rule, see `Keybindings`): search everything from every tab, and again to close it.
         .keyCommand("search.toggle", enabled: sheet == nil && !app.demoMode) { searching.toggle() }
+        .shortcutCheatSheet()
         // F6 between the window's parts; ⌘W, ⌘D and ⇧⌘D in a terminal.
         .windowKeyCommands()
         // Short results from anywhere in Nook (saved, approved, failed) and what waits for you (a permission request, an

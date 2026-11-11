@@ -19,13 +19,37 @@
   import { pullRequests } from "../lib/pulls.svelte";
 
   let route = $state<Route>(resumeRoute());
-  let showList = $state(true);
   let paletteOpen = $state(false);
   let width = $state(window.innerWidth);
+  // The sidebar's state is remembered. Below the narrow breakpoint it is an overlay that starts closed.
+  const SIDEBAR_KEY = "nook.sidebar.open";
+  const storedSidebar = () => { try { return localStorage.getItem(SIDEBAR_KEY) !== "0"; } catch { return true; } };
+  let showList = $state(window.innerWidth > 860 ? storedSidebar() : false);
   const android = $derived(nook.info?.capabilities.os === "android");
   // De telefoonindeling: op Android, en in een smal venster op de computer.
   const mobile = $derived(android || width <= 640);
   let companionClient = $state(false);
+  // Between the phone and the full layout the sidebar floats over the page instead of taking room from it.
+  const narrow = $derived(!mobile && width <= 860);
+  const overlay = $derived(narrow && showList && route === "chat");
+
+  $effect(() => {
+    if (mobile || narrow) return;
+    try { localStorage.setItem(SIDEBAR_KEY, showList ? "1" : "0"); } catch { /* remembering is a convenience */ }
+  });
+
+  // The title in the top bar renames the conversation in place: click it, type, Enter keeps and Escape drops.
+  let renaming = $state(false);
+  let titleDraft = $state("");
+  async function commitRename() {
+    if (!renaming) return;
+    renaming = false;
+    const id = nook.activeId;
+    const title = titleDraft.trim();
+    if (!id || !title || title === nook.active?.title) return;
+    try { await api.setNookFlags(id, { title }); await nook.refreshList(); await nook.load(id); }
+    catch (e) { toast.error("Could not rename conversation", e); }
+  }
 
   // Gamer Mode's coaching shows up as a toast on any page.
   $effect(() => gamer.start());
@@ -90,6 +114,7 @@
 
   function keys(e: KeyboardEvent) {
     const target = e.target instanceof Element ? e.target : null;
+    if (e.key === "Escape" && overlay && !paletteOpen) { showList = false; return; }
     const shortcut = shellShortcut(e, {
       paletteOpen, chat: route === "chat",
       modalOpen: !!document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]'),
@@ -126,7 +151,7 @@
 
 <svelte:window onkeydown={keys} bind:innerWidth={width} />
 
-<div class="main" class:mobile>
+<div class="main" class:mobile class:overlay>
   <nav class="rail" aria-label="Main navigation">
     <div class="head">
       <Orb size={22} movable mood={nook.waiting ? "waiting" : nook.working ? "working" : "idle"} />
@@ -146,7 +171,10 @@
     </div>
     {#if !mobile}
       <div class="rule"></div>
-      <div class="side-list" id="sidebar-slot">
+      <div class="side-list" id="sidebar-slot" role="presentation" onclick={(e) => {
+          const t = e.target as HTMLElement;
+          if (overlay && t.closest(".item") && !t.closest(".actions") && !t.closest(".menu-trigger")) showList = false;
+        }}>
         {#if route === "chat" && showList}<NookList />{/if}
       </div>
       <div class="footer">
@@ -170,12 +198,20 @@
         <div class="chatpane">
           <header class="title">
             <button class="ghost icon-button" onclick={() => (showList = !showList)} title={showList ? "Hide conversations" : "Show conversations"} aria-label={mobile ? "Back to conversations" : "Toggle conversations"} aria-expanded={showList}><Icon name={mobile ? "back" : "sidebar"} /></button>
-            <span class="name">{nook.active?.title ?? "New Nook"}</span>
+            {#if renaming}
+              <!-- svelte-ignore a11y_autofocus -->
+              <input class="rename" aria-label="Conversation title" autofocus bind:value={titleDraft} onblur={commitRename}
+                onkeydown={(e) => { if (e.key === "Enter") commitRename(); else if (e.key === "Escape") { e.stopPropagation(); renaming = false; } }} />
+            {:else if nook.active}
+              <button class="name editable" title="Rename" onclick={() => { titleDraft = nook.active?.title ?? ""; renaming = true; }}>{nook.active.title}</button>
+            {:else}
+              <span class="name">New Nook</span>
+            {/if}
             <span class="spacer"></span>
             <button class="ghost icon-button" disabled={!nook.active?.messages.length} onclick={copyConversation} title="Copy conversation as Markdown" aria-label="Copy conversation as Markdown"><Icon name="copy" /></button>
             <button class="ghost icon-button" onclick={() => { nook.newNook(); if (mobile) showList = false; }} title="New Nook (Ctrl+N)" aria-label="New Nook"><Icon name="plus" /></button>
           </header>
-          <Chat />
+          <Chat onattention={() => navigate("agents")} />
         </div>
       </div>
     {:else if route === "chats"}
@@ -223,6 +259,9 @@
   .listwrap { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .listwrap :global(.list) { flex: 1; }
   .title { min-height: 52px; padding: 0 16px; display: flex; align-items: center; gap: 8px; min-width: 0; flex-shrink: 0; }
+  .title .name.editable { background: transparent; border: 0; padding: 4px 8px; margin-left: -8px; border-radius: var(--radius-control); color: var(--paper); text-align: left; min-width: 0; }
+  .title .name.editable:hover { background: var(--row-hover); }
+  .rename { min-width: 0; flex: 0 1 360px; font-size: 15px; font-weight: 600; padding: 4px 8px; margin-left: -8px; }
   .title .name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .page-title { border-bottom: 1px solid var(--border); }
   .route-body { flex: 1; min-height: 0; overflow: hidden; }
@@ -235,7 +274,13 @@
     .tab, .tab.on, .tab:not(.on) { flex: none; width: 36px; height: 36px; padding: 0; }
     .tab.on span { display: none; }
     .side-list { display: none; }
+    /* The sidebar as an overlay beside the icon rail, over a soft scrim. */
+    .main.overlay::after { content: ""; position: fixed; inset: 0 0 0 56px; background: rgb(0 0 0 / 0.35); z-index: 19; animation: fade 160ms ease-out; }
+    .main.overlay .side-list { display: flex; position: fixed; z-index: 20; top: 0; bottom: 0; left: 56px; width: 280px; padding: 8px; background: var(--sidebar); border-right: 1px solid var(--border); box-shadow: 0 8px 32px rgb(0 0 0 / 0.28); animation: slide 180ms ease-out; }
   }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes slide { from { transform: translateX(-12px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .main.overlay::after, .main.overlay .side-list { animation: none; } }
   .main.mobile { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; padding: var(--safe-top) var(--safe-right) 0 var(--safe-left); }
   .main.mobile .rail { flex-direction: row; justify-content: space-around; align-items: center; padding: 4px 8px calc(4px + var(--safe-bottom)); order: 2; gap: 0; border-top: 1px solid var(--border); border-right: 0; }
   .main.mobile .head { display: none; }

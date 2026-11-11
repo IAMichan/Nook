@@ -783,7 +783,19 @@ struct SessionWorkbench<Conversation: View>: View {
                          openSubThreadHere: openSubThreadHere,
                          console: runID.flatMap { run in consoleEventID.map { CommandConsoleRef(run: run, event: $0) } },
                          showConsole: { id in withAnimation(NookTheme.reveal) { consoleEventID = id } },
-                         closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } })
+                         closeConsole: { withAnimation(NookTheme.reveal) { consoleEventID = nil } },
+                         pinned: viewModel.pinnedTabs,
+                         moveTab: { moved, onto in
+                             viewModel[keyPath: slot.tabs] = SidePanelTabOrder.moving(viewModel[keyPath: slot.tabs], moved: moved, onto: onto,
+                                                                                     pinned: viewModel.pinnedTabs)
+                         },
+                         togglePin: { tool in
+                             let next = SidePanelTabOrder.toggling(tool, in: viewModel[keyPath: slot.tabs], pinned: viewModel.pinnedTabs)
+                             withAnimation(NookTheme.swap) {
+                                 viewModel[keyPath: slot.tabs] = next.tabs
+                                 viewModel.pinnedTabs = next.pinned
+                             }
+                         })
             .environment(\.sidePanelTakesFocus, panelTakesFocus)
             .focusArea(slot.tool == \NotchViewModel.bottomTool ? .bottomPanel : .sidePanel)
     }
@@ -934,6 +946,10 @@ private struct SessionToolPanel: View {
     /// Shows another command of the agent in the Terminal tab: the one it runs now, when you ask for it.
     var showConsole: (UUID) -> Void = { _ in }
     var closeConsole: () -> Void = {}
+    /// The tools pinned to the front of the tab row, what dragging one tab onto another does, and the pin in a tab's menu.
+    var pinned: Set<SessionTool> = []
+    var moveTab: (_ moved: SessionTool, _ onto: SessionTool) -> Void = { _, _ in }
+    var togglePin: (SessionTool) -> Void = { _ in }
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var files = FileViewerStore.shared
@@ -1046,7 +1062,9 @@ private struct SessionToolPanel: View {
     /// The open tabs, + right after them, and the button that closes the panel. The
     /// tabs scroll sideways when they do not fit, so the close button always stays in view.
     private var header: some View {
-        SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
+        SidePanelTabBar(items: tabs.flatMap(tabItems).map(pinnedMark), selected: selectedTab, onSelect: selectTab, onClose: closeTab,
+                        onMove: { moved, onto in moveTab(tool(of: moved), tool(of: onto)) },
+                        onTogglePin: { togglePin(tool(of: $0)) }) {
             addMenu
         } trailing: {
             if let maximized {
@@ -1057,6 +1075,21 @@ private struct SessionToolPanel: View {
             }
             SidePanelCloseButton(help: closeHelp, action: close)
         }
+    }
+
+    /// The tool a tab belongs to: a pull request or a browser tab is one of its tool's tabs, and pins and moves with it.
+    private func tool(of tab: SessionTab) -> SessionTool {
+        switch tab {
+        case .tool(let item): return item
+        case .pullRequest: return .pullRequest
+        case .browser: return .browser
+        }
+    }
+
+    private func pinnedMark(_ item: SidePanelTabItem<SessionTab>) -> SidePanelTabItem<SessionTab> {
+        var marked = item
+        marked.pinned = pinned.contains(tool(of: item.value))
+        return marked
     }
 
     /// The tab in view: a Pull request tab by its own id, as there can be several.

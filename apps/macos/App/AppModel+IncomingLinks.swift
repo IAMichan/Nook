@@ -51,6 +51,10 @@ extension AppModel {
             }
             return
         }
+        if let link = NookDeepLink.parse(url) {
+            openDeepLink(link)
+            return
+        }
         if let link = SessionLink.parse(url), let id = UUID(uuidString: link.id), workspace.run(id) != nil {
             openWorkspace(run: id)
         }
@@ -71,5 +75,21 @@ extension AppModel {
         PromptLinkInbox.shared.pendingCheckout = link
         viewModel.selectedAgentID = "new"
         viewModel.show(.panel(.agents))
+    }
+
+    /// `nook://conversation/<id>`, `nook://settings/<page>`, `nook://memory`, `nook://shortcuts`: Nook's own places.
+    private func openDeepLink(_ link: NookDeepLink) {
+        switch link {
+        case .conversation(let id):
+            guard chat.conversation(id) != nil else { return }
+            chat.select(id)
+            viewModel.show(.panel(.chat))
+        case .settings(let page):
+            openSettings(section: SettingsSection(rawValue: page))
+        case .memory:
+            openSettings(section: .memory)
+        case .shortcuts:
+            cheatSheetOpen = true
+        }
     }
 }

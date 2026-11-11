@@ -159,7 +159,7 @@ pub fn nook_delete(app: AppHandle, state: State<'_, AppState>, id: String) {
 }
 
 #[tauri::command]
-pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pinned: Option<bool>, archived: Option<bool>) {
+pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pinned: Option<bool>, archived: Option<bool>, title: Option<String>) {
     state.with_chat(|c| {
         if let Some(conv) = c.get_mut(&id) {
             if let Some(p) = pinned {
@@ -167,6 +167,10 @@ pub fn nook_set_flags(app: AppHandle, state: State<'_, AppState>, id: String, pi
             }
             if let Some(a) = archived {
                 conv.archived = a;
+            }
+            // A new name from the title in the header; a blank one keeps the old name.
+            if let Some(t) = title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                conv.title = t.chars().take(120).collect();
             }
         }
     });

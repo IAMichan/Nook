@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Review changes, laid out as a stacked diff (`StackedDiffList`): a toolbar, then every changed file in one
@@ -84,7 +85,8 @@ struct ChangesSheet: View {
             } else {
                 ChangesDiffList(workspace: workspace, runID: runID, scope: runID.uuidString, files: files,
                                 comments: workspace.reviewComments[runID] ?? [], expanded: $expanded, showsTree: showsTree,
-                                focus: initialFile?.path) { file, options in
+                                focus: initialFile?.path,
+                                hunkable: workspace.run(runID)?.isRemote == false ? Set(uncommitted.map(\.path)) : []) { file, options in
                     guard let change = self.files.first(where: { $0.path == file.path }) else { return "" }
                     return try await diff(change, options: options)
                 }
@@ -164,11 +166,37 @@ private struct ChangesDiffList: View, Equatable {
     @Binding var expanded: Set<String>
     let showsTree: Bool
     let focus: String?
+    /// The files whose hunks can be staged or discarded one by one: the changed files of a session on this Mac.
+    var hunkable: Set<String> = []
     let diff: (StackedDiffFile, DiffReadOptions) async throws -> String
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.runID == rhs.runID && lhs.scope == rhs.scope && lhs.files == rhs.files && lhs.comments == rhs.comments
-            && lhs.expanded == rhs.expanded && lhs.showsTree == rhs.showsTree && lhs.focus == rhs.focus
+            && lhs.expanded == rhs.expanded && lhs.showsTree == rhs.showsTree && lhs.focus == rhs.focus && lhs.hunkable == rhs.hunkable
+    }
+
+    /// Stages (accept) or discards (reject) one hunk of a file; discarding asks first, as it cannot be undone.
+    private func applyHunk(path: String, text: String, index: Int, action: HunkAction) {
+        guard let patch = HunkPatch(diff: text).patch(hunk: index) else { return }
+        let name = (path as NSString).lastPathComponent
+        if action == .reject {
+            let alert = NSAlert()
+            alert.messageText = tr("agents.diff.hunk.confirm")
+            alert.informativeText = tr("agents.diff.hunk.confirm.detail", name)
+            alert.addButton(withTitle: tr("file.viewer.discard.confirm"))
+            alert.addButton(withTitle: tr("button.cancel"))
+            guard alert.runAboveNotch() == .alertFirstButtonReturn else { return }
+        }
+        let workspace = workspace
+        let runID = runID
+        Task {
+            do {
+                try await workspace.applyHunk(runID, patch: patch, action: action)
+                ToastCenter.shared.success(tr(action == .accept ? "agents.diff.hunk.staged" : "agents.diff.hunk.discarded"), detail: name)
+            } catch {
+                ToastCenter.shared.error(tr("agents.diff.hunk.failed"), detail: error.localizedDescription)
+            }
+        }
     }
 
     var body: some View {
@@ -179,7 +207,10 @@ private struct ChangesDiffList: View, Equatable {
                          workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment, scope: scope))
                      },
                      onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true, path: file.path,
-                     scope: runID.uuidString + "\n" + file.path)
+                     scope: runID.uuidString + "\n" + file.path,
+                     onHunk: hunkable.contains(file.path) && file.kind == .modified ? { index, action in
+                         applyHunk(path: file.path, text: text, index: index, action: action)
+                     } : nil)
                 // Only when the diff or its comments changed.
                 .equatable()
                 .sessionFileMenu(workspace, runID: runID, path: file.path)
@@ -446,6 +477,9 @@ enum DiffCache {
     }()
 
     static func diff(_ key: String) -> String? { cache.object(forKey: key as NSString) as String? }
+
+    /// Forgets every diff: after a hunk was staged or discarded, the next read must come from git.
+    static func clear() { cache.removeAllObjects() }
 
     static func store(_ diff: String, _ key: String) {
         cache.setObject(diff as NSString, forKey: key as NSString, cost: diff.utf8.count)

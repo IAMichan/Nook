@@ -152,6 +152,10 @@ final class NotchViewModel: ObservableObject {
     /// The sub-thread the side panel's Sub-thread tab shows beside its session (`SubThreadStrip`), nil with none.
     @Published var sideSubThread: UUID?
 
+    /// The tools pinned to the front of the tab row (a tab's menu): `SidePanelTabOrder` keeps them there while you drag
+    /// the others. Kept while Nook runs, for the side and the bottom panel alike.
+    @Published var pinnedTabs: Set<SessionTool> = []
+
     /// The tab the side panel showed when it was put away.
     private var hiddenSideTool: SessionTool?
 
