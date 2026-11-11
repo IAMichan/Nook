@@ -95,27 +95,26 @@ struct MessageInfoView: View {
 /// when and by whom it was made, who may write and edit, and its people with their admins marked; a person's bio, username,
 /// number, address and job title. Only what the app said is shown (`ChatProfile`).
 struct ChatInfoButton: View {
-    let name: String
     let members: [String]
     let profile: ChatProfile?
     let isGroup: Bool
-    let appName: String
-    @State private var open = false
+    /// Opens the chat's info (`ChatsInfoSheet`), which the header holds, as a click on the chat's name or face does.
+    let action: () -> Void
     @State private var hovering = false
 
-    private var sorted: [String] {
-        // Admins first, then everyone else, each by name.
-        let admins = Set(profile?.admins ?? [])
+    /// Whether there is anything to show: a group's people or count, or anything its app said.
+    static func shows(members: [String]?, profile: ChatProfile?) -> Bool {
+        !(members ?? []).isEmpty || !(profile?.isEmpty ?? true)
+    }
+
+    /// Admins first, then everyone else, each by name.
+    static func sorted(_ members: [String], admins: [String]?) -> [String] {
+        let admins = Set(admins ?? [])
         return members.sorted { a, b in
             let (aAdmin, bAdmin) = (admins.contains(a), admins.contains(b))
             if aAdmin != bAdmin { return aAdmin }
             return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
         }
-    }
-
-    /// Whether there is anything to show: a group's people or count, or anything its app said.
-    static func shows(members: [String]?, profile: ChatProfile?) -> Bool {
-        !(members ?? []).isEmpty || !(profile?.isEmpty ?? true)
     }
 
     private var label: String {
@@ -127,7 +126,7 @@ struct ChatInfoButton: View {
     }
 
     var body: some View {
-        Button { open = true } label: {
+        Button(action: action) {
             Text(label)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
@@ -138,24 +137,20 @@ struct ChatInfoButton: View {
         .onHover { hovering = $0 }
         .pointerStyle(.link)
         .help(tr(isGroup ? "chats.info.group" : "chats.info.person"))
-        .popover(isPresented: $open, arrowEdge: .bottom) {
-            ScrollView {
-                ChatInfoPanel(name: name, members: sorted, profile: profile ?? ChatProfile(), isGroup: isGroup, appName: appName)
-                    .padding(NookTheme.Spacing.lg)
-            }
-            .frame(width: 300, alignment: .leading)
-            .frame(maxHeight: 460)
-        }
     }
 }
 
-/// The info itself, inside `ChatInfoButton`'s popover.
+/// What the chat's app said of it, inside the chat's info (`ChatsInfoSheet`).
 struct ChatInfoPanel: View {
     let name: String
     let members: [String]
     let profile: ChatProfile
     let isGroup: Bool
     let appName: String
+    /// The name and kind on top; the chat's info shows them bigger itself.
+    var showsTitle = true
+    /// "Nothing more" when the app said nothing; the chat's info has more of its own to show.
+    var showsNothing = true
 
     private static let day: DateFormatter = {
         let formatter = DateFormatter()
@@ -198,14 +193,16 @@ struct ChatInfoPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(name)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .accessibilityAddTraits(.isHeader)
-                Text(tr(isGroup ? "chats.info.group" : "chats.info.person") + " · " + appName)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
+            if showsTitle {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(name)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(tr(isGroup ? "chats.info.group" : "chats.info.person") + " · " + appName)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
             }
             if let about = ChatProfile.text(profile.about) {
                 section(tr(isGroup ? "chats.info.description" : "chats.info.about")) {
@@ -269,7 +266,7 @@ struct ChatInfoPanel: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
             }
-            if profile.isEmpty && members.isEmpty {
+            if showsNothing && profile.isEmpty && members.isEmpty {
                 Text(tr("chats.info.nothing", appName))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
