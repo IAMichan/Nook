@@ -223,6 +223,7 @@ targets:
       - path: Core/I18n+Quiet.swift
       - path: Core/I18n+Sounds.swift
       - path: Core/I18n+Search.swift
+      - path: Core/I18n+Instructions.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+Split.swift
@@ -339,12 +340,14 @@ targets:
       - path: Brain/QueryPlan.swift
       - path: Brain/Memory.swift
       - path: Brain/NookDates.swift
+      - path: Core/DayBuckets.swift
       - path: Brain/AppData.swift
       - path: Brain/BrainSelection.swift
       - path: Brain/PrivateBrief.swift
       - path: Brain/AIProvider.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
+      - path: Core/LineDiff.swift
       - path: Core/ArchivePurge.swift
       - path: Core/NookLook.swift
       - path: NotchUI/Theme/NookPalette.swift
@@ -428,6 +431,8 @@ targets:
       - path: Services/Workspace/CompactionProgress.swift
       - path: Services/HookCompaction.swift
       - path: Services/Workspace/TimelineHandles.swift
+      - path: Services/Workspace/PermissionScope.swift
+      - path: Services/Workspace/PlanChecklist.swift
       - path: Services/Workspace/SkillIndex.swift
       - path: Services/Workspace/ComposerDrafts.swift
       - path: Services/Workspace/ComposerChips.swift
@@ -544,6 +549,10 @@ targets:
       - path: Services/SelectionAsk.swift
       - path: Services/Workspace/UnifiedDiff.swift
       - path: Services/Workspace/DiffDisplay.swift
+      - path: Services/Workspace/ArtifactKind.swift
+      - path: Services/Workspace/ArtifactHistory.swift
+      - path: Services/Workspace/HunkPatch.swift
+      - path: Services/Workspace/SidePanelTabOrder.swift
       - path: Services/Workspace/ScratchProjects.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
@@ -651,6 +660,12 @@ targets:
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
       - path: Services/Search/NookSearch.swift
+      - path: Brain/ResponseStyle.swift
+      - path: Brain/ContextBreakdown.swift
+      - path: Services/Workspace/PromptLibrary.swift
+      - path: Services/Workspace/NookSpace.swift
+      - path: Services/Workspace/NookDeepLink.swift
+      - path: Services/Workspace/ShortcutCheatSheet.swift
       - path: Services/Search/SearchAI.swift
       - path: Brain/MacReport.swift
       - path: Brain/EnergyVAD.swift

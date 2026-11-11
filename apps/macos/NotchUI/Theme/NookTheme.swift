@@ -53,6 +53,19 @@ enum NookTheme {
     /// change (`.id`) can key on it.
     nonisolated(unsafe) static var revision = 0
 
+    /// The density in effect (kept in sync by `AppSettings.density`).
+    nonisolated(unsafe) static var density = NookDensity.comfortable
+
+    /// Sets the density; true when it changed. Bumps `revision`, so the roots that rebuild on a palette change rebuild
+    /// for the new text size too.
+    @discardableResult
+    static func apply(density next: NookDensity) -> Bool {
+        guard next != density else { return false }
+        density = next
+        revision += 1
+        return true
+    }
+
     static func palette(dark: Bool) -> NookPalette { dark ? darkPalette : lightPalette }
 
     /// Sets the palettes; true when something changed.
@@ -254,6 +267,14 @@ enum NookTheme {
         static let xxl: CGFloat = 24
         /// Between the sections of a page (home, a settings page): room that groups without a line.
         static let xxxl: CGFloat = 32
+        /// Between the big regions of a page (a hero, an empty state): 48.
+        static let huge: CGFloat = 48
+
+        /// A padding that follows the density (Settings › Appearance): tighter when compact, roomier when spacious,
+        /// snapped to an even number of points. For the padding of rows and cards, never for a hit target or an icon.
+        static func scaled(_ value: CGFloat) -> CGFloat {
+            max(2, (value * CGFloat(NookTheme.density.spacingScale) / 2).rounded() * 2)
+        }
     }
 
     /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
@@ -295,12 +316,27 @@ enum NookTheme {
     /// A size of the type scale: as written on the Mac; on the phone a step larger and following the text size you chose
     /// (Dynamic Type), so the two apps keep the same proportions.
     static func textFont(_ size: CGFloat, _ weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+        let scaled = (size * density.textScale * 2).rounded() / 2
         #if os(macOS)
-        .system(size: size, weight: weight, design: design)
+        return .system(size: scaled, weight: weight, design: design)
         #else
-        .system(size: UIFontMetrics.default.scaledValue(for: size * phoneTextScale), weight: weight, design: design)
+        return .system(size: UIFontMetrics.default.scaledValue(for: scaled * phoneTextScale), weight: weight, design: design)
         #endif
     }
+
+    /// Line spacing for running text, as a share of its size: reading text sits at a 1.5 line height, the dense UI
+    /// around it tighter. `SelectableProse` and Markdown use `reading`; a row's second line `ui`.
+    enum LineHeight {
+        static let ui: CGFloat = 1.3
+        static let reading: CGFloat = 1.55
+        /// The extra space SwiftUI's `.lineSpacing` needs for `multiple` at a font of `size` (a font is already 1.2 or so).
+        static func spacing(for size: CGFloat, multiple: CGFloat = reading) -> CGFloat {
+            max(0, size * (multiple - 1.2))
+        }
+    }
+
+    /// The longest line of reading text, in characters: about 70, so a wide window never stretches a paragraph.
+    static let readingMeasure = 70
 
     // Typography: SF Pro for text, SF Mono for code and paths.
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
@@ -334,6 +370,89 @@ enum NookTheme {
     /// Scrolling a list to a message or a line.
     static let scroll = Animation.spring(duration: 0.3, bounce: 0)
     static let spring = open
+
+    /// One motion language. Durations are 150 to 250 ms, eases settle without overshoot, panels use a spring with no
+    /// bounce, and with Reduce Motion nothing moves: a change is a short fade (`Motion.resolved`). The older names above
+    /// stay (they are springs on the same scale); new work names the kind of change here.
+    enum Motion {
+        /// A press, a toggle, a checkmark: 150 ms.
+        static let quick = Animation.easeOut(duration: 0.15)
+        /// A color, a fade, a small move: 200 ms.
+        static let standard = Animation.easeInOut(duration: 0.2)
+        /// A larger fade or a cross-fade of a whole surface (a theme change): 250 ms.
+        static let slow = Animation.easeInOut(duration: 0.25)
+        /// A panel, sheet or sidebar opening or closing: a spring that settles without overshoot.
+        static let panel = Animation.spring(duration: 0.3, bounce: 0)
+        /// A list item inserted, removed or moved.
+        static let list = Animation.spring(duration: 0.24, bounce: 0)
+        /// What Reduce Motion leaves of any of the above: a brief fade, no movement.
+        static let reduced = Animation.easeOut(duration: 0.12)
+
+        /// `animation`, or the plain fade when the user asked for less motion.
+        static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation {
+            reduceMotion ? reduced : animation
+        }
+    }
+}
+
+/// Animates a value with a curve of `NookTheme.Motion`, as a fade alone when Reduce Motion is on.
+private struct MotionAnimation<Value: Equatable>: ViewModifier {
+    var animation: Animation
+    var value: Value
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.animation(NookTheme.Motion.resolved(animation, reduceMotion: reduceMotion), value: value)
+    }
+}
+
+/// Runs `body` with `animation`, or the plain fade when Reduce Motion is on (outside a view, where no environment is at hand).
+@MainActor
+func withNookAnimation<Result>(_ animation: Animation = NookTheme.Motion.standard, _ body: () throws -> Result) rethrows -> Result {
+    #if os(macOS)
+    let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    #else
+    let reduce = UIAccessibility.isReduceMotionEnabled
+    #endif
+    return try withAnimation(NookTheme.Motion.resolved(animation, reduceMotion: reduce), body)
+}
+
+extension View {
+    /// `.animation(_:value:)` on Nook's motion language that respects Reduce Motion.
+    func nookAnimation<Value: Equatable>(_ animation: Animation = NookTheme.Motion.standard, value: Value) -> some View {
+        modifier(MotionAnimation(animation: animation, value: value))
+    }
+
+    /// A focus ring that looks intentional: two points of the accent just outside the control's edge, only for keyboard
+    /// focus. Add it to a custom control that takes focus; system controls draw their own.
+    func nookFocusRing(_ focused: Bool, radius: CGFloat = NookTheme.Radius.control) -> some View {
+        overlay(
+            NookTheme.shape(radius + 2).strokeBorder(NookTheme.iris.opacity(0.7), lineWidth: 2)
+                .padding(-2)
+                .opacity(focused ? 1 : 0)
+                .animation(NookTheme.Motion.quick, value: focused)
+                .allowsHitTesting(false)
+        )
+    }
+}
+
+/// The press state of Nook's own buttons: a hair smaller and dimmer while the button is down, then back with the quick
+/// curve. Reduce Motion keeps the dim and drops the scale.
+struct NookPressStyle: ButtonStyle {
+    var scale: CGFloat = 0.97
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(NookTheme.Motion.quick, value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == NookPressStyle {
+    /// Nook's press feedback: `.buttonStyle(.nookPress)`.
+    static var nookPress: NookPressStyle { NookPressStyle() }
 }
 
 /// Lifts a control a hair while the pointer is on it (see `View.hoverLift`). With Reduce Motion on it stays put: the
