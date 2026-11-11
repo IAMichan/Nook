@@ -265,7 +265,7 @@ final class AutocompleteController: ObservableObject {
             let usual = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
             if case .gguf(let file) = usual { lighterModel = CompletionModelLocator.lighter(than: file, candidates: found) } else { lighterModel = nil }
             let model = power.lighterModel ? lighterModel.map(CompletionSource.gguf) ?? usual : usual
-            if model?.identity != activeModel?.identity || (completer != nil && loadedAdapter != prefs.loraAdapterPath) { unload() }
+            if model?.identity != activeModel?.identity || (completer != nil && loadedAdapter != adapterIdentity(for: model)) { unload() }
             activeModel = model
             guard prefs.enabled else { return }
             guard trusted, start() else {
@@ -1696,14 +1696,18 @@ final class AutocompleteController: ObservableObject {
     private func loadedCompleter(for model: CompletionSource) async -> (any CompletionEngine)? {
         let identity = model.identity
         if let completer, completer.identity == identity { return completer }
-        let adapter = prefs.loraAdapterPath
+        let adapter = adapterIdentity(for: model)
         if let loading, loading.identity == identity { return await loading.task.value }
         state = .loading
         let task = Task { () -> (any CompletionEngine)? in
             do {
                 let loaded: any CompletionEngine
                 switch model {
-                case .gguf(let file): loaded = try await LlamaCompleter.load(path: file.url.path, adapter: adapter)
+                case .gguf(let file):
+                    // The personal adapter is sealed on disk: opened into a private file for llama.cpp to read, then deleted.
+                    let opened = adapter == Self.personalAdapterIdentity ? store.openedAdapter() : nil
+                    defer { opened.map { try? FileManager.default.removeItem(at: $0) } }
+                    loaded = try await LlamaCompleter.load(path: file.url.path, adapter: opened?.path ?? adapter)
                 // The brain's model is loaded by the brain itself, on the first suggestion; nothing to wait for here.
                 case .brain(let id, _): loaded = BrainCompleter(modelID: id)
                 }
@@ -1723,6 +1727,57 @@ final class AutocompleteController: ObservableObject {
         let result = await task.value
         if loading?.identity == identity { loading = nil }
         return result
+    }
+
+    /// Which adapter the model runs with: a LoRA file chosen in Settings, else the personal adapter trained on this Mac when it
+    /// was made for this very file (`CompletionAdapterInfo.fits`), else none.
+    private func adapterIdentity(for model: CompletionSource?) -> String {
+        if !prefs.loraAdapterPath.isEmpty { return prefs.loraAdapterPath }
+        guard prefs.personalAdapter, case .gguf(let file) = model, let info = store.adapter,
+              info.fits(file: file.url, size: Self.fileSize(file.url)) else { return "" }
+        return Self.personalAdapterIdentity
+    }
+
+    private static let personalAdapterIdentity = "personal-adapter"
+
+    static func fileSize(_ url: URL) -> Int64 {
+        ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
+    // MARK: Personal adapter
+
+    /// Why a personal adapter cannot be trained for the model autocomplete runs now; nil when it can.
+    enum AdapterObstacle: Equatable {
+        case noGGUFModel
+        case unsupportedModel
+        case memory
+        case tooFewExamples(Int)
+    }
+
+    /// The GGUF model the adapter would be trained for, with the MLX model to train it on.
+    var adapterTarget: (file: URL, base: CompletionAdapterBase.Base)? {
+        guard case .gguf(let file) = activeModel, let base = CompletionAdapterBase.base(forModelFile: file.url.lastPathComponent) else { return nil }
+        return (file.url, base)
+    }
+
+    /// The examples a training would use now: the user's recorded writing, and their own chat messages when allowed.
+    func adapterExamples() -> [CompletionAdapter.Example] {
+        let threads = prefs.adapterFromChats ? Array(ChatCaptureService.shared.inbox.threads.values) : []
+        return CompletionAdapter.examples(threads: threads, samples: store.samples.samples)
+    }
+
+    func adapterObstacle(examples: Int) -> AdapterObstacle? {
+        guard case .gguf = activeModel else { return .noGGUFModel }
+        guard adapterTarget != nil else { return .unsupportedModel }
+        guard ProcessInfo.processInfo.physicalMemory >= CompletionAdapterBase.minimumMemory else { return .memory }
+        guard examples >= CompletionAdapter.minimumExamples else { return .tooFewExamples(examples) }
+        return nil
+    }
+
+    func trainAdapter() {
+        let examples = adapterExamples()
+        guard adapterObstacle(examples: examples.count) == nil, let target = adapterTarget else { return }
+        CompletionAdapterTraining.shared.start(model: target.file, size: Self.fileSize(target.file), base: target.base, examples: examples)
     }
 
     private func scheduleUnload() {
