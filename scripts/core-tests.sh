@@ -81,6 +81,8 @@ for path in sources:
 PY
 
 cat > "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'
+import Foundation
+
 // Combine's names for the few core files that mention them (Linux has no Combine).
 #if !canImport(Combine)
 public protocol ObservableObject: AnyObject {}
