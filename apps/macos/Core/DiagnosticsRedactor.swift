@@ -21,7 +21,7 @@ enum DiagnosticsRedactor {
             (#"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b"#, "[iban]"),
             (#"\+\d[\d\s().-]{7,}\d"#, "[phone]"),
             (#"(?:/Users/|/home/)[^/\s]+"#, "~"),
-            (#"[A-Za-z]:\Users\[^\\s]+"#, "~"),
+            (#"[A-Za-z]:\\Users\\[^\\\s]+"#, "~"),
         ]
         return patterns.compactMap { pattern, template in
             (try? NSRegularExpression(pattern: pattern)).map { Rule(regex: $0, template: template) }
