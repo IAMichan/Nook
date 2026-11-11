@@ -260,17 +260,13 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
+    /// "nook / Agents-pagina rustiger maken" (click the folder for a new session in it, double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
             // of pushing the header past it (under a wide side panel).
-            Text(run.projectName)
-                .fontWeight(.medium)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1)
+            FolderCrumb(name: run.projectName, directory: run.projectPath, local: run.remote == nil)
                 .layoutPriority(1)
-                .help(AgentPathFormat.tilde(run.workingDirectory))
             Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
                 TextField(tr("ws.title.placeholder"), text: $titleDraft)
