@@ -1221,7 +1221,7 @@ private struct SidePanelPullRequestIcon: View {
     let item: PullRequestItem?
 
     var body: some View {
-        PullRequestStateIcon(glyph: item?.stateGlyph ?? .open)
+        if let item { PullRequestLiveStateIcon(item: item) } else { PullRequestStateIcon(glyph: .open) }
     }
 }
 

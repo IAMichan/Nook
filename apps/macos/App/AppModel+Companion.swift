@@ -121,6 +121,7 @@ extension AppModel {
         }
         doubleTap.record = { [weak self] args, result in self?.store.audit(tool: "doubletap_edit", args: args, result: result) }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
+        doubleTap.onScene = { [weak self] scene in self?.showDoubleTapScene(scene) }
         // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type. A click
         // on it opens the notch, which lists every step and, once done, what Nook typed (`DoubleTapRunBar`).
         doubleTap.onStep = { [weak self] line in
