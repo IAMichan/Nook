@@ -365,7 +365,7 @@ struct AgentInboxList: View {
         let home = Dictionary(sections.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
         let active = home[.active] ?? InboxSection(kind: .active, rows: [])
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            projectHeader(group, folder: folder(of: group, byID: byID))
+            projectHeader(group, folder: folder(of: group, byID: byID), byID: byID)
             // Full width, so a row's fill runs under the header's; each row indents its name to the project's name.
             ForEach(rows(of: group), id: \.entry.id) { pair in
                 entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
@@ -391,13 +391,20 @@ struct AgentInboxList: View {
         return WorktreeOrigin.newSessionFolder(project: group.project, paths: paths, known: known)
     }
 
+    /// Takes a project out of the list: every session in it settles (one undo brings them back), so the folder's dropdown goes.
+    private func removeProject(_ group: InboxProjectGroup, byID: [String: AgentListItem]) {
+        let items = group.rows.compactMap { byID[$0.entry.id] }
+        guard !items.isEmpty else { return }
+        withAnimation(NookTheme.reveal) { store.settle(items) }
+    }
+
     /// Opens the new-session composer on `folder`.
     private func newSession(in folder: String) {
         PromptLinkInbox.shared.requestProject(folder)
         select("new")
     }
 
-    private func projectHeader(_ group: InboxProjectGroup, folder: String?) -> some View {
+    private func projectHeader(_ group: InboxProjectGroup, folder: String?, byID: [String: AgentListItem]) -> some View {
         let open = !store.collapsedProjects.contains(group.project) || !store.query.isEmpty
         let name = group.project.isEmpty || group.project == "no folder" ? tr("inbox.project.none") : group.project
         let hovered = hoveredProject == group.project
@@ -412,6 +419,10 @@ struct AgentInboxList: View {
                     .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
                 }
             }
+        .contextMenu {
+            // The folder comes back by itself when a new session starts in it; its sessions stay under Settled.
+            Button(tr("inbox.project.remove"), role: .destructive) { removeProject(group, byID: byID) }
+        }
         .onHover { inside in
             withAnimation(NookTheme.hover) {
                 if inside { hoveredProject = group.project } else if hoveredProject == group.project { hoveredProject = nil }
