@@ -195,6 +195,7 @@ final class LookThemesTests: XCTestCase {
         XCTAssertTrue(MathText.html("\\frac{a}{b}", display: true).hasPrefix(#"<span class="tex display""#))
     }
 
+    #if os(macOS)  // MarkdownBlock is the Mac's (scripts/core-tests.sh leaves it out on Linux)
     func testMarkdownMathBlocks() {
         XCTAssertEqual(MarkdownBlock.parse("```math\n\\int_0^1 x\\,dx\n```"), [.math("\\int_0^1 x\\,dx")])
         XCTAssertEqual(MarkdownBlock.parse("Before\n\n$$\na^2 + b^2 = c^2\n$$\n\nAfter"),
@@ -203,6 +204,7 @@ final class LookThemesTests: XCTestCase {
         // Never closed (still streaming): a paragraph for now.
         XCTAssertEqual(MarkdownBlock.parse("$$\nx"), [.paragraph("$$\nx")])
     }
+    #endif
 
     // MARK: Composer styling
 
