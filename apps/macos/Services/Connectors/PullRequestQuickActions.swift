@@ -2,8 +2,7 @@ import Foundation
 
 /// The actions a pull request's row offers while you hold Shift: close and merge an open one, close a draft or mark it
 /// ready for review, reopen a closed one. A merged one offers nothing. Each needs a second click before it is sent
-/// (see `PullRequestQuickActionButtons`; after one confirmed merge, further merges in the same Shift hold go on one
-/// click), and each is written to the action log. Foundation only, so tests can use it.
+/// (see `PullRequestQuickActionButtons`), and each is written to the action log. Foundation only, so tests can use it.
 enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
     case close, merge, ready, reopen
 
@@ -36,14 +35,11 @@ enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Merging several pull requests in one Shift hold. The first quick merge still asks "Merge it?"; once that is confirmed,
-/// every other Merge clicked before Shift is let go merges on one click. The merges queue up in the order clicked and go
-/// to GitHub one at a time, so each is checked against what the merge before it changed (a conflict, a stack). The list
-/// is read again once, when the queue is empty, so rows do not jump while you click through them.
+/// Merges sent from a pull request's row or from the selection bar under a list. They queue up in the order given and
+/// go to GitHub one at a time, so each is checked against what the merge before it changed (a conflict, a stack). The
+/// list is read again once, when the queue is empty, so rows do not jump while the merges go through.
 struct PullRequestQuickMergeQueue: Equatable, Sendable {
-    /// A merge was confirmed during this Shift hold: the next ones go on one click.
-    private(set) var unlocked = false
-    /// Waiting their turn, in the order clicked.
+    /// Waiting their turn, in the order given.
     private(set) var waiting: [String] = []
     /// At GitHub now.
     private(set) var current: String?
@@ -62,15 +58,9 @@ struct PullRequestQuickMergeQueue: Equatable, Sendable {
 
     var isIdle: Bool { current == nil && waiting.isEmpty }
 
-    /// Shift came up: the next merge asks again. What is queued still goes.
-    mutating func shiftReleased() { unlocked = false }
-
-    /// A click on Merge. Unless `confirmed` (the second click of an armed button) or the hold is unlocked, it only says
-    /// the button should ask first. Returns whether the merge was queued.
+    /// Queues a merge; false when this pull request is queued, at GitHub or just merged already.
     @discardableResult
-    mutating func add(_ id: String, confirmed: Bool) -> Bool {
-        guard confirmed || unlocked else { return false }
-        unlocked = true
+    mutating func add(_ id: String) -> Bool {
         guard phase(id) == nil else { return false }
         waiting.append(id)
         return true
