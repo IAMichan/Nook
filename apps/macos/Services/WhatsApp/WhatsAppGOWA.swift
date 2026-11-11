@@ -35,6 +35,49 @@ final class WhatsAppGOWAProcess {
         return base.appendingPathComponent("Nook/GOWA", isDirectory: true)
     }
 
+    /// How long a file GOWA wrote under `statics/` stays: Nook copies a fetched file into `ChatMedia` at once (which keeps
+    /// its own limit), and a file being sent is gone from GOWA's hands within seconds.
+    nonisolated static let staticsMaxAge: TimeInterval = 24 * 60 * 60
+    private var staticsPrunedAt: Date = .distantPast
+
+    /// At most hourly, off the main thread: GOWA never removes what it saved under `statics/`, which reached 2.3 GB.
+    private func pruneStaticsIfDue(now: Date = Date()) {
+        guard now.timeIntervalSince(staticsPrunedAt) > 60 * 60 else { return }
+        staticsPrunedAt = now
+        let statics = Self.workingDirectory.appendingPathComponent("statics", isDirectory: true)
+        Task.detached(priority: .background) {
+            let removed = Self.pruneStatics(statics, olderThan: Self.staticsMaxAge, now: now)
+            if removed > 0 { Log.connectors.info("WhatsApp: removed \(removed) old GOWA files") }
+        }
+    }
+
+    /// Removes the files under `statics/media` and `statics/senditems` not modified within `age`, and the folders that
+    /// leaves empty. Returns how many files went.
+    @discardableResult
+    nonisolated static func pruneStatics(_ statics: URL, olderThan age: TimeInterval, now: Date = Date()) -> Int {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey]
+        var removed = 0
+        for name in ["media", "senditems"] {
+            let root = statics.appendingPathComponent(name, isDirectory: true)
+            guard let items = fm.enumerator(at: root, includingPropertiesForKeys: keys) else { continue }
+            var folders: [URL] = []
+            for case let item as URL in items {
+                guard let values = try? item.resourceValues(forKeys: Set(keys)) else { continue }
+                if values.isDirectory == true { folders.append(item); continue }
+                guard values.isRegularFile == true, let date = values.contentModificationDate,
+                      now.timeIntervalSince(date) > age, (try? fm.removeItem(at: item)) != nil else { continue }
+                removed += 1
+            }
+            // Deepest first, so a chat's folder empties after its date folders did.
+            for folder in folders.sorted(by: { $0.path.count > $1.path.count })
+            where (try? fm.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
+                try? fm.removeItem(at: folder)
+            }
+        }
+        return removed
+    }
+
     /// What the running GOWA was started with: changed, it is restarted; same, left alone.
     private var launchedWith: String?
 
@@ -44,6 +87,7 @@ final class WhatsAppGOWAProcess {
     /// a minute at most. Returns false when it can't run.
     @discardableResult
     func sync() -> Bool {
+        pruneStaticsIfDue()
         guard Self.autoStart, WhatsAppSettings.gateway == .gowa else { stopNow(); return false }
         let path = (Self.binaryPath as NSString).expandingTildeInPath
         guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path),

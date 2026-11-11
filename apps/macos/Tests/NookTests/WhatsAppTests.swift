@@ -1144,4 +1144,26 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(WAGOWA.device(data, id: "nook-gone00"), "an account's device that is missing is made, not borrowed")
         XCTAssertNil(WAGOWA.device(data, excluding: ["nook", "nook-biz123", "nook-new456"]))
     }
+
+    func testOldGOWAFilesGoAndRecentOnesStay() throws {
+        let fm = FileManager.default
+        let statics = fm.temporaryDirectory.appendingPathComponent("gowa-statics-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: statics) }
+        let old = statics.appendingPathComponent("media/31612345678/2026-10-20/offerte.pdf")
+        let recent = statics.appendingPathComponent("media/31612345678/2026-11-11/foto.jpg")
+        let sending = statics.appendingPathComponent("senditems/upload.jpg")
+        for file in [old, recent, sending] {
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: file)
+        }
+        let now = Date()
+        try fm.setAttributes([.modificationDate: now.addingTimeInterval(-3 * 86_400)], ofItemAtPath: old.path)
+        try fm.setAttributes([.modificationDate: now.addingTimeInterval(-3 * 86_400)], ofItemAtPath: sending.path)
+
+        XCTAssertEqual(WhatsAppGOWAProcess.pruneStatics(statics, olderThan: 86_400, now: now), 2)
+        XCTAssertFalse(fm.fileExists(atPath: old.path))
+        XCTAssertFalse(fm.fileExists(atPath: old.deletingLastPathComponent().path), "the emptied date folder goes too")
+        XCTAssertFalse(fm.fileExists(atPath: sending.path))
+        XCTAssertTrue(fm.fileExists(atPath: recent.path))
+    }
 }
