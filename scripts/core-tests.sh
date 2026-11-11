@@ -92,6 +92,11 @@ public protocol ObservableObject: AnyObject {}
 }
 #endif
 
+// Linux has no Objective-C runtime and so no autorelease pools: the body just runs.
+#if !canImport(ObjectiveC)
+public func autoreleasepool<Result>(invoking body: () throws -> Result) rethrows -> Result { try body() }
+#endif
+
 // URLRequest, URLSession and HTTPURLResponse live in FoundationNetworking on Linux.
 #if canImport(FoundationNetworking)
 @_exported import FoundationNetworking
