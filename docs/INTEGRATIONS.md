@@ -155,6 +155,28 @@ member cannot do:
 | A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ | – (no sign-in: Mail's own accounts; a refused Automation permission says how to give it) |
 | Search everything (⌘K) finds a message in the whole history, not only the newest ones the inbox keeps (`ChatSearchBridge`) | ✓ (every message the linked accounts hold, plus WhatsApp on this Mac's database when it is installed) | ✓ (same) | ✓ (the whole database, as `search_messages`) | ✓ (`searchMessages` on Telegram's servers) | – (the helper has no search call yet: the newest messages Nook keeps) | ✓ (`search.messages`; a pasted token needs search:read) | – (no search Nook can reach without a Graph search scope: the newest messages Nook keeps) | – (the website has no search) | – (not yet: the newest messages Nook keeps; `search_mail` searches Mail for Nook) |
 
+### Follow-ups, people and snooze
+
+These work on the shared inbox (`InboxThread`), so they hold for every chat app at once: WhatsApp (both gateways), Messages,
+Telegram, Slack, Teams, Snapchat, Mail and every network of the chat helper (Signal, Instagram, Messenger and the rest).
+No app needs a translation of its own, because they use only what every bridge already fills in: whose message is last,
+when it was written, the person's name and, where the app gives one, their number (`InboxThread.handle`).
+
+| Feature | Where | What it needs from an app | Members left out |
+|---|---|---|---|
+| "You owe a reply": a private chat whose last word is theirs and waited at least 4 hours (not older than 14 days); questions first (`ChatFollowUps.owed`) | `ChatFollowUpView` | the newest message and its date | none |
+| "Waiting for reply" with a reminder after a day; it ends by itself when they answer (`ChatFollowUps.markWaiting`, `settle`) | `ChatFollowUpView`, row menu | the newest message and its date | none |
+| Snooze a chat until this evening, tomorrow morning or next week (`ChatLaterOption`); a snoozed chat is not owed until its time | `ChatFollowUpView`, row menu | nothing | none |
+| Scheduled send as an editable draft (`ChatScheduledSend`); a due message goes through `ChatAction.send` and the audit log, never by itself | the follow-up store hands it to the sender | `ChatAbilities.send` | chats Nook only reads cannot send, so they cannot schedule either |
+| People view: one card per person across apps, matched by phone number, else the whole name (`ChatPeople`), with a note and a birthday of your own (`ChatPersonNotes`) | `ChatPeopleView` | a name; a number where the app gives one | Slack and Teams give no number, so they match by name only; groups, status updates and channels are no person |
+| Connector health with "Fix it" (`ConnectorHealth`, `ConnectorHealthSection`): sign in again where the sign-in is the problem, read again where the service was away | Settings › Connections | `ConnectorErrorKind` | none |
+
+Not built yet, and why: a summary of one conversation and a smart reply in the user's tone go through the one brain pipeline
+(`prepareRun`) and the existing "Let Nook answer" draft card, which already never sends by itself; inline translation of a
+message in another language needs a translation call through the same pipeline and is not wired. The Chats tab does not
+list `ChatFollowUpView` and `ChatPeopleView` yet: they are shared views ready to put in a sidebar entry. The scheduled
+task builder and its run history already exist (`ScheduledTasksView`); the "when X happens, do Y" rule list is not built.
+
 ### One inbox for every app
 
 Every chat Nook shows lives in one place, the shared inbox (`ChatInbox`), whichever app it is in: the Chats tab, the
