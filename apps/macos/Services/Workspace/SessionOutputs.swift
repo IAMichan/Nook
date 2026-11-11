@@ -93,7 +93,7 @@ enum SessionOutputs {
     }
 
     /// Tools that set the agent's task list, by name (an MCP tool by its own name).
-    static let taskTools: Set<String> = ["TodoWrite", "update_plan", "Plan", "todo_write", "write_todos"]
+    static let taskTools: Set<String> = ["TodoWrite", "update_plan", "Plan", "todo_write", "todowrite", "write_todos"]
 
     /// A task list a tool call sets: Claude Code's TodoWrite (`todos`), Codex's update_plan (`plan`), or the same
     /// shapes from another agent's tool of that name.

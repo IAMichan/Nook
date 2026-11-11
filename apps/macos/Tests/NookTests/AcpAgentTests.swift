@@ -90,6 +90,11 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertNil(AcpMapper.rawOutput([String: Any]()))
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[{"content":"Tests","status":"completed","priority":"high"},{"content":"Fix","status":"pending","priority":"high"}]}}}"#),
                        [.plan([RunTaskStep(text: "Tests", status: .done), RunTaskStep(text: "Fix", status: .pending)])])
+        // An empty plan clears the list; a dropped entry is cancelled.
+        XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[]}}}"#),
+                       [.plan([])])
+        XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[{"content":"Old","status":"cancelled"}]}}}"#),
+                       [.plan([RunTaskStep(text: "Old", status: .cancelled)])])
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":53000,"size":200000,"cost":{"amount":0.42,"currency":"USD"}}}}"#),
                        [.usage(used: 53000, size: 200000, costUSD: 0.42)])
     }

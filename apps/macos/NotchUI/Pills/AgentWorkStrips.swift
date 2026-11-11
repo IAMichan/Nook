@@ -111,8 +111,8 @@ struct TasksStrip: View {
                                 .frame(width: 12)
                             Text(step.text)
                                 .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(step.status == .done ? NookTheme.textTertiary : NookTheme.textSecondary)
-                                .strikethrough(step.status == .done, color: NookTheme.textTertiary)
+                                .foregroundStyle(step.status.isSettled ? NookTheme.textTertiary : NookTheme.textSecondary)
+                                .strikethrough(step.status.isSettled, color: NookTheme.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -140,6 +140,7 @@ struct TasksStrip: View {
         case .done: return "checkmark.circle.fill"
         case .active: return "circle.dotted.circle"
         case .pending: return "circle"
+        case .cancelled: return "xmark.circle"
         }
     }
 
@@ -147,7 +148,7 @@ struct TasksStrip: View {
         switch status {
         case .done: return NookTheme.mint
         case .active: return NookTheme.paper
-        case .pending: return NookTheme.textTertiary
+        case .pending, .cancelled: return NookTheme.textTertiary
         }
     }
 
@@ -155,7 +156,7 @@ struct TasksStrip: View {
         switch status {
         case .done: return NookTheme.mint
         case .active: return NookTheme.paper
-        case .pending: return NookTheme.textTertiary.opacity(0.35)
+        case .pending, .cancelled: return NookTheme.textTertiary.opacity(0.35)
         }
     }
 }

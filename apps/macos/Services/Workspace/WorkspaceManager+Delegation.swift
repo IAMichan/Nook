@@ -29,7 +29,7 @@ extension WorkspaceManager {
         return DelegatedTask.Snapshot(
             taskID: run.id.uuidString.lowercased(),
             title: run.title,
-            state: DelegatedTask.state(run.status, hasPendingQuestion: question),
+            state: DelegatedTask.state(run.status, hasPendingQuestion: question, hasQueuedWork: hasQueuedWork(run.id)),
             summary: DelegatedTask.summary(status: run.status, statusDetail: run.statusDetail, events: timeline(run.id)),
             hasPendingQuestion: question,
             model: run.resolvedModel ?? (run.model.isEmpty ? nil : run.model),
@@ -39,21 +39,37 @@ extension WorkspaceManager {
         )
     }
 
+    /// A message still waits to go out to this session (not one held after a failure or a stop): the work it asked for
+    /// is not over yet. Its live process does not count: Claude Code, Codex and the ACP agents keep theirs between turns.
+    func hasQueuedWork(_ id: UUID) -> Bool {
+        (queued[id].map { !$0.isEmpty && !$0.isHeld } ?? false) || pendingSendNow[id] != nil || awaitingCheckpoint[id] != nil
+    }
+
     /// A child that was not waited for has finished: tell its parent once, in its own conversation. A parent that is busy
-    /// gets it after the turn (the queue); a parent you stopped is left alone.
+    /// gets it after the turn (the queue); a parent you stopped is left alone. A child with a message still waiting to go
+    /// out to it is not finished: it reports after that turn (`sendQueued` calls here once the queue is empty), and a
+    /// result held for a monitor waits for it (`WakeCompletion`).
     func deliverDelegatedResult(_ id: UUID) {
         guard let child = run(id), var link = child.delegation, link.wake, !link.delivered,
-              child.status == .completed || child.status == .failed,
+              DelegatedTask.mayDeliver(child.status, hasQueuedWork: hasQueuedWork(id)), !heldWakeCompletions.contains(id),
               let parent = run(link.parentID), !parent.archived, parent.status != .stopped else { return }
         link.delivered = true
         update(id) { $0.delegation = link }
         let text = DelegatedTask.wakeMessage(snapshot(of: child))
         append(parent.id, RunEvent(kind: .system, text: tr("ws.event.delegatedDone", child.title)))
+        // The parent carries on its own work: its working timer keeps going (`TurnTimer`).
         if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
-            send(parent.id, text: text)
+            send(parent.id, text: text, origin: .notice)
         } else {
-            enqueue(parent.id, text: text)
+            enqueue(parent.id, text: text, origin: .notice)
         }
+    }
+
+    /// A new turn of a task that already reported (a message from you, its parent, or a client without a session of its
+    /// own): its parent hears of this one too when it ends.
+    func rearmDelegation(_ id: UUID) {
+        guard run(id)?.delegation?.delivered == true else { return }
+        update(id) { $0.delegation?.delivered = false }
     }
 
     /// An agent asks you something: the notification, and for a delegated task a word to its parent.
@@ -78,9 +94,9 @@ extension WorkspaceManager {
         // Into its running turn only when that interrupts nothing (a long turn of a main thread may never end).
         if parent.status.isActive, steerRoute(parent.id) == .native, steer(parent.id, text: text) { return }
         if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
-            send(parent.id, text: text)
+            send(parent.id, text: text, origin: .notice)
         } else {
-            enqueue(parent.id, text: text)
+            enqueue(parent.id, text: text, origin: .notice)
         }
     }
 
@@ -134,6 +150,8 @@ extension WorkspaceManager {
             // Stop also reaches the tasks it delegated.
             stop(id)
         } else {
+            // What still waited to go out to it stays (held) instead of starting a turn nobody asked for any more.
+            holdQueue(id)
             stopDelegatedChildren(of: id)
         }
     }

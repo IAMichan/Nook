@@ -331,8 +331,9 @@ enum AcpMapper {
         case "tool_call_update":
             return [.toolCallUpdate(toolCall(update))]
         case "plan":
-            let steps = RunTasks.acp(update)
-            return steps.isEmpty ? [] : [.plan(steps)]
+            // An empty plan clears the list: it goes through, and `setTasks` takes it as a clear.
+            guard update["entries"] is [Any] else { return [] }
+            return [.plan(RunTasks.acp(update))]
         case "usage_update":
             let cost = (update["cost"] as? [String: Any]).flatMap { cost -> Double? in
                 guard (cost["currency"] as? String)?.uppercased() ?? "USD" == "USD" else { return nil }

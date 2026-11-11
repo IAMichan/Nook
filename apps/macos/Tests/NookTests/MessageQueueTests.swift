@@ -7,6 +7,16 @@ final class MessageQueueTests: XCTestCase {
         return q
     }
 
+    func testOriginIsKeptAndAnUnknownOneReadsAsYou() throws {
+        var q = MessageQueue()
+        q.enqueue("result", origin: .notice)
+        q.enqueue("mine")
+        let copy = try JSONDecoder().decode(MessageQueue.self, from: JSONEncoder().encode(q))
+        XCTAssertEqual(copy.messages.map(\.origin), [.notice, nil])
+        let later = Data(#"{"id":"\#(UUID().uuidString)","text":"x","origin":"robot"}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(QueuedMessage.self, from: later).origin)
+    }
+
     func testEnqueueTrimsIgnoresEmptyAndCaps() {
         var q = MessageQueue()
         XCTAssertNil(q.enqueue("   \n"))

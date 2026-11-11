@@ -298,6 +298,12 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNowSteer: [UUID: RunEvent.SteerKind] = [:]
     /// The message in `pendingSendNow` starts a new conversation (`/clear`).
     var pendingSendNowFresh: Set<UUID> = []
+    /// Where the message in `pendingSendNow` comes from, when that is not you (`QueuedMessage.Origin`).
+    var pendingSendNowOrigin: [UUID: QueuedMessage.Origin] = [:]
+    /// When the work now going on began (`TurnTimer`): a new prompt sets it, the agent carrying on by itself keeps it.
+    var workStartedAt: [UUID: Date] = [:]
+    /// The turn about to start carries on the agent's own work (`TurnTimer`); taken by the turn's start.
+    var continuingTurns: Set<UUID> = []
     /// The words of the turn that went out last, to send them again in a new conversation when the agent lost the old one or
     /// it no longer fits (`recoverConversation`).
     var turnPrompts: [UUID: String] = [:]
@@ -1197,15 +1203,15 @@ final class WorkspaceManager: ObservableObject {
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
     @discardableResult
-    func send(_ id: UUID, text: String) -> Bool {
-        send(id, text: text, shown: false)
+    func send(_ id: UUID, text: String, origin: QueuedMessage.Origin? = nil) -> Bool {
+        send(id, text: text, shown: false, origin: origin)
     }
 
     /// A message from Nook rather than from you (the result of background work): it goes to the agent without a bubble
     /// of yours in the timeline.
     @discardableResult
-    func sendHidden(_ id: UUID, text: String) -> Bool {
-        send(id, text: text, shown: true)
+    func sendHidden(_ id: UUID, text: String, origin: QueuedMessage.Origin? = nil) -> Bool {
+        send(id, text: text, shown: true, origin: origin)
     }
 
     /// Sends the message you asked to go out right away once the turn ended; if it cannot go out now it waits
@@ -1215,19 +1221,30 @@ final class WorkspaceManager: ObservableObject {
         guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
         let mark = pendingSendNowSteer.removeValue(forKey: id)
         let fresh = pendingSendNowFresh.remove(id) != nil
+        let origin = pendingSendNowOrigin.removeValue(forKey: id)
         // A new conversation starts only between turns; while the snapshot is still being made it waits at the front.
         if fresh, !clearConversation(id, quietly: true) {
             queued[id, default: MessageQueue()].requeueFirst(next, fresh: true)
             return true
         }
         let before = timeline(id).last { $0.kind == .user }?.id
-        if !send(id, text: next, shown: false) {
+        if !send(id, text: next, shown: false, origin: origin) {
             queued[id, default: MessageQueue()].requeueFirst(next, fresh: fresh)
         } else if let mark, let sent = timeline(id).last(where: { $0.kind == .user }), sent.id != before {
             // It cut the turn off to go out: it reads as a steer, as a message taken into the turn does.
             mutateEvent(id, sent.id) { $0.steer = mark }
         }
         return true
+    }
+
+    /// Where the working timer of the turn starting now begins (`TurnTimer`). `continuing`: the agent carries on by itself
+    /// (a wake for background work); otherwise whatever started the turn says so (`continuingTurns`, set by `send`). Every
+    /// agent's turn start and wake goes through here.
+    func turnStart(_ id: UUID, continuing: Bool = false) -> Date {
+        let continuing = continuingTurns.remove(id) != nil || continuing
+        let start = TurnTimer.start(continuing: continuing, previous: workStartedAt[id])
+        workStartedAt[id] = start
+        return start
     }
 
     /// Whether this turn goes to Codex over app-server (rather than `codex exec`, or another agent).
@@ -1239,10 +1256,15 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
+    /// `origin`: who the message comes from when not you (`QueuedMessage.Origin`): whether the delegating parent hears of
+    /// the turn it starts, and whether the working timer keeps the start of the work it carries on.
     @discardableResult
-    private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
+    private func send(_ id: UUID, text: String, shown: Bool, origin: QueuedMessage.Origin? = nil) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, var run = run(id) else { return false }
+        // Only for the turn this call starts: the mark never lingers for a later message of yours.
+        if QueuedMessage.Origin.continuesWork(origin) { continuingTurns.insert(id) }
+        defer { continuingTurns.remove(id) }
         // Anything but Nook's own summary ends a summary that never reported back (it failed to start, or stopped).
         let idleSummary = shown && clean == "/compact" && idleCompacting.contains(id)
         if !idleSummary {
@@ -1253,14 +1275,17 @@ final class WorkspaceManager: ObservableObject {
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
         // Its worktree is being made again for an earlier message: this one follows that turn.
         if reopeningWorktrees.contains(id) {
-            enqueue(id, text: clean)
+            enqueue(id, text: clean, origin: origin)
             return true
         }
         if checkpointing.contains(id), awaitingCheckpoint[id] != nil {
-            enqueue(id, text: clean)
+            enqueue(id, text: clean, origin: origin)
             return true
         }
         guard run.canContinue || (shown && run.status == .preparing), processes[id] == nil else { return false }
+        // A turn starts: a delegated task tells its parent again when it ends (`Origin.rearmsParent`). Not for Nook's
+        // quiet summary, which reports to nobody.
+        if !idleSummary, QueuedMessage.Origin.rearmsParent(origin) { rearmDelegation(id) }
         // "Auto" may move the session to another agent or account first (see `autoMove`); Nook's summary of an idle
         // session stays with the conversation it summarizes.
         if !idleSummary { autoMove(id, prompt: clean) }
@@ -1362,6 +1387,7 @@ final class WorkspaceManager: ObservableObject {
         } else {
             heldWakeCompletions.remove(id)
             onTurnFinished?(run)
+            // Not while a message still waits to go out to it: then it reports after that turn (`sendQueued`).
             deliverDelegatedResult(id)
         }
         captureCheckpoint(id)
@@ -1433,7 +1459,7 @@ final class WorkspaceManager: ObservableObject {
     /// another agent, a guest or a schedule never takes your `/clear`. A fresh message (or one with `fresh`) starts the
     /// new conversation right away when the agent is free, otherwise it waits in line marked so and never joins a turn.
     @discardableResult
-    func submit(_ id: UUID, text: String, fresh: Bool = false, fromYou: Bool = false) -> Bool {
+    func submit(_ id: UUID, text: String, fresh: Bool = false, fromYou: Bool = false, origin: QueuedMessage.Origin? = nil) -> Bool {
         guard let run = run(id) else { return false }
         if fromYou, FreshConversation.isCommand(text) {
             armFreshConversation(id)
@@ -1446,9 +1472,9 @@ final class WorkspaceManager: ObservableObject {
         var cleared = false
         if !busy {
             if fresh { cleared = clearConversation(id, quietly: true) }
-            if !fresh || cleared, send(id, text: text, shown: false) { return true }
+            if !fresh || cleared, send(id, text: text, shown: false, origin: origin) { return true }
         }
-        enqueue(id, text: text, fresh: fresh && !cleared)
+        enqueue(id, text: text, fresh: fresh && !cleared, origin: origin)
         sendQueued(id)
         return false
     }
@@ -1459,40 +1485,43 @@ final class WorkspaceManager: ObservableObject {
     /// running turn the agent can take and otherwise goes as `submit`; `steer` only into the running turn (nil when it
     /// cannot take it); `restart` stops the running turn and goes out right after; `queue` is `submit`. It never takes
     /// your `/clear`, and never cuts into a turn that is starting a new conversation for you.
-    func deliver(_ id: UUID, text: String, mode: BridgeSessionArguments.SendMode) -> Delivery? {
+    /// `origin`: who sends it when that is not you (`DelegatedTask.origin`).
+    func deliver(_ id: UUID, text: String, mode: BridgeSessionArguments.SendMode, origin: QueuedMessage.Origin? = nil) -> Delivery? {
         guard let run = run(id) else { return nil }
         let active = run.status.isActive
         switch mode {
         case .queue:
-            return submit(id, text: text) ? .sent : .queued
+            return submit(id, text: text, origin: origin) ? .sent : .queued
         case .auto:
             if active, canSteer(id), steer(id, text: text) { return .steered }
-            return submit(id, text: text) ? .sent : .queued
+            return submit(id, text: text, origin: origin) ? .sent : .queued
         case .steer:
-            guard active else { return submit(id, text: text) ? .sent : .queued }
+            guard active else { return submit(id, text: text, origin: origin) ? .sent : .queued }
             return canSteer(id) && steer(id, text: text) ? .steered : nil
         case .restart:
-            guard active else { return submit(id, text: text) ? .sent : .queued }
+            guard active else { return submit(id, text: text, origin: origin) ? .sent : .queued }
             let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { return nil }
             // A message already waits to go out when this turn ends (yours, sent now): this one goes after it.
             guard pendingSendNow[id] == nil else {
-                enqueue(id, text: clean)
+                enqueue(id, text: clean, origin: origin)
                 return .queued
             }
             pendingSendNow[id] = clean
             pendingSendNowSteer[id] = .steer
             pendingSendNowFresh.remove(id)
+            pendingSendNowOrigin[id] = origin
             stop(id)
             return .restarted
         }
     }
 
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
-    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil, fresh: Bool = false) {
+    func enqueue(_ id: UUID, text: String, pullRequest: PullRequestNotice? = nil, fresh: Bool = false,
+                 origin: QueuedMessage.Origin? = nil) {
         guard run(id) != nil else { return }
         var queue = queued[id] ?? MessageQueue()
-        queue.enqueue(text, pullRequest: pullRequest, fresh: fresh)
+        queue.enqueue(text, pullRequest: pullRequest, fresh: fresh, origin: origin)
         queued[id] = queue.isEmpty ? nil : queue
     }
 
@@ -1526,6 +1555,7 @@ final class WorkspaceManager: ObservableObject {
             store(queue, for: id)
             pendingSendNow[id] = text
             pendingSendNowSteer[id] = fresh ? nil : .promoted
+            pendingSendNowOrigin[id] = nil
             if fresh { pendingSendNowFresh.insert(id) } else { pendingSendNowFresh.remove(id) }
             stop(id)
             return
@@ -1573,6 +1603,8 @@ final class WorkspaceManager: ObservableObject {
         guard var queue = queued[id] else { return }
         queue.remove(message)
         store(queue, for: id)
+        // A finished task whose result waited for this message reports now.
+        deliverDelegatedResult(id)
     }
 
     func moveQueued(_ id: UUID, message: UUID, toIndex index: Int) {
@@ -1617,8 +1649,12 @@ final class WorkspaceManager: ObservableObject {
     /// that just ended may well have fixed it. `looked` says that look was just taken.
     func sendQueued(_ id: UUID, looked: Bool = false) {
         // Not while the snapshot of the finished turn is still being made: the next turn's edits must not end up in it.
-        guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed,
-              var queue = queued[id], let next = queue.next() else { return }
+        guard processes[id] == nil, !checkpointing.contains(id), let run = run(id), run.status == .completed else { return }
+        guard var queue = queued[id], let next = queue.next() else {
+            // Nothing left to send: a delegated task whose result waited for its queue reports now.
+            deliverDelegatedResult(id)
+            return
+        }
         if !looked, let notice = next.pullRequest, let fetch = pullRequestSnapshot, let url = URL(string: notice.url) {
             guard queueLooks.insert(id).inserted else { return }
             Task { [weak self] in
@@ -1640,7 +1676,7 @@ final class WorkspaceManager: ObservableObject {
         store(queue, for: id)
         // A message after `/clear`: the conversation so far ends here (sendQueued only runs between turns).
         if next.fresh { clearConversation(id, quietly: true) }
-        send(id, text: next.text)
+        send(id, text: next.text, origin: next.origin)
     }
 
     /// Retries the previous task (after an error or when stopped).
@@ -1807,7 +1843,7 @@ final class WorkspaceManager: ObservableObject {
         if forkNext.remove(id) != nil { forkLaunched.insert(id) } else { forkLaunched.remove(id) }
         if rollback != nil { run.pendingRollback = nil }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id)
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
         append(id, RunEvent(kind: .system, text: spec.displayCommand, tool: "launch"))
@@ -2567,6 +2603,9 @@ final class WorkspaceManager: ObservableObject {
         pendingSendNow[id] = nil
         pendingSendNowSteer[id] = nil
         pendingSendNowFresh.remove(id)
+        pendingSendNowOrigin[id] = nil
+        workStartedAt[id] = nil
+        continuingTurns.remove(id)
         freshArmed.remove(id)
         turnPrompts[id] = nil
         recoveringConversation.remove(id)
