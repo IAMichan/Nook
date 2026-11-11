@@ -95,6 +95,13 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookTheme.shape(_:) or .roundedBackground / .roundedStroke / .roundedClip / .roundedHitShape")
     }
 
+    /// Chips, badges and buttons are rounded rectangles on the chip or control radius, never a pill:
+    /// `Capsule()` is only for shapes without words (progress tracks, indicator bars, drag handles).
+    func testChipsAndButtonsAreNotPills() {
+        let found = offenders(#"\.(background|overlay|contentShape|clipShape)\(Capsule\("#) { _ in false }
+        XCTAssertEqual(found, [], "use NookTheme.shape(NookTheme.Radius.chip) or .control instead of a Capsule behind words")
+    }
+
     /// Text sits on the type scale: SwiftUI's own styles (`.caption`, `.callout`, `.headline`, `.system(.body)`) have
     /// sizes of their own that do not line up with `NookTheme.TextStyle`.
     func testTextUsesTheTypeScale() {

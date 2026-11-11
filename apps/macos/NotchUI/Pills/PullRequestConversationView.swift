@@ -366,7 +366,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
             .foregroundStyle(color)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.14)))
+            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.14)))
             .lineLimit(1)
     }
 
@@ -397,7 +397,7 @@ private struct PullRequestCommentLocation: View {
                         .foregroundStyle(NookTheme.amber)
                         .padding(.horizontal, NookTheme.Spacing.sm)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
+                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.12)))
                 }
                 Spacer(minLength: 0)
             }
@@ -433,8 +433,8 @@ private struct FoldedConversation: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .padding(.horizontal, NookTheme.Spacing.sm)
                     .padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.line2))
-                    .contentShape(Capsule())
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.line2))
+                    .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }
                 .buttonStyle(.plain)
                 .accessibilityValue(open ? tr("compose.queue.expanded") : "")
@@ -496,8 +496,8 @@ struct PullRequestReactionBar: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .padding(.horizontal, NookTheme.Spacing.sm)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(NookTheme.line2))
-                    .contentShape(Capsule())
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.line2))
+                    .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }
                 .buttonStyle(.plain)
                 .disabled(actions == nil || event.reactionPath == nil)

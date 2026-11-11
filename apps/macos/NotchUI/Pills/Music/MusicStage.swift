@@ -466,7 +466,7 @@ private struct RecentSearchChip: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.xs)
-        .background(Capsule().fill(hovering ? NookTheme.graphite : NookTheme.surface))
+        .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.graphite : NookTheme.surface))
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
@@ -609,7 +609,7 @@ struct MusicCoverCard: View {
                             EqualizerBars(color: NookTheme.music, height: 10, isPlaying: service?.current?.isPlaying ?? false)
                                 .scaleEffect(0.7, anchor: .leading)
                                 .padding(NookTheme.Spacing.sm)
-                                .background(Capsule().fill(Color.black.opacity(0.6)))
+                                .background(NookTheme.shape(NookTheme.Radius.chip).fill(Color.black.opacity(0.6)))
                                 .padding(NookTheme.Spacing.sm)
                                 .accessibilityHidden(true)
                         }

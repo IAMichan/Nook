@@ -341,7 +341,7 @@ private struct CardStatusPill: View {
         .foregroundStyle(status.tone.color)
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 20)
-        .background(Capsule().fill(status.tone.color.opacity(0.12)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(status.tone.color.opacity(0.12)))
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(status.text)

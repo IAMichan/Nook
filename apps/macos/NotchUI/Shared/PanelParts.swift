@@ -16,7 +16,7 @@ struct NookCountBadge: View {
                 .foregroundStyle(NookTheme.amber)
                 .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(minWidth: 16, minHeight: 16)
-                .background(Capsule().fill(NookTheme.amber.opacity(0.14)))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.14)))
         }
     }
 }
@@ -66,8 +66,8 @@ struct NookFilterChip: View {
             .foregroundStyle(selected ? NookTheme.onIris : (hovering ? NookTheme.paper : NookTheme.textStrong))
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .padding(.vertical, SharedMetrics.isPhone ? NookTheme.Spacing.sm + 1 : NookTheme.Spacing.xs + 1)
-            .background(Capsule().fill(selected ? NookTheme.iris : NookTheme.smoke))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(selected ? NookTheme.iris : NookTheme.smoke))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

@@ -108,8 +108,8 @@ struct SessionPullRequestRow: View {
             .foregroundStyle(tint)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 22)
-            .background(Capsule().strokeBorder(armed ? NookTheme.amber : NookTheme.line2))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(armed ? NookTheme.amber : NookTheme.line2))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .disabled(running)

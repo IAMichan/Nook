@@ -376,8 +376,8 @@ struct PanelView: View {
         }
         .padding(NookTheme.Spacing.xs)
         .background(
-            Capsule().fill(NookTheme.surface)
-                .overlay(Capsule().strokeBorder(NookTheme.line, lineWidth: 1))
+            NookTheme.shape(NookTheme.Radius.panel).fill(NookTheme.surface)
+                .overlay(NookTheme.shape(NookTheme.Radius.panel).strokeBorder(NookTheme.line, lineWidth: 1))
         )
         .fixedSize()
     }
@@ -630,8 +630,8 @@ private struct SheetBackButton: View {
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.cancelAction)

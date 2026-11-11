@@ -113,7 +113,7 @@ struct NookTabBar<Value: Hashable>: View {
     }
 
     private var shape: AnyShape {
-        segmented ? AnyShape(NookTheme.shape(NookTheme.Radius.chip)) : AnyShape(Capsule())
+        segmented ? AnyShape(NookTheme.shape(NookTheme.Radius.chip)) : AnyShape(NookTheme.shape(NookTheme.Radius.control))
     }
 
     /// The selected tab's title: dark on a light accent, as `onIris` says.

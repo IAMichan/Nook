@@ -20,7 +20,7 @@ struct LabelChip: View {
         .foregroundStyle(NookTheme.textSecondary)
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, 1)
-        .background(Capsule().strokeBorder(NookTheme.line2))
+        .background(NookTheme.shape(NookTheme.Radius.chip).strokeBorder(NookTheme.line2))
         .help(name)
     }
 }

@@ -98,7 +98,7 @@ struct SourcesDisclosure: View {
                                 .foregroundStyle(NookTheme.amber)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
+                                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.12)))
                         }
                         Image(icon: "chevron.down")
                             .font(NookTheme.font(8, .bold))
@@ -199,7 +199,7 @@ struct SourcesDisclosure: View {
         .foregroundStyle(statusColor(group.status))
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
-        .background(Capsule().fill(chipFill(group.status)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(chipFill(group.status)))
     }
 
     /// Why a source could not be read, with what fixes it: the permission it misses, or trying again.
@@ -333,7 +333,7 @@ private struct SourceFixButton: View {
                 .foregroundStyle(prominent ? NookTheme.onPaper : NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 26)
-                .background(Capsule().fill(prominent ? NookTheme.amber : NookTheme.smoke))
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(prominent ? NookTheme.amber : NookTheme.smoke))
         }
         .buttonStyle(.plain)
     }
@@ -747,6 +747,6 @@ struct AttachmentChip: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xxs)
         .frame(height: 26)
-        .background(Capsule().fill(NookTheme.graphite))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.graphite))
     }
 }

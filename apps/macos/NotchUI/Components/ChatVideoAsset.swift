@@ -220,8 +220,8 @@ struct ChatVideoFailure: View {
                 .foregroundStyle(NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .padding(.vertical, NookTheme.Spacing.xxs)
-                .background(Capsule().fill(NookTheme.ink.opacity(0.6)))
-                .contentShape(Capsule())
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.ink.opacity(0.6)))
+                .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .help(label)

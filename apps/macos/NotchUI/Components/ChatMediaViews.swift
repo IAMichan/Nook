@@ -500,7 +500,7 @@ struct ChatGIFView: View {
                 .foregroundStyle(NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.xs)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(NookTheme.ink.opacity(0.6)))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.6)))
                 .padding(NookTheme.Spacing.xs)
         }
         .accessibilityElement()

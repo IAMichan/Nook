@@ -742,7 +742,7 @@ private struct DraftPanel: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .padding(.horizontal, NookTheme.Spacing.sm)
                         .padding(.vertical, NookTheme.Spacing.xxs)
-                        .background(Capsule().fill(NookTheme.graphite))
+                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.graphite))
                         .lineLimit(1)
                 }
             }
@@ -1044,8 +1044,8 @@ private struct DraftLookupChip: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .frame(height: 22)
-        .background(Capsule().fill(NookTheme.graphite))
-        .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+        .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.graphite))
+        .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
         .animation(NookTheme.reveal, value: lookup.done)
     }
 }
@@ -1105,10 +1105,10 @@ private struct DraftChip: View {
             .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 24)
-            .background(Capsule().fill(tint.map { $0.opacity(hovering ? 0.2 : 0.12) } ?? (hovering ? NookTheme.smoke : NookTheme.graphite)))
-            .overlay(Capsule().stroke(tint.map { $0.opacity(0.3) } ?? NookTheme.line2, lineWidth: 1))
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(tint.map { $0.opacity(hovering ? 0.2 : 0.12) } ?? (hovering ? NookTheme.smoke : NookTheme.graphite)))
+            .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(tint.map { $0.opacity(0.3) } ?? NookTheme.line2, lineWidth: 1))
             .hoverLift(hovering, scale: 1.02)
-            .contentShape(Capsule())
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.45)
