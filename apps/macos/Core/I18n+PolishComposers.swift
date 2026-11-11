@@ -5,6 +5,7 @@ import Foundation
 
 let polishComposersTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "compose.plus.screenshot": "Screenshot van het voorste venster (⌥⌘5)",
         "compose.dictate.start": "Inspreken (⌘⇧D)",
         "compose.dictate.finish": "Klaar met inspreken",
         "compose.dictate.discard": "Opname weggooien (Esc)",
@@ -22,6 +23,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.secret": "Geheim",
     ],
     .en: [
+        "compose.plus.screenshot": "Screenshot of the front window (⌥⌘5)",
         "compose.dictate.start": "Dictate (⌘⇧D)",
         "compose.dictate.finish": "Finish dictating",
         "compose.dictate.discard": "Discard the recording (Esc)",
@@ -39,6 +41,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.secret": "Secret",
     ],
     .de: [
+        "compose.plus.screenshot": "Screenshot des vordersten Fensters (⌥⌘5)",
         "compose.dictate.start": "Diktieren (⌘⇧D)",
         "compose.dictate.finish": "Diktat beenden",
         "compose.dictate.discard": "Aufnahme verwerfen (Esc)",
@@ -56,6 +59,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.secret": "Geheimnis",
     ],
     .fr: [
+        "compose.plus.screenshot": "Capture de la fenêtre au premier plan (⌥⌘5)",
         "compose.dictate.start": "Dicter (⌘⇧D)",
         "compose.dictate.finish": "Terminer la dictée",
         "compose.dictate.discard": "Jeter l’enregistrement (Échap)",
@@ -73,6 +77,7 @@ let polishComposersTranslations: [AppLanguage: [String: String]] = [
         "compose.chip.secret": "Secret",
     ],
     .es: [
+        "compose.plus.screenshot": "Captura de la ventana en primer plano (⌥⌘5)",
         "compose.dictate.start": "Dictar (⌘⇧D)",
         "compose.dictate.finish": "Terminar el dictado",
         "compose.dictate.discard": "Descartar la grabación (Esc)",
