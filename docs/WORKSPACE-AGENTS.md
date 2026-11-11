@@ -165,6 +165,7 @@ terminal bar run them, and **Add script** writes new ones there (`ProjectScripts
 {"scripts": [
   {"id": "dev", "name": "Dev server", "command": "pnpm dev", "previewUrl": "http://localhost:5173",
    "autoOpenPreview": true, "runOnWorktreeCreate": false, "stopOnSettle": true},
+  {"id": "install", "name": "Install", "command": "pnpm install", "runOnWorktreeCreate": true, "async": false},
   {"id": "clean", "name": "Clean", "command": "rm -rf node_modules .next", "runOnSettle": true}
 ]}
 ```
@@ -174,6 +175,7 @@ terminal bar run them, and **Add script** writes new ones there (`ProjectScripts
 | `id`, `name`, `command` | The script; `command` is required, the others are derived from it when missing. |
 | `previewUrl`, `autoOpenPreview` | The page the script serves; opened in Nook's browser a moment after it starts. |
 | `runOnWorktreeCreate` | Runs in a terminal next to the session when Nook makes a worktree for it (setup). |
+| `async` | Only for `runOnWorktreeCreate`. `true` (the default) starts the agent while the script still runs. `false` holds the first turn (or the message that brings a removed worktree back) until the script ended: a new session stays preparing meanwhile, and stopping it ends the wait. When the script fails, or its terminal is closed first, the agent is not started and the session shows the error; the terminal stays open with it. The command runs under `/bin/sh` so its exit code can be read. |
 | `stopOnSettle` | When the session settles, the terminal running this script stops, together with every process it started (each process group under the shell, except Nook's own and an agent's). |
 | `runOnSettle` | When a session in a worktree of its own settles, this runs once in a new terminal in that worktree (cleanup). The terminal closes when the command succeeds and stays open with the error when it fails. It never runs for a session in the project's own checkout, which other work shares. |
 
@@ -316,6 +318,9 @@ Delegation rules are implemented in `Delegation.swift` (pure Foundation, tested 
 - **Scoped context:** The child session receives only the explicit task prompt and role—never the parent's full conversation history.
 - **Bounded depth:** Maximum delegation depth of 2 levels and at most 4 concurrent child tasks per session.
 - **Cascading stop:** Stopping a parent session automatically stops all of its active child tasks.
+- **Child does the work:** Every child is told to do the task itself, start no subtasks unless its brief asks, and end with a short report, because that report is all the parent reads (`DelegationPolicy.childNote`).
+- **Results and questions come back:** A task the parent did not wait for sends its result to the parent as a message when it ends (with the branch to merge for a worktree task), and a question it asks once, so the parent answers it with `session_questions` or asks you. Agents are told not to poll.
+- **Main thread:** The **Main thread** switch in the composer (new and running sessions) makes the session an orchestrator: it hands self-contained work to delegated tasks, starts independent ones together and combines their reports, so its own conversation stays small. The agent hears of the switch once, with your next message; its system prompt does not change, so the prompt cache stays warm. Tasks at work, asking something, or ended since your last message show above the composer; click one to open it. After a compaction your next message tells the agent again. On the iPhone a new session can start as a main thread, and a session's menu turns it on or off.
 - **No two writers in one folder:** A child in Plan mode always shares the parent's folder. A child that may change files shares it too, unless another such child of the same parent is already working there: then it gets a git worktree of its own, on a branch from the parent's branch (`DelegationPolicy.placement`). The parent can choose with `isolation` (`shared` or `worktree`). The result of a worktree task names its `worktree` and `branch` and tells the parent to merge that branch.
 
 ## Security Guarantees

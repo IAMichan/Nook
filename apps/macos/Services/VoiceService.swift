@@ -60,9 +60,12 @@ final class VoiceService: ObservableObject {
     private var multi: MultiDictation?
     private var multiPoll: Task<Void, Never>?
 
-    func startMultilingual(onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) {
+    /// `contextualStrings`: words to expect (`DictationContext`), such as your dictionary and project names.
+    func startMultilingual(contextualStrings: [String] = [], onPartial: @escaping (String) -> Void,
+                           onFinish: @escaping (String) -> Void) {
         guard !isListening else { return }
         let dictation = MultiDictation()
+        dictation.contextualStrings = contextualStrings
         dictation.onLevel = { VoiceLevel.shared.set($0) }
         multi = dictation
         self.onPartial = onPartial
@@ -90,7 +93,8 @@ final class VoiceService: ObservableObject {
         }
     }
 
-    func start(locale: Locale = Locale(identifier: "nl-NL"), onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
+    func start(locale: Locale = Locale(identifier: "nl-NL"), contextualStrings: [String] = [],
+               onPartial: @escaping (String) -> Void, onFinish: @escaping (String) -> Void) throws {
         guard !isListening else { return }
         guard let recognizer = self.recognizer(for: locale), recognizer.isAvailable else {
             throw NookError("Speech recognition is currently unavailable.")
@@ -101,6 +105,7 @@ final class VoiceService: ObservableObject {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.contextualStrings = contextualStrings
         if recognizer.supportsOnDeviceRecognition {
             request.requiresOnDeviceRecognition = true
         }

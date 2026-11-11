@@ -59,7 +59,7 @@ for file in "${OWN_COLORS[@]}"; do exclude+=(-e "^$file:"); done
 grep -rnE '\b(NS)?Color\(\s*(hex|red|white|\.sRGB)\b' NotchUI App --include='*.swift' | grep -v "${exclude[@]}" \
   | report "colors come from NookTheme by name (no literal Color(hex:/red:/white:))"
 
-grep -rnE 'cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|cardBackground\(.*radius:\s*[0-9]' NotchUI App --include='*.swift' \
+grep -rnE '(cornerRadius:\s*|(roundedClip|roundedHitShape|NookTheme\.shape)\(\s*)(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|(cardBackground|roundedBackground|roundedStroke|roundedStrokeBorder)\(.*radius:\s*[0-9]' NotchUI App --include='*.swift' \
   | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)"
 
@@ -82,6 +82,13 @@ grep -rnE 'Image\((systemName|icon): "magnifyingglass"\)' NotchUI App --include=
 grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Theme/NookIcon.swift:' \
   | report "icons go through Image(icon:) / NookIcon.nsImage, so they are Nook's Lucide icons (no raw SF Symbols)"
+
+grep -rnE 'RoundedRectangle\(cornerRadius:' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Theme/NookTheme.swift:' \
+  | report "rounded shapes come from NookTheme.shape / .roundedBackground / .roundedStroke / .roundedClip (no RoundedRectangle built inline)"
+
+grep -rnE '\.(background|overlay|contentShape|clipShape)\(Capsule\(' NotchUI App --include='*.swift' \
+  | report "chips and buttons sit on NookTheme.Radius.chip /.control (no Capsule behind words; Capsule is for bars and tracks)"
 
 grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Components/PanelBlocks.swift:' \

@@ -77,7 +77,35 @@ final class RunStore: @unchecked Sendable {
     func saveRuns(_ runs: [WorkspaceRun]) throws {
         lock.lock()
         defer { lock.unlock() }
-        try write(Self.encoder.encode(runs), to: runsURL)
+        try write(encodeRuns(runs), to: runsURL)
+    }
+
+    /// Each session's JSON as last encoded, with the session it came from.
+    private var encodedRuns: [UUID: (run: WorkspaceRun, json: Data)] = [:]
+
+    /// The list as one JSON array, encoding only the sessions that changed since the last save. While agents stream, a
+    /// session changes with every message; encoding all of them (hundreds, a megabyte) each time kept a core busy.
+    /// Call with the lock held.
+    private func encodeRuns(_ runs: [WorkspaceRun]) throws -> Data {
+        var json = Data()
+        json.reserveCapacity(encodedRuns.values.reduce(2) { $0 + $1.json.count + 1 })
+        json.append(UInt8(ascii: "["))
+        var encoded: [UUID: (run: WorkspaceRun, json: Data)] = [:]
+        encoded.reserveCapacity(runs.count)
+        for (index, run) in runs.enumerated() {
+            let piece: Data
+            if let known = encodedRuns[run.id], known.run == run {
+                piece = known.json
+            } else {
+                piece = try Self.encoder.encode(run)
+            }
+            encoded[run.id] = (run, piece)
+            if index > 0 { json.append(UInt8(ascii: ",")) }
+            json.append(piece)
+        }
+        json.append(UInt8(ascii: "]"))
+        encodedRuns = encoded
+        return json
     }
 
     /// - Parameter failed: called, off the main thread, when the list could not be written.
@@ -235,8 +263,9 @@ final class RunStore: @unchecked Sendable {
     }
 
     private static let importedKey = "json_timelines_imported"
-    /// Set once every session is indexed. The second key: the first index (`run_text`) is dropped and built anew.
-    private static let indexedKey = "search_index_v2_built"
+    /// Set once every session is indexed. The third key: the first index (`run_text`) and the second, which kept a copy of
+    /// the text (`RunEventLog.dropSearchWithText`), are dropped and built anew.
+    private static let indexedKey = "search_index_v3_built"
 
     /// Indexes every session written before the index existed, once, in the background. Rows are read on the read
     /// connection and folded without the lock; only writing a session's index takes it, so a timeline you open never waits
@@ -268,6 +297,8 @@ final class RunStore: @unchecked Sendable {
         }
         lock.lock()
         log?.setMeta(Self.indexedKey, ISO8601DateFormatter().string(from: Date()))
+        // An index that kept the text was dropped on opening: its room goes back to the disk.
+        log?.compact()
         lock.unlock()
     }
 

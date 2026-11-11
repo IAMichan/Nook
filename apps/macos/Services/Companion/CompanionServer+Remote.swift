@@ -16,7 +16,8 @@ extension CompanionServer {
                 LaunchOptions.Model(id: $0, name: CompanionPolicy.clip(app.modelName($0, for: provider), limit: 80))
             }
             return LaunchOptions.Agent(id: provider.rawValue, name: provider.displayName, canPlan: provider.capabilities.planMode,
-                                       models: Array(models), defaultModel: settings.model(for: provider))
+                                       models: Array(models), defaultModel: settings.model(for: provider),
+                                       canMainThread: MainThread.offered(provider: provider, access: settings.bridgeAccess))
         }
         let paths = recentProjects(settings)
         let infos = await withTaskGroup(of: ProjectInfo.self) { group in
@@ -80,6 +81,7 @@ extension CompanionServer {
             config.model = defaults.model(for: provider)
         }
         config.effort = defaults.effort(for: provider)
+        if launch.mainThread == true, MainThread.offered(provider: provider, access: settings.bridgeAccess) { config.mainThread = true }
         config.mode = plan ? .plan : .agent
         config.permission = phonePermission(provider, preferred: defaults.permission(for: provider), plan: plan)
         config.projectPath = project
@@ -135,23 +137,54 @@ extension CompanionServer {
     /// A session's conversation: a Workspace session's timeline (read back from disk when it was released or never
     /// opened), or the transcript of an agent outside Nook (`CompanionAgents.timeline`).
     func timeline(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
-        guard let session = request.session, let entries = await timelineEntries(session, app: app) else {
+        // `item`: the oldest entry the phone has, and it wants the page before it.
+        guard let session = request.session, let entries = await timelineEntries(session, before: request.item, app: app) else {
             return .failure(request.id, .unknownSession)
         }
-        return CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
+        var response = CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
+        response.timelineBefore = request.item
+        return response
     }
 
     /// The recent conversation of a session as the phone gets it, within one answer; nil for a session that is gone.
-    func timelineEntries(_ session: String, app: AppModel) async -> [TimelineEntry]? {
+    /// `before`: the page older than that entry instead, empty when there is none.
+    func timelineEntries(_ session: String, before: String? = nil, app: AppModel) async -> [TimelineEntry]? {
         if CompanionAgents.handles(session) {
-            return await CompanionAgents.timeline(app, session: session).map { CompanionPolicy.newestFitting($0) }
+            return await CompanionAgents.timeline(app, session: session, before: before).map { CompanionPolicy.newestFitting($0) }
         }
         let workspace = app.workspace
         guard let runID = UUID(uuidString: session), workspace.run(runID) != nil else { return nil }
         // Off the main thread. The phone polls, so the next look finds it in memory; idle, it is released again.
-        let events = await workspace.timelineForSearch(runID)
+        var events = await workspace.timelineForSearch(runID)[...]
         workspace.prefetchTimeline(runID)
-        return CompanionPolicy.newestFitting(events.suffix(160).compactMap(Self.entry))
+        if let before {
+            guard let index = events.firstIndex(where: { $0.id.uuidString == before }) else { return [] }
+            events = events[..<index]
+        }
+        // Walk back until a page holds 160 entries the phone draws (thinking and results are left out).
+        var page: [TimelineEntry] = []
+        for event in events.reversed() {
+            if let entry = Self.entry(event) { page.append(entry) }
+            if page.count == 160 { break }
+        }
+        return CompanionPolicy.newestFitting(page.reversed())
+    }
+
+    /// One entry of a session's conversation in full, for an entry the timeline clipped (`CompanionOp.entry`).
+    func entry(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        guard let session = request.session, let id = request.item else { return .failure(request.id, .badRequest) }
+        let text: String?
+        if CompanionAgents.handles(session) {
+            text = await CompanionAgents.fullText(app, session: session, entry: id)
+        } else if let runID = UUID(uuidString: session), app.workspace.run(runID) != nil {
+            text = await app.workspace.timelineForSearch(runID).first { $0.id.uuidString == id }?.text
+        } else {
+            return .failure(request.id, .unknownSession)
+        }
+        guard let text else { return .failure(request.id, .unknownItem) }
+        var response = CompanionResponse(id: request.id, ok: true)
+        response.entryText = CompanionPolicy.clip(text, limit: TimelineEntry.fullLimit)
+        return response
     }
 
     // MARK: What a session changed
@@ -244,6 +277,44 @@ extension CompanionServer {
         return response
     }
 
+    /// A piece of one file of a session's folder, for the phone to preview it (`CompanionOp.fileData`). The same rules
+    /// as `files` (inside the folder, no secrets, a regular file), and no file over `FileChunk.maxFileBytes`.
+    func fileData(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        guard let session = request.session, let folder = sessionFolder(session, app: app), !folder.isEmpty else {
+            return .failure(request.id, .unknownSession)
+        }
+        if let id = UUID(uuidString: session), app.workspace.run(id)?.isRemote == true { return .failure(request.id, .notAllowedFromPhone) }
+        let relative = request.item ?? ""
+        let offset = Int(request.text ?? "0") ?? -1
+        let read = await Task.detached(priority: .userInitiated) { () -> (FileChunk?, CompanionError?) in
+            guard !relative.isEmpty, let path = CompanionWorkspace.path(relative, in: folder) else { return (nil, .notAllowedFromPhone) }
+            let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+            // Opening a named pipe or a device would wait forever.
+            guard attributes?[.type] as? FileAttributeType == .typeRegular, let total = attributes?[.size] as? Int else {
+                return (nil, .notAllowedFromPhone)
+            }
+            guard let range = FileChunk.range(offset: offset, total: total) else { return (nil, .badRequest) }
+            guard let handle = FileHandle(forReadingAtPath: path) else { return (nil, .notAllowedFromPhone) }
+            defer { try? handle.close() }
+            do {
+                try handle.seek(toOffset: UInt64(range.lowerBound))
+                let data = try handle.read(upToCount: range.count) ?? Data()
+                return (FileChunk(path: relative, offset: range.lowerBound, total: total, data: data.base64EncodedString()), nil)
+            } catch {
+                return (nil, .failed)
+            }
+        }.value
+        guard let chunk = read.0 else {
+            let error = read.1 ?? .failed
+            // A file over the limit says so, so the phone can tell it from one it may not see.
+            return .failure(request.id, error, message: error == .badRequest ? "tooLarge" : nil)
+        }
+        if chunk.offset == 0 { audit("file_preview", relative) }
+        var response = CompanionResponse(id: request.id, ok: true)
+        response.fileChunk = chunk
+        return response
+    }
+
     private func sessionFolder(_ session: String, app: AppModel) -> String? {
         if let runID = UUID(uuidString: session), let run = app.workspace.run(runID) { return run.workingDirectory }
         guard CompanionAgents.handles(session) else { return nil }
@@ -269,6 +340,14 @@ extension CompanionServer {
             if text.isEmpty { text = event.detail ?? "" }
             detail = event.tool
         case .error: kind = .error
+        case .system where CompactionProgress.isCompaction(event):
+            // A compaction reads as a terminal session's does on the phone; while it runs, or when it stopped, in words.
+            kind = .notice
+            switch event.state {
+            case .running?: text = tr("ws.activity.compacting"); detail = nil
+            case .failed?: text = tr("ws.event.compactionStopped"); detail = nil
+            default: detail = TimelineEntry.compacted
+            }
         case .system: kind = .notice
         case .page:
             // The phone draws no pages: it says which page the agent showed (the page itself stays on the Mac).
@@ -279,16 +358,22 @@ extension CompanionServer {
         let clipped = CompanionPolicy.clip(text)
         // A step can be about nothing in particular (a task list): its tool alone says what it was.
         guard !clipped.isEmpty || kind == .tool else { return nil }
+        // A step opens to what it gave back on the phone, as on the Mac: the end of it, which says how it went.
+        let output = kind == .tool || kind == .change ? TimelineEntry.outputTail(event.output) : nil
         return TimelineEntry(id: event.id.uuidString, kind: kind, text: clipped, detail: detail.map { CompanionPolicy.clip($0, limit: 120) },
-                             date: event.date.timeIntervalSince1970, failed: event.state == .failed)
+                             date: event.date.timeIntervalSince1970, failed: event.state == .failed, output: output,
+                             clipped: kind != .tool && CompanionPolicy.wasClipped(clipped) ? true : nil)
     }
 
     // MARK: Managing a session
 
     /// What the phone may do to a Workspace session, as the Agents list on the Mac offers it: rename it, archive it once
-    /// it rests, and snooze it (or wake it).
-    static func actions(_ run: WorkspaceRun, now: Date) -> [SessionAction] {
+    /// it rests, snooze it (or wake it), and turn its main thread on or off as the composer's switch does.
+    static func actions(_ run: WorkspaceRun, now: Date, access: BridgeAccess) -> [SessionAction] {
         var actions: [SessionAction] = [.rename]
+        if MainThread.offered(provider: run.provider, access: access) {
+            actions.append(run.mainThread == true ? .mainThreadOff : .mainThreadOn)
+        }
         if !run.status.isActive { actions.append(.archive) }
         if let until = run.snoozedUntil, until > now {
             actions.append(.unsnooze)
@@ -314,7 +399,7 @@ extension CompanionServer {
         }
         let workspace = app.workspace
         guard let runID = UUID(uuidString: session), let run = workspace.run(runID) else { return .failure(request.id, .unknownSession) }
-        guard Self.actions(run, now: Date()).contains(action) else { return .failure(request.id, .notAllowedFromPhone) }
+        guard Self.actions(run, now: Date(), access: workspace.settings.bridgeAccess).contains(action) else { return .failure(request.id, .notAllowedFromPhone) }
         switch action {
         case .rename:
             guard let title = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
@@ -332,6 +417,8 @@ extension CompanionServer {
                 return .failure(request.id, .notAllowedFromPhone)
             }
             workspace.snooze(runID, until: end)
+        case .mainThreadOn: workspace.setMainThread(runID, true)
+        case .mainThreadOff: workspace.setMainThread(runID, false)
         case .end: return .failure(request.id, .notAllowedFromPhone)
         }
         audit(action.rawValue, run.title)

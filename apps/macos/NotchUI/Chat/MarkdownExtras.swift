@@ -79,7 +79,7 @@ struct MarkdownImageBlock: View {
                 }
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.sm)
-                .background(Capsule().fill(NookTheme.smoke))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
                 .help(source)
             } else {
                 ChatMessagePicture(image: image, missing: false, name: name) { file }

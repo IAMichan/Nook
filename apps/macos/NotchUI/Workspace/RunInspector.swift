@@ -97,7 +97,7 @@ struct RunInspector: View {
                     Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
                 } else if snapshot == nil || (snapshot?.loading == true && snapshot?.status == nil) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 4).fill(WS.subtle).frame(height: 14)
+                        NookTheme.shape(4).fill(WS.subtle).frame(height: 14)
                     }
                 } else if files.isEmpty {
                     Text(tr("ws.inspector.clean")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
@@ -168,6 +168,10 @@ struct RunInspector: View {
                 InfoRow(label: tr("ws.usage.cacheWrite"), value: WSFormat.tokens(usage.cacheWriteTokens))
             }
             InfoRow(label: tr("ws.usage.context"), value: contextText(usage, caps: caps), help: tr("ws.header.contextHelp"))
+            // Where the agent summarizes by itself: Nook's own limit, or the agent's threshold where it says.
+            if let at = workspace.autoCompactAt(run) {
+                InfoRow(label: tr("ws.usage.autoCompact"), value: TokenTally.format(at), help: tr("ws.usage.autoCompactHelp"))
+            }
             if workspace.settings.showCost {
                 InfoRow(label: tr("ws.usage.cost"),
                         value: caps.reportsCost ? WSFormat.cost(usage.reportedCostUSD) : nil,

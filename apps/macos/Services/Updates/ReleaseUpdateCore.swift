@@ -129,17 +129,20 @@ struct GitHubRelease: Decodable, Equatable, Sendable {
     let page: URL?
     let publishedAt: String?
     let assets: [Asset]
+    /// The release notes (Markdown); the release workflow puts GitHub's list of merged pull requests in them.
+    let body: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, draft, prerelease, assets
+        case name, draft, prerelease, assets, body
         case tag = "tag_name"
         case page = "html_url"
         case publishedAt = "published_at"
     }
 
     init(tag: String, name: String? = nil, draft: Bool = false, prerelease: Bool = false, page: URL? = nil,
-         publishedAt: String? = nil, assets: [Asset]) {
+         publishedAt: String? = nil, assets: [Asset], body: String? = nil) {
         self.tag = tag
+        self.body = body
         self.name = name
         self.draft = draft
         self.prerelease = prerelease
@@ -165,6 +168,10 @@ struct ReleaseCandidate: Equatable, Sendable {
     let page: URL?
     let archive: GitHubRelease.Asset
     let signature: GitHubRelease.Asset
+    /// The pull requests the releases after this build brought, newest first (from their notes).
+    var changes: [IncomingChange] = []
+    /// How many there are in all; `changes` holds at most `ReleaseNotes.limit`.
+    var changeCount = 0
 }
 
 /// What the check found.
@@ -196,7 +203,10 @@ enum ReleaseSelection {
         guard build.publicKey != nil, let archive, let signature, isGitHubDownload(archive.url), isGitHubDownload(signature.url)
         else { return .unsigned(version: version, page: release.page) }
         let title = release.name.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } ?? "Nook \(version)"
-        return .available(ReleaseCandidate(version: version, title: title, page: release.page, archive: archive, signature: signature))
+        // Every release between this build and the newest one: skipping a release must not hide what it brought.
+        let all = ReleaseNotes.changes(newer.sorted { $0.0 > $1.0 }.map(\.1))
+        return .available(ReleaseCandidate(version: version, title: title, page: release.page, archive: archive, signature: signature,
+                                           changes: Array(all.prefix(ReleaseNotes.limit)), changeCount: all.count))
     }
 
     /// Downloads come from GitHub over HTTPS (the signature is what makes them trusted; this keeps the URL honest).
@@ -247,5 +257,66 @@ enum ReleaseBundleCheck {
         let version = info["NookReleaseVersion"] as? String
         guard let version, ReleaseVersion(version) == expected else { return .wrongVersion(version) }
         return nil
+    }
+}
+
+/// The pull requests a release brought, read from its notes. The release workflow fills them with GitHub's generated
+/// list, one line per pull request: `* Title by @author in https://github.com/owner/repo/pull/123`.
+enum ReleaseNotes {
+    /// The panel and the receipt keep this many.
+    static let limit = 60
+
+    /// The pull requests of `releases` (newest release first), newest first, each once.
+    static func changes(_ releases: [GitHubRelease]) -> [IncomingChange] {
+        var seen = Set<Int>()
+        var result: [IncomingChange] = []
+        for release in releases {
+            let date = release.publishedAt.flatMap { ISO8601DateFormatter().date(from: $0) } ?? .distantPast
+            // GitHub lists them oldest first.
+            for change in parse(release.body ?? "", date: date).reversed() where seen.insert(change.pullRequest ?? -1).inserted {
+                result.append(change)
+            }
+        }
+        return result
+    }
+
+    static func parse(_ body: String, date: Date) -> [IncomingChange] {
+        body.split(whereSeparator: \.isNewline).compactMap { line in
+            var text = line.trimmingCharacters(in: .whitespaces)
+            guard text.hasPrefix("* ") || text.hasPrefix("- ") else { return nil }
+            text.removeFirst(2)
+            guard let inRange = text.range(of: " in https://github.com/", options: .backwards),
+                  let byRange = text.range(of: " by @", options: .backwards, range: text.startIndex..<inRange.lowerBound)
+            else { return nil }
+            let link = text[inRange.upperBound...]
+            guard let pullRange = link.range(of: "/pull/"),
+                  let number = Int(link[pullRange.upperBound...].prefix { $0.isNumber }), number > 0 else { return nil }
+            let title = String(text[..<byRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let author = String(text[byRange.upperBound..<inRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            guard !title.isEmpty, !author.isEmpty, !author.contains(" ") else { return nil }
+            return IncomingChange(sha: "pr-\(number)", title: title, pullRequest: number, author: author, date: date)
+        }
+    }
+}
+
+/// Where the running app is, and whether an update can replace it there.
+enum ReleaseInstallLocation {
+    /// Opened straight from Downloads or a disk image, macOS runs a quarantined app from a random read-only copy (App
+    /// Translocation): an update cannot replace it, and the next launch starts the old one again.
+    static func isTranslocated(_ path: String) -> Bool {
+        path.contains("/AppTranslocation/")
+    }
+
+    /// Where "Move to Applications" puts Nook.
+    static let applications = "/Applications/Nook.app"
+}
+
+/// An install that did not take: Nook restarted into an update, but the build that started is still the one the update
+/// came from (the new app was not put in place, or something started the old copy).
+enum UpdateApplied {
+    /// The version (or commit) that should be running now but is not; nil when the receipt is not about this build.
+    static func notApplied(_ receipt: UpdateReceipt, running build: String, now: Date = Date()) -> String? {
+        guard receipt.from == build, receipt.to != build, now.timeIntervalSince(receipt.installedAt) < 24 * 3600 else { return nil }
+        return receipt.to
     }
 }

@@ -42,7 +42,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
                                         canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
-                                        reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true)
+                                        reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
+                                        ultracode: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
@@ -144,6 +145,9 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// A faster tier of the same model beside the effort (`SpeedTiers`): Codex's service tiers, Claude Code's fast mode.
     /// The ACP agents (Gemini CLI, Antigravity, OpenCode, Cursor, Grok, the ones you add) offer none over ACP.
     var speedTiers = false
+    /// Claude Code's Ultracode beside the effort (`Ultracode`). No other agent has the concept: Codex, Pi and the ACP
+    /// agents offer only their effort levels (see docs/INTEGRATIONS.md).
+    var ultracode = false
 }
 
 /// See `ProviderCapabilities.denyReason`.
@@ -391,12 +395,18 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var limitedAt: Date? = nil
     var limitResetAt: Date? = nil
     var autoResume: Bool? = nil
+    /// Times in a row Nook went on by itself after a limit and the limit stopped the session again (nil: not resuming).
+    /// Keeps "Resume at reset" on for the next limit, and spaces out the tries when the reset time is unknown or stale.
+    var limitRetries: Int? = nil
     /// Times in a row Nook went on after a restart cut this session off; back to nil after a turn that ends normally.
     var continuations: Int? = nil
     /// When Nook last went on with it after a restart (see `RestartContinuation.loopWindow`).
     var lastContinuedAt: Date? = nil
     /// The restart cut it off while it waited for your approval: that approval is gone, so Nook does not go on by itself.
     var interruptedWhileWaiting: Bool? = nil
+    /// Nook quit after this session's turn ended while it waited on work in the background (a subagent): that work
+    /// stopped with it and will not report back (see `RestartContinuation`).
+    var cutBackgroundWork: CutBackgroundWork? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
@@ -414,6 +424,12 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var effort: String? = nil
     /// The speed tier for the next turns (`SpeedTiers`); nil is the agent's standard speed.
     var speedTier: String? = nil
+    /// Claude Code's Ultracode for the next turns (`Ultracode`); nil leaves your own Claude setting alone.
+    var ultracode: Bool? = nil
+    /// "Main thread" (`MainThread`): the session hands its work to delegated tasks. nil is off.
+    var mainThread: Bool? = nil
+    /// What the agent was last told about `mainThread` (nil: nothing, which reads as off). A new conversation forgets it.
+    var mainThreadTold: Bool? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
     /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
@@ -438,7 +454,7 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var timelineDetail: TimelineDetail? = nil
 
     var projectName: String {
-        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        let name = (projectPath as NSString).lastPathComponent
         let folder = name.isEmpty ? projectPath : name
         // A session on another machine says which: "buildbox:app".
         return remote.map { $0.name + ":" + folder } ?? folder
@@ -904,6 +920,10 @@ struct NewRunConfig: Equatable, Sendable {
     /// The speed tier for the session (`SpeedTiers`); nil is the agent's standard speed. Not remembered for the next
     /// session: a faster tier costs more.
     var speedTier: String? = nil
+    /// Claude Code's Ultracode for the session (`Ultracode`); nil leaves your own Claude setting alone.
+    var ultracode: Bool? = nil
+    /// "Main thread" for the session (`MainThread`); nil is off.
+    var mainThread: Bool? = nil
     var isolation: IsolationMode = .folder
     var projectPath = ""
     var baseBranch = ""
@@ -1241,7 +1261,7 @@ enum ToolSummary {
             return detail.isEmpty ? mcp.label : "\(mcp.label) · \(oneLine(detail, 100))"
         }
         if let command = command(input) { return "\(tool) · \(oneLine(command, 120))" }
-        if let path = path(input) { return "\(tool) · \(URL(fileURLWithPath: path).lastPathComponent)" }
+        if let path = path(input) { return "\(tool) · \((path as NSString).lastPathComponent)" }
         for key in ["pattern", "query", "url", "description", "prompt"] {
             if let value = input[key] as? String, !value.isEmpty { return "\(tool) · \(oneLine(value, 100))" }
         }
@@ -1252,7 +1272,7 @@ enum ToolSummary {
     static func command(_ input: [String: Any]) -> String? {
         if let text = input["command"] as? String { return text }
         if let parts = input["command"] as? [String], !parts.isEmpty {
-            if parts.count >= 3, ["bash", "sh", "zsh"].contains(URL(fileURLWithPath: parts[0]).lastPathComponent),
+            if parts.count >= 3, ["bash", "sh", "zsh"].contains((parts[0] as NSString).lastPathComponent),
                parts[1].hasPrefix("-") {
                 return parts[2...].joined(separator: " ")
             }

@@ -122,6 +122,18 @@ struct EventRow: View {
             TranscriptWorkLine(symbol: "arrow.turn.right.down", label: event.text)
                 .help(event.text)
 
+        case .system where CompactionProgress.isCompaction(event):
+            // A compaction: live while the agent summarizes, then what it did (`CompactionProgress`).
+            switch event.state {
+            case .running?:
+                TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: tr("ws.activity.compacting"), live: true)
+            case .failed?:
+                TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: tr("ws.event.compactionStopped"), failed: true)
+            default:
+                TranscriptWorkLine(symbol: "arrow.down.right.and.arrow.up.left", label: event.text)
+                    .help(event.text)
+            }
+
         case .system where event.tool == "wake":
             // The agent picks up what it left running in the background: a turn of its own starts here.
             TranscriptWorkLine(symbol: "arrow.turn.down.right", label: event.text)
@@ -189,7 +201,7 @@ struct SharedFilesRow: View {
             TranscriptWorkLine(symbol: "paperclip", label: SharedFiles.caption(input) ?? tr("ws.shared.title"))
                 .help(paths.map(AgentPathFormat.tilde).joined(separator: "\n"))
             ForEach(videos, id: \.self) { path in
-                VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: URL(fileURLWithPath: path).lastPathComponent,
+                VideoTile(url: URL(fileURLWithPath: path), poster: nil, name: (path as NSString).lastPathComponent,
                           maxHeight: 420)
             }
             if !others.isEmpty {
@@ -285,7 +297,7 @@ struct SharedFileTile: View {
     @State private var thumbnail: NSImage?
     @State private var hovering = false
 
-    private var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    private var name: String { (path as NSString).lastPathComponent }
 
     var body: some View {
         Button(action: action) {
@@ -314,11 +326,8 @@ struct SharedFileTile: View {
                 .frame(maxWidth: thumbnail == nil ? 220 : 140, alignment: .leading)
             }
             .background(NookTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .strokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke)
-            )
+            .roundedClip(NookTheme.Radius.card)
+            .roundedStrokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke, radius: NookTheme.Radius.card)
             .fixedSize()
             .contentShape(Rectangle())
         }
@@ -537,7 +546,7 @@ struct ApprovalRow: View {
         }
         .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .onTapGesture { toggle() }
     }
 

@@ -553,7 +553,7 @@ private struct ChatBubbleView: View, Equatable {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
-        .background(Capsule().fill(NookTheme.ink.opacity(0.55)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.55)))
         .padding(NookTheme.Spacing.sm)
         .allowsHitTesting(false)
     }
@@ -1073,7 +1073,7 @@ private struct ChatJumpButton: View {
                 .overlay(alignment: .topTrailing) {
                     if missed > 0 {
                         NookCountBadge(count: missed)
-                            .background(Capsule().fill(NookTheme.canvas))
+                            .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.canvas))
                             .offset(x: NookTheme.Spacing.xs, y: -NookTheme.Spacing.xs)
                     }
                 }
@@ -1194,11 +1194,11 @@ private struct ReactionChips: View {
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xxs)
         .background {
-            Capsule()
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(NookTheme.chatTheirs)
-                .overlay(Capsule().fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
+                .overlay(NookTheme.shape(NookTheme.Radius.chip).fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
         }
-        .contentShape(Capsule())
+        .contentShape(NookTheme.shape(NookTheme.Radius.chip))
     }
 
     /// Who put each emoji there, in one line for the tooltip: "👍 Anna, You · ❤️ Jan".
@@ -1513,13 +1513,13 @@ struct VideoTile: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, NookTheme.Spacing.xs)
                     .padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.ink.opacity(0.6)))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.ink.opacity(0.6)))
                     .padding(NookTheme.Spacing.sm)
                     .allowsHitTesting(false)
             }
         }
         .fittedMedia(size)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+        .roundedClip(NookTheme.Radius.card)
         .onHover { hovering = $0 }
         .onDisappear { playback?.pause() }
         // Its frame is read once its message comes near view, not for every video in the history at once.
@@ -1801,7 +1801,7 @@ struct ChatPhotoPlaceholder: View {
     var body: some View {
         let shown = size.map(PhotoButton.fittedSize(for:))
             ?? CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
-        RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+        NookTheme.shape(NookTheme.Radius.card)
             .fill(NookTheme.ink.opacity(0.3))
             .fittedMedia(shown)
             .overlay {
@@ -1839,7 +1839,7 @@ struct PhotoButton: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .fittedMedia(size)
-                .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+                .roundedClip(NookTheme.Radius.card)
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())
         }
@@ -1869,7 +1869,7 @@ struct AttachmentButton: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 36, height: 46)
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .roundedClip(4)
                 } else {
                     // The icon macOS gives this kind of file (a PDF, a spreadsheet, a zip), as Finder shows it.
                     Image(nsImage: Self.icon(for: name))
@@ -1896,7 +1896,7 @@ struct AttachmentButton: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .padding(.vertical, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.ink.opacity(hovering ? 0.32 : 0.22)))
+            .roundedBackground(NookTheme.ink.opacity(hovering ? 0.32 : 0.22), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

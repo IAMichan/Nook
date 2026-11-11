@@ -272,8 +272,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
             }
             .padding(.horizontal, compact ? 0 : NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, minHeight: 30, alignment: compact ? .center : .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -431,9 +430,9 @@ struct ChatMarkButton: View {
             }
             .padding(.horizontal, compact || !showsTitle ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
             .frame(height: compact ? 22 : 26)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : (compact ? NookTheme.surface : Color.clear)))
-            .overlay(Capsule().strokeBorder(NookTheme.separator, lineWidth: 1))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : (compact ? NookTheme.surface : Color.clear)))
+            .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.separator, lineWidth: 1))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

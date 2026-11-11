@@ -69,8 +69,7 @@ struct SessionPullRequestRow: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-            .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
+        .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
         .onHover { hovering = $0 }
         .help(link.url)
         .hoverCard(arrowEdge: .leading) {
@@ -109,8 +108,8 @@ struct SessionPullRequestRow: View {
             .foregroundStyle(tint)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 22)
-            .background(Capsule().strokeBorder(armed ? NookTheme.amber : NookTheme.line2))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(armed ? NookTheme.amber : NookTheme.line2))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .disabled(running)

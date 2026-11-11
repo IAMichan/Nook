@@ -12,6 +12,9 @@ extension CompanionServer {
         let capture = ChatCaptureService.shared
         // Asked right after launch, the inbox may still be read in the background: the phone gets the chats, not none.
         _ = capture.loadedInbox
+        // The faces from Contacts, also when the Chats tab on the Mac was never opened (nothing without access, at most
+        // every ten minutes).
+        ContactPhotos.shared.refresh()
         let whatsApp = WhatsAppAccounts.shared
         // Chats only, as the Mac's list of every app: status updates and channels show under an app's own tabs on the
         // Mac, which the phone does not have yet.
@@ -93,7 +96,64 @@ extension CompanionServer {
         InboxChatDigest(id: entry.id, app: entry.app, appName: MessagingApps.app(id: entry.app)?.name ?? entry.app,
                                name: CompanionPolicy.clip(entry.name, limit: 120), preview: CompanionPolicy.clip(entry.preview, limit: 200),
                                last: entry.last.timeIntervalSince1970, unread: entry.unread, canSend: canSend,
-                               ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp, typing: typing(entry.id))
+                               ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp, typing: typing(entry.id),
+                               // The chat's own picture, else its photo from Contacts, as the Mac's Chats tab shows it.
+                               avatar: CompanionAvatars.version(entry.avatar)
+                                   ?? CompanionAvatars.contactVersion(handle: entry.handle, name: entry.name))
+    }
+
+    /// The chat the phone has open (`CompanionOp.watchChat`): read as `inboxChat` reads it, and from now on its messages
+    /// follow over the live connection (`pushChats`). Nil `item` closes it.
+    func watchChat(_ request: CompanionRequest, deviceID: String, app: AppModel) async -> CompanionResponse {
+        let peer = streams.first { $0.deviceID == deviceID }
+        guard request.item?.isEmpty == false else {
+            peer?.watchChat = nil
+            peer?.sentChatLines = nil
+            return CompanionResponse(id: request.id, ok: true)
+        }
+        var response = await inboxChat(request, app: app)
+        guard response.ok, let id = request.item else { return response }
+        if let peer {
+            peer.watchChat = id
+            peer.sentChatLines = response.inboxLines
+            peer.sentChatTyping = response.inboxTyping
+        }
+        response.inboxChat = id
+        return response
+    }
+
+    /// The chats' pictures the phone asks for (`CompanionOp.avatars`): only of chats it can list, as small JPEGs.
+    func avatars(_ request: CompanionRequest) async -> CompanionResponse {
+        let wanted = Array((request.items ?? []).prefix(ChatAvatar.batch))
+        guard !wanted.isEmpty else { return .failure(request.id, .badRequest) }
+        var files: [(chat: String, path: String, version: String)] = []
+        // App icons and photos from Contacts are made here; a chat's own picture file is read off the main thread.
+        var made: [ChatAvatar] = []
+        for id in wanted {
+            if id.hasPrefix(ChatAvatar.appPrefix) {
+                if let icon = CompanionAvatars.appIcon(id) { made.append(icon) }
+                continue
+            }
+            guard let entry = inboxEntry(id) else { continue }
+            if let path = entry.avatar, let version = CompanionAvatars.version(path) {
+                files.append((id, path, version))
+            } else if let photo = CompanionAvatars.contactPicture(chat: id, handle: entry.handle, name: entry.name) {
+                made.append(photo)
+            }
+        }
+        return CompanionResponse(id: request.id, ok: true, avatars: made + (await CompanionAvatars.pictures(files)))
+    }
+
+    /// The lines of the chat a live phone has open, as `inboxChat` answers them, without reading the chat from its app
+    /// again: what came in since is in the shared inbox already. Nil when the chat is gone.
+    func liveChatLines(_ id: String) -> (lines: [InboxLine], typing: [InboxTypist])? {
+        guard let entry = inboxEntry(id) else { return nil }
+        return (inboxLines(entry), Self.typing(entry.id))
+    }
+
+    /// The Chats tab's list as the phone gets it, for the live connection.
+    func liveInbox(app: AppModel) -> CompanionResponse {
+        inbox(CompanionRequest(op: .inbox), app: app)
     }
 
     /// Who is typing in a chat now, as the Chats tab on the Mac shows it.

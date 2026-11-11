@@ -5,6 +5,9 @@ import Foundation
 final class PromptLinkInbox: ObservableObject {
     static let shared = PromptLinkInbox()
     @Published var pending: PromptLink?
+    /// A pull request link (`pr=`) whose request no session works on: the composer asks before it checks the branch out in
+    /// a worktree of its own, because the checkout runs the project's setup on code you have not read.
+    @Published var pendingCheckout: PromptLink?
     /// A folder the composer should open on (the "+" beside a project in the Agents list); the task you typed stays.
     /// Every composer on screen takes it (the notch and the main window can both show one), so none clears it on its
     /// own: it goes once the composers that show now, or appear for it, have had it (`requestProject`).

@@ -480,7 +480,7 @@ struct AgentsTab: View {
 
     private func item(_ run: WorkspaceRun, comparisons: [UUID: Int]) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
-        let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen("run:" + run.id.uuidString, run.updatedAt),
+        let attention = app.workspace.attention(run, unseen: unseen("run:" + run.id.uuidString, run.updatedAt),
                                                 includeSnooze: false)
         let status: AgentListItem.Status
         switch attention {
@@ -532,7 +532,8 @@ struct AgentsTab: View {
             switch session.status {
             case .running: status = .working
             case .failed: status = .failed
-            default: status = .idle
+            // Compacting between turns (your /compact): it works, though no turn runs.
+            default: status = session.compactingSince != nil ? .working : .idle
             }
         }
         let conversation = app.conversationID(for: session)
@@ -550,7 +551,7 @@ struct AgentsTab: View {
             status: status,
             // Busy: how long this turn runs, not how long ago the session started.
             started: status == .idle ? (session.updated ?? session.started ?? known?.started)
-                : (session.turnStarted ?? session.started ?? known?.started),
+                : (session.turnStarted ?? session.compactingSince ?? session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(session: session),
             unseen: session.status == .done && unseen(session.id, session.updated),
@@ -683,13 +684,21 @@ struct AgentRowActions {
     var onPin: () -> Void
     var settled: Bool
     var onSettle: () -> Void
-    /// Snoozing and waking are for sessions Nook runs.
-    var onSnooze: ((SnoozePolicy.Choice) -> Void)? = nil
     var onWake: (() -> Void)? = nil
     /// While a usage limit holds the session: when it resets, for "until the limit resets".
     var limitResetsAt: Date? = nil
+    /// Snoozes until a moment (a snooze option's end, the limit's reset); snoozing and waking are for sessions Nook runs.
     var onSnoozeUntil: ((Date) -> Void)? = nil
     var onSnoozeCustom: (() -> Void)? = nil
+    /// Settle (or Un-settle) and Wake pressed and dragged up or down: the same for every row swept (`SessionSweep`).
+    var onSettleSweep: (([String]) -> Void)? = nil
+    var onWakeSweep: (([String]) -> Void)? = nil
+}
+
+/// The sweep of the Agents list (`RowSweep`): Settle, Un-settle or Wake on one row, dragged over the rows of its section.
+@MainActor
+enum SessionSweep {
+    static let rows = RowSweep<String>()
 }
 
 /// A session a thread: its folder with the status or how long ago, its name, and a line of what it did
@@ -717,6 +726,8 @@ struct AgentListRow: View, Equatable {
     var jumpHint: Int? = nil
     /// The keyboard is on this row in the list (↑/↓ after F6): lit as under the pointer.
     var keyFocused = false
+    /// A sweep started on this row's button: its buttons stay while the pointer is elsewhere.
+    var sweepOrigin = false
     /// Opens the session with a pull request beside it, from the card of the row's badge.
     var openPullRequest: (URL) -> Void = { _ in }
     /// Opens the session on a file's change (its path relative to the session's folder), from the card of the row's changes.
@@ -727,11 +738,11 @@ struct AgentListRow: View, Equatable {
     /// out: they act on the same state whichever copy of them the row holds.
     static func == (lhs: AgentListRow, rhs: AgentListRow) -> Bool {
         lhs.item == rhs.item && lhs.now == rhs.now && lhs.selected == rhs.selected && lhs.receded == rhs.receded
-            && lhs.jumpHint == rhs.jumpHint && lhs.keyFocused == rhs.keyFocused
+            && lhs.jumpHint == rhs.jumpHint && lhs.keyFocused == rhs.keyFocused && lhs.sweepOrigin == rhs.sweepOrigin
             && lhs.pinned == rhs.pinned && lhs.woke == rhs.woke && lhs.slim == rhs.slim && lhs.grouped == rhs.grouped
             && lhs.wakeLabel == rhs.wakeLabel && lhs.pullRequests == rhs.pullRequests
             && lhs.actions?.pinned == rhs.actions?.pinned && lhs.actions?.settled == rhs.actions?.settled
-            && (lhs.actions?.onSnooze != nil) == (rhs.actions?.onSnooze != nil)
+            && (lhs.actions?.onSnoozeUntil != nil) == (rhs.actions?.onSnoozeUntil != nil)
             && (lhs.actions?.onWake != nil) == (rhs.actions?.onWake != nil)
             && (lhs.actions != nil) == (rhs.actions != nil)
     }
@@ -763,7 +774,7 @@ struct AgentListRow: View, Equatable {
                 .buttonStyle(.plain)
             // Built only under the pointer: a menu and two or three buttons in every row of a long list were AppKit views,
             // hover regions and accessibility nodes that each redraw and hit test walked, for buttons nobody saw.
-            if let actions, hovering {
+            if let actions, hovering || sweepOrigin {
                 hoverActions(actions)
                     // Only the buttons themselves hold the card back: with the backdrop's fade and the padding counted, a
                     // one-line row in a narrow list was "on the buttons" nearly everywhere and never showed its card.
@@ -790,16 +801,9 @@ struct AgentListRow: View, Equatable {
                 if let onWake = actions.onWake {
                     Button(tr("agents.snooze.cancel"), action: onWake)
                 }
-                if let onSnooze = actions.onSnooze {
-                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
-                        Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
-                    }
-                    if let reset = actions.limitResetsAt, let onUntil = actions.onSnoozeUntil {
-                        Button(SnoozeText.untilReset(reset)) { onUntil(reset) }
-                    }
-                    if let onCustom = actions.onSnoozeCustom {
-                        Button(tr("automation.snooze.custom"), action: onCustom)
-                    }
+                if let onSnooze = actions.onSnoozeUntil {
+                    SnoozeMenuItems(now: now, limitResetsAt: actions.limitResetsAt, onUntil: onSnooze,
+                                    onCustom: actions.onSnoozeCustom)
                 }
             }
         }
@@ -813,7 +817,7 @@ struct AgentListRow: View, Equatable {
         .padding(.trailing, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, minHeight: compact ? Self.lineHeight : nil, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(background))
+        .roundedBackground(background, radius: NookTheme.Radius.chip)
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .contentShape(Rectangle())
@@ -993,9 +997,9 @@ struct AgentListRow: View, Equatable {
         HStack(spacing: NookTheme.Spacing.xxs) {
             // A narrow one-line row keeps one button, so its hover card shows over nearly the whole row: snooze and pin
             // are in its right-click menu.
-            if let onSnooze = actions.onSnooze, !compactStatus {
+            if let onSnooze = actions.onSnoozeUntil, !compactStatus {
                 Menu {
-                    SnoozeMenuItems(limitResetsAt: actions.limitResetsAt, onChoice: onSnooze, onUntil: actions.onSnoozeUntil,
+                    SnoozeMenuItems(now: now, limitResetsAt: actions.limitResetsAt, onUntil: onSnooze,
                                     onCustom: actions.onSnoozeCustom)
                 } label: {
                     rowIcon("clock", tr("agents.snooze.menu"))
@@ -1003,13 +1007,19 @@ struct AgentListRow: View, Equatable {
                 .composerMenu()
             }
             if let onWake = actions.onWake {
+                // Dragged up or down, Wake takes the snoozed rows in between along.
                 rowButton("alarm", tr("agents.snooze.cancel"), onWake)
+                    .help(tr("inbox.sweep.help.wake"))
+                    .sweeps(SessionSweep.rows, from: item.id, enabled: actions.onWakeSweep != nil) { actions.onWakeSweep?($0) }
             }
             if !compactStatus {
                 rowButton(actions.pinned ? "pin.slash" : "pin", actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), actions.onPin)
             }
+            // Dragged up or down, Settle (or Un-settle) takes the rows of the section in between along.
             rowButton(actions.settled ? "arrow.uturn.backward" : "checkmark",
                       actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), actions.onSettle)
+                .help(tr(actions.settled ? "inbox.sweep.help.unsettle" : "inbox.sweep.help.settle"))
+                .sweeps(SessionSweep.rows, from: item.id, enabled: actions.onSettleSweep != nil) { actions.onSettleSweep?($0) }
         }
     }
 
@@ -1128,7 +1138,8 @@ struct AgentConversation: View {
     var body: some View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
-                               working: session.status == .running, fallback: fallback, onReply: onReply,
+                               working: session.status == .running, compactingSince: session.compactingSince,
+                               fallback: fallback, onReply: onReply,
                                bottomBar: bottomBar, directory: session.cwd)
             .id(session.id)
     }

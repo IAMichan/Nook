@@ -98,7 +98,7 @@ struct SourcesDisclosure: View {
                                 .foregroundStyle(NookTheme.amber)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
+                                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.12)))
                         }
                         Image(icon: "chevron.down")
                             .font(NookTheme.font(8, .bold))
@@ -182,10 +182,7 @@ struct SourcesDisclosure: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06))
-        )
+        .roundedBackground(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06), radius: NookTheme.Radius.card)
     }
 
     /// The status of a source as a small chip: green when it was used, red when it could not be read.
@@ -202,7 +199,7 @@ struct SourcesDisclosure: View {
         .foregroundStyle(statusColor(group.status))
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
-        .background(Capsule().fill(chipFill(group.status)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(chipFill(group.status)))
     }
 
     /// Why a source could not be read, with what fixes it: the permission it misses, or trying again.
@@ -336,7 +333,7 @@ private struct SourceFixButton: View {
                 .foregroundStyle(prominent ? NookTheme.onPaper : NookTheme.paper)
                 .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 26)
-                .background(Capsule().fill(prominent ? NookTheme.amber : NookTheme.smoke))
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(prominent ? NookTheme.amber : NookTheme.smoke))
         }
         .buttonStyle(.plain)
     }
@@ -479,7 +476,7 @@ struct NoticeList: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
+        .roundedBackground(NookTheme.amber.opacity(0.07), radius: NookTheme.Radius.panel)
     }
 }
 
@@ -518,7 +515,7 @@ private struct ReferenceRow: View {
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .padding(.horizontal, NookTheme.Spacing.xs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && openable ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering && openable ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -628,7 +625,7 @@ struct ScopeMenu: View {
                          tint: current.isRestricted ? NookTheme.iris : nil)
         }
         .composerMenu()
-        .help(tr("scope.help"))
+        .composerTip(tr("scope.help"))
     }
 
     /// A source in the menu with its real icon: the app or the service's logo, else its own symbol (screen, web…).
@@ -750,6 +747,6 @@ struct AttachmentChip: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xxs)
         .frame(height: 26)
-        .background(Capsule().fill(NookTheme.graphite))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.graphite))
     }
 }

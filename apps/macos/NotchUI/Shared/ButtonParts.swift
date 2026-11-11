@@ -24,7 +24,7 @@ struct NookPrimaryButton: View {
             .fixedSize()
             .padding(.horizontal, symbol == nil ? 16 : 14)
             .frame(height: SharedMetrics.buttonHeight)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.primaryHover : NookTheme.primary))
+            .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
@@ -57,7 +57,7 @@ struct NookGhostButton: View {
             .fixedSize()
             .padding(.horizontal, compact ? 8 : 12)
             .frame(height: height)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.graphite : Color.clear))
+            .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .hoverLift(hovering)
         }
@@ -73,6 +73,8 @@ struct NookIconButton: View {
     let label: String
     var filled: Bool = false
     var size: CGFloat = SharedMetrics.iconButton
+    /// Shows its label as the composer's own tip (`composerTip`) instead of a system tooltip: a button under a composer.
+    var inComposer = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -82,16 +84,26 @@ struct NookIconButton: View {
                 .font(NookTheme.font(size * 0.42, .semibold))
                 .foregroundStyle(filled ? NookTheme.onPrimary : (hovering ? NookTheme.paper : NookTheme.textSecondary))
                 .frame(width: size, height: size)
-                .background(
-                    RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                        .fill(filled ? (hovering ? NookTheme.primaryHover : NookTheme.primary)
-                              : (hovering ? NookTheme.graphite : Color.clear))
-                )
+                .roundedBackground(filled ? (hovering ? NookTheme.primaryHover : NookTheme.primary) : (hovering ? NookTheme.graphite : Color.clear),
+                                   radius: NookTheme.Radius.control)
                 .hoverLift(hovering, scale: 1.03)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(label)
+        .labelTip(label, inComposer: inComposer)
         .accessibilityLabel(label)
+    }
+}
+
+private extension View {
+    /// The button's label on hover. The composer's own tips (`composerTip`, in SessionComposer.swift) are Mac-only, so
+    /// the iPhone app, which shares this file, falls back to `help`.
+    @ViewBuilder
+    func labelTip(_ label: String, inComposer: Bool) -> some View {
+        #if os(macOS)
+        composerTip(label, inComposer: inComposer)
+        #else
+        help(label)
+        #endif
     }
 }

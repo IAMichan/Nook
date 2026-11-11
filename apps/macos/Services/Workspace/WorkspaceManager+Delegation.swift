@@ -56,6 +56,57 @@ extension WorkspaceManager {
         }
     }
 
+    /// An agent asks you something: the notification, and for a delegated task a word to its parent.
+    func asked(_ id: UUID, _ pending: PendingQuestion) {
+        guard let run = run(id) else { return }
+        onQuestion?(run, pending)
+        deliverDelegatedQuestion(id, pending)
+    }
+
+    /// A task its parent did not wait for asks a question: the parent hears of it once, the way it hears of a result
+    /// (: nobody watches a child, so its question would go unanswered). A waiting parent learns it from its wait.
+    func deliverDelegatedQuestion(_ id: UUID, _ pending: PendingQuestion) {
+        guard let child = run(id), var link = child.delegation, link.wake,
+              !(link.toldQuestions ?? []).contains(pending.id),
+              let parent = run(link.parentID), !parent.archived, parent.status != .stopped else { return }
+        link.toldQuestions = (link.toldQuestions ?? []) + [pending.id]
+        update(id) { $0.delegation = link }
+        let question = pending.questions.map { [$0.header, $0.question].filter { !$0.isEmpty }.joined(separator: ": ") }
+            .joined(separator: "\n")
+        let text = DelegatedTask.questionMessage(snapshot(of: child), questionID: pending.id, question: question)
+        append(parent.id, RunEvent(kind: .system, text: tr("ws.event.delegatedAsks", child.title)))
+        // Into its running turn only when that interrupts nothing (a long turn of a main thread may never end).
+        if parent.status.isActive, steerRoute(parent.id) == .native, steer(parent.id, text: text) { return }
+        if parent.canContinue, processes[parent.id] == nil, !checkpointing.contains(parent.id) {
+            send(parent.id, text: text)
+        } else {
+            enqueue(parent.id, text: text)
+        }
+    }
+
+    // MARK: Main thread
+
+    /// "Main thread" on or off for the next messages (`MainThread`). The agent hears of it with your next message.
+    func setMainThread(_ id: UUID, _ on: Bool) {
+        guard let run = run(id), (run.mainThread ?? false) != on else { return }
+        update(id) { $0.mainThread = on ? true : nil }
+    }
+
+    /// Your message, with the main-thread note when the agent does not know the current state yet.
+    func withMainThreadNote(_ id: UUID, _ text: String) -> String {
+        guard let run = run(id), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let note = MainThread.pending(on: run.mainThread, told: run.mainThreadTold) else { return text }
+        update(id) { $0.mainThreadTold = $0.mainThread }
+        return MainThread.attach(note, to: text)
+    }
+
+    /// The tasks you can follow above a session's composer: those at work or waiting for an answer, and those that ended
+    /// since your last message there (done, failed or stopped), so a task never drops out of sight before you saw it.
+    func subThreads(of parent: UUID) -> [WorkspaceRun] {
+        let since = timeline(parent).last { $0.kind == .user }?.date ?? .distantPast
+        return DelegatedTask.shown(children(of: parent), asking: { !(self.questions[$0] ?? []).isEmpty }, since: since)
+    }
+
     /// The parent will not wait for this task any more: no message when it finishes.
     func stopWaiting(for id: UUID) {
         guard run(id)?.delegation != nil else { return }

@@ -130,6 +130,18 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
     }
 
+    func testMainThreadTravelsWithAStartAndOldPhonesStillDecode() throws {
+        let launch = LaunchRequest(agent: "codex", project: "/p", task: "Split it up", mainThread: true)
+        XCTAssertEqual(try JSONDecoder().decode(LaunchRequest.self, from: JSONEncoder().encode(launch)).mainThread, true)
+        let old = Data(#"{"agent":"claude","project":"/p","task":"Fix","plan":false,"worktree":false}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(LaunchRequest.self, from: old).mainThread, "a phone that predates it")
+        let agent = LaunchOptions.Agent(id: "claude", name: "Claude Code", canPlan: true, canMainThread: true)
+        XCTAssertEqual(try JSONDecoder().decode(LaunchOptions.Agent.self, from: JSONEncoder().encode(agent)).canMainThread, true)
+        // Actions travel as names: a phone that predates these two leaves them out instead of failing.
+        XCTAssertEqual(SessionAction(rawValue: "mainThreadOn"), .mainThreadOn)
+        XCTAssertEqual(SessionAction(rawValue: "mainThreadOff"), .mainThreadOff)
+    }
+
     func testInboxCodable() throws {
         let request = CompanionRequest(op: .inboxSend, item: "wa|31600000000@s.whatsapp.net", text: "On my way", replyTo: "m1")
         XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)
@@ -456,5 +468,35 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.liveTimeline))
         XCTAssertEqual(CompanionScopes.table[.watch], .scope(.read))
         XCTAssertEqual(CompanionScopes.table[.diff], .scope(.read))
+    }
+
+    /// A step's output travels as its end, from the start of a line, so the phone shows how it ended.
+    func testStepOutputKeepsItsEndFromALine() throws {
+        XCTAssertNil(TimelineEntry.outputTail(nil))
+        XCTAssertNil(TimelineEntry.outputTail("  \n "))
+        XCTAssertEqual(TimelineEntry.outputTail(" ok\n"), "ok")
+        let long = (1...400).map { "line \($0)" }.joined(separator: "\n")
+        let tail = try XCTUnwrap(TimelineEntry.outputTail(long))
+        XCTAssertTrue(tail.hasPrefix("…\nline "))
+        XCTAssertTrue(tail.hasSuffix("line 400"))
+        XCTAssertLessThanOrEqual(tail.count, TimelineEntry.outputLimit + 2)
+        // An older phone reads an entry with output, and a newer one reads an entry without.
+        let old = try JSONDecoder().decode(TimelineEntry.self, from: Data(#"{"id":"a","kind":"tool","text":"Ran","date":0,"failed":false}"#.utf8))
+        XCTAssertNil(old.output)
+    }
+
+    /// A long line travels clipped and says so, so the phone can ask for all of it; a short one goes whole and unmarked.
+    func testClippedLineIsRecognizedAndTheFullTextCanBeAskedFor() throws {
+        let clipped = CompanionPolicy.clip(String(repeating: "word ", count: 2_000))
+        XCTAssertTrue(CompanionPolicy.wasClipped(clipped))
+        XCTAssertEqual(clipped.count, CompanionConstants.lineLimit + 1)
+        XCTAssertFalse(CompanionPolicy.wasClipped(CompanionPolicy.clip("short")))
+        XCTAssertFalse(CompanionPolicy.wasClipped(CompanionPolicy.clip(String(repeating: "a", count: CompanionConstants.lineLimit))))
+        XCTAssertEqual(CompanionScopes.table[.entry], .scope(.read))
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.fullTranscript))
+        XCTAssertFalse(CommandReceipts.keeps(.entry), "reading an entry changes nothing, so it is answered afresh")
+        // An older phone reads an entry without the mark.
+        let old = try JSONDecoder().decode(TimelineEntry.self, from: Data(#"{"id":"a","kind":"assistant","text":"Hi","date":0,"failed":false}"#.utf8))
+        XCTAssertNil(old.clipped)
     }
 }

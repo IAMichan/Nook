@@ -236,7 +236,7 @@ enum NookTheme {
         static let chatJoin: CGFloat = 4
         /// A card in a conversation: a plan, a question, a task list, a subagent.
         static let conversationCard: CGFloat = 16
-        /// Pills and the notch's own corners.
+        /// The notch's own corners. Not for chips or buttons: those use `chip` or `control`.
         static let pill: CGFloat = 20
         /// The composer box, and the tray that runs on from it. With the 32 pt send button 8 pt from the edge, its corner
         /// runs parallel to the button's.
@@ -371,6 +371,41 @@ extension View {
     /// The shared hover state of Nook's buttons and chips: a slight lift with `NookTheme.hover`, none with Reduce Motion.
     func hoverLift(_ hovering: Bool, scale: CGFloat = 1.01) -> some View {
         modifier(HoverLift(hovering: hovering, scale: scale))
+    }
+}
+
+extension NookTheme {
+    /// Nook's rounded shape: a continuous corner on a radius from `NookTheme.Radius`. Every rounded fill, stroke, clip
+    /// and hit area goes through the helpers below, so a view names only the radius instead of building the shape again.
+    static func shape(_ radius: CGFloat) -> RoundedRectangle {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+    }
+}
+
+extension View {
+    /// Fills the area behind the content with `fill` on a rounded shape (`NookTheme.Radius`).
+    func roundedBackground<Fill: ShapeStyle>(_ fill: Fill, radius: CGFloat) -> some View {
+        background(NookTheme.shape(radius).fill(fill))
+    }
+
+    /// Draws a centered line of `stroke` along a rounded edge over the content, as `Shape.stroke` does.
+    func roundedStroke<Stroke: ShapeStyle>(_ stroke: Stroke, radius: CGFloat, lineWidth: CGFloat = 1) -> some View {
+        overlay(NookTheme.shape(radius).stroke(stroke, lineWidth: lineWidth))
+    }
+
+    /// Draws a line of `stroke` just inside a rounded edge over the content, as `InsettableShape.strokeBorder` does.
+    func roundedStrokeBorder<Stroke: ShapeStyle>(_ stroke: Stroke, radius: CGFloat, lineWidth: CGFloat = 1) -> some View {
+        overlay(NookTheme.shape(radius).strokeBorder(stroke, lineWidth: lineWidth))
+    }
+
+    /// Clips the content to a rounded shape.
+    func roundedClip(_ radius: CGFloat) -> some View {
+        clipShape(NookTheme.shape(radius))
+    }
+
+    /// Makes the whole rounded shape respond to the pointer and clicks, including its transparent parts.
+    func roundedHitShape(_ radius: CGFloat) -> some View {
+        contentShape(NookTheme.shape(radius))
     }
 }
 

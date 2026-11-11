@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var inboxPath: [String] = []
     /// A quick action asked for a new session: the Agents tab opens its New session sheet.
     @State private var newSessionRequested = false
+    /// The launch screen (`LaunchView`) over everything while the app opens, until the Mac answers or a moment passes.
+    @State private var launching = true
 
     var body: some View {
         Group {
@@ -18,33 +20,56 @@ struct RootView: View {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
-                // One tab at a time, switched in the glass bar at the bottom (`PhoneTabBar`) iPhone app;
-                // the bar steps aside while a tab shows a session or a chat. Each tab keeps where it was.
-                Group {
-                    switch shownTab {
-                    case .nook:
+                // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
+                // each with what waits there as a badge. Each tab keeps where it was.
+                let available = router.available(client)
+                TabView(selection: $router.tab) {
+                    if available.contains(.nook) {
                         NavigationStack(path: $chatPath) { ChatListView(path: $chatPath) }
-                    case .agents:
-                        NavigationStack(path: $sessionPath) {
-                            SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
-                        }
-                    case .chats:
+                            .tabItem { tabLabel(.nook) }
+                            .tag(CompanionTab.nook)
+                            .badge(router.count(.nook, client))
+                    }
+                    NavigationStack(path: $sessionPath) {
+                        SessionListView(path: $sessionPath, newSessionRequested: $newSessionRequested)
+                    }
+                    .tabItem { tabLabel(.agents) }
+                    .tag(CompanionTab.agents)
+                    .badge(router.count(.agents, client))
+                    if available.contains(.chats) {
                         NavigationStack(path: $inboxPath) { InboxListView(path: $inboxPath) }
+                            .tabItem { tabLabel(.chats) }
+                            .tag(CompanionTab.chats)
+                            .badge(router.count(.chats, client))
                     }
-                }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if atTabRoot {
-                        PhoneTabBar().transition(.move(edge: .bottom).combined(with: .opacity))
+                    if available.contains(.pulls) {
+                        NavigationStack { PullRequestListView() }
+                            .tabItem { tabLabel(.pulls) }
+                            .tag(CompanionTab.pulls)
                     }
+                    NavigationStack { SettingsView() }
+                        .tabItem { tabLabel(.settings) }
+                        .tag(CompanionTab.settings)
                 }
-                .animation(Theme.reveal, value: atTabRoot)
                 .environmentObject(router)
+                // A tab the Mac no longer allows falls back to Agents.
+                .onChange(of: available) { _, tabs in
+                    if !tabs.contains(router.tab) { router.tab = .agents }
+                }
+                .onChange(of: router.tab) { _, _ in Haptics.tap() }
             }
         }
         .tint(Theme.paper)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
+        .overlay {
+            if launching {
+                LaunchView(macName: client.macName, paired: client.phase != .unpaired)
+                    .transition(.opacity)
+            }
+        }
         .task { client.appBecameActive() }
+        .task { await finishLaunch() }
         #if DEBUG
         // `-NookDemoShow agents|chats|session|chat` with `-NookDemo`: opens that screen of the demo.
         .task {
@@ -111,18 +136,25 @@ struct RootView: View {
         } message: { Text(client.notice ?? "") }
     }
 
-    /// The shown tab is at its list, with nothing pushed on it: the tab bar shows.
-    private var atTabRoot: Bool {
-        switch shownTab {
-        case .nook: return chatPath.isEmpty
-        case .agents: return sessionPath.isEmpty
-        case .chats: return inboxPath.isEmpty
+    /// Holds the launch screen for at least a short moment, so it does not flash, and, with a paired Mac, until it
+    /// answers or `LaunchView.maxWait` passes: then the tabs show what was kept, marked as not live.
+    private func finishLaunch() async {
+        let start = ContinuousClock.now
+        try? await Task.sleep(for: LaunchView.minShown)
+        while !Task.isCancelled, client.phase != .connected, client.phase != .unpaired,
+              ContinuousClock.now - start < LaunchView.maxWait {
+            try? await Task.sleep(for: .milliseconds(100))
         }
+        withAnimation(.easeOut(duration: 0.3)) { launching = false }
     }
 
-    /// The chosen tab, or Agents when the Mac does not let this phone use it (`CompanionScope`).
-    private var shownTab: CompanionTab {
-        router.available(client).contains(router.tab) ? router.tab : .agents
+    /// A tab's icon and name in the bar along the bottom.
+    private func tabLabel(_ tab: CompanionTab) -> some View {
+        Label {
+            Text(tab.title)
+        } icon: {
+            Image(icon: tab.symbol(selected: router.tab == tab))
+        }
     }
 }
 
@@ -157,6 +189,39 @@ enum QuickActionBlock {
 // MARK: Pairing
 
 /// The welcome screen: what the app is, three steps, and one button.
+/// What shows while the app opens: Nook with a calm glow and, with a paired Mac, that it is reaching it. Drawn on the
+/// same canvas as the system's launch screen (`LaunchBackground`), so the opening has no flash.
+struct LaunchView: View {
+    let macName: String
+    let paired: Bool
+
+    static let minShown = Duration.milliseconds(700)
+    static let maxWait = Duration.seconds(4)
+
+    var body: some View {
+        VStack(spacing: Theme.Spacing.xl) {
+            NookMark(size: 72)
+                .background(NookAura(size: 240))
+            VStack(spacing: Theme.Spacing.md) {
+                ProgressView().tint(Theme.textSecondary)
+                Text(status)
+                    .font(Theme.TextStyle.body)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(Theme.Spacing.xxl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas.ignoresSafeArea())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var status: String {
+        guard paired else { return String(localized: "Starting Nook…") }
+        return macName.isEmpty ? String(localized: "Connecting to your Mac…") : String(localized: "Connecting to \(macName)…")
+    }
+}
+
 struct PairingView: View {
     @EnvironmentObject private var client: CompanionClient
     @State private var text = ""
@@ -168,6 +233,7 @@ struct PairingView: View {
             VStack(spacing: Theme.Spacing.xxl) {
                 VStack(spacing: Theme.Spacing.lg) {
                     NookMark(size: 72)
+                        .background(NookAura(size: 240))
                         .padding(.bottom, Theme.Spacing.md)
                     Text("Nook on your iPhone")
                         .font(Theme.TextStyle.display).foregroundStyle(Theme.paper).multilineTextAlignment(.center)
@@ -182,10 +248,10 @@ struct PairingView: View {
                            symbol: "xmark.shield.fill", color: Theme.coral)
                 }
 
-                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                VStack(alignment: .leading, spacing: 0) {
                     PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
                     PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
-                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.")
+                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.", last: true)
                 }
                 .card()
 
@@ -201,7 +267,7 @@ struct PairingView: View {
                                 .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(1...4)
                                 .font(Theme.TextStyle.code)
                                 .padding(Theme.Spacing.lg)
-                                .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                .roundedBackground(Theme.well, radius: Theme.Radius.control)
                             NookPrimaryButton(title: String(localized: "Pair")) { client.pair(link: text) }
                                 .disabled(text.isEmpty || client.phase == .pairing)
                         }
@@ -218,6 +284,17 @@ struct PairingView: View {
             }
             .padding(.horizontal, Theme.Spacing.xxl)
             .padding(.bottom, Theme.Spacing.xxl)
+
+            Label {
+                Text("Everything between your iPhone and your Mac is encrypted end to end.")
+            } icon: {
+                Image(icon: "lock.shield")
+            }
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.xxl)
+                .padding(.bottom, Theme.Spacing.xxl)
         }
         .screen()
         .sheet(isPresented: $scanning) {
@@ -233,6 +310,8 @@ struct PairingView: View {
 private struct PairingStep: View {
     let number: Int
     let text: LocalizedStringKey
+    /// The last step has no line down to a next one.
+    var last = false
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.lg) {
@@ -248,7 +327,20 @@ private struct PairingStep: View {
                 .font(Theme.TextStyle.body)
                 .foregroundStyle(Theme.textStrong)
                 .lineSpacing(2)
+                .padding(.top, Theme.Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.bottom, last ? 0 : Theme.Spacing.xl)
+        // The steps hang on one thin line, from under this number down to the next.
+        .overlay(alignment: .topLeading) {
+            if !last {
+                Rectangle()
+                    .fill(Theme.line2)
+                    .frame(width: 1)
+                    .padding(.top, 28 + Theme.Spacing.xs)
+                    .padding(.bottom, Theme.Spacing.xs)
+                    .padding(.leading, 13.5)
+            }
         }
     }
 }
@@ -296,8 +388,6 @@ struct SessionListView: View {
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
     @State private var composing = false
-    /// The pull request list (`PullRequestListView`) is open.
-    @State private var showsPulls = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
     /// Words to find a session by (its title, folder, branch or agent).
@@ -309,6 +399,7 @@ struct SessionListView: View {
     /// The Working and Recent shelves, open or folded; remembered.
     @AppStorage("nook.companion.shelf.working") private var workingOpen = true
     @AppStorage("nook.companion.shelf.recent") private var recentOpen = true
+    @AppStorage("nook.companion.shelf.older") private var olderOpen = true
 
     private var ordered: [SessionDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -320,9 +411,30 @@ struct SessionListView: View {
             }
             .sorted { $0.updated > $1.updated }
     }
+    /// The folders the sessions work in, the most recent first, for the project filter (at most eight).
+    private var projects: [String] {
+        var seen = Set<String>()
+        return client.sessions.sorted { $0.updated > $1.updated }
+            .map(\.folder)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .prefix(8)
+            .map { $0 }
+    }
     private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
     private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
     private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
+    /// Settled sessions older than the live list, paged in from the Mac (`CompanionFeature.history`).
+    private var older: [SessionDigest] { CompanionHistory.merge(live: client.sessions, older: client.olderSessions) }
+    /// What the Mac found for the words beyond what the live list already shows.
+    private var foundOlder: [SessionDigest] {
+        guard client.foundQuery == CompanionHistory.clean(query) else { return [] }
+        return CompanionHistory.merge(live: client.sessions, older: client.foundSessions)
+    }
+    /// The Mac holds more sessions than the live list: older ones can be paged in.
+    private var hasOlder: Bool {
+        client.can(CompanionFeature.history) && client.sessions.count >= CompanionHistory.liveCount
+            && (!client.olderEnded || !client.olderSessions.isEmpty)
+    }
 
     /// How many recent sessions show before "Show more".
     private static let recentShown = 8
@@ -337,40 +449,35 @@ struct SessionListView: View {
             Group {
                 PanelHeader {
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
-                    if client.can(CompanionFeature.pullRequests) {
-                        HeaderButton(symbol: "arrow.triangle.pull", label: String(localized: "Pull requests")) { showsPulls = true }
-                    }
-                    HeaderButton(symbol: "square.and.pencil", label: String(localized: "New session")) { newSession() }
+                    NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                .buttonStyle(.borderless)
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
                     // New sessions written while the Mac could not be reached: they start once it answers.
                     ForEach(client.outbox.starts) { entry in
                         WaitingRow(symbol: "square.and.pencil", title: entry.request.launch?.task ?? "",
                                    detail: String(localized: "New session · waiting for your Mac")) { client.discardWaiting(entry.id) }
                     }
-                    // Finding one among many: words that match its title, folder, branch or agent, and
-                    // the project it works in.
-                    if !client.sessions.isEmpty {
-                        NookSearchField(prompt: "Search", text: $query)
+                    // Finding one among many: words that match its title, folder, branch or agent.
+                    // With a Mac that searches its older sessions too, also while the list is short.
+                    if client.sessions.count > 8 || hasOlder {
+                        NookSearchField(prompt: "Search sessions", text: $query)
                     }
+                    // Narrowing to one project, once sessions work in more than one.
                     if projects.count > 1 {
                         ProjectChips(projects: projects, chosen: $project)
                     }
-                    if ordered.isEmpty, !client.sessions.isEmpty {
+                    if ordered.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
+                    ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                if !needsYou.isEmpty {
-                    SectionHeader(title: String(localized: "Needs you"), urgent: true)
-                        .padding(.horizontal, Theme.Spacing.md)
-                    rows(needsYou)
-                }
                 group(String(localized: "Working"), working, open: $workingOpen)
-                group(String(localized: "Settled"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
+                group(String(localized: "Recent"), showsAllRecent || !query.isEmpty ? rest : Array(rest.prefix(Self.recentShown)), total: rest.count,
                       open: $recentOpen)
                 if recentOpen, rest.count > Self.recentShown, !showsAllRecent, query.isEmpty {
                     Button { withAnimation(Theme.reveal) { showsAllRecent = true } } label: {
@@ -381,6 +488,7 @@ struct SessionListView: View {
                     .buttonStyle(PressFade())
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
+                olderShelves
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     WSEmptyState(symbol: "square.stack.3d.up", title: String(localized: "No sessions"),
@@ -393,10 +501,17 @@ struct SessionListView: View {
         }
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
+        .animation(Theme.reveal, value: client.sessions)
         .refreshable { await client.refresh() }
+        // The words go to the Mac once you pause typing, for the sessions older than the live list.
+        .task(id: query) {
+            guard client.can(CompanionFeature.history) else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await client.searchSessions(query)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
-        .navigationDestination(isPresented: $showsPulls) { PullRequestListView() }
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
@@ -417,31 +532,7 @@ struct SessionListView: View {
             composing = true
             client.pendingPrompt = nil
         }
-        // A project that has no sessions any more is not a filter any more.
-        .onChange(of: projects) { _, list in
-            if let chosen = project, !list.contains(chosen) { project = nil }
-        }
         .screen()
-    }
-
-    /// The folders the sessions work in, the most recent first, for the project filter (at most eight).
-    private var projects: [String] {
-        var seen = Set<String>()
-        return client.sessions.sorted { $0.updated > $1.updated }
-            .map(\.folder)
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
-            .prefix(8)
-            .map { $0 }
-    }
-
-    /// Rows of sessions, each opening its session, with its actions under a long press and a swipe.
-    @ViewBuilder
-    private func rows(_ sessions: [SessionDigest]) -> some View {
-        ForEach(sessions) { session in
-            PhoneSessionRow(session: session, open: { path.append(session.id) }, divider: session.id != sessions.last?.id)
-                .contextMenu { SessionQuickActions(session: session) }
-                .sessionSwipeActions(session)
-        }
     }
 
     /// The New session sheet, or why this Mac does not let the phone start one.
@@ -450,6 +541,27 @@ struct SessionListView: View {
             client.notice = blocked
         } else {
             composing = true
+        }
+    }
+
+    /// Below the recent sessions, as the Mac's settled sessions: the older ones, a page at a time, or while searching,
+    /// the older ones that match.
+    @ViewBuilder
+    private var olderShelves: some View {
+        if !query.isEmpty {
+            group(String(localized: "Older matches"), foundOlder, open: $olderOpen)
+            if olderOpen, client.foundCursor != nil, !foundOlder.isEmpty {
+                PageButton(title: String(localized: "More matches")) { await client.searchSessions(query, more: true) }
+                    .padding(.horizontal, Theme.Spacing.xl)
+            }
+        } else if hasOlder, recentOpen, showsAllRecent || rest.count <= Self.recentShown {
+            group(String(localized: "Older"), older, open: $olderOpen)
+            if olderOpen || older.isEmpty, !client.olderEnded {
+                PageButton(title: older.isEmpty ? String(localized: "Show older sessions") : String(localized: "Show more older sessions")) {
+                    await client.loadOlderSessions()
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+            }
         }
     }
 
@@ -465,25 +577,65 @@ struct SessionListView: View {
                 SectionHeader(title: String(localized: "On \(mac.name)"), count: sessions.filter(Self.needsYou).count, urgent: sessions.contains(where: Self.needsYou))
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.bottom, Theme.Spacing.xs)
-                let shown = Array(sessions.prefix(10))
-                ForEach(shown) { session in
-                    PhoneSessionRow(session: session, open: {
+                ForEach(sessions.prefix(10)) { session in
+                    Button {
                         client.switchMac(to: mac.id)
                         path.append(session.id)
-                    }, divider: session.id != shown.last?.id)
+                    } label: { AgentRow(session: session) }
+                        .buttonStyle(RowPress())
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xxs / 2)
                 }
             }
         }
     }
 
-    /// A shelf of sessions: its header folds it ("Settled (6)" while folded).
+    /// A shelf of sessions, as the Mac's Agents list: its header folds it; the rows stand without lines between them,
+    /// and only the one under your finger lifts.
     @ViewBuilder
     private func group(_ title: String, _ sessions: [SessionDigest], total: Int? = nil, open: Binding<Bool>) -> some View {
         if !sessions.isEmpty {
             SectionHeader(title: title, count: total ?? sessions.count, expanded: open)
                 .padding(.horizontal, Theme.Spacing.md)
-            if open.wrappedValue { rows(sessions) }
+            if open.wrappedValue {
+                ForEach(sessions) { session in
+                    Button { path.append(session.id) } label: { AgentRow(session: session) }
+                        .buttonStyle(RowPress())
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .contextMenu { SessionQuickActions(session: session) }
+                        .sessionSwipeActions(session)
+                }
+            }
         }
+    }
+}
+
+/// "Show older sessions": asks for the next page, with a spinner instead of its words while it loads.
+private struct PageButton: View {
+    let title: String
+    let load: () async -> Void
+    @State private var loading = false
+
+    var body: some View {
+        Button {
+            guard !loading else { return }
+            loading = true
+            Task {
+                await load()
+                loading = false
+            }
+        } label: {
+            Group {
+                if loading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 40)
+        }
+        .buttonStyle(PressFade())
+        .disabled(loading)
     }
 }
 
@@ -687,9 +839,10 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, the Mac's `AgentListRow` in the same shared layout (`AgentRowLayout`): the folder with the
-/// status (or how long ago) on the right, the session's name, and its branch with the agent's logo at the end. A row
-/// that asks nothing of you recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
+/// A session in a list, laid out as a card row, in Nook's colors: the agent's
+/// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
+/// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
+/// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
 struct AgentRow: View {
     let session: SessionDigest
 
@@ -701,24 +854,49 @@ struct AgentRow: View {
     }
 
     var body: some View {
-        AgentRowLayout(folder: session.folder, hasMeta: branch != nil) {
-            slot
-        } title: {
-            AgentRowTitle(title: session.title, receded: receded)
-        } logo: {
-            AgentMark(agent: session.agent, size: 14, quiet: receded && session.attention != "working")
-        } meta: {
-            if let branch {
-                AgentRowBranch(branch: branch)
-                    .font(Theme.TextStyle.detail)
-                    .foregroundStyle(Theme.textTertiary)
-                Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: Theme.Spacing.md + Theme.Spacing.xxs) {
+            AgentMark(agent: session.agent, size: 20, quiet: receded && session.attention != "working")
+                .frame(width: 22, height: 22)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                    Text(session.title)
+                        .font(Theme.TextStyle.strong)
+                        .foregroundStyle(receded ? Theme.textStrong : Theme.paper)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    slot
+                }
+                meta
             }
         }
         .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
         .padding(.vertical, SharedMetrics.rowVertical)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    /// Where it works: the folder, then its branch in the code font, quiet and on one line; the newest words of an
+    /// answer instead when the session waits on you without a question to show.
+    private var meta: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Label {
+                Text(session.folder).lineLimit(1)
+            } icon: {
+                Image(icon: "folder").font(Theme.font(10, .medium))
+            }
+            .labelStyle(.titleAndIcon)
+            .layoutPriority(1)
+            if let branch {
+                Text(verbatim: "·")
+                AgentRowBranch(branch: branch)
+                    .font(Theme.TextStyle.code)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(Theme.TextStyle.detail)
+        .foregroundStyle(Theme.textTertiary)
     }
 
     /// The status where it says something (working, waiting, failed, ready), otherwise how long ago.
@@ -743,84 +921,61 @@ struct AgentRow: View {
     }
 }
 
-/// A session in the Agents list, as a row of thread list: its agent's mark and its title, its state in the
-/// corner (`PhoneStatusLabel`), what it asks of you or its last words under it, and its branch and agent below. A session
-/// that waits on you shows its answer right there (Allow once and Decline, or Answer); the rest of the row opens it.
-/// Rows run edge to edge with a hairline between them, inset to the text.
-struct PhoneSessionRow: View {
+/// A session that waits for you, the Mac's `PanelNoticeBar`: whose it is, what it asks, and its answer right there
+/// (Allow with Deny beside it in one pill, or Answer); a tap on its top opens the session.
+struct SessionNotice: View {
     @EnvironmentObject private var client: CompanionClient
     let session: SessionDigest
-    /// Opens the session.
-    let open: () -> Void
-    /// Draws the hairline under it (not under the last row of a group).
-    var divider = true
+    /// Opens the session; nil uses a navigation link (a list row needs a plain button, or the whole row becomes one link).
+    var open: (() -> Void)? = nil
 
     private var item: SessionDigest.Item? { session.items.first }
-    private var needsYou: Bool { SessionListView.needsYou(session) }
-    /// Text starts here, past the mark, so the lines under the title line up with it.
-    private static let textInset: CGFloat = 16 + Theme.Spacing.md
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: open) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
-                        AgentMark(agent: session.agent, size: 16, quiet: !needsYou && session.attention != "working")
-                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                        Text(session.title)
-                            .font(Theme.TextStyle.rowTitle)
-                            .foregroundStyle(needsYou || session.attention == "working" ? Theme.paper : Theme.textStrong)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        PhoneStatusLabel(session: session)
-                    }
-                    if let line = secondLine {
-                        Text(line)
-                            .font(Theme.TextStyle.detail)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(2)
-                            .padding(.leading, Self.textInset)
-                    }
-                    meta.padding(.leading, Self.textInset).padding(.top, Theme.Spacing.xxs)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            opener {
+                HStack(spacing: Theme.Spacing.md) {
+                    AgentMark(agent: session.agent, size: 16)
+                    Text(session.title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    Spacer(minLength: Theme.Spacing.md)
+                    StatusPill(attention: session.attention, short: true)
                 }
-                .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(PressFade())
-            if let item, needsYou { actions(item).padding(.leading, Self.textInset).padding(.bottom, Theme.Spacing.lg) }
-            if divider {
-                NookDivider(inset: Self.textInset, tint: Theme.separator)
+
+            if let item {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    Text(item.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(4)
+                    if !item.detail.isEmpty {
+                        Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                            .padding(Theme.Spacing.md)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .roundedBackground(Theme.well, radius: Theme.Radius.control)
+                            .roundedStrokeBorder(Theme.hairline, radius: Theme.Radius.control, lineWidth: 0.5)
+                    }
+                }
+                actions(item)
+            } else if !session.excerpt.isEmpty {
+                Text(session.excerpt).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(3)
             }
         }
-        .padding(.horizontal, Theme.Spacing.xl + Theme.Spacing.xs)
+        .padding(Theme.Spacing.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [Theme.color(session.attention).opacity(0.10), Theme.color(session.attention).opacity(0)],
+                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.6)),
+            in: Theme.shape(Theme.Radius.panel)
+        )
+        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel)
     }
 
-    /// What it asks of you, or its last words while it waits on you or failed.
-    private var secondLine: String? {
-        if let item {
-            let words = item.kind == .approval && !item.detail.isEmpty ? "\(item.detail): \(item.title)" : item.title
-            return words.isEmpty ? nil : words
+    @ViewBuilder
+    private func opener<Label: View>(@ViewBuilder _ label: () -> Label) -> some View {
+        if let open {
+            Button(action: open, label: label).buttonStyle(PressFade())
+        } else {
+            NavigationLink(value: session.id, label: label).buttonStyle(PressFade())
         }
-        guard needsYou, !session.excerpt.isEmpty else { return nil }
-        return session.excerpt
-    }
-
-    /// The branch (in code type), the agent and the folder: what tells two similar sessions apart.
-    private var meta: some View {
-        let branch = session.branch.flatMap { $0.isEmpty || $0 == session.folder ? nil : $0 }
-        return HStack(spacing: Theme.Spacing.xs) {
-            if let branch {
-                Text(verbatim: branch).font(Theme.mono(11.5)).lineLimit(1).truncationMode(.middle)
-                Text(verbatim: "·")
-            }
-            Text(verbatim: session.agent).lineLimit(1)
-            Text(verbatim: "·")
-            Text(verbatim: session.folder).lineLimit(1)
-        }
-        .font(Theme.TextStyle.caption)
-        .foregroundStyle(Theme.textTertiary)
     }
 
     @ViewBuilder
@@ -831,19 +986,27 @@ struct PhoneSessionRow: View {
                 ApproveOffLabel()
             case .approval:
                 if item.canAllow {
-                    PhoneActionButton(title: String(localized: "Allow once"), style: .prominent, compact: true) {
+                    // The same two thumb-sized buttons as on the session's own screen (`DecisionButton`).
+                    DecisionButton(title: String(localized: "Deny"), symbol: "xmark", role: .deny) {
+                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    }
+                    DecisionButton(title: String(localized: "Allow"), symbol: "checkmark", role: .allow) {
                         Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
                     }
-                }
-                PhoneActionButton(title: String(localized: "Decline"), style: .danger, compact: true) {
-                    Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
-                }
-                if !item.canAllow {
-                    Label("Only on your Mac", systemImage: "lock.fill")
-                        .font(Theme.TextStyle.caption).foregroundStyle(Theme.amber).lineLimit(1)
+                } else {
+                    NookGhostButton(title: String(localized: "Deny")) {
+                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    }
+                    Label("Only on your Mac: this one is risky or unknown.", systemImage: "lock.fill")
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
             case .question:
-                PhoneActionButton(title: String(localized: "Answer"), style: .prominent, compact: true, action: open)
+                opener {
+                    Text("Answer").font(Theme.textFont(14, .semibold)).foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 18)
+                        .frame(height: SharedMetrics.buttonHeight)
+                        .background(Theme.paper, in: Capsule())
+                }
             }
             Spacer(minLength: 0)
             if session.items.count > 1 {

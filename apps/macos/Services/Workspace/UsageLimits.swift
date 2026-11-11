@@ -58,7 +58,51 @@ enum UsageLimits {
         }
     }
 
+    /// One line of the composer's limit chip: a window's short name and how much of it is used.
+    struct ChipLine: Equatable {
+        var short: String
+        var used: Int
+    }
+
+    /// The composer chip's lines: the shortest and the longest window, each the fullest of the windows that last that long
+    /// (an agent with a quota per model has several), in that order; one line when every window lasts as long.
+    static func chipLines(_ windows: [(duration: TimeInterval?, percent: Double, window: String)]) -> [ChipLine] {
+        var spans: [(duration: TimeInterval?, windows: [(duration: TimeInterval?, percent: Double, window: String)])] = []
+        for window in windows {
+            let key = window.duration.map { ($0 / 60).rounded() * 60 }
+            if let index = spans.firstIndex(where: { $0.duration == key }) {
+                spans[index].windows.append(window)
+            } else {
+                spans.append((key, [window]))
+            }
+        }
+        spans.sort { ($0.duration ?? .infinity) < ($1.duration ?? .infinity) }
+        let picked = spans.count > 1 ? [spans[0], spans[spans.count - 1]] : spans
+        return picked.map { span in
+            let percent = span.windows.map(\.percent).max() ?? 0
+            return ChipLine(short: shortWindow(span.duration, fallback: span.windows[0].window),
+                            used: Int(min(100, max(0, percent)).rounded()))
+        }
+    }
+
+    /// "5h", "W", "3d": a window's length in a letter or two, to fit beside the chip's ring.
+    static func shortWindow(_ duration: TimeInterval?, fallback: String) -> String {
+        guard let duration, duration > 0 else { return String(fallback.prefix(2)) }
+        let day: TimeInterval = 24 * 3600
+        if duration < day { return tr("compose.limits.shortHours", max(1, Int((duration / 3600).rounded()))) }
+        if duration >= 6 * day { return tr("compose.limits.shortWeek") }
+        return tr("compose.limits.shortDays", Int((duration / day).rounded()))
+    }
+
     /// The latest reset of the blocked windows; nil when one of them did not say when.
+    /// An account's limit windows (percent used, reset): when every full one has reset. Nil when none is full or a
+    /// full one has no reset time.
+    static func fullWindowsReset(_ windows: [(percent: Double, resetsAt: Date?)], now: Date = Date()) -> Date? {
+        let full = windows.filter { $0.percent >= 100 }
+        guard !full.isEmpty, !full.contains(where: { $0.resetsAt == nil }) else { return nil }
+        return full.compactMap(\.resetsAt).max().flatMap { $0 > now ? $0 : nil }
+    }
+
     static func latestReset(_ windows: [String: Date?]) -> Date? {
         guard !windows.isEmpty, !windows.values.contains(where: { $0 == nil }) else { return nil }
         return windows.values.compactMap { $0 }.max()
@@ -96,4 +140,95 @@ enum UsageLimits {
         if let max = nonFull.max() { return min(99, max) }
         return 0
     }
+}
+
+/// When a limit resets, read from what the agent wrote, for the turns that carry no reset time of their own (no
+/// `rate_limit_event`, no snapshot): Claude Code's "Claude AI usage limit reached|1736010000" and "You've hit your limit ·
+/// resets 3pm (Europe/Amsterdam)", Codex's "try again at Nov 12th, 2026 3:04 PM", Gemini's "Please retry in 41.3s".
+extension UsageLimits {
+    /// When a waiting session goes on: a little after the reset, so the limit is really free again; without a reset
+    /// time (or with one that turned out too early) a try after a pause that grows with each try.
+    static func resumeDue(limitedAt: Date, reset: Date?, retries: Int) -> Date {
+        if let reset, reset > limitedAt { return reset.addingTimeInterval(20) }
+        return limitedAt.addingTimeInterval(retryDelay(retries))
+    }
+
+    /// 10, 20, 40 minutes, then every hour.
+    static func retryDelay(_ retries: Int) -> TimeInterval {
+        min(600 * pow(2, Double(min(max(retries, 0), 3))), 3_600)
+    }
+
+    static func textReset(_ text: String, now: Date = Date(), calendar base: Calendar = .current) -> Date? {
+        let range = NSRange(text.startIndex..., in: text)
+        func group(_ match: NSTextCheckingResult, _ i: Int) -> String? {
+            Range(match.range(at: i), in: text).map { String(text[$0]) }
+        }
+        // Seconds since 1970 after a bar.
+        if let match = epochPattern?.firstMatch(in: text, range: range), let seconds = group(match, 1).flatMap(Double.init) {
+            let date = Date(timeIntervalSince1970: seconds)
+            if date > now.addingTimeInterval(-86_400) { return date }
+        }
+        // "in 2 hours 5 minutes", "in 41.3s".
+        if let match = relativePattern?.firstMatch(in: text, range: range), let span = group(match, 1) {
+            var seconds = 0.0
+            let parts = span as NSString
+            for part in unitPattern?.matches(in: span, range: NSRange(location: 0, length: parts.length)) ?? [] {
+                let value = Double(parts.substring(with: part.range(at: 1))) ?? 0
+                let unit = parts.substring(with: part.range(at: 2)).lowercased()
+                switch unit.first {
+                case "d": seconds += value * 86_400
+                case "h": seconds += value * 3_600
+                case "m": seconds += value * 60
+                default: seconds += value
+                }
+            }
+            if seconds > 0 { return now.addingTimeInterval(seconds) }
+        }
+        // "resets 3pm", "resets at 15:30 (Europe/Amsterdam)", "try again at Nov 12th, 2026 3:04 PM".
+        guard let match = clockPattern?.firstMatch(in: text, range: range),
+              var hour = group(match, 4).flatMap(Int.init) else { return nil }
+        let minute = group(match, 5).flatMap(Int.init) ?? 0
+        let meridiem = group(match, 6)?.lowercased()
+        guard meridiem != nil || group(match, 5) != nil, minute < 60 else { return nil }
+        if let meridiem {
+            guard (1...12).contains(hour) else { return nil }
+            hour = hour % 12 + (meridiem == "pm" ? 12 : 0)
+        }
+        guard hour < 24 else { return nil }
+        var calendar = base
+        if let zone = group(match, 7).flatMap({ TimeZone(identifier: $0.trimmingCharacters(in: .whitespaces)) }) {
+            calendar.timeZone = zone
+        }
+        var parts = calendar.dateComponents([.year, .month, .day], from: now)
+        parts.hour = hour
+        parts.minute = minute
+        parts.second = 0
+        let month = group(match, 1).flatMap { name in
+            months.firstIndex { name.lowercased().hasPrefix($0) }.map { $0 + 1 }
+        }
+        if let month, let day = group(match, 2).flatMap(Int.init) {
+            parts.month = month
+            parts.day = day
+            if let year = group(match, 3).flatMap(Int.init) { parts.year = year }
+            guard var date = calendar.date(from: parts) else { return nil }
+            // A date without a year that already passed this year is next year's.
+            if group(match, 3) == nil, date < now.addingTimeInterval(-86_400),
+               let next = calendar.date(byAdding: .year, value: 1, to: date) { date = next }
+            return date
+        }
+        // A time of day alone is the next time the clock says so.
+        guard let today = calendar.date(from: parts) else { return nil }
+        return today > now ? today : calendar.date(byAdding: .day, value: 1, to: today)
+    }
+
+    private static let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    private static let epochPattern = try? NSRegularExpression(pattern: #"\|\s*(\d{10})(?!\d)"#)
+    private static let unitPattern = try? NSRegularExpression(
+        pattern: #"(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b"#, options: .caseInsensitive)
+    private static let relativePattern = try? NSRegularExpression(
+        pattern: #"(?:try again|retry|resets?|available again)\s+in\s+((?:\d+(?:\.\d+)?\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b[\s,]*(?:and\s+)?)+)"#,
+        options: .caseInsensitive)
+    private static let clockPattern = try? NSRegularExpression(
+        pattern: #"(?:resets?|try again|available again)(?:\s+at)?(?:\s+on)?\s+(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(?:(\d{4}),?\s*)?(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b(?:\s*\(([^)]+)\))?"#,
+        options: .caseInsensitive)
 }

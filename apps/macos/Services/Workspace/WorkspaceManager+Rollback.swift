@@ -73,7 +73,8 @@ extension WorkspaceManager {
 
     func noteConversationHead(_ id: UUID, _ uuid: String) {
         guard run(id)?.conversation?.head != uuid else { return }
-        update(id) { run in
+        // Moves with every message of a turn: the turn's end (a change of status) saves it, and so does quitting.
+        update(id, save: false) { run in
             var log = run.conversation ?? ConversationLog(session: run.providerSessionID, provider: run.provider)
             log.noteHead(uuid)
             run.conversation = log

@@ -22,7 +22,6 @@ enum ChatSuggestions {
 /// same conversations as in the notch) above it. Asking starts a new chat.
 struct ChatListView: View {
     @EnvironmentObject private var client: CompanionClient
-    @EnvironmentObject private var router: TabRouter
     @Binding var path: [ChatRoute]
     @State private var text = ""
 
@@ -32,6 +31,8 @@ struct ChatListView: View {
                 PanelHeader()
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     ConnectionLine()
+                    // What needs you across agents and chats, at a glance; an empty first visit leaves the stage to Nook.
+                    if showsOverview { AttentionOverview() }
                     if !client.can(CompanionFeature.chat) {
                         WSEmptyState(symbol: "arrow.down.circle", title: String(localized: "Update Nook on your Mac"),
                                    message: String(localized: "Update Nook on your Mac to chat with Nook from your phone."))
@@ -47,11 +48,11 @@ struct ChatListView: View {
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                // What the Mac's home shows, as one grouped section: what waits, the agenda, what plays.
+                // What the overview does not show: the next meetings and what plays, from the Mac's home.
                 if let home = client.home, !TodaySection.isEmpty(home) {
                     SectionHeader(title: String(localized: "Today"))
                         .padding(.horizontal, Theme.Spacing.md)
-                    TodaySection(home: home, openAgents: { router.tab = .agents })
+                    TodaySection(home: home)
                         .padding(.horizontal, Theme.Spacing.xl)
                 }
                 if client.can(CompanionFeature.chat), client.conversations.isEmpty {
@@ -75,6 +76,7 @@ struct ChatListView: View {
                 }
             }
             .padding(.bottom, Theme.Spacing.xxl)
+            .animation(Theme.reveal, value: client.conversations)
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
@@ -98,9 +100,10 @@ struct ChatListView: View {
         }
         .screen()
         .task {
+            // A Mac that sends Nook's conversations by itself (`liveChats`) needs one look; otherwise every few seconds.
             while !Task.isCancelled {
                 await client.loadChats()
-                try? await Task.sleep(for: .seconds(5))
+                repeat { try? await Task.sleep(for: .seconds(5)) } while !Task.isCancelled && client.chatsAreLive
             }
         }
         // Today changes slowly (the agenda, what plays): every half minute is enough.
@@ -110,6 +113,11 @@ struct ChatListView: View {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
+    }
+
+    /// The overview shows once there is something to tell: sessions, chats, or earlier conversations with Nook.
+    private var showsOverview: Bool {
+        !client.sessions.isEmpty || !client.conversations.isEmpty || (client.allows(.chats) && !client.inbox.isEmpty)
     }
 
     /// A new chat that opens with this question.
@@ -159,7 +167,9 @@ private struct AskNook: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                NookMark(size: 44).padding(.bottom, Theme.Spacing.md)
+                NookMark(size: 44)
+                    .background(NookAura(size: 150))
+                    .padding(.bottom, Theme.Spacing.md)
                 Text("Ask Nook anything").font(Theme.TextStyle.display).foregroundStyle(Theme.paper)
                 Text("Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.")
                     .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
@@ -327,14 +337,14 @@ private struct ThinkingLine: View {
 
 // MARK: Today
 
-/// The Mac's home as one grouped section of the Nook tab (grouped list, 24 pt corners): what waits for you,
-/// the next meetings, and what plays with play/pause. Rows are an icon on a tinted tile, a title and a quiet line.
+/// The Mac's agenda and music as one grouped section of the Nook tab (grouped list, 24 pt corners), under the
+/// overview of what waits (`AttentionOverview`): the next meetings, and what plays with play/pause. Rows are an icon on a
+/// tinted tile, a title and a quiet line.
 struct TodaySection: View {
     @EnvironmentObject private var client: CompanionClient
     let home: HomeDigest
-    let openAgents: () -> Void
 
-    static func isEmpty(_ home: HomeDigest) -> Bool { home.lines.isEmpty && upcoming(home).isEmpty && home.track == nil }
+    static func isEmpty(_ home: HomeDigest) -> Bool { upcoming(home).isEmpty && home.track == nil }
 
     /// The meetings still to come, at most two.
     static func upcoming(_ home: HomeDigest, now: Date = Date()) -> [HomeDigest.Event] {
@@ -344,22 +354,18 @@ struct TodaySection: View {
     var body: some View {
         let rows = rowCount
         VStack(spacing: 0) {
-            ForEach(Array(home.lines.prefix(4).enumerated()), id: \.element.id) { index, line in
-                row(icon: line.icon, tint: tone(line.tone), title: line.title, subtitle: line.subtitle,
-                    last: index == rows - 1, action: line.icon.hasPrefix("agent:") ? openAgents : nil)
-            }
             ForEach(Array(Self.upcoming(home).enumerated()), id: \.element.id) { index, event in
                 row(icon: "symbol:calendar", tint: Theme.blue, title: event.title, subtitle: when(event),
-                    last: min(home.lines.count, 4) + index == rows - 1, action: nil)
+                    last: index == rows - 1, action: nil)
             }
             if let track = home.track {
                 trackRow(track)
             }
         }
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: PhoneRadius.group, style: .continuous))
+        .roundedBackground(Theme.surface, radius: PhoneRadius.group)
     }
 
-    private var rowCount: Int { min(home.lines.count, 4) + Self.upcoming(home).count + (home.track == nil ? 0 : 1) }
+    private var rowCount: Int { Self.upcoming(home).count + (home.track == nil ? 0 : 1) }
 
     @ViewBuilder
     private func row(icon: String, tint: Color, title: String, subtitle: String, last: Bool, action: (() -> Void)?) -> some View {
@@ -424,15 +430,6 @@ struct TodaySection: View {
         }
         let name = icon.hasPrefix("symbol:") ? String(icon.dropFirst("symbol:".count)) : "circle.grid.2x2"
         return HomeLogo(content: .symbol(name), tint: tint, size: 32)
-    }
-
-    private func tone(_ name: String) -> Color {
-        switch name {
-        case "mint": return Theme.mint
-        case "amber": return Theme.amber
-        case "coral": return Theme.coral
-        default: return Theme.iris
-        }
     }
 
     private func when(_ event: HomeDigest.Event) -> String {

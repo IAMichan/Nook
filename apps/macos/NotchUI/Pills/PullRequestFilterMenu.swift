@@ -116,7 +116,7 @@ struct PullRequestFilterMenu: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(row == kind ? DropdownStyle.chosen : .clear))
+            .roundedBackground(row == kind ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -401,13 +401,13 @@ struct PullRequestToolbarButton: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .padding(.horizontal, 5)
                     .frame(minHeight: 15)
-                    .background(Capsule().fill(NookTheme.smoke))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
             }
         }
         .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -452,8 +452,7 @@ private struct FilterChoiceRow: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-            .fill(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear)))
+        .roundedBackground(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear), radius: NookTheme.Radius.chip)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }

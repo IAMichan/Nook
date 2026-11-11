@@ -11,7 +11,7 @@ extension View {
     /// faint edge. With `tint` (something that waits on you, an error) the edge takes that color.
     func card(padding: CGFloat = Theme.Spacing.xl, tint: Color? = nil) -> some View {
         self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
-            .cardBackground(Theme.surface, stroke: tint?.opacity(0.32) ?? Theme.line, radius: PhoneRadius.card, style: .continuous)
+            .cardBackground(Theme.surface, stroke: tint?.opacity(0.32) ?? Theme.line, radius: PhoneRadius.card)
     }
 
     /// The dark canvas behind a whole screen, with matching bars.
@@ -74,33 +74,6 @@ struct SectionHeader: View {
     private func shownTitle(open: Bool) -> String {
         guard let count, count > 0, !open || urgent || expanded == nil else { return title }
         return "\(title) (\(count))"
-    }
-}
-
-/// A session's state in a row's corner: its mark and one word in the state's color (Approval,
-/// Input, Failed, Limit), the mark alone with "Working" while it works, and how long ago for the rest.
-struct PhoneStatusLabel: View {
-    let session: SessionDigest
-
-    var body: some View {
-        let attention = session.attention
-        Group {
-            if Theme.needsYou(attention) || attention == "working" || attention == "ready" {
-                HStack(spacing: Theme.Spacing.xs) {
-                    Image(icon: Theme.symbol(attention))
-                    Text(verbatim: Theme.shortWord(attention))
-                }
-                .font(Theme.textFont(11.5, .bold))
-                .foregroundStyle(Theme.color(attention))
-            } else {
-                Text(verbatim: AgentRow.age(Date().timeIntervalSince1970 - session.updated))
-                    .font(Theme.TextStyle.detail)
-                    .foregroundStyle(Theme.textTertiary)
-            }
-        }
-        .fixedSize()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(Theme.word(attention)))
     }
 }
 
@@ -269,7 +242,7 @@ struct Banner: View {
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
         // notice: a wash of its color with an edge of it, so a warning reads as one at a glance.
-        .cardBackground(color.opacity(0.1), stroke: color.opacity(0.32), radius: PhoneRadius.row + Theme.Spacing.xxs, style: .continuous)
+        .cardBackground(color.opacity(0.1), stroke: color.opacity(0.32), radius: PhoneRadius.row + Theme.Spacing.xxs)
     }
 }
 

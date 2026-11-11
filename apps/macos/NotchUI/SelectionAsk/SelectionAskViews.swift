@@ -53,8 +53,8 @@ private struct SelectionAskBar: View {
             }
         }
         .padding(NookTheme.Spacing.xs)
-        .background(Capsule().fill(NookTheme.surface))
-        .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+        .background(NookTheme.shape(NookTheme.Radius.panel).fill(NookTheme.surface))
+        .overlay(NookTheme.shape(NookTheme.Radius.panel).stroke(NookTheme.line2, lineWidth: 1))
         .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("selectionAsk.bar"))
@@ -81,8 +81,8 @@ private struct SelectionBarButton: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .frame(height: 26)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -136,8 +136,8 @@ struct SelectionAskCard: View {
         }
         .frame(width: SelectionAskController.cardWidth)
         .composerFocusOnAppear($focused)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel, style: .continuous)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel)
+        .roundedClip(NookTheme.Radius.panel)
         .shadow(color: NookTheme.notch.opacity(0.5), radius: 14, y: 6)
     }
 

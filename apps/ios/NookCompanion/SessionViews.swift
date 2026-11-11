@@ -23,17 +23,22 @@ struct SessionDetailView: View {
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
 
-    private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
-    private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
+    /// From the live list, or an older session opened from the settled ones or a search.
+    private var session: SessionDigest? { client.session(sessionID) }
+    private var entries: [TimelineEntry] { client.conversation(sessionID) }
+    /// An older page is on its way (`CompanionClient.loadEarlier`).
+    @State private var loadingEarlier = false
 
     var body: some View {
         if let session {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        SessionHeader(session: session, review: client.can(CompanionFeature.diff) ? { reviewing = true } : nil)
                         if client.can(CompanionFeature.timeline), !entries.isEmpty {
-                            TranscriptConversation(entries: entries, working: session.attention == "working")
+                            if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
+                                EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(proxy) }
+                            }
+                            TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: String(localized: "Latest reply"))
                             TranscriptReply(text: session.excerpt, footer: false)
@@ -123,7 +128,14 @@ struct SessionDetailView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: session.folder) }
+                // Who works where, in the bar, so the conversation starts at the top.
+                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: Self.subtitle(session)) }
+                if client.can(CompanionFeature.diff) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { reviewing = true } label: { Image(icon: "plusminus").foregroundStyle(Theme.paper) }
+                            .accessibilityLabel("Changes")
+                    }
+                }
                 if !actions(session).isEmpty || (canStop(session) && stoppable(session)) {
                     ToolbarItem(placement: .topBarTrailing) { manageMenu(session) }
                 }
@@ -163,12 +175,15 @@ struct SessionDetailView: View {
             // While the session is on screen its conversation stays current: live from a Mac that sends it by itself
             // (`watchSession`), else asked for every few seconds. Leaving the screen ends the loop.
             .task {
-                let live = await client.watchSession(sessionID)
+                var live = await client.watchSession(sessionID)
                 while !Task.isCancelled {
+                    // Opened while the Mac could not be reached: once it is back, follow live from then on.
+                    if !live, client.timelineIsLive { live = await client.watchSession(sessionID) }
                     let following = live && client.timelineIsLive
                     if !following { await client.loadTimeline(sessionID) }
                     let working = client.sessions.first { $0.id == sessionID }?.attention == "working"
-                    try? await Task.sleep(for: .seconds(following ? 30 : (working ? 2 : 5)))
+                    // Following live costs nothing here; the short wait only notices a dropped connection quickly.
+                    try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
                 }
             }
         } else {
@@ -178,6 +193,24 @@ struct SessionDetailView: View {
     }
 
     private static let bottom = "bottom"
+
+    /// "Claude Code · nook · main": the agent, its folder and its branch.
+    static func subtitle(_ session: SessionDigest) -> String {
+        [session.agent, session.folder, session.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// The page before the oldest message, keeping in sight what you were reading.
+    private func loadEarlier(_ proxy: ScrollViewProxy) {
+        guard !loadingEarlier, let first = entries.first?.id else { return }
+        loadingEarlier = true
+        Task {
+            let more = await client.loadEarlier(sessionID)
+            loadingEarlier = false
+            guard more, let session else { return }
+            let rows = TranscriptRow.rows(entries, working: session.attention == "working")
+            if let row = rows.first(where: { $0.holds(first) }) { proxy.scrollTo(row.id, anchor: .top) }
+        }
+    }
 
     /// Sends the message: into the running turn when steering is chosen and possible, else as the Mac decides (now when
     /// the agent rests, after the turn while it works).
@@ -252,6 +285,11 @@ struct SessionDetailView: View {
                     SnoozeCustomItems(session: session, actions: actions) { manage(session, $0) }
                 } label: { Label("Snooze", systemImage: "clock") }
             }
+            if actions.contains(.mainThreadOn) {
+                Button { manage(session, .mainThreadOn) } label: { Label("Make main thread", systemImage: "arrow.triangle.branch") }
+            } else if actions.contains(.mainThreadOff) {
+                Button { manage(session, .mainThreadOff) } label: { Label("Stop main thread", systemImage: "arrow.triangle.branch") }
+            }
             if actions.contains(.rename) {
                 Button { newName = session.title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
             }
@@ -265,7 +303,35 @@ struct SessionDetailView: View {
     }
 }
 
-/// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
+/// "Earlier messages" at the top of a conversation the Mac sent only the end of: the page before it.
+private struct EarlierMessagesButton: View {
+    let loading: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.sm) {
+                if loading {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(icon: "arrow.up")
+                }
+                Text("Earlier messages")
+            }
+            .font(Theme.TextStyle.label)
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(height: 32)
+            .roundedBackground(Theme.smoke, radius: Theme.Radius.control)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressFade())
+        .disabled(loading)
+        .padding(.top, Theme.Spacing.md)
+    }
+}
+
 /// Plays `Haptics.stream` as the conversation grows while the agent works, as often as `StreamCadence` allows.
 private struct StreamTicks: ViewModifier {
     let last: TimelineEntry?
@@ -279,6 +345,7 @@ private struct StreamTicks: ViewModifier {
     }
 }
 
+/// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
 private struct ScrollEndTracker: ViewModifier {
     @Binding var atEnd: Bool
 
@@ -292,59 +359,6 @@ private struct ScrollEndTracker: ViewModifier {
         } else {
             content
         }
-    }
-}
-
-/// Who works where, under the screen's title: the agent's logo and name, its status, and the folder and branch.
-private struct SessionHeader: View {
-    let session: SessionDigest
-    /// Opens what the session changed; nil when this Mac cannot show it.
-    var review: (() -> Void)? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(spacing: Theme.Spacing.md) {
-                AgentLogo(agent: session.agent, size: 18)
-                Text(session.agent).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(1)
-                Spacer(minLength: Theme.Spacing.md)
-                StatusPill(attention: session.attention)
-            }
-            HStack(spacing: Theme.Spacing.lg) {
-                MetaChip(symbol: "folder", text: session.folder)
-                if let branch = session.branch, !branch.isEmpty { MetaChip(symbol: "arrow.triangle.branch", text: branch) }
-                Spacer(minLength: 0)
-                if let review {
-                    Button(action: review) {
-                        Label("Changes", systemImage: "plusminus")
-                            .font(Theme.TextStyle.label)
-                            .foregroundStyle(Theme.paper)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs)
-                            .background(Theme.smoke, in: Capsule())
-                    }
-                    .buttonStyle(PressFade())
-                }
-            }
-        }
-        .padding(Theme.Spacing.lg)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: PhoneRadius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: PhoneRadius.card, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
-        .padding(.top, Theme.Spacing.md)
-    }
-}
-
-/// Where a session works, as a mark and a word: no fill, as the Mac's row badges.
-private struct MetaChip: View {
-    let symbol: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            Image(icon: symbol).foregroundStyle(Theme.textTertiary)
-            Text(text).foregroundStyle(Theme.textSecondary)
-        }
-        .font(Theme.TextStyle.label)
-        .lineLimit(1)
     }
 }
 
@@ -404,9 +418,8 @@ private struct PendingItemDock: View {
     }
 }
 
-/// What waits on you in a session: a small capital label, what it is, the command in code
-/// type, a line on its risk, then the choices stacked full width (Allow once, Always allow where the agent offers it,
-/// Decline) and a field to decline with a reason. A question shows its options and a field for your own answer.
+/// What waits on you in a session: an approval with Deny/Allow (and Always allow where the agent offers it), or a
+/// question with its options and your own answer.
 struct ItemView: View {
     @EnvironmentObject private var client: CompanionClient
     let session: SessionDigest
@@ -414,55 +427,49 @@ struct ItemView: View {
     @State private var text = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md + Theme.Spacing.xxs) {
-            Text(heading)
-                .font(Theme.TextStyle.section).tracking(1.1).textCase(.uppercase)
-                .foregroundStyle(Theme.textTertiary)
-            switch item.kind {
-            case .approval:
-                if !item.detail.isEmpty {
-                    Text(verbatim: item.detail).font(Theme.TextStyle.cardTitle).foregroundStyle(Theme.paper)
-                }
-                Text(item.title).font(Theme.TextStyle.code).foregroundStyle(Theme.textStrong).textSelection(.enabled)
-                    .padding(Theme.Spacing.md + Theme.Spacing.xxs)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            //: a small capitalized heading in the waiting color, then what is asked, large.
+            Label {
+                Text(heading).textCase(.uppercase).tracking(1.1)
+            } icon: {
+                Image(icon: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill")
+            }
+            .font(Theme.TextStyle.caption)
+            .foregroundStyle(Theme.amber)
+            Text(item.title).font(Theme.TextStyle.title).foregroundStyle(Theme.paper).textSelection(.enabled)
+            if !item.detail.isEmpty {
+                Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary)
+                    .padding(Theme.Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.well, in: RoundedRectangle(cornerRadius: PhoneRadius.row, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: PhoneRadius.row, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
-            case .question:
-                Text(item.title).font(Theme.TextStyle.cardTitle).foregroundStyle(Theme.paper).textSelection(.enabled)
-                if !item.detail.isEmpty {
-                    Text(item.detail).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
-                }
+                    .roundedBackground(Theme.well, radius: Theme.Radius.control)
             }
             switch item.kind {
             case _ where !client.allows(.approve):
                 ApproveOffLabel()
             case .approval:
-                if item.canAllow {
-                    Label("Low risk: you can allow it from your iPhone.", systemImage: "checkmark.shield.fill")
-                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
-                } else {
+                // Two large buttons across the card, easy to hit with a thumb: Deny, and Allow in Nook's color.
+                HStack(spacing: Theme.Spacing.md) {
+                    DecisionButton(title: String(localized: "Deny"), symbol: "xmark", role: .deny) {
+                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    }
+                    if item.canAllow {
+                        DecisionButton(title: String(localized: "Allow"), symbol: "checkmark", role: .allow) {
+                            Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
+                        }
+                    }
+                }
+                if !item.canAllow {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
                         .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
-                VStack(spacing: Theme.Spacing.md) {
-                    if item.canAllow {
-                        PhoneActionButton(title: String(localized: "Allow once"), style: .prominent) {
-                            Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                        }
-                        if item.canAlways == true, client.can(CompanionFeature.allowAlways) {
-                            PhoneActionButton(title: String(localized: "Always allow"), style: .secondary) {
-                                Haptics.success(); Task { await client.decide(session, item: item, allow: true, always: true) }
-                            }
-                        }
-                    }
-                    PhoneActionButton(title: String(localized: "Decline"), style: .danger) {
-                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                // Where the agent offers it, as the Mac's "Always": allowed now and from then on (`CompanionFeature.allowAlways`).
+                if item.canAllow, item.canAlways == true, client.can(CompanionFeature.allowAlways) {
+                    PhoneActionButton(title: String(localized: "Always allow"), style: .secondary) {
+                        Haptics.success(); Task { await client.decide(session, item: item, allow: true, always: true) }
                     }
                 }
-                .padding(.top, Theme.Spacing.xxs)
-                // What you type declines it and tells the agent why, or what to do instead.
-                SessionComposer(text: $text, prompt: "Or decline with a reason") {
+                // What you type denies it and tells the agent why, or what to do instead.
+                SessionComposer(text: $text, prompt: "Or deny with a reason") {
                     let reason = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     text = ""
                     Haptics.warning()
@@ -491,12 +498,37 @@ struct ItemView: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: PhoneRadius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: PhoneRadius.card, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .roundedBackground(Theme.surface, radius: PhoneRadius.card)
+        .roundedStrokeBorder(Theme.line, radius: PhoneRadius.card)
     }
 
-    /// Typed, so both go through the String Catalog.
-    private var heading: LocalizedStringKey { item.kind == .approval ? "Approval needed" : "Question" }
+    /// Typed, so both words go through the String Catalog.
+    private var heading: LocalizedStringKey { item.kind == .approval ? "Approval needed" : "Waiting for your answer" }
+}
+
+/// A full-width round button of an approval: Allow on Nook's own color, Deny on the surface with its word in coral.
+struct DecisionButton: View {
+    enum Role { case allow, deny }
+
+    let title: String
+    let symbol: String
+    let role: Role
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(icon: symbol).font(Theme.font(13, .bold))
+                Text(title).font(Theme.textFont(15, .semibold))
+            }
+            .foregroundStyle(role == .allow ? Theme.onIris : Theme.coral)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(Capsule().fill(role == .allow ? Theme.iris : Theme.coral.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(role == .allow ? Color.clear : Theme.coral.opacity(0.3), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressFade())
+    }
 }
 
 /// In place of Allow, Deny or an answer when the Mac does not let this phone approve (`CompanionScope.approve`).
@@ -524,6 +556,7 @@ struct NewSessionView: View {
     @State private var agent = ""
     @State private var project = ""
     @State private var plan = false
+    @State private var mainThread = false
     @State private var worktree = false
     /// The model id for the chosen agent ("" is the agent's own default), from the Mac's composer menu.
     @State private var model = ""
@@ -625,6 +658,18 @@ struct NewSessionView: View {
                                     }
                                 }
                             }
+                            // The Mac composer's "Main thread": the agent hands its work to sub-threads that report back.
+                            if chosenAgent?.canMainThread == true {
+                                ComposerDivider()
+                                Button { withAnimation(Theme.reveal) { mainThread.toggle() } } label: {
+                                    ComposerPill(symbol: "arrow.triangle.branch", text: String(localized: "Main thread"),
+                                                 tint: mainThread ? Theme.paper : nil, showsChevron: false)
+                                        .roundedBackground(mainThread ? Theme.smoke : Color.clear, radius: Theme.Radius.control)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(mainThread ? .isSelected : [])
+                                .accessibilityHint("The agent hands its work to sub-threads that report back here.")
+                            }
                         }
                     }
                     if chosenAgent?.canPlan == true || chosenProject?.canWorktree == true {
@@ -691,7 +736,8 @@ struct NewSessionView: View {
         let launch = LaunchRequest(agent: agent, project: project, task: task, title: nil,
                                    plan: plan && chosenAgent?.canPlan == true,
                                    worktree: worktree && chosenProject?.canWorktree == true,
-                                   model: chosenAgent?.models == nil ? nil : model)
+                                   model: chosenAgent?.models == nil ? nil : model,
+                                   mainThread: mainThread && chosenAgent?.canMainThread == true ? true : nil)
         let pictures = images
         Task {
             let delivery = await client.start(launch, images: pictures)
@@ -735,7 +781,7 @@ struct QuestionOptionRow: View {
                     .font(Theme.textFont(11, .semibold, design: .monospaced))
                     .foregroundStyle(Theme.textSecondary)
                     .frame(minWidth: 22, minHeight: 22)
-                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                    .roundedBackground(Theme.well, radius: Theme.Radius.chip)
                 Text(title)
                     .font(Theme.textFont(13, .semibold))
                     .foregroundStyle(Theme.paper)
@@ -746,8 +792,8 @@ struct QuestionOptionRow: View {
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.vertical, Theme.Spacing.md + 1)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card, style: .continuous)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .cardBackground(Theme.field, stroke: Theme.paper.opacity(0.08), radius: Theme.Radius.card)
+            .roundedHitShape(Theme.Radius.card)
         }
         .buttonStyle(PressFade())
     }

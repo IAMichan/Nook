@@ -66,7 +66,7 @@ private struct QuoteChip: View {
         .padding(.leading, NookTheme.Spacing.sm)
         .padding(.trailing, NookTheme.Spacing.xxs)
         .padding(.vertical, NookTheme.Spacing.xxs)
-        .background(Capsule().fill(NookTheme.smoke))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
     }
 
     /// The passage, quiet, and a field for what you say about it; Return keeps it, Escape leaves it as it was.
@@ -84,7 +84,7 @@ private struct QuoteChip: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...5)
                 .padding(NookTheme.Spacing.md)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                 .onSubmit(save)
             HStack {
                 Spacer()

@@ -22,7 +22,7 @@ name: Release (macOS)
 # Updates (docs/UPDATES.md, "Release builds"): with the repository secret NOOK_UPDATE_SIGNING_KEY and the repository
 # variable NOOK_UPDATE_PUBLIC_KEY (make the pair once with `swift scripts/sign-update.swift generate`), the .zip gets an
 # Ed25519 signature (.zip.sig) and the app carries the public key, so a downloaded Nook installs the next release from
-# the update button after checking it. Without them the release has no .sig and Nook links to the release instead.
+# the update button after checking it. A release without them (or without a signing identity) fails instead of shipping.
 # TDLib and nook-chatd are not bundled (they need scripts/build-tdlib.sh and scripts/build-chatd.sh); Telegram and the
 # chat-helper apps stay on notifications in this build.
 on:
@@ -153,9 +153,9 @@ jobs:
           if [ -n "$DEVELOPER_ID_P12" ]; then KIND=developer-id; P12="$DEVELOPER_ID_P12"; PASS="$DEVELOPER_ID_PASSWORD"
           elif [ -n "$SIGNING_P12" ]; then KIND=self-signed; P12="$SIGNING_P12"; PASS="$SIGNING_PASSWORD"
           else
-            echo "::warning::No signing identity in the secrets: the app is signed ad hoc. macOS then blocks the first launch and asks for Keychain access and permissions again after every update."
-            echo "SIGN_KIND=adhoc" >> "$GITHUB_ENV"
-            exit 0
+            # An ad-hoc build loses its Keychain access and privacy permissions with every update, so it is not released.
+            echo "::error::No signing identity in the secrets (MACOS_DEVELOPER_ID_P12 or MACOS_SIGNING_P12). Make one with scripts/make-release-identity.sh."
+            exit 1
           fi
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASS="$(openssl rand -hex 16)"
@@ -188,6 +188,12 @@ jobs:
           done
           /usr/libexec/PlistBuddy -c "Add :NookReleaseVersion string ${{ steps.version.outputs.version }}" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NookReleaseRepository string $GITHUB_REPOSITORY" "$PLIST"
+          # The key the app checks its next update with; a build without it can never install one by itself.
+          KEY="$(/usr/libexec/PlistBuddy -c "Print :NookUpdatePublicKey" "$PLIST" 2>/dev/null || true)"
+          if [ -z "$KEY" ] || [ "$KEY" != "${{ vars.NOOK_UPDATE_PUBLIC_KEY }}" ]; then
+            echo "::error::Info.plist does not carry NOOK_UPDATE_PUBLIC_KEY."
+            exit 1
+          fi
           # Sign: nested code first, then the app with its entitlements. See "Signing" at the top.
           if [ -n "$SIGN_IDENTITY" ]; then
             SIGN=(--force --sign "$SIGN_IDENTITY" --keychain "$SIGN_KEYCHAIN")
@@ -254,8 +260,9 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           if [ -z "$NOOK_UPDATE_SIGNING_KEY" ] || [ -z "$NOOK_UPDATE_PUBLIC_KEY" ]; then
-            echo "::warning::NOOK_UPDATE_SIGNING_KEY or NOOK_UPDATE_PUBLIC_KEY is not set: the release has no update signature, so downloaded builds link to it instead of installing it."
-            exit 0
+            # Without them, every build out there would have to download the next release by hand.
+            echo "::error::NOOK_UPDATE_SIGNING_KEY or NOOK_UPDATE_PUBLIC_KEY is not set: make the pair with swift scripts/sign-update.swift generate (docs/UPDATES.md)."
+            exit 1
           fi
           # Refuses a private key that does not belong to the public key the app carries.
           swift "$GITHUB_WORKSPACE/scripts/sign-update.swift" sign "Nook-$VERSION-macOS.zip" > "Nook-$VERSION-macOS.zip.sig"
@@ -281,8 +288,8 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/release-notes.sh" > notes.md
           FLAGS=""
           [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
-          FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" SHA256SUMS.txt)
-          [ -s "Nook-$VERSION-macOS.zip.sig" ] && FILES+=("Nook-$VERSION-macOS.zip.sig")
+          test -s "Nook-$VERSION-macOS.zip.sig"
+          FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt)
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.title }}" \
             --notes-file notes.md $FLAGS "${FILES[@]}"

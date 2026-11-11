@@ -42,9 +42,9 @@ struct AgentLogo: View {
         case .brand(let logo):
             BrandMark(logo: logo, size: size)
         case .antigravity:
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
+            NookTheme.shape(corner)
                 .fill(Color(hex: 0x17171B))
-                .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).stroke(NookTheme.line2, lineWidth: 0.5))
+                .roundedStroke(NookTheme.line2, radius: corner, lineWidth: 0.5)
                 .overlay(
                     ArchGlyph()
                         .stroke(LinearGradient(colors: [Color(hex: 0x4F8BF7), Color(hex: 0xEA4335), Color(hex: 0xFBBC04)],
@@ -53,7 +53,7 @@ struct AgentLogo: View {
                         .padding(size * 0.22)
                 )
         case .letter(let letter, let color):
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
+            NookTheme.shape(corner)
                 .fill(color.opacity(0.2))
                 .overlay(
                     Text(letter)
@@ -208,8 +208,8 @@ struct AccountBadge: View {
             }
         }
         .foregroundStyle(kind.glyph)
-        .background(Capsule(style: .continuous).fill(kind.fill))
-        .overlay(Capsule(style: .continuous).stroke(ring, lineWidth: 1.5))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(kind.fill))
+        .overlay(NookTheme.shape(NookTheme.Radius.chip).stroke(ring, lineWidth: 1.5))
         .fixedSize()
         .help(kind.label)
         .accessibilityLabel(kind.label)

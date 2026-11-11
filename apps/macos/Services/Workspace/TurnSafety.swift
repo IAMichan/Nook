@@ -28,6 +28,9 @@ enum OpenWork {
                 return EventSettlement(eventID: event.id, state: reason == .completed ? .done : .failed)
             case (.assistant, .running), (.thinking, .running):
                 return EventSettlement(eventID: event.id, state: .done)
+            case (.system, .running) where CompactionProgress.isCompaction(event):
+                // A compaction the agent never reported the end of: done with a turn that ended well, else stopped.
+                return EventSettlement(eventID: event.id, state: reason == .completed ? .done : .failed)
             case (.approval, .pending):
                 return EventSettlement(eventID: event.id, state: .expired)
             default:

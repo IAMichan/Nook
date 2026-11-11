@@ -84,7 +84,7 @@ struct TimelineFindBar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .onAppear { focused = true }
         .onKeyPress(.escape) { close(); return .handled }
     }
@@ -118,8 +118,8 @@ struct TimelineToEndPill: View {
             .foregroundStyle(NookTheme.paper)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 28)
-            .background(Capsule().fill(NookTheme.smoke))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.smoke))
+            .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
         }
         .buttonStyle(.plain)
@@ -221,59 +221,118 @@ private struct PinProbe: ViewModifier {
     }
 }
 
+/// How many rows of a lazy conversation are drawn now, counted as they appear and disappear (`countsAsDrawnRow`).
+/// `onScrollTargetVisibilityChange` alone does not tell a blank view: after a jump to a stretch where the lazy stack
+/// draws nothing it reports nothing at all, and the rows it last reported still count as in view. The rows' own
+/// appear and disappear do follow such a jump, down to none.
+@MainActor
+final class DrawnRows {
+    fileprivate(set) var count = 0
+    fileprivate var changed: (() -> Void)?
+
+    fileprivate func add(_ delta: Int) {
+        count = max(0, count + delta)
+        changed?()
+    }
+}
+
 extension View {
+    /// Counts this row of a lazy conversation in `drawn` while the lazy stack draws it.
+    func countsAsDrawnRow(_ drawn: DrawnRows) -> some View {
+        onAppear { drawn.add(1) }.onDisappear { drawn.add(-1) }
+    }
+
     /// Brings a lazy conversation back when it stands still with none of its rows in view. A lazy stack places rows it
     /// has not measured yet by estimate; after a resize (a side panel opening narrows every row), a jump, or rows that
     /// turned out shorter than guessed, the scroll view could rest on a stretch where it drew no row at all, and the
-    /// conversation stayed black until you scrolled. `recover` gets the last row that was in view (nil if none was) and
-    /// scrolls there; it runs again, with nil, when the first try left the view blank.
-    func recoversBlankRows<ID: Hashable>(_ type: ID.Type, rows: Int, idle: @escaping () -> Bool,
-                                         recover: @escaping (ID?) -> Void) -> some View {
-        modifier(BlankRowsGuard(rows: rows, idle: idle, recover: recover))
+    /// conversation stayed black until you scrolled. Blank is: no row drawn (`drawn`, which every row reports to with
+    /// `countsAsDrawnRow`), or none of them in view. `recover` gets the last row that was in view (nil if none was, or
+    /// on a later try) and the number of the try (0 first): from the second try on it should go to the end the hard way
+    /// (drop the room held under a sent message, scroll to the last row itself). It keeps trying for as long as the view
+    /// stays blank: a guard that gave up after a few tries left the conversation black for good.
+    func recoversBlankRows<ID: Hashable>(_ type: ID.Type, rows: Int, drawn: DrawnRows, idle: @escaping () -> Bool,
+                                         recover: @escaping (_ last: ID?, _ attempt: Int) -> Void) -> some View {
+        modifier(BlankRowsGuard(rows: rows, drawn: drawn, idle: idle, recover: recover))
     }
 }
 
 /// What `BlankRowsGuard` saw; not state any view draws from.
 @MainActor
 private final class BlankRowsWatch<ID: Hashable> {
-    var visible = true
+    /// Whether the last report of rows in view named any.
+    var inView = true
     var last: ID?
     var check: Task<Void, Never>?
+    /// The newest values from the view: a check that runs for a while must not scroll with rows of an older draw.
+    var rows = 0
+    var drawn: DrawnRows?
+    var idle: () -> Bool = { true }
+    var recover: (ID?, Int) -> Void = { _, _ in }
+
+    /// Checks of 250 ms a blank view waits for the scroll to come to rest before it recovers anyway.
+    private let restWait = 8
+
+    var blank: Bool { rows > 0 && (!inView || drawn?.count == 0) }
+
+    func reported(_ ids: [ID]) {
+        inView = !ids.isEmpty
+        if let first = ids.first { last = first }
+        settle()
+    }
+
+    /// Stops a check once a row shows again, starts one when the view went blank.
+    func settle() {
+        guard blank else {
+            check?.cancel()
+            check = nil
+            return
+        }
+        guard check == nil else { return }
+        check = Task { @MainActor [weak self] in
+            var attempt = 0
+            var waited = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(attempt < 3 ? 250 : 1000))
+                guard let self, !Task.isCancelled else { return }
+                guard self.blank else {
+                    self.check = nil
+                    return
+                }
+                waited += 1
+                // A fast scroll can pass a moment with no row in view: only a view at rest that stays blank is broken.
+                // A scroll cut short can leave the phase on "animating" for good, so after two seconds of blank it
+                // recovers whatever the phase says.
+                guard self.idle() || waited >= self.restWait else { continue }
+                self.recover(attempt == 0 ? self.last : nil, attempt)
+                attempt += 1
+                waited = 0
+            }
+        }
+    }
+
+    func stop() {
+        check?.cancel()
+        check = nil
+    }
 }
 
 private struct BlankRowsGuard<ID: Hashable>: ViewModifier {
     let rows: Int
+    let drawn: DrawnRows
     let idle: () -> Bool
-    let recover: (ID?) -> Void
+    let recover: (ID?, Int) -> Void
     @State private var watch = BlankRowsWatch<ID>()
 
     func body(content: Content) -> some View {
-        content
-            .onScrollTargetVisibilityChange(idType: ID.self, threshold: 0) { ids in
-                watch.visible = !ids.isEmpty
-                if let first = ids.first {
-                    watch.last = first
-                    watch.check?.cancel()
-                    watch.check = nil
-                    return
-                }
-                guard rows > 0, watch.check == nil else { return }
-                watch.check = Task { @MainActor in
-                    // Ended on its own, not replaced: the next blank may start a new check.
-                    defer { if !Task.isCancelled { watch.check = nil } }
-                    var tries = 0
-                    // A fast scroll can pass a moment with no row in view: only a view at rest that stays blank is broken.
-                    for _ in 0..<40 {
-                        try? await Task.sleep(for: .milliseconds(250))
-                        guard !Task.isCancelled, !watch.visible else { return }
-                        guard idle() else { continue }
-                        recover(tries == 0 ? watch.last : nil)
-                        tries += 1
-                        if tries == 3 { return }
-                    }
-                }
-            }
-            .onDisappear { watch.check?.cancel() }
+        let watch = watch
+        watch.rows = rows
+        watch.drawn = drawn
+        watch.idle = idle
+        watch.recover = recover
+        drawn.changed = { [weak watch] in watch?.settle() }
+        return content
+            .onScrollTargetVisibilityChange(idType: ID.self, threshold: 0) { watch.reported($0) }
+            .onDisappear { watch.stop() }
     }
 }
 

@@ -196,7 +196,7 @@ struct ChatAttachmentReview: View {
                     .onExitCommand { leaveTool(for: nil) }
                     .padding(.horizontal, NookTheme.Spacing.sm)
                     .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+                    .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
                     .onAppear { labelFocused = true }
             } else {
                 Spacer(minLength: 0)

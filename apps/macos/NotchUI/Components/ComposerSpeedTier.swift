@@ -22,13 +22,54 @@ struct ComposerSpeedTier: View {
                                 chosen: chosen == tier.id) { onPick(tier.id) }
                 }
             }
-            .help(tr("compose.speed.help"))
+            .composerTip(tr("compose.speed.help"))
         }
     }
 
     private func title(_ id: String?) -> String {
         guard let id else { return tr("compose.speed.standard") }
         return tiers.first { $0.id == id }?.name ?? SpeedTiers.displayName(id)
+    }
+}
+
+/// Claude Code's Ultracode beside the effort (`Ultracode`): one click turns it on or off for the next turns. Shown only
+/// where the agent and model offer it.
+struct ComposerUltracodeToggle: View {
+    let offered: Bool
+    let on: Bool
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        if offered {
+            ComposerDivider()
+            Button { onToggle(!on) } label: {
+                ComposerPill(symbol: "point.3.connected.trianglepath.dotted", text: tr("compose.ultracode"),
+                             tint: on ? NookTheme.iris : nil, showsChevron: false)
+            }
+            .buttonStyle(.plain)
+            .composerTip(on ? tr("compose.ultracode.on") : tr("compose.ultracode.off"))
+            .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
+        }
+    }
+}
+
+/// "Main thread" (`MainThread`): the agent hands its work to sub-threads that report back. Every agent that may delegate.
+struct ComposerMainThreadToggle: View {
+    let offered: Bool
+    let on: Bool
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        if offered {
+            ComposerDivider()
+            Button { onToggle(!on) } label: {
+                ComposerPill(symbol: "arrow.triangle.branch", text: tr("compose.mainThread"),
+                             tint: on ? NookTheme.iris : nil, showsChevron: false)
+            }
+            .buttonStyle(.plain)
+            .help(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
+            .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
+        }
     }
 }
 

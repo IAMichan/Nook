@@ -39,18 +39,10 @@ extension NookPalette {
 }
 
 extension NookTheme.TextStyle {
-    /// A tab in the panel's header, as the Mac's `NookTabBar`.
-    static var tab: Font { NookTheme.textFont(13, .medium) }
-    /// A tab's word under its icon in the tab bar.
-    static var tabBar: Font { NookTheme.textFont(9.5, .medium) }
-    /// A screen's title in its header row, 17 pt bold.
-    static var screenTitle: Font { NookTheme.textFont(15, .bold) }
     /// A section's name above its rows: small, bold and in capitals with wide spacing, section label.
     static var section: Font { NookTheme.textFont(10.5, .bold) }
     /// A row's title in a list: 16 pt medium.
     static var rowTitle: Font { NookTheme.textFont(14, .medium) }
-    /// The title of a card that asks you something (an approval): 18 pt bold.
-    static var cardTitle: Font { NookTheme.textFont(16, .bold) }
 }
 
 /// The phone's shapes iPhone app: rounder than the Mac's, as touch and a phone's own corners ask. The Mac

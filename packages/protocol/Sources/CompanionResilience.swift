@@ -198,28 +198,3 @@ enum ForegroundPolicy {
         live && foreground == true && now.timeIntervalSince(lastHeard) <= heardWithin
     }
 }
-
-/// How fresh what the phone shows is, apart from whether it is connected (docs/COMPANION.md, "Staying connected"): a live
-/// connection gets every change the moment it happens, so what it shows is current however long ago the last change was;
-/// answers the phone asks for (an older Mac, or between connections) are as old as the last one.
-enum CompanionFreshness: Equatable, Sendable {
-    /// Connected live: what shows is current.
-    case live
-    /// Connected, asking now and then: the last answer came within `recentFor`.
-    case current
-    /// Connected, but the last answer is `minutes` old.
-    case behind(minutes: Int)
-    /// Not connected: what shows is from `since` (nil: nothing was ever answered).
-    case offline(since: Date?)
-
-    /// Answers older than this read as behind.
-    static let recentFor: TimeInterval = 90
-
-    static func of(connected: Bool, live: Bool, lastUpdated: Date?, now: Date) -> CompanionFreshness {
-        guard connected else { return .offline(since: lastUpdated) }
-        if live { return .live }
-        guard let lastUpdated else { return .current }
-        let age = now.timeIntervalSince(lastUpdated)
-        return age < recentFor ? .current : .behind(minutes: max(1, Int(age / 60)))
-    }
-}

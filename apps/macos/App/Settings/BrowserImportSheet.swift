@@ -165,7 +165,7 @@ struct BrowserImportSheet: View {
                 Text(tr("cookieImport.into.nook")).tag("")
                 ForEach(ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects,
                                                      overrides: ws.projectOverrides), id: \.self) { path in
-                    Text(URL(fileURLWithPath: path).lastPathComponent).tag(path)
+                    Text((path as NSString).lastPathComponent).tag(path)
                 }
             }
             SettingNote(tr("cookieImport.into.note"))

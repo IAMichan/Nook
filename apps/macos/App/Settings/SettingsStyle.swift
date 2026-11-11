@@ -121,7 +121,7 @@ struct SettingsTile: View {
 
     /// `colors` is kept for the callers that still pass one: every tile has the same quiet look now.
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        NookTheme.shape(size * 0.27)
             .fill(NookTheme.smoke)
             .overlay(
                 Image(icon: symbol)
@@ -156,7 +156,7 @@ struct ServiceTile: View {
     }
 
     private var tile: some View {
-        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        NookTheme.shape(size * 0.27)
             .fill(NookTheme.smoke)
             .overlay(
                 SiteIcon(domain: domain, fallback: fallback, tint: tint, size: size * 0.62, source: source)
@@ -211,7 +211,7 @@ struct HealthPill: View {
         .foregroundStyle(health == .off || health == .notLinked ? NookTheme.textSecondary : health.color)
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, 3)
-        .background(Capsule().fill(health.color.opacity(0.12)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(health.color.opacity(0.12)))
     }
 }
 
@@ -286,8 +286,8 @@ struct SettingsPickRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5))))
+            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5)),
+                               radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -321,8 +321,7 @@ struct SheetPart<Content: View>: View {
             }
             .padding(embedded ? 0 : NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                .fill(embedded ? Color.clear : NookTheme.surface))
+            .roundedBackground(embedded ? Color.clear : NookTheme.surface, radius: NookTheme.Radius.card)
         }
     }
 }

@@ -351,6 +351,42 @@ final class PullRequestLinksTests: XCTestCase {
                        "going back to a branch takes it out of the earlier ones")
     }
 
+    /// An agent made four branches in one turn, one pull request each; Nook's reads only caught the last two.
+    func testPassedFindsBranchesBetweenTwoReads() {
+        let reflog = [
+            "commit: fix: use label-micro",
+            "checkout: moving from fix/icon-spacing to fix/label-micro",
+            "commit: fix: icon spacing",
+            "checkout: moving from fix/search-input to fix/icon-spacing",
+            "commit: fix: search input",
+            "checkout: moving from fix/ellipsis to fix/search-input",
+            "commit: fix: ellipsis",
+            "checkout: moving from nook/fix-ui to fix/ellipsis",
+            "Branch: renamed refs/heads/nook/kijk-ui to refs/heads/nook/fix-ui",
+            "reset: moving to HEAD",
+        ]
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "fix/icon-spacing", to: "fix/label-micro"), [])
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "nook/fix-ui", to: "fix/label-micro"),
+                       ["fix/ellipsis", "fix/search-input", "fix/icon-spacing"])
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "nook/kijk-ui", to: "fix/label-micro"),
+                       ["fix/ellipsis", "fix/search-input", "fix/icon-spacing"], "a rename of the known branch counts as it")
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "somewhere-else", to: "fix/label-micro"), [],
+                       "a history that never shows the known branch adds nothing")
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: nil, to: "fix/label-micro"), [])
+    }
+
+    func testPassedSkipsDetachedCommitsAndRepeats() {
+        let reflog = [
+            "checkout: moving from feat-b to feat-c",
+            "checkout: moving from 3be533f11 to feat-b",
+            "checkout: moving from feat-b to 3be533f11",
+            "checkout: moving from feat-c to feat-b",
+            "checkout: moving from feat-a to feat-c",
+        ]
+        XCTAssertEqual(SessionBranches.passed(reflog: reflog, from: "feat-a", to: "feat-c"), ["feat-b"],
+                       "going back to the current branch and a detached commit are no branches passed")
+    }
+
     func testKeepingReplacesAnOlderReadOfTheSameRequest() {
         var first = link(1, head: "feat-a"); first.url = "https://github.com/a/b/pull/1"
         var merged = first; merged.state = .merged
@@ -500,5 +536,32 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["./scripts/core-tests.sh --filter PullRequestStackTests"]))
         XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Read", command: ["docs/pull_request_template.md"]))
         XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["gh pr list", "gh prompt create"]))
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["gh pr merge 12 --squash"]), "a merge prints its link too")
+    }
+
+    func testShellMergesAndClosesOfEveryForgeCLI() {
+        for command in ["gh pr merge 12 --squash", "git push && gh pr merge --auto", "gh pr close 3", "gh stack merge",
+                        "glab mr merge 4", "glab mr accept 4", "glab mr close 4",
+                        "tea pr merge 7", "tea pulls merge 7", "tea pull merge 7", "tea pr m 7", "tea pull close 7", "fj pr close 7",
+                        "cafe pr merge 2", "cafe stack merge",
+                        "az repos pr update --id 9 --status completed", "az repos pr update --id 9 --status=abandoned"] {
+            XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: [command]), command)
+        }
+        for command in ["gh pr create --fill", "gh pr view 3", "glab mr view 4", "tea pull checkout 7", "tea pr list",
+                        "az repos pr update --id 9 --title x", "git merge main", "gh prompt merge"] {
+            XCTAssertFalse(PullRequestToolCall.closesPullRequest(command: [command]), command)
+        }
+    }
+
+    func testShellMergeFoundInEveryAgentsToolInput() {
+        // Claude Code's Bash, Codex's argument list, an ACP agent's nested input.
+        let claude = PullRequestToolCall.texts(in: ["command": "gh pr merge 12 --squash", "description": "Merge"])
+        let codex = PullRequestToolCall.texts(in: ["command": ["glab", "mr", "accept", "4"]])
+        let acp = PullRequestToolCall.texts(in: ["rawInput": ["cmd": "cd app\ntea pr m 7"]])
+        XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: claude))
+        XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: codex))
+        XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: acp))
+        XCTAssertFalse(PullRequestToolCall.closesPullRequest(command: PullRequestToolCall.texts(in: ["file_path": "merge.swift"])))
+        XCTAssertEqual(PullRequestToolCall.texts(in: nil), [])
     }
 }

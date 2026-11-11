@@ -98,6 +98,65 @@ final class GitCheckpointTests: XCTestCase {
         XCTAssertThrowsError(try git.run(["rev-parse", "--verify", "-q", ref], in: repo.path))
     }
 
+    func testTurnLeavesOutWhatAPullBroughtIn() throws {
+        // Upstream work, committed before the turn: a pull brings it in.
+        let old = ["GIT_AUTHOR_DATE": "2020-01-01T00:00:00Z", "GIT_COMMITTER_DATE": "2020-01-01T00:00:00Z"]
+        try git.run(["checkout", "-q", "-b", "upstream"], in: repo.path)
+        try write("up.txt", "theirs\n")
+        try write("a.txt", "een\nupstream\n")
+        try git.git(["add", "-A"], in: repo.path, env: [:])
+        try git.git(["commit", "-q", "-m", "upstream"], in: repo.path, env: old)
+        try git.run(["checkout", "-q", "main"], in: repo.path)
+        let origin = try git.run(["rev-parse", "HEAD"], in: repo.path).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for initial in [false, true] {
+            try git.run(["reset", "-q", "--hard", origin], in: repo.path)
+            let started = Date()
+            let before = GitService.checkpointRef(session: UUID(), index: 0)
+            if initial { try git.checkpointHead(repo.path, ref: before) } else { try git.checkpoint(repo.path, ref: before) }
+            XCTAssertNil(git.authoredPaths(repo.path, from: before, to: before, since: started), "HEAD did not move: every change counts")
+
+            // The turn pulls, edits a pulled file, and commits a file of its own.
+            try git.run(["merge", "-q", "--ff-only", "upstream"], in: repo.path)
+            try write("a.txt", "een\nupstream\nmine\n")
+            try write("mine.txt", "new\n")
+            try git.git(["add", "mine.txt"], in: repo.path, env: [:])
+            try git.git(["commit", "-q", "-m", "mine"], in: repo.path, env: [:])
+            let after = GitService.checkpointRef(session: UUID(), index: 1)
+            try git.checkpoint(repo.path, ref: after)
+
+            let authored = try XCTUnwrap(git.authoredPaths(repo.path, from: before, to: after, since: started))
+            XCTAssertEqual(authored, ["a.txt", "mine.txt"], "initial snapshot is HEAD: \(initial)")
+            let turn = try git.lineCounts(repo.path, paths: nil, from: before, to: after, authored: authored)
+            XCTAssertEqual(Set(turn.keys), ["a.txt", "mine.txt"], "the pulled up.txt is left out")
+            XCTAssertEqual(Set(try git.lineCounts(repo.path, paths: nil, from: before, to: after).keys), ["a.txt", "mine.txt", "up.txt"])
+        }
+    }
+
+    func testRestoreRemovesWhatAnIgnoreFileFromTheTurnHid() throws {
+        try write("secret.txt", "geheim")
+        let ref = GitService.checkpointRef(session: UUID(), index: 0)
+        try git.checkpoint(repo.path, ref: ref)
+
+        // The turn adds a .gitignore for dist/ and builds into it, and widens the root .gitignore over a file it wrote.
+        let dist = repo.appendingPathComponent("web/dist/assets")
+        try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+        try write("web/.gitignore", "dist/\n")
+        try write("web/dist/index.html", "<html>")
+        try write("web/dist/assets/app.js", "js")
+        try write(".gitignore", "secret.txt\n*.log\n")
+        try write("build.log", "log")
+
+        try git.restore(repo.path, to: ref)
+        XCTAssertNil(read("web/.gitignore"), "the new ignore file goes")
+        XCTAssertNil(read("web/dist/index.html"), "and so do the files it hid")
+        XCTAssertNil(read("web/dist/assets/app.js"))
+        XCTAssertNil(read("build.log"), "a file hidden by a changed ignore file goes too")
+        XCTAssertEqual(read(".gitignore"), "secret.txt\n")
+        XCTAssertEqual(read("secret.txt"), "geheim", "what the snapshot's own rules ignore is never touched")
+        XCTAssertEqual(read("a.txt"), "een")
+    }
+
     func testCheckpointWithoutCommits() throws {
         let empty = FileManager.default.temporaryDirectory.appendingPathComponent("nook-cp-empty-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)

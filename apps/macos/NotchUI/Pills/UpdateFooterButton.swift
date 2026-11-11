@@ -111,16 +111,15 @@ struct UpdateFooterButton<Idle: View>: View {
                     .foregroundStyle(NookTheme.onPaper)
                     .padding(.horizontal, 5)
                     .frame(minWidth: 16, minHeight: 16)
-                    .background(Capsule().fill(look.tint))
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(look.tint))
             }
         }
         .foregroundStyle(look.tint)
         .padding(.leading, iconOnly ? 0 : NookTheme.Spacing.md)
         .padding(.trailing, iconOnly ? 0 : count == nil ? 9 : 5)
         .frame(minWidth: iconOnly ? 26 : nil, minHeight: 26, maxHeight: 26)
-        .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel,
-                        style: .continuous)
-        .contentShape(Capsule())
+        .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel)
+        .contentShape(NookTheme.shape(NookTheme.Radius.control))
         .hoverLift(hovering)
         .fixedSize()
     }
@@ -162,7 +161,6 @@ enum UpdateText {
     static func reason(_ reason: UpdateFailure.Reason, branch: String) -> String {
         switch reason {
         case .blocked(let blocker): return Self.blocker(blocker, branch: branch)
-        case .needsStash(let files): return tr("update.reason.needsStash", files)
         case .stashConflict(let name): return tr("update.reason.stashConflict", name)
         case .missingTool(let tool): return tr("update.reason.missingTool", tool, tool)
         case .command(let status): return tr("update.reason.command", Int(status))
@@ -176,6 +174,8 @@ enum UpdateText {
         case .badBundle(let found): return tr("update.reason.badBundle", found)
         case .rolledBack(let build): return tr("update.reason.rolledBack", build)
         case .notRestarted: return tr("update.reason.notRestarted")
+        case .notApplied(let version): return tr("update.reason.notApplied", version)
+        case .translocated: return tr("update.reason.translocated")
         case .other(let message): return message
         }
     }

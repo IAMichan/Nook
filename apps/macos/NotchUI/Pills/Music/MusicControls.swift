@@ -97,11 +97,11 @@ struct MusicArtwork: View {
                     .transition(.opacity)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .roundedClip(cornerRadius)
         // A faint edge, so a dark cover keeps its shape on the black canvas.
         .overlay {
             if cornerRadius > 0 {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(NookTheme.paper.opacity(0.08), lineWidth: 1)
+                NookTheme.shape(cornerRadius).strokeBorder(NookTheme.paper.opacity(0.08), lineWidth: 1)
             }
         }
         .task(id: url) {
@@ -161,7 +161,7 @@ struct MusicArtworkState: View {
     var body: some View {
         if hovering || playing {
             ZStack {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(Color.black.opacity(0.5))
+                NookTheme.shape(cornerRadius).fill(Color.black.opacity(0.5))
                 if hovering {
                     Image(icon: "play.fill").font(NookTheme.font(12, .bold)).foregroundStyle(NookTheme.paper)
                 } else {
