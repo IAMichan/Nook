@@ -582,7 +582,12 @@ struct ModelSwitchDivider: View {
 
     private func endpoint(_ endpoint: ModelSwitch.Endpoint, model: Bool, effort: Bool) -> some View {
         let account = badge(endpoint)
-        let text = Self.words(endpoint, model: model, effort: effort && endpoint.effort != nil)
+        // To another agent with no model named: the agent's own name beside its logo, not a "default model" that
+        // reads like a model of the one you left.
+        let text = model && endpoint.model == nil && change.handoff && change.from.agent != change.to.agent
+            ? [endpoint.agent, Self.words(endpoint, model: false, effort: effort && endpoint.effort != nil)]
+                .filter { !$0.isEmpty }.joined(separator: " ")
+            : Self.words(endpoint, model: model, effort: effort && endpoint.effort != nil)
         let brand = BrandLogo.forName(endpoint.agent)
         return HStack(spacing: NookTheme.Spacing.xs) {
             AgentLogo(agent: endpoint.agent, size: 13)

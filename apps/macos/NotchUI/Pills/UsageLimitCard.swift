@@ -1,61 +1,103 @@
 import SwiftUI
 
-/// At the end of the timeline of a session a usage limit stopped, in the place and shape of the "You stopped this
-/// turn" card: when the limit resets, "Resume at reset" (sends "Continue where you left off." once it has), another
-/// account with room left, and Retry.
+/// At the end of the timeline of a session a usage limit stopped, in the place and shape of the "You stopped the agent"
+/// card: when the limit resets, the accounts with room left to go on with at once (best first, each with its model and
+/// how much of it is used), "Resume at reset" (sends "Continue where you left off." once it has), and Retry.
 struct UsageLimitCard: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var app: AppModel
     let run: WorkspaceRun
 
+    /// At most this many accounts to go on with: the best ones; the agent menu has every account.
+    private static let shownOptions = 3
+
     /// Whether this session shows the limit card instead of the stopped/failed one.
     static func shows(_ run: WorkspaceRun) -> Bool { run.limitedAt != nil && !run.status.isActive }
 
     var body: some View {
-        let auto = run.autoResume == true
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            AdaptiveActionRow(spacing: 10) {
-                HStack(spacing: 10) {
-                    Image(icon: auto ? "clock.arrow.circlepath" : "hourglass")
-                        .foregroundStyle(NookTheme.amber)
+        if Self.shows(run) {
+            let auto = run.autoResume == true
+            let options = Array(suggestions().prefix(Self.shownOptions))
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                header(auto: auto)
+                if !options.isEmpty {
+                    NookDivider()
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        Text(tr("ws.limit.title"))
-                            .font(NookTheme.TextStyle.strong)
-                            .foregroundStyle(NookTheme.paper)
-                        TimelineView(.nookTicks(every: 30)) { context in
-                            Text(line(now: context.date, auto: auto))
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
+                        Text(tr("ws.limit.goOnWith"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .padding(.leading, NookTheme.Spacing.sm)
+                        ForEach(Array(options.enumerated()), id: \.element.profile.id) { index, option in
+                            LimitOptionRow(option: option, best: index == 0) {
+                                _ = workspace.switchProvider(run.id, to: option.provider, profileID: option.profile.id,
+                                                             model: option.model, resumeIfLimited: true)
+                            }
                         }
                     }
                 }
-            } actions: {
-                if let suggestion = suggestion() {
-                    NookGhostButton(title: tr("ws.limit.switchTo", AccountLabel.name(suggestion.profile, app: app) + " · " + suggestion.profile.kind.name)) {
-                        _ = workspace.switchProvider(run.id, to: suggestion.provider, profileID: suggestion.profile.id, resumeIfLimited: true)
+                NookDivider()
+                HStack(spacing: NookTheme.Spacing.md) {
+                    // Also without a known reset: Nook then tries again now and then until the limit lets it through.
+                    Toggle(isOn: Binding(get: { auto }, set: { workspace.setAutoResume(run.id, $0) })) {
+                        Text(tr("ws.limit.autoResume"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
-                    .help(suggestion.sameAgent ? tr("ws.limit.switchHelpSame") : tr("ws.limit.switchHelp"))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(NookTheme.amber)
+                    .help(tr("ws.limit.resumeHelp"))
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    // The limit may already be free (or the reset was early): try the turn again now.
+                    SmallGhostButton(title: tr("ws.action.retry")) { workspace.retry(run.id) }
+                        .help(tr("ws.action.retry.help"))
                 }
-                // Also without a known reset: Nook then tries again now and then until the limit lets it through.
-                NookGhostButton(title: auto ? tr("ws.limit.cancelResume") : tr("ws.limit.resume")) {
-                    workspace.setAutoResume(run.id, !auto)
+                // A banked reset credit of this account frees it now, instead of waiting for the reset.
+                if let profile = app.profiles.profile(id: run.profileID) {
+                    ResetCreditRow(profile: profile)
                 }
-                .help(tr("ws.limit.resumeHelp"))
-                NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(run.id) }
             }
-            // A banked reset credit of this account frees it now, instead of waiting for the reset.
-            if let profile = app.profiles.profile(id: run.profileID) {
-                ResetCreditRow(profile: profile)
-            }
+            .padding(NookTheme.Spacing.md)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
         }
-        .padding(10)
-        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
     }
 
-    /// Another account with room left (same agent first), when this one is nearly out (LimitAdvisor).
-    private func suggestion() -> (provider: RunProvider, profile: AgentProfile, sameAgent: Bool)? {
+    /// "⌛ Usage limit reached · Claude Code · Personal is at its limit" with the reset time as a chip at the end.
+    private func header(auto: Bool) -> some View {
+        HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+            BannerMark(symbol: "hourglass", tint: NookTheme.amber)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textStrong)
+                Text(tr("ws.limit.accountAt", accountWords(run.provider, profileID: run.profileID)))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            TimelineView(.nookTicks(every: 30)) { context in
+                Text(line(now: context.date, auto: auto))
+                    .font(NookTheme.TextStyle.detail)
+                    .monospacedDigit()
+                    .foregroundStyle(NookTheme.amber)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .padding(.vertical, NookTheme.Spacing.xxs)
+                    .roundedBackground(NookTheme.amber.opacity(0.14), radius: NookTheme.Radius.chip)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// "Claude Code · Personal": the agent, with the account when the agent has several.
+    private func accountWords(_ provider: RunProvider, profileID: String) -> String {
+        guard let profile = app.profiles.profile(id: profileID), app.connectedProfiles(for: provider).count > 1 else {
+            return provider.displayName
+        }
+        return provider.displayName + " · " + AccountLabel.name(profile, app: app)
+    }
+
+    /// The other accounts with room left (`LimitAdvisor.options`), each with the model the session would go on with:
+    /// the model in use on another account of this agent, the one set for that agent in Settings on another agent.
+    private func suggestions() -> [LimitOption] {
         var states: [LimitState] = []
         var profiles: [String: AgentProfile] = [:]
         for provider in app.connectedProviders where workspace.executable(provider) != nil {
@@ -71,10 +113,24 @@ struct UsageLimitCard: View {
         if let index = states.firstIndex(where: { $0.provider == run.provider && $0.profileID == run.profileID }) {
             states[index].usedFraction = max(states[index].usedFraction ?? 0, 1)
         }
-        guard workspace.canTransfer(run.id),
-              let pick = LimitAdvisor.suggest(states: states, current: (run.provider, run.profileID), now: Date()),
-              let profile = profiles[pick.profileID] else { return nil }
-        return (pick.provider, profile, pick.sameAgent)
+        guard workspace.canTransfer(run.id) else { return [] }
+        return LimitAdvisor.options(states: states, current: (run.provider, run.profileID), now: Date()).compactMap { pick in
+            guard let profile = profiles[pick.profileID] else { return nil }
+            let model = pick.sameAgent ? run.model
+                : workspace.settings.sessionDefaults(for: run.projectPath).model(for: pick.provider)
+            return LimitOption(provider: pick.provider, profile: profile, sameAgent: pick.sameAgent,
+                               usedFraction: pick.usedFraction, model: model,
+                               modelName: modelName(model, provider: pick.provider, profileID: profile.id),
+                               title: accountWords(pick.provider, profileID: profile.id),
+                               badge: AccountTag.badge(profile, app: app))
+        }
+    }
+
+    /// The model by name; with none chosen, the agent's default by name when Nook knows it.
+    private func modelName(_ model: String, provider: RunProvider, profileID: String) -> String {
+        if !model.isEmpty, model != AutoModel.id { return app.modelMenuName(model, for: provider, profileID: profileID) }
+        return workspace.modelMenu(for: provider, profileID: profileID).choices.first(where: \.isDefault)?.name
+            ?? app.modelName(model, for: provider, profileID: profileID)
     }
 
     private func line(now: Date, auto: Bool) -> String {
@@ -88,5 +144,86 @@ struct UsageLimitCard: View {
         let clock = reset.formatted(date: Calendar.current.isDateInToday(reset) ? .omitted : .abbreviated, time: .shortened)
         let wait = AgentPathFormat.duration(reset.timeIntervalSince(now))
         return auto ? tr("ws.limit.resumesAt", clock, wait) : tr("ws.limit.resetsAt", clock, wait)
+    }
+}
+
+/// An account to go on with after a usage limit, as `UsageLimitCard` offers it.
+struct LimitOption {
+    let provider: RunProvider
+    let profile: AgentProfile
+    let sameAgent: Bool
+    let usedFraction: Double?
+    /// The model the session goes on with there ("" leaves it to the agent), and its name.
+    let model: String
+    let modelName: String
+    /// "Claude Code · Work".
+    let title: String
+    let badge: AccountTag?
+}
+
+/// One account in the usage limit banner: its logo with the account's badge, the agent and account, the model and
+/// what goes along, how much of its limit is used, and "Go on". The best one is lifted and its button is the main one.
+struct LimitOptionRow: View {
+    let option: LimitOption
+    let best: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            AgentLogo(agent: option.provider.displayName, size: 16)
+                .accountBadge(option.badge, size: 16, ring: best ? NookTheme.rowSelected : NookTheme.surface)
+                .padding(.trailing, option.badge == nil ? 0 : 3)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(option.title)
+                    .font(NookTheme.TextStyle.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .lineLimit(1)
+                Text(tr(option.sameAgent ? "ws.limit.optionSame" : "ws.limit.optionOther", option.modelName))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            usage
+            if best {
+                SmallPrimaryButton(title: tr("ws.limit.goOn"), action: choose)
+            } else {
+                SmallGhostButton(title: tr("ws.limit.goOn"), action: choose)
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.sm)
+        .roundedBackground(best ? NookTheme.rowSelected : Color.clear, radius: NookTheme.Radius.control)
+        .help(tr(option.sameAgent ? "ws.limit.switchHelpSame" : "ws.limit.switchHelp"))
+    }
+
+    /// How much of the account's limit is used, as a short bar; a dim empty bar when Nook does not know.
+    @ViewBuilder private var usage: some View {
+        if let used = option.usedFraction {
+            Bar(fraction: used, color: UsageTone.fill(used: Int(used * 100), calm: NookTheme.mint))
+                .frame(width: 44)
+                .help(tr("ws.limit.used", Int((used * 100).rounded())))
+        } else {
+            Bar(fraction: 0, color: NookTheme.textTertiary)
+                .frame(width: 44)
+                .opacity(0.5)
+                .help(tr("ws.limit.usedUnknown"))
+        }
+    }
+}
+
+/// The mark at the start of a card at the end of the timeline (usage limit, stopped, failed): its symbol in a soft circle of its tint.
+struct BannerMark: View {
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        Image(icon: symbol)
+            .font(NookTheme.font(12, .semibold))
+            .foregroundStyle(tint)
+            .frame(width: 26, height: 26)
+            .background(Circle().fill(tint.opacity(0.14)))
     }
 }
