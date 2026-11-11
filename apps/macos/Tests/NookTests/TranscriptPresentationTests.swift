@@ -100,6 +100,20 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertNil(thought)
     }
 
+    func testWithParallelStepsTheOneStillRunningStaysTheLiveLine() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build", .running), step("b", "Bash", "git status")], at: 2)
+        ], working: true)
+        XCTAssertEqual(rows.map(\.id), ["u1", "working", "step:b", "live"])
+        guard case .live(let current, _) = rows[3] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(current?.id, "a", "a later step that is done already does not hide the one that still runs")
+        XCTAssertEqual(TranscriptPresentation.activity([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build", .running), step("b", "Bash", "git status")], at: 2)
+        ]), .verifying(.build))
+    }
+
     func testTheThoughtBeforeTheRunningStepGoesWithTheLiveLine() {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Fix de test", at: 0),
