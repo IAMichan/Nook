@@ -52,15 +52,17 @@
 </script>
 
 <div class="detail">
-  <header>
-    <div class="title">{session.lastPrompt || session.summary || session.name}</div>
+  <header class="thread-head">
+    <div class="title"><span class="project">{session.project}</span><span class="slash">/</span><span class="name">{session.lastPrompt || session.summary || session.name}</span></div>
     <div class="meta faint">
       <span class="dot {session.status === 'waiting' ? 'waiting' : session.status === 'running' ? 'working' : session.status === 'failed' ? 'error' : session.status === 'done' ? 'unread' : ''}"></span>
-      {session.name} · {session.project} · {statusLabels[session.status]}{#if session.updated} · {ago(session.updated)}{/if}
+      {session.name} · {statusLabels[session.status]}{#if session.updated} · {ago(session.updated)}{/if}
       {#if session.linesAdded + session.linesRemoved > 0}<span> · <span class="add">+{session.linesAdded}</span> <span class="rem">−{session.linesRemoved}</span></span>{/if}
     </div>
   </header>
 
+  <div class="scroll">
+  <div class="thread-column body">
   {#if approval}<ApprovalCard {approval} />{/if}
   {#if question}{#key question.id}<QuestionCard request={question} />{/key}{/if}
 
@@ -76,7 +78,6 @@
     <p class="faint small">{session.isLinked ? `Sluit ${session.name} en start hem opnieuw, dan volgt Nook hem.` : `Koppel ${session.name} bij Instellingen › Agents zodat Nook nieuwe sessies vanaf de start volgt.`}</p>
   {/if}
 
-  <div class="scroll">
     {#if session.transcriptPath}
       <Conversation path={session.transcriptPath} refreshKey={session.updated ?? ""} />
     {:else}
@@ -91,7 +92,9 @@
       <DiffView lines={session.diff} max={220} />
     {/if}
   </div>
+  </div>
 
+  <div class="thread-column foot">
   {#if error}<p class="err">{error}</p>{/if}
 
   {#if canNook && ontakeover && session.status !== "detected"}
@@ -114,16 +117,24 @@
     <span class="spacer"></span>
     {#if canEnd}<button class="ghost danger" onclick={end}>Beëindig sessie</button>{/if}
   </div>
+  </div>
 </div>
 
 <style>
-  .detail { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
-  header .title { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
-  .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 2px; }
+  .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  /* thread header: the project, a slash and the thread's name, its state on the right. */
+  .thread-head { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; flex: none; }
+  .thread-head .title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; font-size: 14px; }
+  .project { color: var(--text2); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; flex: none; }
+  .slash { color: var(--text3); }
+  .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+  .body { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; padding-bottom: 16px; }
+  .foot { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; flex: none; }
   .add { color: var(--mint); }
   .rem { color: var(--coral); }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-  .steps { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .steps { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text2); }
   .step .mark { display: inline-block; width: 18px; }
   .step.done .mark { color: var(--mint); }
   .step.running .mark { color: var(--paper); }
@@ -131,8 +142,12 @@
   .step.failed .mark { color: var(--coral); }
   .step.todo { color: var(--text3); }
   .reply { white-space: pre-wrap; user-select: text; color: var(--text2); }
-  .reply-box { display: flex; gap: 6px; }
-  .reply-box input { flex: 1; }
+  /* The reply field in composer surface. */
+  .reply-box { display: flex; gap: 6px; align-items: center; padding: 6px 6px 6px 14px; border: 1px solid var(--line2); border-radius: var(--radius-composer); background: var(--surface); }
+  .reply-box:focus-within { border-color: color-mix(in srgb, var(--paper) 22%, var(--line2)); }
+  .reply-box input { flex: 1; border: 0; background: transparent; padding: 6px 0; font-size: 14px; }
+  .reply-box input:focus-visible { box-shadow: none; }
+  .reply-box button { border-radius: 999px; height: 32px; padding: 0 14px; }
   .actions { display: flex; gap: 6px; align-items: center; }
   .spacer { flex: 1; }
   .small { font-size: 12px; }
