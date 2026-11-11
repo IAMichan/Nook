@@ -274,6 +274,23 @@
   let resizing = $state(false);
   const MIN = { w: 480, h: 320 };
 
+  // The outermost pixels of the window belong to the system's own resize border, which sits outside the page, so a
+  // drag there takes the focus before any grip sees it. Such a drag is told apart by the window resizing right after
+  // the blur: the close waits a moment and is dropped when the size changes or the focus comes back meanwhile.
+  let lastResize = 0;
+  $effect(() => {
+    const off = getCurrentWindow().onResized(() => (lastResize = Date.now()));
+    return () => void off.then((f) => f());
+  });
+  function blurClose() {
+    if (barDraft.picking || resizing || Date.now() - openedAt <= 600) return;
+    const blurredAt = Date.now();
+    setTimeout(() => {
+      if (resizing || lastResize >= blurredAt - 100 || document.hasFocus()) return;
+      close();
+    }, 250);
+  }
+
   function resize(e: PointerEvent, grip: (typeof grips)[number]) {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -407,7 +424,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !barDraft.picking && !resizing && Date.now() - openedAt > 600 && close()} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={blurClose} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
 <div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
