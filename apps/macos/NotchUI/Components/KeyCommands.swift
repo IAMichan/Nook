@@ -61,7 +61,7 @@ final class KeyCommandCenter: ObservableObject {
     /// available yet, so a rule for them is not mistaken for a broken key.
     static let wiredCommands: Set<String> = Set([
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.dictate", "composer.historyPrevious",
-        "composer.historyNext", "composer.access", "composer.undo", "composer.redo", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle",
+        "composer.historyNext", "composer.access", "composer.undo", "composer.redo", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle", "shortcuts.cheatSheet",
         "session.new", "session.undo", "diff.toggle", "panel.reopenClosed", "selection.quote",
         "selection.ask", "session.previous", "session.next", "modelPicker.toggle", "session.settle", "session.pin",
         "session.interrupt", "session.back", "session.forward", "session.rename", "session.openInEditor",

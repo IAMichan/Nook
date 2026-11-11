@@ -586,6 +586,8 @@ final class AppModel: ObservableObject {
     /// The usage modal (limits, cost, tokens) is open over the panel: from the footer's usage button, the command palette,
     /// search and the composer's limits.
     @Published var usageModalOpen = false
+    /// The shortcut cheat sheet (`?`) is open (see `ShortcutCheatSheetView`).
+    @Published var cheatSheetOpen = false
 
     /// Opens the usage modal; with `tab`, on that part (the limits, from "All limits").
     func openUsageModal(_ tab: UsageModalTab? = nil) {
