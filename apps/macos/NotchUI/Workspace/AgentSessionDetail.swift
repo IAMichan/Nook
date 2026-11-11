@@ -473,7 +473,7 @@ struct AgentSessionDetail: View {
         let finishKey = FinishedSessions.key(session: session)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
         let isFinished = finishedMarks.contains(finishKey)
-        return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
+        return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }, screenshot: { app.captureFrontWindow() }) {
             Divider()
             Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
@@ -701,7 +701,7 @@ struct AgentSessionDetail: View {
 
     /// Attach a file, open the whole conversation in Nook without a message, or its folder or a terminal there.
     private func pastMenu(_ session: PastSession, canContinue: Bool) -> some View {
-        ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
+        ComposerPlusMenu(attach: { attachFile(in: session.cwd) }, screenshot: { app.captureFrontWindow() }) {
             if canContinue {
                 Divider()
                 Button(tr("agents.nook.open")) { perform { try await app.continueInNook(session) } }

@@ -491,11 +491,16 @@ struct ComposerSuggestionList: View {
 struct ComposerPlusMenu<Extra: View>: View {
     var attachLabel = tr("chat.attachShort")
     let attach: () -> Void
+    /// A picture of the window in front, added to the message: given by every composer that writes to an agent.
+    var screenshot: (() -> Void)? = nil
     @ViewBuilder var extra: () -> Extra
 
     var body: some View {
         Menu {
             Button(action: attach) { Label(attachLabel, systemImage: "paperclip") }
+            if let screenshot {
+                Button(action: screenshot) { Label(tr("compose.plus.screenshot"), systemImage: "camera.viewfinder") }
+            }
             extra()
         } label: {
             ComposerIcon(symbol: "plus")
