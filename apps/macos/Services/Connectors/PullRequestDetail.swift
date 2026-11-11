@@ -524,6 +524,14 @@ enum PullRequestDetailParser {
         }
     }
 
+    /// The repository's `methods` narrowed by the base branch's rules (`GET /repos/{repo}/rules/branches/{branch}`): every
+    /// `pull_request` rule with `allowed_merge_methods` must allow a method. A rule without that list allows all.
+    static func methods(_ methods: [PullRequestMergeMethod], rules: [[String: Any]]) -> [PullRequestMergeMethod] {
+        let allowed = rules.filter { ($0["type"] as? String) == "pull_request" }
+            .compactMap { ($0["parameters"] as? [String: Any])?["allowed_merge_methods"] as? [String] }
+        return methods.filter { method in allowed.allSatisfy { $0.contains(method.rawValue) } }
+    }
+
     /// Check runs (GitHub Actions and apps) and the older commit statuses, in one list: failing first, then running.
     static func checks(runs: [[String: Any]], statuses: [[String: Any]]) -> [PullRequestCheck] {
         var result = runs.map { run -> PullRequestCheck in

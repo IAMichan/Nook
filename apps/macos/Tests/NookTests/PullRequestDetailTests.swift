@@ -77,6 +77,19 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertFalse(detail.canBypass)
     }
 
+    func testRulesetsNarrowTheMergeMethods() throws {
+        let rules = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(#"""
+        [{"type": "deletion"}, {"type": "pull_request", "parameters": {"allowed_merge_methods": ["squash"]}}]
+        """#.utf8)) as? [[String: Any]])
+        let all = PullRequestMergeMethod.allCases
+        XCTAssertEqual(PullRequestDetailParser.methods(all, rules: rules), [.squash])
+        XCTAssertEqual(PullRequestDetailParser.methods([.merge, .rebase], rules: rules), [])
+        XCTAssertEqual(PullRequestDetailParser.methods(all, rules: [["type": "pull_request", "parameters": [String: Any]()]]), all)
+        XCTAssertEqual(PullRequestDetailParser.methods(all, rules: []), all)
+        XCTAssertEqual(PullRequestQuickAction.mergeMethod(preferred: .merge,
+                                                          allowed: PullRequestDetailParser.methods(all, rules: rules)), .squash)
+    }
+
     func testAnAdminMayMergePastWhatHoldsItBack() throws {
         var object = try json(pull)
         object["mergeable_state"] = "blocked"
