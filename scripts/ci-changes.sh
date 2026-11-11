@@ -20,8 +20,8 @@ paths_for() {
     packages) echo "packages/core/ .github/workflows/packages.yml .github/actions/" ;;
     relay) echo "apps/relay/ .github/workflows/relay.yml" ;;
     tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;
-    # zizmor: security audit of the workflows and actions.
-    workflows) echo ".github/workflows/ .github/actions/ .github/zizmor.yml" ;;
+    # zizmor: security audit of the workflows, actions and Dependabot settings.
+    workflows) echo ".github/workflows/ .github/actions/ .github/zizmor.yml .github/dependabot.yml" ;;
     # node --test for the scripts the community workflows load (PR overview, welcome).
     github_scripts) echo ".github/scripts/" ;;
     # lychee: relative links and #anchors in Markdown. A renamed heading or moved file breaks links elsewhere too.
