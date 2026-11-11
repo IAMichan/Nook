@@ -40,7 +40,11 @@ final class DirectoryListing {
     static func stamp(_ path: String) -> Stamp? {
         var info = stat()
         guard stat(path, &info) == 0 else { return nil }
+        #if canImport(Darwin)
         let time = info.st_mtimespec
+        #else
+        let time = info.st_mtim  // Glibc's name (the core tests on Linux)
+        #endif
         return Stamp(modified: Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9),
                      size: Int(info.st_size))
     }

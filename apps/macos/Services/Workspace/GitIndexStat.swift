@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#endif
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
@@ -109,11 +112,18 @@ enum GitIndexStat {
     /// `lstat` of `root/path` in the index's terms; nil when the file is missing.
     static func lstat(root: String, path: String) -> FileStat? {
         var info = stat()
+        #if canImport(Darwin)
         guard Darwin.lstat(root + "/" + path, &info) == 0 else { return nil }
-        return FileStat(ctimeSeconds: UInt32(truncatingIfNeeded: info.st_ctimespec.tv_sec),
-                        ctimeNanoseconds: UInt32(truncatingIfNeeded: info.st_ctimespec.tv_nsec),
-                        mtimeSeconds: UInt32(truncatingIfNeeded: info.st_mtimespec.tv_sec),
-                        mtimeNanoseconds: UInt32(truncatingIfNeeded: info.st_mtimespec.tv_nsec),
+        let ctime = info.st_ctimespec, mtime = info.st_mtimespec
+        #else
+        // Glibc (the core tests on Linux) names the times st_ctim and st_mtim.
+        guard Glibc.lstat(root + "/" + path, &info) == 0 else { return nil }
+        let ctime = info.st_ctim, mtime = info.st_mtim
+        #endif
+        return FileStat(ctimeSeconds: UInt32(truncatingIfNeeded: ctime.tv_sec),
+                        ctimeNanoseconds: UInt32(truncatingIfNeeded: ctime.tv_nsec),
+                        mtimeSeconds: UInt32(truncatingIfNeeded: mtime.tv_sec),
+                        mtimeNanoseconds: UInt32(truncatingIfNeeded: mtime.tv_nsec),
                         device: UInt32(truncatingIfNeeded: info.st_dev), inode: UInt32(truncatingIfNeeded: info.st_ino),
                         uid: info.st_uid, gid: info.st_gid, size: UInt32(truncatingIfNeeded: info.st_size))
     }
