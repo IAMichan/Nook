@@ -1,0 +1,43 @@
+name: Core tests
+
+# Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only these.
+#
+# scripts/core-tests.sh builds the Foundation-only part of the macOS app with its NookTests into a throwaway Swift
+# package and runs it. AGENTS.md asks every contributor to run it, and it is the only test suite of the macOS app that
+# works without a Mac, so it has to keep compiling on Linux too: a source that needs an Apple-only framework belongs in
+# its EXCLUDE_SOURCES list. Ubuntu only; the full NookTests run on macOS in build.yml.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # verified-check looks up the markers of earlier runs
+
+jobs:
+  test:
+    name: scripts/core-tests.sh
+    if: github.event.action != 'closed' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Keep this list in sync with scripts/ci-changes.sh.
+      - name: Already verified on these inputs?
+        id: verified
+        uses: ./.github/actions/verified-check
+        with:
+          name: core-tests
+          paths: apps/macos scripts/core-tests.sh .github/workflows/core-tests.yml .github/actions
+      - name: Test
+        if: steps.verified.outputs.verified != 'true'
+        run: |
+          swift --version
+          scripts/core-tests.sh
+      - uses: ./.github/actions/verified-mark
+        if: steps.verified.outputs.verified != 'true'
+        with:
+          name: core-tests
+          fingerprint: ${{ steps.verified.outputs.fingerprint }}
