@@ -72,6 +72,7 @@ extension WorkspaceManager {
                       openedPullRequest: { [weak self] link in
                           guard let self else { return }
                           self.openPullRequests[id] = link
+                          PullRequestSync.shared.opened(id, url: link, branch: self.run(id)?.branch)
                           self.pullRequestCreated?(id, link)
                           self.watchCreatedPullRequest(id, url: link)
                       },
