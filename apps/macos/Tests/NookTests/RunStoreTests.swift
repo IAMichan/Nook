@@ -36,17 +36,26 @@ final class RunStoreTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         var runs = [TestData.run(status: .running), TestData.run(status: .completed), TestData.run(status: .failed)]
         try store.saveRuns(runs)
-        XCTAssertEqual(try Data(contentsOf: file), try encoder.encode(runs))
+        try assertSameJSON(try Data(contentsOf: file), try encoder.encode(runs))
 
         runs[1].title = "Renamed"
         runs.remove(at: 2)
         runs.insert(TestData.run(status: .stopped), at: 0)
         try store.saveRuns(runs)
-        XCTAssertEqual(try Data(contentsOf: file), try encoder.encode(runs))
+        try assertSameJSON(try Data(contentsOf: file), try encoder.encode(runs))
         XCTAssertEqual(RunStore(directory: folder).loadRuns().map(\.title), runs.map(\.title))
 
         try store.saveRuns([])
         XCTAssertEqual(try Data(contentsOf: file), Data("[]".utf8))
+    }
+
+    /// The same JSON value: `JSONEncoder` without `.sortedKeys` does not promise one key order, so two encodings of the
+    /// same runs can differ byte for byte (they did on the CI runner).
+    private func assertSameJSON(_ written: Data, _ expected: Data, file: StaticString = #filePath, line: UInt = #line) throws {
+        let lhs = try JSONSerialization.jsonObject(with: written) as? NSArray
+        let rhs = try JSONSerialization.jsonObject(with: expected) as? NSArray
+        XCTAssertNotNil(lhs, file: file, line: line)
+        XCTAssertEqual(lhs, rhs, file: file, line: line)
     }
 
     func testActiveRunsAreNotRunningAfterRestart() throws {
