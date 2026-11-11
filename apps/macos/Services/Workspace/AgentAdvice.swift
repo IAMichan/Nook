@@ -14,6 +14,8 @@ struct LimitSuggestion: Equatable, Sendable {
     var provider: RunProvider
     var profileID: String
     var sameAgent: Bool
+    /// How much of the suggested account's limit is used, 0...1; nil when unknown.
+    var usedFraction: Double? = nil
     /// Seconds until the current instance resets, for "or wait N".
     var resumeIn: TimeInterval?
 }
@@ -23,16 +25,26 @@ enum LimitAdvisor {
     static let freeBelow = 0.7
 
     static func suggest(states: [LimitState], current: (provider: RunProvider, profileID: String), now: Date) -> LimitSuggestion? {
+        options(states: states, current: current, now: now).first
+    }
+
+    /// Every account to go on with, best first: same agent first (its context and skills carry over), then the least
+    /// used of the rest; accounts whose use is unknown only after those, same agent first again. Accounts that are
+    /// nearly full themselves are left out. Empty while the current account still has room.
+    static func options(states: [LimitState], current: (provider: RunProvider, profileID: String), now: Date) -> [LimitSuggestion] {
         guard let me = states.first(where: { $0.provider == current.provider && $0.profileID == current.profileID }),
-              let used = me.usedFraction, used >= limitedAt else { return nil }
+              let used = me.usedFraction, used >= limitedAt else { return [] }
         let others = states.filter { !($0.provider == current.provider && $0.profileID == current.profileID) }
         let known = others.filter { ($0.usedFraction ?? 1) < freeBelow }.sorted { ($0.usedFraction ?? 1) < ($1.usedFraction ?? 1) }
         let unknown = others.filter { $0.usedFraction == nil }
-        // Same agent first (its context and skills carry over), then the least used of the rest. Unknown only as a last resort.
-        let pick = known.first { $0.provider == current.provider } ?? known.first ?? unknown.first { $0.provider == current.provider } ?? unknown.first
-        guard let pick else { return nil }
-        return LimitSuggestion(provider: pick.provider, profileID: pick.profileID, sameAgent: pick.provider == current.provider,
-                               resumeIn: me.resetAt.map { max(0, $0.timeIntervalSince(now)) })
+        func sameFirst(_ list: [LimitState]) -> [LimitState] {
+            list.filter { $0.provider == current.provider } + list.filter { $0.provider != current.provider }
+        }
+        let resumeIn = me.resetAt.map { max(0, $0.timeIntervalSince(now)) }
+        return (sameFirst(known) + sameFirst(unknown)).map {
+            LimitSuggestion(provider: $0.provider, profileID: $0.profileID, sameAgent: $0.provider == current.provider,
+                            usedFraction: $0.usedFraction, resumeIn: resumeIn)
+        }
     }
 }
 
