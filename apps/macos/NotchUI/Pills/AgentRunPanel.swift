@@ -1508,6 +1508,7 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             ConnectorSignInBanner(runID: runID)
+            ResourceWaitStrip(runID: runID)
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)
             if !sideChats.isEmpty { SideChatStrip(workspace: workspace, chats: sideChats) }

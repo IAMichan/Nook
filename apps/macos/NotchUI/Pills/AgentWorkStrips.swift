@@ -68,6 +68,32 @@ struct FreshConversationStrip: View {
     }
 }
 
+/// The commands this agent runs wait for the Mac to have room again (`AgentGovernor`): what you need to know, and a way to
+/// let them go on anyway. Shown only while they wait.
+struct ResourceWaitStrip: View {
+    let runID: UUID
+    @ObservedObject private var status = AgentGovernorStatus.shared
+
+    var body: some View {
+        if status.throttles[runID] == .paused {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(icon: "pause.circle").font(NookTheme.font(11, .semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tr("ws.governor.paused.title")).foregroundStyle(NookTheme.paper.opacity(0.85))
+                    Text(tr("ws.governor.paused.detail")).foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: 6)
+                Button(tr("ws.governor.letGoOn")) { AgentGovernor.shared.letGoOn(runID) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(NookTheme.iris)
+                    .help(tr("ws.governor.letGoOn.help"))
+            }
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
+        }
+    }
+}
+
 struct TasksStrip: View {
     let steps: [RunTaskStep]
     @State private var open = false

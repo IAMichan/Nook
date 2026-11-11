@@ -39,14 +39,14 @@ if [ "$(git -C "$WORK/libsignal" rev-parse HEAD)" != "$LIBSIGNAL_REF" ] || [ ! -
   git -C "$WORK/libsignal" fetch --quiet origin "$LIBSIGNAL_REF"
   git -C "$WORK/libsignal" checkout --quiet "$LIBSIGNAL_REF"
   echo "Building libsignal $LIBSIGNAL_REF for mautrix-signal $SIGNAL_VERSION"
-  (cd "$WORK/libsignal" && MACOSX_DEPLOYMENT_TARGET=15.0 RUSTFLAGS="-Ctarget-feature=-crt-static" RUSTC_WRAPPER="" \
+  (cd "$WORK/libsignal" && MACOSX_DEPLOYMENT_TARGET=15.0 RUSTFLAGS="-Ctarget-feature=-crt-static" RUSTC_WRAPPER="" "$ROOT/scripts/build-slot.sh" \
     cargo build -p libsignal-ffi --profile=release)
 fi
 
 # 3. The helper itself.
 VERSION="$(git -C "$ROOT" rev-parse --short HEAD)"
 echo "Building nook-chatd $VERSION"
-(cd "$SRC" && MACOSX_DEPLOYMENT_TARGET=15.0 CGO_ENABLED=1 CGO_LDFLAGS="-L$WORK/libsignal/target/release" \
+(cd "$SRC" && MACOSX_DEPLOYMENT_TARGET=15.0 CGO_ENABLED=1 CGO_LDFLAGS="-L$WORK/libsignal/target/release" "$ROOT/scripts/build-slot.sh" \
   go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$OUT/nook-chatd" .)
 
 # Only macOS's own libraries: anything from Homebrew would be missing on another Mac.
