@@ -11,7 +11,7 @@ import Combine
 /// ~/Library/Logs/Nook, and the install is written to the action log.
 /// A downloaded build (the release .dmg or .zip) has no checkout: it asks GitHub Releases for a newer version instead
 /// (`ReleaseBuild`), and an install downloads the release's .zip, checks its Ed25519 signature, unpacks it and puts the
-/// app in place, behind the same button., a downloaded build asks every few minutes (a
+/// app in place, behind the same button. A downloaded build asks every few minutes (a
 /// conditional request, so an unchanged list costs GitHub nothing), shows the download's progress, lists what the
 /// releases since this build brought, and says so when a restart did not start the new version.
 @MainActor
@@ -673,7 +673,7 @@ final class AppUpdater: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: Self.receiptKey) else { return }
         UserDefaults.standard.removeObject(forKey: Self.receiptKey)
         guard let saved = try? JSONDecoder().decode(UpdateReceipt.self, from: data) else { return }
-        // Restarted into a release update, but this is still the old version ("not applied" check). A
+        // Restarted into a release update, but this is still the old version (the "not applied" check). A
         // rollback says so itself, and from Xcode the new build is yours to start.
         if release != nil, UpdateTrialRunner.rollbackToReport == nil, !isFailed,
            let missing = UpdateApplied.notApplied(saved, running: build) {

@@ -105,7 +105,7 @@ enum CloneLayout {
     /// `https://github.com/owner/repo`. GitLab pages are cut at `/-/`; on github.com, bitbucket.org, codeberg.org and
     /// the like everything below `owner/repo` goes; on other hosts (Gitea, Forgejo) a page route right after
     /// `owner/repo` does. The query and fragment are dropped. A path ending in `.git`, an ssh:// or scp-style address, and
-    /// anything else that is no page come back as typed (trimmed)..
+    /// anything else that is no page come back as typed (trimmed).
     static func repositoryURL(fromPage raw: String) -> String {
         let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = clean.lowercased()

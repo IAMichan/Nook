@@ -53,7 +53,7 @@ struct ModelPickerItem: Identifiable {
     let id: String
     let title: String
     var brand: BrandLogo? = nil
-    /// The badge on the model's logo: which account it belongs to, when the agent has several (as rows).
+    /// The badge on the model's logo: which account it belongs to, when the agent has several.
     var account: AccountTag? = nil
     /// Drawn instead of a logo, for an action.
     var symbol: String? = nil

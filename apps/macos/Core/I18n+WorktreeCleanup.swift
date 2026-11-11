@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for worktree cleanup it: more rules (quiet, unchanged, deleted
+// Texts for worktree cleanup: the rules (quiet, unchanged, deleted
 // session), what counts as local changes, the report of the latest cleanup and the per-project switch.
 
 let worktreeCleanupTranslations: [AppLanguage: [String: String]] = [

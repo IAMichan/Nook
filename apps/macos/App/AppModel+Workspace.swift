@@ -86,8 +86,8 @@ final class WorkspaceWindowController {
             // Dock and ⌘Tab.
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            // An empty unified toolbar makes the title bar a taller row with the traffic lights in its middle, as in
-            //: the sidebar's head (Nook, talk, split view) and a session's header share that row
+            // An empty unified toolbar makes the title bar a taller row with the traffic lights in its middle: the
+            // sidebar's head (Nook, talk, split view) and a session's header share that row
             // (`PanelSidebarMetrics.titleBand`). Clicks in it still reach the content.
             window.toolbar = NSToolbar(identifier: "NookWorkspace")
             window.toolbarStyle = .unified

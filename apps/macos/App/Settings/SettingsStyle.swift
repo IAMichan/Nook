@@ -51,8 +51,8 @@ extension SettingsSection {
         }
     }
 
-    /// The line symbol in front of the page's name in the sidebar: one quiet stroke icon per page
-    /// has, so the column reads as a list of words rather than a row of tiles.
+    /// The line symbol in front of the page's name in the sidebar: one quiet stroke icon per page, so the
+    /// column reads as a list of words rather than a row of tiles.
     var sidebarSymbol: String {
         switch self {
         case .start: return "house"

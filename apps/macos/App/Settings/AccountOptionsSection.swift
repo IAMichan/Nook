@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What lets you set per provider instance, for any agent account in Settings › Agents: the switch that turns it
+/// What you can set for any agent account in Settings › Agents: the switch that turns it
 /// off, the program it runs, the arguments added to every launch, the environment variables it runs with, and the models
 /// that no list offers. Folded away under "Advanced", because most accounts need none of it.
 struct AccountOptionsSection: View {

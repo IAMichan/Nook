@@ -81,8 +81,7 @@ struct TranscriptReply<Extras: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if !text.isEmpty {
-                // Headings, lists, code and tables as blocks (phone reads an answer this way), with diagrams
-                // and math drawn as on the Mac.
+                // Headings, lists, code and tables as blocks, with diagrams and math drawn as on the Mac.
                 MarkdownBlocksView(text: text, color: failed ? Theme.coral : Theme.textStrong)
                     .contextMenu { MessageCopyButton(text: text) }
             }

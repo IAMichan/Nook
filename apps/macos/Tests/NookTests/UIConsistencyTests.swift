@@ -138,7 +138,7 @@ final class UIConsistencyTests: XCTestCase {
     }
 
     /// Every icon is drawn through `Image(icon:)` or `NookIcon.nsImage`, so `NookIcon` turns it into Nook's Lucide icon
-    /// (set) and the app keeps one icon style; a raw SF Symbol would bypass that table.
+    /// and the app keeps one icon style; a raw SF Symbol would bypass that table.
     func testIconsGoThroughNookIcon() {
         let found = offenders(#"(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:"#) {
             $0 == "NotchUI/Theme/NookIcon.swift"

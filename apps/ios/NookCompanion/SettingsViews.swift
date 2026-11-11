@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Settings on the phone, the last tab along the bottom, laid out: grouped cards of rows,
+// Settings on the phone, the last tab along the bottom, laid out as grouped cards of rows,
 // each with its icon. What the phone knows about the Mac and how it reaches it, what it does on this iPhone, the plan
 // limits the Mac reports, pairing, and the app. What Nook does is still set on the Mac (Settings there is the one place
 // for Nook's own configuration); these are the phone's own choices and views.

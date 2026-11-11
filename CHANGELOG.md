@@ -54,7 +54,7 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - Dependabot updates for the Tauri app (Cargo and npm) and `nook-chatd` (Go modules).
 - `CODEOWNERS`, `.editorconfig`, and `.gitattributes`.
 - A *Related issues* section in the pull request template.
-- Agent transcripts read more like Code's: the thought behind the running step shows above it, a message sent while
+- Agent transcripts read more clearly: the thought behind the running step shows above it, a message sent while
   the agent worked splits its turn's fold ("Continued for 20s"), a stopped turn stays open ("You stopped after 12s"),
   compactions, API errors and usage limits stay in sight, and a command opens to its output.
 - iPhone companion: repeated commands are carried out once (an LRU receipt store), protocol and app versions with

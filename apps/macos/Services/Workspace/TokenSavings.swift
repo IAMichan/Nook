@@ -106,7 +106,7 @@ enum ReturnCompaction {
 
 /// Where the agent summarizes by itself, for the mark on the context meter: Nook's own limit (`SizeCompaction`) for an
 /// agent that compacts on `/compact`, and the agent's own threshold where it tells it (Claude Code's
-/// `autoCompactWindow`, #29220), whichever comes first.
+/// `autoCompactWindow`), whichever comes first.
 enum AutoCompactMark {
     /// Claude Code compacts this far short of its `autoCompactWindow` (measured 150,000 → 117,000 with Claude Code
     /// 2.1.305, for every catalog model).
@@ -175,8 +175,9 @@ enum SizeCompaction {
 }
 
 /// Claude Code's `ENABLE_TOOL_SEARCH`. With `auto` (its default) it sends every MCP tool schema in full while they fit in a
-/// share of the context window, which they do on 1M models: every request then carries them all, and measured
-/// about ten times the cache writes per session. Nook turns tool search on, unless you set something else yourself.
+/// share of the context window, which they do on 1M models: every request then carries them all, which
+/// measured about ten times the cache writes per session. Nook turns tool search on, unless you set something else
+/// yourself.
 enum ClaudeToolSearch {
     /// The value Nook sets, or nil to leave yours: `auto` and `auto:N` (0 < N < 100) become `true`. `auto:0` already
     /// means on, `auto:100` off, and `true` or `false` are a choice of yours.

@@ -56,7 +56,7 @@ struct NookPalette: Equatable, Sendable {
 
     /// Nook's own dark look: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
     /// white over it, and separation by 8 % white lines and hover fills rather than grey panels. Text is neutral-100
-    /// with neutral-400 for what is quieter; state colors are Tailwind's 400 shades. Nook's accent (the main action) is soft white where has blue.
+    /// with neutral-400 for what is quieter; state colors are Tailwind's 400 shades. Nook's accent (the main action) is soft white.
     static let nookDark = NookPalette(
         isDark: true,
         canvas: 0x000000, well: 0x0A0A0A, surface: 0x111111, field: 0x0D0D0D, graphite: 0x191A1D, smoke: 0x242424,
@@ -258,7 +258,7 @@ struct NookColorTheme: Identifiable, Equatable, Sendable {
     /// Imported by the user (can be removed); built-in themes cannot.
     var custom = false
 
-    /// Nook's own look (black and lines, with Nook's white accent), and the default for both appearances.
+    /// Nook's own look (a black canvas and lines, with a white accent), and the default for both appearances.
     static let nook = NookColorTheme(id: "nook", name: "Nook", dark: .nookDark, light: .nookLight)
     /// Cool and deep: a blue-black night and a pale blue-grey day.
     static let midnight = NookColorTheme(

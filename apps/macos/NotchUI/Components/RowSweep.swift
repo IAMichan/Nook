@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Press a row's button and drag up or down to take every row of its group in between along; Escape cancels (as 
-/// settle sweep). Shared by the Agents list (Settle, Un-settle and Wake on many sessions) and the pull request lists
+/// Press a row's button and drag up or down to take every row of its group in between along; Escape cancels.
+/// Shared by the Agents list (Settle, Un-settle and Wake on many sessions) and the pull request lists
 /// (Close on many requests). Rows tell it where they are with `sweepRow`, the button that starts it carries `sweeps`;
 /// what the sweep does with the rows is the caller's.
 @MainActor

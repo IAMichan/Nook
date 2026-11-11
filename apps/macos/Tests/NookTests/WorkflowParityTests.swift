@@ -1,6 +1,6 @@
 import XCTest
 
-/// The workflow features that follow: the message limit, snooze options, auto-settle rules for pull requests,
+/// The workflow features: the message limit, snooze options, auto-settle rules for pull requests,
 /// the sweep's range, pull request prompt links, the model picker's keys and the dictation context.
 final class WorkflowParityTests: XCTestCase {
     // MARK: Message limit and paste as text

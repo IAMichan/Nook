@@ -525,7 +525,7 @@ struct TimelineSystemDivider<Detail: View>: View {
 
 /// Where the session went on with another agent, account, model or effort: "⇄ Context handoff  [logo] Sonnet 5.5 →
 /// [logo] GPT-5 High" between the turns when the agent changed, "Sonnet 5.5 → Opus 5.5 High" when only the model or
-/// effort did., each logo carries its account's badge (initials, or the color you gave it) when the agent has
+/// effort did. Each logo carries its account's badge (initials, or the color you gave it) when the agent has
 /// several accounts, so a switch to another account reads "[logo·WO] Sonnet 5.5 → [logo·PE] Sonnet 5.5", the logo a
 /// step dimmer behind its badge, the model in the agent's color, and "account · model" under the pointer.
 struct ModelSwitchDivider: View {
