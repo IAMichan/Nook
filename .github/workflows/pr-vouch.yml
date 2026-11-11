@@ -1,0 +1,107 @@
+name: PR vouch
+
+# Labels every pull request by how far its author is trusted, so a maintainer can read an unfamiliar pull request
+# differently from one by a regular contributor: vouch:trusted (collaborator, bot, or listed in .github/VOUCHED.td),
+# vouch:unvouched (unknown), vouch:denounced (listed with a leading "-"). It only labels; it blocks nothing. Comment
+# `/recheck-vouch` on a pull request to run it again, and every open pull request is rechecked when VOUCHED.td changes
+# on main. It runs on pull_request_target so fork pull requests get a label too, and never checks out the pull request's
+# code. Runs on ubuntu and takes seconds. The labels are defined in .github/labels.yml.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
+  push:
+    branches: [main]
+    paths:
+      - '.github/VOUCHED.td'
+      - '.github/workflows/pr-vouch.yml'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  targets:
+    name: Collect pull requests
+    # Most comments are not a recheck command: skip them before a runner starts.
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/recheck-vouch'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      targets: ${{ steps.collect.outputs.targets }}
+    steps:
+      - id: collect
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            let targets;
+            if (context.eventName === 'pull_request_target') {
+              const pr = context.payload.pull_request;
+              targets = [{ number: pr.number, user: pr.user.login }];
+            } else if (context.eventName === 'issue_comment') {
+              const issue = context.payload.issue;
+              targets = [{ number: issue.number, user: issue.user.login }];
+            } else {
+              const pulls = await github.paginate(github.rest.pulls.list, {
+                ...context.repo, state: 'open', per_page: 100,
+              });
+              targets = pulls.map((pull) => ({ number: pull.number, user: pull.user.login }));
+            }
+            core.setOutput('targets', JSON.stringify(targets));
+
+  label:
+    name: Label #${{ matrix.target.number }}
+    needs: targets
+    if: needs.targets.outputs.targets != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.target.number }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        target: ${{ fromJson(needs.targets.outputs.targets) }}
+    steps:
+      - id: vouch
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          user: ${{ matrix.target.user }}
+          allow-fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ matrix.target.number }}
+          VOUCH_STATUS: ${{ steps.vouch.outputs.status }}
+        with:
+          script: |
+            const number = Number(process.env.PR_NUMBER);
+            const status = process.env.VOUCH_STATUS;
+            const managed = ['vouch:trusted', 'vouch:unvouched', 'vouch:denounced'];
+            const next =
+              status === 'denounced' ? 'vouch:denounced'
+              : ['bot', 'collaborator', 'vouched'].includes(status) ? 'vouch:trusted'
+              : 'vouch:unvouched';
+
+            const current = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              ...context.repo, issue_number: number, per_page: 100,
+            });
+            for (const label of current) {
+              if (managed.includes(label.name) && label.name !== next) {
+                await github.rest.issues.removeLabel({
+                  ...context.repo, issue_number: number, name: label.name,
+                }).catch((error) => { if (error.status !== 404) throw error; });
+              }
+            }
+            if (!current.some((label) => label.name === next)) {
+              await github.rest.issues.addLabels({
+                ...context.repo, issue_number: number, labels: [next],
+              });
+            }
+            core.info(`PR #${number}: ${status} -> ${next}`);

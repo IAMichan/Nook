@@ -14,6 +14,10 @@ can tell us something new.
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
 | `labeler.yml` | ubuntu, seconds | adds area labels to every pull request from the paths it changes (`.github/labeler.yml`) |
+| `pr-size.yml` | ubuntu, seconds | labels every pull request `size:XS` to `size:XXL` from its changed lines (tests excluded) |
+| `pr-vouch.yml` | ubuntu, seconds | labels every pull request `vouch:trusted`, `vouch:unvouched` or `vouch:denounced` from its author and `.github/VOUCHED.td`; it blocks nothing. Comment `/recheck-vouch` to run it again |
+| `agent-context-budget.yml` | ubuntu, seconds | fails a pull request that makes the root `AGENTS.md` or `CLAUDE.md` larger than on the base branch (`scripts/agent-context-size.sh`), unless a maintainer adds the `agent-context-increase` label |
+| `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later (`keep open` exempts) |
 | `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
 
 A workflow also runs when its own file changes (and `.github/actions/**` for the ones that use it).

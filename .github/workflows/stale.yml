@@ -1,0 +1,56 @@
+name: Stale
+
+# Keeps the issue and pull request lists short as more people contribute:
+#  - an issue labeled `needs more info` is closed 7 days after the question, unless the reporter replies;
+#  - an open pull request from an author who is not vouched (`vouch:unvouched`) with no activity for 30 days gets the
+#    `stale` label, and is closed 14 days later unless there is new activity. Pull requests from collaborators and
+#    vouched contributors, drafts, and anything labeled `keep open` are never touched.
+# It only reads labels and comments and runs no pull request code. Runs on ubuntu once a day and takes seconds.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  needs-more-info:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          only-issue-labels: needs more info
+          # The label is set by hand, so nothing is marked stale first: the clock starts when the label is added.
+          days-before-issue-stale: -1
+          days-before-issue-close: 7
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          close-issue-reason: not_planned
+          close-issue-message: >-
+            Closing: no reply in 7 days after we asked for more information.
+            Comment with the missing details and we will reopen it.
+          operations-per-run: 200
+
+  stale-pull-requests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          only-pr-labels: vouch:unvouched
+          exempt-pr-labels: keep open
+          exempt-draft-pr: true
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: stale
+          stale-pr-message: >-
+            This pull request has had no activity for 30 days. It will be closed in 14 days unless there is new
+            activity. Push a commit or leave a comment to keep it open.
+          close-pr-message: >-
+            Closing: no activity for 44 days. Feel free to reopen it when you pick it up again.
+          operations-per-run: 200
