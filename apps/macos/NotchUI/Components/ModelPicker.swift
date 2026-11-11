@@ -4,7 +4,7 @@ import SwiftUI
 // own brain in the chat open the same `ModelPicker`: one width, a rail of places on the left (this Mac's local models
 // first where the caller can run them, then choices that span every agent such as "Auto", then one logo per agent or
 // service, once per account when it has several) with a "+" at its foot that opens Settings, and on the right the shown
-// place's column: its name, the account, rows above the search ("send to several models"), the search field, the models
+// place's column: its name, the account, optional rows above the search, the search field, the models
 // (a star for favorites, "New", a model of your own typed in the search) and a link to Settings. Callers only hand over the places and the rows; the panel is drawn here.
 
 enum ModelPickerStyle {
@@ -87,7 +87,7 @@ struct ModelPicker<Above: View>: View {
     let settingsTitle: String
     /// Opens the Settings section where places and models are set up; the "+" and the link at the bottom both go there.
     let openSettings: () -> Void
-    /// Rows above the search for a place ("send to several models").
+    /// Rows above the search for a place.
     @ViewBuilder var above: (ModelPickerPlace) -> Above
     /// A footer under the rail and the column: what is chosen for the session beside the model (`ModelPickerOptions`).
     var footer: AnyView? = nil
