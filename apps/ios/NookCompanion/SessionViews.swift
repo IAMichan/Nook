@@ -253,6 +253,11 @@ struct SessionDetailView: View {
                     SnoozeCustomItems(session: session, actions: actions) { manage(session, $0) }
                 } label: { Label("Snooze", systemImage: "clock") }
             }
+            if actions.contains(.mainThreadOn) {
+                Button { manage(session, .mainThreadOn) } label: { Label("Make main thread", systemImage: "arrow.triangle.branch") }
+            } else if actions.contains(.mainThreadOff) {
+                Button { manage(session, .mainThreadOff) } label: { Label("Stop main thread", systemImage: "arrow.triangle.branch") }
+            }
             if actions.contains(.rename) {
                 Button { newName = session.title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
             }
@@ -519,6 +524,7 @@ struct NewSessionView: View {
     @State private var agent = ""
     @State private var project = ""
     @State private var plan = false
+    @State private var mainThread = false
     @State private var worktree = false
     /// The model id for the chosen agent ("" is the agent's own default), from the Mac's composer menu.
     @State private var model = ""
@@ -599,6 +605,18 @@ struct NewSessionView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(plan ? .isSelected : [])
+                            }
+                            // The Mac composer's "Main thread": the agent hands its work to sub-threads that report back.
+                            if chosenAgent?.canMainThread == true {
+                                ComposerDivider()
+                                Button { withAnimation(Theme.reveal) { mainThread.toggle() } } label: {
+                                    ComposerPill(symbol: "arrow.triangle.branch", text: String(localized: "Main thread"),
+                                                 tint: mainThread ? Theme.paper : nil, showsChevron: false)
+                                        .roundedBackground(mainThread ? Theme.smoke : Color.clear, radius: Theme.Radius.control)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(mainThread ? .isSelected : [])
+                                .accessibilityHint("The agent hands its work to sub-threads that report back here.")
                             }
                         }
                         .zIndex(1)
@@ -724,7 +742,8 @@ struct NewSessionView: View {
         let launch = LaunchRequest(agent: agent, project: project, task: task, title: nil,
                                    plan: plan && chosenAgent?.canPlan == true,
                                    worktree: worktree && chosenProject?.canWorktree == true,
-                                   model: chosenAgent?.models == nil ? nil : model)
+                                   model: chosenAgent?.models == nil ? nil : model,
+                                   mainThread: mainThread && chosenAgent?.canMainThread == true ? true : nil)
         let pictures = images
         Task {
             let delivery = await client.start(launch, images: pictures)

@@ -53,6 +53,26 @@ struct ComposerUltracodeToggle: View {
     }
 }
 
+/// "Main thread" (`MainThread`): the agent hands its work to sub-threads that report back. Every agent that may delegate.
+struct ComposerMainThreadToggle: View {
+    let offered: Bool
+    let on: Bool
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        if offered {
+            ComposerDivider()
+            Button { onToggle(!on) } label: {
+                ComposerPill(symbol: "arrow.triangle.branch", text: tr("compose.mainThread"),
+                             tint: on ? NookTheme.iris : nil, showsChevron: false)
+            }
+            .buttonStyle(.plain)
+            .help(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
+            .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
+        }
+    }
+}
+
 /// The gauge of an effort level fills up with the level (the effort pickers of a new and a running session).
 enum EffortSymbol {
     static func symbol(_ level: String, in levels: [String]) -> String {

@@ -807,7 +807,7 @@ final class CompanionServer: ObservableObject {
                              folder: (run.workingDirectory as NSString).lastPathComponent, branch: run.branch,
                              updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
                              model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
-                             actions: Self.actions(run, now: now).map(\.rawValue),
+                             actions: Self.actions(run, now: now, access: workspace.settings.bridgeAccess).map(\.rawValue),
                              canSteer: workspace.canSteer(run.id),
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
                                                                        now: now)?.timeIntervalSince1970)

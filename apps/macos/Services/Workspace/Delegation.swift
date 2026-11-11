@@ -37,6 +37,8 @@ struct DelegationLink: Codable, Equatable, Sendable {
     var wake: Bool
     /// The parent has been told.
     var delivered = false
+    /// The questions of the child its parent was told about (`deliverDelegatedQuestion`), each once.
+    var toldQuestions: [String]? = nil
 }
 
 enum DelegationPolicy {
@@ -147,11 +149,14 @@ enum DelegationPolicy {
         }
     }
 
+    /// What every child is told after its brief: do the work itself (: "If you are a subagent or child, do the work
+    /// yourself"), so a chain of sessions does not grow by itself, and end with the report its parent reads.
+    static let childNote = "You are a task delegated from another session in Nook. Do the work yourself; start no subtasks unless this brief asks for them. End with a short report of what you did and found: it is all the other session sees."
+
     /// What the child is told: the task and its role, nothing from the parent's conversation.
     static func prompt(task: String, role: DelegationRole) -> String {
         let clean = task.trimmingCharacters(in: .whitespacesAndNewlines)
-        let note = role.instruction
-        return note.isEmpty ? clean : clean + "\n\n" + note
+        return [clean, role.instruction, childNote].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 }
 
@@ -272,10 +277,68 @@ enum DelegatedTask {
     }
 
     /// The message that wakes the parent when a child it did not wait for has finished.
+    /// Which of a session's tasks its sub-thread strip shows (`SubThreadStrip`): every one at work or asking, and the ones
+    /// that ended after `since` (your last message there). Oldest first, the order you started them in.
+    static func shown(_ children: [WorkspaceRun], asking: (UUID) -> Bool, since: Date) -> [WorkspaceRun] {
+        children.filter { $0.status.isActive || asking($0.id) || $0.updatedAt > since }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Everything the parent needs is in it, so it has no reason to call `task_status` again.
     static func wakeMessage(_ snapshot: Snapshot) -> String {
         var text = "Delegated task \"\(snapshot.title)\" (\(snapshot.taskID)) \(snapshot.state.rawValue)."
         if let summary = snapshot.summary, !summary.isEmpty { text += "\n\nResult:\n" + summary }
-        text += "\n\nUse task_status with this task id for details."
+        if let branch = snapshot.branch, !branch.isEmpty {
+            text += "\n\nIts changes are on branch \(branch), not in your folder: review them, then merge that branch (git merge \(branch)) once it has committed."
+        }
         return text
+    }
+
+    /// The message that tells a parent that did not wait that its task asks something (routes a child's question to
+    /// its parent, because nobody watches a child): the parent answers it or asks the user.
+    static func questionMessage(_ snapshot: Snapshot, questionID: String, question: String) -> String {
+        var text = "Delegated task \"\(snapshot.title)\" (\(snapshot.taskID)) asks a question and waits for the answer."
+        let clean = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty { text += "\n\nQuestion:\n" + RunEvent.clip(clean, 1_000) }
+        text += "\n\nAnswer it with session_questions (action answer, session_id \(snapshot.taskID), question_id \(questionID)) when you can, or ask the user. If it is no longer open, carry on."
+        return text
+    }
+}
+
+/// "Main thread": a session that hands its work to delegated tasks (sub-threads) and keeps its own context small, the
+/// way orchestrator thread works with `delegate_task`. You switch it on in the composer; the agent learns of it
+/// with your next message, in the hidden part (`<nook_context>`) so your bubble stays yours. Its system prompt does not
+/// change, so the prompt cache stays warm.
+enum MainThread {
+    static let note = "Nook: this session is the main thread. Keep your own context small: hand each self-contained piece of work (research, an implementation step, a review, tests) to delegate_task with a complete brief, start independent tasks together, and do only small edits and the final check yourself. Do not poll: each result comes back to you as a message when its task ends (task_wait only when you need results before you can go on). Answer questions your tasks ask, then combine their reports into one answer for the user."
+    static let offNote = "Nook: this session is no longer the main thread. Do the work yourself again; delegate only when it clearly helps."
+
+    /// The note for your next message: nil when the agent already knows the current state.
+    static func pending(on: Bool?, told: Bool?) -> String? {
+        let on = on ?? false
+        guard on != (told ?? false) else { return nil }
+        return on ? note : offNote
+    }
+
+    /// What a new session's agent knows from its first message: the note goes with the task, and an idle start has none.
+    static func toldAtStart(_ config: NewRunConfig) -> Bool? {
+        config.mainThread == true && !config.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? true : nil
+    }
+
+    /// The note added to the hidden part of a message, after its references (`ContextRefs.project`).
+    static func attach(_ note: String, to text: String) -> String {
+        let record = "<mode id=\"main-thread\">\n" + ContextRefs.escape(note) + "\n</mode>"
+        let open = "\n\n<nook_context>\n", close = "\n</nook_context>"
+        if let start = text.range(of: open), let end = text.range(of: close, range: start.upperBound..<text.endIndex) {
+            var result = text
+            result.insert(contentsOf: "\n" + record, at: end.lowerBound)
+            return result
+        }
+        return text + open + record + close
+    }
+
+    /// Only for an agent that may delegate (Settings › Automation › Tools per agent).
+    static func offered(provider: RunProvider, access: BridgeAccess) -> Bool {
+        access.isOn(.delegation, agent: provider.rawValue)
     }
 }

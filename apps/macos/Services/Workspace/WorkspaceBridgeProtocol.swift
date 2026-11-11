@@ -792,7 +792,7 @@ struct BridgeLaunch: Equatable, Sendable {
     browser_open, browser_snapshot (refs for browser_click and browser_type), browser_read and browser_screenshot for \
     Nook's browser; pull_request_create once the work is committed (the user approves it; never `gh pr create --web` or \
     GitHub in the user's browser, and use it when `gh` is rate limited), then watch_pull_request; delegate_task to hand \
-    side work to another agent (it sees only your brief; results via task_status); device_open, device_list and \
+    side work to another agent (it sees only your brief; its result comes back as a message, so never poll); device_open, device_list and \
     device_screenshot for an iOS Simulator or Android device (drive Android with adb); schedule_task for recurring work; \
     request_secret for an API key (you get a file path; never ask for one in chat), `sudo -A` for sudo; nook_tools and nook_use for Nook's apps and connectors \
     (actions wait for approval); nook_chat_list, nook_chat_read and nook_chat_send for Nook Chat; take_over_screen for \

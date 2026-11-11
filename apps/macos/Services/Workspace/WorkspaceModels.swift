@@ -426,6 +426,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var speedTier: String? = nil
     /// Claude Code's Ultracode for the next turns (`Ultracode`); nil leaves your own Claude setting alone.
     var ultracode: Bool? = nil
+    /// "Main thread" (`MainThread`): the session hands its work to delegated tasks. nil is off.
+    var mainThread: Bool? = nil
+    /// What the agent was last told about `mainThread` (nil: nothing, which reads as off). A new conversation forgets it.
+    var mainThreadTold: Bool? = nil
     /// "Auto": Nook picks `model` for each turn (see `AutoModel`); nil for a model you chose.
     var autoModel: Bool? = nil
     /// What the last turn on Auto asked for (`AutoModel.Tier` raw value), so a short follow-up does not drop a hard thread.
@@ -918,6 +922,8 @@ struct NewRunConfig: Equatable, Sendable {
     var speedTier: String? = nil
     /// Claude Code's Ultracode for the session (`Ultracode`); nil leaves your own Claude setting alone.
     var ultracode: Bool? = nil
+    /// "Main thread" for the session (`MainThread`); nil is off.
+    var mainThread: Bool? = nil
     var isolation: IsolationMode = .folder
     var projectPath = ""
     var baseBranch = ""
