@@ -49,6 +49,21 @@ final class LookThemesTests: XCTestCase {
         }
     }
 
+    func testWarmAndMonoAreBuiltInAndKeepNookAsTheDefault() {
+        XCTAssertEqual(NookColorTheme.builtIn.map(\.id), ["nook", "warm", "mono", "midnight", "paper", "contrast"])
+        XCTAssertEqual(NookThemeChoice().darkTheme, "nook")
+        // Warm never uses pure white or black as its canvas.
+        XCTAssertEqual(NookColorTheme.warm.light?.canvas, 0xFAF9F5)
+        XCTAssertNotEqual(NookColorTheme.warm.dark?.canvas, 0x000000)
+    }
+
+    func testDensityScalesTextAndSpacing() {
+        XCTAssertEqual(NookDensity.comfortable.textScale, 1)
+        XCTAssertLessThan(NookDensity.compact.textScale, 1)
+        XCTAssertGreaterThan(NookDensity.spacious.spacingScale, 1)
+        XCTAssertEqual(NookDensity.allCases.count, 3)
+    }
+
     func testStateColorsReadOnLightCanvas() {
         let light = NookPalette.nookLight
         for (name, hex) in [("mint", light.mint), ("amber", light.amber), ("coral", light.coral), ("violet", light.violet), ("blue", light.blue)] {
