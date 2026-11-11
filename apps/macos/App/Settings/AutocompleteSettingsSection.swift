@@ -87,6 +87,7 @@ struct AutocompleteSettingsSection: View {
             if store.prefs.enabled {
                 status
                 obstacles
+                personalHints
                 SettingToggle(tr("autocomplete.menuBarCount"), detail: tr("autocomplete.menuBarCountDetail"), isOn: $store.prefs.menuBarCount)
             }
         } header: {
@@ -147,6 +148,38 @@ struct AutocompleteSettingsSection: View {
                         Button(tr("autocomplete.inlinePrediction.turnOff")) { CompletionSystemChecks.turnOffInlinePredictions() }
                         Button(tr("autocomplete.inlinePrediction.open")) {
                             if let url = CompletionSystemChecks.keyboardSettings { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What makes suggestions sound like the user, when it is missing: learning from their writing (off in settings stored
+    /// before it became the default, which updates do not change) and a few words about them. Cotypist asks for both when it
+    /// is set up; without them a suggestion only knows the text in the field. "Not now" puts both away.
+    @ViewBuilder private var personalHints: some View {
+        if !store.prefs.personalHintsDismissed {
+            if !store.prefs.learn {
+                StatusRow(title: tr("autocomplete.hint.learn"), detail: tr("autocomplete.hint.learnDetail"), state: .todo) {
+                    HStack {
+                        Button(tr("autocomplete.hint.notNow")) { store.prefs.personalHintsDismissed = true }
+                        Button(tr("autocomplete.hint.learnOn")) {
+                            store.prefs.learn = true
+                            autocomplete.applyPersonalization()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            if store.prefs.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                StatusRow(title: tr("autocomplete.hint.instructions"), detail: tr("autocomplete.hint.instructionsDetail"), state: .todo) {
+                    HStack {
+                        if store.prefs.learn {
+                            Button(tr("autocomplete.hint.notNow")) { store.prefs.personalHintsDismissed = true }
+                        }
+                        Button(tr("autocomplete.hint.instructionsAdd")) {
+                            app.openSettings(section: .autocompleteStyle, highlight: "autocomplete.instructions")
                         }
                     }
                 }
@@ -433,7 +466,7 @@ struct AutocompleteSettingsSection: View {
     private var personalSection: some View {
         Section {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                Text(tr("autocomplete.instructions"))
+                SettingText("autocomplete.instructions")
                 TextEditor(text: $instructions)
                     .font(NookTheme.TextStyle.body)
                     .frame(minHeight: 70)
@@ -443,6 +476,7 @@ struct AutocompleteSettingsSection: View {
             SettingToggle(tr("autocomplete.learn"), detail: tr("autocomplete.learnDetail"), isOn: $store.prefs.learn)
                 .onChange(of: store.prefs.learn) { _, _ in autocomplete.applyPersonalization() }
             if store.prefs.learn {
+                SettingToggle(tr("autocomplete.learnUntaken"), detail: tr("autocomplete.learnUntakenDetail"), isOn: $store.prefs.learnWithoutSuggestion)
                 LabeledContent(tr("autocomplete.strength")) {
                     Slider(value: $store.prefs.personalStrength, in: 0...1, onEditingChanged: { editing in
                         if !editing { autocomplete.applyPersonalization() }
