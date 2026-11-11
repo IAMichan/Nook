@@ -104,6 +104,11 @@ final class TabWindowController {
         window.title = "Nook · " + tab.title
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // An empty unified toolbar, as in the main window: the title bar becomes the taller row
+        // (`PanelSidebarMetrics.titleBand`) with the traffic lights in its middle, so the tab's name sits beside them
+        // instead of under them.
+        window.toolbar = NSToolbar(identifier: "NookTab-" + tab.rawValue)
+        window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
         window.minSize = NSSize(width: minSize.width, height: minSize.height)
         window.isReleasedWhenClosed = false
@@ -152,8 +157,8 @@ private struct TabWindowView: View {
                     TabWindowController.shared.dock(tab, app: app)
                 }
             }
-            // Clear of the traffic lights, on the title bar's row.
-            .padding(.leading, PanelSidebarMetrics.trafficLights - PanelSidebarMetrics.inset)
+            // Clear of the traffic lights, on the title bar's row, where the main window's sidebar head starts too.
+            .padding(.leading, PanelSidebarMetrics.trafficLights - NookTheme.Spacing.xl)
             .frame(height: PanelSidebarMetrics.titleBand)
             PanelTabContent(viewModel: viewModel, tab: tab, inWindow: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
