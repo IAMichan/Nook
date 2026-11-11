@@ -388,8 +388,11 @@ private struct StackedDiffBody<Content: View>: View {
     let content: (StackedDiffFile, String) -> Content
     @State private var text: String?
     @State private var error: String?
+    /// The file's counts when this diff was last read: when they move, the file changed and the diff is read again.
+    @State private var readCounts: String?
 
     private var key: String { options.cacheKey(scope: scope, path: file.path) }
+    private var counts: String { "\(file.additions ?? -1)|\(file.deletions ?? -1)" }
 
     var body: some View {
         Group {
@@ -413,11 +416,13 @@ private struct StackedDiffBody<Content: View>: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .task(id: key) {
+        .task(id: key + "|" + counts) {
+            let moved = readCounts != nil && readCounts != counts
+            readCounts = counts
             if let cached = DiffCache.diff(key) {
                 text = cached
                 // Scrolled back into view (the lazy stack built it again): a diff read moments ago stands.
-                if StackedDiffReads.shared.isFresh(key) { return }
+                if !moved && StackedDiffReads.shared.isFresh(key) { return }
             }
             do {
                 let fresh = try await diff(file, options)

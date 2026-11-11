@@ -197,6 +197,7 @@ private struct TabWindowView: View {
         }
         // ⌘K (a rule, see `Keybindings`): only for this window, whose views register with it.
         .keyCommand("search.toggle", enabled: !app.demoMode) { searching.toggle() }
+        .shortcutCheatSheet()
         .chatMediaStage(mediaStage)
         .nookToastHost()
         .tint(NookTheme.iris)
