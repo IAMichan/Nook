@@ -1,6 +1,8 @@
 version: 2
 # Every ecosystem checks monthly and groups its version updates into one pull request (and one CI run) per month.
 # Security updates are not grouped, so they still arrive one by one as soon as an advisory is published.
+# Version updates wait a week after a release (cooldown): a hijacked package is usually caught and pulled within days,
+# before Dependabot proposes it. Security updates ignore the cooldown.
 # The Swift packages of the macOS app live in apps/macos/project.yml (XcodeGen), which Dependabot cannot read, and
 # packages/core and packages/protocol have no dependencies; Swift updates stay manual for now.
 updates:
@@ -9,6 +11,8 @@ updates:
     directories: ["/", "/.github/actions/*"]
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "area: ci"]
     groups:
       actions:
@@ -19,6 +23,8 @@ updates:
     directory: "/apps/tauri"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "area: tauri"]
     groups:
       cargo:
@@ -30,6 +36,8 @@ updates:
     directory: "/apps/tauri"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "area: tauri"]
     groups:
       npm:
@@ -46,6 +54,8 @@ updates:
     directory: "/apps/chatd"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "area: chatd"]
     groups:
       gomod:
