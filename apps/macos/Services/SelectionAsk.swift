@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 
 /// Asking Nook about words selected anywhere in Nook: select a question in a chat, a line of an agent's answer, a
 /// sentence on a page in Nook's browser or an error in the terminal, and a small bar above the selection answers,

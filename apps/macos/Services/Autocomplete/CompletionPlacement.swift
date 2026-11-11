@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 
 /// Where suggestions go on screen, from what an app says through Accessibility. Apps answer in many ways and some answers are
 /// wrong: a rect in the screen's corner, a whole paragraph, a field as big as the page, a cursor left behind after scrolling.
