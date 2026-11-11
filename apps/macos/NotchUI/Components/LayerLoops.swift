@@ -23,22 +23,25 @@ struct LayerLoop: NSViewRepresentable {
                   lag: Double)
         /// A light along every edge of the view, `thickness` deep, fading inward, with a thin line on the edge itself; it
         /// breathes between `low` and `high` opacity. The glow over a browser an agent drives (`BrowserTakeoverOverlay`).
+        /// With more than one color in `palette` the light runs through them around the view, one hue per side.
         case edgeGlow(thickness: CGFloat, low: Double, high: Double, period: Double)
     }
 
     let shape: Shape
     let color: Color
+    /// Colors that run around the view instead of `color` alone (`edgeGlow` only): an agent's logo colors.
+    var palette: [Color] = []
     /// Frames a second at most (`EnergyPlan.progressFrameRate`); 0 holds the first frame still.
     let fps: Double
 
     func makeNSView(context: Context) -> LoopLayerView {
         let view = LoopLayerView()
-        view.configure(shape: shape, color: color, fps: fps)
+        view.configure(shape: shape, color: color, palette: palette, fps: fps)
         return view
     }
 
     func updateNSView(_ view: LoopLayerView, context: Context) {
-        view.configure(shape: shape, color: color, fps: fps)
+        view.configure(shape: shape, color: color, palette: palette, fps: fps)
     }
 }
 
@@ -47,6 +50,7 @@ struct LayerLoop: NSViewRepresentable {
 final class LoopLayerView: NSView {
     private var shape: LayerLoop.Shape?
     private var color: Color = .clear
+    private var palette: [Color] = []
     private var fps: Double = 0
     private var builtSize: CGSize = .zero
 
@@ -62,10 +66,11 @@ final class LoopLayerView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
 
-    func configure(shape: LayerLoop.Shape, color: Color, fps: Double) {
-        guard shape != self.shape || color != self.color || fps != self.fps else { return }
+    func configure(shape: LayerLoop.Shape, color: Color, palette: [Color] = [], fps: Double) {
+        guard shape != self.shape || color != self.color || palette != self.palette || fps != self.fps else { return }
         self.shape = shape
         self.color = color
+        self.palette = palette
         self.fps = fps
         rebuild()
     }
@@ -166,7 +171,13 @@ final class LoopLayerView: NSView {
             let glow = CALayer()
             glow.frame = bounds
             glow.opacity = Float(high)
-            let clear = cgColor.copy(alpha: 0) ?? cgColor
+            // Several colors: the lights are drawn in white as the mask of a conic gradient through the colors, so each
+            // side takes its own hue and they blend at the corners. One color: the lights are drawn in it directly.
+            let colors = palette.map { LayerLoopTiming.resolve($0, in: self) }
+            let ink = colors.count > 1 ? CGColor(gray: 1, alpha: 1) : (colors.first ?? cgColor)
+            let lights = CALayer()
+            lights.frame = bounds
+            let clear = ink.copy(alpha: 0) ?? ink
             let depth = min(thickness, bounds.width / 2, bounds.height / 2)
             // Each light runs from its edge (start) inward (end); flipped geometry, so y 0 is the top.
             let edges: [(CGRect, CGPoint, CGPoint)] = [
@@ -178,17 +189,30 @@ final class LoopLayerView: NSView {
             for (frame, start, end) in edges {
                 let light = CAGradientLayer()
                 light.frame = frame
-                light.colors = [cgColor.copy(alpha: 0.55) ?? cgColor, cgColor.copy(alpha: 0.12) ?? cgColor, clear]
+                light.colors = [ink.copy(alpha: 0.55) ?? ink, ink.copy(alpha: 0.12) ?? ink, clear]
                 light.locations = [0, 0.35, 1]
                 light.startPoint = start
                 light.endPoint = end
-                glow.addSublayer(light)
+                lights.addSublayer(light)
             }
             let line = CALayer()
             line.frame = bounds
-            line.borderColor = cgColor
+            line.borderColor = ink
             line.borderWidth = 2
-            glow.addSublayer(line)
+            lights.addSublayer(line)
+            if colors.count > 1 {
+                let hues = CAGradientLayer()
+                hues.type = .conic
+                hues.frame = bounds
+                // Back to the first color at the end, so the circle closes without a seam.
+                hues.colors = colors + [colors[0]]
+                hues.startPoint = CGPoint(x: 0.5, y: 0.5)
+                hues.endPoint = CGPoint(x: 0.5, y: 0)
+                hues.mask = lights
+                glow.addSublayer(hues)
+            } else {
+                glow.addSublayer(lights)
+            }
             layer.addSublayer(glow)
             let breathe = CAKeyframeAnimation(keyPath: "opacity")
             breathe.values = [high, low, high]
