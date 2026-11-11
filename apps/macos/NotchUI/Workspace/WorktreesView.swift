@@ -117,7 +117,7 @@ struct WorktreesView: View {
                     }
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("ws.worktrees.openSession"))
         } else {
             Text(row.worktree.isMain ? tr("ws.worktrees.main") : tr("ws.worktrees.noSession"))
@@ -138,7 +138,7 @@ struct WorktreesView: View {
                     .disabled(active || row.worktree.locked)
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.nookBorderless)
         .controlSize(.small)
     }
 

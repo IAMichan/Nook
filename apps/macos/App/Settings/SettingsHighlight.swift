@@ -128,7 +128,7 @@ struct SettingsFold<Content: View>: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .settingsAnchor(title)
             .accessibilityAddTraits(.isHeader)
             .accessibilityValue(open ? tr("settings.fold.open") : (summary ?? tr("settings.fold.closed")))

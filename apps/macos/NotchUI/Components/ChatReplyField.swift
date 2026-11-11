@@ -1070,7 +1070,7 @@ private struct ChatSendButton: View {
                 .hoverLift(hovering && ready, scale: 1.05)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!ready)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: ready)
@@ -1110,7 +1110,7 @@ private struct DraftChip: View {
             .hoverLift(hovering, scale: 1.02)
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)

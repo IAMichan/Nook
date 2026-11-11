@@ -138,7 +138,7 @@ private struct LyricRow: View {
                 .padding(.vertical, state == .current ? NookTheme.Spacing.xs : 0)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.open, value: state)
         .animation(NookTheme.hover, value: hovering)
@@ -459,7 +459,7 @@ private struct RecentSearchChip: View {
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             ToolbarIconButton("xmark", tr("music.search.forget"), height: 18, width: 18, onForget)
                 .opacity(hovering ? 1 : 0.4)
         }
@@ -507,7 +507,7 @@ private struct MusicBestMatch: View {
             .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.panel)
             .roundedHitShape(NookTheme.Radius.panel)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
@@ -655,7 +655,7 @@ struct MusicCoverCard: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(item.help)

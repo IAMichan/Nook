@@ -23,7 +23,7 @@ struct AutocompleteAdapterSection: View {
                         autocomplete.refresh()
                     }
                     .labelled(tr("autocomplete.adapter.delete"))
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.nookBorderless)
                 }
                 SettingToggle(tr("autocomplete.adapter.use"), detail: tr("autocomplete.adapter.useDetail"), isOn: $store.prefs.personalAdapter)
                     .onChange(of: store.prefs.personalAdapter) { _, _ in autocomplete.refresh() }
@@ -80,7 +80,7 @@ struct AutocompleteAdapterSection: View {
                     Button(store.adapter == nil ? tr("autocomplete.adapter.train") : tr("autocomplete.adapter.retrain")) {
                         autocomplete.trainAdapter()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 } label: {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(tr("autocomplete.adapter.examples", examples))

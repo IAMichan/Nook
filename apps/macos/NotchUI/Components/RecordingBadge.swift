@@ -58,7 +58,7 @@ private struct RecordingBadgeView: View {
                     .foregroundStyle(NookTheme.textSecondary)
                 Spacer(minLength: NookTheme.Spacing.xs)
                 Button(tr("notes.badge.stop")) { notes.stop() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)

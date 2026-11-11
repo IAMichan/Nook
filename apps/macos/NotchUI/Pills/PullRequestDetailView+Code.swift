@@ -157,7 +157,7 @@ struct PullRequestCodeTab: View {
                 .font(NookTheme.TextStyle.label)
                 .lineLimit(1)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.nookBorderlessButton)
         .frame(maxWidth: 220, alignment: .leading)
         .fixedSize(horizontal: commit == nil, vertical: false)
         .help(commit == nil ? tr("agents.pr.code.scope") : tr("agents.pr.code.wholeChangeOnly"))

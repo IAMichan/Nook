@@ -640,7 +640,7 @@ struct PanelOrb: View {
                     frameRate: pointed ? energy.plan.interactiveFrameRate : energy.plan.unattendedFrameRate,
                     motion: motion)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { pointerOn = $0 }
         .accessibilityLabel(tr("notch.goToHome"))
         .background {

@@ -489,7 +489,7 @@ struct ImageAttachmentStrip: View {
                 .frame(width: 16, height: 16)
                 .background(Circle().fill(Color.black.opacity(0.7)))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .padding(3)
         .accessibilityLabel(tr("image.remove"))
     }

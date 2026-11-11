@@ -132,7 +132,7 @@ private struct ChatForwardRow: View {
             .roundedBackground(NookTheme.rowFill(selected: chosen, hovering: hovering), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!fits)
         .opacity(fits ? 1 : 0.45)
         .onHover { hovering = $0 }

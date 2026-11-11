@@ -130,7 +130,7 @@ private struct ArchiveRow: View {
                 .controlSize(.small)
             ConfirmedButton(symbol: "trash", title: tr("button.delete"), question: tr("confirm.deleteChat", title),
                             action: delete)
-                .buttonStyle(.borderless)
+                .buttonStyle(.nookBorderless)
                 .help(tr("button.delete"))
                 .accessibilityLabel(tr("button.delete"))
                 .disabled(busy)

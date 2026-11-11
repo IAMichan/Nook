@@ -92,7 +92,7 @@ private struct OutputTab: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(OutputText.kind(output.kind) + " · " + (output.path ?? OutputText.title(output)))

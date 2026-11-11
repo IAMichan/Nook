@@ -355,7 +355,7 @@ struct MusicToggleButton: View {
                 }
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.reveal, value: isOn)
         .help(label)
@@ -400,7 +400,7 @@ struct MusicVolumeControl: View {
                     .frame(width: 20, height: 24, alignment: .center)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(shown > 0 ? tr("music.mute") : tr("music.unmute"))
             .accessibilityLabel(shown > 0 ? tr("music.mute") : tr("music.unmute"))
 

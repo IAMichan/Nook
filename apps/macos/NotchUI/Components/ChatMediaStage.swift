@@ -158,7 +158,7 @@ private struct ChatVideoStageView: View {
                 .background(Circle().fill(NookTheme.ink.opacity(0.55)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(label)
         .accessibilityLabel(label)
     }

@@ -60,7 +60,7 @@ struct ScheduledTasksView: View {
             Spacer()
             Button(tr("settings2.done"), action: onClose)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
         .sheet(item: $editing) { target in
@@ -405,7 +405,7 @@ private struct ScheduledTaskEditor: View {
                 .controlSize(.large)
             Button(tr("sched.save"), action: save)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
                 .disabled(problem != nil)
         }
@@ -464,7 +464,7 @@ private struct ScheduledTaskEditor: View {
                                 .frame(height: 26)
                                 .background(NookTheme.shape(NookTheme.Radius.control).fill(on ? NookTheme.primary : NookTheme.field))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                     }
                 }
                 Text(tr("sched.weekdays.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)

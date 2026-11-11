@@ -138,7 +138,7 @@ extension SettingsView {
                 Button(tr("button.allow")) {
                     app.requestPermission { await request(); refreshTick += 1 }
                 }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.small)
             }
         }

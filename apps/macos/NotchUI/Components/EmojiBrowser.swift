@@ -105,7 +105,7 @@ private struct EmojiGroupTab: View {
                 .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(label)
         .accessibilityLabel(label)
@@ -128,7 +128,7 @@ private struct EmojiCell: View {
                                    radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(emoji.name)
         .accessibilityLabel(emoji.name)

@@ -73,7 +73,7 @@ private struct UnsentDraftRow: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: action) { content }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             if hovering {
                 ToolbarIconButton("xmark", tr("inbox.draft.discard"), height: 22, width: 22, discard)
                     .rowActionsBackdrop(background)

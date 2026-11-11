@@ -119,7 +119,7 @@ struct PullRequestFilterMenu: View {
             .roundedBackground(row == kind ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         // Pointing at a kind shows its choices, like a submenu.
         .onHover { if $0 { kind = row } }
     }
@@ -436,7 +436,7 @@ private struct FilterChoiceRow: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             Button(action: action) { label }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             if let toggleHidden, hovering || hidden {
                 Button(action: toggleHidden) {
                     Image(icon: hidden ? "eye" : "eye.slash")
@@ -445,7 +445,7 @@ private struct FilterChoiceRow: View {
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
                 .accessibilityLabel(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
             }

@@ -3,8 +3,8 @@ import Foundation
 // Session state beyond start/stop: going on after a restart and snoozing.
 
 extension WorkspaceManager {
-    /// Sessions a restart of Nook cut off get "Continue where you left off." once. Called a moment after launch, when the
-    /// agents' executables are known; with the setting off nothing happens.
+    /// Sessions that quitting or restarting Nook cut off get "Continue where you left off." once. Called a moment after
+    /// launch, when the agents' executables are known; with the setting off nothing happens.
     func continueInterruptedRuns(now: Date = Date()) {
         let enabled = settings.continueAfterRelaunch
         for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: waitsOnQuestion(run.id),
@@ -21,6 +21,11 @@ extension WorkspaceManager {
             }
             append(run.id, RunEvent(kind: .system, text: tr(waited ? "ws.event.continueAfterBackgroundStop" : "ws.event.continueAfterRelaunch")))
             send(run.id, text: message)
+        }
+        // Only the first launch after the quit counts: a session left alone now (the setting off, or one that waits on you)
+        // must not go on at some later launch.
+        for run in runs where run.stoppedByQuit != nil {
+            update(run.id) { $0.stoppedByQuit = nil }
         }
         // Summaries planned before Nook quit, for the sessions whose cache is still warm.
         scheduleIdleCompactions()

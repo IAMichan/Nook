@@ -153,7 +153,7 @@ struct QueuedMessagesStrip: View {
                 .padding(.vertical, NookTheme.Spacing.xxs)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .accessibilityLabel(tr("compose.queue.title", queue.count))
             .accessibilityHint(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
             .accessibilityValue(collapsed ? "" : tr("compose.queue.expanded"))
@@ -343,7 +343,7 @@ struct PlanCard: View {
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .frame(maxWidth: .infinity)
             }
             if canAct {
@@ -389,7 +389,7 @@ struct PlanCard: View {
                     }
                     .padding(.leading, CGFloat(step.indent) * 4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
             Text(tr("ws.plan.kept", list.keptCount, list.steps.count))
                 .font(NookTheme.TextStyle.detail)

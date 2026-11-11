@@ -31,7 +31,7 @@ extension SettingsView {
                         SettingNote(tr("settings.assistant.thinkAlongLocal"))
                         Spacer(minLength: 0)
                         Button(tr("settings.section.brain")) { app.settingsSection = .brain }
-                            .buttonStyle(.link)
+                            .buttonStyle(.nookLink)
                     }
                 }
             }

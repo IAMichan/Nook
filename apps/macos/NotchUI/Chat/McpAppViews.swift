@@ -498,7 +498,7 @@ private struct McpAppFullscreenView: View {
                 Text(session.reference.server ?? session.reference.tool).font(NookTheme.TextStyle.body).lineLimit(1)
                 Spacer()
                 Button { session.exitFullscreen() } label: { Image(icon: "arrow.down.right.and.arrow.up.left") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.nookBorderless)
                     .help(tr("ws.mcpApp.exitFullscreen"))
                     .keyboardShortcut(.cancelAction)
             }

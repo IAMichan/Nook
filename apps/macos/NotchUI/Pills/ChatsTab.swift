@@ -1388,7 +1388,7 @@ struct ChatsGroupHeader: View {
             .padding(.bottom, NookTheme.Spacing.xs)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.reveal, value: open)
         .accessibilityLabel("\(title), \(count)")
@@ -1527,7 +1527,7 @@ struct ChatsRow: View, Equatable {
             .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .accessibilityLabel("\([MessagingApps.app(id: entry.app)?.name ?? entry.app, entry.account].compactMap { $0 }.joined(separator: " "))"
                             + ", \(entry.name), \(stateLabel): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -2196,7 +2196,7 @@ private struct ChatsDetail: View, Equatable {
             Button { infoOpen = true } label: {
                 ChatsFace(entry: entry, size: 36)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .pointerStyle(.link)
             .help(tr("chats.info.open"))
             .accessibilityLabel(tr("chats.info.open"))
@@ -2209,7 +2209,7 @@ private struct ChatsDetail: View, Equatable {
                         .lineLimit(1)
                         .underline(nameHovering)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .onHover { nameHovering = $0 }
                 .pointerStyle(.link)
                 .help(tr("chats.info.open"))
