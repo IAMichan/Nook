@@ -466,6 +466,32 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertFalse(ChatServiceData.isBehind([older], chat: undated))
     }
 
+    /// A read that brings a known message without its file (a chat list's preview) keeps the picture Nook fetched,
+    /// in every app: before, the bubble fell back to a waiting tile and then to a "Photo" file row.
+    func testAReadWithoutTheFileKeepsTheFetchedPicture() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("kept-\(UUID().uuidString).png")
+        try Data([1, 2, 3]).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let source = "https://eu-api.asm.skype.com/v1/objects/0-x/views/imgo"
+        func photo(_ path: String?) -> InboxMessage {
+            InboxMessage(id: "t1", sender: "Aron", text: "The verdict", date: now,
+                         media: ChatMedia(kind: .photo, name: "image.png", path: path, source: source))
+        }
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "teams", name: "Dev", messages: [photo(file.path)], unread: nil))
+        inbox.merge(BridgedChat(app: "teams", name: "Dev", messages: [photo(nil)], unread: nil, listed: true))
+        let key = ChatInbox.key(app: "teams", chat: "Dev")
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.media?.path, file.path)
+
+        // A file that went (macOS cleared the caches) is not kept: the bridge fetches it again.
+        try FileManager.default.removeItem(at: file)
+        XCTAssertNil(ChatInbox.media(photo(nil).media, keeping: photo(file.path).media)?.path)
+        // Another kind of file is another file.
+        try Data([1]).write(to: file)
+        let video = ChatMedia(kind: .video, name: "clip.mp4")
+        XCTAssertNil(ChatInbox.media(video, keeping: photo(file.path).media)?.path)
+    }
+
     func testMessagesGoToTheirChat() {
         var inbox = ChatInbox()
         XCTAssertTrue(inbox.add(notice("Anna", "one"), id: "1"))

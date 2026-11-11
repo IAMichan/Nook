@@ -938,6 +938,18 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// Two copies of one message: a bridge and a notification can both bring it in, each under an id of its own.
     static let sameMessageWindow: TimeInterval = 60
 
+    /// The file a read brings for a message Nook knows, for every app: a read that brings it without its file on this
+    /// Mac (a chat list's preview, or a read whose fetch did not get it this time) keeps the file Nook already has.
+    /// Without this the picture fell back to a waiting tile on the next read and, a minute later, to a file row.
+    static func media(_ new: ChatMedia?, keeping known: ChatMedia?) -> ChatMedia? {
+        guard var new else { return nil }
+        if new.path == nil, let known, known.path != nil, known.shownKind == new.shownKind, known.url != nil {
+            new.path = known.path
+            if new.seconds == nil { new.seconds = known.seconds }
+        }
+        return new
+    }
+
     /// A chat that had nothing new for this long is dropped.
     static let maxAge: TimeInterval = 30 * 86_400
     /// How often a listed chat's `listed` date is renewed: not on every read, so an unchanged chat is not saved again.
@@ -1202,7 +1214,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
             // the phone come after its first messages).
             if !message.sender.isEmpty, thread.messages[index].sender != message.sender { thread.messages[index].sender = message.sender }
             if let sender = message.senderID, thread.messages[index].senderID != sender { thread.messages[index].senderID = sender }
-            if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
+            if let media = Self.media(message.media, keeping: thread.messages[index].media),
+               thread.messages[index].media != media {
+                thread.messages[index].media = media
+            }
             if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
             if message.quote != nil, thread.messages[index].quote != message.quote { thread.messages[index].quote = message.quote }
             if let receipt = message.receipt {

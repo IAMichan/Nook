@@ -146,7 +146,7 @@ extension AppModel {
 
     /// When each chat was last read again for a file its bubbles asked for.
     private static var fileReads: [String: Date] = [:]
-    private static let fileReadPause: TimeInterval = 8
+    private static let fileReadPause: TimeInterval = 2.5
 
     /// Every chat can be removed from Nook; it comes back with its app's next message.
     func canRemoveChat(_ entry: ChatsEntry) -> Bool { true }
