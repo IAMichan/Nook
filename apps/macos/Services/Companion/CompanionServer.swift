@@ -31,7 +31,7 @@ final class CompanionServer: ObservableObject {
     private static let maxConnections = 8
     private let queue = DispatchQueue(label: "nook.companion.server")
     /// Connections a phone subscribed on, at most one per phone.
-    private var streams: [CompanionPeer] = []
+    private(set) var streams: [CompanionPeer] = []
     /// Phones being removed: told so, and refused from that moment on, while their key lives on just long enough to seal
     /// the message that tells them.
     private var revoking: Set<String> = []
@@ -46,7 +46,10 @@ final class CompanionServer: ObservableObject {
         self.app = app
         // Subscribed phones get the sessions when they change; streaming text changes the workspace many times a
         // second, so at most one look a second, and only what changed is sent.
-        watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange)
+        // The chats follow too (`pushChats`): a new message, someone typing, or Nook writing in one of its conversations.
+        watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange,
+                                                     ChatCaptureService.shared.objectWillChange, ChatTypingCenter.shared.objectWillChange,
+                                                     app.chat.objectWillChange)
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
         apply()
@@ -413,6 +416,63 @@ final class CompanionServer: ObservableObject {
                  compress: peer.compression)
         }
         pushTimelines()
+        pushChats()
+    }
+
+    // MARK: Chats, live
+
+    /// Sends every live phone the Chats tab's list, Nook's conversations and the open chat's messages when they changed
+    /// since it last got them (`CompanionFeature.liveChats`), each only to a phone that may see it. Each is made once per
+    /// pass and only when a phone may see it, so a Mac without such a phone does no work here.
+    private func pushChats() {
+        guard let app, !streams.isEmpty else { return }
+        var inbox: CompanionResponse?
+        var conversations: [ChatDigest]?
+        var lines: [String: (lines: [InboxLine], typing: [InboxTypist])?] = [:]
+        for peer in streams {
+            guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID else { continue }
+            let granted = scopes(of: deviceID)
+            var update = CompanionResponse(id: id, ok: true)
+            var changed = false
+            if granted.contains(.chats) {
+                if inbox == nil { inbox = liveInbox(app: app) }
+                if let list = inbox?.inbox, list != peer.sentInbox {
+                    // The first pass after subscribing only takes note: the phone asks for the inbox itself then.
+                    if peer.sentInbox != nil {
+                        update.inbox = list
+                        update.message = inbox?.message
+                        changed = true
+                    }
+                    peer.sentInbox = list
+                }
+                if let chat = peer.watchChat {
+                    if lines[chat] == nil { lines[chat] = .some(liveChatLines(chat)) }
+                    if let current = lines[chat] ?? nil,
+                       current.lines != peer.sentChatLines || current.typing != (peer.sentChatTyping ?? []) {
+                        update.inboxLines = current.lines
+                        update.inboxTyping = current.typing
+                        update.inboxChat = chat
+                        peer.sentChatLines = current.lines
+                        peer.sentChatTyping = current.typing
+                        changed = true
+                    }
+                }
+            }
+            if granted.contains(.nookChat) {
+                if conversations == nil { conversations = chats(CompanionRequest(op: .chats), app: app).conversations ?? [] }
+                if let list = conversations, list != peer.sentConversations {
+                    if peer.sentConversations != nil {
+                        update.conversations = list
+                        changed = true
+                    }
+                    peer.sentConversations = list
+                }
+            }
+            guard changed else { continue }
+            peer.seq += 1
+            update.seq = peer.seq
+            send(update, key: key, deviceID: deviceID, on: peer.transport)
+        }
     }
 
     // MARK: The open session, live
@@ -640,6 +700,10 @@ final class CompanionServer: ObservableObject {
             return await inboxSend(request, app: app)
         case .inboxMark:
             return inboxMark(request, app: app)
+        case .watchChat:
+            return await watchChat(request, deviceID: deviceID, app: app)
+        case .avatars:
+            return await avatars(request)
         case .pulls:
             return pulls(request, app: app)
         case .pull:
@@ -779,6 +843,13 @@ final class CompanionPeer {
     var sentTimeline: [TimelineEntry] = []
     /// The app is in front on the phone, as it last said with `subscribe` or `ping`; nil when it never said.
     var foreground: Bool?
+    /// What the phone was sent of the Chats tab and of Nook's conversations over the live connection
+    /// (`CompanionFeature.liveChats`), and the chat it has open (`watchChat`) with its messages as the phone has them.
+    var sentInbox: [InboxChatDigest]?
+    var sentConversations: [ChatDigest]?
+    var watchChat: String?
+    var sentChatLines: [InboxLine]?
+    var sentChatTyping: [InboxTypist]?
     /// The phone opens compressed answers (`CompanionRequest.compression`), as its last request said.
     var compression = false
 

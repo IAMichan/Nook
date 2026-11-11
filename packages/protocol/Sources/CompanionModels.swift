@@ -123,6 +123,13 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// `inboxLines` in the answer); your own words to a chat that can be answered from Nook (`item`, `text`, and
     /// `replyTo` when it answers one of its messages); and read or unread by hand (`item`, `allow`: true is read).
     case inbox, inboxChat, inboxSend, inboxMark
+    /// The chat the phone has open in the Chats tab (`item`; nil when it closed it): its messages follow by themselves over
+    /// the subscribed connection (`CompanionResponse.inboxChat`), instead of the phone asking every few seconds
+    /// (`CompanionFeature.liveChats`). Answered like `inboxChat`.
+    case watchChat
+    /// The pictures of chats (`items`: chat ids, at most `ChatAvatar.batch`), small enough to travel in one answer
+    /// (`CompanionResponse.avatars`, `CompanionFeature.avatars`).
+    case avatars
     /// Live Activities: the phone's push-to-start token, an activity's update token, an ended activity, or the switch
     /// turned off (`live`).
     case liveActivity
@@ -218,9 +225,14 @@ enum CompanionFeature {
     static let compression = "compression"
     /// The Mac answers `fileData`: any file of a session's folder in pieces, up to `FileChunk.maxFileBytes`.
     static let filePreview = "filePreview"
+    /// The Mac sends the Chats tab's list (`inbox`) and Nook's conversations (`conversations`) over the subscribed
+    /// connection whenever they change, and takes `watchChat`: the open chat's messages follow by themselves.
+    static let liveChats = "liveChats"
+    /// The Mac says which picture each chat has (`InboxChatDigest.avatar`) and answers `avatars` with them.
+    static let avatars = "avatars"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview]
+                      compression, filePreview, liveChats, avatars]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -312,6 +324,8 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// Files that go with `send` or `start` (`CompanionFeature.attachments`): the Mac saves them and gives their
     /// paths below the words, as it does with pictures.
     var attachments: [CompanionFile]? = nil
+    /// The chats of `avatars`.
+    var items: [String]? = nil
     /// This phone opens compressed answers (`CompanionWire`): the Mac may compress a large one. Nil from a phone that
     /// cannot, which always gets plain JSON; a Mac without `CompanionFeature.compression` ignores it.
     var compression: Bool? = nil
@@ -320,11 +334,12 @@ struct CompanionRequest: Codable, Equatable, Sendable {
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
          replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil,
          steer: Bool? = nil, images: [CompanionImage]? = nil, foreground: Bool? = nil, pullAction: CompanionPullAction? = nil,
-         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil) {
+         pullWork: PullWorkRequest? = nil, attachments: [CompanionFile]? = nil, items: [String]? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
         self.protocolVersion = protocolVersion; self.appVersion = appVersion; self.steer = steer; self.images = images
         self.foreground = foreground; self.pullAction = pullAction; self.pullWork = pullWork; self.attachments = attachments
+        self.items = items
     }
 
     /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
@@ -392,6 +407,10 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var pulls: [PullDigest]? = nil
     /// The pull request of `pull`, and of `pullAct` after the action.
     var pull: PullDetailDigest? = nil
+    /// On an update the Mac sends by itself: the chat `inboxLines` belong to (`watchChat`).
+    var inboxChat: String? = nil
+    /// The pictures of `avatars`; a chat without one (any more) is left out.
+    var avatars: [ChatAvatar]? = nil
     /// With `history`: where the next page starts, nil on the last page.
     var cursor: String? = nil
     /// The piece of a file `fileData` asked for.
@@ -461,6 +480,23 @@ struct TimelineEntry: Codable, Equatable, Identifiable, Sendable {
     var detail: String?
     var date: Double
     var failed: Bool
+    /// What a step gave back (a command's output, what a search found, a change's patch), its end clipped to
+    /// `outputLimit`, for the step to open to on the phone; nil when there was none or from a Mac that does not send it.
+    var output: String? = nil
+
+    /// How much of a step's output travels: its last lines, enough to see how it ended.
+    static let outputLimit = 900
+
+    /// The end of a step's output, at most `outputLimit` characters, starting at a line; nil when it is empty.
+    static func outputTail(_ output: String?) -> String? {
+        guard let output else { return nil }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count > outputLimit else { return trimmed }
+        let tail = trimmed.suffix(outputLimit)
+        let fromLine = tail.firstIndex(of: "\n").map { tail[tail.index(after: $0)...] } ?? tail
+        return "…\n" + fromLine
+    }
 
     /// The `detail` of a compaction note, which the phone shows as a quiet word across the conversation rather than as
     /// a line of the work.
@@ -514,6 +550,26 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     var waitsInApp: Bool
     /// Who is typing in it now, the first to start first; nil from a Mac that does not say.
     var typing: [InboxTypist]? = nil
+    /// Which picture the chat has (`ChatAvatar.version`), so the phone asks for it once and again only when it changes;
+    /// nil when it has none or the Mac does not say (`CompanionFeature.avatars`).
+    var avatar: String? = nil
+}
+
+/// A chat's own picture (a contact's or a group's photo), as a small square JPEG.
+struct ChatAvatar: Codable, Equatable, Sendable {
+    /// The chat's id (`InboxChatDigest.id`).
+    var chat: String
+    /// The same as `InboxChatDigest.avatar` when it was made.
+    var version: String
+    /// Base64 JPEG, `side` pixels square.
+    var jpeg: String
+
+    /// The pixel size of a picture: a 40-point avatar on a 3x screen, with room.
+    static let side = 120
+    /// How many pictures one `avatars` request asks for, so the answer stays well under a frame.
+    static let batch = 8
+    /// What one picture may weigh before base64: a batch stays well under `CompanionConstants.maxFrame`.
+    static let maxBytes = 16 * 1024
 }
 
 /// Someone typing in a chat, as the Mac's `ChatTypist`.

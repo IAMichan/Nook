@@ -1,6 +1,6 @@
 # Nook for iOS (`NookCompanion`)
 
-This directory contains **Nook Companion**, the iPhone app that shows which coding-agent sessions on your Mac need your attention, with support for approving or denying tool calls, answering questions, sending follow-up messages, and stopping sessions. It is Nook's panel made for iPhone, with the Mac's three tabs: Nook (chat with Nook), Agents (sessions you can start and follow) and Chats (your chat apps). It communicates directly with Nook on your Mac over your local Wi-Fi network; see [`docs/COMPANION.md`](../../docs/COMPANION.md).
+This directory contains **Nook Companion**, the iPhone app that shows which coding-agent sessions on your Mac need your attention, with support for approving or denying tool calls, answering questions, sending follow-up messages, and stopping sessions. It is Nook's panel made for iPhone, laid out iPhone app with a tab bar along the bottom: Nook (chat with Nook), Agents (sessions you can start and follow), Chats (your chat apps), Pull requests, and Settings (your Mac and the connection, this iPhone's choices, plan usage, pairing). It communicates directly with Nook on your Mac over your local Wi-Fi network; see [`docs/COMPANION.md`](../../docs/COMPANION.md).
 
 ## Building
 
@@ -21,9 +21,12 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   ThemeViews.swift       cards, section headers, status pills and banners, built on the parts shared with the Mac
   PanelComponents.swift  the panel's header and tabs, the search field, the composer and starters
   CompanionViews.swift   root (Nook, Agents, Chats), pairing, session overview
+  OverviewViews.swift    the calm overview on the Nook tab: what waits on you, what works, what is unread
+  SettingsViews.swift    the Settings tab: your Mac and the connection, this iPhone, usage, pairing, about
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer
   InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
+  ChatPictures.swift     the chats' own pictures from the Mac, kept in the caches folder
   LiveActivities.swift   Live Activity tokens for the Mac, the switch, updates while the app is open
 NookActivity/    widget extension: the Live Activity on the Lock Screen and in the Dynamic Island
 Shared/          what the app and the extension share (ActivityKit attributes, how a phase looks)
