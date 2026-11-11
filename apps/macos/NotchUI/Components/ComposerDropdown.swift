@@ -554,7 +554,7 @@ struct AgentModelPicker: View {
             ?? (auto != nil && model == AutoModel.id ? auto : nil)
             ?? pickerPlace(chosenPlace)
         ModelPicker(places: (local.map { [$0.place] } ?? []) + (auto.map { [$0] } ?? []) + agentPlaces, chosen: chosen,
-                    addHelp: tr("agents.picker.add"), settingsTitle: tr("agents.picker.settings"),
+                    addHelp: tr("agents.picker.add"),
                     openSettings: { app.openSettings(section: .agents) }, footer: footer, trailing: trailing, list: { picked, query in
             if let local, picked.id == local.place.id { return local.list(query) }
             if picked == Self.autoPlace { return ModelPickerList(models: [autoRow()]) }
@@ -639,8 +639,7 @@ struct AgentModelPicker: View {
         let profile = profileOf(place)
         // A model that comes in thinking levels shows once; its level is picked with the effort control.
         let family = app.modelFamily(option, for: current, profileID: profile)
-        // The agent's own default model says "Default model", apart from the reasoning column's "Default" level.
-        let name = option.isEmpty ? tr("compose.modelDefault") : app.modelMenuName(option, for: current, profileID: profile)
+        let name = app.modelMenuName(option, for: current, profileID: profile)
         let choice = app.workspace.modelChoice(option, for: current, profileID: profile)
         let isChosen = isChosen(place)
             && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
@@ -654,17 +653,18 @@ struct AgentModelPicker: View {
                                trailing: choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil,
                                chosen: isChosen,
                                disabledReason: app.modelUpdateHelp(option, for: current),
-                               favorite: option.isEmpty ? nil : favoriteBinding(option, for: current)) {
+                               favorite: favoriteBinding(option, for: current)) {
             let picked = app.menuPick(option, keeping: self.isChosen(place) ? model : "", for: current, profileID: profile)
             choose(current, pickedProfile(place), picked)
         }
     }
 
-    /// Older models stay out of the list until you search for them, unless one is in use or a favorite.
+    /// Older models stay out of the list until you search for them, unless one is in use or a favorite. The agent's own
+    /// default (the empty id) is not offered: the list names real models only.
     private func filtered(_ place: Place, query: String) -> [String] {
         let current = place.provider
         let profile = profileOf(place)
-        let all = app.menuModels(for: current, profileID: profile)
+        let all = app.menuModels(for: current, profileID: profile).filter { !$0.isEmpty }
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else {
             return all.filter { !app.workspace.hidesLegacyModel($0, for: current, chosen: isChosen(place) ? model : "") }
@@ -688,8 +688,8 @@ struct AgentModelPicker: View {
     }
 }
 
-/// Build/Plan control: not a menu but one button that switches between the two. The agent composers pick the mode in
-/// the model picker (`ModelPickerOptions`) and show this only while Plan is on, so the read-only mode stays in sight.
+/// Build/Plan control: not a menu but one button that switches between the two. The agent decides on Plan itself; the
+/// composers show this only while Plan is on, so the read-only mode stays in sight and can be switched off.
 struct ModeToggle: View {
     @Binding var mode: ExecutionMode
 
