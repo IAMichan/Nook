@@ -28,8 +28,18 @@ struct PlanChecklist: Equatable {
 
     /// A checklist is worth showing from two steps.
     var isUseful: Bool { steps.count >= 2 }
-    var keptCount: Int { steps.filter(\.kept).count }
-    var allKept: Bool { keptCount == steps.count }
+    /// Steps that will run: kept themselves and not under a step you left out.
+    var keptCount: Int {
+        var count = 0
+        var leftOutIndent: Int?
+        for step in steps {
+            if let indent = leftOutIndent, step.indent > indent { continue }
+            leftOutIndent = nil
+            if step.kept { count += 1 } else { leftOutIndent = step.indent }
+        }
+        return count
+    }
+    var allKept: Bool { steps.allSatisfy(\.kept) }
 
     mutating func toggle(_ id: Int) {
         guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
