@@ -937,6 +937,8 @@ struct ComposerPill: View {
     var short: String? = nil
     var tint: Color? = nil
     var showsChevron = true
+    /// A toggle that is on: drawn filled in Nook's color, so its state reads at a glance and not only by its tint.
+    var selected = false
     @Environment(\.composerDensity) private var density
     @State private var hovering = false
 
@@ -963,10 +965,11 @@ struct ComposerPill: View {
             }
         }
         .font(NookTheme.TextStyle.control)
-        .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
+        .foregroundStyle(selected ? NookTheme.onIris : tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
         .padding(.horizontal, NookTheme.Spacing.md)
         .frame(height: 28)
-        .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
+        .roundedBackground(selected ? (hovering ? NookTheme.primaryHover : NookTheme.iris)
+                                    : hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }

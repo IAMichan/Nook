@@ -520,7 +520,9 @@ struct AgentsTab: View {
             worktree: run.isolation == .worktree || run.worktreePath != nil,
             linesAdded: run.changedLinesAdded ?? 0,
             linesRemoved: run.changedLinesRemoved ?? 0,
-            changedFiles: run.changedFiles
+            changedFiles: run.changedFiles,
+            // Its own turn ended while sub-threads it delegated still work: busy through them.
+            subThreadsWorking: run.status == .completed && attention == .working ? app.workspace.workingSubThreads(of: run.id) : 0
         )
     }
 
@@ -663,6 +665,8 @@ struct AgentListItem: Identifiable, Equatable {
     var linesAdded = 0
     var linesRemoved = 0
     var changedFiles: Int? = nil
+    /// Its own turn ended, but this many sub-threads it delegated still work (`DelegatedTask.workingSubThreads`).
+    var subThreadsWorking = 0
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
@@ -1043,6 +1047,12 @@ struct AgentListRow: View, Equatable {
     @ViewBuilder
     private var time: some View {
         switch item.status {
+        case .working where item.subThreadsWorking > 0:
+            // Busy through its sub-threads: how many, instead of how long its own (ended) turn ran.
+            let count = item.subThreadsWorking
+            AgentStatusBadge(state: .working, detail: count == 1 ? tr("inbox.thread.one") : tr("inbox.thread.many", count),
+                             markOnly: compactStatus)
+                .help(count == 1 ? tr("inbox.thread.busyOne") : tr("inbox.thread.busyMany", count))
         case .working:
             AgentStatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) }, markOnly: compactStatus)
         case .waiting:

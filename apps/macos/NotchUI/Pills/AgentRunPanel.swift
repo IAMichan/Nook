@@ -1643,6 +1643,8 @@ struct AgentRunPanel: View {
                               return true
                           },
                           "effort.increase": { stepEffort(.up) }, "effort.decrease": { stepEffort(.down) }])
+            ComposerMainThreadHint(offered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
+                                   on: run.mainThread == true)
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.TextStyle.detail)

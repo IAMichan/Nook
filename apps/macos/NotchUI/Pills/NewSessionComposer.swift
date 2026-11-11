@@ -141,6 +141,9 @@ struct NewSessionComposer: View {
                 }
                 // The tray's choices show their tips like the box's own (`composerTip`), not as slow system tooltips.
                 .composerTips()
+                ComposerMainThreadHint(offered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
+                                       on: config.mainThread == true)
+                    .padding(.horizontal, NookTheme.Spacing.md)
                 notice
             }
             .frame(maxWidth: 640)
