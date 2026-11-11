@@ -51,6 +51,16 @@ targets:
       - path: ../macos/NotchUI/Theme/NookTheme.swift
         group: Shared from the Mac
         createIntermediateGroups: false
+      # The Mac's Markdown parser (Foundation only), so an agent's answer reads as blocks on both (`MarkdownBlocksView`).
+      - path: ../macos/Brain/MarkdownBlock.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      - path: ../macos/Brain/ChatChart.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
+      - path: ../macos/Brain/ChartRescue.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
       - path: ../macos/NotchUI/Theme/NookPalette.swift
         group: Shared from the Mac
         createIntermediateGroups: false

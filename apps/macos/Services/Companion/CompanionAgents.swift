@@ -82,16 +82,31 @@ enum CompanionAgents {
     /// The conversation of a terminal session from its transcript, as the Mac shows it (`AgentTranscript`): your
     /// messages, the agent's answers, and each step it took; its reasoning is left out, as for a Workspace session.
     /// Nil for a session that is gone or has no transcript.
-    static func timeline(_ app: AppModel, session: String) async -> [TimelineEntry]? {
+    /// `before`: the page of entries older than that one (`CompanionFeature.fullTranscript`) instead of the newest.
+    static func timeline(_ app: AppModel, session: String, before: String? = nil) async -> [TimelineEntry]? {
+        guard let messages = await messages(app, session: session) else { return nil }
+        let all = entries(messages, limit: nil)
+        guard let before else { return Array(all.suffix(200)) }
+        guard let index = all.firstIndex(where: { $0.id == before }) else { return [] }
+        return Array(all[..<index].suffix(200))
+    }
+
+    /// One entry of a terminal session's conversation in full (`CompanionOp.entry`); nil when it is not there.
+    static func fullText(_ app: AppModel, session: String, entry: String) async -> String? {
+        guard let messages = await messages(app, session: session),
+              let message = messages.first(where: { $0.id == entry }) else { return nil }
+        return message.text
+    }
+
+    private static func messages(_ app: AppModel, session: String) async -> [AgentChatMessage]? {
         guard session.hasPrefix(terminalPrefix) else { return nil }
         let key = String(session.dropFirst(terminalPrefix.count))
         guard let agent = app.hub.sessions.first(where: { $0.id == key }), !agent.transcriptPath.isEmpty else { return nil }
         let path = agent.transcriptPath
-        let messages = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
-        return entries(messages)
+        return await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
     }
 
-    static func entries(_ messages: [AgentChatMessage]) -> [TimelineEntry] {
+    static func entries(_ messages: [AgentChatMessage], limit: Int? = 200) -> [TimelineEntry] {
         var entries: [TimelineEntry] = []
         for message in messages {
             let date = (message.date ?? Date()).timeIntervalSince1970
@@ -100,7 +115,8 @@ enum CompanionAgents {
                 let text = CompanionPolicy.clip(message.text)
                 guard !text.isEmpty else { continue }
                 entries.append(TimelineEntry(id: message.id, kind: message.kind == .user ? .user : .assistant, text: text,
-                                             detail: nil, date: date, failed: false))
+                                             detail: nil, date: date, failed: false,
+                                             clipped: CompanionPolicy.wasClipped(text) ? true : nil))
             case .tools:
                 for step in message.steps {
                     entries.append(TimelineEntry(id: message.id + ":" + step.id, kind: .tool,
@@ -121,7 +137,7 @@ enum CompanionAgents {
                 continue
             }
         }
-        return Array(entries.suffix(200))
+        return limit.map { Array(entries.suffix($0)) } ?? entries
     }
 
     /// Ends a terminal session's process, as the Mac's End session does; nil when it ended.

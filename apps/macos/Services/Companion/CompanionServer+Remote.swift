@@ -137,23 +137,54 @@ extension CompanionServer {
     /// A session's conversation: a Workspace session's timeline (read back from disk when it was released or never
     /// opened), or the transcript of an agent outside Nook (`CompanionAgents.timeline`).
     func timeline(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
-        guard let session = request.session, let entries = await timelineEntries(session, app: app) else {
+        // `item`: the oldest entry the phone has, and it wants the page before it.
+        guard let session = request.session, let entries = await timelineEntries(session, before: request.item, app: app) else {
             return .failure(request.id, .unknownSession)
         }
-        return CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
+        var response = CompanionResponse(id: request.id, ok: true, timeline: entries, timelineSession: session)
+        response.timelineBefore = request.item
+        return response
     }
 
     /// The recent conversation of a session as the phone gets it, within one answer; nil for a session that is gone.
-    func timelineEntries(_ session: String, app: AppModel) async -> [TimelineEntry]? {
+    /// `before`: the page older than that entry instead, empty when there is none.
+    func timelineEntries(_ session: String, before: String? = nil, app: AppModel) async -> [TimelineEntry]? {
         if CompanionAgents.handles(session) {
-            return await CompanionAgents.timeline(app, session: session).map { CompanionPolicy.newestFitting($0) }
+            return await CompanionAgents.timeline(app, session: session, before: before).map { CompanionPolicy.newestFitting($0) }
         }
         let workspace = app.workspace
         guard let runID = UUID(uuidString: session), workspace.run(runID) != nil else { return nil }
         // Off the main thread. The phone polls, so the next look finds it in memory; idle, it is released again.
-        let events = await workspace.timelineForSearch(runID)
+        var events = await workspace.timelineForSearch(runID)[...]
         workspace.prefetchTimeline(runID)
-        return CompanionPolicy.newestFitting(events.suffix(160).compactMap(Self.entry))
+        if let before {
+            guard let index = events.firstIndex(where: { $0.id.uuidString == before }) else { return [] }
+            events = events[..<index]
+        }
+        // Walk back until a page holds 160 entries the phone draws (thinking and results are left out).
+        var page: [TimelineEntry] = []
+        for event in events.reversed() {
+            if let entry = Self.entry(event) { page.append(entry) }
+            if page.count == 160 { break }
+        }
+        return CompanionPolicy.newestFitting(page.reversed())
+    }
+
+    /// One entry of a session's conversation in full, for an entry the timeline clipped (`CompanionOp.entry`).
+    func entry(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        guard let session = request.session, let id = request.item else { return .failure(request.id, .badRequest) }
+        let text: String?
+        if CompanionAgents.handles(session) {
+            text = await CompanionAgents.fullText(app, session: session, entry: id)
+        } else if let runID = UUID(uuidString: session), app.workspace.run(runID) != nil {
+            text = await app.workspace.timelineForSearch(runID).first { $0.id.uuidString == id }?.text
+        } else {
+            return .failure(request.id, .unknownSession)
+        }
+        guard let text else { return .failure(request.id, .unknownItem) }
+        var response = CompanionResponse(id: request.id, ok: true)
+        response.entryText = CompanionPolicy.clip(text, limit: TimelineEntry.fullLimit)
+        return response
     }
 
     // MARK: What a session changed
@@ -330,7 +361,8 @@ extension CompanionServer {
         // A step opens to what it gave back on the phone, as on the Mac: the end of it, which says how it went.
         let output = kind == .tool || kind == .change ? TimelineEntry.outputTail(event.output) : nil
         return TimelineEntry(id: event.id.uuidString, kind: kind, text: clipped, detail: detail.map { CompanionPolicy.clip($0, limit: 120) },
-                             date: event.date.timeIntervalSince1970, failed: event.state == .failed, output: output)
+                             date: event.date.timeIntervalSince1970, failed: event.state == .failed, output: output,
+                             clipped: kind != .tool && CompanionPolicy.wasClipped(clipped) ? true : nil)
     }
 
     // MARK: Managing a session

@@ -139,6 +139,7 @@ struct InboxAvatar: View {
     var size: CGFloat = 40
     /// The chat's own picture from the Mac (`ChatPictures`); the initials while there is none.
     var picture: UIImage? = nil
+    @ObservedObject private var pictures = ChatPictures.shared
 
     private var initials: String { Self.initials(name) }
 
@@ -154,14 +155,25 @@ struct InboxAvatar: View {
         // The Mac's `ChatsAvatar`: the initials in the person's own color, the app as a badge on the corner.
         face
             .overlay(alignment: .bottomTrailing) {
-                Image(icon: style.symbol)
-                    .font(Theme.font(size * 0.2, .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: size * 0.42, height: size * 0.42)
-                    .background(style.color, in: Circle())
-                    .padding(Theme.Spacing.xxs / 2)
-                    .background(Circle().fill(Theme.canvas))
-                    .offset(x: Theme.Spacing.xs, y: Theme.Spacing.xxs)
+                // The app's real icon from the Mac (the Mac's `SiteIcon` with `source`), else its mark in its color.
+                Group {
+                    if let icon = pictures.appIcon(app) {
+                        Image(uiImage: icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: size * 0.46, height: size * 0.46)
+                    } else {
+                        Image(icon: style.symbol)
+                            .font(Theme.font(size * 0.2, .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: size * 0.42, height: size * 0.42)
+                            .background(style.color, in: Circle())
+                            .padding(Theme.Spacing.xxs / 2)
+                            .background(Circle().fill(Theme.canvas))
+                    }
+                }
+                .offset(x: Theme.Spacing.xs, y: Theme.Spacing.xxs)
             }
             .accessibilityHidden(true)
     }
