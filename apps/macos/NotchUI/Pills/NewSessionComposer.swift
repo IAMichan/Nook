@@ -432,10 +432,9 @@ struct NewSessionComposer: View {
         ModeToggle(mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }))
     }
 
-    /// Agent or Plan, access, speed and sub-threads, in the footer of the model picker.
+    /// Access, speed and sub-threads, in the footer of the model picker (the agent decides on Plan itself).
     private var options: some View {
         ModelPickerOptions(
-            mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }),
             access: .init(provider: config.provider, chosen: config.permission, readOnly: config.mode == .plan,
                           pick: { config.permission = $0; remember() }),
             speedTiers: speedTiers, speed: config.speedTier, pickSpeed: { config.speedTier = $0 },

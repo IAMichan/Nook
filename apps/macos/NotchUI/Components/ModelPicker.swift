@@ -84,8 +84,7 @@ struct ModelPicker<Above: View>: View {
     let chosen: ModelPickerPlace
     /// What the "+" at the foot of the rail says it adds.
     let addHelp: String
-    let settingsTitle: String
-    /// Opens the Settings section where places and models are set up; the "+" and the link at the bottom both go there.
+    /// Opens the Settings section where places and models are set up; the "+" goes there.
     let openSettings: () -> Void
     /// Rows above the search for a place.
     @ViewBuilder var above: (ModelPickerPlace) -> Above
@@ -195,8 +194,6 @@ struct ModelPicker<Above: View>: View {
         }
         // ⌘1–⌘9 pick the nth model listed (`ModelPickerKeys`), also while the search has the keyboard.
         .keyCommands(numberKeys(shown.models), context: ["modelPickerOpen": true])
-        DropdownDivider()
-        DropdownRow(symbol: "gearshape", title: settingsTitle, action: openSettings)
     }
 
     private func numberKeys(_ models: [ModelPickerItem]) -> [String: () -> Bool] {
@@ -220,10 +217,10 @@ struct ModelPicker<Above: View>: View {
 }
 
 extension ModelPicker where Above == EmptyView {
-    init(places: [ModelPickerPlace], chosen: ModelPickerPlace, addHelp: String, settingsTitle: String,
+    init(places: [ModelPickerPlace], chosen: ModelPickerPlace, addHelp: String,
          openSettings: @escaping () -> Void, footer: AnyView? = nil, trailing: AnyView? = nil,
          list: @escaping (ModelPickerPlace, String) -> ModelPickerList) {
-        self.init(places: places, chosen: chosen, addHelp: addHelp, settingsTitle: settingsTitle,
+        self.init(places: places, chosen: chosen, addHelp: addHelp,
                   openSettings: openSettings, above: { _ in EmptyView() }, footer: footer, trailing: trailing, list: list)
     }
 }
