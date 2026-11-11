@@ -240,7 +240,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "acp.registry.runs": "Start: %@",
         "acp.registry.emptyList": "Het register gaf geen agents terug.",
         "acp.registry.failed": "Het register laden lukte niet: %@",
-        "acp.add": "Voeg toe",
+        "acp.add": "Toevoegen",
         "acp.manual.title": "Een ACP-agent toevoegen",
         "acp.manual.subtitle": "Een naam en de opdracht die zijn ACP-server start.",
         "acp.manual.name": "Naam",

@@ -77,13 +77,20 @@ private struct AgentAccountCardRow: View {
     }
 
     /// Antigravity's hooks may be set up while Nook holds no Google sign-in for it yet.
-    private var antigravitySignedOut: Bool { profile.kind == .antigravity && app.antigravityUsage.noLogin }
+    private var antigravitySignedOut: Bool { Self.antigravitySignedOut(profile, app: app) }
 
-    private var health: ConnectionHealth {
-        if busy { return .busy }
-        if !profile.isEnabled { return .off }
-        if antigravitySignedOut { return .needsYou }
-        if account != nil { return .working }
+    private static func antigravitySignedOut(_ profile: AgentProfile, app: AppModel) -> Bool {
+        profile.kind == .antigravity && app.antigravityUsage.noLogin
+    }
+
+    private var health: ConnectionHealth { Self.health(profile, enabled: profile.isEnabled, app: app) }
+
+    /// How an account is doing: one rule for its row and its manage sheet.
+    static func health(_ profile: AgentProfile, enabled: Bool, app: AppModel) -> ConnectionHealth {
+        if app.agentConnect[profile.id]?.isBusy == true { return .busy }
+        if !enabled { return .off }
+        if antigravitySignedOut(profile, app: app) { return .needsYou }
+        if app.history.profileAccounts[profile.id] != nil { return .working }
         if app.history.executables[profile.kind] == nil { return .notLinked }
         return .needsYou
     }
@@ -233,14 +240,7 @@ private struct ManageAccountSheet: View {
     }
 
     /// How the account is doing, the same as its row says.
-    private var health: ConnectionHealth {
-        if app.agentConnect[profile.id]?.isBusy == true { return .busy }
-        if !current.isEnabled { return .off }
-        if profile.kind == .antigravity && app.antigravityUsage.noLogin { return .needsYou }
-        if account != nil { return .working }
-        if app.history.executables[profile.kind] == nil { return .notLinked }
-        return .needsYou
-    }
+    private var health: ConnectionHealth { AgentAccountCardRow.health(profile, enabled: current.isEnabled, app: app) }
 
     private var nameChanged: Bool {
         name != profile.label && !name.trimmingCharacters(in: .whitespaces).isEmpty
