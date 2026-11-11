@@ -1,9 +1,9 @@
 import SwiftUI
 
 // What a session is set to beside its model, in the footer of the model picker instead of as pills in the composer:
-// the reasoning effort, the speed tier, Ultracode, Main thread (sub-threads) and how much access the agent has. The
-// composer of a new session and of a running one both hand their values to this one view, so every agent shows the same
-// choices (each only where its agent offers them) and the composer keeps its row for the model, the mode and the usage.
+// Agent or Plan, the reasoning effort, the speed tier, Ultracode, Main thread (sub-threads) and how much access the agent
+// has. The composer of a new session and of a running one both hand their values to this one view, so every agent shows
+// the same choices (each only where its agent offers them) and the composer keeps its row for the model and the usage.
 
 struct ModelPickerOptions: View {
     /// The reasoning effort: one level per model of a family (an agent that lists a model per level), or levels set on the session.
@@ -28,6 +28,8 @@ struct ModelPickerOptions: View {
     }
 
     var effort: Effort?
+    /// Agent or Plan; nil hides the choice.
+    var mode: Binding<ExecutionMode>? = nil
     var access: Access?
     var speedTiers: [SpeedTier] = []
     var speed: String?
@@ -42,12 +44,14 @@ struct ModelPickerOptions: View {
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: NookTheme.Spacing.xs) {
+                modeChoice
                 speedChoice
                 subThreads
                 Spacer(minLength: NookTheme.Spacing.sm)
                 accessMenu
             }
             ChipFlow(spacing: NookTheme.Spacing.xs) {
+                modeChoice
                 speedChoice
                 subThreads
                 accessMenu
@@ -64,6 +68,22 @@ struct ModelPickerOptions: View {
                                  on: mainThreadOffered ? mainThread : ultracode, divided: false) { on in
             if mainThreadOffered { setMainThread(on) }
             if ultracodeOffered { setUltracode(on) }
+        }
+    }
+
+    /// Agent and Plan side by side, as one segmented choice. Plan makes the agent read-only (the access menu says so).
+    @ViewBuilder
+    private var modeChoice: some View {
+        if let mode {
+            HStack(spacing: 2) {
+                ForEach(ExecutionMode.allCases) { option in
+                    segment(option.label, symbol: option == .plan ? "list.bullet.clipboard" : "sparkles",
+                            on: mode.wrappedValue == option) { mode.wrappedValue = option }
+                        .help(option.help)
+                }
+            }
+            .padding(2)
+            .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
         }
     }
 
