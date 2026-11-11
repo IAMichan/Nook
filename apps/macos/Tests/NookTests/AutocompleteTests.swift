@@ -589,6 +589,36 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertFalse(samples.relevant(for: "chat", excluding: own).contains { $0.hasPrefix("Zullen we") }, "the field's own text is not a sample")
     }
 
+    func testSamplesAreFoundByTheContextTheyWereWrittenIn() {
+        var samples = CompletionSamples()
+        let context = CompletionSamples.contextWords("Lisa\nZullen we vrijdag de presentatie voor het kwartaaloverleg doornemen?")
+        XCTAssertNotNil(context)
+        samples.add("Prima, dan zie ik je om tien uur in de", app: "chat", context: context)
+        samples.add("Prima, dan zie ik je om tien uur in de kleine zaal!", app: "chat")
+        XCTAssertEqual(samples.samples.first?.context, context, "a sample that grows keeps its context")
+        samples.add("Haha ja, zaterdag naar het strand lijkt me echt top", app: "chat")
+        let about = samples.relevant(for: "chat", about: "Kunnen we de presentatie voor het kwartaaloverleg verzetten?", limit: 1)
+        XCTAssertEqual(about.first, "Prima, dan zie ik je om tien uur in de kleine zaal!", "the conversation it answered makes it fit, not its own words")
+    }
+
+    func testContextWordsLeaveSecretsOut() {
+        let words = CompletionSamples.contextWords("Wachtwoord: Geheim123!xyz voor de server") ?? ""
+        XCTAssertFalse(words.contains("geheim123"))
+        XCTAssertNil(CompletionSamples.contextWords(""))
+    }
+
+    func testOnlyWhatWasTypedIsLearnedWithoutASuggestion() {
+        XCTAssertEqual(CompletionSamples.typed(from: "H", to: "Hoi Jan, tot morgen"), "Hoi Jan, tot morgen")
+        let quote = "\n\nOp maandag schreef Piet: kun je de offerte sturen?"
+        XCTAssertEqual(CompletionSamples.typed(from: quote, to: "Ja, ik stuur hem vandaag nog" + quote), "Ja, ik stuur hem vandaag nog",
+                       "the quoted mail the field held is not the user's writing")
+        XCTAssertEqual(CompletionSamples.typed(from: "Beste Piet, de offerte", to: "Beste Piet, de offerte komt morgen"), "offerte komt morgen")
+        XCTAssertNil(CompletionSamples.typed(from: "Hallo", to: "Hallo"))
+        XCTAssertNil(CompletionSamples.typed(from: "Hallo daar", to: "Hallo"))
+        XCTAssertTrue(CompletionPreferences().learnWithoutSuggestion)
+        XCTAssertFalse(CompletionPreferences.decode(Data(#"{"learn":false}"#.utf8)).personalHintsDismissed)
+    }
+
     func testTopicReadsWhereAndWhatIsWritten() {
         var input = CompletionContext(before: "")
         input.windowTitle = "Lisa"

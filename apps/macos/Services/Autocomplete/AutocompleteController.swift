@@ -143,9 +143,23 @@ final class AutocompleteController: ObservableObject {
     private var refreshWork: DispatchWorkItem?
     private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
-    private var pendingSample: (app: String, text: String)?
-    /// A suggestion was taken in the field `pendingSample` comes from: as in Cotypist, only such a field is learned from.
+    /// The field being written in, to learn from once the user leaves it or sends the message (see `record`).
+    private struct PendingSample {
+        var app: String
+        /// The field's text when it was first seen: what was there before the user typed.
+        var start: String
+        var text: String
+        /// The context the prompt was made with (the conversation, the page), for `CompletionSamples.Sample.context`.
+        var context: CompletionContext?
+        /// A lot of text came in at once (a paste, a template): not the user's own writing.
+        var pasted = false
+    }
+    private var pendingSample: PendingSample?
+    /// A suggestion was taken in the field `pendingSample` comes from: its whole text is learned from. Without one, only
+    /// what was typed there, and only with `learnWithoutSuggestion`.
     private var sampleTaken = false
+    /// More characters than this arriving between two keys is a paste, not typing.
+    private static let pasteJump = 40
     /// The phrases the user writes again and again, from their writing samples (see `applyPersonalization`).
     private var phrases = CompletionPhrases()
     /// The most frequent of them, for the prompt.
@@ -1607,7 +1621,16 @@ final class AutocompleteController: ObservableObject {
         let text = snapshot.before + snapshot.after
         // Much shorter text: the field was emptied (message sent) or another field has the focus. Keep what was written.
         if let pendingSample, pendingSample.app != bundleID || text.count < pendingSample.text.count / 2 { commitSample() }
-        pendingSample = (bundleID, text)
+        let key = CompletionFieldKey.make(app: bundleID, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
+        let context = fieldContext.flatMap { $0.key == key ? $0.context : nil }
+        if var pending = pendingSample {
+            if text.count - pending.text.count > Self.pasteJump { pending.pasted = true }
+            pending.text = text
+            if let context { pending.context = context }
+            pendingSample = pending
+        } else {
+            pendingSample = PendingSample(app: bundleID, start: text, text: text, context: context)
+        }
     }
 
     private func commitSample() {
@@ -1615,8 +1638,17 @@ final class AutocompleteController: ObservableObject {
         sampleTaken = false
         guard let sample = pendingSample else { return }
         pendingSample = nil
-        guard taken else { return }
-        if store.addSample(sample.text, app: sample.app) { applyPersonalization() }
+        let text: String
+        if taken {
+            text = sample.text
+        } else {
+            // As Cotypist with "Record text even when you accept no suggestion": what the user typed in a field where
+            // suggestions came, even when none was taken. Never a paste, nor the text the field held before.
+            guard prefs.learnWithoutSuggestion, !sample.pasted, let typed = CompletionSamples.typed(from: sample.start, to: sample.text) else { return }
+            text = typed
+        }
+        let context = sample.context.flatMap { CompletionSamples.contextWords($0.topic(before: "")) }
+        if store.addSample(text, app: sample.app, context: context) { applyPersonalization() }
     }
 
     /// Hands the words the user writes often to the model, and learns the phrases they write again and again.

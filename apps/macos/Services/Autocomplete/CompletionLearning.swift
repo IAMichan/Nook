@@ -6,10 +6,16 @@ struct CompletionSamples: Codable, Equatable {
         var app: String
         var text: String
         var date: Date
+        /// The words of what was around the field when this was written (the conversation, the mail, the page title), as
+        /// Cotypist keeps the on-screen context with each recorded text: earlier writing about the same thing is found by it,
+        /// even when the text itself shares few words with it ("Prima, tot dan!" under a message about Friday's meeting).
+        /// Only the words, sorted, not the text: enough to match on, and it says less about what others wrote. Nil in
+        /// samples from before this was kept.
+        var context: String?
     }
 
     private(set) var samples: [Sample] = []
-    var capacity = 400
+    var capacity = 800
     var maxLength = 2_000
     /// Short chat messages ("Thanks, see you tomorrow!") count too: they hold the phrases written most often.
     var minLength = 12
@@ -17,15 +23,19 @@ struct CompletionSamples: Codable, Equatable {
     var minPromptLength = 40
 
     /// Text that only extends the last sample of the same app (still typing in that field) replaces it.
-    mutating func add(_ text: String, app: String, date: Date = Date()) {
+    /// - Parameter context: what was around the field, see `contextWords`.
+    mutating func add(_ text: String, app: String, context: String? = nil, date: Date = Date()) {
         let trimmed = String(text.trimmingCharacters(in: .whitespacesAndNewlines).suffix(maxLength))
         guard trimmed.count >= minLength else { return }
+        let context = context.flatMap { $0.isEmpty ? nil : $0 }
         if let index = samples.lastIndex(where: { $0.app == app }),
            trimmed.hasPrefix(samples[index].text) || samples[index].text.hasPrefix(trimmed) {
-            if trimmed.count >= samples[index].text.count { samples[index] = Sample(app: app, text: trimmed, date: date) }
+            if trimmed.count >= samples[index].text.count {
+                samples[index] = Sample(app: app, text: trimmed, date: date, context: context ?? samples[index].context)
+            }
             return
         }
-        samples.append(Sample(app: app, text: trimmed, date: date))
+        samples.append(Sample(app: app, text: trimmed, date: date, context: context))
         if samples.count > capacity { samples.removeFirst(samples.count - capacity) }
     }
 
@@ -48,7 +58,9 @@ struct CompletionSamples: Codable, Equatable {
         var scored: [(score: Double, index: Int)] = []
         for (index, sample) in samples.enumerated() where sample.text.count >= minPromptLength {
             if !field.isEmpty, field.contains(sample.text.prefix(80).lowercased()) { continue }
-            let shared = wanted.isEmpty ? 0 : MemoryText.tokens(sample.text).intersection(wanted).count
+            var words = wanted.isEmpty ? [] : MemoryText.tokens(sample.text)
+            if !wanted.isEmpty, let context = sample.context { words.formUnion(context.split(separator: " ").map(String.init)) }
+            let shared = words.intersection(wanted).count
             let sameApp = sample.app == app
             guard sameApp || shared >= Self.sharedWordsFromOtherApps else { continue }
             // Newer writing breaks a tie: 0 for the oldest, up to 1 for the newest.
@@ -60,6 +72,33 @@ struct CompletionSamples: Codable, Equatable {
 
     /// Words a sample from another app must share with the topic to be shown as the user's writing.
     static let sharedWordsFromOtherApps = 2
+
+    /// The words of the context a text was written in (`CompletionContext.topic` without the text itself), for
+    /// `Sample.context`: the newest end of it, secrets taken out first, as the sorted set of words `MemoryText.tokens` finds.
+    static func contextWords(_ topic: String, limit: Int = 60) -> String? {
+        let clean = CompletionPrivacy.sanitize(String(topic.suffix(contextLength)))
+        let words = MemoryText.tokens(clean).sorted().prefix(limit)
+        return words.isEmpty ? nil : words.joined(separator: " ")
+    }
+
+    /// The end of the context `contextWords` reads.
+    static let contextLength = 600
+
+    /// What the user typed in a field since it got the focus: the stretch between what stayed the same at the start and at
+    /// the end, from `start` (the text when the field was first seen) to `now`. Nil when nothing was added. Text that was
+    /// there already (a quoted mail, a document opened to edit) is someone else's or older writing, and is left out.
+    static func typed(from start: String, to now: String) -> String? {
+        let old = Array(start), new = Array(now)
+        var prefix = 0
+        while prefix < old.count, prefix < new.count, old[prefix] == new[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < old.count - prefix, suffix < new.count - prefix, old[old.count - 1 - suffix] == new[new.count - 1 - suffix] { suffix += 1 }
+        guard new.count - suffix > prefix else { return nil }
+        // Start the stretch at the beginning of the word the change began in: "Hoi Jan" typed after "Ho" is "Hoi Jan".
+        var from = prefix
+        while from > 0, !new[from - 1].isWhitespace { from -= 1 }
+        return String(new[from..<(new.count - suffix)])
+    }
 
     /// Words the user writes often, weighted 0…1. Short common words are left out: the model knows those.
     func vocabulary(limit: Int = 400) -> [String: Double] {

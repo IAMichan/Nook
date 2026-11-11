@@ -135,7 +135,13 @@ struct CompletionPreferences: Codable, Equatable {
     // Personal
     var instructions = ""
     var learn = true
+    /// Also learn from fields where no suggestion was taken, as Cotypist's "Record text even when you accept no suggestion":
+    /// the fields where suggestions miss are the ones there is most to learn from. Only what was typed there, not text the
+    /// field already held or a paste.
+    var learnWithoutSuggestion = true
     var personalStrength = 0.3
+    /// The hints on the General page to turn on learning and to fill in instructions were put away with "Not now".
+    var personalHintsDismissed = false
 
     // Per app and site
     var apps: [String: CompletionAppRule] = [:]
