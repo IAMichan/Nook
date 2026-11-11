@@ -106,7 +106,9 @@ enum CompanionAgents {
                     entries.append(TimelineEntry(id: message.id + ":" + step.id, kind: .tool,
                                                  text: CompanionPolicy.clip(step.summary, limit: 240),
                                                  detail: CompanionPolicy.clip(McpToolName(step.name)?.label ?? step.name, limit: 120), date: date,
-                                                 failed: step.state == .failed))
+                                                 failed: step.state == .failed,
+                                                 // What it gave back, or why it failed, or the edit's patch: what it opens to.
+                                                 output: TimelineEntry.outputTail(step.output ?? step.error ?? step.patch)))
                 }
             case .notice:
                 // An error or a usage limit shows as one on the phone; a compaction as a quiet note.

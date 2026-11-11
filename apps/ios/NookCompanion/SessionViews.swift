@@ -161,12 +161,15 @@ struct SessionDetailView: View {
             // While the session is on screen its conversation stays current: live from a Mac that sends it by itself
             // (`watchSession`), else asked for every few seconds. Leaving the screen ends the loop.
             .task {
-                let live = await client.watchSession(sessionID)
+                var live = await client.watchSession(sessionID)
                 while !Task.isCancelled {
+                    // Opened while the Mac could not be reached: once it is back, follow live from then on.
+                    if !live, client.timelineIsLive { live = await client.watchSession(sessionID) }
                     let following = live && client.timelineIsLive
                     if !following { await client.loadTimeline(sessionID) }
                     let working = client.sessions.first { $0.id == sessionID }?.attention == "working"
-                    try? await Task.sleep(for: .seconds(following ? 30 : (working ? 2 : 5)))
+                    // Following live costs nothing here; the short wait only notices a dropped connection quickly.
+                    try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
                 }
             }
         } else {
@@ -397,13 +400,15 @@ struct ItemView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            // As t3code's approval card: a small capitalized heading in the waiting color, then what is asked, large.
             Label {
-                Text(heading).foregroundStyle(Theme.paper)
+                Text(heading).textCase(.uppercase).tracking(1.1)
             } icon: {
-                Image(icon: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
+                Image(icon: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill")
             }
-            .font(Theme.TextStyle.label)
-            Text(item.title).font(Theme.TextStyle.body).foregroundStyle(Theme.paper).textSelection(.enabled)
+            .font(Theme.TextStyle.caption)
+            .foregroundStyle(Theme.amber)
+            Text(item.title).font(Theme.TextStyle.title).foregroundStyle(Theme.paper).textSelection(.enabled)
             if !item.detail.isEmpty {
                 Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary)
                     .padding(Theme.Spacing.md)
@@ -414,15 +419,15 @@ struct ItemView: View {
             case _ where !client.allows(.approve):
                 ApproveOffLabel()
             case .approval:
-                if item.canAllow {
-                    NookSplitButton(primary: NookNoticeAction(String(localized: "Allow"), symbol: "checkmark") {
-                        Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
-                    }, secondary: NookNoticeAction(String(localized: "Deny")) {
+                // Two large buttons across the card, easy to hit with a thumb: Deny, and Allow in Nook's color.
+                HStack(spacing: Theme.Spacing.md) {
+                    DecisionButton(title: String(localized: "Deny"), symbol: "xmark", role: .deny) {
                         Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
-                    })
-                } else {
-                    NookGhostButton(title: String(localized: "Deny")) {
-                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    }
+                    if item.canAllow {
+                        DecisionButton(title: String(localized: "Allow"), symbol: "checkmark", role: .allow) {
+                            Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
+                        }
                     }
                 }
                 if !item.canAllow {
@@ -461,7 +466,32 @@ struct ItemView: View {
     }
 
     /// Typed, so both words go through the String Catalog.
-    private var heading: LocalizedStringKey { item.kind == .approval ? "Approval" : "Question" }
+    private var heading: LocalizedStringKey { item.kind == .approval ? "Approval needed" : "Waiting for your answer" }
+}
+
+/// A full-width round button of an approval: Allow on Nook's own color, Deny on the surface with its word in coral.
+struct DecisionButton: View {
+    enum Role { case allow, deny }
+
+    let title: String
+    let symbol: String
+    let role: Role
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(icon: symbol).font(Theme.font(13, .bold))
+                Text(title).font(Theme.textFont(15, .semibold))
+            }
+            .foregroundStyle(role == .allow ? Theme.onIris : Theme.coral)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(Capsule().fill(role == .allow ? Theme.iris : Theme.coral.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(role == .allow ? Color.clear : Theme.coral.opacity(0.3), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressFade())
+    }
 }
 
 /// In place of Allow, Deny or an answer when the Mac does not let this phone approve (`CompanionScope.approve`).

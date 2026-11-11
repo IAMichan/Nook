@@ -7,11 +7,6 @@ import UIKit
 // a session's state reads in words, and the system bars. Change the design in `NookTheme`, never here.
 typealias Theme = NookTheme
 
-extension NookTheme.TextStyle {
-    /// A tab in the panel's header, as the Mac's `NookTabBar`.
-    static var tab: Font { NookTheme.textFont(13, .medium) }
-}
-
 extension NookTheme {
     // MARK: Session state
 
