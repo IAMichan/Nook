@@ -964,6 +964,14 @@ struct ChatInbox: Codable, Equatable, Sendable {
         .map(\.0)
     }
 
+    /// The dates of the messages `after` holds and `before` did not, in the chats of these apps: what one read brought.
+    static func added(before: ChatInbox, after: ChatInbox, apps: Set<String>) -> [Date] {
+        after.threads.values.filter { apps.contains($0.app) }.flatMap { thread -> [Date] in
+            let known = Set(before.threads[thread.id]?.messages.map(\.id) ?? [])
+            return thread.messages.filter { !known.contains($0.id) }.map(\.date)
+        }
+    }
+
     /// The key of a chat its app knows by an id of its own (`BridgedChat.chatID`): "whatsapp#31612345678@s.whatsapp.net".
     /// A name's key always has "|", so the two never meet.
     static func key(app: String, id: String) -> String { app + "#" + id }
