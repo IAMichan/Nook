@@ -308,6 +308,8 @@ struct AgentRunPanel: View {
                 .accessibilityLabel(tr("chat.more"))
             }
             if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
+            // Its parent, forks, delegated tasks and side chats: the only way to the ones the Agents list leaves out.
+            LineageControl(workspace: workspace, runID: runID)
             Spacer(minLength: 8)
             ResourceUsageBadge(workspace: workspace, runID: runID)
             if let remote = run.remote {
