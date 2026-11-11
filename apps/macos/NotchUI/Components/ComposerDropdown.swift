@@ -422,9 +422,6 @@ struct AgentModelPicker: View {
     let model: String
     /// Accounts get a logo of their own (a running session keeps its account).
     var showsAccounts = true
-    /// A new session can send its prompt to more models than the chosen one (`ModelComparison`): these are the others.
-    /// Nil hides the choice (a running session).
-    var comparing: Binding<[ComparisonTarget]>? = nil
     /// This Mac's models in front of the agents (Nook's own brain); nil for an agent.
     var local: ModelPickerLocal? = nil
     /// "Auto" as a place of its own in the rail, above the agents: Nook picks one per turn (see `AutoModel`). Off for
@@ -435,8 +432,6 @@ struct AgentModelPicker: View {
     /// The reasoning column beside the models (`ModelPickerReasoning`).
     var trailing: AnyView? = nil
     let choose: (RunProvider, String?, String?) -> Void
-    /// Picking a model adds it to the comparison instead of replacing the chosen one.
-    @State private var multi = false
 
     /// One logo in the rail: an agent, or one of its accounts when it has several to pick from.
     private struct Place: Hashable {
@@ -470,9 +465,7 @@ struct AgentModelPicker: View {
             ?? pickerPlace(chosenPlace)
         ModelPicker(places: (local.map { [$0.place] } ?? []) + (auto.map { [$0] } ?? []) + agentPlaces, chosen: chosen,
                     addHelp: tr("agents.picker.add"), settingsTitle: tr("agents.picker.settings"),
-                    openSettings: { app.openSettings(section: .agents) }, above: { place in
-            if let comparing, place != Self.autoPlace { compareToggle(comparing) }
-        }, footer: footer, trailing: trailing, list: { picked, query in
+                    openSettings: { app.openSettings(section: .agents) }, footer: footer, trailing: trailing, list: { picked, query in
             if let local, picked.id == local.place.id { return local.list(query) }
             if picked == Self.autoPlace { return ModelPickerList(models: [autoRow()]) }
             return shown.first { $0.id == picked.id }.map { models(of: $0, query: query) } ?? ModelPickerList(models: [])
@@ -537,8 +530,8 @@ struct AgentModelPicker: View {
     /// "Auto" sits in the rail next to the agents, not under one of them: it spans every agent and account.
     private static var autoPlace: ModelPickerPlace { ModelPickerPlace(id: AutoModel.id, name: tr("auto.model"), symbol: AutoModel.symbol) }
 
-    /// Hidden for Nook's own brain, and while picking several models (Auto is one choice, not a model to compare).
-    private var showsAuto: Bool { offersAuto && !multi && local == nil }
+    /// Hidden for Nook's own brain.
+    private var showsAuto: Bool { offersAuto && local == nil }
 
     /// "Auto": Nook picks the agent, account and model for each turn from every model allowed in Settings, by the task
     /// and the limits. Picking it starts from the agent and account in use.
@@ -556,11 +549,11 @@ struct AgentModelPicker: View {
         let profile = profileOf(place)
         // A model that comes in thinking levels shows once; its level is picked with the effort control.
         let family = app.modelFamily(option, for: current, profileID: profile)
-        let name = app.modelMenuName(option, for: current, profileID: profile)
+        // The agent's own default model says "Default model", apart from the reasoning column's "Default" level.
+        let name = option.isEmpty ? tr("compose.modelDefault") : app.modelMenuName(option, for: current, profileID: profile)
         let choice = app.workspace.modelChoice(option, for: current, profileID: profile)
         let isChosen = isChosen(place)
             && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
-        let order = multi ? compareOrder(option, of: place, chosen: isChosen) : nil
         // A model that needs a newer agent says which update unlocks it, and cannot be picked until then.
         return ModelPickerItem(id: option,
                                title: name,
@@ -568,61 +561,13 @@ struct AgentModelPicker: View {
                                account: account(of: place),
                                detail: app.modelUpdateNote(option, for: current)
                                    ?? (family == nil && ModelSearch.idAddsToName(option, name) ? option : nil),
-                               trailing: order.map { "\($0)" }
-                                   ?? (choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil),
-                               chosen: multi ? order != nil : isChosen,
+                               trailing: choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil,
+                               chosen: isChosen,
                                disabledReason: app.modelUpdateHelp(option, for: current),
-                               staysOpen: multi,
                                favorite: option.isEmpty ? nil : favoriteBinding(option, for: current)) {
-            if multi, let comparing {
-                toggleCompared(option, of: place, in: comparing)
-                return
-            }
             let picked = app.menuPick(option, keeping: self.isChosen(place) ? model : "", for: current, profileID: profile)
             choose(current, pickedProfile(place), picked)
         }
-    }
-
-    // MARK: Several models
-
-    /// "Send to several models": on, a click adds or removes a model next to the chosen one; off, the others are let go.
-    private func compareToggle(_ comparing: Binding<[ComparisonTarget]>) -> some View {
-        let on = multi || !comparing.wrappedValue.isEmpty
-        return Group {
-            DropdownRow(symbol: "square.stack.3d.up", title: tr("compare.toggle"),
-                        detail: on ? tr("compare.toggleOn", ModelComparison.maxModels) : tr("compare.toggleDetail"),
-                        trailing: on ? "\(comparing.wrappedValue.count + 1)" : nil, chosen: on, staysOpen: true) {
-                if on {
-                    multi = false
-                    comparing.wrappedValue = []
-                } else {
-                    multi = true
-                }
-            }
-            DropdownDivider()
-        }
-        .onAppear { if !comparing.wrappedValue.isEmpty { multi = true } }
-    }
-
-    private var primaryTarget: ComparisonTarget {
-        ComparisonTarget(provider: provider, profileID: profileID ?? app.connectedProfiles(for: provider).first?.id ?? "", model: model)
-    }
-
-    private func target(_ option: String, of place: Place) -> ComparisonTarget {
-        if isChosen(place) { return ComparisonTarget(provider: place.provider, profileID: primaryTarget.profileID, model: option) }
-        return ComparisonTarget(provider: place.provider, profileID: profileOf(place) ?? "", model: option)
-    }
-
-    /// Where a model stands in the comparison (1 is the chosen one), nil when it is not part of it.
-    private func compareOrder(_ option: String, of place: Place, chosen: Bool) -> Int? {
-        if chosen { return 1 }
-        let all = ModelComparison.targets(primary: primaryTarget, extras: comparing?.wrappedValue ?? [])
-        return all.firstIndex(of: target(option, of: place)).map { $0 + 1 }
-    }
-
-    private func toggleCompared(_ option: String, of place: Place, in comparing: Binding<[ComparisonTarget]>) {
-        comparing.wrappedValue = ModelComparison.toggling(target(option, of: place), in: comparing.wrappedValue,
-                                                          primary: primaryTarget)
     }
 
     /// Older models stay out of the list until you search for them, unless one is in use or a favorite.
@@ -653,7 +598,8 @@ struct AgentModelPicker: View {
     }
 }
 
-/// Build/Plan control: not a menu but one button that switches between the two.
+/// Build/Plan control: not a menu but one button that switches between the two. The agent composers pick the mode in
+/// the model picker (`ModelPickerOptions`) and show this only while Plan is on, so the read-only mode stays in sight.
 struct ModeToggle: View {
     @Binding var mode: ExecutionMode
 
