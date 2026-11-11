@@ -57,7 +57,7 @@ enum CompanionAgents {
         for session in sessions {
             let id = terminalPrefix + session.id
             let items = waiting.removeValue(forKey: id) ?? []
-            let folder = session.cwd.isEmpty ? session.project : URL(fileURLWithPath: session.cwd).lastPathComponent
+            let folder = session.cwd.isEmpty ? session.project : (session.cwd as NSString).lastPathComponent
             digests.append(SessionDigest(
                 id: id, title: CompanionPolicy.excerpt(session.project), agent: session.name,
                 attention: attention(session.status, approvals: !items.isEmpty), folder: folder, branch: nil,

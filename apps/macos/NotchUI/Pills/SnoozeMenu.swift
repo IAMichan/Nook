@@ -1,18 +1,21 @@
 import SwiftUI
 
-/// The items of every snooze menu (a row's hover menu and its right-click menu): the fixed choices, "until the usage limit
-/// resets" while a limit holds the session, and "Custom…" for a moment or a duration of your own.
+/// The items of every snooze menu (a row's hover menu, its right-click menu, VoiceOver's actions): the snooze options of
+/// Settings › Sessions soonest first (a today one hides once its time has passed), "until the usage limit resets" while a
+/// limit holds the session, and "Custom…" for a moment or a duration of your own.
 struct SnoozeMenuItems: View {
+    /// The moment the menu is drawn for: the rows pass their clock, so a passed option leaves with the next tick.
+    var now = Date()
     var limitResetsAt: Date?
-    let onChoice: (SnoozePolicy.Choice) -> Void
-    var onUntil: ((Date) -> Void)?
+    let onUntil: (Date) -> Void
     var onCustom: (() -> Void)?
 
     var body: some View {
-        ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
-            Button(tr("agents.snooze." + choice.rawValue)) { onChoice(choice) }
+        ForEach(SnoozeOption.menu(InboxStore.shared.snoozeOptions, now: now), id: \.option.id) { item in
+            // A duration counts from the click, not from when the menu was drawn.
+            Button(SnoozeText.title(item.option)) { onUntil(item.option.end(from: Date()) ?? item.end) }
         }
-        if let reset = limitResetsAt, let onUntil {
+        if let reset = limitResetsAt {
             Button(SnoozeText.untilReset(reset)) { onUntil(reset) }
         }
         if let onCustom {
@@ -23,6 +26,34 @@ struct SnoozeMenuItems: View {
 }
 
 enum SnoozeText {
+    /// An option as the menu says it: "1 hour", "30 minutes", "Today at 18:00", "Monday at 09:00".
+    static func title(_ option: SnoozeOption) -> String {
+        switch option.kind {
+        case .duration:
+            let minutes = option.minutes
+            if minutes % 1440 == 0 { return count(minutes / 1440, one: "snooze.option.day", many: "snooze.option.days") }
+            if minutes % 60 == 0 { return count(minutes / 60, one: "snooze.option.hour", many: "snooze.option.hours") }
+            return count(minutes, one: "snooze.option.minute", many: "snooze.option.minutes")
+        case .time:
+            return tr("snooze.option.at", dayName(option.day), clock(hour: option.hour, minute: option.minute))
+        }
+    }
+
+    static func dayName(_ day: SnoozeOption.Day) -> String { tr("snooze.day." + day.rawValue) }
+
+    /// "09:00" or "9:00 AM", as the Mac writes times.
+    static func clock(hour: Int, minute: Int) -> String {
+        var parts = DateComponents()
+        parts.hour = hour
+        parts.minute = minute
+        let date = Calendar.current.date(from: parts) ?? Date()
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private static func count(_ n: Int, one: String, many: String) -> String {
+        n == 1 ? tr(one) : tr(many, n)
+    }
+
     /// "Until the usage limit resets (14:30)", with the date when it is not today.
     static func untilReset(_ reset: Date) -> String {
         let clock = Calendar.current.isDateInToday(reset)

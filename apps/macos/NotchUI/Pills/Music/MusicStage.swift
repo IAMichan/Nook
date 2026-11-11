@@ -133,8 +133,7 @@ private struct LyricRow: View {
                 .frame(maxWidth: 540)
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.vertical, NookTheme.Spacing.xs)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .fill(hovering && state != .current ? NookTheme.rowHover : Color.clear))
+                .roundedBackground(hovering && state != .current ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.card)
                 .scaleEffect(state == .current ? Self.currentScale : 1)
                 .padding(.vertical, state == .current ? NookTheme.Spacing.xs : 0)
                 .contentShape(Rectangle())
@@ -228,7 +227,8 @@ struct MusicUpNextView: View {
                         }
                     }
                 }
-                .padding(.horizontal, MusicLayout.edge)
+                // As the lyrics and About beside it in Now Playing's card: in line with the card's tabs.
+                .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.bottom, NookTheme.Spacing.xl)
             }
         } else if showsPlayerQueue, service.upNext == nil, service.libraryLoading {
@@ -504,9 +504,8 @@ private struct MusicBestMatch: View {
                     .padding(.trailing, NookTheme.Spacing.md)
             }
             .padding(MusicLayout.rowBleed)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .fill(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear)))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -617,7 +616,7 @@ struct MusicCoverCard: View {
                     }
                     .overlay {
                         // Under the pointer: a soft shade and what a click does, in the corner.
-                        (item.round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)))
+                        (item.round ? AnyShape(Circle()) : AnyShape(NookTheme.shape(NookTheme.Radius.card)))
                             .fill(Color.black.opacity(0.25))
                             .overlay(alignment: item.round ? .center : .bottomTrailing) {
                                 Image(icon: item.hoverSymbol)
@@ -639,7 +638,8 @@ struct MusicCoverCard: View {
                                 .opacity(hovering ? 1 : 0)
                         }
                     }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                // Under a round face the name is centred, as under a person; under a cover it starts at its edge.
+                VStack(alignment: item.round ? .center : .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(item.playing ? NookTheme.music : NookTheme.paper)
@@ -651,6 +651,7 @@ struct MusicCoverCard: View {
                             .lineLimit(1)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: item.round ? .center : .leading)
             }
             .contentShape(Rectangle())
         }

@@ -272,7 +272,7 @@ private struct NookRenameField: View {
             .focused($focused)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 40)
-            .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel, style: .continuous)
+            .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel)
             .onAppear { focused = true }
             .onSubmit(commit)
             .onChange(of: focused) { _, now in
@@ -351,7 +351,7 @@ private struct NookRow: View, Equatable {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
+        .roundedBackground(background, radius: NookTheme.Radius.card)
         .contentShape(Rectangle())
     }
 

@@ -45,7 +45,7 @@ enum ScratchProjects {
     /// The name the folder should have for `prompt`: the same day and id, the prompt's words; nil when that is its name
     /// already or the folder is not one of Nook's scratch folders.
     static func renamedName(_ path: String, prompt: String) -> String? {
-        let name = URL(fileURLWithPath: path).lastPathComponent
+        let name = (path as NSString).lastPathComponent
         // "yyyy-MM-dd-" before the words, "-xxxxxx" after them.
         guard name.count > 18 else { return nil }
         let day = name.prefix(10)

@@ -149,7 +149,7 @@ struct SettingsGroup<Content: View>: View {
                 .foregroundStyle(Theme.textTertiary)
                 .padding(.leading, Theme.Spacing.lg)
             VStack(spacing: 0) { content }
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.conversationCard, style: .continuous))
+            .roundedBackground(Theme.surface, radius: Theme.Radius.conversationCard)
         }
     }
 }

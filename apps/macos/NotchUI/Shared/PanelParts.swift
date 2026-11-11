@@ -109,7 +109,7 @@ extension View {
     /// stroke. Rows inside are split with `NookDivider`.
     func panelCard() -> some View {
         background(NookTheme.field)
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedClip(NookTheme.Radius.panel)
     }
 }
 

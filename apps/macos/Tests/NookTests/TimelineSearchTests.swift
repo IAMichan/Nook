@@ -82,4 +82,48 @@ final class TimelineSearchTests: XCTestCase {
         XCTAssertEqual(r.matches.count, 5000)
         XCTAssertLessThan(Date().timeIntervalSince(start), 5)
     }
+
+    // MARK: Transcript find
+
+    private func said(_ id: String, _ kind: AgentChatMessage.Kind, _ text: String) -> AgentChatMessage {
+        AgentChatMessage(id: id, kind: kind, text: text)
+    }
+
+    private var transcript: [TranscriptRow] {
+        [
+            .user(said("u1", .user, "Fix the Café test")),
+            .fold(id: "f1", seconds: 63, rows: [
+                .thinking(said("t1", .thinking, "Looking at the cafe test")),
+                .step(AgentToolStep(id: "s1", name: "Bash", summary: "npm test cafe", state: .done)),
+                .assistant(said("a1", .assistant, "The cafe test fails twice: cafe, CAFE."), isFinal: false),
+                .superseded(id: "x1", rows: [.assistant(said("a0", .assistant, "Old cafe answer"), isFinal: false)]),
+            ]),
+            .assistant(said("a2", .assistant, "Fixed."), isFinal: true),
+        ]
+    }
+
+    func testTranscriptFindSearchesWhatWasSaidAndOpensItsFolds() {
+        let found = TranscriptSearch.search(transcript, query: "cafe")
+        XCTAssertEqual(found.state, .results)
+        // Diacritics and case do not matter; thoughts and steps are not searched; each occurrence counts.
+        XCTAssertEqual(found.matches.map(\.rowID), ["u1", "a1", "a1", "a1", "a0"])
+        XCTAssertEqual(found.matches[0].containers, [])
+        XCTAssertEqual(found.matches[1].containers, ["fold:f1"])
+        XCTAssertEqual(found.matches[4].containers, ["fold:f1", "superseded:x1"])
+    }
+
+    func testTranscriptFindStepsRound() {
+        let found = TranscriptSearch.search(transcript, query: "cafe")
+        XCTAssertEqual(found.next(after: nil), 0)
+        XCTAssertEqual(found.next(after: 4), 0)
+        XCTAssertEqual(found.previous(before: nil), 4)
+        XCTAssertEqual(found.previous(before: 0), 4)
+        XCTAssertNil(TranscriptSearch.Result.idle.next(after: nil))
+    }
+
+    func testTranscriptFindStates() {
+        XCTAssertEqual(TranscriptSearch.search(transcript, query: "  "), .idle)
+        XCTAssertEqual(TranscriptSearch.search(transcript, query: "nowhere").state, .noResults)
+        XCTAssertEqual(TranscriptSearch.search(transcript, query: String(repeating: "a", count: 501)).state, .failed)
+    }
 }

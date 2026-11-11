@@ -104,7 +104,7 @@ private struct TuningAdviceRow: View {
                     .lineLimit(8)
                     .padding(NookTheme.Spacing.xs)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(NookTheme.surface, in: RoundedRectangle(cornerRadius: NookTheme.Radius.chip))
+                    .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.chip)
             }
             HStack(spacing: NookTheme.Spacing.md) {
                 if item.appliesInNook {

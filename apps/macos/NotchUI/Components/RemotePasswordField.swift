@@ -22,7 +22,7 @@ struct RemotePasswordField: View {
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .frame(minWidth: 160)
                     .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                     .onSubmit(unlock)
                     .disabled(checking)
                 if checking {

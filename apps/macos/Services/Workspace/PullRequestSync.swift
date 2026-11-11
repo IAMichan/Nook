@@ -139,6 +139,11 @@ final class PullRequestSync: ObservableObject {
         return landed >= since
     }
 
+    /// What the session's requests say to the auto-settle rules (`PullRequestSettlement.autoSettleState`).
+    func autoSettleState(_ id: UUID, since: Date?) -> AutoSettlePolicy.PullRequestState {
+        PullRequestSettlement.autoSettleState(links: links[id] ?? [], since: since)
+    }
+
     /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
     /// settle it), and the new branch is asked about in the next round. They stay listed above its composer.
     func forget(_ id: UUID) {
@@ -173,6 +178,17 @@ final class PullRequestSync: ObservableObject {
         let conflicted = state.isOpen && PullRequestStatusStore.shared.statuses[key]?.glyph == .conflict
         PullRequestStatusStore.shared.record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: conflicted), checks: nil)
         if changed { save() }
+    }
+
+    /// The session's agent merged or closed a pull request from the shell (`PullRequestToolCall.closesPullRequest`): its
+    /// branch, earlier branches and the requests you linked are read again now, not at the next round.
+    func recheck(_ id: UUID, now: Date = Date()) {
+        checked[id] = nil
+        let session = id.uuidString
+        for link in (earlier[id] ?? []) + (added[session] ?? []) where link.state.isOpen {
+            earlierChecked[Self.folderKey(path: session, branch: link.id)] = nil
+        }
+        refresh(now: now)
     }
 
     /// A pull request for the session's branch is being made where Nook cannot see it (GitHub's page in the browser):

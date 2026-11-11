@@ -102,7 +102,8 @@ enum GitHubPullRequestList {
                     let entries = PullRequestWatchList.including(organizations, in: watching, owner: login)
                     guard let found = await fetchWatchedInParts(token: target.token, entries: entries) else { return (target.id, nil) }
                     // Only a typed entry is worth a note; an organization found on its own that cannot be searched stays quiet.
-                    return (target.id, WatchedPullRequests(items: found.items, unreadable: found.unreadable.filter { watching.contains($0) }))
+                    return (target.id, WatchedPullRequests(items: found.items, unreadable: found.unreadable.filter { watching.contains($0) },
+                                                           failed: found.failed))
                 }
             }
             var result: [String: WatchedPullRequests] = [:]
@@ -112,47 +113,50 @@ enum GitHubPullRequestList {
     }
 
     /// Up to twenty entries are forty searches. In one query GitHub can take long enough to run out of time, and then
-    /// the whole query is asked again; a few entries per request, all at once, answer much sooner. Nil when a part could
-    /// not get through, so the last watched rows can stay.
-    private static func fetchWatchedInParts(token: String, entries: [String]) async -> (items: [PullRequestItem], unreadable: [String])? {
+    /// the whole query is asked again; a few entries per request, all at once, answer much sooner. A part that could not
+    /// get through only holds back its own entries (`failed`, whose last rows stay); the others come in. Nil when no
+    /// part got through, so the last watched rows stay as a whole.
+    private static func fetchWatchedInParts(token: String, entries: [String])
+        async -> (items: [PullRequestItem], unreadable: [String], failed: [String])? {
         let parts = PullRequestWatchList.parts(entries)
         guard parts.count > 1 else { return await fetchWatched(token: token, entries: entries) }
-        let answers = await withTaskGroup(of: (Int, (items: [PullRequestItem], unreadable: [String])?).self) { group in
+        let answers = await withTaskGroup(of: (Int, (items: [PullRequestItem], unreadable: [String], failed: [String])?).self) { group in
             for (index, part) in parts.enumerated() {
                 group.addTask { (index, await fetchWatched(token: token, entries: part)) }
             }
-            var answers: [(Int, (items: [PullRequestItem], unreadable: [String])?)] = []
+            var answers: [(Int, (items: [PullRequestItem], unreadable: [String], failed: [String])?)] = []
             for await answer in group { answers.append(answer) }
             return answers.sorted { $0.0 < $1.0 }.map(\.1)
         }
-        guard answers.allSatisfy({ $0 != nil }) else { return nil }
+        guard answers.contains(where: { $0 != nil }) else { return nil }
         let found = answers.compactMap { $0 }
-        return (PullRequestWatchList.combined(found.map(\.items)), found.flatMap(\.unreadable))
+        let failed = zip(parts, answers).filter { $0.1 == nil }.flatMap(\.0) + found.flatMap(\.failed)
+        return (PullRequestWatchList.combined(found.map(\.items)), found.flatMap(\.unreadable), failed)
     }
 
     /// The watched entries in one request. When GitHub turns the request down as a whole (one entry it cannot search can
-    /// do that), each entry is asked on its own, so only the entries that fail are left out. Nil when the request could
-    /// not get through at all, so the last watched rows can stay.
-    private static func fetchWatched(token: String, entries: [String]) async -> (items: [PullRequestItem], unreadable: [String])? {
-        guard !entries.isEmpty else { return ([], []) }
+    /// do that), each entry is asked on its own, so only the entries that fail are left out: as `unreadable` when GitHub
+    /// refused it, as `failed` (its last rows stay) when it could not get through. Nil when the request could not get
+    /// through at all, so the last watched rows can stay.
+    private static func fetchWatched(token: String, entries: [String])
+        async -> (items: [PullRequestItem], unreadable: [String], failed: [String])? {
+        guard !entries.isEmpty else { return ([], [], []) }
         do {
             let data = try await post(PullRequestGraphQL.watchBody(entries), token: token)
-            return try PullRequestGraphQL.parseWatched(data, entries: entries)
+            let found = try PullRequestGraphQL.parseWatched(data, entries: entries)
+            return (found.items, found.unreadable, [])
         } catch {
             // Only GitHub refusing the query points at an entry; a lost connection or a rate limit says nothing about one.
             guard ConnectorErrorKind.classify(error) == .other else { return nil }
-            guard entries.count > 1 else { return ([], entries) }
-            return await withTaskGroup(of: (Int, [PullRequestItem], [String]).self) { group in
+            guard entries.count > 1 else { return ([], entries, []) }
+            return await withTaskGroup(of: (Int, (items: [PullRequestItem], unreadable: [String], failed: [String])).self) { group in
                 for (index, entry) in entries.enumerated() {
-                    group.addTask {
-                        let one = await fetchWatched(token: token, entries: [entry])
-                        return (index, one?.items ?? [], one?.unreadable ?? [])
-                    }
+                    group.addTask { (index, await fetchWatched(token: token, entries: [entry]) ?? ([], [], [entry])) }
                 }
-                var parts: [(Int, [PullRequestItem], [String])] = []
+                var parts: [(Int, (items: [PullRequestItem], unreadable: [String], failed: [String]))] = []
                 for await part in group { parts.append(part) }
                 parts.sort { $0.0 < $1.0 }
-                return (PullRequestWatchList.combined(parts.map(\.1)), parts.flatMap(\.2))
+                return (PullRequestWatchList.combined(parts.map(\.1.items)), parts.flatMap(\.1.unreadable), parts.flatMap(\.1.failed))
             }
         }
     }

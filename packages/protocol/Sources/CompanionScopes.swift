@@ -36,14 +36,14 @@ enum CompanionScopes {
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
         .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
         .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
-        .pulls: .scope(.read), .pull: .scope(.read),
+        .pulls: .scope(.read), .pull: .scope(.read), .history: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),
         .send: .scope(.operate), .stop: .scope(.operate), .options: .scope(.operate), .start: .scope(.operate),
         .manage: .scope(.operate),
         // Reviewing, merging and working on a pull request act for you, as sending and starting do.
         .pullAct: .scope(.operate), .pullWork: .scope(.operate),
         // What a project holds goes further than a session's own changes.
-        .terminals: .scope(.operate), .files: .scope(.operate),
+        .terminals: .scope(.operate), .files: .scope(.operate), .fileData: .scope(.operate),
         .inbox: .scope(.chats), .inboxChat: .scope(.chats), .inboxSend: .scope(.chats), .inboxMark: .scope(.chats),
         .watchChat: .scope(.chats), .avatars: .scope(.chats),
         .music: .scope(.music),
@@ -56,6 +56,7 @@ enum CompanionScopes {
         CompanionFeature.images: .operate, CompanionFeature.liveTimeline: .read, CompanionFeature.resume: .read, CompanionFeature.diff: .read,
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
         CompanionFeature.liveActivity: .read, CompanionFeature.pullRequests: .read, CompanionFeature.attachments: .operate,
+        CompanionFeature.history: .read, CompanionFeature.filePreview: .operate,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
         CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats,
     ]
@@ -91,11 +92,13 @@ enum CompanionScopes {
             response.usage = nil
             response.pulls = nil
             response.pull = nil
+            response.cursor = nil
         }
         if !granted.contains(.operate) {
             response.launch = nil
             response.terminals = nil
             response.folder = nil
+            response.fileChunk = nil
         }
         if !granted.contains(.chats) {
             response.inbox = nil

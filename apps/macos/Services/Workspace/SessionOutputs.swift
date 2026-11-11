@@ -60,7 +60,7 @@ enum SessionOutputs {
         func add(_ raw: String, at date: Date) {
             let path = resolve(raw, in: directory)
             guard !path.isEmpty, let kind = kind(path: path) else { return }
-            let output = SessionOutput(id: "file:" + path, kind: kind, title: URL(fileURLWithPath: path).lastPathComponent,
+            let output = SessionOutput(id: "file:" + path, kind: kind, title: (path as NSString).lastPathComponent,
                                        path: path, date: date)
             if let index = files[path] { outputs[index] = output } else { files[path] = outputs.count; outputs.append(output) }
         }
@@ -122,7 +122,8 @@ enum SessionOutputs {
 /// outputs panel keeps them.
 enum SharedFiles {
     /// The tools that hand files over, by name (an MCP tool by its own name).
-    static let tools: Set<String> = ["SendUserFile"]
+    /// Codex's generated pictures count too (`CodexAppServerMapper.imageTool`).
+    static let tools: Set<String> = ["SendUserFile", "image_generation"]
 
     static func isTool(_ tool: String) -> Bool {
         tools.contains(tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool)

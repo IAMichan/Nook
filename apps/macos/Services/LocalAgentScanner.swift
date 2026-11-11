@@ -202,7 +202,7 @@ enum LocalAgentScanner {
         guard let first = tokens.first else { return nil }
         // Background daemon services for an editor/app are not user interactive sessions.
         if tokens.contains(where: { backgroundModes.contains($0) }) { return nil }
-        let program = URL(fileURLWithPath: first).lastPathComponent
+        let program = (first as NSString).lastPathComponent
         // The helpers of an app (Antigravity.app/Contents/…) are no sessions, but an agent's own command line tool
         // is, even when the app ships it inside its bundle (agy lives in Antigravity.app).
         let isAgentCommand = kinds.contains { $0.commands.contains(program) }
@@ -211,7 +211,7 @@ enum LocalAgentScanner {
         // The first command token, or for node/python the script argument following it.
         var candidates = [program]
         if interpreters.contains(program) {
-            candidates += tokens.dropFirst().prefix(3).filter { !$0.hasPrefix("-") }.map { URL(fileURLWithPath: $0).lastPathComponent }
+            candidates += tokens.dropFirst().prefix(3).filter { !$0.hasPrefix("-") }.map { ($0 as NSString).lastPathComponent }
         }
         for kind in kinds {
             if candidates.contains(where: { kind.commands.contains($0) }) { return kind }

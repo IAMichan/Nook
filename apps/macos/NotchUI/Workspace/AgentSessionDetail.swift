@@ -175,7 +175,7 @@ struct AgentSessionDetail: View {
         let shown = withTranscript(session, past)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(folder: session.project, title: title(for: session, known: past), directory: session.cwd,
-                   agentWorking: session.status == .running || session.status == .waiting)
+                   agentWorking: session.status == .running || session.status == .waiting || session.compactingSince != nil)
 
             if shown.transcriptPath.isEmpty && !session.steps.isEmpty {
                 steps(session)
@@ -244,7 +244,8 @@ struct AgentSessionDetail: View {
     private func steps(_ session: AgentSession) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(session.steps.suffix(3)) { step in
-                let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
+                let current = step.id == session.steps.last?.id && step.mark == .running
+                    && (session.status == .running || session.compactingSince != nil)
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(step.symbol)
                         .foregroundStyle(step.color)
@@ -299,7 +300,7 @@ struct AgentSessionDetail: View {
         }
         .scrollIndicators(.never)
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
+        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
     }
 
     /// The pull request of a session Nook does not run: the open one for its folder and branch, else the last one its
@@ -382,7 +383,7 @@ struct AgentSessionDetail: View {
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
             .images($composerState.images)
-            .trailing { ComposerMic(text: $composerState.draft) }
+            .dictating()
         }
     }
 
@@ -413,7 +414,7 @@ struct AgentSessionDetail: View {
                     choice = next == original ? nil : next
                 }
             }
-            .help(tr("agents.reply.switchHelp"))
+            .composerTip(tr("agents.reply.switchHelp"))
         } else {
             agentPill(name: name, profile: profile)
         }
@@ -449,7 +450,7 @@ struct AgentSessionDetail: View {
                 }
             }
             .disabled(turnSettings.mode == .plan)
-            .help(permission.help(for: provider))
+            .composerTip(permission.help(for: provider))
             let levels = app.workspace.effortLevels(for: provider, profileID: choice?.profileID, model: choice?.model ?? "")
             if !levels.isEmpty {
                 ComposerDivider()
@@ -465,7 +466,7 @@ struct AgentSessionDetail: View {
                                  text: app.workspace.effortTitle(turnSettings.effort, for: provider, profileID: choice?.profileID))
                 }
                 .composerMenu()
-                .help(tr("compose.effort.help"))
+                .composerTip(tr("compose.effort.help"))
             }
         }
     }
@@ -668,7 +669,7 @@ struct AgentSessionDetail: View {
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
                     .images($composerState.images)
-                    .trailing { ComposerMic(text: $composerState.draft) }
+                    .dictating()
                 }
                 .zIndex(1)
             }
@@ -797,15 +798,9 @@ private struct SessionQuestionOptionButton: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(backgroundColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .stroke(borderColor, lineWidth: isHovered || chosen ? 1.2 : 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+            .roundedBackground(backgroundColor, radius: NookTheme.Radius.control)
+            .roundedStroke(borderColor, radius: NookTheme.Radius.control, lineWidth: isHovered || chosen ? 1.2 : 1)
+            .roundedHitShape(NookTheme.Radius.control)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -828,9 +823,9 @@ private struct SessionQuestionOptionButton: View {
 
     private var keycapBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(chosen ? NookTheme.amber.opacity(0.2) : (isHovered ? NookTheme.smoke : NookTheme.well))
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .stroke(chosen ? NookTheme.amber.opacity(0.6) : (isHovered ? NookTheme.amber.opacity(0.4) : NookTheme.wash.opacity(0.08)), lineWidth: 1)
 
             Text(number < 9 ? "\(number + 1)" : "·")

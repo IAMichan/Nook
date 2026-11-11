@@ -115,6 +115,7 @@ extension WorkspaceManager {
         run.remote = target
         run.effort = config.effort
         run.speedTier = config.speedTier
+        run.ultracode = config.ultracode
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
             run.autoModel = true
@@ -152,7 +153,7 @@ extension WorkspaceManager {
                         let base = requestedBase.isEmpty ? (git.currentBranch(root) ?? "HEAD") : requestedBase
                         let path = WorktreeNaming.worktreePath(
                             root: RemoteShell.worktreeRoot(home: home),
-                            repoName: URL(fileURLWithPath: root).lastPathComponent,
+                            repoName: (root as NSString).lastPathComponent,
                             slug: WorktreeNaming.directorySlug(branch: name),
                             exists: { RemoteShell.exists($0, on: remote) })
                         try git.addWorktree(repo: root, path: path, branch: name, base: base)

@@ -34,7 +34,7 @@ extension GitService {
                 try git(["add", "-A", "--", "."], in: directory, env: env)
             }
             let tree = try git(["write-tree"], in: directory, env: env).trimmed
-            var arguments = ["commit-tree", tree, "-m", "Nook checkpoint"]
+            var arguments = ["commit-tree", tree, "-m", Self.checkpointMessage]
             if let head, !head.isEmpty { arguments += ["-p", head] }
             let commit = try git(arguments, in: directory, env: env).trimmed
             try git(["update-ref", ref, commit], in: directory, env: env)
@@ -52,16 +52,37 @@ extension GitService {
         let target = Set(try git(["ls-tree", "-r", "-z", "--name-only", ref], in: directory, env: [:])
             .split(separator: "\0").map(String.init))
         // What is there now (tracked and untracked, not ignored): what the snapshot does not have goes away.
-        let current = try withTemporaryIndex(directory, seedFromCurrentIndex: true) { env -> Set<String> in
-            try git(["add", "-A", "--", "."], in: directory, env: env)
-            return Set(try git(["ls-files", "-z"], in: directory, env: env).split(separator: "\0").map(String.init))
-        }
+        var current = try presentFiles(directory)
         try withTemporaryIndex(directory) { env in
             try git(["read-tree", ref], in: directory, env: env)
             try git(["checkout-index", "-a", "-f", "-q"], in: directory, env: env)
         }
-        let gone = current.subtracting(target).filter { !$0.split(separator: "/").contains("..") && !$0.hasPrefix("/") }.sorted()
-        if let remote, !gone.isEmpty {
+        // The ignore rules are now the snapshot's again. When the turn added or changed a `.gitignore` (one that hides the
+        // `dist/` it wrote), the files those rules hid show up now: list again and remove them too, a few times over for
+        // nested ignore files. Files the snapshot's own rules ignore stay ignored, so they are never touched.
+        for pass in 1...Self.restorePasses {
+            let gone = current.subtracting(target).filter { !$0.split(separator: "/").contains("..") && !$0.hasPrefix("/") }.sorted()
+            if !gone.isEmpty { removeFiles(gone, in: directory) }
+            guard pass < Self.restorePasses else { return }
+            let now = try presentFiles(directory)
+            if now.subtracting(target).isEmpty { return }
+            current = now
+        }
+    }
+
+    /// How many times `restore` removes what the snapshot does not have (see there).
+    static let restorePasses = 4
+
+    /// Tracked and untracked files of `directory`, without the ignored ones.
+    private func presentFiles(_ directory: String) throws -> Set<String> {
+        try withTemporaryIndex(directory, seedFromCurrentIndex: true) { env -> Set<String> in
+            try git(["add", "-A", "--", "."], in: directory, env: env)
+            return Set(try git(["ls-files", "-z"], in: directory, env: env).split(separator: "\0").map(String.init))
+        }
+    }
+
+    private func removeFiles(_ gone: [String], in directory: String) {
+        if let remote {
             // On the other machine: the same files removed there, a batch at a time.
             for start in stride(from: 0, to: gone.count, by: 200) {
                 let batch = Array(gone[start..<min(start + 200, gone.count)])

@@ -213,6 +213,7 @@ targets:
       - path: Core/I18n+WhatsAppAccounts.swift
       - path: Core/I18n+Privacy.swift
       - path: Core/I18n+Toast.swift
+      - path: Core/I18n+WorkflowParity.swift
       - path: Core/I18n+Confirm.swift
       - path: Core/I18n+Buddy.swift
       - path: Core/I18n+Quiet.swift
@@ -334,6 +335,7 @@ targets:
       - path: Brain/AIProvider.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
+      - path: Core/ArchivePurge.swift
       - path: Core/NookLook.swift
       - path: NotchUI/Theme/NookPalette.swift
       - path: Core/NookMonthDay.swift
@@ -411,9 +413,14 @@ targets:
       - path: Services/Workspace/ScrollModel.swift
       - path: Services/Workspace/TimelineVisits.swift
       - path: Services/Workspace/HistoryWindow.swift
+      - path: Services/Workspace/CompactionProgress.swift
+      - path: Services/HookCompaction.swift
       - path: Services/Workspace/TimelineHandles.swift
       - path: Services/Workspace/SkillIndex.swift
       - path: Services/Workspace/ComposerDrafts.swift
+      - path: Services/Workspace/ComposerChips.swift
+      - path: Services/Workspace/ComposerDictation.swift
+      - path: Services/Workspace/ComposerEditing.swift
       - path: Services/Workspace/AgentCommands.swift
       - path: Services/Workspace/EffortLevels.swift
       - path: Services/Workspace/AgentAdvice.swift
@@ -434,6 +441,9 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionResilience.swift
       - path: ../../packages/protocol/Sources/CompanionPullRequests.swift
       - path: ../../packages/protocol/Sources/CompanionShare.swift
+      - path: ../../packages/protocol/Sources/CompanionWire.swift
+      - path: ../../packages/protocol/Sources/CompanionHistory.swift
+      - path: ../../packages/protocol/Sources/CompanionAgentWidget.swift
       - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
       # The phone's Foundation-only logic: dictation languages, diagrams and math, comment positions in a diff.
       - path: ../ios/Core/DictationText.swift
@@ -485,6 +495,8 @@ targets:
       - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
+      - path: ../../packages/protocol/Sources/DictationContext.swift
+      - path: Services/Workspace/RowSweepRange.swift
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/UsageLedger.swift
       - path: Services/Workspace/LimitPool.swift
@@ -536,6 +548,7 @@ targets:
       - path: Services/Workspace/WorktreeCleanup.swift
       - path: Services/Workspace/WorktreeArchive.swift
       - path: Services/Workspace/DiskUsage.swift
+      - path: Services/DirectoryListing.swift
       - path: Services/Workspace/BuildLeftovers.swift
       - path: Services/Workspace/ComposerLists.swift
       - path: Services/Workspace/ComposerMarkdownStyle.swift
@@ -620,6 +633,7 @@ targets:
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
       - path: Services/Search/NookSearch.swift
+      - path: Services/Search/SearchAI.swift
       - path: Brain/MacReport.swift
       - path: Brain/EnergyVAD.swift
       - path: Services/Updates/AppUpdateCore.swift

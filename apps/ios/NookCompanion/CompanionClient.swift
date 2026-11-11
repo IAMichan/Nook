@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import UIKit
+import WidgetKit
 import UserNotifications
 
 /// The phone's side of the companion (docs/COMPANION.md, "Staying connected"). While the app is in front a supervisor
@@ -101,6 +102,15 @@ final class CompanionClient: ObservableObject {
     @Published var pullsAt: Date?
     @Published var linkedPulls: [String: [PullDigest]] = [:]
     @Published var pullDetails: [String: PullDetailDigest] = [:]
+    /// Sessions older than the live list (`CompanionOp.history`), paged in on request as the Mac's settled sessions;
+    /// where the next page starts, and whether the last one came.
+    @Published var olderSessions: [SessionDigest] = []
+    @Published var olderCursor: String?
+    @Published var olderEnded = false
+    /// Sessions the Mac found for the words in the search field, the older ones included, and where more start.
+    @Published var foundSessions: [SessionDigest] = []
+    @Published var foundCursor: String?
+    @Published var foundQuery = ""
     /// A gentle word when the Mac and this app work together but one speaks an older protocol (`CompanionVersionNotice`).
     @Published private(set) var versionNotice: CompanionVersionNotice?
     private(set) var pushToken: String?
@@ -256,6 +266,9 @@ final class CompanionClient: ObservableObject {
         pairings.remove(id)
         PairingStore.save(pairings)
         otherSessions[id] = nil
+        // The widget showed this Mac's agents: they go with it (the next Mac's list fills it again).
+        AppGroup.remove(AgentActivitySnapshot.fileName)
+        WidgetCenter.shared.reloadTimelines(ofKind: AgentActivityWidgetKind.kind)
         loadActive()
         guard link != nil else { phase = .unpaired; return }
         phase = .offline("")
@@ -306,6 +319,12 @@ final class CompanionClient: ObservableObject {
         linkedPulls = pullCache.linked
         pullDetails = pullCache.details.mapValues(\.detail)
         versionNotice = nil
+        olderSessions = []
+        olderCursor = nil
+        olderEnded = false
+        foundSessions = []
+        foundCursor = nil
+        foundQuery = ""
         sessions = cache.sessions
         timelines = cache.allTimelines
         launchOptions = cache.launch
@@ -1188,12 +1207,14 @@ final class CompanionClient: ObservableObject {
     /// Takes in what an answer carries. Every poll answers, mostly with the same data: a value is only assigned when it
     /// changed, so the screens are not redrawn each time.
     private func apply(_ response: CompanionResponse, to req: CompanionRequest) {
-        // The badge is set on (re)connecting too, so one left from before is corrected.
-        if let list = response.sessions, list != sessions || phase != .connected {
+        // The badge is set on (re)connecting too, so one left from before is corrected. Older sessions (`history`) are
+        // no live list: they are taken in where they were asked for.
+        let live = req.op == .history ? nil : response.sessions
+        if let list = live, list != sessions || phase != .connected {
             if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
             if list != sessions { sessions = list }
         }
-        if let list = response.sessions { tookList(list) }
+        if let list = live { tookList(list) }
         if let name = response.macName, name != macName {
             macName = name
             if let id = pairings.active?.id {
@@ -1279,6 +1300,7 @@ final class CompanionClient: ObservableObject {
         if lastUpdated.map({ Int($0.timeIntervalSince1970 / 60) != Int(now.timeIntervalSince1970 / 60) }) ?? true { lastUpdated = now }
         cache.record(sessions: list, at: now)
         scheduleCacheSave()
+        keepAgentActivity(list, now: now)
         let pending = DeliveredNotifications.pending(list)
         guard pending != clearedPending, let mac = activeMacID else { return }
         clearedPending = pending
@@ -1473,7 +1495,7 @@ final class CompanionClient: ObservableObject {
         let framed = try CompanionChannel.frame(req, key: link.key, deviceID: PairedDevice.identifier(forKey: link.key))
         let reply = try await Exchange.run(route: route, key: link.key, payload: framed)
         let opened = try CompanionSeal.open(reply, pairingKey: link.key, direction: .response)
-        let response = try JSONDecoder().decode(CompanionResponse.self, from: opened)
+        let response = try CompanionWire.decode(CompanionResponse.self, from: opened)
         guard response.id == req.id else { throw CompanionClientError.badRequest }
         ClockOffsets.learn(from: response, mac: PairedDevice.identifier(forKey: link.key))
         return response

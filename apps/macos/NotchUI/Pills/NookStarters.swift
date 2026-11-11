@@ -42,8 +42,8 @@ private struct SuggestionCard: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.graphite : NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -76,7 +76,7 @@ private struct HomeLogo: View {
             }
         }
         .frame(width: size, height: size)
-        .background(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(tileFill))
+        .roundedBackground(tileFill, radius: size * 0.28)
     }
 
     /// Symbols and dots sit on a tile tinted with their color; real icons get a neutral one.

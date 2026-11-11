@@ -128,9 +128,11 @@ targets:
         createIntermediateGroups: false
       - path: NookCompanion/Theme.swift
       - path: NookCompanion/Localizable.xcstrings
-      # The only shared protocol files it needs: the activity's attributes and content, and the usage widget's timeline.
+      # The only shared protocol files it needs: the activity's attributes and content, the usage widget's timeline and
+      # the agent activity widget's snapshot.
       - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
+      - path: ../../packages/protocol/Sources/CompanionAgentWidget.swift
     dependencies:
       - sdk: ActivityKit.framework
       - sdk: WidgetKit.framework

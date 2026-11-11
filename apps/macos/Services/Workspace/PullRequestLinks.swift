@@ -105,10 +105,38 @@ enum PullRequestToolCall {
         pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
         options: [.caseInsensitive])
 
+    /// A forge CLI that merges or closes a pull request from the shell, in every spelling the CLI takes: `gh pr merge`,
+    /// `glab mr merge` or `glab mr accept`, `tea pr merge` or `tea pulls m`, `fj pr close`, `cafe pr merge`, and Azure
+    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI. The same list.
+    private static let closing = try? NSRegularExpression(
+        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
+            + #"tea\s+(?:pr|pulls?)\s+(?:merge|m|close)|fj\s+pr\s+(?:merge|close)|cafe\s+(?:pr|stack)\s+(?:merge|close)|"#
+            + #"az\s+repos\s+pr\s+update\b[^;&|\n]*--status[\s=]+["']?(?:completed|abandoned))\b"#,
+        options: [.caseInsensitive])
+
     static func showsPullRequest(tool: String?, command parts: [String?]) -> Bool {
         if let tool = tool?.lowercased(),
            ["pull_request", "pullrequest", "merge_request", "mergerequest"].contains(where: tool.contains) { return true }
-        guard let rx = command else { return false }
+        return matches(command, parts) || matches(closing, parts)
+    }
+
+    /// The command merged or closed a pull request, so the linked ones are read again at once instead of at the next
+    /// round, and the session's row turns merged while you look.
+    static func closesPullRequest(command parts: [String?]) -> Bool { matches(closing, parts) }
+
+    /// Every text in a tool call's input (`command`, `cmd`, an argument list), for `closesPullRequest`.
+    static func texts(in input: Any?) -> [String] {
+        switch input {
+        case let text as String: return [text]
+        case let words as [String]: return words + [words.joined(separator: " ")]
+        case let list as [Any]: return list.flatMap { texts(in: $0) }
+        case let object as [String: Any]: return object.values.flatMap { texts(in: $0) }
+        default: return []
+        }
+    }
+
+    private static func matches(_ rx: NSRegularExpression?, _ parts: [String?]) -> Bool {
+        guard let rx else { return false }
         return parts.compactMap { $0 }.contains { text in
             rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
         }
@@ -311,6 +339,17 @@ enum PullRequestMatch {
     }
 }
 
+/// Which session a prompt link's `pr=owner/name/123` opens: the first in `order` (newest first, archived left out) whose
+/// pull requests include that one. Nil when no session works on it.
+enum PromptLinkSessions {
+    static func linked(_ repository: String, _ number: Int, links: [UUID: [PullRequestLink]], order: [UUID]) -> UUID? {
+        let wanted = repository.lowercased()
+        return order.first { id in
+            (links[id] ?? []).contains { $0.number == number && $0.repository.lowercased() == wanted }
+        }
+    }
+}
+
 /// An unresolved PR holds the session open, and the newest merged/closed one decides.
 enum PullRequestSettlement {
     static func allMerged(links: [PullRequestLink]) -> Bool { !links.isEmpty && links.allSatisfy { $0.state == .merged } }
@@ -321,6 +360,21 @@ enum PullRequestSettlement {
         guard !links.isEmpty, !anyOpen(links: links) else { return false }
         let latest = links.max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }!
         return latest.state == .closed || (latest.state == .merged && settleOnMerge)
+    }
+
+    /// What a session's requests say to the auto-settle rules: open while any is open, else how the newest one ended,
+    /// but only when it landed at or after `since` (the session's start or your latest message to it): a request that
+    /// closed before you wrote again does not settle the session you are busy in. Without an update time it counts.
+    static func autoSettleState(links: [PullRequestLink], since: Date?) -> AutoSettlePolicy.PullRequestState {
+        guard !links.isEmpty else { return .none }
+        if anyOpen(links: links) { return .open }
+        let latest = links.max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }!
+        if let since, let landed = links.compactMap(\.updatedAt).max(), landed < since { return .none }
+        switch latest.state {
+        case .merged: return .merged
+        case .closed: return .closed
+        default: return .none
+        }
     }
 
     /// After this long a merged or closed request, or a session without any, has settled.

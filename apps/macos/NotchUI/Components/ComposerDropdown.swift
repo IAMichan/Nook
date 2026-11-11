@@ -32,6 +32,8 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .background(DropdownStyle.panel)
                     .environment(\.closeDropdown, { open = false })
+                    // A panel is a window of its own: the composer below cannot draw tips into it.
+                    .environment(\.composerTipsHosted, false)
             }
             // Ahead of the spacer, so the pill gets all the room left instead of half of it.
             .layoutPriority(flexible ? 1 : 0)
@@ -140,8 +142,7 @@ struct DropdownRow: View {
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(tile)
                         .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                            .fill(tile.opacity(hovering ? 0.24 : 0.16)))
+                        .roundedBackground(tile.opacity(hovering ? 0.24 : 0.16), radius: NookTheme.Radius.control)
                 } else if let symbol {
                     NookSymbol(symbol, size: 13)
                         .font(NookTheme.TextStyle.label)
@@ -172,9 +173,8 @@ struct DropdownRow: View {
             .padding(.vertical, detail == nil ? (tile == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.xs) : NookTheme.Spacing.md)
             .frame(minHeight: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(chosen && !highlighted ? DropdownStyle.chosen
-                      : ((hovering || highlighted) && disabledReason == nil ? DropdownStyle.hover : .clear)))
+            .roundedBackground(chosen && !highlighted ? DropdownStyle.chosen : ((hovering || highlighted) && disabledReason == nil ? DropdownStyle.hover : .clear),
+                               radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -264,6 +264,17 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .fixedSize(horizontal: false, vertical: true)
+        // ⇧⌘↑ and ⇧⌘↓ show the place before or after the shown one (`ModelPickerKeys`); the panel is its own window, so
+        // it says itself that the picker is open.
+        .keyCommands([ModelPickerKeys.previousPlace: { step(-1) }, ModelPickerKeys.nextPlace: { step(1) }],
+                     context: ["modelPickerOpen": true])
+    }
+
+    private func step(_ offset: Int) -> Bool {
+        guard let place = ModelPickerKeys.step(from: current, by: offset, in: Array(filledGroups.joined())) else { return false }
+        shown = place
+        onShow(place)
+        return true
     }
 
     private var rail: some View {
@@ -290,8 +301,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
         } label: {
             icon(place)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(place == current ? DropdownStyle.chosen : .clear))
+                .roundedBackground(place == current ? DropdownStyle.chosen : .clear, radius: NookTheme.Radius.control)
                 // Top corner: the bottom one holds the account badge.
                 .overlay(alignment: .topTrailing) {
                     if place == chosen && place != current {
@@ -618,7 +628,7 @@ struct ModeToggle: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help(mode.help + " · " + tr("compose.modeSwitch"))
+        .composerTip(mode.help + " · " + tr("compose.modeSwitch"))
     }
 }
 

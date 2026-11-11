@@ -2,7 +2,8 @@ import Foundation
 
 /// A command a project defines for its sessions, in `nook.json` at the repository root:
 /// `{"scripts": [{"id": "dev", "name": "Dev server", "command": "pnpm dev", "runOnWorktreeCreate": false,
-/// "previewUrl": "http://localhost:5173", "autoOpenPreview": true, "stopOnSettle": true}]}`.
+/// "previewUrl": "http://localhost:5173", "autoOpenPreview": true, "stopOnSettle": true}]}`. A setup script
+/// (`runOnWorktreeCreate`) can add `"async": false` to make the agent wait for it.
 struct ProjectScript: Equatable, Identifiable, Sendable {
     var id: String
     var name: String
@@ -16,6 +17,9 @@ struct ProjectScript: Equatable, Identifiable, Sendable {
     var stopOnSettle = false
     /// Runs by itself when a session in its own worktree settles (`cargo clean`, `rm -rf node_modules`).
     var runOnSettle = false
+    /// Only for `runOnWorktreeCreate`: true (the default) starts the agent while the script still runs; `"async": false`
+    /// holds the agent's first turn until the script ended, and fails the start when it fails.
+    var async = true
 }
 
 enum ProjectScripts {
@@ -111,9 +115,35 @@ enum ProjectScripts {
                                          runOnWorktreeCreate: (item["runOnWorktreeCreate"] as? Bool) ?? false,
                                          previewURL: preview, autoOpenPreview: (item["autoOpenPreview"] as? Bool) ?? false,
                                          stopOnSettle: (item["stopOnSettle"] as? Bool) ?? false,
-                                         runOnSettle: (item["runOnSettle"] as? Bool) ?? false))
+                                         runOnSettle: (item["runOnSettle"] as? Bool) ?? false,
+                                         async: (item["async"] as? Bool) ?? true))
         }
         return scripts
+    }
+
+    /// The setup scripts of a new worktree, and whether one of them holds the agent until it ended (`async: false`).
+    static func setup(_ scripts: [ProjectScript]) -> (scripts: [ProjectScript], holdsAgent: Bool) {
+        let setup = scripts.filter(\.runOnWorktreeCreate)
+        return (setup, setup.contains { !$0.async })
+    }
+
+    /// The command a setup script that holds the agent runs with: it writes its exit code to `statusFile`, so Nook knows
+    /// when and how it ended, and its terminal closes when it succeeds (it stays open with the error when it fails).
+    /// Run by `/bin/sh`, so reading the exit code works whatever the login shell is (fish has no `$?`), and in a subshell,
+    /// so an `exit` in the command still gets its code written.
+    static func blockingCommand(_ command: String, statusFile: String) -> String {
+        let script = "(\n" + command + "\n)\n__nook_status=$?\nprintf '%s' \"$__nook_status\" > " + quote(statusFile) + "\nexit \"$__nook_status\""
+        return "/bin/sh -c " + quote(script) + " && exit 0"
+    }
+
+    /// The exit code `blockingCommand` wrote; nil while the script still runs.
+    static func exitStatus(_ data: Data?) -> Int32? {
+        guard let data else { return nil }
+        return Int32(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func quote(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

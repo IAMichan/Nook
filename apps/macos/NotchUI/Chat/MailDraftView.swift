@@ -73,7 +73,7 @@ struct MailDraftView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.xl)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
     }
 
     private var card: some View {
@@ -139,7 +139,7 @@ struct MailDraftView: View {
             }
         }
         .padding(NookTheme.Spacing.xl)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
     }
 
     @ViewBuilder

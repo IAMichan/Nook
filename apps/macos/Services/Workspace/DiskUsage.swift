@@ -3,8 +3,9 @@ import Foundation
 /// How much disk a folder takes, and removing what Nook left in a folder of its own that macOS never cleans.
 /// A worktree holds its own build (often several GB), so the Worktrees list shows this next to each one.
 enum DiskUsage {
-    /// Bytes allocated on disk under `path`, without following symbolic links; nil when it cannot be read.
-    static func allocatedSize(of path: String) -> Int64? {
+    /// Bytes allocated on disk under `path`, without following symbolic links; nil when it cannot be read, or when
+    /// `proceed` (asked every 2,000 files) says to stop: a build folder takes a while, and nobody may want it anymore.
+    static func allocatedSize(of path: String, while proceed: () -> Bool = { true }) -> Int64? {
         let root = URL(fileURLWithPath: path)
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .isRegularFileKey]
         guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [],
@@ -14,6 +15,7 @@ enum DiskUsage {
         var done = false
         // A worktree with its build holds hundreds of thousands of files; every URL is autoreleased, so drain in batches.
         while !done {
+            guard proceed() else { return nil }
             autoreleasepool {
                 for _ in 0..<2_000 {
                     guard let url = items.nextObject() as? URL else { done = true; return }
@@ -32,13 +34,20 @@ enum DiskUsage {
     private static let cacheLock = NSLock()
     private nonisolated(unsafe) static var cache: [String: (bytes: Int64?, at: Date)] = [:]
 
-    /// `allocatedSize(of:)`, measured again only when the last measurement of `path` is older than `maxAge`.
-    static func cachedAllocatedSize(of path: String, maxAge: TimeInterval = cachedSizeAge, now: Date = Date()) -> Int64? {
+    /// `allocatedSize(of:)`, measured again only when the last measurement of `path` is older than `maxAge`. Stopped by
+    /// `proceed`, it keeps what it measured before and returns that.
+    static func cachedAllocatedSize(of path: String, maxAge: TimeInterval = cachedSizeAge, now: Date = Date(),
+                                    while proceed: () -> Bool = { true }) -> Int64? {
         cacheLock.lock()
         let known = cache[path]
         cacheLock.unlock()
         if let known, now.timeIntervalSince(known.at) < maxAge { return known.bytes }
-        let bytes = allocatedSize(of: path)
+        var stopped = false
+        let bytes = allocatedSize(of: path) {
+            stopped = !proceed()
+            return !stopped
+        }
+        if stopped { return known?.bytes ?? nil }
         cacheLock.lock()
         cache[path] = (bytes, now)
         cacheLock.unlock()
@@ -63,6 +72,18 @@ enum DiskUsage {
 
     static func format(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+/// Whether a Worktrees list is open, readable from the background refresh that measures worktree sizes
+/// (`WorkspaceManager.worktreesShown`).
+final class WorktreeListFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = false
+
+    var isOpen: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return open }
+        set { lock.lock(); open = newValue; lock.unlock() }
     }
 }
 

@@ -36,18 +36,22 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘S | `composer.stash` | `composerFocus` | Set the draft aside; in an empty box bring it back (or choose from several) |
 | ⌥↑ / ⌥↓ | `composer.historyPrevious` / `composer.historyNext` | `composerFocus` | Walk through earlier messages from anywhere in the text (plain ↑ ↓ still do it from the edge) |
 | ⇧⇥ | `composer.access` | `composerFocus` | In the Nook chat and the Double Tap field: what Nook may do by itself, to the next level (Ask first, Small things, More by itself); other composers leave ⇧⇥ to the field |
+| ⌘Z / ⇧⌘Z | `composer.undo` / `composer.redo` | `composerFocus` | Undo and redo in the draft: typing, a chip put in or deleted (it comes back with its whole reference), a paste, a dictation |
+| ⇧⌘V | `composer.pasteAsText` | `composerFocus` | Paste a big text as text you can edit instead of as an attachment (a paste that would push the message past its limit of 120,000 characters still goes aside) |
 | ⇧⌘↩ | `queue.steerFirst` | `composerFocus && turnRunning` | Send the first queued message now |
-| ⌘F | `chat.find` | `!terminalFocus` | Find in the session, or jump to the pull requests' search |
+| ⌘F | `chat.find` | `!terminalFocus` | Find in the session (also one read from its transcript), or jump to the pull requests' search |
 | ⌘K | `search.toggle` | `!terminalFocus` | Search everything, from every tab (also ⇧⌘F) |
 | ⇧⌘K | `commandPalette.toggle` | `!terminalFocus` | The agents' command palette |
 | ⌘N | `session.new` | `!terminalFocus` | A new Nook chat in the Nook list, a new agent session elsewhere in the main window |
-| ⌘Z | `session.undo` | `!terminalFocus && !editableFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
+| ⌘Z | `session.undo` | `!terminalFocus && !editableFocus && !composerFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
 | ⇧⌘T | `panel.reopenClosed` | `!terminalFocus` | Reopen the tab closed last: a session's side or bottom panel tab (in the panel it was in, a pull request tab with its pull request), or a tab on the Pull requests page |
 | ⇧⌘L | `selection.quote` | `!terminalFocus && !editableFocus` | Words selected in an agent's answer go with your next message, as a chip above the composer; the chip can carry your own note, and a click on it jumps back to the passage |
 | ⌘L | `selection.ask` | `!terminalFocus && !editableFocus` | The same, and the keyboard goes to the composer to ask about them |
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | The chat above or below on Chats; the repository tab on the left or right on the Actions page |
 | ⌘D | `diff.toggle` | `!terminalFocus` | The Changes tab on the latest turn (or the branch), and again to close it |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Opens the model picker of the composer on screen (↑ ↓ move over the models, Return picks, Escape closes) |
+| ⌘1–⌘9 | `modelPicker.pick1` … `modelPicker.pick9` | `modelPickerOpen` | In the open model picker: picks the nth model listed (a disabled one keeps its number); the session jumps step aside meanwhile |
+| ⇧⌘↑ / ⇧⌘↓ | `modelPicker.previousPlace` / `modelPicker.nextPlace` | `modelPickerOpen` | In the open model picker: the place before or after the shown one in its rail, round the ends |
 | ⇧⌘E | `effortPicker.toggle` | `!terminalFocus` | Opens the effort picker of the composer on screen, when its agent has levels |
 | ⇧⌘A | `permissionPicker.toggle` | `!terminalFocus` | Opens the access picker of the composer on screen |
 | — | `effort.increase` / `effort.decrease` | | Unbound on purpose: one effort level up or down in the composer on screen without opening the picker (`EffortStep`; for an agent that lists a model per level, the next model of that family) |
@@ -56,7 +60,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘P | `session.pin` | `!terminalFocus` | Pins the open session, or unpins it |
 | — | `session.interrupt` | | Unbound on purpose: stops the open session's turn (a session Nook runs); also in the command palette |
 | ⌘[ / ⌘] | `session.back` / `session.forward` | `!terminalFocus` | Back and forward through the sessions you opened (sessions that are gone are skipped) |
-| ⌘1–⌘9 | `session.jump1` … `session.jump9` | | On the Agents tab: the first nine rows of the list as shown; hold ⌘ for a moment to see each row's number. Elsewhere (and past the end of the list) ⌘1–⌘3 switch the main window's tabs |
+| ⌘1–⌘9 | `session.jump1` … `session.jump9` | `!modelPickerOpen` | On the Agents tab: the first nine rows of the list as shown; hold ⌘ for a moment to see each row's number. Elsewhere (and past the end of the list) ⌘1–⌘3 switch the main window's tabs |
 | F2 | `session.rename` | `!editableFocus && !terminalFocus` | Renames the session the list's keyboard is on, else the open one (sessions Nook runs) |
 | ⌘O | `session.openInEditor` | `!terminalFocus` | Opens the open session's folder in your editor (Settings › Workspace), else in Finder |
 | ⇧⌘C | `session.copyReference` | `!terminalFocus && !editableFocus` | Copies the open session's folder and branch: `/code/app (feature/x)` |

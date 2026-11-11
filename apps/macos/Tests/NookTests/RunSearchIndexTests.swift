@@ -1,3 +1,4 @@
+import SQLite3
 import XCTest
 
 /// The search index over every session's timeline: it names the sessions that mention a piece of text, the way "Find in
@@ -48,6 +49,38 @@ final class RunSearchIndexTests: XCTestCase {
         XCTAssertEqual(log.sessions(mentioning: "lexer"), [id])
         log.removeIndex(id)
         XCTAssertEqual(log.sessions(mentioning: "lexer"), [])
+    }
+
+    func testAnIndexThatKeptTheTextIsBuiltAgainWithoutIt() throws {
+        let url = folder.appendingPathComponent("runs.sqlite")
+        try XCTSkipUnless(sqlite3_libversion_number() >= 3_043_000, "older SQLite keeps the index it has")
+        // As written before 2026-11-10: FTS5 kept its own copy of every event's text.
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, """
+            CREATE VIRTUAL TABLE run_search USING fts5(body, tokenize = 'trigram');
+            CREATE TABLE run_search_keys (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, event_id TEXT NOT NULL, UNIQUE (run_id, event_id));
+            INSERT INTO run_search_keys (id, run_id, event_id) VALUES (1, 'old', 'old');
+            INSERT INTO run_search (rowid, body) VALUES (1, 'stale text');
+            """, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+
+        let log = try XCTUnwrap(RunEventLog(url: url))
+        try XCTSkipUnless(log.searchAvailable)
+        XCTAssertEqual(log.sessions(mentioning: "stale"), [], "the old index and its keys are gone, to be built anew")
+        let id = UUID()
+        log.reindex(id, TimelineSearchText.entries([event("Fixed the parser"), event("Then the lexer")]))
+        XCTAssertEqual(log.sessions(mentioning: "parser"), [id])
+        log.index(id, TimelineSearchText.entries([event("Fixed the parser")]))
+        log.removeIndex(id)
+        XCTAssertEqual(log.sessions(mentioning: "lexer"), [], "rows are removed from the contentless index too")
+
+        // Reopened, the new index stays: it is not dropped and built again on every launch.
+        log.reindex(id, TimelineSearchText.entries([event("Kept across launches")]))
+        let reopened = try XCTUnwrap(RunEventLog(url: url))
+        XCTAssertEqual(reopened.sessions(mentioning: "across"), [id])
+        XCTAssertFalse(reopened.compact(), "a little free room is left alone")
+        XCTAssertTrue(reopened.compact(over: -1))
     }
 
     func testTheStoreIndexesWhatItSavesAndForgetsWhatItDeletes() throws {

@@ -236,7 +236,7 @@ struct FolderGitButton: View {
                         if model.isRepository {
                             label(icon: "arrow.triangle.branch", text: model.status?.branch ?? tr("agents.git.detached"))
                         } else {
-                            label(icon: "folder", text: URL(fileURLWithPath: model.directory).lastPathComponent)
+                            label(icon: "folder", text: (model.directory as NSString).lastPathComponent)
                         }
                     }
                     .buttonStyle(.plain)
@@ -320,7 +320,7 @@ struct DockedSessionPanel: View {
     var body: some View {
         ScrollView {
             SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges, close: {}, docked: true)
-                .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.conversationCard, style: .continuous)
+                .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.conversationCard)
                 // The scroll view would cut off the card's outline.
                 .padding(.vertical, NookTheme.Spacing.xxs)
                 .padding(.trailing, NookTheme.Spacing.sm)

@@ -231,6 +231,7 @@ extension WorkspaceManager {
         copy.limitedAt = nil
         copy.limitResetAt = nil
         copy.autoResume = nil
+        copy.limitRetries = nil
         copy.continuations = nil
         copy.snoozedAt = nil
         copy.snoozedUntil = nil

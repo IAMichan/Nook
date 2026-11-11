@@ -1,19 +1,32 @@
 import Foundation
 
-// `nook://prompt?text=…&project=…&agent=…&model=…`. A link only fills a draft; it never sends,
-// never sets permissions or a branch. Hidden characters are removed because they can smuggle instructions to the agent.
+// `nook://prompt?text=…&project=…&repo=owner/name&agent=…&model=…&pr=owner/name/123`. A link only fills a draft; it never
+// sends, never sets permissions or a branch. Hidden characters are removed because they can smuggle instructions to the
+// agent. `repo` picks the project whose GitHub remote it names; `pr` opens the session linked to that pull request, or
+// (after you confirm) a draft in a new worktree on its branch. Only a pull request link may come without text.
 
 struct PromptLink: Equatable, Sendable {
     static let maxTextLength = 8_000
 
     enum Warning: String, Hashable, Sendable {
-        case strippedHiddenCharacters, droppedProject, droppedAgent, droppedModel
+        case strippedHiddenCharacters, droppedProject, droppedAgent, droppedModel, droppedRepository, droppedPullRequest
+    }
+
+    /// A GitHub pull request named by a link: `owner/name` and its number.
+    struct PullRequest: Equatable, Hashable, Sendable {
+        var repository: String
+        var number: Int
+
+        var url: String { "https://github.com/\(repository)/pull/\(number)" }
     }
 
     var text: String
     var project: String?
     var agent: String?
     var model: String?
+    /// A GitHub repository as `owner/name`.
+    var repository: String?
+    var pullRequest: PullRequest?
     var warnings: Set<Warning> = []
 
     /// Control, format (zero-width, bidi, soft hyphen) and tag characters out; newline and tab stay.
@@ -57,6 +70,56 @@ struct PromptLink: Equatable, Sendable {
         return ok ? s : nil
     }
 
+    /// One part of a GitHub repository path: letters, digits, `-`, `_` and `.`, never `.` or `..` alone.
+    private static func validPathPart(_ s: Substring, max: Int) -> Bool {
+        !s.isEmpty && s.count <= max && s != "." && s != ".."
+            && s.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "-_.".unicodeScalars.contains($0)) }
+    }
+
+    /// The path of a GitHub address or the text itself, split at `/`: `https://github.com/a/b/pull/1` gives `a b pull 1`.
+    /// Nil for another host or scheme.
+    private static func githubPath(_ raw: String) -> [Substring]? {
+        var s = raw.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty, s.unicodeScalars.count <= 300 else { return nil }
+        for prefix in ["https://", "http://"] where s.lowercased().hasPrefix(prefix) {
+            s = String(s.dropFirst(prefix.count))
+            guard s.lowercased().hasPrefix("github.com/") || s.lowercased().hasPrefix("www.github.com/") else { return nil }
+        }
+        if s.lowercased().hasPrefix("www.") { s = String(s.dropFirst(4)) }
+        if s.lowercased().hasPrefix("github.com/") { s = String(s.dropFirst("github.com/".count)) }
+        if let cut = s.firstIndex(where: { $0 == "?" || $0 == "#" }) { s = String(s[..<cut]) }
+        return s.split(separator: "/", omittingEmptySubsequences: true)
+    }
+
+    /// `owner/name`, or the address of the repository on GitHub (with `.git`, or a page in it); nil for anything else.
+    static func validRepository(_ raw: String) -> String? {
+        guard let parts = githubPath(raw), parts.count >= 2 else { return nil }
+        var name = parts[1]
+        if name.lowercased().hasSuffix(".git") { name = name.dropLast(4) }
+        guard validPathPart(parts[0], max: 39), validPathPart(name, max: 100) else { return nil }
+        return "\(parts[0])/\(name)"
+    }
+
+    /// `owner/name/123`, `owner/name#123`, or the pull request's address on GitHub; nil for anything else.
+    static func validPullRequest(_ raw: String) -> PullRequest? {
+        let hashed = raw.trimmingCharacters(in: .whitespaces)
+        if !hashed.contains("://"), let hash = hashed.lastIndex(of: "#") {
+            guard let repo = validRepository(String(hashed[..<hash])), let number = Int(hashed[hashed.index(after: hash)...]),
+                  (1...999_999_999).contains(number) else { return nil }
+            return PullRequest(repository: repo, number: number)
+        }
+        guard let parts = githubPath(hashed) else { return nil }
+        let numberPart: Substring
+        switch parts.count {
+        case 3: numberPart = parts[2]
+        case 4... where parts[2] == "pull": numberPart = parts[3]
+        default: return nil
+        }
+        guard let repo = validRepository("\(parts[0])/\(parts[1])"), numberPart.allSatisfy(\.isASCII),
+              let number = Int(numberPart), (1...999_999_999).contains(number) else { return nil }
+        return PullRequest(repository: repo, number: number)
+    }
+
     static func parse(url: URL) -> PromptLink? {
         guard url.scheme?.lowercased() == "nook",
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -64,17 +127,22 @@ struct PromptLink: Equatable, Sendable {
         var first: [String: String] = [:]
         for item in parts.queryItems ?? [] where first[item.name] == nil { first[item.name] = item.value ?? "" }
 
-        guard let raw = first["text"] else { return nil }
-        let cleaned = sanitize(raw)
+        // A pull request link may come without words: it opens the session that works on that request.
+        let pullRequest = first["pr"].flatMap { $0.isEmpty ? nil : validPullRequest($0) }
+        let cleaned = sanitize(first["text"] ?? "")
         let text = cleaned.text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Cut-off prompts change meaning, so an overlong one is refused instead of truncated.
-        guard !text.isEmpty, text.count <= maxTextLength else { return nil }
+        guard !text.isEmpty || pullRequest != nil, text.count <= maxTextLength else { return nil }
 
         var link = PromptLink(text: text)
         if cleaned.stripped { link.warnings.insert(.strippedHiddenCharacters) }
         if let p = first["project"], !p.isEmpty { if let v = validProject(p) { link.project = v } else { link.warnings.insert(.droppedProject) } }
         if let a = first["agent"], !a.isEmpty { if let v = validAgent(a) { link.agent = v } else { link.warnings.insert(.droppedAgent) } }
         if let m = first["model"], !m.isEmpty { if let v = validModel(m) { link.model = v } else { link.warnings.insert(.droppedModel) } }
+        if let r = first["repo"], !r.isEmpty { if let v = validRepository(r) { link.repository = v } else { link.warnings.insert(.droppedRepository) } }
+        if let pr = first["pr"], !pr.isEmpty {
+            if let pullRequest { link.pullRequest = pullRequest } else { link.warnings.insert(.droppedPullRequest) }
+        }
         return link
     }
 
@@ -89,14 +157,17 @@ struct PromptLink: Equatable, Sendable {
     }
 
     /// Nil when the text is empty or too long after sanitising, so a link that `parse` would refuse is never made.
-    static func build(text: String, project: String? = nil, agent: String? = nil, model: String? = nil) -> URL? {
+    static func build(text: String, project: String? = nil, agent: String? = nil, model: String? = nil,
+                      repository: String? = nil, pullRequest: PullRequest? = nil) -> URL? {
         let cleaned = sanitize(text).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty, cleaned.count <= maxTextLength else { return nil }
-        var query = "text=" + encode(cleaned)
-        if let project, let v = validProject(project) { query += "&project=" + encode(v) }
-        if let agent, let v = validAgent(agent) { query += "&agent=" + encode(v) }
-        if let model, let v = validModel(model) { query += "&model=" + encode(v) }
-        return URL(string: "nook://prompt?" + query)
+        guard !cleaned.isEmpty || pullRequest != nil, cleaned.count <= maxTextLength else { return nil }
+        var parts: [String] = cleaned.isEmpty ? [] : ["text=" + encode(cleaned)]
+        if let project, let v = validProject(project) { parts.append("project=" + encode(v)) }
+        if let repository, let v = validRepository(repository) { parts.append("repo=" + encode(v)) }
+        if let agent, let v = validAgent(agent) { parts.append("agent=" + encode(v)) }
+        if let model, let v = validModel(model) { parts.append("model=" + encode(v)) }
+        if let pullRequest { parts.append("pr=" + encode("\(pullRequest.repository)/\(pullRequest.number)")) }
+        return URL(string: "nook://prompt?" + parts.joined(separator: "&"))
     }
 }
 
