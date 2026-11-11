@@ -4,6 +4,7 @@
   // agent werkt, zoeken met Ctrl+F, en volgen van het einde tot je zelf wegscrolt.
   import { isActive, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
   import * as T from "../../../lib/workspace/timeline";
+  import Icon from "../../../components/Icon.svelte";
   import EventRow from "./EventRow.svelte";
   import PlanCard from "./PlanCard.svelte";
 
@@ -158,6 +159,7 @@
     </div>
   {/if}
   <div class="scroll" bind:this={scroller} {onscroll} {onwheel}>
+    <div class="thread-column rows">
     {#if !shown.length}<p class="faint small">Nog niets in dit gesprek. Stuur een bericht om verder te gaan.</p>{/if}
 
     {#snippet eventView(e: RunEvent)}
@@ -177,8 +179,8 @@
       {:else if b.type === "tools"}
         <div class="group">
           <button class="summary" class:fail={b.tally.failed} onclick={() => toggleBlock("group:" + b.id)}>
-            <span class="sym">{b.tally.failed ? "⚠" : "⚒"}</span><span>{T.sentence(b.tally)}</span>
-            <span class="chev" class:open={open.has("group:" + b.id)}>›</span>
+            <span class="sym"><Icon name={b.tally.failed ? "alert" : "wrench"} size={13} /></span><span class="stext">{T.sentence(b.tally)}</span>
+            <span class="chev" class:open={open.has("group:" + b.id)}><Icon name="chevron-right" size={13} /></span>
           </button>
           {#if open.has("group:" + b.id)}
             <div class="inner">{#each b.events as e (e.id)}{@render eventView(e)}{/each}</div>
@@ -187,8 +189,8 @@
       {:else}
         <div class="group">
           <button class="summary" onclick={() => toggleBlock("fold:" + b.id)}>
-            <span class="sym">✓</span><span>{T.duration(b.seconds)} gewerkt</span>
-            <span class="chev" class:open={open.has("fold:" + b.id)}>›</span>
+            <span class="sym"><Icon name="circle-check" size={13} /></span><span class="stext">{T.duration(b.seconds)} gewerkt</span>
+            <span class="chev" class:open={open.has("fold:" + b.id)}><Icon name="chevron-right" size={13} /></span>
           </button>
           {#if open.has("fold:" + b.id)}
             <div class="inner fold">{#each b.blocks as inner (inner.id)}{@render blockView(inner)}{/each}</div>
@@ -202,7 +204,7 @@
     {#if active}
       {@const waiting = run.status === "waitingApproval" || asking}
       <div class="live">
-        <span class="dot {waiting ? 'waiting' : 'working'}"></span>
+        <span class="spin" class:waiting>{#if waiting}<Icon name="hand" size={13} />{:else}<Icon name="loader" size={13} />{/if}</span>
         <div class="live-text">
           <div class="live-head">
             <span class="label">{waiting ? (asking ? "Wacht op je antwoord…" : "Wacht op je goedkeuring…") : (liveLine.tool ?? "De agent werkt…")}</span>
@@ -215,7 +217,7 @@
 
     {#if run.status === "failed" || run.status === "stopped"}
       <div class="recovery {run.status}">
-        <span>{run.status === "failed" ? "⚠" : "⏸"}</span>
+        <span class="rsym"><Icon name={run.status === "failed" ? "alert" : "stop"} size={14} /></span>
         <div class="rtext">
           <strong>{run.status === "failed" ? "Deze beurt is mislukt." : run.statusDetail === "interrupted" ? "Nook stopte terwijl de agent werkte; het proces draait niet meer." : "Je hebt deze beurt gestopt."}</strong>
           <span class="faint">
@@ -230,6 +232,7 @@
         <button onclick={onretry}>Opnieuw</button>
       </div>
     {/if}
+    </div>
   </div>
   {#if !follow && !atEnd && !finding}
     <button class="to-end" onclick={() => { follow = true; toEnd(true); }}>Naar einde ↓</button>
@@ -238,30 +241,40 @@
 
 <style>
   .wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 8px; }
-  .find { display: flex; gap: 6px; align-items: center; padding: 4px; background: var(--graphite); border: 1px solid var(--line2); border-radius: 10px; margin-bottom: 6px; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .rows { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; padding-bottom: 16px; }
+  .find { display: flex; gap: 6px; align-items: center; padding: 4px; width: min(420px, calc(100% - 32px)); margin: 0 auto 6px; background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-panel); }
   .find input { flex: 1; padding: 4px 8px; }
   .count { font-size: 11.5px; min-width: 70px; text-align: right; }
-  .group { display: flex; flex-direction: column; gap: 8px; }
-  .summary { display: flex; gap: 7px; align-items: center; background: none; border: none; padding: 0; font-size: 12.5px; color: var(--text2); text-align: left; }
+  /* A work group as t3code's: one quiet line of 24 px, the steps under it when you open it. */
+  .group { display: flex; flex-direction: column; gap: 4px; }
+  .summary { display: flex; gap: 8px; align-items: center; min-height: 24px; background: none; border: none; padding: 0 4px; font-size: 14px; color: var(--text2); text-align: left; border-radius: var(--radius-control); width: fit-content; max-width: 100%; }
   .summary:hover { background: none; color: var(--paper); }
   .summary.fail { color: var(--coral); }
-  .summary .sym { width: 14px; text-align: center; font-size: 11px; }
-  .chev { display: inline-block; transition: transform 0.15s; opacity: 0.6; }
-  .chev.open { transform: rotate(90deg); opacity: 0.9; }
-  .inner { display: flex; flex-direction: column; gap: 8px; padding-left: 14px; }
-  .inner.fold { border-left: 1px solid var(--line2); gap: 12px; }
-  .live { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
-  .live .dot { margin-top: 5px; }
+  .summary .sym { display: inline-flex; color: var(--text3); }
+  .summary.fail .sym { color: var(--coral); }
+  .stext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chev { display: inline-flex; transition: transform 0.15s; color: var(--text3); opacity: 0; }
+  .summary:hover .chev, .chev.open { opacity: 1; }
+  .chev.open { transform: rotate(90deg); }
+  .inner { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line2) 60%, transparent); }
+  .inner.fold { gap: 12px; }
+  /* The live line: t3code's status line, quiet text with a spinner. */
+  .live { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 0 4px; color: var(--text2); }
+  .spin { display: inline-flex; margin-top: 1px; color: var(--text3); animation: spin 1s linear infinite; }
+  .spin.waiting { color: var(--amber); animation: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .live-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .live-head { display: flex; gap: 6px; align-items: center; }
   .live-head .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
   .mono { font-family: var(--mono); font-size: 11px; }
   .thought { color: var(--text3); font-size: 12px; background: linear-gradient(90deg, var(--text3), var(--paper), var(--text3)); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2.4s linear infinite; }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-  .recovery { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 9px; background: rgba(255, 184, 77, 0.07); }
-  .recovery.failed { background: rgba(255, 107, 107, 0.07); }
+  .recovery { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--radius-card); border: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line2)); background: var(--surface); }
+  .recovery.failed { border-color: color-mix(in srgb, var(--coral) 30%, var(--line2)); }
+  .rsym { display: inline-flex; color: var(--amber); }
+  .recovery.failed .rsym { color: var(--coral); }
   .rtext { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
-  .to-end { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); border-radius: 999px; font-size: 12px; padding: 4px 12px; }
+  .to-end { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); border-radius: 999px; font-size: 12px; padding: 4px 12px; background: var(--surface); box-shadow: var(--shadow-popover); }
   .small { font-size: 12.5px; }
 </style>
