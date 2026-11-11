@@ -44,6 +44,13 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var launchOptions: LaunchOptions?
     /// The conversation of each session that was opened, by session id.
     @Published private(set) var timelines: [String: [TimelineEntry]] = [:]
+    /// Older pages of a session's conversation, asked for by scrolling up (`loadEarlier`), oldest first. Kept apart from
+    /// `timelines`, which the Mac replaces whole; the screen joins the two (`conversation`).
+    @Published private(set) var earlier: [String: [TimelineEntry]] = [:]
+    /// Sessions whose conversation was paged back to its start.
+    @Published private(set) var reachedStart: Set<String> = []
+    /// Entries the Mac clipped, in full once asked for (`loadFullEntry`), by entry id.
+    @Published private(set) var fullTexts: [String: String] = [:]
     /// The session on screen whose conversation follows live (`CompanionOp.watch`), kept across reconnects.
     private(set) var watchedSession: String?
     /// The chat open in the Chats tab, followed live (`watchChat`); watched again after a reconnect.
@@ -960,6 +967,45 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .timeline, session: sessionID), quiet: true)
     }
 
+    /// A session's conversation as the screen shows it: the older pages, then the recent conversation, each entry once.
+    func conversation(_ sessionID: String) -> [TimelineEntry] {
+        let recent = timelines[sessionID] ?? []
+        guard let older = earlier[sessionID], !older.isEmpty else { return recent }
+        let ids = Set(recent.map(\.id))
+        return older.filter { !ids.contains($0.id) } + recent
+    }
+
+    /// The Mac can page back and send clipped entries in full (`CompanionFeature.fullTranscript`).
+    var canReadFullTranscript: Bool { can(CompanionFeature.fullTranscript) }
+
+    /// The page before the oldest entry the phone has. False when there is nothing older (or the Mac cannot say).
+    @discardableResult
+    func loadEarlier(_ sessionID: String) async -> Bool {
+        guard canReadFullTranscript, !reachedStart.contains(sessionID),
+              let oldest = conversation(sessionID).first?.id else { return false }
+        guard let response = await perform(CompanionRequest(op: .timeline, session: sessionID, item: oldest), quiet: true),
+              response.ok, let page = response.timeline else { return false }
+        let known = Set(conversation(sessionID).map(\.id))
+        let fresh = page.filter { !known.contains($0.id) }
+        if fresh.isEmpty {
+            reachedStart.insert(sessionID)
+            return false
+        }
+        earlier[sessionID] = fresh + (earlier[sessionID] ?? [])
+        return true
+    }
+
+    /// An entry the Mac clipped, in full (`CompanionOp.entry`); nil when the Mac cannot send it.
+    @discardableResult
+    func loadFullEntry(_ sessionID: String, entry: String) async -> String? {
+        if let known = fullTexts[entry] { return known }
+        guard canReadFullTranscript,
+              let text = await perform(CompanionRequest(op: .entry, session: sessionID, item: entry), quiet: true)?.entryText
+        else { return nil }
+        fullTexts[entry] = text
+        return text
+    }
+
     /// Opens a session's conversation live (`CompanionOp.watch`): the Mac answers with it whole, then sends what changes
     /// by itself. False when this Mac cannot, and the screen asks every few seconds instead.
     @discardableResult
@@ -1257,7 +1303,8 @@ final class CompanionClient: ObservableObject {
             cache.launch = options
             scheduleCacheSave()
         }
-        if let timeline = response.timeline, let session = response.timelineSession ?? req.session {
+        if let timeline = response.timeline, let session = response.timelineSession ?? req.session,
+           response.timelineBefore == nil, req.item == nil || req.op != .timeline {
             // An update builds on the entry the phone already has; missing it, the whole conversation is asked for once.
             if let merged = TimelineDelta.apply(timeline, after: response.timelineAfter, to: timelines[session]) {
                 if timelines[session] != merged {
@@ -1278,6 +1325,8 @@ final class CompanionClient: ObservableObject {
             if chats != inbox { inbox = chats }
             // The chats' own pictures: the ones the phone does not have yet, or that changed (`CompanionFeature.avatars`).
             if can(CompanionFeature.avatars) { ChatPictures.shared.update(chats, client: self) }
+            // The real logo of each chat app on its chats, as the Mac shows it.
+            if can(CompanionFeature.appIcons) { ChatPictures.shared.updateAppIcons(Set(chats.map(\.app)), client: self) }
             if response.message != inboxStatus { inboxStatus = response.message }
         }
         if let lines = response.inboxLines, let chat = response.inboxChat ?? req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
@@ -1756,7 +1805,7 @@ extension CompanionClient {
     func loadDemo() {
         let now = Date().timeIntervalSince1970
         macName = "MacBook Pro"
-        features = [CompanionFeature.start, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
+        features = [CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
                     CompanionFeature.manage, CompanionFeature.steer]
         sessions = [
             SessionDigest(id: "s1", title: "Add the usage page to Settings", agent: "Claude Code", attention: "approval",
@@ -1779,6 +1828,33 @@ extension CompanionClient {
             TimelineEntry(id: "t4", kind: .assistant, text: "The socket is closed on sleep, but **the backoff never resets**. I'll reset it when the network comes back.", date: now - 500, failed: false),
             TimelineEntry(id: "t5", kind: .user, text: "Good, go ahead.", date: now - 300, failed: false),
             TimelineEntry(id: "t6", kind: .tool, text: "Edited RelayClient.swift", date: now - 200, failed: false),
+            TimelineEntry(id: "t7", kind: .tool, text: "swift test --filter RelayClientTests", detail: "Bash", date: now - 150, failed: false,
+                          output: "Building for debugging...\nTest Suite 'RelayClientTests' started\nTest Case 'testBackoffResetsAfterWake' passed (0.012 seconds)\nExecuted 8 tests, with 0 failures"),
+            TimelineEntry(id: "t8", kind: .assistant, text: """
+            ## What changed
+
+            The backoff now resets when the network comes back:
+
+            1. `RelayClient` listens for `NWPathMonitor` updates.
+            2. On a satisfied path it calls `resetBackoff()` and reconnects.
+            - [x] Reset on wake
+            - [ ] Test on a real Mac sleep
+
+            ```swift
+            monitor.pathUpdateHandler = { [weak self] path in
+                guard path.status == .satisfied else { return }
+                self?.resetBackoff(); self?.reconnect(reason: .networkReturned)
+            }
+            ```
+
+            | Case | Before | After |
+            |---|---|---|
+            | Sleep 5 min | 64 s to reconnect | 1 s |
+            | Wi-Fi switch | 32 s | 1 s |
+
+            > [!NOTE]
+            > The old backoff still applies when the relay itself is down.
+            """, date: now - 100, failed: false, clipped: true),
         ]
         conversations = [
             ChatDigest(id: "c1", title: "Plan for tomorrow", updated: now - 3600, busy: false, waiting: false, preview: "You have three meetings…"),

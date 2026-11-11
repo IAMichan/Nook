@@ -25,16 +25,20 @@ struct SessionDetailView: View {
 
     /// From the live list, or an older session opened from the settled ones or a search.
     private var session: SessionDigest? { client.session(sessionID) }
-    private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
+    private var entries: [TimelineEntry] { client.conversation(sessionID) }
+    /// An older page is on its way (`CompanionClient.loadEarlier`).
+    @State private var loadingEarlier = false
 
     var body: some View {
         if let session {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        SessionHeader(session: session, review: client.can(CompanionFeature.diff) ? { reviewing = true } : nil)
                         if client.can(CompanionFeature.timeline), !entries.isEmpty {
-                            TranscriptConversation(entries: entries, working: session.attention == "working")
+                            if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
+                                EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(proxy) }
+                            }
+                            TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: String(localized: "Latest reply"))
                             TranscriptReply(text: session.excerpt, footer: false)
@@ -121,7 +125,14 @@ struct SessionDetailView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: session.folder) }
+                // Who works where, in the bar as t3code's thread header has it, so the conversation starts at the top.
+                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: Self.subtitle(session)) }
+                if client.can(CompanionFeature.diff) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { reviewing = true } label: { Image(icon: "plusminus").foregroundStyle(Theme.paper) }
+                            .accessibilityLabel("Changes")
+                    }
+                }
                 if !actions(session).isEmpty || (canStop(session) && stoppable(session)) {
                     ToolbarItem(placement: .topBarTrailing) { manageMenu(session) }
                 }
@@ -179,6 +190,24 @@ struct SessionDetailView: View {
     }
 
     private static let bottom = "bottom"
+
+    /// "Claude Code · nook · main": the agent, its folder and its branch.
+    static func subtitle(_ session: SessionDigest) -> String {
+        [session.agent, session.folder, session.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// The page before the oldest message, keeping in sight what you were reading.
+    private func loadEarlier(_ proxy: ScrollViewProxy) {
+        guard !loadingEarlier, let first = entries.first?.id else { return }
+        loadingEarlier = true
+        Task {
+            let more = await client.loadEarlier(sessionID)
+            loadingEarlier = false
+            guard more, let session else { return }
+            let rows = TranscriptRow.rows(entries, working: session.attention == "working")
+            if let row = rows.first(where: { $0.holds(first) }) { proxy.scrollTo(row.id, anchor: .top) }
+        }
+    }
 
     /// Sends the message: into the running turn when steering is chosen and possible, else as the Mac decides (now when
     /// the agent rests, after the turn while it works).
@@ -271,6 +300,35 @@ struct SessionDetailView: View {
     }
 }
 
+/// "Earlier messages" at the top of a conversation the Mac sent only the end of: the page before it.
+private struct EarlierMessagesButton: View {
+    let loading: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.sm) {
+                if loading {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(icon: "arrow.up")
+                }
+                Text("Earlier messages")
+            }
+            .font(Theme.TextStyle.label)
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(height: 32)
+            .roundedBackground(Theme.smoke, radius: Theme.Radius.control)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressFade())
+        .disabled(loading)
+        .padding(.top, Theme.Spacing.md)
+    }
+}
+
 /// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
 private struct ScrollEndTracker: ViewModifier {
     @Binding var atEnd: Bool
@@ -285,58 +343,6 @@ private struct ScrollEndTracker: ViewModifier {
         } else {
             content
         }
-    }
-}
-
-/// Who works where, under the screen's title: the agent's logo and name, its status, and the folder and branch.
-private struct SessionHeader: View {
-    let session: SessionDigest
-    /// Opens what the session changed; nil when this Mac cannot show it.
-    var review: (() -> Void)? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(spacing: Theme.Spacing.md) {
-                AgentLogo(agent: session.agent, size: 18)
-                Text(session.agent).font(Theme.TextStyle.strong).foregroundStyle(Theme.paper).lineLimit(1)
-                Spacer(minLength: Theme.Spacing.md)
-                StatusPill(attention: session.attention)
-            }
-            HStack(spacing: Theme.Spacing.lg) {
-                MetaChip(symbol: "folder", text: session.folder)
-                if let branch = session.branch, !branch.isEmpty { MetaChip(symbol: "arrow.triangle.branch", text: branch) }
-                Spacer(minLength: 0)
-                if let review {
-                    Button(action: review) {
-                        Label("Changes", systemImage: "plusminus")
-                            .font(Theme.TextStyle.label)
-                            .foregroundStyle(Theme.paper)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs)
-                            .background(Theme.smoke, in: Capsule())
-                    }
-                    .buttonStyle(PressFade())
-                }
-            }
-        }
-        .padding(Theme.Spacing.lg)
-        .roundedBackground(Theme.field, radius: Theme.Radius.panel)
-        .padding(.top, Theme.Spacing.md)
-    }
-}
-
-/// Where a session works, as a mark and a word: no fill, as the Mac's row badges.
-private struct MetaChip: View {
-    let symbol: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            Image(icon: symbol).foregroundStyle(Theme.textTertiary)
-            Text(text).foregroundStyle(Theme.textSecondary)
-        }
-        .font(Theme.TextStyle.label)
-        .lineLimit(1)
     }
 }
 
