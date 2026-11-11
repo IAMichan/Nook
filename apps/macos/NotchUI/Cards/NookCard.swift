@@ -229,6 +229,12 @@ struct LineChanges: Equatable {
     var removed: Int
 }
 
+/// A request a compact card offers under its field, with its symbol.
+struct CardSuggestion: Equatable, Hashable {
+    var text: String
+    var symbol: String
+}
+
 struct NookCard: Equatable, Identifiable {
     var id: String
     var mood: NookMood
@@ -265,6 +271,9 @@ struct NookCard: Equatable, Identifiable {
     var compact: Bool = false
     /// The height a compact card started with, kept while its field grows so it can shrink back to it.
     var compactBaseHeight: CGFloat? = nil
+    /// One-click requests under a compact card's field (what Nook could do with what is in front of you, and what you
+    /// asked lately): a click sends the request as if it was typed.
+    var suggestions: [CardSuggestion] = []
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
     /// Less common actions, tucked away in a "…" menu at the end of the button row so the row stays calm.

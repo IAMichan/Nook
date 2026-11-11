@@ -228,6 +228,7 @@ targets:
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+Split.swift
       - path: Core/I18n+DoubleTap.swift
+      - path: Core/I18n+DoubleTapSuggest.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+DiffReview.swift
@@ -637,6 +638,7 @@ targets:
       - path: Services/Flow/FlowLogic.swift
       - path: Services/Flow/VoiceModelCopies.swift
       - path: Services/DoubleTap/DoubleTapLogic.swift
+      - path: Services/DoubleTap/DoubleTapSuggest.swift
       - path: Services/DoubleTap/DoubleTapEditLogic.swift
       - path: Services/DoubleTap/DoubleTapRun.swift
       - path: Brain/SettingsPanes.swift

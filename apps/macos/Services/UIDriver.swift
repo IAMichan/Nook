@@ -66,7 +66,7 @@ enum UIDriver {
             ),
             ToolSpec(
                 name: lookTool,
-                description: "Looks at the front window of a Mac app the way a person does: takes a fresh picture of it and lists every text seen on it with its screen position (x,y of its centre). Brains that can see also get the picture itself. Use it when read_ui shows little or nothing useful (apps that draw their own controls, canvases, games, remote screens, images, web apps), to find something by how it looks (an icon, a colour, a position), and to check the result of a step with your own eyes. In the picture, pixel (px, py) is screen point (window x + px, window y + py): click there with control_ui x and y.",
+                description: "Looks at the front window of a Mac app the way a person does: takes a fresh picture of it and lists every text seen on it with its screen position (x,y of its centre). Brains that can see also get the picture itself. Use it when read_ui shows little or nothing useful (apps that draw their own controls, canvases, games, remote screens, images, web apps), to find something by how it looks (an icon, a colour, a position), and to check the result of a step with your own eyes. Its text says which screen point a pixel of the picture is: click there with control_ui x and y.",
                 schema: [
                     "type": "object",
                     "properties": ["app": ["type": "string", "description": "Name of the app. Without it: the app in front."]] as [String: Any],
@@ -220,8 +220,14 @@ enum UIDriver {
         if let found = element?.element, !found.enabled, step.action != .scroll {
             throw NookError(tr("control.error.disabled", found.label))
         }
-        let point: CGPoint? = element.map { CGPoint(x: $0.element.centerX, y: $0.element.centerY) }
+        var point: CGPoint? = element.map { CGPoint(x: $0.element.centerX, y: $0.element.centerY) }
             ?? step.x.flatMap { x in step.y.map { CGPoint(x: x, y: $0) } }
+        // An element scrolled out of view (a button further down a web page) is scrolled into view first, the way a
+        // person would scroll to it, so the mouse lands on it instead of on whatever is at its old place.
+        if let found = element, !found.element.visible, [.click, .doubleClick, .rightClick, .hover, .type, .drag].contains(step.action),
+           await scrollIntoView(found.ref) {
+            point = frame(of: found.ref).map { CGPoint(x: $0.midX, y: $0.midY) } ?? point
+        }
         if let point, step.action != .key { onAct?(point, element?.element.label ?? "") }
 
         switch step.action {
@@ -330,12 +336,35 @@ enum UIDriver {
             return "Nook could not take a picture of \(app.localizedName ?? "the app") (no window on screen, or screen recording is not allowed). Use read_ui."
         }
         // A full-window JPEG encode takes tens of milliseconds: off the main thread, where the takeover cursor moves.
-        picture = await Task.detached(priority: .userInitiated) { [cg = shot.image] in ChatImage.encode(cg) }.value
+        // A big window is made smaller first: a brain shrinks a large picture itself, and then its pixels would no
+        // longer be the points Nook says they are.
+        let (picked, scale) = await Task.detached(priority: .userInitiated) { [cg = shot.image] () -> (ChatImage?, Double) in
+            let small = UIDriver.shrunk(cg, maxSide: UIControl.maxPictureSide)
+            return (ChatImage.encode(small.image), small.scale)
+        }.value
+        picture = picked
         let frame = shot.frame
-        var lines = ["Window of \(app.localizedName ?? "the app") at x \(Int(frame.minX)), y \(Int(frame.minY)), \(Int(frame.width))×\(Int(frame.height)) points. In the picture, pixel (px, py) is screen point (\(Int(frame.minX)) + px, \(Int(frame.minY)) + py)."]
+        var lines = ["Window of \(app.localizedName ?? "the app") at x \(Int(frame.minX)), y \(Int(frame.minY)), \(Int(frame.width))×\(Int(frame.height)) points. "
+                     + UIControl.pictureMapping(originX: frame.minX, originY: frame.minY, scale: scale)]
         let seen = UIControl.describeSeen(await ScreenReader.seenLines(of: app, limit: 250), limit: 6_000)
         lines.append(seen.isEmpty ? "No text recognized in the window." : seen)
         return lines.joined(separator: "\n\n")
+    }
+
+    /// The picture made smaller so its longest side is at most `maxSide` pixels, and the scale it got (1 when it was
+    /// small enough already, or could not be redrawn).
+    nonisolated static func shrunk(_ image: CGImage, maxSide: Int) -> (image: CGImage, scale: Double) {
+        let scale = UIControl.pictureScale(width: image.width, height: image.height, maxSide: maxSide)
+        guard scale < 1 else { return (image, 1) }
+        let width = max(1, Int((Double(image.width) * scale).rounded()))
+        let height = max(1, Int((Double(image.height) * scale).rounded()))
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return (image, 1) }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let small = context.makeImage() else { return (image, 1) }
+        return (small, Double(width) / Double(image.width))
     }
 
     /// The name of the element at a screen point (top-left origin) in that app, as a person would call it: for the
@@ -351,6 +380,30 @@ enum UIDriver {
         let name = label(of: hit, role: UIControl.role(role, subrole: attribute(hit, kAXSubroleAttribute)))
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.isEmpty ? nil : clean
+    }
+
+    /// The name of what has the keyboard in that app (a focused button's title), for the checkpoint of Space.
+    static func focusedLabel(pid: pid_t) -> String? {
+        guard let focused = focusedElement(pid) else { return nil }
+        let role: String = attribute(focused, kAXRoleAttribute) ?? ""
+        let name = label(of: focused, role: UIControl.role(role, subrole: attribute(focused, kAXSubroleAttribute)))
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
+    }
+
+    /// The app whose window is in front of all others, leaving Nook's own windows out: what the user looks at when they
+    /// started a task from Nook's panel. Nil when there is none.
+    static func frontmostOther() -> NSRunningApplication? {
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] else { return nil }
+        for info in list {
+            guard (info[kCGWindowLayer as String] as? Int) == 0,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own,
+                  let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular else { continue }
+            return app
+        }
+        return nil
     }
 
     /// After a click on a checkbox, switch or radio button: a note when it still shows what it showed before (or a radio
@@ -648,6 +701,15 @@ enum UIDriver {
               AXValueGetValue(positionValue as! AXValue, .cgPoint, &position),
               AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
         return CGRect(origin: position, size: size)
+    }
+
+    /// Asks the app to scroll an element into view (`AXScrollToVisible`) and gives it a moment to get there. False when
+    /// the app has no such action for it.
+    private static func scrollIntoView(_ element: AXUIElement) async -> Bool {
+        guard actions(of: element).contains("AXScrollToVisible"),
+              AXUIElementPerformAction(element, "AXScrollToVisible" as CFString) == .success else { return false }
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        return true
     }
 
     private static func actions(of element: AXUIElement) -> [String] {

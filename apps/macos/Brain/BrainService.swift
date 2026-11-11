@@ -289,8 +289,11 @@ final class BrainService {
             normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
         )
         runner.perform = perform
-        // Only with a first picture: the fallback in `execute` drops the pictures when the brain refuses that one.
-        if canSee, !images.isEmpty, let pictures {
+        // The screen changes by itself while a task runs (a page loads): reading it again must really read again.
+        runner.liveReads = [UIDriver.readTool, UIDriver.lookTool]
+        // What look_ui sees goes along whenever the brain takes pictures, also when the task started without one (Nook
+        // was in front); the fallback in `execute` drops the pictures when the brain refuses a first one.
+        if canSee, let pictures {
             runner.pictures = { pictures().map { PromptImage(mediaType: $0.mediaType, base64: $0.base64) } }
         }
         let started = CFAbsoluteTimeGetCurrent()

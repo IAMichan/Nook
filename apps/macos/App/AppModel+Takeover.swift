@@ -20,6 +20,10 @@ final class TakeoverState: ObservableObject {
     fileprivate var cookieBanner = false
     /// The browser the task works in (the user's, not just the default one).
     fileprivate var browser: NSRunningApplication?
+    /// The last control_ui calls, to notice the brain asking for the same steps over and over.
+    fileprivate var recentSteps: [String] = []
+    /// The window as read after the last control_ui, to notice steps that changed nothing.
+    fileprivate var lastWindow = ""
 
     /// Stops the task: a question that waits is answered with no, the brain's run is cancelled.
     func stop() {
@@ -63,7 +67,8 @@ extension AppModel {
     /// The calendar and reminders go through their own tools rather than clicks in their apps: what "More by itself"
     /// allows there then runs without a question (`allowedByAccess`).
     static let takeoverToolNames = ["read_ui", "look_ui", "control_ui", "open_url", "open_app", "search_web", "read_webpage", "recall_memory",
-                                    "list_events", "create_event", "update_event", "create_reminder", "complete_reminder"]
+                                    "list_events", "create_event", "update_event", "create_reminder", "complete_reminder",
+                                    "list_app_menu", "app_menu_command"]
 
     // MARK: Tools
 
@@ -137,7 +142,29 @@ extension AppModel {
             compact: true,
             escape: close
         )
-        viewModel.show(.card(card))
+        var shown = card
+        // What you asked lately right away; what Nook could do with the window in front follows once it is read.
+        shown.suggestions = Self.cardSuggestions(scene: nil)
+        viewModel.show(.card(shown))
+    }
+
+    /// What Nook read in front as the Double Tap field opened (`DoubleTap.onScene`): the field, while it is still open,
+    /// offers what Nook could do with it.
+    func showDoubleTapScene(_ scene: DoubleTapScene) {
+        guard case .card(var card) = viewModel.state, card.id.hasPrefix(Self.takeoverCardPrefix) else { return }
+        let suggestions = Self.cardSuggestions(scene: scene)
+        guard suggestions != card.suggestions else { return }
+        card.suggestions = suggestions
+        viewModel.updateCard(card)
+    }
+
+    private static func cardSuggestions(scene: DoubleTapScene?) -> [CardSuggestion] {
+        guard DoubleTap.shared.suggests else { return [] }
+        let language = I18n.shared.currentLanguage
+        let selectionLanguage = scene.flatMap { DoubleTapLogic.language(of: $0.selection) }
+        return DoubleTapLogic.suggestions(for: scene, recents: DoubleTap.shared.recents, language: language,
+                                          selectionLanguage: selectionLanguage)
+            .map { CardSuggestion(text: $0.text, symbol: $0.symbol) }
     }
 
     /// What was typed in the notch's quick field: a new conversation in the Nook chat, through the same path as a message
@@ -146,6 +173,7 @@ extension AppModel {
     func askFromQuickField(_ text: String) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty else { return }
+        DoubleTap.shared.remember(request)
         viewModel.show(.idle)
         // "Punt 5 moet dit worden", "verwijder de laatste zin": the part is changed in the document in front, selected and
         // typed over like a person would. Without a document there, it is a chat message, and a task Nook can take over.
@@ -284,6 +312,8 @@ extension AppModel {
         state.stopRequested = false
         state.messageID = messageID
         state.cookieBanner = false
+        state.recentSteps = []
+        state.lastWindow = ""
         UIDriver.onAct = { point, label in TakeoverCursor.shared.move(to: point, label: label) }
         defer {
             state.isRunning = false
@@ -300,12 +330,17 @@ extension AppModel {
 
         // What Nook already knows: the app in front (not Nook itself), its text and a picture of it, the user's memories.
         let own = ProcessInfo.processInfo.processIdentifier
+        // Started from Nook's own panel or chat: the window right behind it is what the task is about.
         let front = NSWorkspace.shared.frontmostApplication.flatMap { $0.processIdentifier == own ? nil : $0 }
+            ?? UIDriver.frontmostOther()
         let screenAllowed = settings.liveScreen && !settings.privateSources.contains(SourceCatalog.screen)
         var screen = ""
+        var windowTitle = ""
         if screenAllowed, let bundle = front?.bundleIdentifier {
             let windows = screenContext.windows.filter { $0.bundleID == bundle }
-            screen = settings.shielded(((windows.first { $0.isFront } ?? windows.first)?.text) ?? "")
+            let window = windows.first { $0.isFront } ?? windows.first
+            screen = settings.shielded(window?.text ?? "")
+            windowTitle = settings.shielded(window?.title ?? "")
         }
         var images: [ChatImage] = []
         if screenAllowed, let front, let shot = await ScreenReader.windowImage(of: front, scale: 1),
@@ -314,7 +349,7 @@ extension AppModel {
         }
         let memories = recalledMemories(for: task, scope: .automatic, tools: []).map(\.text)
         state.browser = UIDriver.userBrowser()
-        let prompt = TakeoverPolicy.prompt(task: task, frontApp: front?.localizedName ?? "", window: "", screen: screen,
+        let prompt = TakeoverPolicy.prompt(task: task, frontApp: front?.localizedName ?? "", window: windowTitle, screen: screen,
                                            memories: memories, dates: ChatIntent.dateSheet(),
                                            browser: state.browser?.localizedName ?? "")
 
@@ -372,6 +407,13 @@ extension AppModel {
                 : ("The user stopped the task. Summarize what is done and what is left, and end with STATUS: COULD_NOT — stopped by the user.", false)
         }
         if let refusal = TakeoverPolicy.refusal(tool: tool, input: input) { return (refusal, true) }
+        let state = TakeoverState.shared
+        // The same steps a third time in a row: they do not work this way, and the brain is told to find another.
+        let stepKey = tool + ":" + Self.json(input)
+        if tool == UIDriver.controlTool {
+            if TakeoverPolicy.isRepeat(stepKey, after: state.recentSteps) { return (TakeoverPolicy.repeatRefusal, true) }
+            state.recentSteps = Array((state.recentSteps + [stepKey]).suffix(4))
+        }
         let summary = spec.summarize(input)
         // A click on a point is judged by what is there: the button under it, read from the app in front.
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
@@ -379,7 +421,8 @@ extension AppModel {
         if !allowedByAccess(tool, input),
            let line = TakeoverPolicy.checkpoint(tool: tool, input: input, summary: summary,
                                                 cookieBanner: TakeoverState.shared.cookieBanner,
-                                                labelAt: { x, y in front.flatMap { UIDriver.label(at: CGPoint(x: x, y: y), pid: $0) } }) {
+                                                labelAt: { x, y in front.flatMap { UIDriver.label(at: CGPoint(x: x, y: y), pid: $0) } },
+                                                focusedLabel: { front.flatMap { UIDriver.focusedLabel(pid: $0) } }) {
             updateTakeover(tr("takeover.waiting"))
             let yes = await askTakeoverUser(title: tr("takeover.check.title"), line: line, yes: tr("takeover.check.yes"))
             guard yes else {
@@ -392,7 +435,20 @@ extension AppModel {
         do {
             let result = try await spec.run(input)
             store.audit(tool: tool, args: args, result: result)
-            if tool == UIDriver.readTool { TakeoverState.shared.cookieBanner = TakeoverPolicy.showsCookieBanner(result) }
+            if tool == UIDriver.readTool { state.cookieBanner = TakeoverPolicy.showsCookieBanner(result) }
+            // After the mouse and keyboard: the window as it is now goes with the result, so the brain sees what its
+            // steps did without a round of its own, and hears it when they changed nothing.
+            if tool == UIDriver.controlTool || tool == TakeoverPolicy.menuTool,
+               let read = tools.first(where: { $0.name == UIDriver.readTool }) {
+                let app = (input["app"] as? String) ?? ""
+                if let window = try? await read.run(app.isEmpty ? [:] : ["app": app]) {
+                    let shielded = settings.shielded(window)
+                    let unchanged = !state.lastWindow.isEmpty && shielded == state.lastWindow
+                    state.lastWindow = shielded
+                    state.cookieBanner = TakeoverPolicy.showsCookieBanner(shielded)
+                    return (TakeoverPolicy.afterAction(result, window: shielded, unchanged: unchanged), false)
+                }
+            }
             return (result, false)
         } catch {
             store.audit(tool: tool, args: args, result: "FOUT: \(error.localizedDescription)")
