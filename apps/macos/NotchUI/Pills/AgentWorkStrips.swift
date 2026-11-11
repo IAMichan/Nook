@@ -84,7 +84,7 @@ struct ResourceWaitStrip: View {
                 }
                 Spacer(minLength: 6)
                 Button(tr("ws.governor.letGoOn")) { AgentGovernor.shared.letGoOn(runID) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .foregroundStyle(NookTheme.iris)
                     .help(tr("ws.governor.letGoOn.help"))
             }
