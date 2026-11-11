@@ -444,6 +444,10 @@ final class AppSettings: ObservableObject {
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
     }
+    /// Which sound each moment makes, keyed by `NookSound.rawValue` (see `NookSound.Choice`); missing means the default.
+    @Published var soundChoices: [String: String] {
+        didSet { UserDefaults.standard.set(soundChoices, forKey: "soundChoices") }
+    }
     /// Read responses aloud when asked by voice.
     @Published var speakAnswers: Bool {
         didSet { UserDefaults.standard.set(speakAnswers, forKey: "speakAnswers") }
@@ -757,6 +761,7 @@ final class AppSettings: ObservableObject {
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         showNotch = defaults.object(forKey: "showNotch") as? Bool ?? true
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
+        soundChoices = (defaults.dictionary(forKey: "soundChoices") as? [String: String]) ?? [:]
         // Before these rules: agent notices had their own size and place, and WhatsApp its own switch.
         noticeRules = defaults.data(forKey: Self.noticeRulesKey).flatMap { try? JSONDecoder().decode(NoticeRules.self, from: $0) }
             ?? NoticeRules.migrated(agentNotice: defaults.string(forKey: "agentNotice"),

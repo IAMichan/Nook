@@ -218,6 +218,7 @@ targets:
       - path: Core/I18n+Confirm.swift
       - path: Core/I18n+Buddy.swift
       - path: Core/I18n+Quiet.swift
+      - path: Core/I18n+Sounds.swift
       - path: Core/I18n+Search.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift

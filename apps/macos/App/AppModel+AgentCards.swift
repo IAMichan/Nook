@@ -34,7 +34,7 @@ extension AppModel {
             showApprovalCard(approval, context: context, open: open, waiting: waiting)
             return
         }
-        NookSound.play(.attention)
+        NookSound.play(.permission)
         SystemNotifier.shared.approval(
             approval, context: context, target: noticeTarget(approval),
             decide: { [weak self] decision in self?.approvals.decide(approval, decision, source: .notification) },
@@ -94,7 +94,7 @@ extension AppModel {
                                tone: approval.danger ? .failed : .waiting)
         )
         viewModel.presentUrgent(card, keepPanel: true)
-        if sound { NookSound.play(.attention) }
+        if sound { NookSound.play(.permission) }
     }
 
     /// Interactive multiple-choice prompts from an agent. Returns collected answers upon completion.
