@@ -26,7 +26,8 @@ protocol ChatBridge: AnyObject {
     /// seconds (`ChatBackoff`), not after a minute.
     var readsLocally: Bool { get }
     /// You are looking at the chat `name`: the files it still waits for go before those of other chats. For an app that
-    /// fetches files in its own queue (Telegram); every other bridge fetches them with the read a chat's opening asks for.
+    /// fetches files in its own queue (Telegram), or one that reads a chat again only when it moved (Teams); every other
+    /// bridge fetches them with the read a chat's opening asks for.
     func hurryFiles(name: String)
 }
 
