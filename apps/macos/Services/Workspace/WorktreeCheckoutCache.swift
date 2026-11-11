@@ -369,7 +369,7 @@ struct WorktreeCheckoutCache: Sendable {
 
     static func device(_ path: String) -> Int32? {
         var info = stat()
-        return stat(path, &info) == 0 ? info.st_dev : nil
+        return stat(path, &info) == 0 ? Int32(truncatingIfNeeded: info.st_dev) : nil
     }
 
     static func sha256(_ data: Data) -> [UInt8] {

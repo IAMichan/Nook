@@ -102,6 +102,12 @@ public protocol ObservableObject: AnyObject {}
 public func autoreleasepool<Result>(invoking body: () throws -> Result) rethrows -> Result { try body() }
 #endif
 
+// APFS clones are the Mac's: on Linux `clonefile` always fails, so WorktreeCheckoutCache falls back as it does off APFS.
+#if !canImport(Darwin)
+public let CLONE_NOFOLLOW: Int32 = 0x0001
+public func clonefile(_ source: String, _ destination: String, _ flags: UInt32) -> Int32 { -1 }
+#endif
+
 // URLRequest, URLSession and HTTPURLResponse live in FoundationNetworking on Linux.
 #if canImport(FoundationNetworking)
 @_exported import FoundationNetworking
