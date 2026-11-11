@@ -18,7 +18,7 @@ extension WorkspaceManager {
         turns[id] = TurnState()
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id)
         replace(run)
         recap?.prompt(session: "run-" + id.uuidString, project: run.projectName, agent: run.provider.displayName)
 
@@ -357,10 +357,11 @@ extension WorkspaceManager {
                 noteSubagentsWorking(id)
                 append(id, RunEvent(kind: .system, text: tr("ws.wake.command", ToolSummary.oneLine(command, 80)), tool: "wake"))
                 let message = BackgroundWork.codexMessage(command: command, exitCode: exitCode, output: output)
+                // Codex carries on its own work: its working timer keeps going (`TurnTimer`).
                 if let run = run(id), run.canContinue, processes[id] == nil, !run.status.isActive {
-                    sendHidden(id, text: message)
+                    sendHidden(id, text: message, origin: .notice)
                 } else {
-                    enqueue(id, text: message)
+                    enqueue(id, text: message, origin: .notice)
                 }
             default:
                 handleCodex(event, id: id)
@@ -533,7 +534,7 @@ extension WorkspaceManager {
         append(id, RunEvent(kind: .system, text: tr("ws.wake.background"), tool: "wake"))
         if run.status == .completed || run.status == .failed || run.status == .stopped { run.move(to: .preparing) }
         run.move(to: .running)
-        run.turnStartedAt = Date()
+        run.turnStartedAt = turnStart(id, continuing: true)
         replace(run)
     }
 
