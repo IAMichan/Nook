@@ -179,8 +179,8 @@ struct PanelView: View {
         .keyCommand("search.toggle", enabled: sheet == nil && !app.demoMode) { searching.toggle() }
         // F6 between the window's parts; ⌘W, ⌘D and ⇧⌘D in a terminal.
         .windowKeyCommands()
-        // Short results from anywhere in Nook (saved, approved, failed) show in the panel's top-right corner; what waits
-        // for you (a permission request, an agent's question, a short note) floats over its bottom edge.
+        // Short results from anywhere in Nook (saved, approved, failed) and what waits for you (a permission request, an
+        // agent's question, a short note) both show in the panel's top-right corner, the request on top.
         .nookToastHost {
             if sheet == nil {
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
@@ -404,8 +404,8 @@ private final class MeasuredWidth {
 }
 
 /// A permission request or multiple-choice question that comes in while the panel (or the main window) is open: one
-/// compact notice floating over the panel's bottom edge, where toasts show, instead of a card over the whole notch. Hidden while the session that asks is on screen,
-/// which shows the whole request itself.
+/// compact notice in the panel's top-right corner, on top of the toasts, instead of a card over the whole notch. Hidden
+/// while the session that asks is on screen, which shows the whole request itself.
 struct PanelApprovalBar: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
@@ -451,7 +451,7 @@ struct PanelApprovalBar: View {
                 )
                 .fixedSize()
             }
-            .transition(.nookFloating(reduceMotion: reduceMotion))
+            .transition(.nookToast(reduceMotion: reduceMotion))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
             questionBar(question, more: hub.questions.count - 1)
         } else if let notice = viewModel.panelNotice {
@@ -472,7 +472,7 @@ struct PanelApprovalBar: View {
             EmptyView()
         }
         .id(notice.id)
-        .transition(.nookFloating(reduceMotion: reduceMotion))
+        .transition(.nookToast(reduceMotion: reduceMotion))
         .onHover { viewModel.holdPanelNotice($0) }
     }
 
@@ -489,7 +489,7 @@ struct PanelApprovalBar: View {
             )
             .fixedSize()
         }
-        .transition(.nookFloating(reduceMotion: reduceMotion))
+        .transition(.nookToast(reduceMotion: reduceMotion))
     }
 
     private func subtitle(_ request: AgentQuestionRequest, more: Int) -> String {
