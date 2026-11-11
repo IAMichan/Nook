@@ -75,4 +75,38 @@ final class ComposerDraftsTests: XCTestCase {
         XCTAssertEqual(StashAction.decide(composerText: "", stashCount: 1), .restoreOnly)
         XCTAssertEqual(StashAction.decide(composerText: "", stashCount: 2), .openMenu)
     }
+
+    // MARK: New-session drafts, one per folder or machine
+
+    func testNewSessionKeysNameTheirPlace() {
+        XCTAssertEqual(NewSessionDraftKey.place(of: NewSessionDraftKey.folder("/Users/me/app")), .folder("/Users/me/app"))
+        XCTAssertEqual(NewSessionDraftKey.place(of: NewSessionDraftKey.machine("box")), .machine("box"))
+        XCTAssertEqual(NewSessionDraftKey.machineID(NewSessionDraftKey.machine("box")), "box")
+        XCTAssertNil(NewSessionDraftKey.machineID("/Users/me/app"))
+        // A running session's draft, the old shared key, and a box without a folder are no unsent new sessions.
+        XCTAssertNil(NewSessionDraftKey.place(of: UUID().uuidString))
+        XCTAssertNil(NewSessionDraftKey.place(of: NewSessionDraftKey.legacy))
+        XCTAssertNil(NewSessionDraftKey.place(of: NewSessionDraftKey.folder("")))
+        XCTAssertNil(NewSessionDraftKey.place(of: NewSessionDraftKey.machine("")))
+    }
+
+    func testUnsentListsOnlyNewSessionDraftsWithWordsNewestFirst() {
+        var drafts = ComposerDrafts()
+        let start = Date(timeIntervalSince1970: 1_000)
+        drafts.save(sessionID: NewSessionDraftKey.folder("/a"), text: "Fix the login\nand more", now: start)
+        drafts.save(sessionID: NewSessionDraftKey.machine("box"), text: "\n  Deploy it  ", now: start.addingTimeInterval(10))
+        drafts.save(sessionID: "run-session", text: "a reply in a session", now: start.addingTimeInterval(20))
+        drafts.save(sessionID: NewSessionDraftKey.legacy, text: "old shared draft", now: start.addingTimeInterval(30))
+        let rows = drafts.unsentNewSessions()
+        XCTAssertEqual(rows.map(\.key), [NewSessionDraftKey.machine("box"), NewSessionDraftKey.folder("/a")])
+        XCTAssertEqual(rows.map(\.preview), ["Deploy it", "Fix the login"])
+
+        drafts.save(sessionID: NewSessionDraftKey.folder("/a"), text: "  ", now: start.addingTimeInterval(40))
+        XCTAssertEqual(drafts.unsentNewSessions().map(\.key), [NewSessionDraftKey.machine("box")])
+    }
+
+    func testUnsentPreviewIsCut() {
+        XCTAssertEqual(UnsentDraft.preview(of: String(repeating: "x", count: 300)).count, 120)
+        XCTAssertEqual(UnsentDraft.preview(of: " \n\n"), "")
+    }
 }

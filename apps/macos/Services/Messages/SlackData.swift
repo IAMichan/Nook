@@ -207,6 +207,8 @@ enum SlackData {
                                      date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
             // Slack keeps no delivery or read receipts: your message is on Slack, and that is all it says.
             if mine { inbox.receipt = .sent }
+            // Who wrote it in a group, by their Slack id: their face beside the bubble goes by it.
+            if !mine, conversation.isGroup, !user.isEmpty { inbox.senderID = user }
             if message["edited"] != nil { inbox.edited = true }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
             inbox.reactions = Self.reactions(message, me: me, users: users)

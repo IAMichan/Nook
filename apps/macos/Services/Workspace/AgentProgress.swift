@@ -177,6 +177,25 @@ enum AgentActivity: Equatable, Sendable {
     /// It summarizes the conversation to free up context (`CompactionProgress`).
     case compacting
 
+    /// A step the agent takes with a tool (a command, a read, an edit…), rather than what it does between its steps.
+    var isStep: Bool {
+        switch self {
+        case .running, .verifying, .reading, .editing, .searching, .browsing, .delegating, .planning, .screen, .using: return true
+        case .starting, .thinking, .writing, .reviewing, .recovering, .compacting: return false
+        }
+    }
+
+    /// How long a step stays on the live line after it ended when nothing else runs yet: the agent usually starts its
+    /// next step within this, and the line would otherwise blink "Running …", "Reviewing", "Running …" a few times a
+    /// second through quick commands.
+    static let stepDwell: TimeInterval = 0.8
+
+    /// Whether the live line keeps `shown` a while (`stepDwell`) before it says `next`: a step that ended gives way
+    /// right away to another step, never to the pause between two.
+    static func holds(_ shown: AgentActivity, before next: AgentActivity) -> Bool {
+        shown.isStep && !next.isStep && next != .compacting
+    }
+
     /// A tool call by name and input.
     static func of(tool: String, input: [String: Any], fallback: String = "") -> AgentActivity {
         let name = tool.lowercased()

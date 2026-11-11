@@ -661,9 +661,10 @@ private struct ChatBubbleView: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             if bubble.fromMe { Spacer(minLength: 70) }
-            // In a group, who wrote it shows beside each of their messages: their photo from Contacts, else their initials.
+            // In a group, who wrote it shows beside each of their messages: their picture in the chat's app, else their
+            // photo from Contacts, else their initials.
             if !bubble.fromMe, !bubble.sender.isEmpty {
-                ChatSenderFace(name: bubble.sender, size: Self.faceSize)
+                ChatSenderFace(name: bubble.sender, picture: bubble.senderFace, size: Self.faceSize)
             }
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
@@ -729,7 +730,7 @@ private struct ChatBubbleView: View, Equatable {
         // is asked of its app as the bubble comes into view, and again a few times while it stays there.
         .task(id: near && bubble.file == nil && bubble.attachment != nil ? bubble.id : nil) {
             guard near, bubble.file == nil, bubble.attachment != nil, let fetchFile else { return }
-            for wait in [0.0, 2, 6, 15, 30] {
+            for wait in [0.0, 1.5, 3, 6, 10, 15, 25] {
                 if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
                 if Task.isCancelled { return }
                 await fetchFile(bubble.id)

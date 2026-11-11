@@ -54,10 +54,16 @@ struct NewSessionComposer: View {
     @State private var started = false
     /// The other models the prompt also goes to, each in a session and worktree of its own (`ModelComparison`).
     @State private var comparing: [ComparisonTarget] = []
+    /// "New session in this worktree": the session works in the folder as it is, whatever this folder's default says.
+    @State private var keepCheckout = false
     @FocusState private var focused: Bool
 
-    /// The key of the task you were typing in `ComposerDraftStore`, so it also outlives a relaunch.
-    static let draftKey = "new-session"
+    /// Where this draft's words are kept in `ComposerDraftStore`: one draft per folder, or per machine over SSH, so what
+    /// you typed for one project waits there (and in the list's unsent rows) while you start something in another.
+    private var draftKey: String {
+        if let remoteMachine { return NewSessionDraftKey.machine(remoteMachine.id) }
+        return NewSessionDraftKey.folder(config.projectPath)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,18 +78,33 @@ struct NewSessionComposer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink(); applyRequestedProject() }
+        .onChange(of: draftKey) { _, key in ComposerDraftStore.shared.openNewSession = key }
+        .onReceive(ComposerDraftStore.shared.$unsentNewSessions) { _ in dropIfDiscarded() }
         .composerFocusOnAppear($focused)
         // Closing the notch (or switching tabs) drops this view; what you typed and chose waits for its return.
         .onDisappear(perform: keepDraft)
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
-        // ⌥⌘↩: start it and keep a fresh box here for the next one.
-        .keyCommands(["composer.startInBackground": {
-            guard canStart, !starting else { return false }
-            start(background: true)
-            return true
-        }], enabled: focused)
+        // ⌥⌘↩, and ⌘↩ here as in a draft: start it and keep a fresh box for the next one. Return starts and opens it.
+        // Above the box's own ⌘↩ (`priority`), which would only send.
+        .keyCommands(["composer.startInBackground": startInBackgroundKey, "composer.send": startInBackgroundKey],
+                     enabled: focused, priority: 1)
+    }
+
+    private func startInBackgroundKey() -> Bool {
+        // With the `/`, `@`, `#` list open the key takes the chosen line, in the box's own handler.
+        guard !composerModel.isOpen, canStart, !starting else { return false }
+        start(background: true)
+        return true
+    }
+
+    /// The draft on screen was discarded from the list: the box empties too.
+    private func dropIfDiscarded() {
+        guard hasTask, !started, ComposerDraftStore.shared.draft(for: draftKey) == nil else { return }
+        NewSessionDraft.discard(draftKey)
+        setTask("")
+        images = []
     }
 
     private func setTask(_ text: String) {
@@ -93,7 +114,7 @@ struct NewSessionComposer: View {
         if filled != hasTask { hasTask = filled }
         // Typing again after a start begins the next draft.
         if !text.isEmpty { started = false }
-        if !started { ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: text) }
+        if !started { ComposerDraftStore.shared.save(sessionID: draftKey, text: text) }
     }
 
     /// The folder the panels open in: none for a session on another machine.
@@ -191,7 +212,7 @@ struct NewSessionComposer: View {
                     DropdownHeader(title: tr("ws.remote.header"))
                     ForEach(machines) { machine in
                         DropdownRow(symbol: "server.rack", title: machine.name, detail: machine.host,
-                                    chosen: remoteMachine?.id == machine.id) { chooseMachine(machine) }
+                                    chosen: remoteMachine?.id == machine.id) { pickMachine(machine) }
                     }
                 }
             }
@@ -210,7 +231,7 @@ struct NewSessionComposer: View {
     private func projectRow(_ path: String) -> some View {
         let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
         return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: (path as NSString).lastPathComponent,
-                           detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { select(path) }
+                           detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { pick(path) }
     }
 
     private func favoriteBinding(_ path: String) -> Binding<Bool> {
@@ -699,9 +720,10 @@ struct NewSessionComposer: View {
         guard let link = promptLinks.pending else { return }
         promptLinks.pending = nil
         // What you were writing stays, under the link's text.
+        // A link for a project fills that project's draft.
+        if let path = link.project, FileManager.default.fileExists(atPath: path) { open(path) }
         let draft = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
         setTask(draft.isEmpty || draft == link.text ? link.text : link.text + "\n\n" + draft)
-        if let path = link.project, FileManager.default.fileExists(atPath: path) { select(path) }
         if let name = link.agent?.lowercased(),
            let provider = RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) {
             choose(provider, account: rememberedProfile(for: provider) ?? app.profiles.preferredProfile(provider.kind).id)
@@ -732,23 +754,79 @@ struct NewSessionComposer: View {
         }
     }
 
-    /// A project's "+" in the Agents list opens the composer on that folder.
+    /// A project's "+" in the Agents list (or an unsent draft's row) opens the composer on that folder's own draft.
     private func applyRequestedProject() {
         guard let request = promptLinks.pendingProject, request.id != appliedProjectRequest else { return }
         appliedProjectRequest = request.id
         showClone = false
-        if FileManager.default.fileExists(atPath: request.path) { select(request.path) }
+        if let id = NewSessionDraftKey.machineID(request.path) {
+            if let machine = RemoteMachines.load().first(where: { $0.id == id }) { openMachine(machine) }
+        } else if FileManager.default.fileExists(atPath: request.path) {
+            open(request.path, isolation: request.isolation)
+            if let text = request.text, text != task.text {
+                if hasTask { ComposerDraftStore.shared.pushToStash(task.text); ToastCenter.shared.success(tr("ws.new.draftStashed")) }
+                setTask(text)
+            }
+        } else if ScratchProjects.isScratch(request.path) {
+            // A draft without a project whose empty folder went: a new one, with the words.
+            openNoProject(draft: NewSessionDraftKey.folder(request.path))
+        }
         DispatchQueue.main.async { focused = true }
     }
 
     /// Back where you left it when the notch closed, else a fresh box with your last choices (and the task you were
-    /// typing before Nook quit).
+    /// typing before Nook quit). Opened from a session, the box shows that session's project.
     private func restoreOrPrepare() {
-        guard let draft = NewSessionDraft.saved else {
+        if let key = NewSessionDraft.lastKey, let draft = NewSessionDraft.saved[key] {
+            load(draft)
+        } else {
             prepare()
-            if task.text.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { setTask(saved) }
-            return
         }
+        // The one shared draft of an earlier Nook goes to the folder it opens on, or to the stash when that has its own.
+        let store = ComposerDraftStore.shared
+        if let legacy = store.draft(for: NewSessionDraftKey.legacy) {
+            store.save(sessionID: NewSessionDraftKey.legacy, text: "")
+            if !hasTask { setTask(legacy) } else if legacy != task.text { store.pushToStash(legacy) }
+        }
+        openOriginProject()
+        store.openNewSession = draftKey
+    }
+
+    /// ⌘N or New session while a session was open: that session's project (its main checkout, not the agent's worktree),
+    /// starts a new thread in the thread's project. A project request (a folder's pencil, a link) comes after
+    /// and wins.
+    private func openOriginProject() {
+        guard let origin = app.viewModel.newSessionOrigin else { return }
+        app.viewModel.newSessionOrigin = nil
+        guard let folder = originFolder(origin) else { return }
+        open(folder)
+    }
+
+    /// The folder a session at `id` works in on this Mac; nil for a page, a session elsewhere, or one without a project.
+    private func originFolder(_ id: String) -> String? {
+        let path: String?
+        if id.hasPrefix("run:"), let uuid = UUID(uuidString: String(id.dropFirst(4))) {
+            guard let run = workspace.run(uuid), run.remote == nil else { return nil }
+            path = run.projectPath
+        } else if id.hasPrefix("past:") {
+            let key = String(id.dropFirst(5))
+            path = app.history.sessions.first { $0.id == key }?.cwd
+        } else {
+            path = app.agentSessions.first { $0.id == id }?.cwd
+        }
+        guard let path, !path.isEmpty, !ScratchProjects.isScratch(path) else { return nil }
+        let folder = WorktreeOrigin.checkoutPath(of: path)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue,
+              !ScratchProjects.isScratch(folder) else { return nil }
+        return folder
+    }
+
+    /// Shows a parked draft: its words, pictures and every choice around them.
+    private func load(_ draft: NewSessionDraft) {
+        started = false
+        error = nil
+        linkNotice = nil
         config = draft.config
         config.task = ""
         setTask(draft.config.task)
@@ -760,6 +838,8 @@ struct NewSessionComposer: View {
         pendingID = draft.pendingID
         remoteMachine = draft.remoteMachine
         remoteFolder = draft.remoteFolder
+        comparing = draft.comparing
+        keepCheckout = draft.keepCheckout
         for (id, text) in draft.excerpts { composerModel.keep(id, text: text) }
         // A project still being inspected when the notch closed is looked at again.
         if project == nil, !config.projectPath.isEmpty, remoteMachine == nil,
@@ -768,12 +848,135 @@ struct NewSessionComposer: View {
         }
     }
 
+    /// Closing the notch (or switching tabs) parks the box; it comes back on the same draft.
     private func keepDraft() {
-        guard !started else { NewSessionDraft.saved = nil; return }
-        NewSessionDraft.saved = NewSessionDraft(
+        park()
+        NewSessionDraft.lastKey = draftKey
+        if ComposerDraftStore.shared.openNewSession == draftKey { ComposerDraftStore.shared.openNewSession = nil }
+    }
+
+    /// Keeps this draft as it is for when its folder opens again. A folder made for "No project" with nothing typed goes.
+    private func park() {
+        let key = draftKey
+        guard !started else { NewSessionDraft.saved[key] = nil; return }
+        if remoteMachine == nil, ScratchProjects.isScratch(config.projectPath), !hasTask, images.isEmpty {
+            ScratchProjects.discardIfEmpty(config.projectPath)
+            NewSessionDraft.saved[key] = nil
+            return
+        }
+        NewSessionDraft.saved[key] = NewSessionDraft(
             config: configured(task: task.text), images: images, project: project, allowShared: allowShared, showClone: showClone,
             cloneURL: cloneURL, pendingID: pendingID, remoteMachine: remoteMachine, remoteFolder: remoteFolder,
-            excerpts: composerModel.excerpts)
+            excerpts: composerModel.excerpts, comparing: comparing, keepCheckout: keepCheckout)
+    }
+
+    /// Opens `folder`'s own draft: parked as you left it, else its words from `ComposerDraftStore` with the folder's
+    /// choices, else an empty box with them. The draft shown before waits under its own folder.
+    private func open(_ folder: String, isolation: IsolationMode? = nil) {
+        let key = NewSessionDraftKey.folder(folder)
+        if key != draftKey {
+            park()
+            if let draft = NewSessionDraft.saved[key] {
+                load(draft)
+            } else {
+                clearBox()
+                select(folder)
+                if let words = ComposerDraftStore.shared.draft(for: key) { setTask(words) }
+            }
+        }
+        if let isolation {
+            config.isolation = isolation
+            keepCheckout = isolation == .folder
+        }
+    }
+
+    /// A "No project" draft whose empty folder went (Nook removes those): a new folder for it, with its words.
+    private func openNoProject(draft key: String) {
+        park()
+        clearBox()
+        let store = ComposerDraftStore.shared
+        let words = store.draft(for: key) ?? ""
+        do {
+            select(try ScratchProjects.create(prompt: words))
+            if !words.isEmpty { setTask(words) }
+            store.save(sessionID: key, text: "")
+        } catch let failure {
+            error = failure.localizedDescription
+        }
+    }
+
+    /// Drops an unsent draft from the list: its words and, when it was parked, everything around them.
+    static func discardDraft(_ key: String) {
+        NewSessionDraft.discard(key)
+        ComposerDraftStore.shared.save(sessionID: key, text: "")
+        if case .folder(let path) = NewSessionDraftKey.place(of: key) { ScratchProjects.discardIfEmpty(path) }
+    }
+
+    /// The same for a machine over SSH.
+    private func openMachine(_ machine: RemoteMachine) {
+        let key = NewSessionDraftKey.machine(machine.id)
+        guard key != draftKey else { return }
+        park()
+        if let draft = NewSessionDraft.saved[key] {
+            load(draft)
+        } else {
+            clearBox()
+            applyFolderDefaults(nil)
+            chooseMachine(machine)
+            if let words = ComposerDraftStore.shared.draft(for: key) { setTask(words) }
+        }
+    }
+
+    /// An empty box with nothing chosen yet, without touching the stored words of the draft shown before.
+    private func clearBox() {
+        task.text = ""
+        hasTask = false
+        started = false
+        images = []
+        comparing = []
+        project = nil
+        showClone = false
+        cloneURL = ""
+        remoteMachine = nil
+        remoteFolder = ""
+        allowShared = false
+        keepCheckout = false
+        error = nil
+        linkNotice = nil
+        pendingID = UUID()
+        config = NewRunConfig()
+        config.worktreeRoot = settings.worktreeRoot
+    }
+
+    /// A folder picked in the heading. What you typed goes along to it (as a draft moves to the project you pick);
+    /// with nothing typed, that folder's own draft opens.
+    private func pick(_ path: String) {
+        guard hasTask || !images.isEmpty else { return open(path) }
+        moveDraft { select(path) }
+    }
+
+    private func pickMachine(_ machine: RemoteMachine) {
+        guard hasTask || !images.isEmpty else { return openMachine(machine) }
+        moveDraft { chooseMachine(machine) }
+    }
+
+    /// Moves the words of this draft to wherever `change` points the box. A draft the new place already had goes to the
+    /// stash (⌘S brings it back), so no words are lost.
+    private func moveDraft(_ change: () -> Void) {
+        let old = draftKey
+        change()
+        let new = draftKey
+        guard new != old else { return }
+        let store = ComposerDraftStore.shared
+        if let earlier = store.draft(for: new), earlier != task.text {
+            store.pushToStash(earlier)
+            ToastCenter.shared.success(tr("ws.new.draftStashed"))
+        }
+        // The new place first: the box clears itself when its own draft disappears from the store (`dropIfDiscarded`).
+        if !started { store.save(sessionID: new, text: task.text) }
+        store.save(sessionID: old, text: "")
+        NewSessionDraft.saved[old] = nil
+        NewSessionDraft.saved[new] = nil
     }
 
     private func prepare() {
@@ -783,6 +986,7 @@ struct NewSessionComposer: View {
         let initial = last.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
         applyFolderDefaults(initial)
         if let initial { select(initial) }
+        if !hasTask, let words = ComposerDraftStore.shared.draft(for: draftKey) { setTask(words) }
     }
 
     private func choose(_ provider: RunProvider, account: String) {
@@ -856,7 +1060,8 @@ struct NewSessionComposer: View {
         config.projectPath = path
         // The next new session opens on the project you chose last, also when this one never started; a session
         // without a project leaves that alone.
-        if !ScratchProjects.isScratch(path) { settings.lastProject = path }
+        // Nor does a session in an agent's worktree: the next one opens on the repository.
+        if !ScratchProjects.isScratch(path), WorktreeOrigin.checkoutPath(of: path) == path { settings.lastProject = path }
         error = nil
         if let cached = workspace.cachedProject(path) {
             applyInspectedProject(cached, for: path)
@@ -877,7 +1082,7 @@ struct NewSessionComposer: View {
         let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
         if !canWorktree {
             config.isolation = .folder
-        } else if config.isolation == .folder && settings.composerDefaults(for: path).isolation == .worktree {
+        } else if !keepCheckout, config.isolation == .folder && settings.composerDefaults(for: path).isolation == .worktree {
             config.isolation = .worktree
         }
         if !config.baseBranch.isEmpty, info.branches.contains(config.baseBranch) {
@@ -894,7 +1099,7 @@ struct NewSessionComposer: View {
     /// the prompt's name when the session starts.
     private func chooseNoProject() {
         do {
-            select(try ScratchProjects.create(prompt: task.text))
+            pick(try ScratchProjects.create(prompt: task.text))
         } catch let failure {
             error = failure.localizedDescription
         }
@@ -911,7 +1116,7 @@ struct NewSessionComposer: View {
         if let current = project?.path { panel.directoryURL = URL(fileURLWithPath: current) }
         guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         settings.rememberProject(url.path)
-        select(url.path)
+        pick(url.path)
     }
 
     /// "New project…": a new folder where you choose, with an empty repository, then the offer to publish it on GitHub
@@ -930,7 +1135,7 @@ struct NewSessionComposer: View {
             do {
                 let plan = try await workspace.createProject(at: url.path)
                 settings.rememberProject(plan.folder)
-                select(plan.folder)
+                pick(plan.folder)
                 newProjectPlan = plan
             } catch let failure {
                 error = failure.localizedDescription
@@ -950,7 +1155,7 @@ struct NewSessionComposer: View {
                 showClone = false
                 cloneURL = ""
                 if cloned.usedHTTPS { ToastCenter.shared.success(tr("sc.clone.usedHTTPS")) }
-                select(cloned.path)
+                pick(cloned.path)
             } catch let failure {
                 error = failure.localizedDescription
             }
@@ -976,6 +1181,7 @@ struct NewSessionComposer: View {
         if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
         let finalConfig = request
         let shared = allowShared
+        let key = draftKey
         Task {
             do {
                 let id = try await workspace.start(finalConfig, allowSharedFolder: shared)
@@ -983,9 +1189,9 @@ struct NewSessionComposer: View {
                     UserDefaults.standard.set(remote.directory, forKey: "agents.remoteFolder." + remote.machineID)
                 }
                 remember()
+                ComposerDraftStore.shared.save(sessionID: key, text: "")
                 started = true
-                NewSessionDraft.saved = nil
-                ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
+                NewSessionDraft.saved[key] = nil
                 setTask("")
                 images = []
                 pendingID = UUID()
@@ -1012,6 +1218,7 @@ struct NewSessionComposer: View {
         base.task = composerModel.outgoing(base.task).send
         if base.mode == .plan { base.permission = base.provider.capabilities.policies.first ?? .acceptEdits }
         let targets = comparisonTargets
+        let key = draftKey
         let configs = ModelComparison.configs(base: base, targets: targets, ids: targets.map { _ in UUID() },
                                               modelName: comparisonName)
         Task {
@@ -1019,9 +1226,9 @@ struct NewSessionComposer: View {
             starting = false
             if !outcome.started.isEmpty { remember() }
             guard let retry = ModelComparison.retrySelection(after: outcome) else {
+                ComposerDraftStore.shared.save(sessionID: key, text: "")
                 started = true
-                NewSessionDraft.saved = nil
-                ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
+                NewSessionDraft.saved[key] = nil
                 setTask("")
                 images = []
                 comparing = []
@@ -1033,7 +1240,7 @@ struct NewSessionComposer: View {
                 }
                 return
             }
-            ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: task.text)
+            ComposerDraftStore.shared.save(sessionID: key, text: task.text)
             if retry.primary.provider != config.provider || retry.primary.profileID != config.profileID {
                 choose(retry.primary.provider, account: retry.primary.profileID)
             }
@@ -1059,11 +1266,19 @@ struct NewSessionComposer: View {
     }
 }
 
-/// The new-session box as you left it when the notch closed: the task, its pictures and big pastes, and every choice
-/// around it. Kept in memory only; the task alone also goes to `ComposerDraftStore` for after a relaunch.
+/// A new-session draft as you left it: the task, its pictures and big pastes, and every choice around it. One per folder
+/// (or machine), kept in memory only; the task alone also goes to `ComposerDraftStore` for after a relaunch.
 @MainActor
 private struct NewSessionDraft {
-    static var saved: NewSessionDraft?
+    static var saved: [String: NewSessionDraft] = [:]
+    /// The draft the box showed when it last closed, which it opens on again.
+    static var lastKey: String?
+
+    /// Forgets a draft you discarded from the list.
+    static func discard(_ key: String) {
+        saved[key] = nil
+        if lastKey == key { lastKey = nil }
+    }
 
     var config: NewRunConfig
     var images: [ImageAttachment]
@@ -1075,6 +1290,8 @@ private struct NewSessionDraft {
     var remoteMachine: RemoteMachine?
     var remoteFolder: String
     var excerpts: [String: String]
+    var comparing: [ComparisonTarget]
+    var keepCheckout: Bool
 }
 
 /// The words typed in the new-session box (`NewSessionComposer.task`): observed by the field alone, so a keystroke does
