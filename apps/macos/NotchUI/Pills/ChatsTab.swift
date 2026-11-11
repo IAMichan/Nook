@@ -110,7 +110,8 @@ extension ChatsEntry {
 
     /// One chat as a row.
     @MainActor
-    static func entry(_ thread: InboxThread, hidden: ChatHiddenMessages = .shared) -> ChatsEntry {
+    static func entry(_ thread: InboxThread, hidden: ChatHiddenMessages? = nil) -> ChatsEntry {
+        let hidden = hidden ?? .shared
         let newest = hidden.visible(thread.messages, in: thread.id) { $0.id }.last
         // Someone's emoji on a message after the newest one says more than that message itself.
         let reaction = thread.newestReaction
@@ -1905,7 +1906,7 @@ private struct ChatsDetail: View, Equatable {
                                        onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
                                        typing: typing.line(entry.id), newFrom: newFrom)
                             .equatable()
-                            .environment(\.chatFetchFile) { [entry] in await app.fetchChatFile($0, in: entry) }
+                            .environment(\.chatFetchFile, ChatFileFetch(chat: entry.id) { [entry] in await app.fetchChatFile($0, in: entry) })
                             .padding(.horizontal, NookTheme.Spacing.xs)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }

@@ -124,7 +124,7 @@ final class ChatFileThumbnails: @unchecked Sendable {
     private let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.totalCostLimit = 32 * 1024 * 1024
-        MemoryPressure.shared.register("chatFileThumbnails") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("chatFileThumbnails", emptying: cache)
         return cache
     }()
     private let lock = NSLock()
@@ -188,7 +188,7 @@ enum ChatMediaImages {
     private static let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.totalCostLimit = 64 * 1024 * 1024
-        MemoryPressure.shared.register("chatMediaImages") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("chatMediaImages", emptying: cache)
         return cache
     }()
 
@@ -376,7 +376,17 @@ extension EnvironmentValues {
     @Entry var chatMediaLive = true
     /// Asks the chat's app for a message's file Nook does not have yet, by the message's id (`AppModel.fetchChatFile`).
     /// Nil where no chat is around it.
-    @Entry var chatFetchFile: (@MainActor (String) async -> Void)? = nil
+    @Entry var chatFetchFile: ChatFileFetch? = nil
+}
+
+/// How a chat asks its app for a message's file (`chatFetchFile`). Equal per chat, so setting it again on a redraw of
+/// the same chat does not redraw every message that reads it.
+struct ChatFileFetch: Equatable {
+    /// The chat it asks for.
+    let chat: String
+    let fetch: @MainActor (String) async -> Void
+
+    static func == (a: ChatFileFetch, b: ChatFileFetch) -> Bool { a.chat == b.chat }
 }
 
 extension View {

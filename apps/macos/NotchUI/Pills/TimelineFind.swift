@@ -137,7 +137,7 @@ struct TimelineToEndPill: View {
 @MainActor
 final class TurnPinRoom: ObservableObject {
     /// The name of the conversation's coordinate space (on its lazy stack), where `pinProbe` and `TurnPinSpacer` measure.
-    static let space = "timeline"
+    nonisolated static let space = "timeline"
 
     @Published private(set) var height = 0.0
     /// The row held, for `pinProbe`.

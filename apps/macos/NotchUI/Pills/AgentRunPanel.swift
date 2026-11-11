@@ -829,32 +829,6 @@ struct AgentRunPanel: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor((run.status.isActive || landsOnLoad) && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
-            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
-            .overlay(alignment: .leading) {
-                if overflows, !finding, !memo.marks.isEmpty {
-                    TranscriptPromptRail(marks: memo.marks) { mark in
-                        scroll.userScrolled()
-                        guard let id = UUID(uuidString: mark.row) else { return }
-                        if revealTurn(of: id) {
-                            DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) } }
-                        } else {
-                            withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                        }
-                    }
-                    .padding(.vertical, NookTheme.Spacing.md)
-                    .transition(.opacity)
-                }
-            }
-            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
-            .composerInset {
-                VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
-                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !finding) {
-                        scroll.jumpedToEnd()
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-            }
-            .padding(.top, NookTheme.Spacing.xs)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
@@ -896,6 +870,33 @@ struct AgentRunPanel: View {
                     }
                 }
             }
+            // Below the scroll modifiers: the composer has scroll views of its own, and a scroll modifier over both picks one.
+            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
+                if overflows, !finding, !memo.marks.isEmpty {
+                    TranscriptPromptRail(marks: memo.marks) { mark in
+                        scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
+                        if revealTurn(of: id) {
+                            DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) } }
+                        } else {
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                        }
+                    }
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+                }
+            }
+            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+            .composerInset {
+                VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
+                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !finding) {
+                        scroll.jumpedToEnd()
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+            }
+            .padding(.top, NookTheme.Spacing.xs)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .overlay(alignment: .top) {
                 if finding {
                     TimelineFindBar(query: $findQuery, result: found, current: findIndex,
@@ -1366,7 +1367,7 @@ struct AgentRunPanel: View {
             onEdit: onEdit,
             // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
             showBackground: {
-                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.openSubagents() }
+                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { _ = outputsLink.openSubagents() }
             },
             onSuggestion: { app.chooseSuggestion($0, event: event, in: runID) }
         )

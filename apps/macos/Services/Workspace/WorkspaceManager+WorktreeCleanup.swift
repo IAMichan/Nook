@@ -256,7 +256,7 @@ extension WorkspaceManager {
             }
             let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, busy: busy, mainCheckouts: mainCheckouts) }
             let removed = BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle)))
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 for item in removed {
                     self?.onAudit?("build_cleanup", "\(AgentPathFormat.tilde(item.leftover.url.path)) · \(item.leftover.kind.rawValue)",
                                    "removed \(DiskUsage.format(item.bytes))")
