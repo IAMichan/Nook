@@ -405,6 +405,12 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(many.fit, 100, "past the closest distance the newest show")
     }
 
+    func testRailHidesUntilHoverWhenItWouldCoverTheMessages() {
+        XCTAssertTrue(TranscriptPresentation.railAlwaysShown(room: 900, column: 736, rail: 20), "a wide margin keeps it in sight")
+        XCTAssertFalse(TranscriptPresentation.railAlwaysShown(room: 760, column: 736, rail: 20), "a 12 pt margin is too narrow")
+        XCTAssertFalse(TranscriptPresentation.railAlwaysShown(room: 450, column: 736, rail: 20), "a narrow chat fills its room")
+    }
+
     func testTheNookChatMarksYourQuestionsOnTheSameRail() {
         let long = String(repeating: "Een lange regel tekst. ", count: 30)
         let marks = TranscriptPresentation.promptMarks(chat: [("q1", true, "Hoi", 0), ("a1", false, long, 0),

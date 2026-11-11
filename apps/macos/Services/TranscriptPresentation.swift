@@ -420,6 +420,13 @@ enum TranscriptPresentation {
         return (step, max(1, min(count, Int(height / step))))
     }
 
+    /// Whether the rail stays in sight in a conversation `room` wide: only when the margin beside its centered column
+    /// (`PanelLayout.chatColumn` at most) is as wide as the rail. With less room it would lie over the messages, so it
+    /// shows while the pointer is on the leading edge.
+    static func railAlwaysShown(room: CGFloat, column: CGFloat, rail: CGFloat) -> Bool {
+        PanelSplit.columnStart(column: min(room, column), room: room) >= rail
+    }
+
     /// The same marks for a session Nook runs, from its events: `row` is the event itself. A finished turn folds its
     /// steps into one line, so a step weighs little.
     static func promptMarks(events: [RunEvent]) -> [PromptMark] {
