@@ -236,7 +236,7 @@ enum NookTheme {
         static let chatJoin: CGFloat = 4
         /// A card in a conversation: a plan, a question, a task list, a subagent.
         static let conversationCard: CGFloat = 16
-        /// Pills and the notch's own corners.
+        /// The notch's own corners. Not for chips or buttons: those use `chip` or `control`, as t3code does.
         static let pill: CGFloat = 20
         /// The composer box, and the tray that runs on from it. With the 32 pt send button 8 pt from the edge, its corner
         /// runs parallel to the button's.

@@ -111,7 +111,7 @@ struct UpdateFooterButton<Idle: View>: View {
                     .foregroundStyle(NookTheme.onPaper)
                     .padding(.horizontal, 5)
                     .frame(minWidth: 16, minHeight: 16)
-                    .background(Capsule().fill(look.tint))
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(look.tint))
             }
         }
         .foregroundStyle(look.tint)
@@ -119,7 +119,7 @@ struct UpdateFooterButton<Idle: View>: View {
         .padding(.trailing, iconOnly ? 0 : count == nil ? 9 : 5)
         .frame(minWidth: iconOnly ? 26 : nil, minHeight: 26, maxHeight: 26)
         .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel)
-        .contentShape(Capsule())
+        .contentShape(NookTheme.shape(NookTheme.Radius.control))
         .hoverLift(hovering)
         .fixedSize()
     }

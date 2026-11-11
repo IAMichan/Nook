@@ -63,12 +63,12 @@ private struct RecordingBadgeView: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .padding(.vertical, NookTheme.Spacing.xs)
-                    .background(Capsule().fill(NookTheme.smoke))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 34)
-            .background(Capsule().fill(NookTheme.notch.opacity(0.88)))
-            .overlay(Capsule().strokeBorder(NookTheme.line2))
+            .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.notch.opacity(0.88)))
+            .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(NookTheme.line2))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

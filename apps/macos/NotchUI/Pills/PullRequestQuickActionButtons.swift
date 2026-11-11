@@ -77,8 +77,8 @@ struct PullRequestQuickActionButtons: View {
             .foregroundStyle(tint)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 22)
-            .background(Capsule().strokeBorder(confirming ? tint : NookTheme.line2))
-            .contentShape(Capsule())
+            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(confirming ? tint : NookTheme.line2))
+            .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.plain)
         .disabled(running != nil)

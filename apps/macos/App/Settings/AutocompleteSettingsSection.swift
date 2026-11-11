@@ -314,7 +314,7 @@ struct AutocompleteSettingsSection: View {
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textStrong)
                             .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, 1)
-                            .background(Capsule().fill(NookTheme.smoke))
+                            .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
                     }
                 }
                 if downloads.downloading == model {

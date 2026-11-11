@@ -121,7 +121,7 @@ extension PullRequestDetailView {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, acts ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
         .frame(height: 34)
-        .background(Capsule().fill(NookTheme.graphite))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.graphite))
         .layoutPriority(1)
     }
 

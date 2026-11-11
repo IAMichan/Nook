@@ -211,7 +211,7 @@ struct HealthPill: View {
         .foregroundStyle(health == .off || health == .notLinked ? NookTheme.textSecondary : health.color)
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, 3)
-        .background(Capsule().fill(health.color.opacity(0.12)))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(health.color.opacity(0.12)))
     }
 }
 

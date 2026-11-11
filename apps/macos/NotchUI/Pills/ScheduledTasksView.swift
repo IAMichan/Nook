@@ -167,7 +167,7 @@ private struct TaskRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, 3)
-            .background(Capsule().fill(color.opacity(0.12)))
+            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.12)))
         } else {
             Text(tr("sched.never"))
                 .font(NookTheme.TextStyle.detail)
@@ -465,7 +465,7 @@ private struct ScheduledTaskEditor: View {
                                 .foregroundStyle(on ? NookTheme.onPrimary : NookTheme.textSecondary)
                                 .padding(.horizontal, 10)
                                 .frame(height: 26)
-                                .background(Capsule().fill(on ? NookTheme.primary : NookTheme.field))
+                                .background(NookTheme.shape(NookTheme.Radius.control).fill(on ? NookTheme.primary : NookTheme.field))
                         }
                         .buttonStyle(.plain)
                     }

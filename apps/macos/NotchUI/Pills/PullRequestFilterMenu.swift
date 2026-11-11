@@ -401,7 +401,7 @@ struct PullRequestToolbarButton: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .padding(.horizontal, 5)
                     .frame(minHeight: 15)
-                    .background(Capsule().fill(NookTheme.smoke))
+                    .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
             }
         }
         .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)

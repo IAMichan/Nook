@@ -208,8 +208,8 @@ struct AccountBadge: View {
             }
         }
         .foregroundStyle(kind.glyph)
-        .background(Capsule(style: .continuous).fill(kind.fill))
-        .overlay(Capsule(style: .continuous).stroke(ring, lineWidth: 1.5))
+        .background(NookTheme.shape(NookTheme.Radius.chip).fill(kind.fill))
+        .overlay(NookTheme.shape(NookTheme.Radius.chip).stroke(ring, lineWidth: 1.5))
         .fixedSize()
         .help(kind.label)
         .accessibilityLabel(kind.label)

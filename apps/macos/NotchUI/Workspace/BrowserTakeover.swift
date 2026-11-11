@@ -78,9 +78,9 @@ struct BrowserTakeoverOverlay: View {
     }
 
     private var pillBackground: some View {
-        Capsule(style: .continuous)
+        NookTheme.shape(NookTheme.Radius.panel)
             .fill(NookTheme.surface)
-            .overlay(Capsule(style: .continuous).stroke(NookTheme.fieldStroke, lineWidth: 1))
+            .overlay(NookTheme.shape(NookTheme.Radius.panel).stroke(NookTheme.fieldStroke, lineWidth: 1))
             .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
     }
 }
