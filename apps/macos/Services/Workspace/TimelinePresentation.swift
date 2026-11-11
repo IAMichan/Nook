@@ -23,7 +23,8 @@ enum ToolCategory: Int, Comparable, Sendable {
             return .command
         case "edit", "multiedit", "write", "notebookedit", "write_file", "replace", "apply_patch":
             return .edit
-        case "read", "read_file", "read_many_files", "ls", "list_directory", "notebookread":
+        // Codex looks at a picture with view_image (`imageView` in its app server).
+        case "read", "read_file", "read_many_files", "ls", "list_directory", "notebookread", "view_image":
             return .read
         case "grep", "glob", "search_file_content", "websearch", "webfetch", "web_search", "web_fetch", "google_web_search":
             return .search

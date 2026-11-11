@@ -5,6 +5,14 @@ import AppKit
 struct PullRequestOpenRequest: Equatable {
     let account: String
     let item: PullRequestItem
+    /// Where in the pull request the link pointed (a comment, a file, the checks); nil opens it on the summary.
+    var focus: PullRequestFocusRequest? = nil
+}
+
+/// A link's `PullRequestFocus`, new with each click, so following the same link again on a page that is open goes there again.
+struct PullRequestFocusRequest: Equatable {
+    let focus: PullRequestFocus
+    let token = UUID()
 }
 
 /// The pull requests of your GitHub accounts: the ones you wrote, the ones waiting for your review, and the others in the
@@ -132,20 +140,25 @@ struct PullRequestsPanel: View {
                                   stackHistory: PullRequestStack.history(of: opened.item, in: items(of: opened.account)) ?? [],
                                   onOpenPullRequest: { open(opened.account, $0) },
                                   onUpdate: { updated in
-                                      if let index = tabs.firstIndex(where: { $0.id == opened.id }) { tabs[index].item = updated }
+                                      if let index = tabs.firstIndex(where: { $0.id == opened.id }) {
+                                          tabs[index].item = updated
+                                          // The page holds on to where the link pointed; coming back to the tab later starts on the summary.
+                                          tabs[index].focus = nil
+                                      }
                                   },
                                   onBack: close,
                                   onMaximize: split && !tabbed ? toggleMaximized : nil,
-                                  maximized: maximized)
+                                  maximized: maximized, focus: opened.focus)
                 .id(opened.id)
         }
     }
 
     /// Opens a pull request as a tab (or shows its tab when it is open already); at most eight, the oldest goes first.
-    private func open(_ account: String, _ item: PullRequestItem) {
-        let tab = OpenPullRequest(account: account, item: item)
+    private func open(_ account: String, _ item: PullRequestItem, focus: PullRequestFocusRequest? = nil) {
+        let tab = OpenPullRequest(account: account, item: item, focus: focus)
         if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
             tabs[index].item = item
+            if let focus { tabs[index].focus = focus }
         } else {
             tabs.append(tab)
             if tabs.count > 8 { tabs.removeFirst(tabs.count - 8) }
@@ -184,7 +197,7 @@ struct PullRequestsPanel: View {
     private func take(_ request: PullRequestOpenRequest?) {
         guard let request else { return }
         app.viewModel.pullRequestToOpen = nil
-        open(request.account, request.item)
+        open(request.account, request.item, focus: request.focus)
     }
 
     private func list(selected: String?) -> some View {

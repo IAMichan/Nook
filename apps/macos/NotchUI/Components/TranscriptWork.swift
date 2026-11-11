@@ -184,6 +184,9 @@ struct TranscriptWorkGroup<Steps: View>: View {
     let tally: ToolTally
     let open: Bool
     let toggle: () -> Void
+    /// Pictures the steps looked at (`ViewedImages`, absolute paths): one row of thumbnails under the group, also while
+    /// the group is folded.
+    var images: [String] = []
     @ViewBuilder var steps: () -> Steps
     /// The steps are taller than the scroll: its edges fade, so a cut-off list shows there is more.
     @State private var overflows = false
@@ -216,6 +219,7 @@ struct TranscriptWorkGroup<Steps: View>: View {
                     }
                 }
             }
+            if !images.isEmpty { ViewedImagesRow(paths: images) }
         }
     }
 }

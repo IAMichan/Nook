@@ -425,6 +425,22 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).editInput)
     }
 
+    func testAReadNamesTheFileItReportedOnlyInItsLocations() throws {
+        let located = AcpToolCall(id: "r", title: "Read shot.png", kind: "read", status: nil, input: JSONBox(["limit": 10]),
+                                  output: "", paths: ["/w/shot.png"])
+        let input = try XCTUnwrap(located.readInput?.dictionary)
+        XCTAssertEqual(input["path"] as? String, "/w/shot.png")
+        XCTAssertEqual(input["limit"] as? Int, 10)
+        XCTAssertEqual(ViewedImages.paths(tool: located.toolName, input: input), ["/w/shot.png"])
+        // An input that names its file, another kind of call, or no location: the input as it came.
+        let named = AcpToolCall(id: "r", title: "", kind: "read", status: nil, input: JSONBox(["file_path": "/w/a.png"]),
+                                output: "", paths: ["/w/b.png"])
+        XCTAssertEqual(named.readInput, named.input)
+        let search = AcpToolCall(id: "s", title: "", kind: "search", status: nil, input: nil, output: "", paths: ["/w/a.png"])
+        XCTAssertNil(search.readInput)
+        XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).readInput)
+    }
+
     func testCursorChats() throws {
         let info = CursorChats.info(metaJSON: Data(#"{"schemaVersion":1,"createdAtMs":1761630000000,"updatedAtMs":1761630090000,"hasConversation":true,"cwd":"/Users/me/app"}"#.utf8))
         XCTAssertEqual(info.cwd, "/Users/me/app")

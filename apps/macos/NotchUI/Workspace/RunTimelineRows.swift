@@ -290,9 +290,11 @@ enum AnswerFiles {
 }
 
 /// One file in `SharedFilesRow` that is not a video: a picture as a small thumbnail, anything else as its icon and name.
+/// `compact`, a picture the agent only looked at (`ViewedImagesRow`): the thumbnail alone, small, its name on hover.
 struct SharedFileTile: View {
     let path: String
     let shown: Bool
+    var compact = false
     let action: () -> Void
     @State private var thumbnail: NSImage?
     @State private var hovering = false
@@ -301,52 +303,119 @@ struct SharedFileTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                if let thumbnail {
-                    Image(nsImage: thumbnail)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 140, height: 96)
-                        .clipped()
-                    NookDivider()
-                }
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(icon: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
-                        .font(NookTheme.font(10.5, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
-                    Text(name)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(shown || hovering ? NookTheme.paper : NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .padding(.horizontal, NookTheme.Spacing.sm)
-                .padding(.vertical, NookTheme.Spacing.xs)
-                .frame(maxWidth: thumbnail == nil ? 220 : 140, alignment: .leading)
-            }
-            .background(NookTheme.surface)
-            .roundedClip(NookTheme.Radius.card)
-            .roundedStrokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke, radius: NookTheme.Radius.card)
-            .fixedSize()
-            .contentShape(Rectangle())
+            if compact { compactLabel } else { label }
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tr("ws.shared.show") + " · " + AgentPathFormat.tilde(path))
+        .help(tr(compact ? "ws.viewed.show" : "ws.shared.show") + " · " + AgentPathFormat.tilde(path))
         .accessibilityLabel(name)
         .task(id: path) {
             guard SessionOutputs.kind(path: path) == .image else { return }
             // A small picture made off the main thread: the shared file is often a full-size render.
             let url = URL(fileURLWithPath: path) as CFURL
+            let size = compact ? 160 : 400
             let small = await Task.detached(priority: .utility) { () -> CGImage? in
                 guard let source = CGImageSourceCreateWithURL(url, nil) else { return nil }
                 let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                                                 kCGImageSourceCreateThumbnailWithTransform: true,
-                                                kCGImageSourceThumbnailMaxPixelSize: 400]
+                                                kCGImageSourceThumbnailMaxPixelSize: size]
                 return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
             }.value
             thumbnail = small.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+        }
+    }
+
+    /// The thumbnail alone, 64 by 44 points; the picture's mark while it loads.
+    private var compactLabel: some View {
+        ZStack {
+            if let thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(icon: OutputText.symbol(.image))
+                    .font(NookTheme.font(12, .medium))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .frame(width: 64, height: 44)
+        .clipped()
+        .background(NookTheme.surface)
+        .roundedClip(NookTheme.Radius.control)
+        .roundedStrokeBorder(shown ? NookTheme.iris : (hovering ? NookTheme.line2 : NookTheme.fieldStroke), radius: NookTheme.Radius.control)
+        .contentShape(Rectangle())
+    }
+
+    private var label: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 140, height: 96)
+                    .clipped()
+                NookDivider()
+            }
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(icon: OutputText.symbol(SessionOutputs.kind(path: path) ?? .document))
+                    .font(NookTheme.font(10.5, .medium))
+                    .foregroundStyle(NookTheme.textTertiary)
+                Text(name)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(shown || hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .frame(maxWidth: thumbnail == nil ? 220 : 140, alignment: .leading)
+        }
+        .background(NookTheme.surface)
+        .roundedClip(NookTheme.Radius.card)
+        .roundedStrokeBorder(shown ? NookTheme.iris : NookTheme.fieldStroke, radius: NookTheme.Radius.card)
+        .fixedSize()
+        .contentShape(Rectangle())
+    }
+}
+
+/// Pictures the agent only looked at (`ViewedImages`), under the step or the group of steps that read them: one row of
+/// small thumbnails, at most `ViewedImages.rowLimit` and a count for the rest, so a run of screenshots never floods the
+/// conversation. Each opens beside the conversation (in a window of its own where there is no side panel).
+struct ViewedImagesRow: View {
+    /// Absolute paths; the ones not on this Mac (any more) are left out.
+    let paths: [String]
+    @Environment(\.sessionSide) private var side
+
+    var body: some View {
+        let found = paths.filter { PathProbe.stat($0).exists }
+        if !found.isEmpty {
+            let shown = Array(found.prefix(ViewedImages.rowLimit))
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(shown, id: \.self) { path in
+                    SharedFileTile(path: path, shown: path == side.shownFile, compact: true) { open(path) }
+                }
+                if found.count > shown.count {
+                    Text(tr("ws.viewed.more", found.count - shown.count))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .help(found.dropFirst(shown.count).map(AgentPathFormat.tilde).joined(separator: "\n"))
+                }
+            }
+            .padding(.leading, TranscriptStyle.workIndent)
+            .padding(.bottom, NookTheme.Spacing.xxs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(tr("ws.viewed.title"))
+        }
+    }
+
+    private func open(_ path: String) {
+        if side.hasPanel {
+            side.showFile(path)
+        } else {
+            AppModel.shared.openFileInNook(FileTarget(path: path), beside: false)
         }
     }
 }

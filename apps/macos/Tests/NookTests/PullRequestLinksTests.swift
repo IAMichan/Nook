@@ -33,6 +33,67 @@ final class PullRequestLinksTests: XCTestCase {
         }
     }
 
+    // MARK: Where a link points (PullRequestFocus)
+
+    private func focus(_ text: String) -> PullRequestFocus? { URL(string: text).flatMap(PullRequestFocus.parse) }
+
+    func testGitHubCommentLinksOpenOnTheTimeline() {
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12#issuecomment-345"), .comment(["comment-345"]))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12#discussion_r678"), .comment(["line-678"]))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12#pullrequestreview-9"), .comment(["review-9"]))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/files#r678"), .comment(["line-678"]))
+    }
+
+    func testGitHubFilesChecksAndCommits() throws {
+        let hash = String(repeating: "a1", count: 32)
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/files#diff-\(hash)R42"),
+                       .file(PullRequestFileAnchor(hash: hash, line: 42)))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/changes#diff-\(hash)L7-L9"),
+                       .file(PullRequestFileAnchor(hash: hash, line: 7, oldSide: true)))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/files"), .file(PullRequestFileAnchor()))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/checks"), .checks)
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/commits"), .commits(sha: nil))
+        XCTAssertEqual(focus("https://github.com/acme/app/pull/12/commits/ABCDEF1234"), .commits(sha: "abcdef1234"))
+        // The pull request itself, and links that are no pull request.
+        XCTAssertNil(focus("https://github.com/acme/app/pull/12"))
+        XCTAssertNil(focus("https://github.com/acme/app/pull/12#top"))
+        XCTAssertNil(focus("https://github.com/acme/app/issues/12#issuecomment-1"))
+    }
+
+    func testOtherForges() {
+        XCTAssertEqual(focus("https://gitlab.com/g/sub/app/-/merge_requests/3#note_55"), .comment(["comment-55", "line-55"]))
+        let sha1 = String(repeating: "b2", count: 20)
+        XCTAssertEqual(focus("https://gitlab.com/g/app/-/merge_requests/3/diffs#\(sha1)_10_12"),
+                       .file(PullRequestFileAnchor(hash: sha1, line: 12)))
+        XCTAssertEqual(focus("https://gitlab.com/g/app/-/merge_requests/3/diffs#\(sha1)_10_"),
+                       .file(PullRequestFileAnchor(hash: sha1, line: 10, oldSide: true)))
+        XCTAssertEqual(focus("https://gitlab.com/g/app/-/merge_requests/3/pipelines"), .checks)
+        XCTAssertEqual(focus("https://gitlab.com/g/app/-/merge_requests/3/commits"), .commits(sha: nil))
+        XCTAssertEqual(focus("https://codeberg.org/o/r/pulls/4#issuecomment-8"), .comment(["comment-8"]))
+        XCTAssertEqual(focus("https://codeberg.org/o/r/pulls/4/files"), .file(PullRequestFileAnchor()))
+        XCTAssertEqual(focus("https://bitbucket.org/o/r/pull-requests/5/diff#chg-src/app.swift"),
+                       .file(PullRequestFileAnchor(path: "src/app.swift")))
+        XCTAssertEqual(focus("https://bitbucket.org/o/r/pull-requests/5#comment-77"), .comment(["comment-77", "line-77"]))
+        XCTAssertEqual(focus("https://dev.azure.com/org/proj/_git/repo/pullrequest/6?_a=files&path=/src/a.ts"),
+                       .file(PullRequestFileAnchor(path: "src/a.ts")))
+        XCTAssertEqual(focus("https://dev.azure.com/org/proj/_git/repo/pullrequest/6?_a=commits"), .commits(sha: nil))
+    }
+
+    func testAFileAnchorFindsItsFileByHash() {
+        let paths = ["README.md", "src/app.swift"]
+        let sha256 = PullRequestFileAnchor.hashes(of: "src/app.swift")[0]
+        XCTAssertEqual(sha256, "56efc767b4ccd1fb4724de65adaeea0c8c2ec5e39684e78fbb6b5acdaac7fa67", "SHA-256 in hex")
+        XCTAssertEqual(PullRequestFileAnchor.hashes(of: "README.md")[1], "04c6e90faac2675aa89e2176d2eec7d8")
+        XCTAssertEqual(PullRequestFileAnchor(hash: sha256, line: 3).file(in: paths), "src/app.swift")
+        XCTAssertEqual(PullRequestFileAnchor(hash: PullRequestFileAnchor.hashes(of: "README.md")[1]).file(in: paths), "README.md",
+                       "GitHub's older MD5 anchors")
+        XCTAssertEqual(PullRequestFileAnchor(hash: PullRequestFileAnchor.hashes(of: "README.md")[2]).file(in: paths), "README.md",
+                       "GitLab's SHA-1 anchors")
+        XCTAssertEqual(PullRequestFileAnchor(path: "src/app.swift").file(in: paths), "src/app.swift")
+        XCTAssertNil(PullRequestFileAnchor(hash: String(repeating: "0", count: 64)).file(in: paths))
+        XCTAssertNil(PullRequestFileAnchor().file(in: paths))
+    }
+
     // MARK: PullRequestRef
 
     func testParsesUrlsOfEveryHost() throws {
