@@ -405,9 +405,13 @@ and its buttons on one row, and back and forward beside the traffic lights), and
 the `PanelFooter` at the bottom. Music has no list of its own: `PanelView` draws its column, with `MusicSidebar` (the sections and the playlists) in place of a list. The Music pages
 themselves keep one grid (`MusicLayout` in `MusicTab.swift`): the header band, what scrolls and the player bar share the
 same two edges; the band holds the one title (Home's greeting, a section's name) as a conversation's "folder / title"
-header ("Music / Statistics", body type, no line under it) with back and the section's own controls; tracks are flat rows (`MusicTrackRow`, `MusicTrackTile`) whose hover fill reaches past that edge
-(`.musicRowBleed()`), an open playlist and the full player have no card around them, and the player bar is the
-composer's box. While a tab draws the
+header ("Music / Statistics", body type, no line under it) with back, the section's own controls and the tab's one
+search field (`MusicSearchModel`: typing on any page shows the results); tracks are flat rows (`MusicTrackRow`,
+`MusicTrackTile`) whose hover fill reaches past that edge (`.musicRowBleed()`), with their buttons beside the part that
+plays (queue, Add to playlist, and the "…" of `MusicTrackMenu`, which stays in sight; a labelled `MusicRowAction` such
+as "Add" when the list is for that), an open playlist and the full player have no card around them, and the player bar
+is the composer's box. The bar stays at the bottom of every page while something plays (only Now Playing, the player
+itself, goes without), with where the music plays (`MusicOutputButton`, its list in `MusicOutputList`) and Up next. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
 when no column shows it (one column at a time, a task over the tab), the capsule comes back. Agents' list goes away
 altogether: `PanelSidebarToggle` floats in one spot right of the traffic lights, with the list out or away, and a

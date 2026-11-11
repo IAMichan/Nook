@@ -204,6 +204,7 @@ targets:
       - path: Core/I18n+Music.swift
       - path: Core/I18n+MusicPage.swift
       - path: Core/I18n+MusicRedesign.swift
+      - path: Core/I18n+MusicControls.swift
       - path: Core/I18n+Permissions.swift
       - path: Core/I18n+Phone.swift
       - path: Core/I18n+ChatCall.swift
@@ -674,6 +675,7 @@ targets:
       - path: Core/Shortcuts.swift
       - path: Services/Music/MusicLibrary.swift
       - path: Services/Music/MusicHistory.swift
+      - path: Services/Music/MusicOutputs.swift
       - path: Brain/Undo.swift
       - path: Brain/NookAccess.swift
       - path: Brain/SettingsCatalog.swift

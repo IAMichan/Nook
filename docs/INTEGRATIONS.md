@@ -592,8 +592,14 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   Music through AppleScript (`MusicScriptOutput`: list, tracks, add with `duplicate`, remove, make, rename, delete;
   smart playlists are read only), Spotify through its Web API (`SpotifyWebAPI`: `/me/playlists`, a playlist's
   `/items` with a fallback to the older `/tracks`; playlists of others are read only). A playlist opens as a track
-  list to play, shuffle, filter and edit; "Add to playlist" sits in the bar, the full player and every track's context
-  menu. Spotify needs the playlist scopes, so a connection made before them asks to connect again
+  list to play, shuffle, filter and edit, with "Add songs" searching that playlist's own player so every result can go
+  in; "Add to playlist" sits in the bar, the full player and every track's "…" and context menu. Spotify needs the playlist scopes, so a connection made before them asks to connect again
   (`Failure.missingScope`). With nothing playing, the tab offers the playlists to start from.
+- **Music players: where the music plays.** The bar's "Plays on" button (`MusicOutputButton`, `MusicOutputService`)
+  lists this Mac's outputs for both players (Core Audio, the same list as the Sound settings; choosing one sets the
+  Mac's sound output) and the playing player's own devices elsewhere: Music's AirPlay devices through AppleScript
+  (`current AirPlay devices`), Spotify Connect through its Web API (`/me/player/devices`, `PUT /me/player`; needs Spotify
+  connected in Settings, and Premium to move playback). Picking a speaker of this Mac while the player sends elsewhere
+  takes the player back to this Mac too. Spotify without a connection shows only this Mac's outputs, and says why.
 
 Add an item here when a change cannot reach every member yet.
