@@ -455,6 +455,7 @@ final class SpawnedProcess: @unchecked Sendable {
 
     private static func read(_ fd: Int32, onData: @escaping @Sendable (Data) -> Void) -> FileHandle {
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        #if canImport(Darwin)
         handle.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty {
@@ -463,8 +464,39 @@ final class SpawnedProcess: @unchecked Sendable {
             }
             onData(data)
         }
+        #else
+        // swift-corelibs-foundation (the core tests on Linux) sets the handler with a sync on the queue this handler runs
+        // on, which traps: it is let go of from outside, and until then the end of the stream is passed on only once.
+        let ended = EndOnce()
+        handle.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                guard ended.first() else { return }
+                DispatchQueue.global().async {
+                    handle.readabilityHandler = nil
+                    try? handle.close()
+                }
+            }
+            onData(data)
+        }
+        #endif
         return handle
     }
+
+    #if !canImport(Darwin)
+    /// True the first time only (see `read`).
+    private final class EndOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func first() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if done { return false }
+            done = true
+            return true
+        }
+    }
+    #endif
 
     private static func withCStrings<T>(_ strings: [String], _ body: ([UnsafeMutablePointer<CChar>?]) -> T) -> T {
         var pointers = strings.map { strdup($0) }
