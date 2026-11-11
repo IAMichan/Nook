@@ -324,13 +324,6 @@ struct NewSessionComposer: View {
             ComposerDivider()
             modeMenu
             ComposerDivider()
-            permissionMenu
-            effortMenu
-            ComposerSpeedTier(tiers: speedTiers, chosen: config.speedTier) { config.speedTier = $0 }
-            ComposerUltracodeToggle(offered: Ultracode.offered(provider: config.provider, model: config.model),
-                                    on: config.ultracode == true) { config.ultracode = $0 }
-            ComposerMainThreadToggle(offered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
-                                     on: config.mainThread == true) { config.mainThread = $0 ? true : nil }
             usageLimits
         }
         .rich(composerModel, composerConfig)
@@ -365,7 +358,7 @@ struct NewSessionComposer: View {
         // On Auto the agent is picked from the prompt as the session starts, so the pill shows Auto's own mark and word,
         // not the logo of the agent chosen last.
         let auto = config.model == AutoModel.id && comparing.isEmpty
-        return ModelPickerDropdown {
+        return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning != nil) {
             ComposerPill(symbol: auto ? AutoModel.symbol : nil,
                          agent: auto ? nil : config.provider.displayName,
                          account: auto ? nil : profile.map { AccountTag.of($0, app: app) },
@@ -381,7 +374,8 @@ struct NewSessionComposer: View {
                 DropdownHeader(title: tr(app.connectedProviders.isEmpty ? "agents.noneConnected" : "sc.agents.allOff"))
             } else {
                 AgentModelPicker(providers: providers, provider: config.provider, profileID: config.profileID,
-                                 model: config.model, comparing: remoteMachine == nil ? $comparing : nil) { provider, account, model in
+                                 model: config.model, comparing: remoteMachine == nil ? $comparing : nil,
+                                 footer: AnyView(options), trailing: reasoning.map { AnyView(ModelPickerReasoning(effort: $0)) }) { provider, account, model in
                     if provider != config.provider || (account != nil && account != config.profileID) {
                         choose(provider, account: account ?? rememberedProfile(for: provider) ?? config.profileID)
                     }
@@ -397,88 +391,38 @@ struct NewSessionComposer: View {
         ModeToggle(mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }))
     }
 
-    private var permissionMenu: some View {
-        ComposerDropdown(width: 300, command: "permissionPicker.toggle") {
-            ComposerPill(symbol: config.mode == .plan ? "lock" : config.permission.symbol,
-                 dot: nil,
-                 text: config.mode == .plan ? tr("compose.readOnly") : config.permission.label,
-                 tint: config.permission == .bypass && config.mode != .plan ? NookTheme.coralSoft : nil)
-        } content: {
-            DropdownHeader(title: tr("compose.access"))
-            ForEach(config.provider.capabilities.policies) { policy in
-                DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: config.provider),
-                            chosen: config.permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
-                    config.permission = policy
-                    remember()
-                }
-            }
-        }
-        .disabled(config.mode == .plan)
-        .composerTip(config.mode == .plan ? tr("ws.new.planReadOnly") : config.permission.help(for: config.provider))
+    /// Access, effort, speed and sub-threads, in the footer of the model picker.
+    private var options: some View {
+        ModelPickerOptions(
+            access: .init(provider: config.provider, chosen: config.permission, readOnly: config.mode == .plan,
+                          pick: { config.permission = $0; remember() }),
+            speedTiers: speedTiers, speed: config.speedTier, pickSpeed: { config.speedTier = $0 },
+            ultracodeOffered: Ultracode.offered(provider: config.provider, model: config.model),
+            ultracode: config.ultracode == true, setUltracode: { config.ultracode = $0 },
+            mainThreadOffered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
+            mainThread: config.mainThread == true, setMainThread: { config.mainThread = $0 ? true : nil })
     }
 
-    /// How hard the agent thinks, only for agents that have it; "Default" leaves it to the agent.
-    @ViewBuilder
-    private var effortMenu: some View {
+    /// The reasoning levels, in the column beside the models; nil when the agent has none for this model.
+    private var reasoning: ModelPickerOptions.Effort? {
         let levels = workspace.effortLevels(for: config.provider, profileID: config.profileID,
                                             model: config.model.isEmpty ? nil : config.model)
-        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
-            levelMenu(family)
-        } else if !levels.isEmpty {
-            ComposerDivider()
-            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent",
-                             text: workspace.effortTitle(config.effort, for: config.provider, profileID: config.profileID))
-            } content: {
-                DropdownHeader(title: tr("compose.effort"))
-                DropdownRow(symbol: "circle.dashed", title: tr(EffortLevels.label(nil)), chosen: config.effort == nil) {
-                    config.effort = nil
-                    remember()
-                }
-                ForEach(levels, id: \.self) { level in
-                    DropdownRow(symbol: Self.effortSymbol(level, in: levels),
-                                title: workspace.effortTitle(level, for: config.provider, profileID: config.profileID),
-                                chosen: config.effort == level) {
-                        config.effort = level
-                        remember()
-                    }
-                }
-            }
-            .composerTip(tr("compose.effort.help"))
-        }
+        let effort = ModelPickerOptions.Effort(
+            family: app.modelFamily(config.model, for: config.provider, profileID: config.profileID),
+            model: config.model,
+            modelName: config.model.isEmpty ? config.provider.displayName
+                : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID),
+            levels: levels, chosen: config.effort,
+            title: { workspace.effortTitle($0, for: config.provider, profileID: config.profileID) },
+            pickLevel: { config.effort = $0; remember() },
+            pickModel: { config.model = $0; remember() })
+        return effort.family != nil || !levels.isEmpty ? effort : nil
     }
 
     /// The subscription limits of the chosen account, beside the effort as in a running session, for every agent that
     /// reports them: you see how much room is left before you start.
     private var usageLimits: some View {
         ComposerUsageRing.forAccount(app.profiles.profile(id: config.profileID), app: app)
-    }
-
-    /// For an agent that lists one model per thinking level, the level picks the model of that family.
-    private func levelMenu(_ family: ModelVariants.Family) -> some View {
-        let levels = family.members.map(\.level)
-        let current = family.members.first { $0.id == config.model }?.level ?? ""
-        return Group {
-            ComposerDivider()
-            ComposerDropdown(width: 220, command: "effortPicker.toggle") {
-                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(variant: current)))
-            } content: {
-                DropdownHeader(title: tr("compose.effort"))
-                ForEach(family.members, id: \.self) { member in
-                    DropdownRow(symbol: member.level.isEmpty ? "circle.dashed" : Self.effortSymbol(member.level, in: levels),
-                                title: tr(EffortLevels.label(variant: member.level)), chosen: member.id == config.model) {
-                        config.model = member.id
-                        remember()
-                    }
-                }
-            }
-            .composerTip(tr("compose.effort.help"))
-        }
-    }
-
-    /// The gauge fills up with the level.
-    private static func effortSymbol(_ level: String, in levels: [String]) -> String {
-        EffortSymbol.symbol(level, in: levels)
     }
 
     /// The faster tiers the chosen agent offers for the chosen model (`SpeedTiers`).
