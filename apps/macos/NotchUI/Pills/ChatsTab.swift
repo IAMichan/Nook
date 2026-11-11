@@ -1513,8 +1513,8 @@ struct ChatsRow: View, Equatable {
             ChatListRowContent(
                 name: entry.name, when: when,
                 // A chat on the phone that wrote nothing since Nook was linked: its newest message is being fetched
-                // (`loadChatLine`); until then the line says only that something new came in.
-                preview: entry.preview.isEmpty ? (entry.read.isUnread ? tr("chats.row.new") : " ") : previewText,
+                // (`loadChatLine`); until then the line stays blank rather than claiming something.
+                preview: entry.preview.isEmpty ? " " : previewText,
                 unread: entry.read.isUnread, ticks: entry.ticks, typing: typing,
                 // The WhatsApp account, while more than one is linked.
                 detail: entry.account, hidesTime: hovering && rowAction != nil
