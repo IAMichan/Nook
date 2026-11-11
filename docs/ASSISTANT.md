@@ -46,6 +46,22 @@ With Claude, Haiku performs this lightweight planning step (fast and inexpensive
 
 When answering, the model follows a strict reasoning order: what does the user want, where does that information live, does the retrieved context actually answer the question (if not, search further), and only then formulate the answer. It never guesses yes or no about your personal data without evidence. When searching files, documents rank ahead of source code and build artifacts (`dist/`, `node_modules/`, `.build/`, etc.) are excluded.
 
+### Conversation Memory Within a Budget
+
+A follow-up (*"and on Friday?"*, *"make it shorter"*, *"go back to the budget question"*) only works when the brain sees what came before, but sending a whole long conversation with every question wastes the model's window and time. `NookChat.history` therefore passes the conversation through `ConversationWindow` (`Brain/ConversationWindow.swift`, tested in `ConversationWindowTests`):
+
+- the six newest turns go in full (up to 4,000 characters each), older turns as their first 600 characters, at most 20 turns;
+- everything stays within 24,000 characters (it used to be up to 16 messages of 4,000 characters, about 64,000, while everything before them was forgotten);
+- turns that no longer fit are folded into one recap at the start that lists what the user asked earlier (the first questions, where the topic was set, and the latest ones before the window), so a conversation can pick up an earlier topic again. The window always starts on the user's side, and the brain is told never to answer the recap itself.
+
+Small local models keep their own, shorter view of the same window (`BrainService.historyPrefix`).
+
+### Shape of an Answer & Next Steps
+
+The system prompt asks for answers you can act on: the answer itself first (the yes or no, the number, the name, the date, the recommendation), then what supports it, concrete and cited; a longer answer opens with a one-line takeaway, groups per topic and ends with what the user has to do or decide; an ambiguous request that a wrong guess would make costly gets one short question with the likely options; and what Nook could not find goes in one line at the end instead of a disclaimer up front.
+
+Under the answer the brain proposes up to three next steps (`» …` lines, `FollowUps`, tested in `FollowUpsTests`): an action it can take, a way to go deeper, or the obvious next question, in the user's language. They show as `AnswerOfferChips`, so a conversation goes on with one click. Generic ones (*"tell me more"*) are dropped, and offers written as a list item (`- » …`) are still recognized. The notch's cards keep two (`FollowUps.cardLimit`).
+
 ### Automatic Search & Full-Document Reading
 
 Small local models often struggle with multi-step tool calling: they may invoke a single search tool with the entire sentence as the query, or read only the titles of the eight newest notes. Nook therefore performs the initial retrieval pass on your Mac before the model answers, consistently across every brain and source (`Research`, called from `prepareRun`):
@@ -221,7 +237,7 @@ Above every answer, Nook shows a status chip per source:
 | `○ GitHub · nothing found` | Searched, 0 results |
 | `✗ Notion` | Search failed; hover or read below the answer for the exact reason |
 
-Clicking `ⓘ` reveals the exact context and every search query with its outcome. Tools emit references (`@ref title | url | detail`), which `RetrievalLedger` numbers sequentially across the turn (`[1]`, `[2]`, …). Hallucinated citation numbers are stripped by `Citations.sanitize`. Only `https:`, `file:` (inside your home directory), and `message:` (opens the email in Mail.app) links are clickable.
+The sources an answer actually cites show right under it as `AnswerSourceChips` (number and name; a click opens the mail, note, chat or page), in the chat as in the notch's card, so where a fact comes from is one click away without opening the details. Clicking `ⓘ` reveals the exact context and every search query with its outcome. Tools emit references (`@ref title | url | detail`), which `RetrievalLedger` numbers sequentially across the turn (`[1]`, `[2]`, …). Hallucinated citation numbers are stripped by `Citations.sanitize`. Only `https:`, `file:` (inside your home directory), and `message:` (opens the email in Mail.app) links are clickable.
 
 ### Action Validation & Execution
 
