@@ -67,7 +67,7 @@ struct ComposerMainThreadToggle: View {
                              tint: on ? NookTheme.iris : nil, showsChevron: false)
             }
             .buttonStyle(.plain)
-            .help(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
+            .composerTip(on ? tr("compose.mainThread.on") : tr("compose.mainThread.off"))
             .accessibilityValue(on ? tr("compose.ultracode.stateOn") : tr("compose.ultracode.stateOff"))
         }
     }
