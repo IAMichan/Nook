@@ -238,6 +238,9 @@ final class WorkspaceManager: ObservableObject {
     @Published var agentEfforts: [String: [AgentModel]] = [:]
     /// The `/` commands each ACP session announced (`available_commands_update`).
     @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
+    /// What fills each session's context window, as its agent last said it (`refreshContextUsage`), with the session's
+    /// context size at that moment: an answer from before a later turn is not shown.
+    @Published var contextUsages: [UUID: (usage: ContextUsage, contextTokens: Int?)] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
@@ -2680,6 +2683,7 @@ final class WorkspaceManager: ObservableObject {
         codexTotals[id] = nil
         codexSubagents[id] = nil
         openPullRequests[id] = nil
+        contextUsages[id] = nil
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil

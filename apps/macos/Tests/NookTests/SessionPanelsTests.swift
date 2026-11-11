@@ -25,9 +25,19 @@ final class SessionPanelsTests: XCTestCase {
         XCTAssertEqual(PanelSplit.columnStart(column: 736, room: 600), 0)
     }
 
-    func testContextRingStaysQuietUntilHalfUsed() {
-        XCTAssertFalse(ContextMeter.worthShowing(0.49))
-        XCTAssertTrue(ContextMeter.worthShowing(0.5))
+    func testContextRingShowsFromTheFirstToken() {
+        XCTAssertFalse(ContextMeter.worthShowing(used: 0, window: 1_000_000))
+        XCTAssertFalse(ContextMeter.worthShowing(used: 1_000, window: 0))
+        XCTAssertTrue(ContextMeter.worthShowing(used: 30_000, window: 1_000_000))
+    }
+
+    func testContextPressureCountsTowardTheAutoCompactPoint() {
+        // A 1M window compacted at 350k: 300k is time to summarize, though only 30 % of the window.
+        XCTAssertTrue(ContextMeter.suggestsCompact(ContextMeter.pressure(used: 300_000, window: 1_000_000, autoCompactAt: 350_000)))
+        XCTAssertFalse(ContextMeter.suggestsCompact(ContextMeter.pressure(used: 300_000, window: 1_000_000, autoCompactAt: nil)))
+        // A point past the window, or none at all, falls back to the window.
+        XCTAssertEqual(ContextMeter.pressure(used: 100_000, window: 200_000, autoCompactAt: 500_000), 0.5)
+        XCTAssertEqual(ContextMeter.pressure(used: 100_000, window: 200_000, autoCompactAt: 0), 0.5)
     }
 
     func testSessionPanelShortcutLeavesTheTerminalAlone() {
