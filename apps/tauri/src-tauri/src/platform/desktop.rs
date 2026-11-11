@@ -14,7 +14,8 @@ pub const BAR: &str = "bar";
 pub const COLLAPSED: (f64, f64) = (44.0, 44.0);
 /// A compact agent notice: the bar keeps its height and grows wider, with the message and its buttons in the row.
 pub const NOTICE: (f64, f64) = (560.0, 38.0);
-pub const EXPANDED: (f64, f64) = (760.0, 540.0);
+/// The open panel's default size is this share of the screen's work area, in both directions.
+pub const EXPANDED_SCREEN_FRACTION: f64 = 0.75;
 /// The smallest the open panel can be dragged to.
 pub const EXPANDED_MIN: (f64, f64) = (480.0, 320.0);
 pub const EXPANDED_LARGE: (f64, f64) = (960.0, 680.0);
@@ -108,15 +109,6 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
         set_clicks_pass(&window, false);
     }
     let settings = app.state::<AppState>().settings();
-    let (w, h) = if !expanded && notice {
-        NOTICE
-    } else if !expanded {
-        COLLAPSED
-    } else if settings.panel_large {
-        EXPANDED_LARGE
-    } else {
-        EXPANDED
-    };
     let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else { return };
     let scale = monitor.scale_factor();
@@ -124,6 +116,21 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
     let left = area.position.x as f64 / scale;
     let top = area.position.y as f64 / scale;
     let width = area.size.width as f64 / scale;
+    let height = area.size.height as f64 / scale;
+    // By default the open panel fills 75% of the screen; the large setting never goes below its fixed size.
+    let default_open = (
+        (width * EXPANDED_SCREEN_FRACTION).max(EXPANDED_MIN.0).min(width),
+        (height * EXPANDED_SCREEN_FRACTION).max(EXPANDED_MIN.1).min(height),
+    );
+    let (w, h) = if !expanded && notice {
+        NOTICE
+    } else if !expanded {
+        COLLAPSED
+    } else if settings.panel_large {
+        (EXPANDED_LARGE.0.max(default_open.0).min(width), EXPANDED_LARGE.1.max(default_open.1).min(height))
+    } else {
+        default_open
+    };
     let (x, y) = match (settings.placement.as_str(), settings.float_x, settings.float_y) {
         ("floating", Some(fx), Some(fy)) => (left + width / 2.0 + fx - w / 2.0, top + fy),
         _ => (left + (width - w) / 2.0, top),
