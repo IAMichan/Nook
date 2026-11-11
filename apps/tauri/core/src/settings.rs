@@ -113,6 +113,12 @@ pub struct Settings {
     pub home_essentials: Option<Vec<String>>,
     /// Home's inbox items you dismissed, by id, with when (RFC 3339); the interface forgets them after two weeks.
     pub inbox_dismissed: BTreeMap<String, String>,
+    /// Home's inbox items you snoozed, by id, with when they come back (RFC 3339).
+    pub inbox_snoozed: BTreeMap<String, String>,
+    /// Which sources may interrupt you: `all`, `work`, `deep` or `off_hours` (see `src/lib/focus.ts`).
+    pub focus_mode: String,
+    /// When you last looked at the inbox (RFC 3339), so "Catch me up" can summarise what came after.
+    pub inbox_seen_at: Option<String>,
 }
 
 impl Default for Settings {
@@ -163,6 +169,9 @@ impl Default for Settings {
             user_name: String::new(),
             home_essentials: None,
             inbox_dismissed: BTreeMap::new(),
+            inbox_snoozed: BTreeMap::new(),
+            focus_mode: "all".into(),
+            inbox_seen_at: None,
         }
     }
 }

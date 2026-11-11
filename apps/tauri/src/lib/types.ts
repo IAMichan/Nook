@@ -63,6 +63,12 @@ export interface Settings {
   homeEssentials: string[] | null;
   /** Dismissed inbox item ids, with when they were dismissed (ISO). */
   inboxDismissed: Record<string, string>;
+  /** Snoozed inbox item ids, with when they come back (ISO). */
+  inboxSnoozed: Record<string, string>;
+  /** Which sources may interrupt: "all" | "work" | "deep" | "off_hours". */
+  focusMode: string;
+  /** When the inbox was last looked at (ISO); "Catch me up" summarises what came after. */
+  inboxSeenAt: string | null;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.

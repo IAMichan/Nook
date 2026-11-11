@@ -213,6 +213,15 @@ extension SettingsView {
                 SettingText("theme.appearance")
             }
             .pickerStyle(.segmented)
+            Picker(selection: $settings.density) {
+                ForEach(NookDensity.allCases) { density in
+                    Text(tr("theme.density.\(density.rawValue)")).tag(density)
+                }
+            } label: {
+                SettingText("theme.density")
+            }
+            .pickerStyle(.segmented)
+            SettingNote(tr("theme.densityNote"))
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
                 ForEach(settings.themes) { theme in
                     themeCard(theme)
