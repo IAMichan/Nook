@@ -2643,8 +2643,10 @@ final class WorkspaceManager: ObservableObject {
         let directory = run.workingDirectory
         let base = run.baseBranch
         let cachedPoint = branchPoints[id].flatMap { Date().timeIntervalSince($0.at) < Self.branchPointMaxAge ? $0 : nil }
+        let knownBranch = run.branch
         Task.detached(priority: .utility) {
             var status: GitStatus?
+            var passed: [String] = []
             var problem: String?
             var divergence: (ahead: Int, behind: Int)?
             var branch: (changes: [GitFileChange], point: BranchPoint)?
@@ -2655,11 +2657,18 @@ final class WorkspaceManager: ObservableObject {
                 // base, committed work included (`FolderGitModel`). A session on another machine counts what is not
                 // committed, as its review there does.
                 if git.remote == nil, let status { branch = Self.branchChanges(git, directory: directory, status: status, cached: cachedPoint) }
+                // The session is on another branch than at the last read: the branches it went through in between
+                // (an agent that opens several pull requests in one turn) are its earlier branches too.
+                if let status, !status.detached, let now = status.branch, let knownBranch, now != knownBranch,
+                   let reflog = try? git.run(["log", "-g", "--format=%gs", "-n", "200", "HEAD"], in: directory) {
+                    passed = SessionBranches.passed(reflog: reflog.components(separatedBy: "\n"), from: knownBranch, to: now)
+                }
             } else {
                 problem = tr("ws.error.folderGone", directory)
             }
             let result = (status: status, divergence: divergence, problem: problem)
             let branchResult = branch
+            let passedBranches = passed
             await MainActor.run { [weak self] in
                 // A session deleted while git was read leaves nothing behind.
                 guard let self, self.run(id) != nil else { return }
@@ -2683,7 +2692,7 @@ final class WorkspaceManager: ObservableObject {
                         $0.changedLinesRemoved = removed
                     }
                     // A branch the agent (or you) switched to becomes the session's own.
-                    if !status.detached, let branch = status.branch { self.followBranch(id, to: branch) }
+                    if !status.detached, let branch = status.branch { self.followBranch(id, to: branch, passing: passedBranches) }
                 }
                 if let again { self.refreshGit(id, quiet: again) }
             }
