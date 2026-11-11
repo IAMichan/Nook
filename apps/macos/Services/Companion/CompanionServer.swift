@@ -222,10 +222,12 @@ final class CompanionServer: ObservableObject {
 
     func relayClosed(_ peer: CompanionPeer) { closed(peer) }
 
-    private func send(_ response: CompanionResponse, key: Data, deviceID: String, on transport: CompanionTransport) {
+    /// `compress`: the phone opens compressed answers (`CompanionRequest.compression`); a large answer is compressed
+    /// before it is sealed (`CompanionWire`).
+    private func send(_ response: CompanionResponse, key: Data, deviceID: String, on transport: CompanionTransport, compress: Bool = false) {
         // Only what this phone may see, and only the features it may use (`CompanionScopes`).
         let response = CompanionScopes.redact(response, granted: scopes(of: deviceID))
-        guard let json = try? JSONEncoder().encode(response),
+        guard let json = try? CompanionWire.encode(response, compress: compress),
               let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: deviceID, direction: .response),
               let framed = CompanionFrameReader.frame(sealed) else { return }
         transport.send(framed)
@@ -243,15 +245,18 @@ final class CompanionServer: ObservableObject {
             pairing = true
         }
         guard let key, let plain = try? CompanionSeal.open(frame, pairingKey: key, direction: .request),
-              let request = try? JSONDecoder().decode(CompanionRequest.self, from: plain) else {
+              let request = try? CompanionWire.decode(CompanionRequest.self, from: plain) else {
             connection.cancel()
             return
         }
+        // Every answer to this request, and on a subscribe all that follows on it, compressed when large.
+        let compress = request.compression == true
+        peer.compression = compress
         peer.lastHeard = Date()
         // What this phone may do is decided on the Mac (Settings › Connections › iPhone); anything else is refused before it runs.
         if !pairing, !CompanionScopes.allows(request.op, granted: scopes(of: claimed)) {
             CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "scope", "device": claimed])
-            send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection)
+            send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection, compress: compress)
             return
         }
         let keeps = !pairing && CommandReceipts.keeps(request.op)
@@ -262,18 +267,18 @@ final class CompanionServer: ObservableObject {
             switch receipts[claimed, default: CommandReceipts()].begin(request.id, now: Date()) {
             case .answered(let earlier):
                 let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date())
-                send(refusal.map { Self.refusal(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
+                send(refusal.map { Self.refusal(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection, compress: compress)
                 return
             case .running:
                 if let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date()) {
-                    send(Self.refusal(request.id, refusal), key: key, deviceID: claimed, on: connection)
+                    send(Self.refusal(request.id, refusal), key: key, deviceID: claimed, on: connection, compress: compress)
                     return
                 }
                 let slot = claimed + "|" + request.id
                 let earlier = await withCheckedContinuation { continuation in
                     running[slot, default: []].append(continuation)
                 }
-                send(earlier, key: key, deviceID: claimed, on: connection)
+                send(earlier, key: key, deviceID: claimed, on: connection, compress: compress)
                 return
             case .new:
                 break
@@ -284,7 +289,7 @@ final class CompanionServer: ObservableObject {
             if keeps { receipts[claimed]?.cancel(request.id) }
             CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": refusal.rawValue, "device": claimed,
                                                            "skew": String(Int(Date().timeIntervalSince1970 - request.sent))])
-            send(Self.refusal(request.id, refusal), key: key, deviceID: claimed, on: connection)
+            send(Self.refusal(request.id, refusal), key: key, deviceID: claimed, on: connection, compress: compress)
             return
         }
         // Whether the app is in front on the phone (`CompanionFeature.foreground`): a phone in front gets no pushes for
@@ -293,7 +298,7 @@ final class CompanionServer: ObservableObject {
 
         if pairing {
             guard request.op == .hello, store.completePairing(name: request.text ?? "") != nil else {
-                send(.failure(request.id, .badRequest), key: key, deviceID: claimed, on: connection)
+                send(.failure(request.id, .badRequest), key: key, deviceID: claimed, on: connection, compress: compress)
                 return
             }
             audit("paired", request.text ?? "iPhone")
@@ -317,7 +322,7 @@ final class CompanionServer: ObservableObject {
             // Repeats that came while it ran get the same answer.
             for waiter in running.removeValue(forKey: claimed + "|" + request.id) ?? [] { waiter.resume(returning: response) }
         }
-        send(response, key: key, deviceID: claimed, on: connection)
+        send(response, key: key, deviceID: claimed, on: connection, compress: compress)
     }
 
     /// A refusal; a `stale` one says the Mac's time, so the phone can correct for its clock (`CompanionFeature.clock`).
@@ -380,7 +385,7 @@ final class CompanionServer: ObservableObject {
         send(Self.versioned(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
                                               features: CompanionFeature.all, endpoints: endpoints(),
                                               relay: CompanionRelayClient.shared.advertised)),
-             key: key, deviceID: deviceID, on: peer.transport)
+             key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
         if streamTimer == nil {
             // Closes connections that went quiet (a phone that left without saying so) and catches changes the
             // workspace does not announce (agents in a terminal).
@@ -407,7 +412,8 @@ final class CompanionServer: ObservableObject {
             guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID else { continue }
             peer.seq += 1
             peer.sent = sessions
-            send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.transport)
+            send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.transport,
+                 compress: peer.compression)
         }
         pushTimelines()
         pushChats()
@@ -515,7 +521,7 @@ final class CompanionServer: ObservableObject {
                     peer.sentTimeline = entries
                     send(CompanionResponse(id: id, ok: true, timeline: fits ? change.entries : entries, seq: peer.seq,
                                            timelineSession: session, timelineAfter: fits ? change.after : nil),
-                         key: key, deviceID: deviceID, on: peer.transport)
+                         key: key, deviceID: deviceID, on: peer.transport, compress: peer.compression)
                 }
             } while timelinePushAgain
             timelinePushRunning = false
@@ -706,6 +712,10 @@ final class CompanionServer: ObservableObject {
             return await pullAct(request, app: app)
         case .pullWork:
             return await pullWork(request, app: app)
+        case .history:
+            return history(request, app: app)
+        case .fileData:
+            return await fileData(request, app: app)
         }
     }
 
@@ -736,7 +746,7 @@ final class CompanionServer: ObservableObject {
     func anyBusy(_ app: AppModel) -> Bool {
         let workspace = app.workspace
         let now = Date()
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(25)
+        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(CompanionHistory.liveCount)
         let working = runs.contains { run in
             let waiting = !(workspace.approvals[run.id] ?? []).isEmpty || !(workspace.questions[run.id] ?? []).isEmpty
             return KeepAwakePolicy.isBusy(attention: String(describing: workspace.attention(run, unseen: false, now: now)),
@@ -749,33 +759,58 @@ final class CompanionServer: ObservableObject {
 
     private func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
         let now = Date()
-        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(25)
-        return runs.map { run in
-            var items: [SessionDigest.Item] = []
-            for pending in workspace.approvals[run.id] ?? [] {
-                items.append(.init(id: pending.id, kind: .approval, title: CompanionPolicy.excerpt(pending.summary),
-                                   detail: CompanionPolicy.excerpt(pending.tool), canAllow: canAllow(pending), options: []))
+        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(CompanionHistory.liveCount)
+        return runs.map { digest($0, workspace: workspace, now: now) }
+    }
+
+    /// Older sessions than the live list holds, a page at a time, or every session that matches the words of `text`
+    /// (`CompanionOp.history`). Only the runs of one page become digests, so a long history costs nothing extra.
+    func history(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
+        let workspace = app.workspace
+        let query = CompanionHistory.clean(request.text)
+        let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }
+        let candidates: [WorkspaceRun]
+        if query.isEmpty {
+            candidates = Array(runs.dropFirst(CompanionHistory.liveCount))
+        } else {
+            candidates = runs.filter { run in
+                CompanionHistory.matches(query, [run.title, (run.workingDirectory as NSString).lastPathComponent,
+                                                 run.branch ?? "", run.provider.displayName])
             }
-            for question in workspace.questions[run.id] ?? [] {
-                let first = question.questions.first
-                let single = question.questions.count == 1
-                items.append(.init(id: question.id, kind: .question, title: CompanionPolicy.excerpt(first?.question ?? ""),
-                                   detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
-                                   options: single ? (first?.options.map(\.label) ?? []) : []))
-            }
-            // From memory only: the phone asks every few seconds, and reading released timelines back from disk would
-            // also keep them all in memory.
-            let lastAnswer = workspace.lastAnswer(run.id)
-            return SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
-                                 attention: String(describing: workspace.attention(run, unseen: false, now: now)),
-                                 folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,
-                                 updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
-                                 model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
-                                 actions: Self.actions(run, now: now).map(\.rawValue),
-                                 canSteer: workspace.canSteer(run.id),
-                                 limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
-                                                                           now: now)?.timeIntervalSince1970)
         }
+        let page = CompanionHistory.page(candidates, updated: { $0.updatedAt.timeIntervalSince1970 }, id: { $0.id.uuidString },
+                                         after: request.item)
+        let now = Date()
+        var response = CompanionResponse(id: request.id, ok: true, sessions: page.items.map { digest($0, workspace: workspace, now: now) })
+        response.cursor = page.cursor
+        return response
+    }
+
+    private func digest(_ run: WorkspaceRun, workspace: WorkspaceManager, now: Date) -> SessionDigest {
+        var items: [SessionDigest.Item] = []
+        for pending in workspace.approvals[run.id] ?? [] {
+            items.append(.init(id: pending.id, kind: .approval, title: CompanionPolicy.excerpt(pending.summary),
+                               detail: CompanionPolicy.excerpt(pending.tool), canAllow: canAllow(pending), options: []))
+        }
+        for question in workspace.questions[run.id] ?? [] {
+            let first = question.questions.first
+            let single = question.questions.count == 1
+            items.append(.init(id: question.id, kind: .question, title: CompanionPolicy.excerpt(first?.question ?? ""),
+                               detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
+                               options: single ? (first?.options.map(\.label) ?? []) : []))
+        }
+        // From memory only: the phone asks every few seconds, and reading released timelines back from disk would
+        // also keep them all in memory.
+        let lastAnswer = workspace.lastAnswer(run.id)
+        return SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
+                             attention: String(describing: workspace.attention(run, unseen: false, now: now)),
+                             folder: (run.workingDirectory as NSString).lastPathComponent, branch: run.branch,
+                             updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
+                             model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
+                             actions: Self.actions(run, now: now).map(\.rawValue),
+                             canSteer: workspace.canSteer(run.id),
+                             limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
+                                                                       now: now)?.timeIntervalSince1970)
     }
 }
 
@@ -815,6 +850,8 @@ final class CompanionPeer {
     var watchChat: String?
     var sentChatLines: [InboxLine]?
     var sentChatTyping: [InboxTypist]?
+    /// The phone opens compressed answers (`CompanionRequest.compression`), as its last request said.
+    var compression = false
 
     init(_ transport: CompanionTransport, counted: Bool) {
         self.transport = transport

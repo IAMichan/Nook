@@ -320,7 +320,7 @@ final class ProviderTrafficLog: @unchecked Sendable {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         let folder = directory ?? Self.directory
-        let provider = URL(fileURLWithPath: spec.executable).lastPathComponent
+        let provider = (spec.executable as NSString).lastPathComponent
         return ProviderTrafficLog(url: folder.appendingPathComponent("\(run)-\(formatter.string(from: now)).ndjson"), provider: provider)
     }
 

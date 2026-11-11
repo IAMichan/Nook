@@ -227,34 +227,59 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
     /// `keepEmpty`: also the finished turns without an edit, whose files git can still find in the snapshots around them
     /// (`counted`).
     static func collect(events: [RunEvent], keepEmpty: Bool = false) -> [TurnDiff] {
+        var cache = TurnDiffCache()
+        return collect(events: events, keepEmpty: keepEmpty, cache: &cache)
+    }
+
+    /// The same, reading a finished turn again only when its events changed: every edit's input is parsed as JSON and
+    /// diffed, and a session in the middle of its work asks again for each event that comes in.
+    static func collect(events: [RunEvent], keepEmpty: Bool = false, cache: inout TurnDiffCache) -> [TurnDiff] {
         var turns: [TurnDiff] = []
+        var kept: [String: TurnDiffCache.Entry] = [:]
         var number = 0
         for events in TimelinePresentation.split(events) {
             guard let first = events.first else { continue }
             if first.kind == .user { number += 1 }
-            guard let end = events.last(where: { $0.kind == .result }) else { continue }
-            var turn = TurnDiff(id: first.id.uuidString, number: max(number, 1), answerID: end.id.uuidString,
-                                start: first.date, end: end.date)
-            for event in events {
-                switch event.kind {
-                case .fileChange:
-                    if let path = event.detail ?? (event.text.isEmpty ? nil : event.text) { turn.merge(File(path: path)) }
-                case .tool where ToolCategory.of(tool: event.tool ?? "") == .edit && event.state != .failed:
-                    let input = event.detail.flatMap { $0.data(using: .utf8) }
-                        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
-                    var step = AgentToolStep(id: event.id.uuidString, name: event.tool ?? "", summary: "",
-                                             path: ToolSummary.path(input), lines: EditLines.of(event),
-                                             patch: EditPatch.make(tool: event.tool ?? "", input: input))
-                    step.state = .done
-                    if step.patch == nil, let path = step.path { turn.merge(File(path: path, lines: step.lines ?? EditLines())) }
-                    turn.add(step)
-                default:
-                    continue
-                }
+            // A turn without a result is still at work; it has no card yet.
+            guard events.contains(where: { $0.kind == .result }) else { continue }
+            let turn: TurnDiff
+            if let hit = cache.entries[first.id.uuidString], hit.number == max(number, 1), hit.events == events {
+                turn = hit.turn
+                kept[first.id.uuidString] = hit
+            } else {
+                guard let built = turnDiff(of: events, number: max(number, 1)) else { continue }
+                turn = built
+                kept[first.id.uuidString] = TurnDiffCache.Entry(events: events, number: max(number, 1), turn: built)
             }
             if keepEmpty || !turn.isEmpty { turns.append(turn) }
         }
+        cache.entries = kept
         return turns
+    }
+
+    /// One turn's files, from its events; nil for a turn without a result (still at work).
+    private static func turnDiff(of events: [RunEvent], number: Int) -> TurnDiff? {
+        guard let first = events.first, let end = events.last(where: { $0.kind == .result }) else { return nil }
+        var turn = TurnDiff(id: first.id.uuidString, number: number, answerID: end.id.uuidString,
+                            start: first.date, end: end.date)
+        for event in events {
+            switch event.kind {
+            case .fileChange:
+                if let path = event.detail ?? (event.text.isEmpty ? nil : event.text) { turn.merge(File(path: path)) }
+            case .tool where ToolCategory.of(tool: event.tool ?? "") == .edit && event.state != .failed:
+                let input = event.detail.flatMap { $0.data(using: .utf8) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+                var step = AgentToolStep(id: event.id.uuidString, name: event.tool ?? "", summary: "",
+                                         path: ToolSummary.path(input), lines: EditLines.of(event),
+                                         patch: EditPatch.make(tool: event.tool ?? "", input: input))
+                step.state = .done
+                if step.patch == nil, let path = step.path { turn.merge(File(path: path, lines: step.lines ?? EditLines())) }
+                turn.add(step)
+            default:
+                continue
+            }
+        }
+        return turn
     }
 
     /// The same turn with the lines git counted (keyed by the path relative to `directory`) in place of those from the
@@ -312,4 +337,17 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
             files.append(file)
         }
     }
+}
+
+/// The finished turns of the last `TurnDiff.collect`, by the id of their first event, to make the next one from.
+struct TurnDiffCache {
+    struct Entry {
+        var events: [RunEvent]
+        var number: Int
+        var turn: TurnDiff
+    }
+
+    fileprivate(set) var entries: [String: Entry] = [:]
+
+    init() {}
 }

@@ -77,7 +77,7 @@ struct ProjectSourceControlRows: View {
                     .foregroundStyle(NookTheme.textSecondary)
                 Menu(tr("sc.icon.change")) {
                     Button(tr("sc.icon.monogram")) {
-                        let name = URL(fileURLWithPath: path).lastPathComponent
+                        let name = (path as NSString).lastPathComponent
                         ws.setProjectIcon(.monogram(ProjectIcon.initials(name), .mint), project: path)
                     }
                     Menu(tr("sc.icon.tint")) {
@@ -117,7 +117,7 @@ struct ProjectSourceControlRows: View {
 
     private func monogramLetters(_ icon: ProjectIcon?) -> String {
         if case .monogram(let letters, _)? = icon { return letters }
-        return ProjectIcon.initials(URL(fileURLWithPath: path).lastPathComponent)
+        return ProjectIcon.initials((path as NSString).lastPathComponent)
     }
 
     private func monogramTint(_ icon: ProjectIcon?) -> ProjectIcon.Tint {
@@ -154,7 +154,7 @@ struct ArchivedProjectsSection: View {
                         }
                     } label: {
                         Label {
-                            Text(URL(fileURLWithPath: path).lastPathComponent)
+                            Text((path as NSString).lastPathComponent)
                         } icon: {
                             ProjectIconView(icon: ws.projectIcon(path), size: 15)
                         }

@@ -213,7 +213,7 @@ struct PairingView: View {
                                 .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(1...4)
                                 .font(Theme.TextStyle.code)
                                 .padding(Theme.Spacing.lg)
-                                .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                .roundedBackground(Theme.well, radius: Theme.Radius.control)
                             NookPrimaryButton(title: String(localized: "Pair")) { client.pair(link: text) }
                                 .disabled(text.isEmpty || client.phase == .pairing)
                         }
@@ -343,6 +343,7 @@ struct SessionListView: View {
     /// The Working and Recent shelves, open or folded; remembered.
     @AppStorage("nook.companion.shelf.working") private var workingOpen = true
     @AppStorage("nook.companion.shelf.recent") private var recentOpen = true
+    @AppStorage("nook.companion.shelf.older") private var olderOpen = true
 
     private var ordered: [SessionDigest] {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -356,6 +357,18 @@ struct SessionListView: View {
     private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
     private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
     private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
+    /// Settled sessions older than the live list, paged in from the Mac (`CompanionFeature.history`).
+    private var older: [SessionDigest] { CompanionHistory.merge(live: client.sessions, older: client.olderSessions) }
+    /// What the Mac found for the words beyond what the live list already shows.
+    private var foundOlder: [SessionDigest] {
+        guard client.foundQuery == CompanionHistory.clean(query) else { return [] }
+        return CompanionHistory.merge(live: client.sessions, older: client.foundSessions)
+    }
+    /// The Mac holds more sessions than the live list: older ones can be paged in.
+    private var hasOlder: Bool {
+        client.can(CompanionFeature.history) && client.sessions.count >= CompanionHistory.liveCount
+            && (!client.olderEnded || !client.olderSessions.isEmpty)
+    }
 
     /// How many recent sessions show before "Show more".
     private static let recentShown = 8
@@ -381,10 +394,11 @@ struct SessionListView: View {
                                    detail: String(localized: "New session · waiting for your Mac")) { client.discardWaiting(entry.id) }
                     }
                     // Finding one among many: words that match its title, folder, branch or agent.
-                    if client.sessions.count > 8 {
+                    // With a Mac that searches its older sessions too, also while the list is short.
+                    if client.sessions.count > 8 || hasOlder {
                         NookSearchField(prompt: "Search sessions", text: $query)
                     }
-                    if ordered.isEmpty, !client.sessions.isEmpty {
+                    if ordered.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
                         Text("No session matches.")
                             .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
@@ -404,6 +418,7 @@ struct SessionListView: View {
                     .buttonStyle(PressFade())
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
+                olderShelves
                 otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     WSEmptyState(symbol: "square.stack.3d.up", title: String(localized: "No sessions"),
@@ -418,6 +433,13 @@ struct SessionListView: View {
         .environment(\.defaultMinListRowHeight, 0)
         .animation(Theme.reveal, value: client.sessions)
         .refreshable { await client.refresh() }
+        // The words go to the Mac once you pause typing, for the sessions older than the live list.
+        .task(id: query) {
+            guard client.can(CompanionFeature.history) else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await client.searchSessions(query)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
@@ -449,6 +471,27 @@ struct SessionListView: View {
             client.notice = blocked
         } else {
             composing = true
+        }
+    }
+
+    /// Below the recent sessions, as the Mac's settled sessions: the older ones, a page at a time, or while searching,
+    /// the older ones that match.
+    @ViewBuilder
+    private var olderShelves: some View {
+        if !query.isEmpty {
+            group(String(localized: "Older matches"), foundOlder, open: $olderOpen)
+            if olderOpen, client.foundCursor != nil, !foundOlder.isEmpty {
+                PageButton(title: String(localized: "More matches")) { await client.searchSessions(query, more: true) }
+                    .padding(.horizontal, Theme.Spacing.xl)
+            }
+        } else if hasOlder, recentOpen, showsAllRecent || rest.count <= Self.recentShown {
+            group(String(localized: "Older"), older, open: $olderOpen)
+            if olderOpen || older.isEmpty, !client.olderEnded {
+                PageButton(title: older.isEmpty ? String(localized: "Show older sessions") : String(localized: "Show more older sessions")) {
+                    await client.loadOlderSessions()
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+            }
         }
     }
 
@@ -494,6 +537,35 @@ struct SessionListView: View {
                 }
             }
         }
+    }
+}
+
+/// "Show older sessions": asks for the next page, with a spinner instead of its words while it loads.
+private struct PageButton: View {
+    let title: String
+    let load: () async -> Void
+    @State private var loading = false
+
+    var body: some View {
+        Button {
+            guard !loading else { return }
+            loading = true
+            Task {
+                await load()
+                loading = false
+            }
+        } label: {
+            Group {
+                if loading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 40)
+        }
+        .buttonStyle(PressFade())
+        .disabled(loading)
     }
 }
 
@@ -808,11 +880,8 @@ struct SessionNotice: View {
                         Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary).lineLimit(2)
                             .padding(Theme.Spacing.md)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                    .strokeBorder(Theme.hairline, lineWidth: 0.5)
-                            )
+                            .roundedBackground(Theme.well, radius: Theme.Radius.control)
+                            .roundedStrokeBorder(Theme.hairline, radius: Theme.Radius.control, lineWidth: 0.5)
                     }
                 }
                 actions(item)
@@ -825,10 +894,9 @@ struct SessionNotice: View {
         .background(
             LinearGradient(colors: [Theme.color(session.attention).opacity(0.10), Theme.color(session.attention).opacity(0)],
                            startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.6)),
-            in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+            in: Theme.shape(Theme.Radius.panel)
         )
-        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel,
-                        style: .continuous)
+        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel)
     }
 
     @ViewBuilder

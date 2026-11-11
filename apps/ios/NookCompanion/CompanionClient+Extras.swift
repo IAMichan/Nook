@@ -147,6 +147,85 @@ extension CompanionClient {
             WidgetCenter.shared.reloadTimelines(ofKind: UsageWidgetKind.kind)
         }
     }
+
+    // MARK: The agent activity widget
+
+    /// The agents the Live Activity follows, kept for the Agent activity widget, which is told to look again when they
+    /// changed, or when what it shows is getting old (so it does not read as out of date while the app is open).
+    func keepAgentActivity(_ list: [SessionDigest], now: Date) {
+        let snapshot = AgentActivitySnapshot(macName: macName, snapshots: list.map { (LiveActivitySnapshot(digest: $0), $0.updated) },
+                                             taken: now)
+        let previous = AppGroup.read(AgentActivitySnapshot.fileName, as: AgentActivitySnapshot.self)
+        let aging = snapshot.taken - (previous?.taken ?? 0) > AgentActivitySnapshot.staleAfter / 2
+        guard !snapshot.sameAgents(as: previous) || aging else { return }
+        AppGroup.write(snapshot, AgentActivitySnapshot.fileName)
+        WidgetCenter.shared.reloadTimelines(ofKind: AgentActivityWidgetKind.kind)
+    }
+
+    // MARK: Older sessions and search
+
+    /// A session by its id: from the live list, else from the older ones or a search.
+    func session(_ id: String) -> SessionDigest? {
+        sessions.first { $0.id == id } ?? olderSessions.first { $0.id == id } ?? foundSessions.first { $0.id == id }
+    }
+
+    /// The next page of sessions older than the live list (`CompanionOp.history`).
+    func loadOlderSessions() async {
+        guard can(CompanionFeature.history), !olderEnded else { return }
+        let cursor = olderCursor
+        guard let response = await perform(CompanionRequest(op: .history, item: cursor), quiet: true),
+              cursor == olderCursor else { return }
+        olderSessions = CompanionHistory.merge(live: sessions, older: olderSessions + (response.sessions ?? []))
+        olderCursor = response.cursor
+        olderEnded = response.cursor == nil
+    }
+
+    /// Sessions on the Mac that match `query`, the older ones included (`CompanionOp.history` with words); `more` asks
+    /// for the next page of the same search. Words that changed meanwhile win: an answer to older words is dropped.
+    func searchSessions(_ query: String, more: Bool = false) async {
+        let words = CompanionHistory.clean(query)
+        guard can(CompanionFeature.history), !words.isEmpty else {
+            foundSessions = []
+            foundCursor = nil
+            foundQuery = ""
+            return
+        }
+        if more, words != foundQuery || foundCursor == nil { return }
+        let cursor = more ? foundCursor : nil
+        guard let response = await perform(CompanionRequest(op: .history, item: cursor, text: words), quiet: true),
+              !Task.isCancelled, more ? words == foundQuery : true else { return }
+        foundSessions = (more ? foundSessions : []) + (response.sessions ?? [])
+        foundCursor = response.cursor
+        foundQuery = words
+    }
+
+    // MARK: File previews
+
+    /// A file of a session's folder on the phone, fetched in pieces (`CompanionOp.fileData`), to open with Quick Look:
+    /// its place in the app's temporary folder, or nil when it could not be fetched. `progress` hears 0…1 as it comes.
+    /// Only the last preview is kept; the system clears the folder too.
+    func fetchFile(_ sessionID: String, path: String, progress: (Double) -> Void) async -> URL? {
+        guard can(CompanionFeature.filePreview) else { return nil }
+        var assembly = FileAssembly()
+        repeat {
+            guard !Task.isCancelled,
+                  let chunk = await perform(CompanionRequest(op: .fileData, session: sessionID, item: path,
+                                                             text: String(assembly.nextOffset)), quiet: true)?.fileChunk,
+                  chunk.path == path, (try? assembly.take(chunk)) != nil else { return nil }
+            progress(assembly.total.map { $0 == 0 ? 1 : Double(assembly.nextOffset) / Double($0) } ?? 0)
+        } while !assembly.complete
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Previews", isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        let name = path.split(separator: "/").last.map(String.init) ?? "file"
+        let url = folder.appendingPathComponent(UUID().uuidString, isDirectory: true).appendingPathComponent(name)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try assembly.data.write(to: url, options: [.atomic, .completeFileProtection])
+            return url
+        } catch {
+            return nil
+        }
+    }
 }
 
 /// The last share targets written, so an unchanged list is not written again with every update of the sessions.

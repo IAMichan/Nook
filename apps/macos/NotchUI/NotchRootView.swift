@@ -683,7 +683,7 @@ extension TaskRingItem {
         for run in app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace) {
             let id = "run:" + run.id.uuidString
             let key = FinishedSessions.key(run: run)
-            let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen(id, run.updatedAt))
+            let attention = app.workspace.attention(run, unseen: unseen(id, run.updatedAt))
             let kind: TaskRingItem.Kind
             let status: AgentStatus
             switch attention {
@@ -708,7 +708,8 @@ extension TaskRingItem {
             let status: AgentStatus
             if session.status == .waiting || session.approvalID != nil {
                 kind = .waiting; status = .waiting
-            } else if session.status == .running {
+            } else if session.status == .running || session.compactingSince != nil {
+                // Also while it compacts between turns (your /compact): it works, though no turn runs.
                 if app.isSettledWhileBusy(session) { continue }
                 kind = .running; status = .running
             } else if session.status == .failed {
@@ -722,7 +723,12 @@ extension TaskRingItem {
             } else {
                 continue
             }
-            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail(session.project, status),
+            // While it compacts, the line says so ("Compacting the conversation…") rather than only that it works.
+            let compacting = kind == .running && session.compactingSince != nil
+            let line = compacting
+                ? (session.project.isEmpty ? tr("ws.activity.compacting") : "\(session.project) · \(tr("ws.activity.compacting"))")
+                : detail(session.project, status)
+            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: line,
                                       state: kind, target: .agent(session.id)))
         }
         for conversation in app.chat.list(query: "", showArchived: false) {
@@ -899,7 +905,7 @@ private struct TrackCover: View {
     var body: some View {
         let artworkURL = app.nowPlaying.current?.artworkURL
         ZStack {
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            NookTheme.shape(NookTheme.Radius.chip)
                 .fill(artworkURL != nil ? NookTheme.graphite : NookTheme.music.opacity(0.18))
             if let artworkURL {
                 AsyncImage(url: artworkURL) { image in
@@ -916,7 +922,7 @@ private struct TrackCover: View {
             }
         }
         .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
+        .roundedClip(NookTheme.Radius.chip)
     }
 }
 

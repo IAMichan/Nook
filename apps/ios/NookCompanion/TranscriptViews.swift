@@ -322,8 +322,8 @@ struct TranscriptStepOutput: View {
             .padding(Theme.Spacing.md)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+        .roundedBackground(Theme.well, radius: Theme.Radius.control)
+        .overlay(Theme.shape(Theme.Radius.control)
             .strokeBorder(failed ? Theme.coral.opacity(0.35) : Theme.hairline, lineWidth: 0.5))
     }
 
@@ -356,7 +356,7 @@ struct TranscriptNotice: View {
             }
             .padding(Theme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .roundedBackground(Theme.surface, radius: Theme.Radius.card)
             .padding(.vertical, Theme.Spacing.xs)
         } else {
             HStack(spacing: Theme.Spacing.sm) {

@@ -281,7 +281,8 @@ struct PastSession: Identifiable, Equatable, Codable {
     var id: String { "\(agent.rawValue):\(sessionID)" }
 
     var project: String {
-        let name = URL(fileURLWithPath: cwd).lastPathComponent
+        // From the text: `URL(fileURLWithPath:)` asks the disk whether it is a folder, on every redraw of a row.
+        let name = (cwd as NSString).lastPathComponent
         guard !(cwd.isEmpty || name.isEmpty || name == "/") else { return "no folder" }
         return WorktreeOrigin.repositoryName(of: cwd) ?? name
     }
@@ -1067,13 +1068,13 @@ private final class HistoryScanner: @unchecked Sendable {
         return CacheKey(modified: modified, size: values.fileSize ?? 0)
     }
 
-    /// The files in `directory` whose name passes `include`, with their date and size. The attributes come with the listing
-    /// (`getattrlistbulk`, one call per directory) instead of one `getattrlist` per file: a scan sees some 1,500 transcripts.
+    /// The files in `directory` whose name passes `include`, with their date and size (`DirectoryListing`: a directory
+    /// that did not change is not listed again).
     private func files(in directory: URL, where include: (String) -> Bool) -> [(url: URL, key: CacheKey)] {
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
-        guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return [] }
-        return urls.compactMap { url in include(url.lastPathComponent) ? attributes(url).map { (url, $0) } : nil }
+        listing.files(in: directory, where: include).map { ($0.url, CacheKey(modified: $0.stamp.modified, size: $0.stamp.size)) }
     }
+
+    private let listing = DirectoryListing()
 
     /// ~/.claude/projects/<dir>/<session>.jsonl
     private func claudeFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {

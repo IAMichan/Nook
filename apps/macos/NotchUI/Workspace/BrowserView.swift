@@ -784,8 +784,7 @@ struct BrowserView: View {
                 }
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .frame(height: SidePanelMetrics.toolbar)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                    .fill(addressHovering ? WS.subtle : .clear))
+                .roundedBackground(addressHovering ? WS.subtle : .clear, radius: NookTheme.Radius.control)
                 .onHover { addressHovering = $0 }
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
@@ -1264,8 +1263,8 @@ struct SessionBrowserCard: View {
         .frame(maxWidth: Self.size.width)
         .frame(height: Self.size.height)
         .background(NookTheme.field)
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).stroke(NookTheme.fieldStroke, lineWidth: 1))
+        .roundedClip(NookTheme.Radius.panel)
+        .roundedStroke(NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
         .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
         .onAppear {
             store.shownInChat += 1

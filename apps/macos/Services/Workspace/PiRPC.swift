@@ -29,6 +29,12 @@ enum PiRPC {
 
     static func abort() -> String { line(["type": "abort"]) }
 
+    /// The answer to an extension's dialog: the value, or cancelled when there is none.
+    static func dialogResponse(requestID: String, value: String?) -> String {
+        guard let value else { return line(["type": "extension_ui_response", "id": requestID, "cancelled": true]) }
+        return line(["type": "extension_ui_response", "id": requestID, "value": value])
+    }
+
     static func setModel(provider: String, modelID: String) -> String {
         line(["type": "set_model", "provider": provider, "modelId": modelID])
     }
@@ -117,8 +123,8 @@ enum PiStreamEvent: Equatable, Sendable {
     case usage(PiUsage)
     /// A blocking `confirm` dialog of an extension: Nook's approval extension asks before a tool runs.
     case confirm(requestID: String, title: String, message: String)
-    /// A dialog Nook does not draw (select, input, editor): answered as cancelled so the extension goes on.
-    case unsupportedDialog(requestID: String)
+    /// A `select`, `input` or `editor` dialog of an extension, as a question: options to pick from, or your own text.
+    case dialog(requestID: String, question: RunQuestion)
     /// Something Pi or an extension wants you to know.
     case notice(String)
     case compactionStarted
@@ -247,13 +253,29 @@ enum PiStreamParser {
             return [.confirm(requestID: id, title: (object["title"] as? String) ?? "", message: (object["message"] as? String) ?? "")]
         case "select", "input", "editor":
             guard let id = object["id"] as? String else { return [] }
-            return [.unsupportedDialog(requestID: id)]
+            return [.dialog(requestID: id, question: dialogQuestion(method, object))]
         case "notify":
             let message = (object["message"] as? String) ?? ""
             return message.isEmpty ? [] : [.notice(message)]
         default:
             return []
         }
+    }
+
+    /// An extension's `select` (its `options`, one to pick), `input` or `editor` (your own text) as a question. Pi's
+    /// dialogs carry a `title`, and some a `message` or `placeholder`: the title then heads the question. An `editor`'s
+    /// `prefill` is not offered: the question panel has no starting text.
+    static func dialogQuestion(_ method: String, _ object: [String: Any]) -> RunQuestion {
+        let title = ((object["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = [object["message"], object["placeholder"]].compactMap { $0 as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+        let options = method == "select"
+            ? ((object["options"] as? [String]) ?? []).filter { !$0.isEmpty }.map { RunQuestionOption(label: $0, description: "") }
+            : []
+        let question = detail ?? title
+        return RunQuestion(id: "value", header: detail == nil ? "" : title,
+                           question: question.isEmpty ? tr("pi.dialog.question") : question,
+                           options: options, multiSelect: false, allowsOther: options.isEmpty)
     }
 
     private static func usage(_ value: Any?) -> PiUsage? {

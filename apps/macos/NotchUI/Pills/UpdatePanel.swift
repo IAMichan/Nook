@@ -292,7 +292,7 @@ struct UpdatePanel: View {
                 }
                 .padding(NookTheme.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
+                .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control)
                 .textSelection(.enabled)
             }
             HStack(spacing: NookTheme.Spacing.md) {
@@ -388,7 +388,7 @@ struct UpdatePanel: View {
         }
         .padding(NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: NookTheme.Radius.control, style: .continuous)
+        .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: NookTheme.Radius.control)
     }
 }
 
@@ -419,7 +419,7 @@ private struct ChangeRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && url != nil ? DropdownStyle.hover : .clear))
+            .roundedBackground(hovering && url != nil ? DropdownStyle.hover : .clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

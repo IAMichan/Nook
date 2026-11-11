@@ -95,8 +95,18 @@ final class PiRPCTests: XCTestCase {
     func testDialogs() {
         XCTAssertEqual(PiStreamParser.parse(#"{"type":"extension_ui_request","id":"u1","method":"confirm","title":"Allow bash?","message":"{}"}"#),
                        [.confirm(requestID: "u1", title: "Allow bash?", message: "{}")])
-        XCTAssertEqual(PiStreamParser.parse(#"{"type":"extension_ui_request","id":"u2","method":"select","title":"Pick","options":["a"]}"#),
-                       [.unsupportedDialog(requestID: "u2")])
+        XCTAssertEqual(PiStreamParser.parse(#"{"type":"extension_ui_request","id":"u2","method":"select","title":"Pick","options":["a",""]}"#),
+                       [.dialog(requestID: "u2", question: RunQuestion(id: "value", header: "", question: "Pick",
+                                                                       options: [RunQuestionOption(label: "a", description: "")],
+                                                                       multiSelect: false, allowsOther: false))])
+        // An input or editor dialog takes your own text; a message under the title becomes the question.
+        XCTAssertEqual(PiStreamParser.parse(#"{"type":"extension_ui_request","id":"u3","method":"input","title":"Name","placeholder":"Your branch"}"#),
+                       [.dialog(requestID: "u3", question: RunQuestion(id: "value", header: "Name", question: "Your branch",
+                                                                       options: [], multiSelect: false, allowsOther: true))])
+        XCTAssertEqual(PiRPC.dialogResponse(requestID: "u3", value: "main"),
+                       #"{"id":"u3","type":"extension_ui_response","value":"main"}"# + "\n")
+        XCTAssertEqual(PiRPC.dialogResponse(requestID: "u3", value: nil),
+                       #"{"cancelled":true,"id":"u3","type":"extension_ui_response"}"# + "\n")
         XCTAssertEqual(PiStreamParser.parse(#"{"type":"extension_ui_request","method":"notify","message":"hello"}"#), [.notice("hello")])
         XCTAssertEqual(PiStreamParser.parse(#"{"type":"extension_ui_request","method":"setStatus","statusKey":"k"}"#), [])
     }

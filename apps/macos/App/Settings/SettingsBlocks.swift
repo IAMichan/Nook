@@ -26,7 +26,7 @@ struct ConfigPreview: View {
             .font(NookTheme.mono(11))
             .textSelection(.enabled)
             .padding(NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
+            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.chip)
         } footer: {
             Spacer()
             Button(tr("button.cancel"), action: onCancel)
@@ -370,9 +370,9 @@ struct Keycap: View {
             .padding(.horizontal, label.count > 1 ? 9 : 0)
             .frame(minWidth: 24, minHeight: 22)
             .background(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                NookTheme.shape(NookTheme.Radius.chip)
                     .fill(NookTheme.smoke)
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(NookTheme.line2))
+                    .roundedStrokeBorder(NookTheme.line2, radius: NookTheme.Radius.chip)
                     .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
             )
     }
@@ -422,6 +422,7 @@ struct WorkspaceSettingsSection: View {
             behavior
             TextGenerationSection()
             sessionTidying
+            SnoozeOptionsSection()
         case .projects: projects
         case .openIn: openIn
         case .browser: browser
@@ -510,7 +511,7 @@ struct WorkspaceSettingsSection: View {
             } else {
                 Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
                     ForEach(choices, id: \.self) { path in
-                        let name = URL(fileURLWithPath: path).lastPathComponent
+                        let name = (path as NSString).lastPathComponent
                         Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
                             .tag(path).help(AgentPathFormat.tilde(path))
                     }
@@ -913,8 +914,11 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
                 Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)
+                Toggle(tr("settings.ws.autoSettleClosed"), isOn: $inbox.autoSettle.settleOnClosedPullRequest)
                 Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
                         value: $inbox.autoSettle.inactivityDays, in: 1...30)
+                Toggle(tr("settings.ws.autoSettleKeepOpenPR"), isOn: $inbox.autoSettle.keepWithOpenPullRequest)
+                    .help(tr("settings.ws.autoSettleKeepOpenPR.help"))
             }
             Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
                 Text(tr("settings.ws.never")).tag(0)

@@ -57,7 +57,7 @@ struct ImageTray: View {
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 56, height: 56)
-                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                    .roundedClip(Theme.Radius.control)
                             }
                             Button {
                                 withAnimation(Theme.reveal) { _ = images.remove(at: index) }

@@ -364,7 +364,7 @@ final class AgentWorkTests: XCTestCase {
     }
 
     func testCustomAgentStore() {
-        let defaults = UserDefaults(suiteName: "nook.tests.acp." + UUID().uuidString)!
+        let defaults = scratchDefaults("nook.tests.acp")
         XCTAssertEqual(CustomAgents.load(defaults: defaults), [])
         let first = CustomAgent(profileID: "acp-a", name: "A", command: "a")
         CustomAgents.upsert(first, defaults: defaults)
@@ -755,7 +755,7 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(BrowserSearchEngine.address("swift actors", engine: .duckDuckGo)?.host, "duckduckgo.com")
         XCTAssertNil(BrowserSearchEngine.address("   ", engine: .bing))
         XCTAssertNil(BrowserSearchEngine.address("file:///etc/passwd", engine: .bing).flatMap { $0.isFileURL ? $0 : nil })
-        let defaults = UserDefaults(suiteName: "browser-search-\(UUID().uuidString)")!
+        let defaults = scratchDefaults("browser-search")
         XCTAssertEqual(BrowserSearchEngine.current(defaults: defaults), .duckDuckGo)
         defaults.set("kagi", forKey: BrowserSearchEngine.defaultsKey)
         XCTAssertEqual(BrowserSearchEngine.current(defaults: defaults), .kagi)
@@ -1100,5 +1100,39 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertNil(AvcConfiguration(Data([1, 0x64, 0, 0x1F, 0xFF, 0xE1, 0, 9, 0x67])), "a set longer than the record")
         XCTAssertEqual(AvcConfiguration.codecString(Data(record)), "avc1.64001f")
         XCTAssertEqual(DeviceHub.avccPath(udid: "U-1"), "/vendor/serve-sim/helper/U-1/stream.avcc")
+    }
+}
+
+/// One alert per monitor: a wake for a line of a monitor that still runs holds its completion (`WakeCompletion`).
+final class WakeCompletionTests: XCTestCase {
+    private func monitor(_ state: RunEvent.State) -> RunEvent {
+        var event = RunEvent(kind: .tool, text: "Monitor · tail -f build.log", tool: "Monitor", callID: "toolu_m", state: state)
+        event.background = true
+        return event
+    }
+
+    func testMonitorsAreBackgroundCommandsByToolName() {
+        XCTAssertTrue(BackgroundCommands.isMonitor(monitor(.running)))
+        var grok = monitor(.running)
+        grok.tool = "monitor"
+        XCTAssertTrue(BackgroundCommands.isMonitor(grok), "Grok names it in lower case")
+        var bash = monitor(.running)
+        bash.tool = "Bash"
+        XCTAssertFalse(BackgroundCommands.isMonitor(bash), "a dev server is a command, not a monitor")
+        var foreground = monitor(.running)
+        foreground.background = nil
+        XCTAssertFalse(BackgroundCommands.isMonitor(foreground), "a monitor call not yet in the background")
+    }
+
+    func testAWakeTurnIsHeldWhileItsMonitorRuns() {
+        let user = RunEvent(kind: .user, text: "Watch the build")
+        let wake = RunEvent(kind: .system, text: "Woke up", tool: "wake")
+        let answer = RunEvent(kind: .assistant, text: "Line 12: compiling")
+        XCTAssertTrue(WakeCompletion.holds([user, monitor(.running), wake, answer]))
+        XCTAssertFalse(WakeCompletion.holds([user, monitor(.done), wake, answer]), "the monitor ended: alert once")
+        XCTAssertFalse(WakeCompletion.holds([user, monitor(.running), answer]), "your own turn always alerts")
+        var command = monitor(.running)
+        command.tool = "Bash"
+        XCTAssertFalse(WakeCompletion.holds([user, command, wake, answer]), "a dev server left running holds nothing")
     }
 }

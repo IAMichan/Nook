@@ -500,5 +500,32 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["./scripts/core-tests.sh --filter PullRequestStackTests"]))
         XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Read", command: ["docs/pull_request_template.md"]))
         XCTAssertFalse(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["gh pr list", "gh prompt create"]))
+        XCTAssertTrue(PullRequestToolCall.showsPullRequest(tool: "Bash", command: ["gh pr merge 12 --squash"]), "a merge prints its link too")
+    }
+
+    func testShellMergesAndClosesOfEveryForgeCLI() {
+        for command in ["gh pr merge 12 --squash", "git push && gh pr merge --auto", "gh pr close 3", "gh stack merge",
+                        "glab mr merge 4", "glab mr accept 4", "glab mr close 4",
+                        "tea pr merge 7", "tea pulls merge 7", "tea pull merge 7", "tea pr m 7", "tea pull close 7", "fj pr close 7",
+                        "cafe pr merge 2", "cafe stack merge",
+                        "az repos pr update --id 9 --status completed", "az repos pr update --id 9 --status=abandoned"] {
+            XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: [command]), command)
+        }
+        for command in ["gh pr create --fill", "gh pr view 3", "glab mr view 4", "tea pull checkout 7", "tea pr list",
+                        "az repos pr update --id 9 --title x", "git merge main", "gh prompt merge"] {
+            XCTAssertFalse(PullRequestToolCall.closesPullRequest(command: [command]), command)
+        }
+    }
+
+    func testShellMergeFoundInEveryAgentsToolInput() {
+        // Claude Code's Bash, Codex's argument list, an ACP agent's nested input.
+        let claude = PullRequestToolCall.texts(in: ["command": "gh pr merge 12 --squash", "description": "Merge"])
+        let codex = PullRequestToolCall.texts(in: ["command": ["glab", "mr", "accept", "4"]])
+        let acp = PullRequestToolCall.texts(in: ["rawInput": ["cmd": "cd app\ntea pr m 7"]])
+        XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: claude))
+        XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: codex))
+        XCTAssertTrue(PullRequestToolCall.closesPullRequest(command: acp))
+        XCTAssertFalse(PullRequestToolCall.closesPullRequest(command: PullRequestToolCall.texts(in: ["file_path": "merge.swift"])))
+        XCTAssertEqual(PullRequestToolCall.texts(in: nil), [])
     }
 }

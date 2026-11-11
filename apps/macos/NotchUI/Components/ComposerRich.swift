@@ -131,11 +131,13 @@ final class ComposerModel: ObservableObject {
 
     // MARK: Suggestions
 
-    /// Looks at the end of the text and fills the list.
-    func update(for text: String, _ config: ComposerConfig) {
+    /// Looks at the text before the caret (UTF-16; nil: the end) and fills the list.
+    func update(for text: String, caret: Int? = nil, _ config: ComposerConfig) {
         search?.cancel()
+        // "@chat …" and "@open …" read the whole box, so they count with the caret at its end.
+        let atEnd = caret.map { $0 >= text.utf16.count } ?? true
         // Each list comes from its source once per key: the chats are every inbox thread, sorted.
-        let chatQuery = EmbeddedAppCatalog.chatQuery(in: text)
+        let chatQuery = atEnd ? EmbeddedAppCatalog.chatQuery(in: text) : nil
         let chats: [(name: String, detail: String)]? = chatQuery == nil ? nil : config.chats()
         // "@chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
         if let query = chatQuery, let all = chats, !all.isEmpty {
@@ -151,11 +153,11 @@ final class ComposerModel: ObservableObject {
             })
         }
         // "@open whats": the app list stays open past the space after "@open" and filters by the name typed after it.
-        if !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
+        if atEnd, !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
             return publish(appRows(query, config, chats: chats))
         }
-        guard let found = ComposerTrigger.detect(in: text) else { return close() }
+        guard let found = ComposerTrigger.detect(in: text, caret: caret) else { return close() }
         trigger = found
         switch found.kind {
         case .command:
@@ -192,9 +194,9 @@ final class ComposerModel: ObservableObject {
                 let files = await Task.detached(priority: .userInitiated) { FileSearch.rank(all, query: query) }.value
                 guard !Task.isCancelled, let self else { return }
                 let rows = files.map { path in
-                    ComposerSuggestion(id: "file:" + path, title: URL(fileURLWithPath: path).lastPathComponent, detail: path,
+                    ComposerSuggestion(id: "file:" + path, title: (path as NSString).lastPathComponent, detail: path,
                                        symbol: "doc", payload: .ref(ContextRef(kind: .file, id: path,
-                                                                                label: URL(fileURLWithPath: path).lastPathComponent)))
+                                                                                label: (path as NSString).lastPathComponent)))
                 }
                 self.publish(people + models + rows + sessions)
             }
@@ -321,23 +323,29 @@ final class ComposerModel: ObservableObject {
 
     /// The text after choosing a line: a command runs or fills the box, a reference becomes a link.
     func accept(_ suggestion: ComposerSuggestion, in text: String, _ config: ComposerConfig) -> String {
+        accepting(suggestion, in: text, config).text
+    }
+
+    /// As `accept`, with where the caret goes (UTF-16): right after what went in where the trigger was typed. Nil leaves
+    /// it at the end.
+    func accepting(_ suggestion: ComposerSuggestion, in text: String, _ config: ComposerConfig) -> (text: String, caret: Int?) {
         if case .stash(let index) = suggestion.payload {
             defer { close() }
             let restored = stash.restore(at: index) ?? text
             onStashChanged?()
-            return restored
+            return (restored, nil)
         }
-        guard let trigger else { return text }
+        guard let trigger else { return (text, nil) }
         defer { close() }
         switch suggestion.payload {
         case .stash:
-            return text
+            return (text, nil)
         case .command(let command):
-            if command.action == .insert { return trigger.replacing(in: text, with: command.insertion) }
+            if command.action == .insert { return trigger.inserting(command.insertion, in: text) }
             config.onCommand(command)
-            return String(text.dropLast(trigger.token.count)).trimmingCharacters(in: .whitespaces)
+            return trigger.removing(from: text)
         case .ref(let ref):
-            return trigger.replacing(in: text, with: config.plainReferences ? ContextRefs.plainText(ref) : ContextRefs.link(ref))
+            return trigger.inserting(config.plainReferences ? ContextRefs.plainText(ref) : ContextRefs.link(ref), in: text)
         }
     }
 
@@ -392,10 +400,15 @@ final class ComposerModel: ObservableObject {
         if secretOffer != nil { secretOffer = nil }
     }
 
-    /// A paste that was too big for the box: keep it aside and put a reference in its place.
-    func keepPaste(old: String, new: String) -> String? {
-        guard new.utf8.count - old.utf8.count >= PasteRule.attachThreshold,
-              let parts = PasteRule.split(old: old, new: new), PasteRule.shouldAttach(parts.inserted) else { return nil }
+    /// The next paste stays editable text however big it is (⇧⌘V), unless it would push the message past its limit. The
+    /// composer reads and clears it on the next change of the text.
+    var pastesAsText = false
+
+    /// A paste that was too big for the box, or that would make the message too long: keep it aside and put a reference
+    /// in its place. `asText` (⇧⌘V) keeps a big paste as text. Typing never counts: under 16 characters nothing is kept aside.
+    func keepPaste(old: String, new: String, asText: Bool = false) -> String? {
+        guard new.utf8.count - old.utf8.count >= 16, let parts = PasteRule.split(old: old, new: new),
+              PasteRule.attaches(parts.inserted, result: new, asText: asText) else { return nil }
         let id = String(UUID().uuidString.prefix(8)).lowercased()
         excerpts[id] = parts.inserted
         let ref = ContextRef(kind: .paste, id: id, label: PasteRule.fileName(for: parts.inserted))
@@ -462,14 +475,14 @@ struct ComposerSuggestionList: View {
                     }
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(index == model.selection ? NookTheme.smoke : Color.clear))
+                    .roundedBackground(index == model.selection ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(NookTheme.Spacing.sm)
-        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
+        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
         .accessibilityElement(children: .contain)
     }
 }
@@ -488,7 +501,7 @@ struct ComposerPlusMenu<Extra: View>: View {
             ComposerIcon(symbol: "plus")
         }
         .composerMenu()
-        .help(tr("chat.more"))
+        .composerTip(tr("chat.more"))
         .accessibilityLabel(tr("chat.more"))
     }
 }
@@ -510,63 +523,33 @@ enum ComposerFilePicker {
     }
 }
 
-/// The microphone of the agents' composer: you speak, the words appear in the box, you send when you are ready. (The chat's
-/// microphone asks Nook straight away and speaks the answer back; both sit in the same place.)
-struct ComposerMic: View {
-    @EnvironmentObject private var app: AppModel
-    @Binding var text: String
-    @State private var listening = false
-
-    var body: some View {
-        NookIconButton(systemName: listening ? "mic.fill" : "mic", label: tr("button.talk"), size: 30) { toggle() }
-    }
-
-    private func join(_ base: String, _ spoken: String) -> String {
-        let clean = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
-        if base.isEmpty { return clean }
-        return clean.isEmpty ? base : base + " " + clean
-    }
-
-    private func toggle() {
-        if listening {
-            app.voice.finishNow()
-            return
-        }
-        Task { @MainActor in
-            guard await app.voice.requestPermissions() else { return }
-            app.wake.stop()
-            app.speech.stop()
-            let base = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            listening = true
-            do {
-                try app.voice.start(
-                    onPartial: { partial in text = join(base, partial) },
-                    onFinish: { final in
-                        text = join(base, final)
-                        listening = false
-                        app.updateWakeWord()
-                    }
-                )
-            } catch {
-                listening = false
-            }
-        }
-    }
-}
-
 /// How full the agent's context window is: a small ring that starts at the top, amber above 80 % and coral above 90 %.
 /// Hover says how much, and once it fills up suggests `/compact`; a button asks the agent to summarize when it can.
 struct ComposerContextRing: View {
     let used: Int
     let window: Int
     var onCompact: (() -> Void)? = nil
+    /// Where the agent summarizes by itself (`AutoCompactMark`): a tick on the ring, and a line in its help.
+    var autoCompactAt: Int? = nil
     @State private var open = false
 
     private var fraction: Double { window > 0 ? min(1, Double(used) / Double(window)) : 0 }
 
+    /// The tick's place on the ring, when it falls inside the window.
+    private var markFraction: Double? {
+        guard let autoCompactAt, window > 0, autoCompactAt < window else { return nil }
+        return Double(autoCompactAt) / Double(window)
+    }
+
+    /// "Compacts automatically at about 280k tokens."
+    private var autoCompactLine: String? {
+        autoCompactAt.map { tr("compose.context.autoCompact", ContextMeter.tokensText($0)) }
+    }
+
     /// "Context window 84% · 168k/200k", and past the warning line the suggestion to summarize.
     private var help: String {
-        let base = tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window))
+        var base = tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window))
+        if let autoCompactLine { base += "\n" + autoCompactLine }
         guard ContextMeter.suggestsCompact(fraction), onCompact != nil else { return base }
         return base + "\n" + tr("compose.context.nearlyFull")
     }
@@ -580,13 +563,19 @@ struct ComposerContextRing: View {
                 Circle().trim(from: 0, to: fraction)
                     .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
+                if let mark = markFraction {
+                    // The auto-compact point: a short, bright stretch of the ring.
+                    Circle().trim(from: max(0, mark - 0.012), to: min(1, mark + 0.012))
+                        .stroke(NookTheme.paper, style: StrokeStyle(lineWidth: 3.5))
+                        .rotationEffect(.degrees(-90))
+                }
             }
             .frame(width: 16, height: 16)
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .composerTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 8) {
@@ -594,6 +583,11 @@ struct ComposerContextRing: View {
                 ProgressView(value: fraction).tint(tint)
                 Text(tr("compose.context.detail", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
                     .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                if let autoCompactLine {
+                    Text(autoCompactLine)
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if ContextMeter.suggestsCompact(fraction), onCompact != nil {
                     Text(tr("compose.context.nearlyFull"))
                         .font(NookTheme.TextStyle.detail).foregroundStyle(tint)
@@ -611,9 +605,31 @@ struct ComposerContextRing: View {
     }
 }
 
-/// How much of its subscription the session's account has used, among the choices of the composer, right after the effort: a
-/// small ring filled to the window that runs out first, with its percentage beside it, amber from 75 % and coral from 90 %. Click for every window as one line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits",
-/// the usage limits modal with every account (`UsageModal`). Every agent that reports limits gets it.
+/// Back at a long session whose prompt cache expired (`ReturnCompaction`): "Compact · 312k" by the send button means your
+/// message goes after a summary; one click makes it "Keep", and the whole history goes with it.
+struct CompactFirstChip: View {
+    let tokens: Int
+    let compacts: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        let size = ContextMeter.tokensText(tokens)
+        Button(action: toggle) {
+            ComposerPill(symbol: compacts ? "arrow.down.right.and.arrow.up.left" : "text.alignleft",
+                         text: tr(compacts ? "compose.compactFirst.compact" : "compose.compactFirst.keep", size),
+                         tint: compacts ? NookTheme.amber : nil, showsChevron: false)
+        }
+        .buttonStyle(.plain)
+        .composerTip(tr(compacts ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp", size))
+    }
+}
+
+/// How much of its subscription the session's account has used, among the choices of the composer, right after the effort:
+/// the short window (5 hours) and the long one (week) at once, as two rings in one (outer the short window, inner the long
+/// one) beside two small labelled lines ("5h 38%", "W 12%") that stack inside the chip's height, so it hardly grows wider
+/// than a single number. Each window takes its own tone: amber from 75 %, coral from 90 %. Click for every window as one
+/// line each (`UsageLimitRows`, reset and pace in their tooltips) and "All limits", the usage limits modal with every
+/// account (`UsageModal`). Every agent that reports limits gets it.
 ///
 /// Equatable, and without the app model of its own: composers redraw for every change of the workspace, and this one only
 /// has to when the limits do.
@@ -641,10 +657,7 @@ struct ComposerUsageRing: View, Equatable {
         }
     }
 
-    /// The fullest window: only shows 100 % once every window is full; otherwise the fullest one that is not (at most 99 %).
-    private var used: Int {
-        100 - LimitPool.left(UsageLimits.effectiveHighestPercent(limits.map(\.percent)))
-    }
+    private typealias Line = UsageLimits.ChipLine
 
     /// "Limits of Work: 5 hours: 38% used · Week: 12% used".
     private var help: String {
@@ -659,36 +672,61 @@ struct ComposerUsageRing: View, Equatable {
     }
 
     var body: some View {
-        let tint = UsageTone.fill(used: used, calm: NookTheme.textSecondary)
+        let lines = UsageLimits.chipLines(limits.map { ($0.duration, $0.percent, $0.window) })
         Button { open.toggle() } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
-                ring(tint: tint)
-                Text("\(used)%")
-                    .font(NookTheme.TextStyle.label.monospacedDigit())
-                    .foregroundStyle(UsageTone.level(used: used) == .calm ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(used: used))
+                rings(lines)
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(lines.indices, id: \.self) { index in
+                            Text(lines[index].short)
+                                .font(NookTheme.font(9.5, .semibold))
+                                .foregroundStyle(NookTheme.textTertiary)
+                        }
+                    }
+                    VStack(alignment: .trailing, spacing: 0) {
+                        ForEach(lines.indices, id: \.self) { index in
+                            let used = lines[index].used
+                            Text("\(used)%")
+                                .font(NookTheme.TextStyle.caption.monospacedDigit())
+                                .foregroundStyle(UsageTone.level(used: used) == .calm
+                                                 ? (hovering ? NookTheme.paper : NookTheme.textSecondary) : UsageTone.text(used: used))
+                        }
+                    }
+                }
+                .lineLimit(1)
+                .fixedSize()
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(hovering || open ? NookTheme.smoke : Color.clear))
+            .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help(help)
+        .composerTip(help)
         .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: shown, account: account, open: $open) }
     }
 
-    private func ring(tint: Color) -> some View {
+    /// The short window as the outer ring, the long one inside it, each filled from the top in its own tone.
+    private func rings(_ lines: [Line]) -> some View {
         ZStack {
-            Circle().stroke(NookTheme.line2, lineWidth: 2)
-            Circle().trim(from: 0, to: CGFloat(used) / 100)
-                .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+            ForEach(lines.indices, id: \.self) { index in
+                let used = lines[index].used
+                let size: CGFloat = index == 0 ? 16 : 9
+                ZStack {
+                    Circle().inset(by: 1).stroke(NookTheme.line2, lineWidth: 2)
+                    Circle().inset(by: 1).trim(from: 0, to: CGFloat(used) / 100)
+                        .stroke(UsageTone.fill(used: used, calm: NookTheme.textSecondary),
+                                style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: size, height: size)
+            }
         }
-        .frame(width: 11, height: 11)
+        .frame(width: 16, height: 16)
     }
 
 }

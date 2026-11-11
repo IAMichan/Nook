@@ -119,11 +119,11 @@ private struct OverviewTile: View {
             .background(
                 LinearGradient(colors: [tint.opacity(urgent ? 0.14 : 0.06), tint.opacity(0)],
                                startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                in: Theme.shape(Theme.Radius.panel)
             )
             .cardBackground(Theme.surface, stroke: urgent ? tint.opacity(0.35) : Theme.line2,
-                            radius: Theme.Radius.panel, style: .continuous)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+                            radius: Theme.Radius.panel)
+            .roundedHitShape(Theme.Radius.panel)
         }
         .buttonStyle(PressFade())
         .accessibilityElement(children: .combine)

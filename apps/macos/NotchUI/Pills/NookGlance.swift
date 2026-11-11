@@ -183,9 +183,8 @@ private struct GlanceCard<Content: View>: View {
             }
             .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(hovering ? NookTheme.graphite : NookTheme.field, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

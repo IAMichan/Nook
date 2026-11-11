@@ -128,7 +128,7 @@ extension SettingsView {
         .frame(maxWidth: .infinity)
         .padding(.vertical, NookTheme.Spacing.xl)
         .padding(.horizontal, NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.surface))
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.sheet)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("settings.appearance.preview"))
     }
@@ -167,10 +167,9 @@ extension SettingsView {
             .frame(maxWidth: .infinity)
             .padding(.vertical, NookTheme.Spacing.lg)
             .padding(.horizontal, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(selected ? NookTheme.smoke : NookTheme.graphite))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+            .roundedBackground(selected ? NookTheme.smoke : NookTheme.graphite, radius: NookTheme.Radius.panel)
+            .roundedStrokeBorder(selected ? NookTheme.iris : Color.clear, radius: NookTheme.Radius.panel)
+            .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -276,7 +275,7 @@ extension SettingsView {
             }
         }
         .padding(NookTheme.Spacing.md)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.graphite))
+        .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.panel)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Self.title(for: theme))
     }
@@ -302,9 +301,8 @@ extension SettingsView {
             .frame(height: 44)
             .frame(maxWidth: .infinity)
             .background(Color(hex: palette.canvas))
-            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .strokeBorder(chosen ? NookTheme.iris : NookTheme.line2, lineWidth: chosen ? 2 : 1))
+            .roundedClip(NookTheme.Radius.chip)
+            .roundedStrokeBorder(chosen ? NookTheme.iris : NookTheme.line2, radius: NookTheme.Radius.chip, lineWidth: chosen ? 2 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -11,6 +11,9 @@ struct TranscriptConversation: View {
     let accent: Color
     /// The agent is working: keep reading and show that it is busy.
     var working = false
+    /// When the agent started compacting the conversation, as its hooks said (a session in a terminal); nil when it does
+    /// not. The live line says so until the compacted notice is in the transcript, also between turns.
+    var compactingSince: Date? = nil
     /// Shown when the transcript gives nothing once it was read, or when there is none to read.
     var fallback: [AgentChatMessage] = []
     var onReply: ((String) -> Void)? = nil
@@ -45,6 +48,20 @@ struct TranscriptConversation: View {
     /// The transcript was read fresh for this view (not only taken from the cache): what is new since shows then.
     @State private var freshRead = false
     @State private var derived = TranscriptDerived()
+    /// "Find in conversation" (⌘F): the bar is open, what it looks for, its matches and the one chosen.
+    @State private var finding = false
+    @State private var findQuery = ""
+    @State private var found = TranscriptSearch.Result.idle
+    @State private var findIndex: Int?
+
+    /// The chosen match while the find bar is open.
+    private var foundMatch: TranscriptSearch.Match? {
+        guard finding, let findIndex, found.matches.indices.contains(findIndex) else { return nil }
+        return found.matches[findIndex]
+    }
+    /// The first turn drawn (`HistoryWindow`): a long conversation opens with its latest turns, "Show earlier messages"
+    /// and a mark on the rail widen it. Nil until the conversation has landed.
+    @State private var historyStart: Int?
 
     /// The conversation as read from the transcript; before this view's first read, as it was read last time, so a
     /// conversation you switch back to shows from the first frame instead of after the read is under way.
@@ -61,6 +78,12 @@ struct TranscriptConversation: View {
         TranscriptPresentation.shown(read: transcriptMessages, fallback: fallback, readFinished: readFinished)
     }
 
+    /// The agent compacts the conversation now: its hooks said it started, and the transcript has no compacted notice
+    /// for it yet (`HookCompaction`).
+    private var compacting: Bool {
+        compactingSince.map { !HookCompaction.finished(shown, since: $0) } ?? false
+    }
+
     /// The session's key in TimelineVisitStore: its transcript; nil for a conversation read from elsewhere.
     private var visitKey: String? { path.isEmpty ? nil : "transcript:" + path }
 
@@ -71,7 +94,12 @@ struct TranscriptConversation: View {
     var body: some View {
         // Only a conversation read from the transcript is kept for the next visit, not the fallback shown before it.
         let _ = derived.update(shown, working: working, directory: directory, path: transcriptMessages.isEmpty ? "" : path)
-        let rows = derived.rows
+        let allRows = derived.rows
+        // Only the latest turns of a long conversation are drawn, from the turn the window starts at.
+        let perTurn = TranscriptPresentation.rowsPerTurn(allRows)
+        let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: perTurn), turnCount: perTurn.count)
+        let firstRow = min(allRows.count, HistoryWindow.firstRow(rowsPerTurn: perTurn, start: start))
+        let rows = firstRow > 0 ? Array(allRows[firstRow...]) : allRows
         let outputs = derived.outputs
         let turns = derived.turns
         let beforeNew = newSince.flatMap { id in rows.firstIndex { $0.id == id } }.flatMap { $0 > 0 ? rows[$0 - 1].id : nil }
@@ -91,6 +119,15 @@ struct TranscriptConversation: View {
                                 PatientSpinner().frame(height: 160)
                             }
                         }
+                        if firstRow > 0 {
+                            TimelineEarlierRow {
+                                // What you looked at stays where it is: the earlier turns go above it.
+                                let anchor = rows.first?.id
+                                scroll.userScrolled()
+                                historyStart = HistoryWindow.earlier(from: start)
+                                if let anchor { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } }
+                            }
+                        }
                         ForEach(rows) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -103,6 +140,10 @@ struct TranscriptConversation: View {
                                 // The "new since" line is a hairline of its own: a fold right above it gives up its own.
                                 self.row(row, ruled: row.id != beforeNew).pinProbe(row.id, room: pinRoom).id(row.id)
                             }
+                        }
+                        // A compaction between turns (your /compact while the agent waits): the line under the last turn.
+                        if compacting && !working {
+                            TranscriptLiveLine(activity: .compacting).id("compacting")
                         }
                         if let footer {
                             Text(footer)
@@ -157,10 +198,17 @@ struct TranscriptConversation: View {
                     }
                 }
                 .overlay(alignment: .leading) {
-                    if overflows, !derived.marks.isEmpty {
+                    if overflows, !finding, !derived.marks.isEmpty {
                         TranscriptPromptRail(marks: derived.marks) { mark in
                             scroll.userScrolled()
-                            withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                            // A message the window leaves out widens it first.
+                            let turn = TranscriptPresentation.turn(ofRow: mark.row, in: derived.rows)
+                            if let turn, turn < start {
+                                historyStart = HistoryWindow.revealing(turn, from: start)
+                                DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) } }
+                            } else {
+                                withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                            }
                         }
                         .padding(.vertical, NookTheme.Spacing.md)
                         .transition(.opacity)
@@ -177,7 +225,7 @@ struct TranscriptConversation: View {
                 // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
                 .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
                     (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
-                        .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty) {
+                        .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty && !finding) {
                             scroll.jumpedToEnd()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                         }
@@ -202,6 +250,30 @@ struct TranscriptConversation: View {
                     DispatchQueue.main.async { scrollToEnd(proxy) }
                 }
                 .onDisappear { rememberVisit() }
+                .overlay(alignment: .top) {
+                    if finding {
+                        TimelineFindBar(query: $findQuery, state: found.state, count: found.matches.count, current: findIndex,
+                                        previous: { stepFind(proxy, forward: false) },
+                                        next: { stepFind(proxy, forward: true) },
+                                        close: closeFind)
+                            .padding(.horizontal, NookTheme.Spacing.xs)
+                            .padding(.top, NookTheme.Spacing.xs)
+                    }
+                }
+                .keyCommand("chat.find") { openFind() }
+                .onChange(of: findQuery) { _, query in
+                    found = TranscriptSearch.search(allRows, query: query)
+                    findIndex = found.next(after: nil)
+                    if let findIndex { reveal(findIndex, proxy) }
+                }
+                // A working agent writes on: its new words count too, and the chosen match stays where it was.
+                // Over every row, also the turns the window leaves out: a match there widens it.
+                .onChange(of: allRows) { _, rows in
+                    guard finding, !findQuery.isEmpty else { return }
+                    let chosen = foundMatch?.rowID
+                    found = TranscriptSearch.search(rows, query: findQuery)
+                    findIndex = chosen.flatMap { id in found.matches.firstIndex { $0.rowID == id } } ?? found.next(after: nil)
+                }
             }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
@@ -211,11 +283,13 @@ struct TranscriptConversation: View {
         .environment(\.fileLinkBase, directory)
         // What the agent produced goes to the outputs tab and diff panel of the side panel around the conversation (`SessionWorkbench`).
         .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns, pullRequest: derived.pullRequest))
-        .task(id: path + (working ? "#working" : "")) {
+        // A compaction between turns is followed too, until its notice is in the transcript.
+        .task(id: path + (working || compactingSince != nil ? "#working" : "")) {
             // Another session in the same place: its conversation as read last time shows at once (never the previous
             // session's), and the read below brings it up to date.
             if readPath != path {
                 readPath = path
+                historyStart = nil
                 messages = TranscriptCache.messages(path) ?? []
                 loaded = !messages.isEmpty
             }
@@ -235,7 +309,7 @@ struct TranscriptConversation: View {
                 loaded = true
                 freshRead = true
                 // An earlier session does not change any more: read once.
-                guard working else { break }
+                guard working || compacting else { break }
                 try? await Task.sleep(nanoseconds: interval)
             }
         }
@@ -249,9 +323,50 @@ struct TranscriptConversation: View {
         TranscriptRowView(row: row, answers: row.id == derived.answerable, cards: derived.rowCards[row.id] ?? [:],
                           checks: derived.foldChecks[row.id] ?? [],
                           open: open.isEmpty ? [] : open.intersection(derived.rowOpenKeys[row.id] ?? []), ruled: ruled, directory: directory,
-                          side: sideLink, live: row.id == "live" ? shown : [], onReply: onReply,
+                          side: sideLink, live: row.id == "live" ? shown : [], compacting: row.id == "live" && compacting,
+                          // Only the row with the match, or the fold around it, draws again as the choice moves.
+                          found: foundMatch.flatMap { $0.rowID == row.id || $0.containers.contains(row.id) ? $0.rowID : nil },
+                          onReply: onReply,
                           toggle: { toggle($0) })
             .equatable()
+    }
+
+    // MARK: Find
+
+    private func openFind() {
+        finding = true
+        scroll.findStarted()
+    }
+
+    private func closeFind() {
+        finding = false
+        findQuery = ""
+        found = .idle
+        findIndex = nil
+        scroll.findEnded()
+    }
+
+    private func stepFind(_ proxy: ScrollViewProxy, forward: Bool) {
+        guard let target = forward ? found.next(after: findIndex) : found.previous(before: findIndex) else { return }
+        findIndex = target
+        reveal(target, proxy)
+    }
+
+    /// Opens the folds around the match, then scrolls to it.
+    private func reveal(_ index: Int, _ proxy: ScrollViewProxy) {
+        guard found.matches.indices.contains(index) else { return }
+        let match = found.matches[index]
+        scroll.userScrolled()
+        // A match in a turn the window leaves out widens it first (its top-level row: the outermost fold, or itself).
+        let perTurn = TranscriptPresentation.rowsPerTurn(derived.rows)
+        let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: perTurn), turnCount: perTurn.count)
+        if let turn = TranscriptPresentation.turn(ofRow: match.containers.first ?? match.rowID, in: derived.rows), turn < start {
+            historyStart = HistoryWindow.revealing(turn, from: start)
+        }
+        if !match.containers.allSatisfy(open.contains) {
+            withAnimation(NookTheme.reveal) { open.formUnion(match.containers) }
+        }
+        DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(match.rowID, anchor: .center) } }
     }
 
     private func toggle(_ key: String) {
@@ -303,6 +418,11 @@ struct TranscriptConversation: View {
     /// again while the layout settles: the lazy rows only learn their real height once laid out, so a single scroll from
     /// far up lands short of the end. Stops when you scroll away in the meantime.
     private func land(_ proxy: ScrollViewProxy) {
+        // The window opens on the latest turns and stays there as new ones come in.
+        if historyStart == nil {
+            let perTurn = TranscriptPresentation.rowsPerTurn(derived.rows)
+            if !perTurn.isEmpty { historyStart = HistoryWindow.initialStart(rowsPerTurn: perTurn) }
+        }
         newSince = visit.flatMap { TimelineLanding.firstNew(visitRows, since: $0.lastViewedAt) }
         scroll.jumpedToEnd()
         scrollToEnd(proxy)
@@ -336,6 +456,10 @@ private struct TranscriptRowView: View, Equatable {
     let side: SessionSideLink
     /// The whole conversation, for the live line only (what the agent does now and its task list); empty for other rows.
     let live: [AgentChatMessage]
+    /// The live line's agent compacts the conversation (`HookCompaction`); false for other rows.
+    let compacting: Bool
+    /// The row of the find bar's chosen match, lit up (it can sit inside a fold this row holds).
+    let found: String?
     let onReply: ((String) -> Void)?
     let toggle: (String) -> Void
 
@@ -343,6 +467,7 @@ private struct TranscriptRowView: View, Equatable {
         lhs.row == rhs.row && lhs.answers == rhs.answers && lhs.ruled == rhs.ruled && lhs.directory == rhs.directory
             && lhs.side.shownFile == rhs.side.shownFile && (lhs.onReply == nil) == (rhs.onReply == nil)
             && lhs.open == rhs.open && lhs.cards == rhs.cards && lhs.checks == rhs.checks && lhs.live == rhs.live
+            && lhs.found == rhs.found && lhs.compacting == rhs.compacting
     }
 
     var body: some View {
@@ -376,6 +501,15 @@ private struct TranscriptRowView: View, Equatable {
     /// Every row but a fold (a fold holds only these).
     @ViewBuilder
     private func flatRow(_ row: TranscriptRow, answers: Bool) -> some View {
+        let lit = row.id == found
+        flatRowContent(row, answers: answers)
+            .padding(.horizontal, lit ? NookTheme.Spacing.xs : 0)
+            .padding(.vertical, lit ? NookTheme.Spacing.xxs : 0)
+            .roundedBackground(NookTheme.iris.opacity(lit ? 0.16 : 0), radius: NookTheme.Radius.control)
+    }
+
+    @ViewBuilder
+    private func flatRowContent(_ row: TranscriptRow, answers: Bool) -> some View {
         switch row {
         case .user(let message):
             // Space above your message: each turn starts as its own block, as in the Nook chat.
@@ -412,7 +546,8 @@ private struct TranscriptRowView: View, Equatable {
         case .live(let step, let thought):
             // The agent's task list, live, then why it does what it does now (the thought right before it) and what it
             // does in words rather than a bare "Thinking…".
-            let activity = step.map { AgentActivity.of($0) }
+            // While it compacts (its hooks said so) the agent does nothing else.
+            let activity: AgentActivity = compacting ? .compacting : step.map { AgentActivity.of($0) }
                 ?? (thought == nil ? TranscriptPresentation.activity(live) : .thinking(""))
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 if let thought { thinking(thought) }

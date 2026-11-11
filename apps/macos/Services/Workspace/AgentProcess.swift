@@ -25,7 +25,7 @@ struct LaunchSpec: Equatable, Sendable {
 
     /// For display: without environment and with long arguments truncated, so sensitive information is never shown.
     var displayCommand: String {
-        let program = URL(fileURLWithPath: executable).lastPathComponent
+        let program = (executable as NSString).lastPathComponent
         let shown = arguments.map { argument -> String in
             let short = argument.count > 48 ? String(argument.prefix(45)) + "…" : argument
             return short.contains(" ") ? "\"\(short)\"" : short
@@ -66,6 +66,8 @@ enum AgentCommand {
         var effort: String? = nil
         /// The speed tier (`SpeedTiers`): Claude Code's fast mode in its settings, Codex's `service_tier`; nil is standard.
         var speedTier: String? = nil
+        /// Claude Code's Ultracode (`Ultracode`): nil leaves your own setting.
+        var ultracode: Bool? = nil
         /// An ACP agent you added: its command, run by `executable` (your login shell).
         var customAgent: CustomAgent? = nil
         /// Settings › Agents: no agent credits in commits and pull requests (`AgentCredits.commitsKey`).
@@ -92,7 +94,8 @@ enum AgentCommand {
                 "--settings", AgentCredits.claudeSettings(omit: input.omitAgentCredits,
                                                           env: input.toolSearch.map { ["ENABLE_TOOL_SEARCH": $0] } ?? [:],
                                                           extra: input.tuning.claudeSettings
-                                                              .merging(SpeedTiers.claudeSettings(tier: input.speedTier)) { $1 })
+                                                              .merging(SpeedTiers.claudeSettings(tier: input.speedTier)) { $1 }
+                                                              .merging(Ultracode.claudeSettings(input.ultracode)) { $1 })
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }

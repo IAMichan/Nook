@@ -5,6 +5,9 @@ import Foundation
 
 let chatTimelineTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "compose.limits.shortHours": "%ldu",
+        "compose.limits.shortWeek": "W",
+        "compose.limits.shortDays": "%ldd",
         "compose.limits.help": "Limieten van %@: %@",
         "selection.ask": "Vraag hierover",
         "compose.quote.remove": "Citaat weghalen",
@@ -13,6 +16,9 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "Het contextvenster raakt vol: /compact vat het gesprek samen.",
     ],
     .en: [
+        "compose.limits.shortHours": "%ldh",
+        "compose.limits.shortWeek": "W",
+        "compose.limits.shortDays": "%ldd",
         "compose.limits.help": "Limits of %@: %@",
         "selection.ask": "Ask About This",
         "compose.quote.remove": "Remove quote",
@@ -21,6 +27,9 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "The context window is filling up: /compact summarizes the conversation.",
     ],
     .de: [
+        "compose.limits.shortHours": "%ldh",
+        "compose.limits.shortWeek": "W",
+        "compose.limits.shortDays": "%ldT",
         "compose.limits.help": "Limits von %@: %@",
         "selection.ask": "Hierzu fragen",
         "compose.quote.remove": "Zitat entfernen",
@@ -29,6 +38,9 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "Das Kontextfenster wird voll: /compact fasst das Gespräch zusammen.",
     ],
     .fr: [
+        "compose.limits.shortHours": "%ldh",
+        "compose.limits.shortWeek": "S",
+        "compose.limits.shortDays": "%ldj",
         "compose.limits.help": "Limites de %@ : %@",
         "selection.ask": "Poser une question à ce sujet",
         "compose.quote.remove": "Retirer la citation",
@@ -37,6 +49,9 @@ let chatTimelineTranslations: [AppLanguage: [String: String]] = [
         "compose.context.nearlyFull": "La fenêtre de contexte se remplit : /compact résume la conversation.",
     ],
     .es: [
+        "compose.limits.shortHours": "%ldh",
+        "compose.limits.shortWeek": "S",
+        "compose.limits.shortDays": "%ldd",
         "compose.limits.help": "Límites de %@: %@",
         "selection.ask": "Preguntar sobre esto",
         "compose.quote.remove": "Quitar cita",

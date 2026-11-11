@@ -287,6 +287,24 @@ final class PullRequestForgeGitLabTests: XCTestCase {
         XCTAssertEqual(GitLabPullRequestForge.mergedSHA([:]), "")
     }
 
+    func testRequestChangesAnswersOfNewAndOldGitLab() {
+        typealias Outcome = GitLabPullRequestForge.MutationOutcome
+        let field = "mergeRequestRequestChanges"
+        XCTAssertEqual(GitLabPullRequestForge.mutationOutcome(["data": [field: ["errors": [String]()]]], field: field), Outcome.done)
+        XCTAssertEqual(GitLabPullRequestForge.mutationOutcome(["data": [field: ["errors": ["Merge request is locked"]]]], field: field),
+                       Outcome.refused(["Merge request is locked"]))
+        // A server older than the mutation: the review falls back to a note.
+        let old: [String: Any] = ["errors": [["message": "Field 'mergeRequestRequestChanges' doesn't exist on type 'Mutation'"]]]
+        XCTAssertEqual(GitLabPullRequestForge.mutationOutcome(old, field: field), Outcome.unsupported)
+        let noArgument: [String: Any] = ["errors": [["message": "Argument 'operationMode' on InputObject 'MergeRequestSetReviewersInput' isn't defined"]]]
+        XCTAssertEqual(GitLabPullRequestForge.mutationOutcome(noArgument, field: "mergeRequestSetReviewers"), Outcome.unsupported)
+        let denied: [String: Any] = ["data": [field: NSNull()], "errors": [["message": "The resource that you are attempting to access does not exist or you don't have permission"]]]
+        XCTAssertEqual(GitLabPullRequestForge.mutationOutcome(denied, field: field),
+                       Outcome.refused(["The resource that you are attempting to access does not exist or you don't have permission"]))
+        XCTAssertTrue(GitLabPullRequestForge.requestChangesMutation.contains("mergeRequestRequestChanges"))
+        XCTAssertTrue(GitLabPullRequestForge.setReviewerMutation.contains("operationMode: APPEND"))
+    }
+
     func testUsernamesKeepDotsAndUnderscores() {
         XCTAssertEqual(GitLabPullRequestForge.usernames(["@anna.b, bob_c", "ANNA.B"]), ["anna.b", "bob_c"])
     }

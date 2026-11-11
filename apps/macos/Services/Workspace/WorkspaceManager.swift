@@ -23,6 +23,10 @@ struct PendingQuestion: Identifiable, Equatable {
     enum Origin: Equatable {
         case codex(RPCID)
         case claude(requestID: String, input: JSONBox)
+        /// A Pi extension's dialog (select, input, editor): answered with `extension_ui_response`.
+        case pi(requestID: String)
+        /// A question the agent asked without waiting for it (Codex's async message): the answer goes as a message.
+        case message
     }
 
     let id: String
@@ -30,6 +34,9 @@ struct PendingQuestion: Identifiable, Equatable {
     let questions: [RunQuestion]
     let origin: Origin
     let created: Date
+
+    /// Nothing waits for this answer: the agent goes on, and the answer reaches it as a message of yours.
+    var answersAsMessage: Bool { origin == .message }
 }
 
 /// Latest Git snapshot observed by Nook for a session.
@@ -178,6 +185,9 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// Sessions whose latest wake turn ended while a monitor still runs: its completion waits for the monitor
+    /// (`WakeCompletion`), so you are told once instead of for every line the monitor printed.
+    var heldWakeCompletions: Set<UUID> = []
     /// Sessions whose turn ended while their subagents or commands still work in the background: the list keeps showing
     /// them as working. Published, unlike the timelines it comes from: a list row has to change when the last one ends.
     @Published var subagentsWorking: Set<UUID> = []
@@ -196,6 +206,8 @@ final class WorkspaceManager: ObservableObject {
     var onCodexRateLimits: ((JSONBox, String) -> Void)?
     /// A turn stopped on a usage limit: the limits shown are read again now, so they say why.
     var onLimitReached: (() -> Void)?
+    /// When the account of this session is free again by its own limits (`QuotaService`), for a turn that did not say.
+    var limitResetHint: ((WorkspaceRun) -> Date?)?
     /// Claude Code reported how full a subscription window is, for the account (`AgentProfile.id`) the session runs with.
     var onPlanWindow: ((UsageLimits.PlanReading, String) -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
@@ -205,6 +217,11 @@ final class WorkspaceManager: ObservableObject {
     private var worktreesRefreshPending = false
     /// The pending refresh measures every worktree's size again (the list's refresh button), not from the cache.
     private var worktreesRefreshForced = false
+    /// Whether a Worktrees list is on screen (`worktreesShown(_:)`). Its rows are refreshed only then: a removal or a
+    /// cleanup with nobody looking walked every worktree and its build (minutes of a core with a hundred of them).
+    private(set) var worktreesListShown = 0
+    /// Read off the main thread by a running refresh, which stops once the list is closed.
+    nonisolated let worktreesListOpen = WorktreeListFlag()
     @Published private(set) var gitAvailable: Bool?
     @Published var selectedRunID: UUID?
     /// The models each agent offers itself (Codex `model/list`, ACP sessions); see WorkspaceManager+Models.
@@ -264,6 +281,11 @@ final class WorkspaceManager: ObservableObject {
     var idleCompactionTimers: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose running turn is such a summary: it ends quietly, without a notification or a snapshot.
     var idleCompacting: Set<UUID> = []
+    /// Sessions where you chose Keep on the "compact first" chip (`ReturnCompaction`): your next message goes with the
+    /// whole history. Cleared once it went out.
+    @Published var keepsHistory: Set<UUID> = []
+    /// Claude Code's `autoCompactWindow` per settings folder and model, read at most once a minute (`AutoCompactMark`).
+    var claudeCompactWindows: [String: (window: Int?, read: Date)] = [:]
     /// The part of `idleCompacting` that Nook started because the context grew past your limit (`SizeCompaction`).
     var sizeCompacting: Set<UUID> = []
     /// A message sent while the session was still warming up: it goes out as soon as the connection is open.
@@ -328,8 +350,9 @@ final class WorkspaceManager: ObservableObject {
     var usageWindows: (String) -> [AutoModel.Window] = { _ in [] }
     /// The connected agents with their accounts, for "Auto" to pick among (see `AutoModel`); configured by AppModel.
     var autoAccounts: () -> [AutoModel.Account] = { [] }
-    /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel.
-    var runScript: ((String, String, String) -> Void)?
+    /// Runs a project script in a visible terminal (folder, command, title); configured by AppModel. Returns whether that
+    /// terminal is still open, asked while a setup script holds the agent.
+    var runScript: ((String, String, String) -> @MainActor () -> Bool)?
     /// Nook's workspace bridge for the agent's command line; nil when agents may not use it.
     var bridgeLaunch: () -> BridgeLaunch? = { nil }
     /// A session is waiting for approval or has finished: AppModel displays it in the notch.
@@ -698,7 +721,7 @@ final class WorkspaceManager: ObservableObject {
         let git = gitService
         let info = await Task.detached(priority: .userInitiated) {
             let normalized = WorkspacePathPolicy.normalize(path)
-            var info = ProjectInfo(path: normalized, name: URL(fileURLWithPath: normalized).lastPathComponent,
+            var info = ProjectInfo(path: normalized, name: (normalized as NSString).lastPathComponent,
                                    verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
                                    branches: [], defaultBase: nil, hasCommits: false, dirtyFiles: 0, isWorktree: false)
             guard info.verdict == .ok, let git, let root = git.repositoryRoot(for: normalized) else { return info }
@@ -781,7 +804,7 @@ final class WorkspaceManager: ObservableObject {
             let prefix = settings.sessionDefaults(for: root).branchPrefix
             let name = ProjectSettings.branchName(config.branchName, globalPrefix: WorktreeNaming.branchPrefix, projectPrefix: prefix)
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
-            let repoName = URL(fileURLWithPath: root).lastPathComponent
+            let repoName = (root as NSString).lastPathComponent
             let reserved = Set(runs.compactMap(\.worktreePath))
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
                                                    slug: WorktreeNaming.directorySlug(branch: name, prefix: prefix),
@@ -830,6 +853,7 @@ final class WorkspaceManager: ObservableObject {
         )
         run.effort = config.effort
         run.speedTier = config.speedTier
+        run.ultracode = config.ultracode
         run.lineage = config.lineage
         // "Auto": the model is picked for each turn as it starts (see `applyAutoModel`).
         if config.model == AutoModel.id {
@@ -892,21 +916,20 @@ final class WorkspaceManager: ObservableObject {
                 return
             }
             guard let self, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
-            self.prepareTasks[id] = nil
             self.update(id) {
                 $0.workingDirectory = path
                 $0.worktreePath = path
                 $0.branch = branch
             }
             if let submoduleProblem { self.append(id, RunEvent(kind: .error, text: tr("sc.submodules.failed", submoduleProblem))) }
-            if prompt.isEmpty {
-                // Started without a first message: the worktree is ready and the session waits for yours.
-                self.update(id) {
-                    $0.status = .completed
-                    $0.turnStartedAt = nil
-                }
-            } else {
-                self.launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+            // The project's setup (nook.json `runOnWorktreeCreate`). One with `"async": false` holds the first turn until
+            // it ended; meanwhile the session stays preparing, and stopping it stops the wait.
+            let setup = ProjectScripts.setup(await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value)
+            guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+            let holds = setup.holdsAgent && !prompt.isEmpty
+            if !holds {
+                self.prepareTasks[id] = nil
+                self.startFirstTurn(id, prompt: prompt, executable: executable)
             }
             // The first snapshot, before the agent does anything: a new worktree is its branch's HEAD.
             let worktreeKey = FolderLease.key(path)
@@ -916,14 +939,64 @@ final class WorkspaceManager: ObservableObject {
             if made {
                 self.recordInitialCheckpoint(id, RunCheckpoint(ref: ref, date: Date(), conversation: .empty))
             }
-            // The project's setup (nook.json `runOnWorktreeCreate`), visible in a terminal next to the session.
-            let setup = await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value
             guard !Task.isCancelled, self.run(id) != nil else { return }
-            for script in setup where script.runOnWorktreeCreate {
-                self.runScript?(path, script.command, script.name)
-                self.append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+            let failure = await self.startSetupScripts(id, path: path, scripts: setup.scripts)
+            guard holds, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
+            self.prepareTasks[id] = nil
+            if let failure {
+                self.update(id) { $0.move(to: .failed, detail: failure) }
+                self.append(id, RunEvent(kind: .error, text: failure))
+                return
+            }
+            self.startFirstTurn(id, prompt: prompt, executable: executable)
+        }
+    }
+
+    /// The first turn of a session in a new worktree; without a first message, the session waits for yours.
+    private func startFirstTurn(_ id: UUID, prompt: String, executable: String) {
+        if prompt.isEmpty {
+            update(id) {
+                $0.status = .completed
+                $0.turnStartedAt = nil
+            }
+        } else {
+            launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
+        }
+    }
+
+    /// Starts the project's setup scripts in terminals next to the session, and returns once the ones with
+    /// `"async": false` ended: nil when they succeeded (or none waits), else what went wrong. While it waits it reads
+    /// the script's exit-code file twice a second; nothing runs when no script holds the agent.
+    func startSetupScripts(_ id: UUID, path: String, scripts: [ProjectScript]) async -> String? {
+        var waiting: [(name: String, status: String, open: @MainActor () -> Bool)] = []
+        for script in scripts {
+            if script.async {
+                _ = runScript?(path, script.command, script.name)
+                append(id, RunEvent(kind: .system, text: tr("ws.event.setupScript", script.name)))
+                continue
+            }
+            let status = FileManager.default.temporaryDirectory.appendingPathComponent("nook-setup-\(UUID().uuidString)").path
+            guard let open = runScript?(path, ProjectScripts.blockingCommand(script.command, statusFile: status), script.name) else { continue }
+            append(id, RunEvent(kind: .system, text: tr("ws.event.setupScriptWaiting", script.name)))
+            waiting.append((script.name, status, open))
+        }
+        var failure: String?
+        for item in waiting {
+            defer { try? FileManager.default.removeItem(atPath: item.status) }
+            while !Task.isCancelled {
+                let wasOpen = item.open()
+                if let code = ProjectScripts.exitStatus(FileManager.default.contents(atPath: item.status)) {
+                    if code != 0, failure == nil { failure = tr("ws.event.setupScriptFailed", item.name, String(code)) }
+                    break
+                }
+                if !wasOpen {
+                    failure = failure ?? tr("ws.event.setupScriptClosed", item.name)
+                    break
+                }
+                try? await Task.sleep(for: .milliseconds(500))
             }
         }
+        return failure
     }
 
     /// Resolves git metadata and captures the initial folder snapshot in the background without delaying the first turn.
@@ -1005,7 +1078,7 @@ final class WorkspaceManager: ObservableObject {
         let permission = settings.sessionDefaults(for: repoRoot ?? projectPath).permission(for: provider)
         let run = WorkspaceRun(
             id: id,
-            title: task.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: task),
+            title: task.isEmpty ? (projectPath as NSString).lastPathComponent : WorktreeNaming.title(from: task),
             task: task,
             provider: provider,
             profileID: profileID,
@@ -1116,7 +1189,8 @@ final class WorkspaceManager: ObservableObject {
     // MARK: Turns
 
     /// Follow-up message. Permitted only when prior turn has finished; concurrent processes for the same session are prevented.
-    func send(_ id: UUID, text: String) {
+    @discardableResult
+    func send(_ id: UUID, text: String) -> Bool {
         send(id, text: text, shown: false)
     }
 
@@ -1274,8 +1348,15 @@ final class WorkspaceManager: ObservableObject {
             recoverConversation(id, recovery)
             return
         }
-        onTurnFinished?(run)
-        deliverDelegatedResult(id)
+        // A wake for one line of a monitor that still runs: the alert (and a delegating session's result) waits for the
+        // turn after its last line, or for the monitor to end.
+        if run.status == .completed, WakeCompletion.holds(timeline(id)) {
+            heldWakeCompletions.insert(id)
+        } else {
+            heldWakeCompletions.remove(id)
+            onTurnFinished?(run)
+            deliverDelegatedResult(id)
+        }
         captureCheckpoint(id)
         scheduleIdleCompaction(id)
         compactForSize(id)
@@ -1565,7 +1646,7 @@ final class WorkspaceManager: ObservableObject {
             let reserved = Set(runs.filter { $0.id != id }.compactMap(\.worktreePath))
             let path = WorktreeNaming.worktreePath(
                 root: (settings.worktreeRoot as NSString).expandingTildeInPath,
-                repoName: URL(fileURLWithPath: root).lastPathComponent,
+                repoName: (root as NSString).lastPathComponent,
                 slug: WorktreeNaming.directorySlug(branch: branch, prefix: prefix),
                 exists: { reserved.contains($0) || FileManager.default.fileExists(atPath: $0) })
             update(id) {
@@ -1694,7 +1775,8 @@ final class WorkspaceManager: ObservableObject {
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
             effort: run.provider == .claude || run.provider == .pi ? run.effort : nil,
-            speedTier: speedTier(run)
+            speedTier: speedTier(run),
+            ultracode: ultracode(run)
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
         if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
@@ -1759,7 +1841,7 @@ final class WorkspaceManager: ObservableObject {
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
                 thinkingDisplay: claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
-                effort: run.effort, speedTier: speedTier(run))), for: run)
+                effort: run.effort, speedTier: speedTier(run), ultracode: ultracode(run))), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -2008,9 +2090,13 @@ final class WorkspaceManager: ObservableObject {
             // Turn finished: keep Claude Code waiting for the next message instead of closing it.
             parkClaudeProcess(id, stopping: stopping)
         case .notice(let text):
-            if text == "compact" {
-                turns[id]?.compacted = true
-                append(id, RunEvent(kind: .system, text: tr(sizeCompacting.contains(id) ? "ws.event.sizeCompaction" : idleCompacting.contains(id) ? "ws.event.idleCompaction" : "ws.event.compacted")))
+            if text == "compact" { compactionFinished(id) }
+        case .compaction(let phase):
+            // Claude Code reports a compaction it gave up for your Stop as failed: that is stopped, not an error.
+            if case .failed = phase, turns[id]?.stopping == true {
+                compactionFailed(id, message: nil)
+            } else {
+                noteCompaction(id, phase)
             }
         case .rateLimits(let event):
             onRateLimits?()
@@ -2173,7 +2259,7 @@ final class WorkspaceManager: ObservableObject {
             approvals[runID]?.removeAll { $0.id == requestID }
             recap?.decision(allowed: decision != .deny)
             mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-            if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+            if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
             onApprovalGone?(requestID)
             return
         }
@@ -2190,7 +2276,7 @@ final class WorkspaceManager: ObservableObject {
         approvals[runID]?.removeAll { $0.id == requestID }
         recap?.decision(allowed: decision != .deny)
         mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed }
-        if (approvals[runID]?.isEmpty ?? true), (questions[runID]?.isEmpty ?? true) { update(runID) { $0.move(to: .running) } }
+        if (approvals[runID]?.isEmpty ?? true), !waitsOnQuestion(runID) { update(runID) { $0.move(to: .running) } }
         onApprovalGone?(requestID)
         if !reason.isEmpty { append(runID, RunEvent(kind: .system, text: tr("ws.approval.deniedBecause", reason))) }
     }
@@ -2481,6 +2567,8 @@ final class WorkspaceManager: ObservableObject {
         backgroundWork.remove(id)
         subagentsWorking.remove(id)
         wakeLine[id] = nil
+        heldWakeCompletions.remove(id)
+        keepsHistory.remove(id)
         mcpAppContexts[id] = nil
         let appFolder = Self.mcpAppFolder(id)
         // The pages the agent showed (render_page) go with the session.
@@ -2658,18 +2746,24 @@ final class WorkspaceManager: ObservableObject {
     /// The lines one turn added and removed per file (between the same snapshots as `turnDiff`), keyed by the path
     /// relative to the session's folder. Binary files count as nothing. With a snapshot on both sides of the turn these
     /// are all the files it changed, also by a command or script (`sed`, a formatter) that no edit of the agent shows;
-    /// otherwise only `paths`, against the last commit or the files as they are now.
+    /// otherwise only `paths`, against the last commit or the files as they are now. When the turn pulled, merged or
+    /// rebased, the files Git brought in are left out unless the turn edited, committed or fixed a conflict in them
+    /// (`GitService.authoredPaths`); restoring a snapshot still brings back everything.
     func turnLines(_ id: UUID, paths: [String], start: Date, end: Date) async throws -> TurnLines {
         guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         let directory = run.workingDirectory
         let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
         let from = around?.before.ref ?? "HEAD"
         let to = around?.after?.ref
+        let since = around?.before.date ?? start
         let complete = to != nil
         // A file outside the folder (the agent's own settings, say) would make git refuse the whole list.
         let root = directory.hasSuffix("/") ? directory : directory + "/"
         let inside = complete ? nil : paths.filter { !$0.hasPrefix("/") || $0.hasPrefix(root) }
-        let counts = try await Task.detached(priority: .utility) { try git.lineCounts(directory, paths: inside, from: from, to: to) }.value
+        let counts = try await Task.detached(priority: .utility) {
+            let authored = to.flatMap { git.authoredPaths(directory, from: from, to: $0, since: since) }
+            return try git.lineCounts(directory, paths: inside, from: from, to: to, authored: authored)
+        }.value
         return TurnLines(counts: counts.mapValues { EditLines(added: $0.added ?? 0, removed: $0.removed ?? 0) }, complete: complete)
     }
 
@@ -2754,6 +2848,8 @@ final class WorkspaceManager: ObservableObject {
     /// Sizes come from `DiskUsage.cachedAllocatedSize` unless `force` (the list's refresh button) measures them again.
     func refreshWorktrees(force: Bool = false) {
         guard let git = gitService else { return }
+        // Nobody looks at the rows: the list refreshes when it opens.
+        guard worktreesListShown > 0 else { return }
         guard !worktreesLoading else {
             worktreesRefreshPending = true
             if force { worktreesRefreshForced = true }
@@ -2762,6 +2858,7 @@ final class WorkspaceManager: ObservableObject {
         let sizeAge = force ? 0 : DiskUsage.cachedSizeAge
         let roots = Set(runs.compactMap(\.repoRoot))
         let snapshot = runs
+        let listOpen = worktreesListOpen
         worktreesLoading = true
         Task.detached(priority: .utility) {
             // Resolving each root to its main checkout runs Git once per root: off the main thread, or every refresh
@@ -2769,31 +2866,37 @@ final class WorkspaceManager: ObservableObject {
             let repos = Array(Set(roots.map { git.mainCheckout(of: $0) ?? $0 })).sorted()
             var rows: [WorktreeRow] = []
             var seenPaths = Set<String>()
-            for repo in repos where FileManager.default.fileExists(atPath: repo) {
+            // Closed meanwhile: the rest is for no one. The list keeps the rows it had; opening it again refreshes in full.
+            var stopped = false
+            repositories: for repo in repos where FileManager.default.fileExists(atPath: repo) {
+                guard listOpen.isOpen else { stopped = true; break }
                 guard let list = try? git.worktrees(repo) else { continue }
-                for worktree in list { autoreleasepool {
-                    let path = WorkspacePathPolicy.normalize(worktree.path)
-                    guard seenPaths.insert(path).inserted else { return }
-                    let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
-                    // Only show root workspace if a session is actively using it.
-                    if worktree.isMain && linked.isEmpty { return }
-                    var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
-                    if FileManager.default.fileExists(atPath: worktree.path) {
-                        row.changedFiles = git.changedFileCount(worktree.path)
-                        if !worktree.isMain { row.bytes = DiskUsage.cachedAllocatedSize(of: worktree.path, maxAge: sizeAge) }
-                        let base = linked.compactMap(\.baseBranch).first
-                        row.baseBranch = base
-                        if let base, let divergence = git.divergence(worktree.path, base: base) {
-                            row.ahead = divergence.ahead
-                            row.behind = divergence.behind
+                for worktree in list {
+                    guard listOpen.isOpen else { stopped = true; break repositories }
+                    autoreleasepool {
+                        let path = WorkspacePathPolicy.normalize(worktree.path)
+                        guard seenPaths.insert(path).inserted else { return }
+                        let linked = snapshot.filter { WorkspacePathPolicy.normalize($0.workingDirectory) == path }
+                        // Only show root workspace if a session is actively using it.
+                        if worktree.isMain && linked.isEmpty { return }
+                        var row = WorktreeRow(repoRoot: repo, worktree: worktree, runIDs: linked.map(\.id))
+                        if FileManager.default.fileExists(atPath: worktree.path) {
+                            row.changedFiles = git.changedFileCount(worktree.path)
+                            if !worktree.isMain { row.bytes = DiskUsage.cachedAllocatedSize(of: worktree.path, maxAge: sizeAge) { listOpen.isOpen } }
+                            let base = linked.compactMap(\.baseBranch).first
+                            row.baseBranch = base
+                            if let base, let divergence = git.divergence(worktree.path, base: base) {
+                                row.ahead = divergence.ahead
+                                row.behind = divergence.behind
+                            }
                         }
+                        rows.append(row)
                     }
-                    rows.append(row)
-                } }
+                }
             }
-            await MainActor.run { [weak self, rows] in
+            await MainActor.run { [weak self, rows, stopped] in
                 guard let self else { return }
-                self.worktreeRows = rows
+                if !stopped { self.worktreeRows = rows }
                 self.worktreesLoading = false
                 if self.worktreesRefreshPending {
                     let forced = self.worktreesRefreshForced
@@ -2803,6 +2906,14 @@ final class WorkspaceManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// A Worktrees list opened (`true`) or closed. Opening refreshes its rows; with every list closed, a refresh under way
+    /// stops at the next worktree and later changes wait for the next opening.
+    func worktreesShown(_ shown: Bool) {
+        worktreesListShown = max(0, worktreesListShown + (shown ? 1 : -1))
+        worktreesListOpen.isOpen = worktreesListShown > 0
+        if shown { refreshWorktrees() }
     }
 
     /// The worktree deleting this session would leave unused (`WorktreeCleanup`), offered to remove along with it.
@@ -2928,6 +3039,17 @@ final class WorkspaceManager: ObservableObject {
     /// On Nook shutdown: gracefully terminate running agents to prevent orphaned processes.
     func shutdown() {
         let kept = detachKeptRuns()
+        // Nothing is announced on the way out: a completion held for a monitor ends with Nook.
+        heldWakeCompletions.removeAll()
+        // A session whose turn ended while it waited on work in the background (a subagent) loses that work now: Nook
+        // remembers what it was, so after the restart it can tell the agent and go on (`RestartContinuation`).
+        let now = Date()
+        for index in runs.indices where runs[index].status == .completed && !kept.contains(runs[index].id) {
+            let id = runs[index].id
+            guard backgroundWork.contains(id) || subagentsWorking.contains(id) else { continue }
+            let labels = RestartContinuation.waitedOn(events[id] ?? [])
+            if !labels.isEmpty { runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now) }
+        }
         GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
@@ -2967,6 +3089,9 @@ final class WorkspaceManager: ObservableObject {
         // A turn starts: the suggestion for the one before it no longer fits.
         if !runs[index].status.isActive, run.status.isActive { dropNextPrompt(id) }
         run.updatedAt = max(run.updatedAt, runs[index].updatedAt)
+        // A summary Nook runs on its own is no activity of yours: the session keeps its place in the list, its "last
+        // active" and its read state, instead of jumping up while it runs and landing first among the idle ones after.
+        if idleCompacting.contains(id) { run.updatedAt = runs[index].updatedAt }
         runs[index] = run
         if save { scheduleSave() }
         // However a turn ended (done, failed, stopped, its process gone), a turn that waited for a free place may start.

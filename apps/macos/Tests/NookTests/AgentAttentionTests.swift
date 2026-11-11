@@ -22,6 +22,21 @@ final class AgentAttentionTests: XCTestCase {
 
     // MARK: Priority
 
+    func testNooksOwnSummaryLeavesTheSessionIdle() {
+        var summary = AgentAttention.Input(status: .running)
+        summary.quietTurn = true
+        XCTAssertEqual(AgentAttention.resolve(summary), .idle)
+        summary.status = .preparing
+        XCTAssertEqual(AgentAttention.resolve(summary), .idle)
+        summary.unseen = true
+        XCTAssertEqual(AgentAttention.resolve(summary), .ready)
+        summary.pendingApprovals = 1
+        XCTAssertEqual(AgentAttention.resolve(summary), .approval)
+        var failed = AgentAttention.Input(status: .failed)
+        failed.quietTurn = true
+        XCTAssertEqual(AgentAttention.resolve(failed), .failed)
+    }
+
     func testApprovalBeatsQuestionBeatsWorking() {
         XCTAssertEqual(AgentAttention.resolve(input(.running, approvals: 1, questions: 1)), .approval)
         XCTAssertEqual(AgentAttention.resolve(input(.waitingApproval)), .approval)

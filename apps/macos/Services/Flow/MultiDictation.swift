@@ -41,6 +41,8 @@ final class MultiDictation: @unchecked Sendable {
     @ObservationIgnored private var tapInstalled = false
     /// The microphone's loudness, 0…1, about 20 times a second (for the pill), on the main actor.
     @ObservationIgnored var onLevel: (@MainActor (Double) -> Void)?
+    /// Words every recognizer is told to expect (`DictationContext`), set before `start`.
+    @ObservationIgnored var contextualStrings: [String] = []
 
     /// The text field's content: what was typed, then the words heard so far.
     var text: String { prefix + transcript }
@@ -71,6 +73,7 @@ final class MultiDictation: @unchecked Sendable {
     @MainActor func start(from text: String) async {
         guard !isRecording, await Self.authorized() else { return }
         let built = Self.makeCandidates(language == Self.automatic ? Self.automaticLocales() : [Locale(identifier: language)])
+        for candidate in built { candidate.request.contextualStrings = contextualStrings }
         guard !built.isEmpty, Self.startEngine(engine, feeding: built.map(\.request), level: onLevel) else { return }
         tapInstalled = true
         prefix = text.isEmpty || text.hasSuffix(" ") ? text : text + " "
