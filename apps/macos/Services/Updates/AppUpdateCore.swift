@@ -152,20 +152,43 @@ struct UpdateCheckout: Equatable, Sendable {
     let localCommits: Int
     /// The checkout already sits at the new main (pulled by hand, not rebuilt yet): only a build is needed.
     let atTarget: Bool
+    /// Changed files the update also changes: git does not fast-forward over them, so they go into a stash first.
+    var overlapping: [String] = []
+
+    /// The paths in `git status --porcelain` lines ("XY path", "XY old -> new" for a rename, quoted when unusual).
+    static func paths(fromPorcelain lines: [String]) -> [String] {
+        lines.compactMap { line in
+            guard line.count > 3 else { return nil }
+            var path = String(line.dropFirst(3))
+            if let arrow = path.range(of: " -> ") { path = String(path[arrow.upperBound...]) }
+            if path.count >= 2, path.hasPrefix("\""), path.hasSuffix("\"") { path = String(path.dropFirst().dropLast()) }
+            return path
+        }
+    }
+
+    /// The changed files (porcelain lines) that also appear in the update's `git diff --name-only`, in status order.
+    static func overlap(changed lines: [String], updated: [String]) -> [String] {
+        let updated = Set(updated)
+        return paths(fromPorcelain: lines).filter { path in
+            // An untracked folder shows as "dir/": it overlaps when the update adds anything inside it.
+            updated.contains(path) || (path.hasSuffix("/") && updated.contains { $0.hasPrefix(path) })
+        }
+    }
 }
 
 /// Whether the update can go in, and what stands in the way when not.
 enum UpdatePreflight: Equatable, Sendable {
     case ready
-    /// Uncommitted changes: the update can set them aside (git stash) and put them back, but only when you say so.
-    case needsStash(files: Int)
+    /// Uncommitted changes. The update leaves the ones it does not touch in place; the `overlapping` ones go into a
+    /// git stash first. Whether they come back afterwards is your choice.
+    case hasChanges(files: Int, overlapping: [String])
     case blocked(UpdateBlocker)
 
     static func check(_ checkout: UpdateCheckout) -> UpdatePreflight {
         guard let branch = checkout.branch else { return .blocked(.detached) }
         guard branch == checkout.updateBranch else { return .blocked(.otherBranch(branch)) }
         if checkout.localCommits > 0, !checkout.atTarget { return .blocked(.diverged(checkout.localCommits)) }
-        if !checkout.changedFiles.isEmpty, !checkout.atTarget { return .needsStash(files: checkout.changedFiles.count) }
+        if !checkout.changedFiles.isEmpty, !checkout.atTarget { return .hasChanges(files: checkout.changedFiles.count, overlapping: checkout.overlapping) }
         return .ready
     }
 }

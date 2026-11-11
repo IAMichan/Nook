@@ -83,12 +83,25 @@ final class AppUpdateTests: XCTestCase {
 
     func testPreflight() {
         XCTAssertEqual(UpdatePreflight.check(checkout()), .ready)
-        XCTAssertEqual(UpdatePreflight.check(checkout(files: 3)), .needsStash(files: 3))
+        XCTAssertEqual(UpdatePreflight.check(checkout(files: 3)), .hasChanges(files: 3, overlapping: []))
         XCTAssertEqual(UpdatePreflight.check(checkout(files: 3, atTarget: true)), .ready, "nothing to merge: only a build")
         XCTAssertEqual(UpdatePreflight.check(checkout(branch: "feature")), .blocked(.otherBranch("feature")))
         XCTAssertEqual(UpdatePreflight.check(checkout(branch: nil)), .blocked(.detached))
         XCTAssertEqual(UpdatePreflight.check(checkout(local: 2)), .blocked(.diverged(2)))
         XCTAssertEqual(UpdatePreflight.check(checkout(files: 1, local: 2)), .blocked(.diverged(2)), "blocked before stash")
+    }
+
+    func testOverlapWithTheUpdate() {
+        let status = [" M apps/ios/Localizable.xcstrings", "?? notes.txt", "R  old.swift -> apps/new.swift",
+                      " M \"with space.swift\"", "?? build/"]
+        XCTAssertEqual(UpdateCheckout.paths(fromPorcelain: status),
+                       ["apps/ios/Localizable.xcstrings", "notes.txt", "apps/new.swift", "with space.swift", "build/"])
+        XCTAssertEqual(UpdateCheckout.overlap(changed: status, updated: ["apps/ios/Localizable.xcstrings", "build/x.o", "README.md"]),
+                       ["apps/ios/Localizable.xcstrings", "build/"])
+        XCTAssertEqual(UpdateCheckout.overlap(changed: status, updated: ["README.md"]), [])
+        var dirty = checkout(files: 2)
+        dirty.overlapping = ["file.swift"]
+        XCTAssertEqual(UpdatePreflight.check(dirty), .hasChanges(files: 2, overlapping: ["file.swift"]))
     }
 
     func testBuildActivity() {

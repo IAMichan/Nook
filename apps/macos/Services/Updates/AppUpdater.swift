@@ -316,13 +316,20 @@ final class AppUpdater: ObservableObject {
         let status = try git.run(["status", "--porcelain"], in: repository).split(whereSeparator: \.isNewline).map(String.init)
         let head = try git.run(["rev-parse", "HEAD"], in: repository).trimmed
         let local = Int(try git.run(["rev-list", "--count", "\(target)..HEAD"], in: repository).trimmed) ?? 0
-        return UpdateCheckout(branch: git.currentBranch(repository), updateBranch: branch, changedFiles: status,
-                              localCommits: local, atTarget: head == target)
+        var checkout = UpdateCheckout(branch: git.currentBranch(repository), updateBranch: branch, changedFiles: status,
+                                      localCommits: local, atTarget: head == target)
+        if !status.isEmpty, head != target {
+            let updated = try git.run(["diff", "--name-only", "--no-renames", "HEAD", target], in: repository)
+                .split(whereSeparator: \.isNewline).map(String.init)
+            checkout.overlapping = UpdateCheckout.overlap(changed: status, updated: updated)
+        }
+        return checkout
     }
 
     // MARK: Installing
 
-    /// Starts the install you confirmed. `stash`: you agreed to set uncommitted changes aside and put them back after.
+    /// Starts the install you confirmed. `stash`: set all uncommitted changes aside and put them back after. Without it,
+    /// changes the update does not touch stay in place and the ones it does go into a stash that stays.
     func install(stash: Bool = false) {
         rememberScreen()
         if source == nil, let release, let candidate = releaseUpdate {
@@ -858,22 +865,26 @@ final class AppUpdater: ObservableObject {
         let checkout = try readCheckout(repository, remote: job.update.remote, branch: job.update.branch, target: target, git: git)
         switch UpdatePreflight.check(checkout) {
         case .blocked(let blocker): throw InstallError.blocked(blocker)
-        case .needsStash(let files): if !job.allowStash { throw InstallError.needsStash(files) }
-        case .ready: break
+        case .hasChanges, .ready: break
         }
 
         enter(.merge)
         if !checkout.atTarget {
             var stash: String?
-            if !checkout.changedFiles.isEmpty {
-                let name = "nook-update-" + ISO8601DateFormatter().string(from: Date())
+            var keptStash: String?
+            let name = "nook-update-" + ISO8601DateFormatter().string(from: Date())
+            if job.allowStash, !checkout.changedFiles.isEmpty {
                 try runGit(["stash", "push", "--include-untracked", "-m", name])
                 stash = name
+            } else if !checkout.overlapping.isEmpty {
+                // Only what the update also changes; the rest of your changes stay where they are.
+                try runGit(["stash", "push", "--include-untracked", "-m", name, "--"] + checkout.overlapping)
+                keptStash = name
             }
             do {
                 try runGit(["merge", "--ff-only", upstream])
             } catch {
-                if stash != nil { try? runGit(["stash", "pop"]) }
+                if stash != nil || keptStash != nil { try? runGit(["stash", "pop"]) }
                 throw error
             }
             if let stash {
@@ -993,7 +1004,6 @@ private final class DownloadProgress: NSObject, URLSessionTaskDelegate, @uncheck
 /// Why an install stopped.
 enum InstallError: Error, Equatable {
     case blocked(UpdateBlocker)
-    case needsStash(Int)
     case stashConflict(String)
     case missingTool(String)
     case failed(step: String, status: Int32)
@@ -1014,7 +1024,6 @@ enum InstallError: Error, Equatable {
 struct UpdateFailure: Error, Equatable, Sendable {
     enum Reason: Equatable, Sendable {
         case blocked(UpdateBlocker)
-        case needsStash(Int)
         case stashConflict(String)
         case missingTool(String)
         case command(Int32)
@@ -1054,7 +1063,6 @@ struct UpdateFailure: Error, Equatable, Sendable {
         let reason: Reason
         switch error as? InstallError {
         case .blocked(let blocker): reason = .blocked(blocker)
-        case .needsStash(let files): reason = .needsStash(files)
         case .stashConflict(let name): reason = .stashConflict(name)
         case .missingTool(let tool): reason = .missingTool(tool)
         case .failed(_, let status): reason = .command(status)
