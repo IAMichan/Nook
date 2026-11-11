@@ -16,7 +16,8 @@ extension CompanionServer {
                 LaunchOptions.Model(id: $0, name: CompanionPolicy.clip(app.modelName($0, for: provider), limit: 80))
             }
             return LaunchOptions.Agent(id: provider.rawValue, name: provider.displayName, canPlan: provider.capabilities.planMode,
-                                       models: Array(models), defaultModel: settings.model(for: provider))
+                                       models: Array(models), defaultModel: settings.model(for: provider),
+                                       canMainThread: MainThread.offered(provider: provider, access: settings.bridgeAccess))
         }
         let paths = recentProjects(settings)
         let infos = await withTaskGroup(of: ProjectInfo.self) { group in
@@ -80,6 +81,7 @@ extension CompanionServer {
             config.model = defaults.model(for: provider)
         }
         config.effort = defaults.effort(for: provider)
+        if launch.mainThread == true, MainThread.offered(provider: provider, access: settings.bridgeAccess) { config.mainThread = true }
         config.mode = plan ? .plan : .agent
         config.permission = phonePermission(provider, preferred: defaults.permission(for: provider), plan: plan)
         config.projectPath = project
@@ -334,9 +336,12 @@ extension CompanionServer {
     // MARK: Managing a session
 
     /// What the phone may do to a Workspace session, as the Agents list on the Mac offers it: rename it, archive it once
-    /// it rests, and snooze it (or wake it).
-    static func actions(_ run: WorkspaceRun, now: Date) -> [SessionAction] {
+    /// it rests, snooze it (or wake it), and turn its main thread on or off as the composer's switch does.
+    static func actions(_ run: WorkspaceRun, now: Date, access: BridgeAccess) -> [SessionAction] {
         var actions: [SessionAction] = [.rename]
+        if MainThread.offered(provider: run.provider, access: access) {
+            actions.append(run.mainThread == true ? .mainThreadOff : .mainThreadOn)
+        }
         if !run.status.isActive { actions.append(.archive) }
         if let until = run.snoozedUntil, until > now {
             actions.append(.unsnooze)
@@ -362,7 +367,7 @@ extension CompanionServer {
         }
         let workspace = app.workspace
         guard let runID = UUID(uuidString: session), let run = workspace.run(runID) else { return .failure(request.id, .unknownSession) }
-        guard Self.actions(run, now: Date()).contains(action) else { return .failure(request.id, .notAllowedFromPhone) }
+        guard Self.actions(run, now: Date(), access: workspace.settings.bridgeAccess).contains(action) else { return .failure(request.id, .notAllowedFromPhone) }
         switch action {
         case .rename:
             guard let title = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
@@ -380,6 +385,8 @@ extension CompanionServer {
                 return .failure(request.id, .notAllowedFromPhone)
             }
             workspace.snooze(runID, until: end)
+        case .mainThreadOn: workspace.setMainThread(runID, true)
+        case .mainThreadOff: workspace.setMainThread(runID, false)
         case .end: return .failure(request.id, .notAllowedFromPhone)
         }
         audit(action.rawValue, run.title)

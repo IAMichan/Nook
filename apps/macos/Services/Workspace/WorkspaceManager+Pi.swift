@@ -44,7 +44,7 @@ extension WorkspaceManager {
             guard !(questions[id] ?? []).contains(where: { $0.id == pending.id }) else { break }
             questions[id, default: []].append(pending)
             update(id) { $0.move(to: .waitingApproval) }
-            if let run = run(id) { onQuestion?(run, pending) }
+            asked(id, pending)
         case .notice(let message):
             append(id, RunEvent(kind: .system, text: message))
         case .compactionStarted:

@@ -130,6 +130,18 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
     }
 
+    func testMainThreadTravelsWithAStartAndOldPhonesStillDecode() throws {
+        let launch = LaunchRequest(agent: "codex", project: "/p", task: "Split it up", mainThread: true)
+        XCTAssertEqual(try JSONDecoder().decode(LaunchRequest.self, from: JSONEncoder().encode(launch)).mainThread, true)
+        let old = Data(#"{"agent":"claude","project":"/p","task":"Fix","plan":false,"worktree":false}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(LaunchRequest.self, from: old).mainThread, "a phone that predates it")
+        let agent = LaunchOptions.Agent(id: "claude", name: "Claude Code", canPlan: true, canMainThread: true)
+        XCTAssertEqual(try JSONDecoder().decode(LaunchOptions.Agent.self, from: JSONEncoder().encode(agent)).canMainThread, true)
+        // Actions travel as names: a phone that predates these two leaves them out instead of failing.
+        XCTAssertEqual(SessionAction(rawValue: "mainThreadOn"), .mainThreadOn)
+        XCTAssertEqual(SessionAction(rawValue: "mainThreadOff"), .mainThreadOff)
+    }
+
     func testInboxCodable() throws {
         let request = CompanionRequest(op: .inboxSend, item: "wa|31600000000@s.whatsapp.net", text: "On my way", replyTo: "m1")
         XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)
