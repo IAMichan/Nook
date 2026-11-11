@@ -295,7 +295,7 @@ struct AgentRunPanel: View {
                     .help(tr("ws.title.renameHelp"))
                 // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
                 // whenever the running session redrew the header.
-                ComposerDropdown(width: 248) {
+                ComposerDropdown(width: 248, scrolls: true) {
                     Image(icon: "chevron.down")
                         .font(NookTheme.font(9, .bold))
                         .foregroundStyle(NookTheme.textTertiary)
@@ -432,17 +432,10 @@ struct AgentRunPanel: View {
             DropdownRow(symbol: "eye", title: tr("ws.prwatch.start")) { workspace.watchPullRequest(runID, url: watchable) }
         }
         // Connectors the agent cannot use until you sign in, also the ones you hid above the composer: a group of
-        // their own in the panel, so there is no submenu to lose under the pointer.
+        // their own in the panel (folded when there are many), so there is no submenu to lose under the pointer.
         if let connectors = workspace.connectorSignIns[runID], !connectors.isEmpty {
             DropdownDivider()
-            DropdownHeader(title: tr("ws.connector.menu"))
-            ForEach(connectors) { connector in
-                DropdownRow(symbol: connector.waiting ? "hourglass" : "person.badge.key",
-                            title: connector.waiting ? tr("ws.connector.waiting", connector.title) : tr("ws.connector.signInTo", connector.title),
-                            disabledReason: connector.waiting ? tr("ws.connector.waitingHelp") : nil) {
-                    workspace.signInConnector(runID, name: connector.name)
-                }
-            }
+            ConnectorSignInGroup(runID: runID, connectors: connectors)
         }
         DropdownDivider()
         // How much of the agent's work the timeline shows, for this session only (Settings has the default).
