@@ -167,7 +167,9 @@ final class TokenSavingsTests: XCTestCase {
         // file path, request_secret a url and a delivery, scheduled tasks a target and a conversation, delegate_task `@` models.
         // 37,991 bytes later that day: session_wait, and session_start/session_send as t3code's create_threads,
         // t3_thread_launch and t3_thread_send (several sessions, a place, idle starts, send modes).
-        XCTAssertLessThanOrEqual(tools.count, 38_200, "the tool list")
+        // 38,519 bytes on 2026-11-11: session_suggest, Claude's "New session" card (a side task the user starts, hands
+        // back or dismisses), kept to a one-line description and four short arguments.
+        XCTAssertLessThanOrEqual(tools.count, 38_600, "the tool list")
     }
 
     private func size(_ setting: Int = 350_000, tokens: Int?, window: Int? = 1_000_000, can: Bool = true, completed: Bool = true,

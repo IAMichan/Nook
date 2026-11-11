@@ -511,6 +511,7 @@ targets:
       - path: Services/Workspace/BrowserSession.swift
       - path: Services/Workspace/WorkspaceBridgeSessions.swift
       - path: Services/Workspace/RenderedPage.swift
+      - path: Services/Workspace/SessionSuggestion.swift
       - path: Services/Workspace/RenderedPageFile.swift
       - path: Services/Workspace/AgentUpdates.swift
       - path: Services/Workspace/PiRPC.swift
