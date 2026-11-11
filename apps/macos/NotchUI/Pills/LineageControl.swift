@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Lineage · 2 running" in a session's header, as t3code's lineage control: the sessions related to this one in a
+/// "Lineage · 2 running" in a session's header: the sessions related to this one in a
 /// dropdown. First the parent and the forks and comparisons made from it, then the tasks it delegated that still work
 /// (each with a stop button), the ones that ended under "Previous agents" (folded), and its side chats. Delegated tasks
 /// and side chats have no row in the Agents list (`SubThreadListing`), so this is where you open them.
@@ -100,7 +100,7 @@ struct LineageControl: View {
         }
     }
 
-    /// t3code's relationship labels: "Parent agent" for the session that delegated this one, "Parent thread" otherwise.
+    /// The relationship labels: "Parent agent" for the session that delegated this one, "Parent thread" otherwise.
     static func roleKey(_ role: LineageGroups.Row.Role) -> String {
         switch role {
         case .parent(.delegated): return "lineage.role.parentAgent"

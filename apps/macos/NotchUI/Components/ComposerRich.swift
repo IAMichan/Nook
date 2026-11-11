@@ -74,8 +74,9 @@ final class ComposerModel: ObservableObject {
 
     /// Keeps the drafts set aside (Cmd+S) in `ComposerDraftStore`, so every composer shares them across launches. A
     /// call site that wired `onStashChanged` itself (the session panel) is left alone.
-    func connectStash(_ store: ComposerDraftStore = .shared) {
+    func connectStash(_ store: ComposerDraftStore? = nil) {
         guard onStashChanged == nil else { return }
+        let store = store ?? .shared
         stash = store.stash
         onStashChanged = { [weak self] in
             guard let self else { return }

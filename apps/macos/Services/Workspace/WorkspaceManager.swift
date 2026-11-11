@@ -1493,7 +1493,7 @@ final class WorkspaceManager: ObservableObject {
 
     enum Delivery: String, Sendable { case sent, queued, steered, restarted }
 
-    /// A message another agent sends (`session_send`), the way it asks for it (t3code's `t3_thread_send`): `auto` steers a
+    /// A message another agent sends (`session_send`), the way it asks for it: `auto` steers a
     /// running turn the agent can take and otherwise goes as `submit`; `steer` only into the running turn (nil when it
     /// cannot take it); `restart` stops the running turn and goes out right after; `queue` is `submit`. It never takes
     /// your `/clear`, and never cuts into a turn that is starting a new conversation for you.
@@ -1594,7 +1594,7 @@ final class WorkspaceManager: ObservableObject {
             return false
         }
         // After `/clear` it starts a new conversation: right away when the agent is free, otherwise first in line, after
-        // the running turn (as t3code does, a new conversation never cuts a turn off).
+        // the running turn (a new conversation never cuts a turn off).
         let fresh = takeFreshArm(id)
         if fresh, run.status.isActive {
             var queue = queued[id] ?? MessageQueue()
@@ -2504,7 +2504,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// Keeps one host change feed per open watched pull request that the sweep would read now: none while the energy plan
     /// pauses background work, and none for a watch that only updates a badge while nobody is at the Mac. A feed that
-    /// ended by itself waits a sweep (two minutes) before it is asked for again, as in t3code.
+    /// ended by itself waits a sweep (two minutes) before it is asked for again.
     private func followPullRequestFeeds() {
         guard let events = pullRequestEvents else { return }
         let now = Date()

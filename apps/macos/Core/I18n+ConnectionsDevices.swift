@@ -1,7 +1,7 @@
 import Foundation
 
 // Texts of the connection rows on Settings › iPhone and Code › Pull requests (paired phones, code hosts, watched
-// organizations), in the t3code shape of `ConnectionRow`. Numbers use %ld, text uses %@.
+// organizations), in the shape of `ConnectionRow`. Numbers use %ld, text uses %@.
 
 let connectionsDevicesTranslations: [AppLanguage: [String: String]] = [
     .en: [

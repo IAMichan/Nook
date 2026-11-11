@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What t3code lets you set per provider instance, for any agent account in Settings › Agents: the switch that turns it
+/// What you can set for any agent account in Settings › Agents: the switch that turns it
 /// off, the program it runs, the arguments added to every launch, the environment variables it runs with, and the models
 /// that no list offers. Folded away under "Advanced", because most accounts need none of it.
 struct AccountOptionsSection: View {
@@ -65,7 +65,7 @@ struct AccountOptionsSection: View {
             .padding(NookTheme.Spacing.xs)
             .frame(height: 64)
             .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.control)
-            .onChange(of: text.wrappedValue) { onChange($0) }
+            .onChange(of: text.wrappedValue) { _, new in onChange(new) }
     }
 
     private var variablesView: some View {

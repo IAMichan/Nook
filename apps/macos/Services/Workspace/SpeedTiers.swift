@@ -1,8 +1,8 @@
 import Foundation
 
-/// Claude Code's Ultracode, a toggle beside the effort (t3code's `withUltracodeToggle`): the agent plans and checks its work
-/// in a longer workflow at extra-high effort. Claude Code reads it as `ultracode` in the settings it starts with, the
-/// key t3code passes through the Agent SDK's `settings` (Nook's `--settings`). Claude's model catalog offers it on the
+/// Claude Code's Ultracode, a toggle beside the effort: the agent plans and checks its work
+/// in a longer workflow at extra-high effort. Claude Code reads it as `ultracode` in the settings it starts with, which
+/// Nook passes through `--settings`. Claude's model catalog offers it on the
 /// models below; the other agents have no such thing (`ProviderCapabilities.ultracode`).
 enum Ultracode {
     /// The models whose effort levels include Ultracode in Claude's model catalog, without "claude-" and a date.

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Every subscription account of one agent read as one pool, as the Usage limits sheet shows it (the same model as
-/// t3code's limit pools): per window (5 hours, week) how much of the pool is left and whether it is spent ahead of the
+/// Every subscription account of one agent read as one pool, as the Usage limits sheet shows it (a limit
+/// pool): per window (5 hours, week) how much of the pool is left and whether it is spent ahead of the
 /// clock, with a column per account that stays in the same place across windows, and which reset comes next and how
 /// much of the pool it hands back. Everything reads as room left, not as what was used. One account is a pool of one.
 struct LimitPool: Equatable, Sendable {

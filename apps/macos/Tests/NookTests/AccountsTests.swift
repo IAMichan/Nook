@@ -70,7 +70,7 @@ final class AccountsTests: XCTestCase {
         XCTAssertEqual(AccountRegistry.slug("***"), "account")
     }
 
-    // MARK: Agent account options (t3code's per-instance settings)
+    // MARK: Agent account options (per-instance settings)
 
     func testVariableNamesFollowTheShellRule() {
         XCTAssertTrue(AccountVariable.isValidName("HTTPS_PROXY"))

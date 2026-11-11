@@ -184,7 +184,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         return Self.mergedSHA(answer as? [String: Any] ?? [:])
     }
 
-    /// What GitLab's own Revert button does (as t3code): the merged commit reverted onto a new branch off the target, and a
+    /// What GitLab's own Revert button does: the merged commit reverted onto a new branch off the target, and a
     /// merge request of that branch. Returns its link. The branch goes again when a later step fails, or a retry would
     /// fail on making it.
     private func revert(_ number: Int) async throws -> String? {
@@ -234,7 +234,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         try await note(body, number: number)
     }
 
-    /// Requests changes as GitLab's own verdict (GitLab 18.9 and later, GraphQL only, like t3code): you join the
+    /// Requests changes as GitLab's own verdict (GitLab 18.9 and later, GraphQL only): you join the
     /// reviewers, since GitLab keeps the verdict on a reviewer, then `mergeRequestRequestChanges`. False when this
     /// GitLab does not know the mutation (an older server): the review is then a note, as before. A refusal throws.
     private func requestChanges(_ number: Int) async throws -> Bool {
@@ -592,7 +592,7 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
         return position
     }
 
-    /// Where a comment on several lines starts and ends, as GitLab's own page sends it (t3code does the same): each end
+    /// Where a comment on several lines starts and ends, as GitLab's own page sends it: each end
     /// with `type` ("new" for an added line, "old" for a removed one, null for one that did not change), its line numbers,
     /// and a `line_code` of the path's SHA-1 and both of GitLab's line counters there. GitLab finds the lines to mark by
     /// that code, and only the patch knows the other side's counter. Nil for a comment on one line.

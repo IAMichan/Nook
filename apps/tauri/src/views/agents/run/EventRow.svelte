@@ -27,7 +27,7 @@
   };
 
   type ToolIcon = "terminal" | "file" | "pencil" | "search" | "globe" | "bot" | "tasks" | "link" | "wrench";
-  /// The Lucide icon t3code gives each kind of tool call (`TimelineToolActivityIcon`).
+  /// The Lucide icon for each kind of tool call.
   function symbol(tool: string): ToolIcon {
     switch (tool) {
       case "Bash": case "shell": case "BashOutput": case "KillShell": case "run_shell_command": return "terminal";
@@ -54,7 +54,7 @@
 
 <div class="row" class:hl={highlighted}>
   {#if event.kind === "user"}
-    <!-- Your message as t3code's: a round bubble on the right, its time and copy under it on hover. -->
+    <!-- Your message: a round bubble on the right, its time and copy under it on hover. -->
     <div class="turn user">
       <div class="msg user" oncontextmenu={(e) => { if (onrevert) { e.preventDefault(); onrevert(); } }} role="note">
         <div class="markdown">{@html renderMarkdown(event.text)}</div>
@@ -152,7 +152,7 @@
   .chev { display: inline-flex; transition: transform 0.15s; color: var(--text3); opacity: 0; }
   .line:hover .chev, .thinking:hover .chev, .chev.open { opacity: 1; }
   .chev.open { transform: rotate(90deg); }
-  /* A tool call as t3code's work entry: its icon and what it did on one 24 px line, the details under it when opened. */
+  /* A tool call as a work entry: its icon and what it did on one 24 px line, the details under it when opened. */
   .tool { display: flex; flex-direction: column; gap: 6px; }
   .line { display: flex; gap: 8px; align-items: center; min-height: 24px; width: 100%; padding: 0 4px; font-size: 14px; color: var(--text2); }
   .line:hover { color: var(--paper); }
@@ -181,7 +181,7 @@
   .esym { display: inline-flex; color: var(--coral); margin-top: 1px; }
   .sel { user-select: text; white-space: pre-wrap; word-break: break-word; }
   .system { display: flex; gap: 6px; align-items: center; padding: 0 4px; font-size: 12px; color: var(--text3); width: 100%; }
-  /* The end of a turn as t3code's system divider: a hairline with the words in the middle. */
+  /* The end of a turn as a system divider: a hairline with the words in the middle. */
   .result { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--text3); font-variant-numeric: tabular-nums; }
   .result .rule { flex: 1; height: 1px; background: var(--line); }
   .small { font-size: 11.5px; }

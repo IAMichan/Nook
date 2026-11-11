@@ -246,7 +246,7 @@
   .find { display: flex; gap: 6px; align-items: center; padding: 4px; width: min(420px, calc(100% - 32px)); margin: 0 auto 6px; background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-panel); }
   .find input { flex: 1; padding: 4px 8px; }
   .count { font-size: 11.5px; min-width: 70px; text-align: right; }
-  /* A work group as t3code's: one quiet line of 24 px, the steps under it when you open it. */
+  /* A work group: one quiet line of 24 px, the steps under it when you open it. */
   .group { display: flex; flex-direction: column; gap: 4px; }
   .summary { display: flex; gap: 8px; align-items: center; min-height: 24px; background: none; border: none; padding: 0 4px; font-size: 14px; color: var(--text2); text-align: left; border-radius: var(--radius-control); width: fit-content; max-width: 100%; }
   .summary:hover { background: none; color: var(--paper); }
@@ -259,7 +259,7 @@
   .chev.open { transform: rotate(90deg); }
   .inner { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line2) 60%, transparent); }
   .inner.fold { gap: 12px; }
-  /* The live line: t3code's status line, quiet text with a spinner. */
+  /* The live line: a status line, quiet text with a spinner. */
   .live { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 0 4px; color: var(--text2); }
   .spin { display: inline-flex; margin-top: 1px; color: var(--text3); animation: spin 1s linear infinite; }
   .spin.waiting { color: var(--amber); animation: none; }

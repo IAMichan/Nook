@@ -393,7 +393,7 @@ private struct NookToastHost<Above: View>: ViewModifier {
     }
 }
 
-/// The toasts of one surface as a stack, as t3code shows them: the newest in front, each older one a step smaller and
+/// The toasts of one surface as a stack: the newest in front, each older one a step smaller and
 /// peeking out a little lower under it, its content hidden. With the pointer on the stack it spreads out into a column
 /// so every toast can be read, closed or acted on, and every clock holds. A new toast slides in from the trailing edge,
 /// and one that closes slides back out; the rest move up into place.

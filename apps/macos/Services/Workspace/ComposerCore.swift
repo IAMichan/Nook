@@ -243,7 +243,7 @@ enum PasteRule {
 
     static func shouldAttach(_ text: String) -> Bool { text.utf8.count >= attachThreshold }
 
-    /// The most characters one message holds (as in t3code): a longer draft stays in the box, with a notice, until you
+    /// The most characters one message holds: a longer draft stays in the box, with a notice, until you
     /// shorten it or split it into several messages.
     static let messageLimit = 120_000
 

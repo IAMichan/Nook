@@ -385,7 +385,7 @@ struct Keycap: View {
 /// each) and Settings › Automation (scheduled tasks and what agents may use of Nook). The machines sessions run on have
 /// a page of their own (`RemoteMachinesSection`).
 struct WorkspaceSettingsSection: View {
-    /// One page each, as t3code has them: never tabs.
+    /// One page each, never tabs.
     enum Part {
         /// How a new session starts for all projects, how sessions behave, and how the list tidies itself.
         case sessions
@@ -868,7 +868,7 @@ struct WorkspaceSettingsSection: View {
             .help(tr("settings.ws.maxWorking.help"))
             .onChange(of: ws.maxWorkingSessions) { _, _ in app.workspace.startWaitingTurns() }
         }
-        // How the session list is laid out and confirming quit are on General, as t3code has its sidebar and confirmations.
+        // How the session list is laid out and confirming quit are on General.
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
@@ -878,7 +878,7 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
-    /// Where a new worktree goes and what its branch is called, as t3code's Worktrees page starts.
+    /// Where a new worktree goes and what its branch is called.
     private var worktreeCreation: some View {
         Section(tr("settings.worktrees.creation")) {
             LabeledContent {

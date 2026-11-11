@@ -78,10 +78,11 @@ final class SelectionAskController {
         self.app = app
         let add = { [weak self] (mask: NSEvent.EventTypeMask, handle: @escaping @MainActor (SelectionAskController, NSEvent) -> Bool) in
             guard let monitor = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { event in
-                MainActor.assumeIsolated {
-                    guard let self else { return event }
-                    return handle(self, event) ? nil : event
+                let consumed = MainActor.assumeIsolated {
+                    guard let self else { return false }
+                    return handle(self, event)
                 }
+                return consumed ? nil : event
             }) else { return }
             self?.monitors.append(monitor)
         }

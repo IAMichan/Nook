@@ -117,7 +117,7 @@ enum SessionOutputs {
     }
 }
 
-/// Pictures the agent only looked at (as t3code shows them): Claude Code's `Read` of a screenshot, Codex's `view_image`,
+/// Pictures the agent only looked at: Claude Code's `Read` of a screenshot, Codex's `view_image`,
 /// Gemini CLI's `read_file` or `read_many_files`, an ACP agent's read (by its input or the location it reported), Pi's
 /// `read`, Cursor's `read_file`. The conversation shows them as one row of small thumbnails under the step or group that
 /// read them, so you see what the agent saw; handed-over files (`SharedFiles`) keep their own, larger row.

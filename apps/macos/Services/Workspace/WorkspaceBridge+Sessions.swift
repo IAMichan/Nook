@@ -10,8 +10,8 @@ extension WorkspaceBridge {
 
     // MARK: Start
 
-    /// New sessions, for a script (`nook start`) or an agent: one, or up to 20 in one call, as t3code's `create_threads`
-    /// and `t3_thread_launch`. Without a folder they work beside the caller in its own folder or worktree; `worktree` or
+    /// New sessions, for a script (`nook start`) or an agent: one, or up to 20 in one call.
+    /// Without a folder they work beside the caller in its own folder or worktree; `worktree` or
     /// `base` gives each a worktree of its own, `scratch` a folder without a project; without a task one starts idle.
     /// They ask like any other session (you raise their rights yourself), and their timeline says who started them.
     func sessionStart(_ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async -> BridgeRPC.ToolResult {

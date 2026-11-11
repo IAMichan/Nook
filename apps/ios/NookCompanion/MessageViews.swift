@@ -81,14 +81,13 @@ struct TranscriptReply<Extras: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if !text.isEmpty {
-                // Headings, lists, code and tables as blocks (t3code's phone reads an answer this way), with diagrams
-                // and math drawn as on the Mac.
+                // Headings, lists, code and tables as blocks, with diagrams and math drawn as on the Mac.
                 MarkdownBlocksView(text: text, color: failed ? Theme.coral : Theme.textStrong)
                     .contextMenu { MessageCopyButton(text: text) }
             }
             extras()
             if footer, !text.isEmpty, let date {
-                // Under a turn's final answer: its time and Copy, as t3code's phone app has them.
+                // Under a turn's final answer: its time and Copy.
                 HStack(spacing: Theme.Spacing.sm) {
                     TranscriptTime(date: date)
                     Button {

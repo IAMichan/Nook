@@ -6,7 +6,7 @@ enum GitHubPullRequestEventStream {
 
     /// Emits when GitHub says the pull request at `url` may have changed, and once per (re)connect. Nil for a link that
     /// is not on github.com, or without a GitHub account. Ends when GitHub refuses the feed; the sweep then reads alone.
-    /// Changes that land while the reader is busy collapse into one, like t3code's sliding buffer.
+    /// Changes that land while the reader is busy collapse into one, as in a sliding buffer.
     static func changes(_ url: URL) -> AsyncStream<Void>? {
         guard let target = GitHubPullRequestEvents.Target.parse(url), GitHubPullRequests.isAvailable else { return nil }
         let tokens = GitHubPullRequests.tokens

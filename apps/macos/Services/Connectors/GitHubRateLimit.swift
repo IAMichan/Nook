@@ -12,7 +12,7 @@ enum GitHubRateLimit {
         return tr(isAnonymous(text) ? "github.error.rateLimitAnonymous" : "github.error.rateLimit", until)
     }
 
-    /// Older GitHub Enterprise hosts call a secondary limit an "abuse detection mechanism" (as in t3code).
+    /// Older GitHub Enterprise hosts call a secondary limit an "abuse detection mechanism".
     static func namesLimit(_ text: String) -> Bool {
         text.localizedCaseInsensitiveContains("rate limit") || text.localizedCaseInsensitiveContains("abuse detection mechanism")
     }

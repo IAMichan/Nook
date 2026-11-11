@@ -35,7 +35,7 @@ final class AgentUpdater: ObservableObject {
 
     private var checked: [RunProvider: (path: String, at: Date)] = [:]
     private static let checkSeconds: TimeInterval = 30 * 60
-    private static let updateTimeout: TimeInterval = 10 * 60
+    nonisolated private static let updateTimeout: TimeInterval = 10 * 60
 
     /// Reads who owns each agent's program (`executables`: the agent and its program's path) and looks up the newest
     /// versions that are due. Agents without a program drop out.
@@ -86,8 +86,8 @@ final class AgentUpdater: ObservableObject {
         guard !jobs.isEmpty else { return }
         Task { [weak self] in
             for (provider, command, executable) in jobs {
-                let result = await Self.run(command, agent: executable) { line in
-                    Task { @MainActor [weak self] in self?.setPhase(.updating(line), provider, onlyWhileBusy: true) }
+                let result = await Self.run(command, agent: executable) { [weak self] line in
+                    Task { @MainActor in self?.setPhase(.updating(line), provider, onlyWhileBusy: true) }
                 }
                 guard let self else { return }
                 self.setPhase(result.ok ? .updated : .failed(result.last), provider)

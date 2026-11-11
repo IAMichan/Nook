@@ -163,10 +163,10 @@ final class TokenSavingsTests: XCTestCase {
         XCTAssertLessThanOrEqual(RemoteBridge.instructions.utf8.count, 700, "the note for another machine")
         let tools = try JSONSerialization.data(withJSONObject: BridgeTool.allCases.map(\.definition), options: [.sortedKeys])
         // 33,741 bytes for 43 tools on 2026-11-07. Claude Code defers them behind tool search; Codex and the ACP agents
-        // send them with every request. 36,195 bytes on 2026-11-10 after the t3code parity packages: render_page takes a
+        // send them with every request. 36,195 bytes on 2026-11-10 after the parity packages: render_page takes a
         // file path, request_secret a url and a delivery, scheduled tasks a target and a conversation, delegate_task `@` models.
-        // 37,991 bytes later that day: session_wait, and session_start/session_send as t3code's create_threads,
-        // t3_thread_launch and t3_thread_send (several sessions, a place, idle starts, send modes).
+        // 37,991 bytes later that day: session_wait, and richer session_start/session_send (several sessions, a place,
+        // idle starts, send modes).
         // 38,519 bytes on 2026-11-11: session_suggest, Claude's "New session" card (a side task the user starts, hands
         // back or dismisses), kept to a one-line description and four short arguments.
         XCTAssertLessThanOrEqual(tools.count, 38_600, "the tool list")

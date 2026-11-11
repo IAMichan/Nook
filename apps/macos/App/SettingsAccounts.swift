@@ -212,7 +212,7 @@ private struct ManageAccountSheet: View {
             if profile.kind == .antigravity {
                 SheetPart(tr("accounts.method")) { antigravitySignInView }
             }
-            // Its own color, on the account's badge wherever the agent's logo shows (as t3code's accent color).
+            // Its own color, on the account's badge wherever the agent's logo shows.
             SheetPart(tr("accounts.color")) {
                 AccountColorPicker(accent: Binding(get: { current.accent },
                                                    set: { app.profiles.setAccent(profile.id, $0) }))

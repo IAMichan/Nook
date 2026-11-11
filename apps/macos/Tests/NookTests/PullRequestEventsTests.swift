@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 
 final class PullRequestEventsTests: XCTestCase {
-    private let target = GitHubPullRequestEvents.Target(repo: "pingdotgg/t3code", number: 15)
+    private let target = GitHubPullRequestEvents.Target(repo: "octocat/hello-world", number: 15)
 
     private static func sse(_ frames: [(String, String)]) -> String {
         frames.map { "event: \($0.0)\ndata: \($0.1)\n\n" }.joined()
@@ -57,13 +57,13 @@ final class PullRequestEventsTests: XCTestCase {
     }
 
     func testOnlyPullRequestsOnGitHubDotComHaveAFeed() {
-        XCTAssertEqual(GitHubPullRequestEvents.Target.parse(URL(string: "https://github.com/pingdotgg/t3code/pull/15")!), target)
-        XCTAssertEqual(target.resourceURL, "https://github.com/pingdotgg/t3code/pull/15")
+        XCTAssertEqual(GitHubPullRequestEvents.Target.parse(URL(string: "https://github.com/octocat/hello-world/pull/15")!), target)
+        XCTAssertEqual(target.resourceURL, "https://github.com/octocat/hello-world/pull/15")
         XCTAssertNil(GitHubPullRequestEvents.Target.parse(URL(string: "https://ghe.example.com/a/b/pull/1")!), "GitHub Enterprise polls")
         XCTAssertNil(GitHubPullRequestEvents.Target.parse(URL(string: "https://gitlab.com/a/b/-/merge_requests/1")!))
         XCTAssertNil(GitHubPullRequestEvents.Target.parse(URL(string: "https://github.com/a/b/issues/1")!))
         let body = GitHubPullRequestEvents.subscribeBody(target)
-        XCTAssertEqual(body["resource_url"] as? String, "https://github.com/pingdotgg/t3code/pull/15")
+        XCTAssertEqual(body["resource_url"] as? String, "https://github.com/octocat/hello-world/pull/15")
         XCTAssertEqual(body["event_types"] as? [String], [
             "com.github.pull_request.review.submitted.v1", "com.github.pull_request.head.changed.v1",
             "com.github.pull_request.state.changed.v1", "com.github.pull_request.merge_conflict.v1",
@@ -123,7 +123,7 @@ final class PullRequestEventsTests: XCTestCase {
             "https://api.github.com/event-subscriptions/2/events b",
         ])
         XCTAssertEqual(transport.posts.count, 2)
-        XCTAssertEqual(transport.posts.first?["resource_url"] as? String, "https://github.com/pingdotgg/t3code/pull/15")
+        XCTAssertEqual(transport.posts.first?["resource_url"] as? String, "https://github.com/octocat/hello-world/pull/15")
         XCTAssertEqual(transport.deletes, ["1 a", "2 a"], "each subscription is deleted with the account that made it")
     }
 
@@ -147,7 +147,7 @@ final class PullRequestEventsTests: XCTestCase {
         let clock = FakeClock()
         let follower = PullRequestEventFollower(transport: refused, now: clock.now, sleep: clock.sleep, jitter: { 1 })
         await follower.follow(target, tokens: ["a"]) {}
-        await follower.follow(GitHubPullRequestEvents.Target(repo: "pingdotgg/t3code", number: 16), tokens: ["a"]) {}
+        await follower.follow(GitHubPullRequestEvents.Target(repo: "octocat/hello-world", number: 16), tokens: ["a"]) {}
         XCTAssertEqual(refused.posts.count, 1, "a refused account is not asked again for an hour")
         clock.advance(61 * 60)
         await follower.follow(target, tokens: ["a"]) {}
@@ -160,7 +160,7 @@ final class PullRequestEventsTests: XCTestCase {
         XCTAssertEqual(missing.posts.count, 2, "every account is asked before a pull request counts as unseen")
         await missingFollower.follow(target, tokens: ["a", "b"]) {}
         XCTAssertEqual(missing.posts.count, 2, "a pull request no account can see is not asked again")
-        await missingFollower.follow(GitHubPullRequestEvents.Target(repo: "pingdotgg/t3code", number: 16), tokens: ["a"]) {}
+        await missingFollower.follow(GitHubPullRequestEvents.Target(repo: "octocat/hello-world", number: 16), tokens: ["a"]) {}
         XCTAssertEqual(missing.posts.count, 3, "other pull requests on the host still subscribe")
 
         let full = FakeTransport(subscribe: { _, _ in (422, Data()) }, connections: [])
