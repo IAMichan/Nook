@@ -11,6 +11,10 @@ extension SettingsView {
         Group {
             Section {
                 Toggle(isOn: $settings.sounds) { SettingText("settings.voice.agentSound") }
+                ForEach(NookSound.allCases) { sound in
+                    soundChoiceRow(sound)
+                }
+                .disabled(!settings.sounds)
                 LabeledContent {
                     Button(tr("button.openFolder")) { NookSound.openFolder() }
                 } label: {
@@ -33,6 +37,36 @@ extension SettingsView {
                 }
             }
             ParakeetSettingsSection()
+        }
+    }
+
+    /// One moment's sound: a picker of the macOS sounds, your own file and none, which plays what you pick, and a
+    /// button to hear it again.
+    private func soundChoiceRow(_ sound: NookSound) -> some View {
+        let choice = Binding<String>(
+            get: { settings.soundChoices[sound.rawValue] ?? "" },
+            set: { stored in
+                settings.soundChoices[sound.rawValue] = stored.isEmpty ? nil : stored
+                NookSound.play(sound, choice: NookSound.Choice(stored: stored))
+            }
+        )
+        let hasFile = sound.customFile != nil
+        return HStack(spacing: NookTheme.Spacing.xs) {
+            Picker(selection: choice) {
+                Text(hasFile ? tr("settings.sound.standardFile") : tr("settings.sound.standard", sound.defaultSystemName))
+                    .tag("")
+                Divider()
+                ForEach(NookSound.systemSounds, id: \.self) { Text($0).tag($0) }
+                Divider()
+                if hasFile || choice.wrappedValue == "file" { Text(tr("settings.sound.file")).tag("file") }
+                Text(tr("settings.sound.none")).tag("none")
+            } label: {
+                SettingText(sound.titleKey)
+            }
+            ToolbarIconButton("speaker.wave.2", tr("settings.sound.preview"),
+                              enabled: settings.sounds && choice.wrappedValue != "none") {
+                NookSound.play(sound, choice: NookSound.Choice(stored: choice.wrappedValue))
+            }
         }
     }
 
