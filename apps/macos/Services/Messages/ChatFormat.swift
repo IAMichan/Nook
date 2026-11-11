@@ -104,7 +104,7 @@ enum ChatFormat {
         let cache = NSCache<NSString, Value>()
         cache.countLimit = 2_000
         cache.totalCostLimit = textCacheBytes
-        MemoryPressure.shared.register(name) { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register(name, emptying: cache)
         return cache
     }
 

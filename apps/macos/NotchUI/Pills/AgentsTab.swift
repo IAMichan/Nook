@@ -1184,7 +1184,8 @@ struct AgentConversation: View {
 enum WorkspaceRunsSection {
     static let settledLimit = 12
 
-    static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions = .shared, now: Date = Date()) -> [WorkspaceRun] {
+    static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions? = nil, now: Date = Date()) -> [WorkspaceRun] {
+        let finished = finished ?? .shared
         let list = workspace.runs
             .filter { !$0.archived }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }

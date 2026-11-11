@@ -16,7 +16,7 @@ final class MusicArtworkStore: @unchecked Sendable {
         let cache = NSCache<NSURL, NSImage>()
         cache.countLimit = 60
         cache.totalCostLimit = 32 * 1024 * 1024
-        MemoryPressure.shared.register("musicArtwork") { [cache] _ in cache.removeAllObjects() }
+        MemoryPressure.shared.register("musicArtwork", emptying: cache)
         return cache
     }()
 

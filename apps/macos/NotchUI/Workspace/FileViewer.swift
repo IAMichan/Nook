@@ -468,8 +468,9 @@ private struct FileCodeView: View, Equatable {
     /// The last line of the link's range (`app.swift:42-64`): the lines from `line` to it are marked.
     var endLine: Int? = nil
     let scrollKey: UUID
-    /// Starts a remark on a line (1-based), from the + on its number. Nil outside a session.
-    var comment: ((Int) -> Void)? = nil
+    /// Starts a remark on a line (1-based), from the + on its number. Nil outside a session. Read off the main actor
+    /// only by `==`, and only for whether it is set.
+    nonisolated(unsafe) var comment: ((Int) -> Void)? = nil
     /// The lines already in their colors, by index with what they were made from, so scrolling back over a line does
     /// not build it again.
     @State private var styledLines = StyledLines()

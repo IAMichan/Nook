@@ -859,7 +859,7 @@ final class BrowserConnector: ContextSource {
         }
     }
 
-    private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
+    nonisolated private static let browsers: [(name: String, bundle: String, safari: Bool)] = [
         ("Safari", "com.apple.Safari", true),
         ("Google Chrome", "com.google.Chrome", false),
         ("Arc", "company.thebrowser.Browser", false),
