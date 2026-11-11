@@ -79,24 +79,10 @@ enum AndroidDevices {
     /// A PNG of the screen, without touching the phone's storage.
     static func screenshot(serial: String) -> Data? {
         guard let adb else { return nil }
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: adb)
-        process.arguments = ["-s", serial, "exec-out", "screencap", "-p"]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        defer {
-            try? pipe.fileHandleForReading.close()
-            try? pipe.fileHandleForWriting.close()
-        }
-        guard (try? process.run()) != nil else { return nil }
-        // A device that hangs must not hold the page or the agent: ending adb ends the read below.
-        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: watchdog)
-        defer { watchdog.cancel() }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return process.terminationStatus == 0 && !data.isEmpty ? data : nil
+        // A device that hangs must not hold the page or the agent: the deadline ends adb and the read.
+        guard let result = try? ProcessRunner.run(adb, ["-s", serial, "exec-out", "screencap", "-p"], timeout: 10),
+              result.status == 0, !result.timedOut, !result.stdoutData.isEmpty else { return nil }
+        return result.stdoutData
     }
 
     static func shutdown(serial: String) {

@@ -65,25 +65,9 @@ extension WorkspaceManager {
 
     /// The version a program prints for `--version` ("2.1.280"), nil when it prints none within a few seconds.
     nonisolated private static func version(of path: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["--version"]
-        process.environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: path, extra: [:])
-        process.standardInput = FileHandle.nullDevice
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        do { try process.run() } catch { return nil }
-        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: stop)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        stop.cancel()
-        let text = String(decoding: data.prefix(4096), as: UTF8.self)
+        let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: path, extra: [:])
+        guard let result = try? ProcessRunner.run(path, ["--version"], environment: environment, timeout: 10) else { return nil }
+        let text = String(decoding: result.stdoutData.prefix(4096), as: UTF8.self)
         return text.split(whereSeparator: \.isNewline).lazy.compactMap { CLIVersion(String($0)) }.first?.description
     }
 

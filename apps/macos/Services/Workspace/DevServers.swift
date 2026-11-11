@@ -74,20 +74,10 @@ enum DevServerScanner {
     }
 
     private static func run(_ arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        do { try process.run() } catch { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+        // lsof can hang on an unreachable network volume: the deadline keeps the caller from waiting on it forever.
+        // Its exit status is 1 when it finds nothing, so the output counts either way.
+        guard let result = try? ProcessRunner.run("/usr/sbin/lsof", arguments, timeout: 10), !result.timedOut else { return nil }
+        return result.stdout
     }
 }
 

@@ -997,24 +997,8 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private static func run(_ path: String, _ arguments: [String], timeout: TimeInterval) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        do { try process.run() } catch { return nil }
-        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        stop.cancel()
-        return String(data: data, encoding: .utf8)
+        guard let result = try? ProcessRunner.run(path, arguments, timeout: timeout), !result.timedOut else { return nil }
+        return String(data: result.stdoutData, encoding: .utf8)
     }
 
     // MARK: Usage
