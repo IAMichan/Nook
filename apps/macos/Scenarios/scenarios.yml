@@ -1,0 +1,85 @@
+# End-to-end scenarios (docs/SCENARIOS.md), included from project.yml.
+#
+# Everything the scenarios need lives in this folder, so scripts/prove-scenario.sh can lay it over an older commit and
+# only add `include: [Scenarios/scenarios.yml]` to that commit's project.yml. Paths here are relative to this folder.
+targets:
+  # The replay agent: a stand-in `claude` that plays recordings over Claude Code's stream-json protocol, so a scenario
+  # runs the real session code without a model (and without spending a token).
+  NookReplayAgent:
+    type: tool
+    platform: macOS
+    sources:
+      - path: ReplayAgent
+    settings:
+      base:
+        PRODUCT_NAME: claude
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Automatic
+
+  # The scenarios themselves: a unit-test bundle without an app host. It compiles the app's own sources (all of the Nook
+  # target but its entry point), so the real WorkspaceManager, AgentProcess and views run inside the test process,
+  # pointed at a scenario home instead of the user's. Nook.app is never launched.
+  NookScenarios:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ../App
+        excludes:
+          - main.swift
+          - "*.icns"
+          - Info.plist
+          - "*.entitlements"
+      - path: ../NotchUI
+      - path: ../Demo
+      - path: ../Core
+      - path: ../Services
+      - path: ../Brain
+      - path: ../../../packages/protocol/Sources
+      # The icons, so the views draw them as the app does (the harness serves this bundle as the main bundle).
+      - path: ../Resources/Lucide.xcassets
+      - path: Harness
+      - path: Cases
+      - path: Recordings
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: NookReplayAgent
+        embed: true
+        copy:
+          destination: resources
+      - package: MLXSwiftLM
+        product: MLXLLM
+      - package: MLXSwiftLM
+        product: MLXLMCommon
+      - package: MLXSwiftLM
+        product: MLXVLM
+      - package: MLXSwiftLM
+        product: MLXHuggingFace
+      - package: SwiftHuggingFace
+        product: HuggingFace
+      - package: SwiftTransformers
+        product: Tokenizers
+      - package: SwiftTerm
+        product: SwiftTerm
+      - package: LlamaSwift
+        product: LlamaSwift
+      - package: FluidAudio
+        product: FluidAudio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.scenarios
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # No app host: the bundle carries the app code itself.
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+
+schemes:
+  NookScenarios:
+    build:
+      targets:
+        NookScenarios: [test]
+    test:
+      targets:
+        - NookScenarios

@@ -487,10 +487,10 @@ struct SelectableProse: NSViewRepresentable {
     }
 
     /// The file's symbol (`FileTypeGlyph`) set in the text and opening the same link, centered on the capitals with a
-    /// little room before the name.
+    /// little room before the name. A link to an app on this Mac shows the app's own icon, a little larger.
     private static func fileGlyph(_ path: String, size: CGFloat, link: URL) -> NSAttributedString {
         let font = NSFont.systemFont(ofSize: size)
-        let image = FileTypeGlyph.image(for: path, size: round(size * 0.8))
+        let image = FileTypeGlyph.appIcon(for: path, size: round(size * 1.1)) ?? FileTypeGlyph.image(for: path, size: round(size * 0.8))
         let attachment = NSTextAttachment()
         attachment.image = image
         let height = image.size.height

@@ -536,7 +536,7 @@ final class PullRequestStore: ObservableObject {
                                        // While GitHub works mergeability out again, the row keeps the conflict it knew.
                                        conflict: detail.conflicted || (detail.mergeable == nil && item.conflict),
                                        labels: detail.labels,
-                                       labelColors: detail.labelColors, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
+                                       labelColors: detail.labelColors, labelDescriptions: detail.labelDescriptions, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
                                        baseBranch: detail.baseBranch.isEmpty ? item.baseBranch : detail.baseBranch,
                                        nodeID: detail.nodeID.isEmpty ? item.nodeID : detail.nodeID)
             }

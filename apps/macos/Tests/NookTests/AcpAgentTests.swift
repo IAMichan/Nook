@@ -90,6 +90,11 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertNil(AcpMapper.rawOutput([String: Any]()))
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[{"content":"Tests","status":"completed","priority":"high"},{"content":"Fix","status":"pending","priority":"high"}]}}}"#),
                        [.plan([RunTaskStep(text: "Tests", status: .done), RunTaskStep(text: "Fix", status: .pending)])])
+        // An empty plan clears the list; a dropped entry is cancelled.
+        XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[]}}}"#),
+                       [.plan([])])
+        XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[{"content":"Old","status":"cancelled"}]}}}"#),
+                       [.plan([RunTaskStep(text: "Old", status: .cancelled)])])
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":53000,"size":200000,"cost":{"amount":0.42,"currency":"USD"}}}}"#),
                        [.usage(used: 53000, size: 200000, costUSD: 0.42)])
     }
@@ -423,6 +428,22 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual(EditLines.of(tool: two.toolName, input: several), EditLines(added: 3, removed: 1),
                        "several places, and a new file, count as one edit")
         XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).editInput)
+    }
+
+    func testAReadNamesTheFileItReportedOnlyInItsLocations() throws {
+        let located = AcpToolCall(id: "r", title: "Read shot.png", kind: "read", status: nil, input: JSONBox(["limit": 10]),
+                                  output: "", paths: ["/w/shot.png"])
+        let input = try XCTUnwrap(located.readInput?.dictionary)
+        XCTAssertEqual(input["path"] as? String, "/w/shot.png")
+        XCTAssertEqual(input["limit"] as? Int, 10)
+        XCTAssertEqual(ViewedImages.paths(tool: located.toolName, input: input), ["/w/shot.png"])
+        // An input that names its file, another kind of call, or no location: the input as it came.
+        let named = AcpToolCall(id: "r", title: "", kind: "read", status: nil, input: JSONBox(["file_path": "/w/a.png"]),
+                                output: "", paths: ["/w/b.png"])
+        XCTAssertEqual(named.readInput, named.input)
+        let search = AcpToolCall(id: "s", title: "", kind: "search", status: nil, input: nil, output: "", paths: ["/w/a.png"])
+        XCTAssertNil(search.readInput)
+        XCTAssertNil(AcpToolCall(id: "x", title: "", kind: "read", status: nil, input: nil, output: "", paths: []).readInput)
     }
 
     func testCursorChats() throws {

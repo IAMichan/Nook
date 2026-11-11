@@ -266,12 +266,13 @@ struct PullRequestRow: View, Equatable {
                         ForEach(Array(shown.enumerated()), id: \.offset) { index, name in
                             let rest = item.labels.count - shown.count
                             LabelChip(name: name, color: item.labelColors[name],
-                                      suffix: index == shown.count - 1 && rest > 0 ? "+\(rest)" : nil)
+                                      suffix: index == shown.count - 1 && rest > 0 ? "+\(rest)" : nil,
+                                      description: item.labelDescriptions[name])
                         }
                     }
                     .fixedSize()
                 }
-                LabelChip(name: first, color: item.labelColors[first]).frame(maxWidth: 120)
+                LabelChip(name: first, color: item.labelColors[first], description: item.labelDescriptions[first]).frame(maxWidth: 120)
             }
         }
     }

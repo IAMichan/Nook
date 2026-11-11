@@ -113,8 +113,15 @@ final class DeviceHubService: ObservableObject {
                 return
             }
         }
-        // The versions these replace: nothing runs from them any more.
-        for folder in earlierInstalls { try? FileManager.default.removeItem(at: folder) }
+        // The versions these replace. A daemon may still run from an earlier agent-device: it is stopped with its own
+        // CLI first, and a folder it still runs from stays until it is gone.
+        let earlier = earlierInstalls
+        let daemon = daemonPaths
+        let record = await Task.detached(priority: .utility) { () -> DeviceHub.DaemonRecord? in
+            Self.stopDaemon(daemon)
+            return Self.readRecord(daemon.stateDir)
+        }.value
+        for folder in earlier where !DeviceHub.inUse(folder, by: record) { try? FileManager.default.removeItem(at: folder) }
         await start()
     }
 
@@ -204,8 +211,27 @@ final class DeviceHubService: ObservableObject {
         }
     }
 
+    /// Stops the hub and the agent-device daemon Nook started (in the background).
     func stop() {
+        stopHub()
+        let daemon = daemonPaths
+        Task.detached(priority: .utility) { Self.stopDaemon(daemon) }
+    }
+
+    /// Nook quits: the hub stops now, and what stops the daemon is handed back to run while Nook waits for its agents
+    /// (`QuitShutdown`); nil when no daemon was started.
+    func stopForQuit() -> (@Sendable () -> Void)? {
+        stopHub()
+        let daemon = daemonPaths
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: daemon.stateDir.appendingPathComponent("daemon.json").path)
+                || manager.fileExists(atPath: daemon.stateDir.appendingPathComponent(DeviceHub.daemonRecordName).path) else { return nil }
+        return { Self.stopDaemon(daemon, timeout: 4) }
+    }
+
+    private func stopHub() {
         stopping = true
+        idleStop?.cancel()
         process?.terminate()
         process = nil
         origin = nil
@@ -326,9 +352,10 @@ final class DeviceHubService: ObservableObject {
         guard installed(agentFolder, version: DeviceHub.agentVersion, entry: DeviceHub.agentEntry(agentFolder)) else {
             throw NookError(tr("sim.hub.notInstalled"))
         }
-        let agentState = stateDir.appendingPathComponent("agent-device", isDirectory: true)
-        let daemon = try await Task.detached(priority: .userInitiated) {
-            try Self.startDaemon(node: node, entry: entry, stateDir: agentState)
+        var paths = daemonPaths
+        paths.node = node
+        let daemon = try await Task.detached(priority: .userInitiated) { [paths] in
+            try Self.startDaemon(paths)
         }.value
         let hosts = stateDir.appendingPathComponent("hosts", isDirectory: true)
         let bin = stateDir.appendingPathComponent("bin", isDirectory: true)
@@ -346,22 +373,102 @@ final class DeviceHubService: ObservableObject {
                             "--session", DeviceHub.agentSession(runID: runID, deviceID: udid)])
     }
 
-    /// The agent-device daemon: reused while it answers `/health`, otherwise started (`devices --json` starts it) and
-    /// waited for until it writes daemon.json.
-    nonisolated private static func startDaemon(node: String, entry: String, stateDir: URL) throws -> (port: Int, token: String) {
+    /// Where the agent-device daemon keeps its state, and the agent-device of this Nook.
+    struct DaemonPaths: Sendable {
+        var stateDir: URL
+        var entry: String
+        var node: String?
+    }
+
+    private var daemonPaths: DaemonPaths {
+        DaemonPaths(stateDir: stateDir.appendingPathComponent("agent-device", isDirectory: true),
+                    entry: DeviceHub.agentEntry(agentFolder).path, node: node)
+    }
+
+    /// The agent-device daemon: reused while it answers `/health` and runs this Nook's agent-device version; one of
+    /// another version is stopped first. Otherwise started (`devices --json` starts it) and waited for until it writes
+    /// daemon.json, and then written down (`DeviceHub.DaemonRecord`) so it can be stopped again later.
+    nonisolated private static func startDaemon(_ paths: DaemonPaths) throws -> DeviceHub.AgentDaemon {
+        guard let node = paths.node else { throw NookError(tr("sim.hub.noNode")) }
+        let stateDir = paths.stateDir
         try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
         let file = stateDir.appendingPathComponent("daemon.json")
-        if let data = try? Data(contentsOf: file), let daemon = DeviceHub.daemon(data), healthy(port: daemon.port) { return daemon }
+        let running = (try? Data(contentsOf: file)).flatMap(DeviceHub.daemon)
+        let record = readRecord(stateDir)
+        switch DeviceHub.daemonReuse(running, record: record, healthy: running.map { healthy(port: $0.port) } ?? false) {
+        case .reuse:
+            if let running { return running }
+        case .replace:
+            stopDaemon(paths)
+        case .start:
+            break
+        }
         try? FileManager.default.removeItem(at: file)
         var environment = loginEnvironment()
         for (key, value) in DeviceHub.agentEnvironment(stateDir: stateDir.path) { environment[key] = value }
-        _ = try? ProcessRunner.run(node, [entry, "devices", "--json"], environment: environment, timeout: 30)
+        _ = try? ProcessRunner.run(node, [paths.entry, "devices", "--json"], environment: environment, timeout: 30)
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
-            if let data = try? Data(contentsOf: file), let daemon = DeviceHub.daemon(data) { return daemon }
+            if let data = try? Data(contentsOf: file), let daemon = DeviceHub.daemon(data) {
+                let record = DeviceHub.DaemonRecord(pid: daemon.pid, version: daemon.version ?? DeviceHub.agentVersion,
+                                                    entry: paths.entry, node: node)
+                if let data = try? JSONEncoder().encode(record) {
+                    try? data.write(to: stateDir.appendingPathComponent(DeviceHub.daemonRecordName), options: .atomic)
+                }
+                return daemon
+            }
             Thread.sleep(forTimeInterval: 0.1)
         }
         throw NookError(tr("sim.hub.daemonFailed"))
+    }
+
+    nonisolated static func readRecord(_ stateDir: URL) -> DeviceHub.DaemonRecord? {
+        (try? Data(contentsOf: stateDir.appendingPathComponent(DeviceHub.daemonRecordName))).flatMap(DeviceHub.daemonRecord)
+    }
+
+    /// Stops the daemon Nook started, also one an earlier Nook left running: with the CLI of the version it runs when
+    /// that is still installed, else this Nook's, else SIGTERM once its pid is checked to still be agent-device. A record
+    /// whose process is gone is dropped. Blocks for at most `timeout` seconds of `daemon stop`.
+    nonisolated static func stopDaemon(_ paths: DaemonPaths, timeout: TimeInterval = 10) {
+        let manager = FileManager.default
+        let daemonFile = paths.stateDir.appendingPathComponent("daemon.json")
+        let recordFile = paths.stateDir.appendingPathComponent(DeviceHub.daemonRecordName)
+        let daemon = (try? Data(contentsOf: daemonFile)).flatMap(DeviceHub.daemon)
+        let decision = DeviceHub.daemonStop(record: readRecord(paths.stateDir), daemon: daemon, currentNode: paths.node,
+                                            currentEntry: paths.entry, alive: { kill($0, 0) == 0 || errno == EPERM },
+                                            exists: { manager.fileExists(atPath: $0) })
+        func forget() {
+            try? manager.removeItem(at: recordFile)
+            try? manager.removeItem(at: daemonFile)
+        }
+        switch decision {
+        case .nothing:
+            return
+        case .forget:
+            forget()
+        case .run(let node, let entry):
+            var environment = ProcessInfo.processInfo.environment
+            for (key, value) in DeviceHub.agentEnvironment(stateDir: paths.stateDir.path) { environment[key] = value }
+            _ = try? ProcessRunner.run(node, DeviceHub.daemonStopArguments(entry: entry, stateDir: paths.stateDir.path),
+                                       environment: environment, timeout: timeout)
+            // The CLI could not stop it (within a second of its answer, its pid still runs agent-device): SIGTERM.
+            if let pid = daemon?.pid ?? readRecord(paths.stateDir)?.pid {
+                let until = Date().addingTimeInterval(1)
+                while kill(pid, 0) == 0, Date() < until { Thread.sleep(forTimeInterval: 0.05) }
+                if kill(pid, 0) == 0 { terminateDaemon(pid) }
+            }
+            forget()
+        case .signal(let pid):
+            terminateDaemon(pid)
+            forget()
+        }
+    }
+
+    /// SIGTERM, only while that pid still is an agent-device process (a pid can be given to another program).
+    nonisolated private static func terminateDaemon(_ pid: Int32) {
+        guard pid > 1, let output = try? ProcessRunner.run("/bin/ps", ["-o", "command=", "-p", String(pid)], timeout: 2),
+              output.stdout.contains("agent-device") else { return }
+        kill(pid, SIGTERM)
     }
 
     nonisolated private static func healthy(port: Int) -> Bool {

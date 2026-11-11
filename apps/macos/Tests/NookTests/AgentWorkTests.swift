@@ -34,6 +34,41 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(RunTasks.progress(done).current, "C")
     }
 
+    func testADroppedStepIsCancelledAndCountsInNeitherNumber() {
+        XCTAssertEqual(RunTasks.status("cancelled"), .cancelled)
+        XCTAssertEqual(RunTasks.status("canceled"), .cancelled)
+        // Cursor's todo_write, OpenCode's todowrite and Gemini CLI's write_todos (`description`) say so.
+        XCTAssertEqual(SessionOutputs.taskList(tool: "todowrite", input: ["todos": [["content": "Old idea", "status": "cancelled"]]]),
+                       [RunTaskStep(text: "Old idea", status: .cancelled)])
+        XCTAssertEqual(RunTasks.claude(["todos": [["description": "Write tests", "status": "in_progress"]]]),
+                       [RunTaskStep(text: "Write tests", status: .active)])
+        let steps = [RunTaskStep(text: "A", status: .done), RunTaskStep(text: "B", status: .cancelled), RunTaskStep(text: "C", status: .pending)]
+        let progress = RunTasks.progress(steps)
+        XCTAssertEqual(progress.done, 1)
+        XCTAssertEqual(progress.total, 2)
+        XCTAssertEqual(progress.current, "C")
+        XCTAssertFalse(RunTasks.isFinished(steps))
+        XCTAssertTrue(RunTasks.isFinished([RunTaskStep(text: "A", status: .done), RunTaskStep(text: "B", status: .cancelled)]))
+        XCTAssertEqual(RunTasks.progress([RunTaskStep(text: "A", status: .done), RunTaskStep(text: "B", status: .cancelled)]).current, "A")
+    }
+
+    func testATaskStatusThisNookDoesNotKnowStillDecodes() throws {
+        let data = Data(#"[{"text":"A","status":"cancelled"},{"text":"B","status":"blocked"}]"#.utf8)
+        let steps = try JSONDecoder().decode([RunTaskStep].self, from: data)
+        XCTAssertEqual(steps, [RunTaskStep(text: "A", status: .cancelled), RunTaskStep(text: "B", status: .pending)])
+        XCTAssertEqual(try JSONDecoder().decode([RunTaskStep].self, from: JSONEncoder().encode(steps)), steps)
+    }
+
+    // MARK: Working timer
+
+    func testTheWorkingTimerKeepsItsStartWhenTheAgentCarriesOn() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let now = Date(timeIntervalSince1970: 2_000)
+        XCTAssertEqual(TurnTimer.start(continuing: true, previous: start, now: now), start)
+        XCTAssertEqual(TurnTimer.start(continuing: false, previous: start, now: now), now, "a new prompt starts the timer again")
+        XCTAssertEqual(TurnTimer.start(continuing: true, previous: nil, now: now), now)
+    }
+
     func testOldSessionsDecodeWithoutTasks() throws {
         let run = TestData.run(status: .completed)
         var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(run)) as! [String: Any]

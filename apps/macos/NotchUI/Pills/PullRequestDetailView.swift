@@ -108,12 +108,21 @@ struct PullRequestDetailView: View {
     /// Hands the row back as the page last read it (merged, closed, ready for review, in conflict), so the tab that
     /// holds it shows the same mark as the page.
     let onUpdate: ((PullRequestItem) -> Void)?
+    /// Where the link that opened the page pointed (see PullRequestFocus); the page opens on that tab and goes there once
+    /// GitHub answered. A new request (the same link clicked again) goes there again.
+    let focus: PullRequestFocusRequest?
+    @State var pendingFocus: PullRequestFocus?
+    /// The comment a link pointed at, lit up on the timeline.
+    @State var focusedEvent: String?
 
     init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [], stackHistory: [PullRequestItem] = [],
          onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onUpdate: ((PullRequestItem) -> Void)? = nil,
          onBack: (() -> Void)? = nil, onMaximize: (() -> Void)? = nil, maximized: Bool = false,
-         waitsForPanel: Bool = false) {
+         waitsForPanel: Bool = false, focus: PullRequestFocusRequest? = nil) {
         self.accountID = accountID
+        self.focus = focus
+        _pendingFocus = State(initialValue: focus?.focus)
+        _tab = State(initialValue: focus.map { Self.tab(for: $0.focus) } ?? .summary)
         self.item = item
         self.inline = inline
         self.stack = stack
@@ -139,6 +148,10 @@ struct PullRequestDetailView: View {
     var body: some View {
         pageBody
             .environment(\.sessionPullRequestRef, detail?.sessionRef)
+            // Read (1), then with its timeline, commits and files (2): where a link pointed can be gone to.
+            .onChange(of: detail == nil ? 0 : (detail?.activityLoaded == true ? 2 : 1), initial: true) { _, _ in applyFocus() }
+            .onChange(of: settled) { _, _ in applyFocus() }
+            .onChange(of: focus) { _, request in takeFocus(request) }
             .environment(\.pullRequestCommentActions, commentActions)
             // A new push, a moved base: compare again.
             .task(id: detail.map { "\($0.headSHA) \($0.mergeState) \($0.updated?.timeIntervalSince1970 ?? 0)" }) {

@@ -267,6 +267,9 @@ enum CodexAppServerMapper {
             guard let id = params["itemId"] as? String, let delta = params["delta"] as? String else { return [] }
             return [.commandOutput(id: id, delta: delta)]
         case "item/started":
+            if let user = params["item"] as? [String: Any], (user["type"] as? String) == "userMessage" {
+                return [.userMessage(text: userMessageText(user), thread: params["threadId"] as? String)]
+            }
             return item(params["item"] as? [String: Any], finished: false)
         case "item/completed":
             return item(params["item"] as? [String: Any], finished: true)
@@ -300,6 +303,15 @@ enum CodexAppServerMapper {
         }
     }
 
+    /// The words of a `userMessage` item: its text inputs, joined; nil when it has none (only pictures).
+    static func userMessageText(_ item: [String: Any]) -> String? {
+        let parts = ((item["content"] as? [[String: Any]]) ?? []).compactMap { input in
+            (input["type"] as? String) == "text" ? input["text"] as? String : nil
+        }
+        let text = parts.joined(separator: "\n")
+        return text.isEmpty ? nil : text
+    }
+
     private static func item(_ item: [String: Any]?, finished: Bool) -> [CodexStreamEvent] {
         guard let item, let id = item["id"] as? String, let type = item["type"] as? String else { return [] }
         switch type {
@@ -309,6 +321,11 @@ enum CodexAppServerMapper {
             return [.messageCompleted(id: id, text: text)]
         case "imageGeneration":
             return [generatedImage(id, item, finished: finished)]
+        case "imageView":
+            // A picture Codex looked at (`view_image`): a read step, with the picture under it (`ViewedImages`).
+            guard let path = (item["path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else { return [] }
+            return [.toolCall(id: id, name: "view_image", detail: (path as NSString).lastPathComponent, finished: finished,
+                              failed: false, input: JSONBox(["path": path]))]
         case "reasoning":
             guard finished else { return [] }
             let parts = ((item["summary"] as? [String]) ?? []).isEmpty ? ((item["content"] as? [String]) ?? []) : ((item["summary"] as? [String]) ?? [])

@@ -2,7 +2,8 @@
   let { name, size = 18 }: {
     name: "chat" | "agents" | "workspace" | "phone" | "settings" | "plus" | "search" | "sidebar" | "arrow" | "back" | "attach" | "mic" | "copy" | "lock" | "unlock" | "gamepad"
       | "home" | "memory" | "link" | "brain" | "pull" | "chart" | "globe" | "note" | "voice" | "check" | "calendar" | "message"
-      | "code" | "sparkle" | "x" | "grip" | "tasks";
+      | "code" | "sparkle" | "x" | "grip" | "tasks"
+      | "terminal" | "file" | "pencil" | "bot" | "wrench" | "chevron-right" | "chevron-down" | "alert" | "loader" | "stop" | "branch" | "eye" | "hand" | "circle-check";
     size?: number;
   } = $props();
 </script>
@@ -40,6 +41,20 @@
   {:else if name === "sparkle"}<path d="M12 3.5c.6 4.4 2.1 5.9 6.5 6.5-4.4.6-5.9 2.1-6.5 6.5-.6-4.4-2.1-5.9-6.5-6.5 4.4-.6 5.9-2.1 6.5-6.5ZM18.5 15.5c.3 1.9.9 2.6 2.5 3-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.4 2.2-1.1 2.5-3Z" />
   {:else if name === "x"}<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
   {:else if name === "grip"}<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="2.6" />
+  {:else if name === "terminal"}<path d="m4 17 6-6-6-6M12 19h8" />
+  {:else if name === "file"}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" />
+  {:else if name === "pencil"}<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" />
+  {:else if name === "bot"}<rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4H8M2 14h2M20 14h2M9 13v2M15 13v2" />
+  {:else if name === "wrench"}<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94Z" />
+  {:else if name === "chevron-right"}<path d="m9 18 6-6-6-6" />
+  {:else if name === "chevron-down"}<path d="m6 9 6 6 6-6" />
+  {:else if name === "alert"}<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4M12 17h.01" />
+  {:else if name === "loader"}<path d="M21 12a9 9 0 1 1-6.22-8.56" />
+  {:else if name === "stop"}<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />
+  {:else if name === "branch"}<circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="8" r="2.5" /><path d="M6 8.5v7M18 10.5c0 4-6 3-11 5.5" />
+  {:else if name === "eye"}<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
+  {:else if name === "hand"}<path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+  {:else if name === "circle-check"}<circle cx="12" cy="12" r="9" /><path d="m9 12 2 2 4-4" />
   {:else if name === "tasks"}<rect x="4" y="4" width="16" height="16" rx="4" /><path d="m8.5 12 2.5 2.5 4.5-5" />
   {/if}
 </svg>

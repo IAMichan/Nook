@@ -5,7 +5,10 @@ import Foundation
 /// written bare), `author:ada`, `draft:true` or `draft:false`, `review:approved` / `changes-requested` / `required` /
 /// `none`, `checks:passing` / `failing` / `pending` (or `status:`), and Nook's own `repo:owner/name` (`-repo:` to
 /// leave a repository out). A qualifier
-/// typed here wins over the same choice in the Filters dropdown. Foundation only, so tests can use it.
+/// typed here wins over the same choice in the Filters dropdown. A query pasted from github.com works too: GitHub's own
+/// scope and order qualifiers (`is:pr`, `state:open`, `sort:updated-desc` …, see `githubOnlyKeys`) are skipped, two
+/// different authors mean any author (GitHub ORs them), and `-draft:true` reads as `draft:false`. As in t3code.
+/// Foundation only, so tests can use it.
 struct PullRequestQuery: Equatable, Sendable {
     /// The words left over, lowercased; every one must appear in the row.
     var words: [String] = []
@@ -22,8 +25,18 @@ struct PullRequestQuery: Equatable, Sendable {
     private static let maxValues = 10
     private static let maxLength = 200
 
+    /// GitHub's search qualifiers that set scope, order or what is searched, not a label: the list sets those itself,
+    /// so they are skipped rather than read as scoped labels nothing carries. `repo:` stays Nook's own.
+    static let githubOnlyKeys: Set<String> = [
+        "is", "state", "archived", "org", "user", "sort", "in", "language", "created", "updated", "merged", "closed",
+        "comments", "interactions", "reactions", "review-requested", "reviewed-by", "team-review-requested", "assignee",
+        "mentions", "commenter", "involves", "base", "head", "milestone", "linked", "no",
+    ]
+
     static func parse(_ raw: String) -> PullRequestQuery {
         var query = PullRequestQuery()
+        // Set once two different logins are named: GitHub shows either author's, and the filter holds one.
+        var authorsDiffer = false
         for token in tokens(raw) {
             guard let (negated, key, rawValue) = qualifier(token) else {
                 query.words.append(token.lowercased())
@@ -37,9 +50,12 @@ struct PullRequestQuery: Equatable, Sendable {
                 if names.isEmpty { query.words.append(token.lowercased()) }
                 else if negated { query.excludedLabels += names } else { query.labels.append(names) }
             case "author" where !negated:
-                query.author = String((value.hasPrefix("@") ? String(value.dropFirst()) : value).prefix(maxLength))
-            case "draft" where !negated && ["true", "false"].contains(value.lowercased()):
-                query.draft = value.lowercased() == "true" ? .drafts : .ready
+                // `@me` and `me` both name the viewer; logins are case-insensitive.
+                let login = String((value.hasPrefix("@") ? String(value.dropFirst()) : value).prefix(maxLength))
+                if let author = query.author, author.lowercased() != login.lowercased() { authorsDiffer = true }
+                if query.author == nil { query.author = login }
+            case "draft" where ["true", "false"].contains(value.lowercased()):
+                query.draft = (value.lowercased() == "true") != negated ? .drafts : .ready
             case "review" where !negated && review(value) != nil:
                 query.review = review(value)
             case "checks" where !negated && checks(value) != nil, "status" where !negated && checks(value) != nil:
@@ -50,6 +66,8 @@ struct PullRequestQuery: Equatable, Sendable {
                 query.excludedRepos += list(rawValue)
             case "author", "draft", "review", "checks", "status":
                 query.words.append(token.lowercased())
+            case let other where githubOnlyKeys.contains(other):
+                continue
             default:
                 // Anything else with a colon is a scoped label ("area:ui"), unless it reads as a path or an address.
                 guard !value.hasPrefix("/") else { query.words.append(token.lowercased()); continue }
@@ -57,6 +75,7 @@ struct PullRequestQuery: Equatable, Sendable {
                 if negated { query.excludedLabels += names } else { query.labels.append(names) }
             }
         }
+        if authorsDiffer { query.author = nil }
         query.labels = Array(query.labels.prefix(maxValues))
         query.excludedLabels = Array(query.excludedLabels.prefix(maxValues))
         query.excludedRepos = Array(query.excludedRepos.prefix(maxValues))

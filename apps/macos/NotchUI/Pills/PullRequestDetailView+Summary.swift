@@ -38,7 +38,7 @@ extension PullRequestDetailView {
                     metaRow(symbol: "tag", title: tr("agents.pr.status.labels")) {
                         ChipFlow(spacing: NookTheme.Spacing.xs) {
                             ForEach(detail.labels, id: \.self) { label in
-                                LabelChip(name: label, color: detail.labelColors[label])
+                                LabelChip(name: label, color: detail.labelColors[label], description: detail.labelDescriptions[label])
                             }
                             if detail.isOpen, detail.canPush != false, detail.features.labels {
                                 ToolbarIconButton("plus", tr("agents.pr.action.labels"), height: 20, width: 20) { actions.open(.labels, detail: detail) }

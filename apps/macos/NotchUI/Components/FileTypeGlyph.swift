@@ -45,11 +45,28 @@ enum FileTypeGlyph {
         case "sql", "db", "sqlite", "prisma": return Glyph(symbol: "cylinder", color: NookTheme.Syntax.property)
         case "lock", "resolved": return Glyph(symbol: "lock", color: NookTheme.textTertiary)
         case "zip", "gz", "tar", "tgz", "dmg": return Glyph(symbol: "archivebox", color: NookTheme.textSecondary)
+        // An app that is not on this Mac; one that is shows its own icon (`appIcon`).
+        case "app": return Glyph(symbol: "app", color: NookTheme.textSecondary)
         default: return Glyph(symbol: "doc", color: NookTheme.textSecondary)
         }
     }
 
     private static let cache = NSCache<NSString, NSImage>()
+
+    /// The app's own icon for a link to an app on this Mac (`/Applications/Safari.app`, `~/Applications/Tool.app`), as
+    /// Finder shows it, `size` points high; nil for anything else, or an app that is not there.
+    static func appIcon(for path: String, size: CGFloat) -> NSImage? {
+        guard FileLink.isAppBundle(path) else { return nil }
+        let full = (path as NSString).expandingTildeInPath
+        guard full.hasPrefix("/") else { return nil }
+        let key = "app|\(full)|\(size)" as NSString
+        if let known = cache.object(forKey: key) { return known }
+        guard FileManager.default.fileExists(atPath: full) else { return nil }
+        let icon = NSWorkspace.shared.icon(forFile: full)
+        icon.size = NSSize(width: size, height: size)
+        cache.setObject(icon, forKey: key)
+        return icon
+    }
 
     /// The glyph as an image to set in text, `size` points high, tinted when drawn so it follows the window's
     /// appearance (Settings › Appearance) like the text around it.

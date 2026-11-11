@@ -158,6 +158,19 @@ final class CodexAppServerTests: XCTestCase {
 final class CodexImagesAndAsyncQuestionsTests: XCTestCase {
     private func events(_ line: String) -> [CodexStreamEvent] { CodexAppServerMapper.events(CodexRPC.parse(line)!) }
 
+    func testAViewedImageIsAReadWithThePicture() throws {
+        let line = #"{"method":"item/completed","params":{"item":{"type":"imageView","id":"iv1","path":"/repo/shot.png"}}}"#
+        guard case .toolCall(let id, let name, let detail, let finished, let failed, let input, _) = try XCTUnwrap(events(line).first) else {
+            return XCTFail("expected a tool call")
+        }
+        XCTAssertEqual([id, name, detail], ["iv1", "view_image", "shot.png"])
+        XCTAssertTrue(finished)
+        XCTAssertFalse(failed)
+        XCTAssertEqual(ToolCategory.of(tool: name), .read)
+        XCTAssertEqual(ViewedImages.paths(tool: name, input: try XCTUnwrap(input?.dictionary)), ["/repo/shot.png"])
+        XCTAssertTrue(events(#"{"method":"item/completed","params":{"item":{"type":"imageView","id":"iv2","path":""}}}"#).isEmpty)
+    }
+
     func testAGeneratedImageIsAFileItHandsYou() throws {
         XCTAssertEqual(events(#"{"method":"item/started","params":{"item":{"type":"imageGeneration","id":"ig1","status":"inProgress","result":""}}}"#),
                        [.toolCall(id: "ig1", name: "image_generation", detail: "", finished: false, failed: false)])

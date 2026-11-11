@@ -97,6 +97,176 @@ extension PullRequestRef {
     static func gitHubItem(_ url: URL) -> PullRequestItem? { parse(url.absoluteString)?.gitHubItem }
 }
 
+/// Where a pull request link points inside the pull request, so it opens there and not on the summary (as in t3code): a
+/// comment or review (`#issuecomment-12`, `#discussion_r34`, `#pullrequestreview-56`, GitLab's `#note_7`), a file and
+/// line of the diff (`/files#diff-<hash>R12`, `/-/merge_requests/3/diffs`), the checks, or the commits.
+enum PullRequestFocus: Equatable, Sendable {
+    /// A comment or review on the timeline, by the ids Nook gives its events (`PullRequestEvent.id`): "comment-12",
+    /// "line-34", "review-56". Several when the link alone cannot tell which kind it is (GitLab's notes).
+    case comment([String])
+    /// A changed file, and the line on it, on the Code tab.
+    case file(PullRequestFileAnchor)
+    case checks
+    /// The commits; with a sha (`/commits/<sha>`), that commit's changes.
+    case commits(sha: String?)
+
+    /// The focus of a pull request link; nil for a link to the pull request itself or one Nook does not read.
+    static func parse(_ url: URL) -> PullRequestFocus? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let ref = PullRequestRef.parse(url.absoluteString), let kind = ref.host else { return nil }
+        let segments = components.path.split(separator: "/").map(String.init)
+        let fragment = components.fragment ?? ""
+        let rest = tail(segments, after: ref.number, kind: kind)
+        let page = rest.first?.lowercased()
+        switch kind {
+        case .github, .gitea, .forgejo, .gitcafe:
+            if let comment = gitHubComment(fragment) { return .comment(comment) }
+            switch page {
+            case "files", "changes":
+                return .file(PullRequestFileAnchor(gitHub: fragment) ?? PullRequestFileAnchor())
+            case "checks": return .checks
+            case "commits": return .commits(sha: rest.count > 1 ? sha(rest[1]) : nil)
+            default: return nil
+            }
+        case .gitlab:
+            if let note = number(after: "note_", in: fragment) { return .comment(["comment-\(note)", "line-\(note)"]) }
+            switch page {
+            case "diffs": return .file(PullRequestFileAnchor(gitLab: fragment) ?? PullRequestFileAnchor())
+            case "pipelines": return .checks
+            case "commits": return .commits(sha: nil)
+            default: return nil
+            }
+        case .bitbucket:
+            if let comment = number(after: "comment-", in: fragment) { return .comment(["comment-\(comment)", "line-\(comment)"]) }
+            switch page {
+            case "diff":
+                // `#chg-src/app.swift`: the file by its path.
+                let path = fragment.hasPrefix("chg-") ? String(fragment.dropFirst(4)).removingPercentEncoding : nil
+                return .file(PullRequestFileAnchor(path: path.flatMap { $0.isEmpty ? nil : $0 }))
+            case "commits": return .commits(sha: nil)
+            default: return nil
+            }
+        case .azureDevOps:
+            let query = Dictionary((components.queryItems ?? []).map { ($0.name.lowercased(), $0.value ?? "") },
+                                   uniquingKeysWith: { first, _ in first })
+            switch query["_a"]?.lowercased() {
+            case "files":
+                var path = query["path"].flatMap { $0.isEmpty ? nil : $0 }
+                if path?.hasPrefix("/") == true { path?.removeFirst() }
+                return .file(PullRequestFileAnchor(path: path))
+            case "commits": return .commits(sha: nil)
+            default: return nil
+            }
+        case .unknown:
+            return nil
+        }
+    }
+
+    /// The path segments after the pull request's number.
+    private static func tail(_ segments: [String], after number: Int, kind: SourceControlHost) -> [String] {
+        let marker: Set<String>
+        switch kind {
+        case .github: marker = ["pull"]
+        case .gitea, .forgejo, .gitcafe: marker = ["pulls"]
+        case .gitlab: marker = ["merge_requests"]
+        case .bitbucket: marker = ["pull-requests"]
+        case .azureDevOps: marker = ["pullrequest"]
+        case .unknown: return []
+        }
+        guard let index = segments.indices.first(where: { marker.contains(segments[$0]) && $0 + 1 < segments.count
+                                                         && segments[$0 + 1] == String(number) }) else { return [] }
+        return Array(segments[(index + 2)...])
+    }
+
+    /// GitHub's (and Gitea's) anchors of a comment, a comment on a line, and a review.
+    private static func gitHubComment(_ fragment: String) -> [String]? {
+        if let id = number(after: "issuecomment-", in: fragment) { return ["comment-\(id)"] }
+        if let id = number(after: "discussion_r", in: fragment) { return ["line-\(id)"] }
+        if let id = number(after: "pullrequestreview-", in: fragment) { return ["review-\(id)"] }
+        // A comment on a line, as the Files tab links it.
+        if fragment.hasPrefix("r"), let id = number(after: "r", in: fragment) { return ["line-\(id)"] }
+        return nil
+    }
+
+    /// The number right after `prefix` that makes up the rest of `text`.
+    private static func number(after prefix: String, in text: String) -> Int? {
+        guard text.hasPrefix(prefix) else { return nil }
+        let digits = text.dropFirst(prefix.count)
+        guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return Int(digits)
+    }
+
+    private static func sha(_ text: String) -> String? {
+        let lower = text.lowercased()
+        guard lower.count >= 7, lower.count <= 64, lower.allSatisfy({ $0.isHexDigit }) else { return nil }
+        return lower
+    }
+}
+
+/// A changed file a pull request link points at: by its path, or by the hash a forge's diff anchor names it with (GitHub's
+/// SHA-256 or older MD5 of the path, GitLab's SHA-1), and the line on it.
+struct PullRequestFileAnchor: Equatable, Sendable {
+    var path: String?
+    /// Lowercase hex.
+    var hash: String?
+    var line: Int?
+    /// The line is on the old side of the diff (GitHub's `L12`) rather than the new one (`R12`).
+    var oldSide = false
+
+    init(path: String? = nil, hash: String? = nil, line: Int? = nil, oldSide: Bool = false) {
+        self.path = path; self.hash = hash; self.line = line; self.oldSide = oldSide
+    }
+
+    /// `diff-<hash>`, then `R12` or `L12`, perhaps a range after it (`R12-R20`).
+    init?(gitHub fragment: String) {
+        guard fragment.hasPrefix("diff-") else { return nil }
+        let rest = fragment.dropFirst(5)
+        let hex = rest.prefix { $0.isHexDigit }
+        guard [32, 64].contains(hex.count) else { return nil }
+        var anchor = PullRequestFileAnchor(hash: hex.lowercased())
+        let side = rest.dropFirst(hex.count)
+        if let mark = side.first, mark == "R" || mark == "L" {
+            anchor.line = Int(side.dropFirst().prefix { $0.isNumber })
+            anchor.oldSide = mark == "L"
+        }
+        self = anchor
+    }
+
+    /// `<sha1 of the path>_<old line>_<new line>`, either line may be empty.
+    init?(gitLab fragment: String) {
+        let parts = fragment.split(separator: "_", omittingEmptySubsequences: false)
+        guard let hex = parts.first, hex.count == 40, hex.allSatisfy({ $0.isHexDigit }) else { return nil }
+        var anchor = PullRequestFileAnchor(hash: hex.lowercased())
+        if parts.count == 3 {
+            if let new = Int(parts[2]) { anchor.line = new } else if let old = Int(parts[1]) { anchor.line = old; anchor.oldSide = true }
+        }
+        self = anchor
+    }
+
+    /// The file of `paths` this anchor names; nil when it names none of them (or names no file).
+    func file(in paths: [String], hashes: (String) -> [String]) -> String? {
+        if let path { return paths.first { $0 == path } }
+        guard let hash else { return nil }
+        return paths.first { hashes($0).contains(hash) }
+    }
+}
+
+#if canImport(CryptoKit)
+import CryptoKit
+
+extension PullRequestFileAnchor {
+    /// The hashes forges name a file's diff by: SHA-256 and MD5 (GitHub, now and before), SHA-1 (GitLab).
+    static func hashes(of path: String) -> [String] {
+        let data = Data(path.utf8)
+        func hex<D: Sequence>(_ digest: D) -> String where D.Element == UInt8 { digest.map { String(format: "%02x", $0) }.joined() }
+        return [hex(SHA256.hash(data: data)), hex(Insecure.MD5.hash(data: data)), hex(Insecure.SHA1.hash(data: data))]
+    }
+
+    /// The file of `paths` this anchor names.
+    func file(in paths: [String]) -> String? { file(in: paths, hashes: Self.hashes) }
+}
+#endif
+
 /// Whether a tool call made or showed a pull request, so a pull request link in its output is that one: `gh pr create`,
 /// `glab mr view` and the like, or a tool named for pull or merge requests. A command that merely touches a file such as
 /// `PullRequestActions.swift` does not count: its output can hold any link (a test's sample `.../pull/3`).

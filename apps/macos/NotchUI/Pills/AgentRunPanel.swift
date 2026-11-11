@@ -751,7 +751,8 @@ struct AgentRunPanel: View {
             // token, which redraws the conversation (`timelines`) but changes nothing the composer shows.
             RunComposerHost(state: composerState, workspace: workspace, app: app, pullRequests: pullRequestSync,
                             key: RunComposerHost.Key(run: run, subagents: derived.subagents, commands: derived.commands, skills: skills,
-                                                     repository: repository, shownSubagents: outputsLink.subagentsShown)) {
+                                                     repository: repository, shownSubagents: outputsLink.subagentsShown,
+                                                     olderBranchesShown: showsOlderBranches)) {
                 composer(run)
             }
             .equatable()
@@ -1011,6 +1012,25 @@ struct AgentRunPanel: View {
                 }
             }
         }
+        // VoiceOver hears the step, the finished replies and what waits on you, as for an agent's own transcript.
+        .announcesAgentProgress(key: "run:" + runID.uuidString, author: run.provider.displayName, snapshot: announcement(run))
+    }
+
+    /// What a screen reader is told about the session (`AgentAnnouncer`), from the whole timeline rather than what the
+    /// timeline detail shows; only built while one listens.
+    private func announcement(_ run: WorkspaceRun) -> AgentAnnouncementSnapshot {
+        guard AgentAnnouncer.listening else { return .idle }
+        let events = workspace.timeline(runID)
+        let status: AgentAnnouncementSnapshot.Status
+        if workspace.questions[runID] != nil {
+            status = .question
+        } else if run.status == .waitingApproval {
+            status = .approval
+        } else {
+            status = run.status.isActive ? .working : .idle
+        }
+        let step = status == .working ? AgentAnnouncer.spokenStep(AgentActivity.current(TimelinePresentation.lastTurn(events))) : nil
+        return AgentAnnouncements.snapshot(events, status: status, step: step)
     }
 
     /// Brings the message you sent near the top of the view, with room under it for the reply, until you scroll away.
@@ -1196,6 +1216,13 @@ struct AgentRunPanel: View {
                     app.reauthenticate(profile) { workspace.retry(runID) }
                 }
                 .disabled(signingIn)
+            }
+            // The API refused this agent's version for the model: Settings › Agents updates it after you confirm.
+            if run.status == .failed, !run.isRemote, AgentUpdates.updatable(run.provider),
+               AgentVersionRejection.parse(run.statusDetail) != nil {
+                NookPrimaryButton(title: tr("ws.recovery.updateAgent", run.provider.displayName), symbol: "arrow.down.circle") {
+                    app.requestAgentUpdate([run.provider])
+                }
             }
         }
         .padding(10)
@@ -1643,7 +1670,17 @@ struct AgentRunPanel: View {
         } ?? []
         // A pull request the git button is writing or opening shows here already, where it will appear.
         let pending = workspace.quickGitProgress(runID).flatMap { $0.action.proposes ? $0.step : nil }
-        let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil
+        // The pull requests it works on besides its own branch's: one it was asked to fix, one you linked. Open first.
+        let shownURLs = Set(([pullRequest] + branches.map(\.pullRequest)).compactMap { $0?.absoluteString })
+        // Every pull request the session watches shows too, not only the first.
+        let linked = pullRequestSync.others(run: runID)
+        let watchedOnly = watches.compactMap { watch in
+            linked.contains { $0.url == watch.url } ? nil : URL(string: watch.url).flatMap(PullRequestLink.init(url:))
+        }
+        let others = (linked + watchedOnly)
+            .filter { !shownURLs.contains($0.url) && URL(string: $0.url) != nil }
+            .sorted { ($0.state.isOpen ? 0 : 1, -$0.number) < ($1.state.isOpen ? 0 : 1, -$1.number) }
+        let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil || !others.isEmpty
         if hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -1661,6 +1698,7 @@ struct AgentRunPanel: View {
                         } : nil)
                     }
                     if let pending { PullRequestPendingRow(step: pending) }
+                    ForEach(others) { link in otherRow(link, watches: watches) }
                     if hasPullRequests && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
                         QueuedMessagesStrip(
@@ -1732,6 +1770,19 @@ struct AgentRunPanel: View {
             } : nil)
         } else if let branch = row.branch {
             BranchTrayRow(branch: branch, isCurrent: row.isCurrent)
+        }
+    }
+
+    /// A pull request the session works on that is not its own branch's, in the same row as those: its state, title and
+    /// checks, watched from here (CI and reviews then wake the agent) while it can still change.
+    @ViewBuilder
+    private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch]) -> some View {
+        if let url = URL(string: link.url) {
+            let watch = watches.first { $0.url == link.url }
+            PullRequestWatchStrip(url: url, watch: watch, title: link.title ?? "#\(link.number)",
+                                  toggle: watch != nil || (link.state.isOpen && PullRequestWatch.canWatch(url)) ? {
+                if watch == nil { workspace.watchPullRequest(runID, url: url) } else { workspace.stopWatchingPullRequest(runID, url: url) }
+            } : nil)
         }
     }
 
@@ -1866,9 +1917,12 @@ struct RunComposerHost<Content: View>: View, Equatable {
         var skills: [Skill]
         var repository: String?
         var shownSubagents: Bool
+        /// The panel's own state the tray reads (the folded earlier branches): without it here a click on the fold row
+        /// changes the state but the composer is never drawn again, so the list never opens.
+        var olderBranchesShown: Bool
 
         init(run: WorkspaceRun, subagents: [SubagentInfo], commands: [BackgroundCommandInfo], skills: [Skill], repository: String?,
-             shownSubagents: Bool) {
+             shownSubagents: Bool, olderBranchesShown: Bool) {
             // A streaming turn moves `updatedAt` every two seconds; the composer does not show it.
             var run = run
             run.updatedAt = .distantPast
@@ -1878,6 +1932,7 @@ struct RunComposerHost<Content: View>: View, Equatable {
             self.skills = skills
             self.repository = repository
             self.shownSubagents = shownSubagents
+            self.olderBranchesShown = olderBranchesShown
         }
     }
 

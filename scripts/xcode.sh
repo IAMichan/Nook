@@ -7,6 +7,7 @@
 #
 #   scripts/xcode.sh build
 #   scripts/xcode.sh test -only-testing:NookTests/ComposerCoreTests
+#   NOOK_XCODE_SCHEME=NookScenarios scripts/xcode.sh test   # the end-to-end scenarios (scripts/scenarios.sh)
 #
 # Extra arguments go to xcodebuild.
 set -euo pipefail
@@ -19,9 +20,10 @@ xcodegen --use-cache >/dev/null
 
 ACTION="${1:-build}"
 [ $# -gt 0 ] && shift
+SCHEME="${NOOK_XCODE_SCHEME:-Nook}"
 EXTRA=()
-[ "$ACTION" = test ] && [ $# -eq 0 ] && EXTRA=(-only-testing:NookTests)
+[ "$ACTION" = test ] && [ $# -eq 0 ] && [ "$SCHEME" = Nook ] && EXTRA=(-only-testing:NookTests)
 
-exec xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' \
+exec xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS' \
   -derivedDataPath "$REPO/.build/xcode" CODE_SIGNING_ALLOWED=NO \
   "$ACTION" ${EXTRA[@]+"${EXTRA[@]}"} "$@"

@@ -78,7 +78,7 @@ struct GitCafePullRequestForge: PullRequestForgeClient {
 
     func commitFiles(sha: String) async throws -> [PullRequestFile] { throw PullRequestForgeError.unsupported(Self.name) }
 
-    func labels() async -> [(name: String, color: String)] {
+    func labels() async -> [PullRequestLabelChoice] {
         let rows = (try? await pages(repository + "/labels")) ?? []
         return Self.labels(rows)
     }
@@ -355,6 +355,7 @@ struct GitCafePullRequestForge: PullRequestForgeClient {
         detail.labels = labels.compactMap { $0["name"] as? String }
         for label in labels {
             if let name = label["name"] as? String, let color = label["color"] as? String { detail.labelColors[name] = hex(color) }
+            if let name = label["name"] as? String, let text = label["description"] as? String, !text.isEmpty { detail.labelDescriptions[name] = text }
         }
         detail.locked = pull["lockedAt"] is String
         let source = pull["sourceRepo"] as? [String: Any]
@@ -563,10 +564,10 @@ struct GitCafePullRequestForge: PullRequestForgeClient {
         return lines.joined(separator: "\n")
     }
 
-    static func labels(_ list: [[String: Any]]) -> [(name: String, color: String)] {
+    static func labels(_ list: [[String: Any]]) -> [PullRequestLabelChoice] {
         list.compactMap { label in
             guard let name = label["name"] as? String else { return nil }
-            return (name, hex((label["color"] as? String) ?? ""))
+            return (name, hex((label["color"] as? String) ?? ""), (label["description"] as? String) ?? "")
         }
     }
 

@@ -173,7 +173,8 @@ struct TaskChecklistCard: View {
     }
 }
 
-/// One step of a task list: a check when done, a spinning ring on the one that runs, an open circle for what is to do.
+/// One step of a task list: a check when done, a spinning ring on the one that runs, an open circle for what is to do,
+/// and a dimmed cross with the text struck through for a step the agent dropped.
 struct TaskStepRow: View {
     let step: RunTaskStep
 
@@ -182,7 +183,9 @@ struct TaskStepRow: View {
             mark.frame(width: 13, height: 13).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
             Text(step.text)
                 .font(step.status == .active ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
-                .foregroundStyle(step.status == .active ? NookTheme.paper : step.status == .done ? NookTheme.textTertiary : NookTheme.textSecondary)
+                .foregroundStyle(step.status == .active ? NookTheme.paper : step.status.isSettled ? NookTheme.textTertiary : NookTheme.textSecondary)
+                // A dropped step stays in the list, struck through: the agent said it will not do it.
+                .strikethrough(step.status == .cancelled, color: NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -201,6 +204,10 @@ struct TaskStepRow: View {
             SpinningRing(color: NookTheme.paper)
         case .pending:
             Image(icon: "circle.dashed")
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
+        case .cancelled:
+            Image(icon: "xmark.circle")
                 .font(NookTheme.font(11.5))
                 .foregroundStyle(NookTheme.textTertiary)
         }

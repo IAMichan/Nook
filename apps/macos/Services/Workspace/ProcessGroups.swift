@@ -388,6 +388,28 @@ final class SpawnedProcess: @unchecked Sendable {
         return true
     }
 
+    /// True while the leader or anything else in its group still runs. Once the leader exited only an unreaped leader
+    /// keeps the group id ours, and `killpg(_, 0)` then fails (EPERM or ESRCH) when nothing in the group lives any more.
+    var groupIsAlive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pid > 0, !reaped else { return false }
+        if !exited { return true }
+        guard killpg(pid, 0) == 0 else { return false }
+        #if os(Linux)
+        // Linux counts the unreaped leader itself as a member: only a member that is no zombie means the group lives.
+        let group = pid
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/proc")) ?? []
+        return entries.contains { name in
+            guard let member = Int32(name), member != group,
+                  let stat = try? String(contentsOfFile: "/proc/\(name)/stat", encoding: .utf8) else { return false }
+            return ProcessIdentity.parseLinuxStat(stat, pid: member)?.processGroup == group
+        }
+        #else
+        return true
+        #endif
+    }
+
     /// Keeps an exited leader unreaped (so the group can still be signalled) until `release()`.
     func hold() {
         lock.lock()
