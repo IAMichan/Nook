@@ -12,6 +12,9 @@ extension CompanionServer {
         let capture = ChatCaptureService.shared
         // Asked right after launch, the inbox may still be read in the background: the phone gets the chats, not none.
         _ = capture.loadedInbox
+        // The faces from Contacts, also when the Chats tab on the Mac was never opened (nothing without access, at most
+        // every ten minutes).
+        ContactPhotos.shared.refresh()
         let whatsApp = WhatsAppAccounts.shared
         // Chats only, as the Mac's list of every app: status updates and channels show under an app's own tabs on the
         // Mac, which the phone does not have yet.
@@ -94,7 +97,9 @@ extension CompanionServer {
                                name: CompanionPolicy.clip(entry.name, limit: 120), preview: CompanionPolicy.clip(entry.preview, limit: 200),
                                last: entry.last.timeIntervalSince1970, unread: entry.unread, canSend: canSend,
                                ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp, typing: typing(entry.id),
-                               avatar: CompanionAvatars.version(entry.avatar))
+                               // The chat's own picture, else its photo from Contacts, as the Mac's Chats tab shows it.
+                               avatar: CompanionAvatars.version(entry.avatar)
+                                   ?? CompanionAvatars.contactVersion(handle: entry.handle, name: entry.name))
     }
 
     /// The chat the phone has open (`CompanionOp.watchChat`): read as `inboxChat` reads it, and from now on its messages
@@ -121,11 +126,22 @@ extension CompanionServer {
     func avatars(_ request: CompanionRequest) async -> CompanionResponse {
         let wanted = Array((request.items ?? []).prefix(ChatAvatar.batch))
         guard !wanted.isEmpty else { return .failure(request.id, .badRequest) }
-        let chats = wanted.compactMap { id -> (chat: String, path: String, version: String)? in
-            guard let entry = inboxEntry(id), let path = entry.avatar, let version = CompanionAvatars.version(path) else { return nil }
-            return (id, path, version)
+        var files: [(chat: String, path: String, version: String)] = []
+        // App icons and photos from Contacts are made here; a chat's own picture file is read off the main thread.
+        var made: [ChatAvatar] = []
+        for id in wanted {
+            if id.hasPrefix(ChatAvatar.appPrefix) {
+                if let icon = CompanionAvatars.appIcon(id) { made.append(icon) }
+                continue
+            }
+            guard let entry = inboxEntry(id) else { continue }
+            if let path = entry.avatar, let version = CompanionAvatars.version(path) {
+                files.append((id, path, version))
+            } else if let photo = CompanionAvatars.contactPicture(chat: id, handle: entry.handle, name: entry.name) {
+                made.append(photo)
+            }
         }
-        return CompanionResponse(id: request.id, ok: true, avatars: await CompanionAvatars.pictures(chats))
+        return CompanionResponse(id: request.id, ok: true, avatars: made + (await CompanionAvatars.pictures(files)))
     }
 
     /// The lines of the chat a live phone has open, as `inboxChat` answers them, without reading the chat from its app

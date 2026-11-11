@@ -97,7 +97,8 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     case register, unregister
     /// What a new session can start with (`launch` in the answer); `start` starts one (`launch` in the request).
     case options, start
-    /// The recent conversation of one session (`session`).
+    /// The recent conversation of one session (`session`). With `CompanionFeature.fullTranscript`, `item` may name the
+    /// oldest entry the phone has: the answer then holds the page before it (`timelineBefore`), empty at the start.
     case timeline
     /// The session the phone has open (`session`; nil when it closed it): its conversation follows by itself over the
     /// subscribed connection, as changes after the entry the phone has (`CompanionResponse.timelineAfter`), instead of
@@ -155,6 +156,9 @@ enum CompanionOp: String, Codable, Sendable, CaseIterable {
     /// A piece of one file of a session's folder (`CompanionFeature.filePreview`), to preview on the phone: `item` is
     /// its path as for `files`, `text` the byte offset to read from ("0" or nil for the start). `fileChunk` in the answer.
     case fileData
+    /// One entry of a session's conversation in full (`session`, `item`: the entry's id), for an entry the timeline
+    /// clipped (`TimelineEntry.clipped`); `entryText` in the answer (`CompanionFeature.fullTranscript`).
+    case entry
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -233,9 +237,15 @@ enum CompanionFeature {
     static let liveChats = "liveChats"
     /// The Mac says which picture each chat has (`InboxChatDigest.avatar`) and answers `avatars` with them.
     static let avatars = "avatars"
+    /// The Mac answers `entry` with a clipped entry in full, marks clipped entries (`TimelineEntry.clipped`), and pages
+    /// back through older entries (`timeline` with `item`).
+    static let fullTranscript = "fullTranscript"
+    /// The Mac answers `avatars` for "app:<id>" with the chat app's icon (`ChatAvatar.appPrefix`), and lists a chat's
+    /// photo from Contacts as its picture when the chat has none of its own.
+    static let appIcons = "appIcons"
     static let all = [workspace, start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate,
                       steer, liveTimeline, diff, images, clock, revoke, foreground, resume, pullRequests, attachments, history,
-                      compression, filePreview, liveChats, avatars]
+                      compression, filePreview, liveChats, avatars, fullTranscript, appIcons]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -422,6 +432,10 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var cursor: String? = nil
     /// The piece of a file `fileData` asked for.
     var fileChunk: FileChunk? = nil
+    /// With `timeline` asked with `item`: `timeline` is the page before that entry, not the recent conversation.
+    var timelineBefore: String? = nil
+    /// The entry `entry` asked for, in full (cut at `TimelineEntry.fullLimit`).
+    var entryText: String? = nil
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -490,6 +504,12 @@ struct TimelineEntry: Codable, Equatable, Identifiable, Sendable {
     /// What a step gave back (a command's output, what a search found, a change's patch), its end clipped to
     /// `outputLimit`, for the step to open to on the phone; nil when there was none or from a Mac that does not send it.
     var output: String? = nil
+    /// `text` was cut at `CompanionConstants.lineLimit`: the phone can ask for all of it (`CompanionOp.entry`). Nil from a
+    /// Mac without `CompanionFeature.fullTranscript`.
+    var clipped: Bool? = nil
+
+    /// The most of one entry `CompanionOp.entry` sends: well inside `CompanionConstants.maxFrame` once sealed.
+    static let fullLimit = 100_000
 
     /// How much of a step's output travels: its last lines, enough to see how it ended.
     static let outputLimit = 900
@@ -568,8 +588,12 @@ struct ChatAvatar: Codable, Equatable, Sendable {
     var chat: String
     /// The same as `InboxChatDigest.avatar` when it was made.
     var version: String
-    /// Base64 JPEG, `side` pixels square.
+    /// Base64 JPEG, `side` pixels square; a PNG with its transparency for an app's icon (`appPrefix`).
     var jpeg: String
+
+    /// `avatars` with `CompanionFeature.appIcons` also takes "app:<app id>" (`InboxChatDigest.app`): the icon of that chat
+    /// app as the Mac shows it, so the phone draws the real app logo on a chat.
+    static let appPrefix = "app:"
 
     /// The pixel size of a picture: a 40-point avatar on a 3x screen, with room.
     static let side = 120
@@ -782,6 +806,11 @@ enum CompanionPolicy {
     /// A line of a conversation, cut at `limit` characters.
     static func clip(_ text: String, limit: Int = CompanionConstants.lineLimit) -> String {
         cut(text, limit: limit)
+    }
+
+    /// Whether `clip` cut `clipped`: a cut line is `limit` characters and the ellipsis, anything shorter went whole.
+    static func wasClipped(_ clipped: String, limit: Int = CompanionConstants.lineLimit) -> Bool {
+        clipped.count > limit
     }
 
     /// `text` without carriage returns and surrounding white space, cut at `limit` characters. Only its start is read: an

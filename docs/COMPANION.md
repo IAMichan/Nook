@@ -31,6 +31,8 @@ steers) or **After this turn** (in line); the choice is remembered (`CompanionRe
 read. The Agents list has search and a project filter, and touching and holding the app's icon offers New session, Ask
 Nook, Answer a chat and the two sessions that need you most (`AppShortcut`).
 
+**The whole conversation.** An agent's answer reads as blocks on the phone, as on the Mac: headings, lists, quotes and call-outs as type, and code and tables in a card that scrolls sideways (code can wrap and be copied); the parser is the Mac's `MarkdownBlock`. One entry travels cut at `CompanionConstants.lineLimit`; with a Mac that lists `fullTranscript` a cut entry says so (`TimelineEntry.clipped`) and *Read the whole message* asks for all of it (`CompanionOp.entry`, up to `TimelineEntry.fullLimit`). *Earlier messages* at the top asks for the page before the oldest entry the phone has (`timeline` with `item`), kept beside the live conversation so a live update never drops it.
+
 **Live conversation.** With a current Mac, an open session no longer asks every few seconds: the phone says which
 session is on screen (`CompanionOp.watch`), the Mac answers with its recent conversation and from then on sends only
 what changed after the last entry both have alike, over the live connection (`TimelineDelta`, `timelineAfter`). A phone

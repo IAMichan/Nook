@@ -32,6 +32,17 @@ enum TranscriptRow: Identifiable {
         }
     }
 
+    /// Whether the entry `id` is this row or folded inside it.
+    func holds(_ id: String) -> Bool {
+        switch self {
+        case .user(let entry), .answer(let entry, _), .notice(let entry): return entry.id == id
+        case .work(_, let steps): return steps.contains { $0.id == id }
+        case .fold(_, _, let rows): return rows.contains { $0.holds(id) }
+        case .live(let entry): return entry?.id == id
+        case .working: return false
+        }
+    }
+
     /// A turn starts at each message of yours. A finished turn shows your message, "Worked for …" and its final
     /// answer; the turn that runs shows how long it goes, the work so far and the step that runs now.
     static func rows(_ entries: [TimelineEntry], working: Bool) -> [TranscriptRow] {
@@ -112,11 +123,13 @@ extension TimelineEntry {
 
 /// The whole conversation: the rows, the folds and groups you opened, and the end in sight while the agent works.
 struct TranscriptConversation: View {
+    @EnvironmentObject private var client: CompanionClient
+    let sessionID: String
     let entries: [TimelineEntry]
     let working: Bool
-    /// Tapping an option in the agent's last answer answers it; nil when the session cannot be written to.
-    var onChoose: ((String) -> Void)? = nil
     @State private var open: Set<String> = []
+    /// Clipped entries whose full text is on its way from the Mac.
+    @State private var fetching: Set<String> = []
 
     var body: some View {
         let rows = TranscriptRow.rows(entries, working: working)
@@ -132,11 +145,14 @@ struct TranscriptConversation: View {
         switch row {
         case .user(let entry):
             // Each turn starts as a block of its own, as on the Mac.
-            TranscriptUserMessage(text: entry.text, date: Date(timeIntervalSince1970: entry.date))
-                .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
-                .padding(.bottom, Theme.Spacing.xxs)
+            VStack(alignment: .trailing, spacing: Theme.Spacing.xs) {
+                TranscriptUserMessage(text: text(entry), date: Date(timeIntervalSince1970: entry.date))
+                more(entry)
+            }
+            .padding(.top, Theme.Spacing.xxl - Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.xxs)
         case .answer(let entry, let isFinal):
-            TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
+            answer(entry, isFinal: isFinal)
                 .padding(.bottom, isFinal ? Theme.Spacing.lg : Theme.Spacing.xxs)
         case .work(let id, let steps):
             work(id: id, steps: steps)
@@ -173,8 +189,8 @@ struct TranscriptConversation: View {
     @ViewBuilder
     private func flat(_ row: TranscriptRow) -> some View {
         switch row {
-        case .user(let entry): TranscriptUserMessage(text: entry.text)
-        case .answer(let entry, let isFinal): TranscriptReply(text: entry.text, date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal)
+        case .user(let entry): TranscriptUserMessage(text: text(entry))
+        case .answer(let entry, let isFinal): answer(entry, isFinal: isFinal)
         case .work(let id, let steps): work(id: id, steps: steps)
         case .notice(let entry): TranscriptNotice(entry: entry)
         default: EmptyView()
@@ -221,6 +237,46 @@ struct TranscriptConversation: View {
             }
         } else {
             TranscriptWorkLine(symbol: symbol, label: text.verb, detail: text.detail, mono: text.mono, failed: step.failed)
+        }
+    }
+
+    /// An answer, in full once the Mac sent all of a clipped one, with the way to ask for the rest under it.
+    private func answer(_ entry: TimelineEntry, isFinal: Bool) -> some View {
+        TranscriptReply(text: text(entry), date: Date(timeIntervalSince1970: entry.date), failed: entry.failed, footer: isFinal) {
+            more(entry)
+        }
+    }
+
+    private func text(_ entry: TimelineEntry) -> String {
+        client.fullTexts[entry.id] ?? entry.text
+    }
+
+    /// "Read the whole message" under an entry the Mac clipped for the trip, until its full text is here.
+    @ViewBuilder
+    private func more(_ entry: TimelineEntry) -> some View {
+        if entry.clipped == true, client.fullTexts[entry.id] == nil, client.canReadFullTranscript {
+            Button {
+                fetching.insert(entry.id)
+                Task {
+                    await client.loadFullEntry(sessionID, entry: entry.id)
+                    fetching.remove(entry.id)
+                }
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    if fetching.contains(entry.id) {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(icon: "text.append")
+                    }
+                    Text("Read the whole message")
+                }
+                .font(Theme.TextStyle.label)
+                .foregroundStyle(Theme.blue)
+                .padding(.vertical, Theme.Spacing.xs)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressFade())
+            .disabled(fetching.contains(entry.id))
         }
     }
 
@@ -309,9 +365,11 @@ struct TranscriptStepOutput: View {
     private var isPatch: Bool { text.contains("\n@@") || text.hasPrefix("@@") || text.hasPrefix("--- ") }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        // Both ways: long lines sideways, and at most 240 points tall (cap), so an opened step never pushes
+        // the conversation out of sight.
+        ScrollView([.horizontal, .vertical], showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(text.split(separator: "\n", omittingEmptySubsequences: false).prefix(60).enumerated()), id: \.offset) { _, line in
+                ForEach(Array(text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()), id: \.offset) { _, line in
                     Text(verbatim: line.isEmpty ? " " : String(line))
                         .foregroundStyle(color(line))
                         .fixedSize()
@@ -321,7 +379,9 @@ struct TranscriptStepOutput: View {
             .textSelection(.enabled)
             .padding(Theme.Spacing.md)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxWidth: .infinity, maxHeight: 240, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .roundedBackground(Theme.well, radius: Theme.Radius.control)
         .overlay(Theme.shape(Theme.Radius.control)
             .strokeBorder(failed ? Theme.coral.opacity(0.35) : Theme.hairline, lineWidth: 0.5))

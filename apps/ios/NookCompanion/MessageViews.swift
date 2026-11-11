@@ -81,13 +81,29 @@ struct TranscriptReply<Extras: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if !text.isEmpty {
-                // Diagrams and math drawn as on the Mac; anything else is the same text as always.
-                RichMessageText(text: text, color: failed ? Theme.coral : Theme.textStrong)
+                // Headings, lists, code and tables as blocks (phone reads an answer this way), with diagrams
+                // and math drawn as on the Mac.
+                MarkdownBlocksView(text: text, color: failed ? Theme.coral : Theme.textStrong)
                     .contextMenu { MessageCopyButton(text: text) }
             }
             extras()
             if footer, !text.isEmpty, let date {
-                TranscriptTime(date: date)
+                // Under a turn's final answer: its time and Copy.
+                HStack(spacing: Theme.Spacing.sm) {
+                    TranscriptTime(date: date)
+                    Button {
+                        UIPasteboard.general.string = text
+                        Haptics.tap()
+                    } label: {
+                        Image(icon: "doc.on.doc")
+                            .font(Theme.TextStyle.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressFade())
+                    .accessibilityLabel(Text("Copy"))
+                }
             }
         }
         .padding(.horizontal, Theme.Spacing.xxs)

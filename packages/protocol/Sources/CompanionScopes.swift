@@ -36,7 +36,7 @@ enum CompanionScopes {
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
         .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
         .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
-        .pulls: .scope(.read), .pull: .scope(.read), .history: .scope(.read),
+        .pulls: .scope(.read), .pull: .scope(.read), .history: .scope(.read), .entry: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),
         .send: .scope(.operate), .stop: .scope(.operate), .options: .scope(.operate), .start: .scope(.operate),
         .manage: .scope(.operate),
@@ -56,9 +56,9 @@ enum CompanionScopes {
         CompanionFeature.images: .operate, CompanionFeature.liveTimeline: .read, CompanionFeature.resume: .read, CompanionFeature.diff: .read,
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
         CompanionFeature.liveActivity: .read, CompanionFeature.pullRequests: .read, CompanionFeature.attachments: .operate,
-        CompanionFeature.history: .read, CompanionFeature.filePreview: .operate,
+        CompanionFeature.history: .read, CompanionFeature.filePreview: .operate, CompanionFeature.fullTranscript: .read,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
-        CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats,
+        CompanionFeature.liveChats: .chats, CompanionFeature.avatars: .chats, CompanionFeature.appIcons: .chats,
     ]
 
     /// Whether `granted` allows `op`. An op missing from the table is refused: a new op must be given its scope.
@@ -88,6 +88,7 @@ enum CompanionScopes {
         if !granted.contains(.read) {
             response.sessions = response.sessions.map { _ in [] }
             response.timeline = nil
+            response.entryText = nil
             response.home = nil
             response.usage = nil
             response.pulls = nil

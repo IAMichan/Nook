@@ -716,6 +716,8 @@ final class CompanionServer: ObservableObject {
             return history(request, app: app)
         case .fileData:
             return await fileData(request, app: app)
+        case .entry:
+            return await entry(request, app: app)
         }
     }
 
