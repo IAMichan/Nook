@@ -226,10 +226,11 @@ enum TranscriptPresentation {
             }
             work = Array(work[(lastSteer + 1)...])
         }
+        // The step that runs, also when the agent runs several at once and a later one of them is done already: the live
+        // line goes on with the one that still runs instead of falling back to "Reviewing" in between.
         var current: AgentToolStep?
-        if var last = work.last, last.isTools, let step = last.steps.last, step.state == .running {
-            current = step
-            last.steps.removeLast()
+        if var last = work.last, last.isTools, let index = last.steps.lastIndex(where: { $0.state == .running }) {
+            current = last.steps.remove(at: index)
             if last.steps.isEmpty { work.removeLast() } else { work[work.count - 1] = last }
         }
         // The thought the work ends with goes with the live line: why the agent runs this step, or what it thinks now.
@@ -308,7 +309,7 @@ enum TranscriptPresentation {
             return .thinking(headline(last.text))
         case .tools:
             guard let step = last.steps.last else { return .reviewing }
-            if step.state == .running { return AgentActivity.of(step) }
+            if let running = last.steps.last(where: { $0.state == .running }) { return AgentActivity.of(running) }
             return step.state == .failed ? .recovering : .reviewing
         case .notice:
             if case .compacted = last.notice { return .reviewing }
