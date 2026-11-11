@@ -344,7 +344,7 @@ struct AgentRunPanel: View {
     /// What goes into the message: a file, the stash, the terminal's last lines. The session's own actions are in the
     /// menu beside its title (`sessionActions`).
     private func actionsMenu(_ run: WorkspaceRun) -> some View {
-        ComposerPlusMenu(attach: { attachFile(run) }) {
+        ComposerPlusMenu(attach: { attachFile(run) }, screenshot: { app.captureFrontWindow() }) {
             Button(tr("compose.stash.set")) {
                 if let text = composerModel.stashKey(composerText: draft) { draft = text; ComposerDraftStore.shared.setStash(composerModel.stash) }
             }
