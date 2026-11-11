@@ -314,4 +314,17 @@ enum TestData {
         XCTAssertEqual(McpToolName.arguments(["source": "/a.txt", "max_depth": 2]), "Max depth: 2\nSource: /a.txt")
     }
 
+    // MARK: Activity
+
+    func testNookNotesOnAQuietSessionDoNotMoveIt() {
+        let merged = RunEvent(kind: .system, text: "Pull request merged", tool: "prwatch")
+        let cleaned = RunEvent(kind: .system, text: "Worktree cleaned up")
+        XCTAssertFalse(merged.countsAsActivity(runActive: false),
+                       "a merged pull request must not bring a finished chat back to the top")
+        XCTAssertFalse(cleaned.countsAsActivity(runActive: false))
+        XCTAssertTrue(cleaned.countsAsActivity(runActive: true), "notes during a turn still count")
+        XCTAssertFalse(RunEvent(kind: .system, text: "claude", tool: "launch").countsAsActivity(runActive: true))
+        XCTAssertTrue(RunEvent(kind: .user, text: "hi").countsAsActivity(runActive: false))
+        XCTAssertTrue(RunEvent(kind: .result, text: "done").countsAsActivity(runActive: false))
+    }
 }
