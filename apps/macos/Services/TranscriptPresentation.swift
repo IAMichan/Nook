@@ -226,10 +226,11 @@ enum TranscriptPresentation {
             }
             work = Array(work[(lastSteer + 1)...])
         }
+        // The step that runs, also when the agent runs several at once and a later one of them is done already: the live
+        // line goes on with the one that still runs instead of falling back to "Reviewing" in between.
         var current: AgentToolStep?
-        if var last = work.last, last.isTools, let step = last.steps.last, step.state == .running {
-            current = step
-            last.steps.removeLast()
+        if var last = work.last, last.isTools, let index = last.steps.lastIndex(where: { $0.state == .running }) {
+            current = last.steps.remove(at: index)
             if last.steps.isEmpty { work.removeLast() } else { work[work.count - 1] = last }
         }
         // The thought the work ends with goes with the live line: why the agent runs this step, or what it thinks now.
@@ -308,7 +309,7 @@ enum TranscriptPresentation {
             return .thinking(headline(last.text))
         case .tools:
             guard let step = last.steps.last else { return .reviewing }
-            if step.state == .running { return AgentActivity.of(step) }
+            if let running = last.steps.last(where: { $0.state == .running }) { return AgentActivity.of(running) }
             return step.state == .failed ? .recovering : .reviewing
         case .notice:
             if case .compacted = last.notice { return .reviewing }
@@ -418,6 +419,13 @@ enum TranscriptPresentation {
         guard count > 0, height > 0 else { return (pitch, 0) }
         let step = min(pitch, max(railMinPitch, height / CGFloat(count)))
         return (step, max(1, min(count, Int(height / step))))
+    }
+
+    /// Whether the rail stays in sight in a conversation `room` wide: only when the margin beside its centered column
+    /// (`PanelLayout.chatColumn` at most) is as wide as the rail. With less room it would lie over the messages, so it
+    /// shows while the pointer is on the leading edge.
+    static func railAlwaysShown(room: CGFloat, column: CGFloat, rail: CGFloat) -> Bool {
+        PanelSplit.columnStart(column: min(room, column), room: room) >= rail
     }
 
     /// The same marks for a session Nook runs, from its events: `row` is the event itself. A finished turn folds its

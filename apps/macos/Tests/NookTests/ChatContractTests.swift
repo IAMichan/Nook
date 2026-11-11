@@ -90,6 +90,49 @@ final class ChatContractTests: XCTestCase {
         XCTAssertEqual(ChatBackoff.delay(interval: 10, failures: 1, local: true), 10, "never shorter than the bridge's own interval")
     }
 
+    func testANotificationKeepsItsBridgeReadingUntilTheMessageIsThere() {
+        var catchUp = ChatCatchUp()
+        let told = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertNil(catchUp.next("slack"), "without a notification a bridge waits its own interval")
+        catchUp.expect("slack", at: told)
+        XCTAssertEqual(catchUp.next("slack"), 2)
+        XCTAssertEqual(catchUp.next("slack"), 3)
+        catchUp.read("slack", brought: [told.addingTimeInterval(-3600)])
+        XCTAssertTrue(catchUp.isOwed("slack"), "an old message (history) is not the one the notification told of")
+        catchUp.read("slack", brought: [told.addingTimeInterval(-20)])
+        XCTAssertFalse(catchUp.isOwed("slack"), "the message is there: back to its own interval")
+        XCTAssertNil(catchUp.next("slack"))
+    }
+
+    func testQuickReadsEndAfterAboutTwoMinutes() {
+        var catchUp = ChatCatchUp()
+        catchUp.expect("teams", at: Date())
+        var waited: TimeInterval = 0
+        while let gap = catchUp.next("teams") { waited += gap }
+        XCTAssertEqual(waited, 120)
+        XCTAssertFalse(catchUp.isOwed("teams"))
+    }
+
+    func testANewNotificationStartsTheQuickReadsOver() {
+        var catchUp = ChatCatchUp()
+        let first = Date(timeIntervalSince1970: 1_000_000)
+        catchUp.expect("mail", at: first)
+        for _ in 0..<5 { _ = catchUp.next("mail") }
+        catchUp.expect("mail", at: first.addingTimeInterval(60))
+        XCTAssertEqual(catchUp.next("mail"), 2)
+        catchUp.read("mail", brought: [first.addingTimeInterval(-10)])
+        XCTAssertFalse(catchUp.isOwed("mail"), "the first notification's message also counts")
+    }
+
+    func testANewMessageIsWhatOneReadBrought() {
+        var before = ChatInbox()
+        before.add(ChatNotice(app: "slack", chat: "Anna", sender: "", text: "hi", date: Date(timeIntervalSince1970: 10)), id: "a")
+        var after = before
+        after.add(ChatNotice(app: "slack", chat: "Anna", sender: "", text: "there?", date: Date(timeIntervalSince1970: 20)), id: "b")
+        after.add(ChatNotice(app: "teams", chat: "Bo", sender: "", text: "yo", date: Date(timeIntervalSince1970: 30)), id: "c")
+        XCTAssertEqual(ChatInbox.added(before: before, after: after, apps: ["slack"]), [Date(timeIntervalSince1970: 20)])
+    }
+
     func testSlackTellsALostSignInFromOtherRefusals() {
         for reason in ["invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive"] {
             XCTAssertTrue(SlackData.signedOut(["ok": false, "error": reason]), reason)

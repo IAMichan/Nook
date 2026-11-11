@@ -29,6 +29,18 @@ struct AgentLogo: View {
         return .letter(String(agent.prefix(1)).uppercased(), palette[index])
     }
 
+    /// The colors of this agent's logo: its brand's colors, Antigravity's three, or the color of its letter. The glow
+    /// over a browser it drives is drawn in them (`BrowserTakeoverOverlay`).
+    static func colors(of agent: String) -> [Color] {
+        switch AgentLogo(agent: agent).style {
+        case .brand(let logo): return logo.palette
+        case .antigravity: return antigravityColors
+        case .letter(_, let color): return [color]
+        }
+    }
+
+    private static let antigravityColors = [Color(hex: 0x4F8BF7), Color(hex: 0xEA4335), Color(hex: 0xFBBC04)]
+
     var body: some View {
         logo
             .frame(width: size, height: size)
@@ -47,7 +59,7 @@ struct AgentLogo: View {
                 .roundedStroke(NookTheme.line2, radius: corner, lineWidth: 0.5)
                 .overlay(
                     ArchGlyph()
-                        .stroke(LinearGradient(colors: [Color(hex: 0x4F8BF7), Color(hex: 0xEA4335), Color(hex: 0xFBBC04)],
+                        .stroke(LinearGradient(colors: Self.antigravityColors,
                                                startPoint: .bottomLeading, endPoint: .topTrailing),
                                 style: StrokeStyle(lineWidth: max(1, size * 0.09), lineCap: .round, lineJoin: .round))
                         .padding(size * 0.22)

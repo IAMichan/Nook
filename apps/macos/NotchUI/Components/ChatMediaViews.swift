@@ -28,6 +28,7 @@ extension ChatBubble {
             var bubble = ChatBubble(message, time: time(message.date), members: thread.members ?? [],
                                     person: thread.isPrivate ? thread.name : nil)
             bubble.quote = message.quote.flatMap { quote(of: $0, in: byID, chat: thread.name) }
+            bubble.senderFace = thread.face(of: message)
             return bubble
         }
         fillReaders(&bubbles)

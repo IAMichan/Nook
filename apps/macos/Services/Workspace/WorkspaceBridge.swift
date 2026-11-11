@@ -433,6 +433,7 @@ final class WorkspaceBridge: ObservableObject {
             case .sessionOrganize: return await sessionOrganize(arguments, caller, context)
             case .sessionQuestions: return await sessionQuestions(arguments, caller, context)
             case .renderPage: return renderPage(arguments, caller)
+            case .sessionSuggest: return suggestSession(arguments, caller)
             case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return try await device(tool, arguments, caller)
             case .browserSnapshot: return try await browserSnapshot(arguments, caller)
             case .browserClick, .browserType: return try await browserInteract(tool, arguments, caller, context)

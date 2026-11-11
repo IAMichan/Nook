@@ -342,8 +342,8 @@ struct NookToastView: View {
 
 extension View {
     /// The toast's bubble: lifted a step above the panel it floats over, its tone in the symbol and a faint edge, not a
-    /// loud frame. Also worn by what waits for you over the panel's bottom edge (`PanelNoticeBar(floating:)`), so a
-    /// request and a result read as the same kind of thing in the same place.
+    /// loud frame. Also worn by what waits for you in the same corner (`PanelNoticeBar(floating:)`), so a request and a
+    /// result read as the same kind of thing in the same place.
     func toastBubble(tone: Color, maxWidth: CGFloat = 480) -> some View {
         padding(.leading, NookTheme.Spacing.lg)
             .padding(.trailing, NookTheme.Spacing.md)
@@ -355,13 +355,7 @@ extension View {
 }
 
 extension AnyTransition {
-    /// The enter and leave of what floats over a panel's bottom edge (a toast, a request): it rises from the edge, or only
-    /// fades under Reduce Motion.
-    static func nookFloating(reduceMotion: Bool) -> AnyTransition {
-        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
-    }
-
-    /// The enter and leave of a toast in the top-right corner: it slides in from the trailing edge and back out, or only
+    /// The enter and leave of a toast or a request in the top-right corner: it slides in from the trailing edge and back out, or only
     /// fades under Reduce Motion.
     static func nookToast(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .trailing))
@@ -369,8 +363,9 @@ extension AnyTransition {
 }
 
 /// Shows `ToastCenter`'s toasts in the top-right corner of this view, under the header, when this is the surface they
-/// belong to (`NookToastStack`). `above` (what waits for you on this surface: a permission request) keeps the bottom
-/// edge, just above the composer, so a result never covers what you are asked or the box you type in.
+/// belong to (`NookToastStack`). `above` (what waits for you on this surface: a permission request, an agent's question)
+/// sits in the same corner, on top of the toasts, so a request and a result show in one place and never cover the page
+/// or the box you type in.
 private struct NookToastHost<Above: View>: ViewModifier {
     let above: Above
     @ObservedObject private var center = ToastCenter.shared
@@ -379,22 +374,15 @@ private struct NookToastHost<Above: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // What waits for you: over the bottom edge, but above the session's composer when one is on this surface, so
-            // it never covers the box you type in.
-            .overlayPreferenceValue(SessionComposerBounds.self) { composer in
-                GeometryReader { proxy in
-                    above
-                        .padding(.horizontal, NookTheme.Spacing.xl)
-                        .padding(.bottom, bottomInset(composer.map { proxy[$0] }, height: proxy.size.height))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                }
-            }
-            // The results: top right, under the header (the panel's tabs, the window's traffic lights), out of the way
-            // of the page and the composer.
+            // Top right, under the header (the panel's tabs, the window's traffic lights), out of the way of the page and
+            // the composer: first what waits for you, then the results.
             .overlay(alignment: .topTrailing) {
-                NookToastStack(center: center, shown: center.activeHost == id)
-                    .padding(.top, PanelView.headerHeight + NookTheme.Spacing.md)
-                    .padding(.horizontal, NookTheme.Spacing.xl)
+                VStack(alignment: .trailing, spacing: NookTheme.Spacing.md) {
+                    above
+                    NookToastStack(center: center, shown: center.activeHost == id)
+                }
+                .padding(.top, PanelView.headerHeight + NookTheme.Spacing.md)
+                .padding(.horizontal, NookTheme.Spacing.xl)
             }
             .background(ToastWindowReader { window = $0 })
             .onChange(of: window) { _, window in
@@ -402,18 +390,6 @@ private struct NookToastHost<Above: View>: ViewModifier {
             }
             .onAppear { if let window { center.register(id, window: window) } }
             .onDisappear { center.unregister(id) }
-    }
-
-    /// The room a floating notice or toast needs under a composer to sit at the bottom edge without touching it.
-    /// Computed: a generic type cannot hold a static stored property.
-    private static var roomUnderComposer: CGFloat { 120 }
-
-    /// The room under the toast: the edge's own, or up to just above the composer when it sits at the bottom. A
-    /// composer higher up (a new session's, centered on the page) leaves the bottom edge free, so the toast stays there.
-    private func bottomInset(_ composer: CGRect?, height: CGFloat) -> CGFloat {
-        guard let composer, composer.height > 0,
-              height - composer.maxY < Self.roomUnderComposer else { return NookTheme.Spacing.xl }
-        return max(NookTheme.Spacing.xl, height - composer.minY + NookTheme.Spacing.sm)
     }
 }
 

@@ -100,6 +100,20 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertNil(thought)
     }
 
+    func testWithParallelStepsTheOneStillRunningStaysTheLiveLine() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build", .running), step("b", "Bash", "git status")], at: 2)
+        ], working: true)
+        XCTAssertEqual(rows.map(\.id), ["u1", "working", "step:b", "live"])
+        guard case .live(let current, _) = rows[3] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(current?.id, "a", "a later step that is done already does not hide the one that still runs")
+        XCTAssertEqual(TranscriptPresentation.activity([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build", .running), step("b", "Bash", "git status")], at: 2)
+        ]), .verifying(.build))
+    }
+
     func testTheThoughtBeforeTheRunningStepGoesWithTheLiveLine() {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Fix de test", at: 0),
@@ -403,6 +417,12 @@ final class TranscriptPresentationTests: XCTestCase {
         let many = TranscriptPresentation.railLayout(count: 500, height: 400, pitch: 8)
         XCTAssertEqual(many.pitch, TranscriptPresentation.railMinPitch)
         XCTAssertEqual(many.fit, 100, "past the closest distance the newest show")
+    }
+
+    func testRailHidesUntilHoverWhenItWouldCoverTheMessages() {
+        XCTAssertTrue(TranscriptPresentation.railAlwaysShown(room: 900, column: 736, rail: 20), "a wide margin keeps it in sight")
+        XCTAssertFalse(TranscriptPresentation.railAlwaysShown(room: 760, column: 736, rail: 20), "a 12 pt margin is too narrow")
+        XCTAssertFalse(TranscriptPresentation.railAlwaysShown(room: 450, column: 736, rail: 20), "a narrow chat fills its room")
     }
 
     func testTheNookChatMarksYourQuestionsOnTheSameRail() {

@@ -17,6 +17,17 @@ final class AgentProgressTests: XCTestCase {
         return event(.tool, "Bash · " + command, tool: "Bash", detail: json, state: state, at: seconds)
     }
 
+    // MARK: The live line
+
+    func testAStepStaysOnTheLiveLineThroughThePauseBeforeTheNext() {
+        XCTAssertTrue(AgentActivity.holds(.running("npm test"), before: .reviewing), "no 'Reviewing' between quick commands")
+        XCTAssertTrue(AgentActivity.holds(.reading("App.swift"), before: .thinking("Next")))
+        XCTAssertFalse(AgentActivity.holds(.running("npm test"), before: .running("npm run lint")), "the next step shows right away")
+        XCTAssertFalse(AgentActivity.holds(.running("npm test"), before: .compacting))
+        XCTAssertFalse(AgentActivity.holds(.reviewing, before: .writing), "only a step is held")
+        XCTAssertGreaterThan(AgentActivity.stepDwell, 0)
+    }
+
     // MARK: Verification
 
     func testRecognizesChecksOfTheWork() {

@@ -199,6 +199,22 @@ final class PullRequestSync: ObservableObject {
         refresh(now: now)
     }
 
+    /// The session's git button just opened this pull request for its branch: its row lists it at once. The round would
+    /// find it too, but only after every other due branch had its turn, and the button's own record of it is gone as
+    /// soon as it merges (it only remembers open ones), so a pull request merged right away showed on no row at all.
+    /// Expected as well, so a list from GitHub that does not have it yet is asked again in the next round.
+    func opened(_ id: UUID, url: URL, branch: String?, now: Date = Date()) {
+        guard var link = PullRequestLink(url: url) else { return }
+        if link.headBranch == nil { link.headBranch = branch }
+        expected[id.uuidString] = now.addingTimeInterval(Self.expectFor)
+        checked[id] = nil
+        if !(links[id] ?? []).contains(where: { $0.id == link.id }) {
+            links[id] = (links[id] ?? []) + [link]
+            save()
+        }
+        refresh(now: now)
+    }
+
     /// The same for a session Nook only sees, by its folder and branch.
     func expect(path: String, branch: String, now: Date = Date()) {
         let key = Self.folderKey(path: path, branch: branch)

@@ -65,6 +65,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘O | `session.openInEditor` | `!terminalFocus` | Opens the open session's folder in your editor (Settings › Workspace), else in Finder |
 | ⇧⌘C | `session.copyReference` | `!terminalFocus && !editableFocus` | Copies the open session's folder and branch: `/code/app (feature/x)` |
 | ⌥⌘↩ | `composer.startInBackground` | `composerFocus` | In the new-session box: starts the session without opening it, and keeps a fresh box with the same folder, agent and worktree choices |
+| ⌘↩ | `composer.send` | `composerFocus && !turnRunning` | In the new-session box, the same as ⌥⌘↩ (as in a t3code draft thread); Return starts the session and opens it |
 | ⌘B | `sidebar.toggle` | `!terminalFocus` | Puts the Agents list away, or brings it back |
 | ⌘J | `terminal.toggle` | | The terminal in the bottom panel under the session, and again to put it away |
 | ⌥⌘B | `sidePanel.toggle` | | Puts the side panel away with its tabs, or opens it again on what it showed |

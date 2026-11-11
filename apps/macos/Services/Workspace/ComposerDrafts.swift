@@ -114,3 +114,69 @@ enum StashAction: Equatable, Sendable {
         }
     }
 }
+
+/// The new-session box keeps one draft per place a session can start: a folder on this Mac, or a machine over SSH. Like a
+/// t3code draft thread, what you typed for one project waits there while you start something in another, and the list
+/// shows it as an unsent draft. The drafts live in `ComposerDrafts` under these keys, beside the running sessions' drafts.
+enum NewSessionDraftKey {
+    /// The one shared draft of Nook before drafts were kept per folder; read once and moved to the folder it opens on.
+    static let legacy = "new-session"
+    static let prefix = "new-session:"
+    static let machinePrefix = "ssh:"
+
+    static func folder(_ path: String) -> String { prefix + path }
+    static func machine(_ id: String) -> String { prefix + machinePrefix + id }
+
+    enum Place: Equatable, Sendable {
+        case folder(String)
+        case machine(String)
+    }
+
+    /// The machine of a machine's key; nil for any other text (a folder path).
+    static func machineID(_ key: String) -> String? {
+        if case .machine(let id) = place(of: key) { return id }
+        return nil
+    }
+
+    /// Where a key's draft starts; nil for a running session's key and the legacy key.
+    static func place(of key: String) -> Place? {
+        guard key.hasPrefix(prefix) else { return nil }
+        let rest = String(key.dropFirst(prefix.count))
+        guard !rest.isEmpty else { return nil }
+        if rest.hasPrefix(machinePrefix) {
+            let id = String(rest.dropFirst(machinePrefix.count))
+            return id.isEmpty ? nil : .machine(id)
+        }
+        return .folder(rest)
+    }
+}
+
+/// A new-session draft with words in it, for the list's "Unsent" rows.
+struct UnsentDraft: Identifiable, Equatable, Sendable {
+    let key: String
+    let place: NewSessionDraftKey.Place
+    let preview: String
+    let updatedAt: Date
+    var id: String { key }
+
+    /// The first line that says something, cut to fit a row.
+    static func preview(of text: String) -> String {
+        let line = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        return String(line.prefix(120))
+    }
+}
+
+extension ComposerDrafts {
+    /// Every new-session draft with words in it, newest first.
+    func unsentNewSessions() -> [UnsentDraft] {
+        drafts.compactMap { key, entry -> UnsentDraft? in
+            guard let place = NewSessionDraftKey.place(of: key) else { return nil }
+            let preview = UnsentDraft.preview(of: entry.text)
+            guard !preview.isEmpty else { return nil }
+            return UnsentDraft(key: key, place: place, preview: preview, updatedAt: entry.updatedAt)
+        }
+        .sorted { ($0.updatedAt, $0.key) > ($1.updatedAt, $1.key) }
+    }
+}

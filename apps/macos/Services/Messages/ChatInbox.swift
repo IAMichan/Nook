@@ -423,6 +423,10 @@ struct BridgedChat: Equatable, Sendable {
     var avatar: String? = nil
     /// A group's other members by name (you left out), when the app lists them; nil when it does not.
     var members: [String]? = nil
+    /// In a group: each sender's picture on this Mac as their app shows it, by their id in the app
+    /// (`InboxMessage.senderID`), else by their name for an app that gives no id. Their message's face beside the bubble
+    /// shows it (`InboxThread.face(of:)`). Nil when this read brings none; what came before stays.
+    var faces: [String: String]? = nil
     /// What the app says about the chat itself (a group's description and admins, a person's bio); nil when this read
     /// says nothing of it.
     var profile: ChatProfile? = nil
@@ -594,6 +598,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var avatar: String? = nil
     /// A group's other members by name (you left out), as its app lists them; nil when it is not known.
     var members: [String]? = nil
+    /// Each sender's picture in a group, by their id in the app or their name (`BridgedChat.faces`); nil when none.
+    var faces: [String: String]? = nil
     /// What its app says about the chat itself (`ChatProfile`), as far as its bridges said it; nil when nothing.
     var profile: ChatProfile? = nil
     /// When a bridge last listed this chat as one of yours (`BridgedChat.listed`): it stays while that is recent, even
@@ -666,6 +672,14 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var isGroup: Bool {
         if let kind { return kind == .group }
         return (members?.count ?? 0) > 1 || messages.contains { !$0.sender.isEmpty }
+    }
+    /// The picture of whoever wrote this message in a group, on this Mac, as their app shows it (`faces`): by their id
+    /// in the app, else by their name. Nil for your own, and where the app gave none (the face then shows their photo in
+    /// Contacts, else their initials).
+    func face(of message: InboxMessage) -> String? {
+        guard let faces, !message.isMine else { return nil }
+        if let id = message.senderID, let path = faces[id] { return path }
+        return message.sender.isEmpty ? nil : faces[message.sender]
     }
     /// The kind the notice rules go by: what its app says, else a group when it looks like one, else a person's chat.
     var noticeKind: ChatKind { kind ?? (isGroup ? .group : .person) }
@@ -938,6 +952,18 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// Two copies of one message: a bridge and a notification can both bring it in, each under an id of its own.
     static let sameMessageWindow: TimeInterval = 60
 
+    /// The file a read brings for a message Nook knows, for every app: a read that brings it without its file on this
+    /// Mac (a chat list's preview, or a read whose fetch did not get it this time) keeps the file Nook already has.
+    /// Without this the picture fell back to a waiting tile on the next read and, a minute later, to a file row.
+    static func media(_ new: ChatMedia?, keeping known: ChatMedia?) -> ChatMedia? {
+        guard var new else { return nil }
+        if new.path == nil, let known, known.path != nil, known.shownKind == new.shownKind, known.url != nil {
+            new.path = known.path
+            if new.seconds == nil { new.seconds = known.seconds }
+        }
+        return new
+    }
+
     /// A chat that had nothing new for this long is dropped.
     static let maxAge: TimeInterval = 30 * 86_400
     /// How often a listed chat's `listed` date is renewed: not on every read, so an unchanged chat is not saved again.
@@ -964,9 +990,29 @@ struct ChatInbox: Codable, Equatable, Sendable {
         .map(\.0)
     }
 
+    /// The dates of the messages `after` holds and `before` did not, in the chats of these apps: what one read brought.
+    static func added(before: ChatInbox, after: ChatInbox, apps: Set<String>) -> [Date] {
+        after.threads.values.filter { apps.contains($0.app) }.flatMap { thread -> [Date] in
+            let known = Set(before.threads[thread.id]?.messages.map(\.id) ?? [])
+            return thread.messages.filter { !known.contains($0.id) }.map(\.date)
+        }
+    }
+
     /// The key of a chat its app knows by an id of its own (`BridgedChat.chatID`): "whatsapp#31612345678@s.whatsapp.net".
     /// A name's key always has "|", so the two never meet.
     static func key(app: String, id: String) -> String { app + "#" + id }
+
+    /// How many senders' pictures a group keeps (`InboxThread.faces`): the ones a read brought last stay.
+    static let maxFaces = 200
+
+    /// A read's senders' pictures over the ones the chat had: a new picture wins, one the read does not mention stays.
+    static func faces(_ new: [String: String]?, over old: [String: String]?) -> [String: String]? {
+        guard let new, !new.isEmpty else { return old }
+        var merged = old ?? [:]
+        if merged.count + new.count > maxFaces { merged = [:] }
+        merged.merge(new) { _, latest in latest }
+        return merged
+    }
 
     /// The key of a chat as a bridge brings it: by its id when it has one, else by its name.
     static func key(of chat: BridgedChat) -> String {
@@ -1158,7 +1204,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
         } ?? false
         guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil
                                                      || (chat.profile != nil && chat.profile?.merged(over: known?.profile) != known?.profile) || chat.listed || !chat.deleted.isEmpty
-                                                     || (chat.avatar != nil && chat.avatar != known?.avatar) || described))
+                                                     || (chat.avatar != nil && chat.avatar != known?.avatar)
+                                                     || (chat.faces != nil && ChatInbox.faces(chat.faces, over: known?.faces) != known?.faces)
+                                                     || described))
                 || (known == nil && gone == nil && chat.listed)
         else { return false }
         // Two chats that shared a row now each have their own: the old row held both, and their app has their messages.
@@ -1194,7 +1242,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
             // the phone come after its first messages).
             if !message.sender.isEmpty, thread.messages[index].sender != message.sender { thread.messages[index].sender = message.sender }
             if let sender = message.senderID, thread.messages[index].senderID != sender { thread.messages[index].senderID = sender }
-            if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
+            if let media = Self.media(message.media, keeping: thread.messages[index].media),
+               thread.messages[index].media != media {
+                thread.messages[index].media = media
+            }
             if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
             if message.quote != nil, thread.messages[index].quote != message.quote { thread.messages[index].quote = message.quote }
             if let receipt = message.receipt {
@@ -1282,6 +1333,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         thread.name = chat.name
         if let avatar = chat.avatar { thread.avatar = avatar }
         if let members = chat.members { thread.members = members }
+        if chat.faces != nil { thread.faces = Self.faces(chat.faces, over: thread.faces) }
         if let profile = chat.profile {
             let merged = profile.merged(over: thread.profile)
             thread.profile = merged.isEmpty ? nil : merged
