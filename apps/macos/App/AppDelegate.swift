@@ -74,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func stopAgentsBeforeQuit() -> NSApplication.TerminateReply {
         model.workspace.shutdown()
         let daemonStop = DeviceHubService.shared.stopForQuit()
+        // Commands the governor paused come back first, so they hear the quit (`AgentGovernor`).
+        AgentGovernor.shared.releaseAll()
         let processes = LiveAgentProcesses.shared.beginQuit()
         guard !processes.isEmpty || daemonStop != nil else { return .terminateNow }
         var replied = false

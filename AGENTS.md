@@ -98,6 +98,23 @@ It keeps the build in `.build/xcode` inside the checkout, so it is removed toget
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
 
+Both `./scripts/xcode.sh` and `./scripts/core-tests.sh` run their build through `./scripts/build-slot.sh`: one heavy build
+at a time on this Mac, at a lower priority. When another agent is building, yours prints that it is waiting and starts
+when that build ends. Do not work around it: several agents compiling at once once drove the load to 185 on 14 cores,
+filled the swap, and froze the Mac and the running Nook. Run any other heavy build (`xcodebuild`, `swift build`,
+`cargo build`) through `./scripts/build-slot.sh` too. `NOOK_BUILD_SLOT=off` skips the wait, only for a quick build the
+user is waiting on.
+
+Nook itself starts every coding agent behind your own work (`AgentCommand.behindForeground`, nice 10), so a build an
+agent runs yields to the windows, typing and Nook. On top of that `AgentGovernor` watches the Mac while agents run: when
+memory is tight or the Mac is hot, the commands agents run move to macOS's background band; when the Mac swaps hard, the
+commands of the youngest agents hold still (never the agent itself, never the oldest one, at most two minutes) until
+there is room, with a strip above the composer to let them go on. It finds those commands by the process tree, since
+agents start each command in a process group of its own, and always resumes what it paused: when the agent stops, when
+Nook quits, and after a crash. Terminals you type in are your own work and are left alone. Its optional background work (reading the screen, thinking along,
+local models) pauses while the Mac is hot, busy, or short on memory (`EnergyPolicy`); a Mac that keeps reading memory
+back from swap counts as short even when macOS's own pressure level still says normal.
+
 Test programs must leave the user's screen, focus, and input alone. This Mac is in use while agents work, and a throwaway
 harness that opens a window interrupts whatever the user is doing:
 

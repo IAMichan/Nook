@@ -11,4 +11,8 @@ enum Log {
     static let connectors = Logger(subsystem: subsystem, category: "connectors")
     static let actions = Logger(subsystem: subsystem, category: "actions")
     static let autocomplete = Logger(subsystem: subsystem, category: "autocomplete")
+    /// How hard the Mac is pressed and what Nook does about it (`AgentGovernor`, `EnergyMonitor`): the readings behind each
+    /// change, so the thresholds can be checked against a real slowdown with
+    /// `log show --predicate 'subsystem == "nl.imdigital.nook" AND category == "resources"' --info --last 1d`.
+    static let resources = Logger(subsystem: subsystem, category: "resources")
 }
