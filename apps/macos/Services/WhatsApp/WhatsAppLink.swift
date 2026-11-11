@@ -93,11 +93,23 @@ enum WhatsAppSettings {
         defaults.set(Array(chats).sorted(), forKey: key("whatsappPinnedChats", account: account))
     }
 
+    /// Whether the account's phone was linked when Nook last knew: after a restart its chats (with the pictures kept on
+    /// this Mac) show at once while the gateway starts, instead of the chats WhatsApp on this Mac named, without
+    /// pictures, until the gateway answers.
+    static func wasLinked(account: String) -> Bool {
+        defaults.bool(forKey: key("whatsappWasLinked", account: account))
+    }
+
+    static func setWasLinked(_ linked: Bool, account: String) {
+        guard wasLinked(account: account) != linked else { return }
+        defaults.set(linked, forKey: key("whatsappWasLinked", account: account))
+    }
+
     /// What an account you removed kept on this Mac: its read marks, its unread counts, its pins, its votes and ticks.
     static func forget(account: String) {
         guard !account.isEmpty else { return }
         for base in ["whatsappUnreadCarry", "whatsappPinnedChats", "whatsappReadInNook", "whatsappReadInWhatsApp",
-                     "whatsappMarkedUnread"] {
+                     "whatsappMarkedUnread", "whatsappWasLinked"] {
             defaults.removeObject(forKey: key(base, account: account))
         }
         try? FileManager.default.removeItem(at: WAPollStore.file(account: account))
@@ -189,8 +201,16 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var link: Link = .off {
         didSet {
             switch link {
-            case .connected: linkedUntil = nil; wasLinked = true
-            case .off, .needsQR, .unauthorized: linkedUntil = nil; wasLinked = false
+            case .connected:
+                linkedUntil = nil; wasLinked = true
+                WhatsAppSettings.setWasLinked(true, account: account)
+            case .needsQR, .unauthorized:
+                linkedUntil = nil; wasLinked = false
+                WhatsAppSettings.setWasLinked(false, account: account)
+            case .off:
+                linkedUntil = nil; wasLinked = false
+                // Off for a restart of the link (a changed setting) is no unlinking; turned off it is.
+                if !WhatsAppSettings.enabled { WhatsAppSettings.setWasLinked(false, account: account) }
             case .connecting, .unreachable, .failed:
                 if oldValue == .connected { linkedUntil = Date().addingTimeInterval(Self.linkGrace) }
             }
@@ -382,6 +402,12 @@ final class WhatsAppLink: ObservableObject {
             Date().timeIntervalSince($0.value.last) < ChatReadMarks.maxAge
         }
         pinnedChats = WhatsAppSettings.pinnedChats(account: account)
+        // Linked when Nook quit: its chats keep showing while the gateway starts, as through any other moment it does
+        // not answer (`linkGrace`).
+        if WhatsAppSettings.enabled, WhatsAppSettings.wasLinked(account: account) {
+            wasLinked = true
+            linkedUntil = Date().addingTimeInterval(Self.linkGrace)
+        }
         filters = ChatNoticeRulesStore.shared.filters(account: account)
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
             .sink { [weak self] _ in DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.wake() } }
