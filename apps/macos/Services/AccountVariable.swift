@@ -9,7 +9,7 @@ struct AccountVariable: Codable, Hashable, Identifiable {
 
     var id: String { name }
 
-    /// Letters, digits and underscores, not starting with a digit (the shell's rule, as t3code checks).
+    /// Letters, digits and underscores, not starting with a digit (the shell's rule).
     static func isValidName(_ name: String) -> Bool {
         guard let first = name.unicodeScalars.first, first == "_" || (first.isASCII && CharacterSet.letters.contains(first)) else { return false }
         return name.unicodeScalars.allSatisfy { $0 == "_" || ($0.isASCII && CharacterSet.alphanumerics.contains($0)) }

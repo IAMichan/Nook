@@ -3,7 +3,7 @@ import SwiftUI
 // A coding agent's session in a list, as both apps show it (apps/ios/project.yml compiles this file too): the Mac's
 // `AgentListRow` and the phone's `AgentRow` fill the same layout, so a session reads the same on either.
 
-/// Three lines, as a thread in t3code: the folder with the status or how long ago on the right; the session's name;
+/// Three lines: the folder with the status or how long ago on the right; the session's name;
 /// and the branch (with what changed and its pull request, where the app knows them) with the agent's logo at its end.
 /// Without anything for the third line the logo moves up beside the name and the row keeps two lines.
 struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {

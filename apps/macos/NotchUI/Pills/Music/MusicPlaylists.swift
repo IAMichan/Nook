@@ -46,7 +46,7 @@ struct MusicPlaylistsView: View {
             MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.playlists.loadFailed"), detail: message) {
                 SmallGhostButton(title: tr("music.lyrics.retry")) { service.refreshPlaylists() }
             }
-        case .idle, .loading where service.playlists.isEmpty:
+        case .idle where service.playlists.isEmpty, .loading where service.playlists.isEmpty:
             PatientSpinner()
         default:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {

@@ -13,9 +13,9 @@ copying it again.
 | `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
-| `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action, as t3code draws it: t3code's button shape filled with Nook's accent (soft white by default, where t3code has blue) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
-| `NookTheme.outlineFill`, `outlineStroke` | t3code's outline button: a faint fill and an input-colored edge |
-| `Image(icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (t3code's set, custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
+| `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action: a button filled with Nook's accent (soft white by default) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
+| `NookTheme.outlineFill`, `outlineStroke` | The outline button: a faint fill and an input-colored edge |
+| `Image(icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
@@ -32,7 +32,7 @@ copying it again.
 
 Appearance and themes (Settings › Appearance): `NookTheme`'s named colors resolve through the `NookPalette` of the theme
 in effect (`NookPalette.swift`): `NookAppearanceMode` (System / Light / Dark) picks light or dark, `NookColorTheme` is a
-built-in theme (the default "Nook" follows t3code: a true black canvas, 8 % white lines, neutral text and Nook's white accent; Midnight, Paper and High contrast come with it) and
+built-in theme (the default "Nook": a true black canvas, 8 % white lines, neutral text and Nook's white accent; Midnight, Paper and High contrast come with it) and
 `VSCodeThemeImport` turns a VS Code color theme JSON into a `NookCustomTheme` (editor, sidebar and accent colors).
 State colors keep their meaning in every theme. A file that must draw its own colors takes them from the palette or
 stays on the allow-list with a reason. The notch stays dark in every theme. The tests check text contrast (WCAG AA) of
@@ -50,12 +50,12 @@ informs without shouting; motion settles without overshoot. When you add a view:
 - Group with space and fill, not with lines: a `panelCard()` for rows that belong together, `NookDivider` between them.
 - One accent per view at most. Buttons in a header are the same quiet `NookIconButton` or `ToolbarIconButton` (a ghost
   that lights on hover); only the main action is filled with `NookTheme.primary`. Buttons sit on the control radius
-  (8 pt), as t3code's, not in a capsule. The same goes for everything else with words in it: a tag, badge, status or
+  (8 pt), not in a capsule. The same goes for everything else with words in it: a tag, badge, status or
   filter chip sits on the chip radius (6 pt), a floating bar (the panel header, a HUD) on the panel radius (12 pt).
   `Capsule()` is only for shapes without text: progress tracks, thin indicator bars, drag handles, level meters.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-The dark theme reads calm because it uses so little: t3code's ramp (a true black canvas `#000000`, cards and menus about 3 % white over it, lines of 8 % white), separation by tonal steps,
+The dark theme reads calm because it uses so little: a neutral ramp (a true black canvas `#000000`, cards and menus about 3 % white over it, lines of 8 % white), separation by tonal steps,
 faint white fills and one light grey `border` between columns instead of grey panels, and color only where it carries meaning. Calm never costs
 clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
 and a selected row stands a full step above a hovered one. In practice:
@@ -68,7 +68,7 @@ and a selected row stands a full step above a hovered one. In practice:
   and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).
 - **Lists are a sidebar, not a stack of cards.** A row has no fill at rest (`rowFill(…, rest: .clear)`); only the
-  row under the pointer and the selected one lift. A session row reads as a thread in t3code (`AgentListRow`): the
+  row under the pointer and the selected one lift. A session row (`AgentListRow`) shows the
   folder with the status or time, the name, and a line with the branch (a worktree's with its own mark), the changes
   (`+12 −3`, or the changed files) and the pull request, with the agent's logo at its end. Under a project's header the
   folder line goes, the name lines up with the project's name, and the second line shows only when there is a branch, a
@@ -306,7 +306,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` (its layout `StatusBadgeLabel` and `RowBadgeBackground`: `Shared/PanelParts.swift`) | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)`, `HoverCardButton` | `HoverCard.swift` | Detail popover on hover. It stays while the pointer is on the view or on the card, and a moment after, so what it holds can be clicked; `HoverCardButton` is such a line, and a click on it closes the card |
 | `.detailCard(onDetail:_:)`, `RowChangesCard`, `RowPullRequestCard` | `HoverCard.swift`, `RowDetailCards.swift` | A part of a row with its own hover card (a session row's changed files, its pull request badge); the row holds its own card back while the pointer is on that part. `RowPullRequestCard` takes a `SessionPullRequests`: it counts the requests (and the merged ones) when there is more than one, lists those of earlier branches and worktrees under their own heading, and each opens beside its session. A file in `RowChangesCard` opens in the session's Changes tab |
-| `LineageControl` | `NotchUI/Pills/LineageControl.swift` | "Lineage · 2 running" in a session's header, as t3code's lineage control: a `ComposerDropdown` with the parent, forks and comparisons, the delegated tasks at work (each with a stop button), **Previous agents** folded, and the side chats. Delegated tasks and side chats have no row in the Agents list (`SubThreadListing`), so this is where they open; never list them as rows again |
+| `LineageControl` | `NotchUI/Pills/LineageControl.swift` | "Lineage · 2 running" in a session's header: a `ComposerDropdown` with the parent, forks and comparisons, the delegated tasks at work (each with a stop button), **Previous agents** folded, and the side chats. Delegated tasks and side chats have no row in the Agents list (`SubThreadListing`), so this is where they open; never list them as rows again |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers; `DropdownRow(favorite:)` adds a favorite star (the model menus), `DropdownRow(tile:)` a tinted icon tile and `DropdownRow(thumbnail:)` a small picture in its place |
 | `DropdownTileGrid`, `DropdownTile`, `DropdownNote` | `ComposerDropdown.swift` | The big choices on top of a dropdown as tinted tiles in a grid of three (the chat composer's "+" panel: photo and video, file, audio, GIF, stickers), and a quiet tip line at its foot ("Or drop files on the chat") |
 | `ModelPickerDropdown`, `ModelPicker` | `ModelPicker.swift` | The one model picker, drawn the same everywhere: the agents' (`AgentModelPicker`: a new session, a running one, a conversation continued in Nook) and Nook's own brain in the chat (`BrainChip`). One width, a rail of places (this Mac's local models first, set apart, where the caller can run them; then an agent or service per logo, once per account when it has several, its badge telling them apart) with a "+" that opens Settings, and a column with the place's name, an optional line (the account, or what "On your Mac" means), the search, the models (`ModelPickerItem`: logo, star, "New", a disabled reason) and actions (a model typed in the search, fetch models), and a Settings link. Callers hand over `ModelPickerPlace`s and a `ModelPickerList` per place; never build a second model menu |
@@ -387,7 +387,7 @@ window layout. In the window the header's empty space (`WindowTitleBarArea`) mov
 button, the window remembers its tab (and opens at an agent that waits for you), and the chat keeps a readable width
 (`PanelLayout.readableChat`). In the notch, the window button continues on the same tab in the window.
 
-In the window the tabs live in a sidebar along the left edge, as in t3code (`PanelSidebar.swift`): `PanelView` hands
+In the window the tabs live in a sidebar along the left edge (`PanelSidebar.swift`): `PanelView` hands
 the tab a `PanelSidebarContext` through the environment, and the tab's first column starts with `PanelSidebarTop`
 (the title bar's row with search, talk and split view, then the tabs on one 34 pt bar: the selected one with its mark,
 name and what goes on there on `rowSelected` — waiting sessions in amber or a pulse while one works, unread chats as a
@@ -401,8 +401,8 @@ follows under it, with its `PanelListHeader` as a quiet section label (`sidebarT
 and its buttons on one row, and back and forward beside the traffic lights), and
 the `PanelFooter` at the bottom. Music has no list of its own: `PanelView` draws its column, with `MusicSidebar` (the sections and the playlists) in place of a list. The Music pages
 themselves keep one grid (`MusicLayout` in `MusicTab.swift`): the header band, what scrolls and the player bar share the
-same two edges; the band holds the one title (Home's greeting, a section's name) with back and the section's own
-controls; tracks are flat rows (`MusicTrackRow`, `MusicTrackTile`) whose hover fill reaches past that edge
+same two edges; the band holds the one title (Home's greeting, a section's name) as a conversation's "folder / title"
+header ("Music / Statistics", body type, no line under it) with back and the section's own controls; tracks are flat rows (`MusicTrackRow`, `MusicTrackTile`) whose hover fill reaches past that edge
 (`.musicRowBleed()`), an open playlist and the full player have no card around them, and the player bar is the
 composer's box. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
@@ -439,10 +439,10 @@ to share it (Nook has no hosting to publish to), and per-line comments inside a 
 | `SettingToggle(_:detail:isOn:)` | `SettingsBlocks.swift` | A switch with its title only; the detail shows on hover and to VoiceOver |
 | `SettingLabel(_:detail:)`, `SettingLabel(_:hint:)` | `SettingsBlocks.swift` | The title of a row with a button or picker: `detail:` keeps a caption for what must be seen (a state, a step), `hint:` shows the title only with the explanation on hover |
 | `StatusRow`, `Keycap` | `SettingsBlocks.swift` | Status lines (their buttons are always small, set by the row itself), keyboard keys |
-| `SettingsSidebar`, `SettingsSidebarRow`, `SettingsPageBar`, `SettingsLayout` | `SettingsSidebar.swift` | The Settings window, laid out as t3code's: a 240 pt sidebar with the search on top (⌘F or /, ↑ ↓ and Return through the results) and the pages in their groups (`SettingsSection.Group`; the first and last have no heading), a 48 pt bar over the page with the breadcrumb, the page's ⓘ and its main step, and the page in a column of readable width. A page is one subject and never has tabs: a part that grows becomes a page of its own. A new page is a `SettingsSection` case in one group with a `sidebarSymbol`; never a second sidebar or header |
+| `SettingsSidebar`, `SettingsSidebarRow`, `SettingsPageBar`, `SettingsLayout` | `SettingsSidebar.swift` | The Settings window: a 240 pt sidebar with the search on top (⌘F or /, ↑ ↓ and Return through the results) and the pages in their groups (`SettingsSection.Group`; the first and last have no heading), a 48 pt bar over the page with the breadcrumb, the page's ⓘ and its main step, and the page in a column of readable width. A page is one subject and never has tabs: a part that grows becomes a page of its own. A new page is a `SettingsSection` case in one group with a `sidebarSymbol`; never a second sidebar or header |
 | `AgentName` | `SettingsStyle.swift` | A coding agent's name with its logo, everywhere Settings names one (a picker, a button, a menu, a row); never an agent's name as plain text |
 | Connection sheets | `SetupSheet`, `SetupStep`, `SheetPart` | Every connection sheet has the same shape. Not linked: numbered steps from 1, the last one Nook checking the link, also when nothing has to be filled in ("Ready to add") or the app cannot be linked yet (that is step 1, in plain words). Linked: the state as a pill beside the title, then `SheetPart`s in this order: account or status, sign-in or key, "In Nook", "What Nook can do with it", and anything rarely needed folded away last. Buttons: Done alone where the steps do the work, Cancel and the step on the right for a form, disconnecting on the left. A step title never carries its own number |
-| `SettingsFold` | `SettingsHighlight.swift` | A whole group of rarely needed settings, folded as t3code folds them: one row with a chevron, the group's name and on the right a summary of what is inside (the current choice, a count). A search for a setting inside opens it. Never a `DisclosureGroup` called "Advanced" inside another group: name what it holds, or make it a fold of its own |
+| `SettingsFold` | `SettingsHighlight.swift` | A whole group of rarely needed settings, folded into one row with a chevron, the group's name and on the right a summary of what is inside (the current choice, a count). A search for a setting inside opens it. Never a `DisclosureGroup` called "Advanced" inside another group: name what it holds, or make it a fold of its own |
 | `SetupSheet(title:subtitle:width:)` | `SettingsStyle.swift` | Every dialog Settings opens: icon, title and one line on top, the content in the middle, and at the bottom Cancel and the one step (`.borderedProminent`, Return), or Done. A sheet that shows a file or a diff passes a larger `width`; never a dialog laid out by hand |
 | `SettingText`, `.settingsAnchor(_:)`, `SettingsHighlight` | `SettingsHighlight.swift` | A setting's name that a search can land on: the page scrolls it to the middle and lights it for a moment. `SettingToggle`, `SettingLabel` and `SettingsSectionTitle` do this themselves; a plain `Toggle`, `Picker`, `LabeledContent` or section header for a setting in `SettingsSearch.index` takes `SettingText("key")` as its label |
 | `SettingsSectionTitle(_:info:)`, `SettingsInfoButton` | `SettingsBlocks.swift` | A Settings section header with an optional ⓘ that holds its explanation; use it instead of an explanatory footer. A footer is only for a warning, an error, or the step that unlocks the section |

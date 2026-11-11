@@ -20,7 +20,7 @@ struct RootView: View {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
-                // The tabs along the bottom, as t3code's iPhone app: Nook, Agents, Chats, pull requests and Settings,
+                // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
                 // each with what waits there as a badge. Each tab keeps where it was.
                 let available = router.available(client)
                 TabView(selection: $router.tab) {
@@ -823,7 +823,7 @@ struct WaitingRow: View {
     }
 }
 
-/// A session in a list, laid out as a card row the way t3code's iPhone app lists threads, in Nook's colors: the agent's
+/// A session in a list, laid out as a card row in Nook's colors: the agent's
 /// logo where its project's mark would be, the session's name in full strength over up to two lines, and on the right
 /// its state (or how long ago); under the name the folder and branch it works in. A row that asks nothing of you
 /// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.

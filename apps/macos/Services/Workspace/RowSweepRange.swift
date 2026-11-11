@@ -1,7 +1,7 @@
 import Foundation
 
 /// Which rows a sweep takes (`RowSweep`): you press a row's button and drag up or down, and every row of its group between
-/// that row and the one under the pointer comes along, top to bottom (as t3code's settle sweep).
+/// that row and the one under the pointer comes along, top to bottom (a settle sweep).
 enum RowSweepRange {
     /// The rows whose frame meets the span from the middle of `origin`'s row to `pointerY`, top to bottom; just `origin`
     /// while the pointer stays on its own row, and nothing when `origin` has no frame.

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The setting a search led to, as t3code's settings do it: the page scrolls it into the middle and it lights up for a
+/// The setting a search led to: the page scrolls it into the middle and it lights up for a
 /// moment. Rows built from `SettingToggle`, `SettingLabel` and `SettingsSectionTitle` mark themselves with
 /// `settingsAnchor`; a search for anything else still opens the right page.
 @MainActor
@@ -86,7 +86,7 @@ struct SettingText: View {
     }
 }
 
-/// A group of rarely needed settings, folded as t3code folds them: the whole group is one row with a chevron, its name,
+/// A group of rarely needed settings, folded away: the whole group is one row with a chevron, its name,
 /// and on the right a summary of what is inside (the current choice, a count), so you know what you would find before
 /// you open it. A search for a setting inside (`keys`) opens it before the page scrolls there. Use it for a whole group
 /// of a page, never for one row inside another group; a row that hides a single step says that step instead.

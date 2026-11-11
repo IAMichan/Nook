@@ -341,7 +341,7 @@ enum AcpMapper {
         case "tool_call_update":
             return [.toolCallUpdate(toolCall(update))]
         case "plan":
-            // An empty plan clears the list, as in t3code: it goes through, and `setTasks` takes it as a clear.
+            // An empty plan clears the list: it goes through, and `setTasks` takes it as a clear.
             guard update["entries"] is [Any] else { return [] }
             return [.plan(RunTasks.acp(update))]
         case "usage_update":

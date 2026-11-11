@@ -392,7 +392,7 @@ enum Keybindings {
         // The draft's own undo, so a deleted chip comes back whole (the list's undo below steps aside for it).
         KeybindingRule(key: "mod+z", command: "composer.undo", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+z", command: "composer.redo", when: "composerFocus"),
-        // ⌘V keeps a big paste aside as an attachment; ⇧⌘V keeps it as text you can edit (as t3code).
+        // ⌘V keeps a big paste aside as an attachment; ⇧⌘V keeps it as text you can edit.
         KeybindingRule(key: "mod+shift+v", command: "composer.pasteAsText", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+enter", command: "queue.steerFirst", when: "composerFocus && turnRunning"),
         KeybindingRule(key: "mod+f", command: "chat.find", when: "!terminalFocus"),
@@ -432,7 +432,7 @@ enum Keybindings {
         KeybindingRule(key: "mod+shift+d", command: "terminal.splitDown", when: "terminalFocus"),
         KeybindingRule(key: "f6", command: "focus.next", when: nil),
         KeybindingRule(key: "shift+f6", command: "focus.previous", when: nil),
-        // In the open model picker ⇧⌘↑ and ⇧⌘↓ step through the places in its rail, and ⌘1–⌘9 pick a model (as t3code);
+        // In the open model picker ⇧⌘↑ and ⇧⌘↓ step through the places in its rail, and ⌘1–⌘9 pick a model;
         // the session jumps step aside meanwhile.
         KeybindingRule(key: "mod+shift+up", command: ModelPickerKeys.previousPlace, when: "modelPickerOpen"),
         KeybindingRule(key: "mod+shift+down", command: ModelPickerKeys.nextPlace, when: "modelPickerOpen"),

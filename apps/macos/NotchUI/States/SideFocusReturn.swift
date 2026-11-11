@@ -5,7 +5,7 @@ extension Notification.Name {
     static let nookComposerFocusRequest = Notification.Name("nook.composerFocusRequest")
 }
 
-/// Gives the keyboard back when a session's side panel closes, as t3code does: to what had it before the panel took it
+/// Gives the keyboard back when a session's side panel closes: to what had it before the panel took it
 /// (the composer, a field, a list) when that is still in the window, else to the composer. Only when closing the panel
 /// dropped the keyboard: focus that never went into the panel stays where it is.
 @MainActor

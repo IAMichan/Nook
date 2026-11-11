@@ -1,6 +1,6 @@
 import Foundation
 
-// Marks in a session's timeline where it went on with another agent, model or effort (`ModelSwitch`), as t3code does:
+// Marks in a session's timeline where it went on with another agent, model or effort (`ModelSwitch`):
 // a divider between the turns, drawn by `ModelSwitchDivider`. Changes you make before sending one message count as one.
 
 extension WorkspaceManager {

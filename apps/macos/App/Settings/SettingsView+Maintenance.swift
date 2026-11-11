@@ -2,8 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Maintenance: keeping Nook up to date, how much it does on its own, and what helps track down a problem.
-/// Settings › About Nook: which Nook this is, where its source lives, and its license. Both close the sidebar, as
-/// t3code's Maintenance and About do.
+/// Settings › About Nook: which Nook this is, where its source lives, and its license. Both close the sidebar.
 extension SettingsView {
     // MARK: Maintenance
 

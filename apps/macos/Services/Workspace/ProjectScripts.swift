@@ -18,7 +18,7 @@ struct ProjectScript: Equatable, Identifiable, Sendable {
     /// Runs by itself when a session in its own worktree settles (`cargo clean`, `rm -rf node_modules`).
     var runOnSettle = false
     /// Only for `runOnWorktreeCreate`: true (the default) starts the agent while the script still runs; `"async": false`
-    /// holds the agent's first turn until the script ended, and fails the start when it fails (as in t3code).
+    /// holds the agent's first turn until the script ended, and fails the start when it fails.
     var async = true
 }
 

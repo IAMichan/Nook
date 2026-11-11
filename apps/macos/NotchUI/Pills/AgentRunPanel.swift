@@ -578,7 +578,7 @@ struct AgentRunPanel: View {
             case .plan: workspace.configure(runID, mode: .plan)
             case .fork:
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
-            // As t3code does: the next message starts the new conversation, also while a turn runs; the strip above the
+            // The next message starts the new conversation, also while a turn runs; the strip above the
             // box takes it back.
             case .clear: workspace.armFreshConversation(runID)
             case .insert, .compact, .new: break
@@ -829,32 +829,6 @@ struct AgentRunPanel: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor((run.status.isActive || landsOnLoad) && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
-            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
-            .overlay(alignment: .leading) {
-                if overflows, !finding, !memo.marks.isEmpty {
-                    TranscriptPromptRail(marks: memo.marks) { mark in
-                        scroll.userScrolled()
-                        guard let id = UUID(uuidString: mark.row) else { return }
-                        if revealTurn(of: id) {
-                            DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) } }
-                        } else {
-                            withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
-                        }
-                    }
-                    .padding(.vertical, NookTheme.Spacing.md)
-                    .transition(.opacity)
-                }
-            }
-            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
-            .composerInset {
-                VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
-                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !finding) {
-                        scroll.jumpedToEnd()
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-            }
-            .padding(.top, NookTheme.Spacing.xs)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
@@ -896,6 +870,33 @@ struct AgentRunPanel: View {
                     }
                 }
             }
+            // Below the scroll modifiers: the composer has scroll views of its own, and a scroll modifier over both picks one.
+            // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
+            .overlay(alignment: .leading) {
+                if overflows, !finding, !memo.marks.isEmpty {
+                    TranscriptPromptRail(marks: memo.marks) { mark in
+                        scroll.userScrolled()
+                        guard let id = UUID(uuidString: mark.row) else { return }
+                        if revealTurn(of: id) {
+                            DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) } }
+                        } else {
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                        }
+                    }
+                    .padding(.vertical, NookTheme.Spacing.md)
+                    .transition(.opacity)
+                }
+            }
+            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+            .composerInset {
+                VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
+                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !finding) {
+                        scroll.jumpedToEnd()
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+            }
+            .padding(.top, NookTheme.Spacing.xs)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .overlay(alignment: .top) {
                 if finding {
                     TimelineFindBar(query: $findQuery, result: found, current: findIndex,
@@ -1366,7 +1367,7 @@ struct AgentRunPanel: View {
             onEdit: onEdit,
             // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
             showBackground: {
-                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.openSubagents() }
+                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { _ = outputsLink.openSubagents() }
             },
             onSuggestion: { app.chooseSuggestion($0, event: event, in: runID) }
         )
@@ -1589,7 +1590,7 @@ struct AgentRunPanel: View {
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
             // ⌥⌘Return: this message goes (as Return sends it) and the box of a new session opens for the next task, while
-            // this one works on in the background (t3code's "Send and start new thread").
+            // this one works on in the background.
             .keyCommands(["queue.steerFirst": { steerFirstQueued() },
                           "composer.startInBackground": {
                               guard editingQueued == nil, composerModel.hasContent(draft.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -1747,8 +1748,9 @@ struct AgentRunPanel: View {
     /// which waits until the agent is idle.
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
-        let account = profile.map { AccountLabel.name($0, app: app) }
-        let picked = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider, profileID: run.profileID)
+        let picked = run.model.isEmpty ? nil
+            : ComposerModelLabel.compact(app.modelMenuName(run.model, for: run.provider, profileID: run.profileID),
+                                         agent: run.provider.displayName)
         // On Auto: "Auto · Claude Sonnet 5.5", the model it picked last.
         let model = run.autoModel == true ? [tr("auto.model"), picked].compactMap { $0 }.joined(separator: " · ") : picked
         let chosenModel = run.autoModel == true ? AutoModel.id : run.model
@@ -1758,8 +1760,10 @@ struct AgentRunPanel: View {
         let providers = idle ? (allowed.contains(run.provider) ? allowed : [run.provider] + allowed) : [run.provider]
         return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning(run) != nil) {
             ComposerPill(agent: run.provider.displayName, account: AccountTag.badge(profile, app: app),
-                         text: [run.provider.displayName, account, model].compactMap { $0 }.joined(separator: " · "),
-                         short: model ?? run.provider.displayName)
+                         text: model ?? run.provider.displayName,
+                         detail: effortWord(run),
+                         badge: subThreadsOn(run) ? ("app.connected.to.app.below.fill", tr("compose.mainThread.on")) : nil,
+                         showsChevron: false)
         } content: {
             AgentModelPicker(providers: providers, provider: run.provider, profileID: run.profileID, model: chosenModel, showsAccounts: idle,
                              footer: AnyView(options(run)),
@@ -1788,6 +1792,21 @@ struct AgentRunPanel: View {
             ultracode: run.ultracode == true, setUltracode: { workspace.setUltracode(runID, $0) },
             mainThreadOffered: MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess),
             mainThread: run.mainThread == true, setMainThread: { workspace.setMainThread(runID, $0) })
+    }
+
+    /// The chosen effort as the model pill says it ("High"); nil on the agent's default.
+    private func effortWord(_ run: WorkspaceRun) -> String? {
+        if let family = app.modelFamily(run.model, for: run.provider, profileID: run.profileID) {
+            guard let level = family.members.first(where: { $0.id == run.model })?.level, !level.isEmpty else { return nil }
+            return tr(EffortLevels.label(variant: level))
+        }
+        return run.effort.map { workspace.effortTitle($0, for: run.provider, profileID: run.profileID) }
+    }
+
+    /// Main thread (or Ultracode, the same choice in the picker) is on for this session.
+    private func subThreadsOn(_ run: WorkspaceRun) -> Bool {
+        MainThread.offered(provider: run.provider, access: workspace.settings.bridgeAccess) ? run.mainThread == true
+            : Ultracode.offered(provider: run.provider, model: run.model) && run.ultracode == true
     }
 
     /// The reasoning levels, in the column beside the models; nil when the agent has none for this model.

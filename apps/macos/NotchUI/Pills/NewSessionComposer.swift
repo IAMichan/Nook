@@ -86,7 +86,7 @@ struct NewSessionComposer: View {
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
-        // ⌥⌘↩, and ⌘↩ here as in a t3code draft: start it and keep a fresh box for the next one. Return starts and opens it.
+        // ⌥⌘↩, and ⌘↩ here too: start it and keep a fresh box for the next one. Return starts and opens it.
         // Above the box's own ⌘↩ (`priority`), which would only send.
         .keyCommands(["composer.startInBackground": startInBackgroundKey, "composer.send": startInBackgroundKey],
                      enabled: focused, priority: 1)
@@ -353,20 +353,21 @@ struct NewSessionComposer: View {
     /// Agent, account and model in one panel: agents in a rail, their models with a search.
     private var agentMenu: some View {
         let profile = app.profiles.profile(id: config.profileID)
-        let name = profile.map { AccountLabel.name($0, app: app) }
         // On Auto the agent is picked from the prompt as the session starts, so the pill shows Auto's own mark and word,
         // not the logo of the agent chosen last.
         let auto = config.model == AutoModel.id && comparing.isEmpty
+        let model = config.model.isEmpty ? config.provider.displayName
+            : ComposerModelLabel.compact(app.modelMenuName(config.model, for: config.provider, profileID: config.profileID),
+                                         agent: config.provider.displayName)
+        let plain = auto || !comparing.isEmpty
         return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning != nil) {
             ComposerPill(symbol: auto ? AutoModel.symbol : nil,
                          agent: auto ? nil : config.provider.displayName,
                          account: auto ? nil : profile.map { AccountTag.of($0, app: app) },
-                         text: auto ? tr("auto.model") : comparing.isEmpty
-                            ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                                + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider, profileID: config.profileID))
-                            : tr("compare.pill", comparing.count + 1),
-                         short: auto ? tr("auto.model") : !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
-                            : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID)))
+                         text: auto ? tr("auto.model") : comparing.isEmpty ? model : tr("compare.pill", comparing.count + 1),
+                         detail: plain ? nil : effortWord,
+                         badge: plain || !subThreadsOn ? nil : ("app.connected.to.app.below.fill", tr("compose.mainThread.on")),
+                         showsChevron: false)
         } content: {
             let providers = app.connectedProviders(in: remoteMachine == nil ? config.projectPath : nil)
             if providers.isEmpty {
@@ -401,6 +402,21 @@ struct NewSessionComposer: View {
             ultracode: config.ultracode == true, setUltracode: { config.ultracode = $0 },
             mainThreadOffered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
             mainThread: config.mainThread == true, setMainThread: { config.mainThread = $0 ? true : nil })
+    }
+
+    /// The chosen effort as the model pill says it ("High"); nil on the agent's default.
+    private var effortWord: String? {
+        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
+            guard let level = family.members.first(where: { $0.id == config.model })?.level, !level.isEmpty else { return nil }
+            return tr(EffortLevels.label(variant: level))
+        }
+        return config.effort.map { workspace.effortTitle($0, for: config.provider, profileID: config.profileID) }
+    }
+
+    /// Main thread (or Ultracode, the same choice in the picker) is on for the new session.
+    private var subThreadsOn: Bool {
+        MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess) ? config.mainThread == true
+            : Ultracode.offered(provider: config.provider, model: config.model) && config.ultracode == true
     }
 
     /// The reasoning levels, in the column beside the models; nil when the agent has none for this model.
@@ -748,8 +764,8 @@ struct NewSessionComposer: View {
         store.openNewSession = draftKey
     }
 
-    /// ⌘N or New session while a session was open: that session's project (its main checkout, not the agent's worktree),
-    /// as t3code starts a new thread in the thread's project. A project request (a folder's pencil, a link) comes after
+    /// ⌘N or New session while a session was open: that session's project (its main checkout, not the agent's worktree).
+    /// A project request (a folder's pencil, a link) comes after
     /// and wins.
     private func openOriginProject() {
         guard let origin = app.viewModel.newSessionOrigin else { return }
@@ -903,7 +919,7 @@ struct NewSessionComposer: View {
         config.worktreeRoot = settings.worktreeRoot
     }
 
-    /// A folder picked in the heading. What you typed goes along to it (as a t3code draft moves to the project you pick);
+    /// A folder picked in the heading. What you typed goes along to it;
     /// with nothing typed, that folder's own draft opens.
     private func pick(_ path: String) {
         guard hasTask || !images.isEmpty else { return open(path) }

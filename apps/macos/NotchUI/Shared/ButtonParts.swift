@@ -1,10 +1,10 @@
 import SwiftUI
 
-// The buttons both apps draw (apps/ios/project.yml compiles this file too), as t3code draws them: the filled accent main
+// The buttons both apps draw (apps/ios/project.yml compiles this file too): the filled accent main
 // action (`NookTheme.primary`), the quiet one beside it, and the symbol button, all on the control radius. On the Mac they light under the pointer; on the phone they are a finger's height
 // (`SharedMetrics.buttonHeight`) and dim while pressed.
 
-/// The main action of a card: filled with the accent (t3code's blue by default).
+/// The main action of a card: filled with the accent.
 struct NookPrimaryButton: View {
     let title: String
     /// An SF Symbol before the title, or nil for text only.

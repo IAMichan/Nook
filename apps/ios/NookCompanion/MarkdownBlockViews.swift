@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// An agent's answer as blocks, the way t3code's phone app reads it: headings, lists, quotes and call-outs as type, code
+// An agent's answer as blocks: headings, lists, quotes and call-outs as type, code
 // and tables in a card of their own that scrolls sideways instead of wrapping, so a long answer reads as on the Mac. The
 // blocks come from the Mac's own parser (`MarkdownBlock`, apps/macos/Brain/MarkdownBlock.swift, compiled into this app).
 

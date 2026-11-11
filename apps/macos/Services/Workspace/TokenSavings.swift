@@ -75,7 +75,7 @@ enum IdleCompaction {
     }
 }
 
-/// Returning to a long session after its prompt cache expired (t3code's "Compact idle threads › When you return"): the
+/// Returning to a long session after its prompt cache expired ("Compact idle threads › When you return"): the
 /// next message would write the whole history to the cache again at the full price, so the composer offers to
 /// summarize first. A chip by the send button says so; while it is on, sending summarizes (`/compact`) and then sends
 /// your message. One click switches it to Keep, which sends with the full history. The summary before expiry
@@ -106,9 +106,9 @@ enum ReturnCompaction {
 
 /// Where the agent summarizes by itself, for the mark on the context meter: Nook's own limit (`SizeCompaction`) for an
 /// agent that compacts on `/compact`, and the agent's own threshold where it tells it (Claude Code's
-/// `autoCompactWindow`, t3code #29220), whichever comes first.
+/// `autoCompactWindow`), whichever comes first.
 enum AutoCompactMark {
-    /// Claude Code compacts this far short of its `autoCompactWindow` (t3code measured 150,000 → 117,000 with Claude Code
+    /// Claude Code compacts this far short of its `autoCompactWindow` (measured 150,000 → 117,000 with Claude Code
     /// 2.1.305, for every catalog model).
     static let claudeReserve = 33_000
     /// The windows Claude Code accepts for `autoCompactWindow`.
@@ -175,8 +175,9 @@ enum SizeCompaction {
 }
 
 /// Claude Code's `ENABLE_TOOL_SEARCH`. With `auto` (its default) it sends every MCP tool schema in full while they fit in a
-/// share of the context window, which they do on 1M models: every request then carries them all, and t3code measured
-/// about ten times the cache writes per session. Nook turns tool search on, unless you set something else yourself.
+/// share of the context window, which they do on 1M models: every request then carries them all, which
+/// measured about ten times the cache writes per session. Nook turns tool search on, unless you set something else
+/// yourself.
 enum ClaudeToolSearch {
     /// The value Nook sets, or nil to leave yours: `auto` and `auto:N` (0 < N < 100) become `true`. `auto:0` already
     /// means on, `auto:100` off, and `true` or `false` are a choice of yours.

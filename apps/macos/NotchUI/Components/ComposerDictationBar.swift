@@ -21,8 +21,8 @@ final class ComposerDictator: ObservableObject {
         guard !state.isActive else { return }
         let app = AppModel.shared
         let context = Self.context(app: app, folder: folder)
-        Task { @MainActor in
-            guard await app.voice.requestPermissions(), !app.voice.isListening,
+        Task { @MainActor [weak self] in
+            guard await app.voice.requestPermissions(), let self, !app.voice.isListening,
                   self.state.begin(body: body, selection: selection) else { return }
             app.wake.stop()
             app.speech.stop()

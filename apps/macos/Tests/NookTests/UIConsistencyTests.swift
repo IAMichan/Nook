@@ -95,7 +95,7 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookTheme.shape(_:) or .roundedBackground / .roundedStroke / .roundedClip / .roundedHitShape")
     }
 
-    /// Chips, badges and buttons are rounded rectangles on the chip or control radius, as t3code's are, never a pill:
+    /// Chips, badges and buttons are rounded rectangles on the chip or control radius, never a pill:
     /// `Capsule()` is only for shapes without words (progress tracks, indicator bars, drag handles).
     func testChipsAndButtonsAreNotPills() {
         let found = offenders(#"\.(background|overlay|contentShape|clipShape)\(Capsule\("#) { _ in false }
@@ -138,7 +138,7 @@ final class UIConsistencyTests: XCTestCase {
     }
 
     /// Every icon is drawn through `Image(icon:)` or `NookIcon.nsImage`, so `NookIcon` turns it into Nook's Lucide icon
-    /// (t3code's set) and the app keeps one icon style; a raw SF Symbol would bypass that table.
+    /// and the app keeps one icon style; a raw SF Symbol would bypass that table.
     func testIconsGoThroughNookIcon() {
         let found = offenders(#"(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:"#) {
             $0 == "NotchUI/Theme/NookIcon.swift"

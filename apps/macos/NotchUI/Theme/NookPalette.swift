@@ -54,9 +54,9 @@ struct NookPalette: Equatable, Sendable {
     /// Nook's color when the user kept the default accent: soft white on dark, near black on light.
     var accent: UInt32
 
-    /// Nook's own dark look, after t3code's: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
+    /// Nook's own dark look: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
     /// white over it, and separation by 8 % white lines and hover fills rather than grey panels. Text is neutral-100
-    /// with neutral-400 for what is quieter; state colors are Tailwind's 400 shades. Nook's accent (the main action) is soft white where t3code has blue.
+    /// with neutral-400 for what is quieter; state colors are Tailwind's 400 shades. Nook's accent (the main action) is soft white.
     static let nookDark = NookPalette(
         isDark: true,
         canvas: 0x000000, well: 0x0A0A0A, surface: 0x111111, field: 0x0D0D0D, graphite: 0x191A1D, smoke: 0x242424,
@@ -68,7 +68,7 @@ struct NookPalette: Equatable, Sendable {
         violet: 0xA684FF, music: 0xF0936A,
         accent: 0xF4F3F7)
 
-    /// Nook in light, after t3code's: an off-white canvas (zinc-25), white cards, zinc lines and zinc-900 text, with the
+    /// Nook in light: an off-white canvas (zinc-25), white cards, zinc lines and zinc-900 text, with the
     /// state colors a few shades deeper so they read on white, and a near-black accent. Every text color reads at 4.5:1 or more up to `smoke`.
     static let nookLight = NookPalette(
         isDark: false,
@@ -258,7 +258,7 @@ struct NookColorTheme: Identifiable, Equatable, Sendable {
     /// Imported by the user (can be removed); built-in themes cannot.
     var custom = false
 
-    /// Nook's own look (t3code's black and lines, with Nook's white accent), and the default for both appearances.
+    /// Nook's own look (a black canvas and lines, with a white accent), and the default for both appearances.
     static let nook = NookColorTheme(id: "nook", name: "Nook", dark: .nookDark, light: .nookLight)
     /// Cool and deep: a blue-black night and a pale blue-grey day.
     static let midnight = NookColorTheme(

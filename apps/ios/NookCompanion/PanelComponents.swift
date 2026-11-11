@@ -40,7 +40,7 @@ struct HomeLogo: View {
 
 // MARK: Headers
 
-/// The tabs along the bottom, as t3code's iPhone app has them, in Nook's order: the Mac's three (Nook, Agents, Chats),
+/// The tabs along the bottom, in Nook's order: the Mac's three (Nook, Agents, Chats),
 /// then pull requests and Settings, always last.
 enum CompanionTab: Hashable, CaseIterable {
     case nook, agents, chats, pulls, settings
@@ -97,8 +97,8 @@ final class TabRouter: ObservableObject {
 }
 
 /// The row on top of every tab: Nook's orb (its menu holds the Mac, the connection and Live Activities), the tab's name
-/// large with the Mac's name and how it is connected under it, as t3code's header says the machine and "Reconnecting…",
-/// and the tab's own round button on the right. The tabs themselves are along the bottom.
+/// large with the Mac's name and how it is connected (such as "Reconnecting…") under it, and the tab's own round button
+/// on the right. The tabs themselves are along the bottom.
 struct PanelHeader<Trailing: View>: View {
     @EnvironmentObject private var router: TabRouter
     @ViewBuilder var trailing: () -> Trailing
@@ -126,7 +126,7 @@ extension PanelHeader where Trailing == EmptyView {
     init() { self.init { EmptyView() } }
 }
 
-/// Under the tab's name: the Mac and how the phone has it, as t3code's header title. "MacBook · live" while connected,
+/// Under the tab's name: the Mac and how the phone has it. "MacBook · live" while connected,
 /// "Catching up…" while it synchronizes, and "Looking for MacBook…" once it has been away for a moment (not at a short
 /// drop). A tap on it while away explains why.
 struct ConnectionTitle: View {

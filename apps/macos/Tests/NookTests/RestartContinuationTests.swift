@@ -61,7 +61,7 @@ final class RestartContinuationTests: XCTestCase {
     }
 }
 
-/// A session whose turn ended while it waited on a subagent, when Nook quit: it is woken with a note (t3code).
+/// A session whose turn ended while it waited on a subagent, when Nook quit: it is woken with a note.
 final class RestartBackgroundWaitTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 

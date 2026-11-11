@@ -88,7 +88,7 @@ grep -rnE 'RoundedRectangle\(cornerRadius:' NotchUI App --include='*.swift' \
   | report "rounded shapes come from NookTheme.shape / .roundedBackground / .roundedStroke / .roundedClip (no RoundedRectangle built inline)"
 
 grep -rnE '\.(background|overlay|contentShape|clipShape)\(Capsule\(' NotchUI App --include='*.swift' \
-  | report "chips and buttons sit on NookTheme.Radius.chip / .control, as t3code's (no Capsule behind words; Capsule is for bars and tracks)"
+  | report "chips and buttons sit on NookTheme.Radius.chip / .control (no Capsule behind words; Capsule is for bars and tracks)"
 
 grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Components/PanelBlocks.swift:' \
