@@ -114,9 +114,16 @@ struct FileViewer: View {
     @ObservedObject private var editor: FileEditor
     @State private var content: FileViewContent?
     @State private var reloads = 0
-    @State private var markdownPreview = false
-    /// A page an agent showed (`RenderedPage`) shows as the page, sandboxed as in the conversation; its source on request.
-    @State private var pageSource = false
+    /// What you chose with the Preview / Code toggle; nil leaves it to the kind of file (`ArtifactKind.opensOnPreview`).
+    @State private var previewOverride: Bool?
+    /// The file is being read again after it changed on disk (the agent wrote it): a quiet "Updating…" in the bar.
+    @State private var updating = false
+    /// An older version in view (`ArtifactHistory`), nil for the file as it is; its text once read, and whether the
+    /// diff against the version before shows instead.
+    @State private var viewing: Int?
+    @State private var versionContent: (number: Int, lines: [String], tokens: [[SyntaxToken]])?
+    @State private var comparing = false
+    @ObservedObject private var histories = ArtifactHistoryStore.shared
     @Environment(\.sessionContextTarget) private var session
     /// The line you are writing a remark about, and the remark.
     @State private var commentLine: Int?
@@ -134,13 +141,21 @@ struct FileViewer: View {
 
     private var name: String { (target.path as NSString).lastPathComponent }
     private var folder: String { (target.path as NSString).deletingLastPathComponent }
-    private var isMarkdown: Bool { SyntaxLanguage.detect(path: target.path) == .markdown }
-    /// A notebook reads as a document, with its source one click away like a Markdown file's.
-    private var isNotebook: Bool { (target.path as NSString).pathExtension.lowercased() == "ipynb" }
-    /// A diagram's source; its picture is one click away.
-    private var isMermaid: Bool { ["mmd", "mermaid"].contains((target.path as NSString).pathExtension.lowercased()) }
-    /// A page from an agent's conversation: only from the folder Nook keeps them in, never any HTML file.
+    /// What the file is: a page, a picture, a diagram, a document or code. All but code have a preview, one click from
+    /// the code (a notebook and a Markdown file read as documents, a diagram as its picture).
+    private var kind: ArtifactKind { ArtifactKind.detect(path: target.path) }
+    /// A page from an agent's conversation, from the folder Nook keeps them in: it opens on the page. Any other HTML or
+    /// SVG file opens on its code, and Preview draws it in the same sandbox (no network, no links, no windows).
     private var isPage: Bool { RenderedPage.isOwnFile(target.path, base: NookPaths.supportDirectory) }
+    /// The file's preview is in view: chosen with the toggle, else by its kind; a link to a line opens the code.
+    private var previewing: Bool { previewOverride ?? (kind.opensOnPreview(ownPage: isPage) && target.line == nil) }
+    private var history: ArtifactHistory { histories.history(target.path) }
+    /// The file's text as the panel shows it now: the version in view, or the file as it is.
+    private var shownText: String? {
+        if let viewing { return history.version(viewing)?.text }
+        if case .text(let lines, _) = content { return lines.joined(separator: "\n") + "\n" }
+        return nil
+    }
 
     private func commentBar(_ line: Int, lines: [String]) -> some View {
         let send = {
@@ -166,32 +181,21 @@ struct FileViewer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             bar
+            if let viewing, let version = history.version(viewing), let latest = history.latest?.number {
+                NookDivider()
+                ArtifactVersionBar(viewing: version, latest: latest, comparing: $comparing,
+                                   restore: { restore(viewing) }, back: { self.viewing = nil; comparing = false })
+            }
             NookDivider()
             Group {
                 switch content {
                 case nil:
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .text(let lines, let tokens):
-                    if editor.editing {
-                        FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
-                    } else if isPage && !pageSource {
-                        SandboxedPageView(html: lines.joined(separator: "\n"))
-                    } else if isMermaid && markdownPreview {
-                        CodeRenderView(language: "mermaid", code: lines.joined(separator: "\n"))
-                    } else if (isMarkdown || isNotebook) && markdownPreview {
-                        ScrollView(.vertical) {
-                            let source = lines.joined(separator: "\n")
-                            MarkdownView(text: isNotebook ? (NotebookDocument.markdown(from: source) ?? source) : source)
-                                .environment(\.fileLinkBase, folder)
-                                .environment(\.pullRequestLinksBeside, beside)
-                                .padding(NookTheme.Spacing.xl)
-                        }
+                case .text(let liveLines, let liveTokens):
+                    if let viewing, let versionContent, versionContent.number == viewing {
+                        textBody(lines: versionContent.lines, tokens: versionContent.tokens)
                     } else {
-                        FileCodeView(lines: lines, tokens: tokens, line: FileViewing.clampedLine(target.line, count: lines.count),
-                                     endLine: target.endLine.map { min($0, lines.count) },
-                                     scrollKey: opened, comment: session == nil ? nil : { commentLine = $0 })
-                            .equatable()
-                        if let commentLine, commentLine <= lines.count { commentBar(commentLine, lines: lines) }
+                        textBody(lines: liveLines, tokens: liveTokens)
                     }
                 case .preview:
                     QuickLookView(url: URL(fileURLWithPath: target.path))
@@ -208,8 +212,76 @@ struct FileViewer: View {
         .task(id: "\(target.path)|\(reloads)") {
             let path = target.path
             let loaded = await Task.detached(priority: .userInitiated) { FileViewing.load(path: path) }.value
-            if !Task.isCancelled { content = loaded }
+            guard !Task.isCancelled else { return }
+            content = loaded
+            if case .text(let lines, _) = loaded { histories.record(lines.joined(separator: "\n") + "\n", path: path) }
+            // Long enough to be seen: a file that is written in a blink would flash the mark.
+            if updating {
+                try? await Task.sleep(for: .milliseconds(450))
+                updating = false
+            }
         }
+        // Live reload: the file is read again when it changes on disk (the agent writes it), unless you are editing it.
+        .task(id: target.path) {
+            let (changes, signal) = AsyncStream<Void>.makeStream()
+            let watcher = FileChangeWatcher(path: target.path) { signal.yield() }
+            signal.onTermination = { _ in watcher.stop() }
+            for await _ in changes where !editor.editing {
+                updating = true
+                reloads += 1
+            }
+            watcher.stop()
+        }
+        .task(id: viewing) {
+            guard let viewing, let version = history.version(viewing) else {
+                versionContent = nil
+                return
+            }
+            let path = target.path
+            let read = await Task.detached(priority: .userInitiated) { () -> (Int, [String], [[SyntaxToken]]) in
+                let lines = FileViewing.split(version.text)
+                return (version.number, lines, FileViewing.tokens(lines, path: path))
+            }.value
+            if !Task.isCancelled { versionContent = (number: read.0, lines: read.1, tokens: read.2) }
+        }
+    }
+
+    /// The text of the file, or of the version in view, as its kind shows it: a page in the sandbox, a diagram, a rendered
+    /// document, the diff against the version before, or code with its line numbers.
+    @ViewBuilder
+    private func textBody(lines: [String], tokens: [[SyntaxToken]]) -> some View {
+        let source = lines.joined(separator: "\n")
+        if editor.editing && viewing == nil {
+            FileTextEditor(text: $editor.draft, onSave: { if editor.save() { reloads += 1 } })
+        } else if comparing, let viewing, let version = history.version(viewing) {
+            ArtifactVersionDiff(old: history.previous(of: viewing)?.text ?? "", new: version.text, name: name)
+        } else if previewing && kind.rendersInSandbox {
+            SandboxedPageView(html: kind.sandboxPage(for: source))
+        } else if previewing && kind == .mermaid {
+            CodeRenderView(language: "mermaid", code: source)
+        } else if previewing && (kind == .markdown || kind == .notebook) {
+            ScrollView(.vertical) {
+                MarkdownView(text: kind == .notebook ? (NotebookDocument.markdown(from: source) ?? source) : source)
+                    .environment(\.fileLinkBase, folder)
+                    .environment(\.pullRequestLinksBeside, beside)
+                    .padding(NookTheme.Spacing.xl)
+            }
+        } else {
+            FileCodeView(lines: lines, tokens: tokens, line: FileViewing.clampedLine(target.line, count: lines.count),
+                         endLine: target.endLine.map { min($0, lines.count) },
+                         scrollKey: opened, comment: session == nil ? nil : { commentLine = $0 })
+                .equatable()
+            if let commentLine, commentLine <= lines.count { commentBar(commentLine, lines: lines) }
+        }
+    }
+
+    /// Writes an older version back over the file; the file's own change then shows up as the newest version.
+    private func restore(_ number: Int) {
+        guard let version = history.version(number), ArtifactHistoryStore.restore(version.text, to: target.path) else { return }
+        viewing = nil
+        comparing = false
+        reloads += 1
+        ToastCenter.shared.success(tr("artifact.version.restored"), detail: name)
     }
 
     /// The file's name and folder, then its actions.
@@ -236,29 +308,33 @@ struct FileViewer: View {
                 .truncationMode(.head)
                 .help(target.path)
             Spacer(minLength: NookTheme.Spacing.sm)
+            if updating { ArtifactUpdatingMark() }
             if editor.editing {
                 editActions
             } else {
-                if isPage, case .text = content {
-                    ToolbarIconButton(pageSource ? "eye" : "chevron.left.forwardslash.chevron.right",
-                                      pageSource ? tr("code.preview") : tr("code.source")) { pageSource.toggle() }
-                } else if isMarkdown || isNotebook || isMermaid, case .text = content {
-                    ToolbarIconButton(markdownPreview ? "chevron.left.forwardslash.chevron.right" : "eye",
-                                      markdownPreview ? tr("code.source") : tr("code.preview")) { markdownPreview.toggle() }
+                if kind.hasPreview, case .text = content {
+                    ToolbarIconButton(previewing ? "chevron.left.forwardslash.chevron.right" : "eye",
+                                      previewing ? tr("code.source") : tr("code.preview")) { previewOverride = !previewing }
                 }
-                if case .text = content, !isPage {
+                if case .text = content, history.versions.count > 1 {
+                    ArtifactVersionMenu(history: history, viewing: viewing) { choice in
+                        viewing = choice
+                        if choice == nil { comparing = false }
+                    }
+                }
+                if case .text = content, !isPage, viewing == nil {
                     ToolbarIconButton("pencil", tr("file.viewer.edit")) { Task { await editor.begin() } }
                 }
                 ToolbarIconButton("arrow.clockwise", tr("file.viewer.reload")) { reloads += 1 }
             }
-            ToolbarIconButton("doc.badge.ellipsis", tr("file.viewer.open")) { pickFile() }
-            CopyIconButton(tr("file.viewer.copyPath")) { target.path }
-            ToolbarIconButton("folder", tr("file.viewer.reveal")) { AppModel.shared.workspace.revealInFinder(target.path) }
-            ToolbarIconButton("arrow.up.forward.app", tr("file.viewer.openEditor")) { AppModel.shared.workspace.openFile(target) }
+            ArtifactMoreMenu(path: target.path, kind: kind, text: { shownText }, openFile: pickFile,
+                             reveal: { AppModel.shared.workspace.revealInFinder(target.path) },
+                             openEditor: { AppModel.shared.workspace.openFile(target) })
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .frame(height: SidePanelMetrics.toolbar)
         .background(NookTheme.canvas)
+        .animation(NookTheme.hover, value: updating)
     }
 
     /// While editing: whether there is something to save, Save (⌘S in the text), and Done to go back to reading.
