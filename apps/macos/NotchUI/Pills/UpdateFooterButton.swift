@@ -161,7 +161,6 @@ enum UpdateText {
     static func reason(_ reason: UpdateFailure.Reason, branch: String) -> String {
         switch reason {
         case .blocked(let blocker): return Self.blocker(blocker, branch: branch)
-        case .needsStash(let files): return tr("update.reason.needsStash", files)
         case .stashConflict(let name): return tr("update.reason.stashConflict", name)
         case .missingTool(let tool): return tr("update.reason.missingTool", tool, tool)
         case .command(let status): return tr("update.reason.command", Int(status))
