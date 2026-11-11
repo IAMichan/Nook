@@ -4,7 +4,7 @@ import Foundation
 // conversation, while the timeline keeps everything. The same for every agent.
 //
 // - `/clear` (typed, or picked from the `/` list, on the Mac or the phone) does not clear at once: it arms the session, and
-// your next message starts the new conversation. The strip above the composer says so and takes it back
+//   your next message starts the new conversation. The strip above the composer says so and takes it back
 //   ("Keep this conversation"). Armed while the agent works, that message waits in line marked fresh and goes after the
 //   turn; it is never taken into the running turn.
 // - A scheduled task set to "fresh conversation each run" starts one before its prompt, so a session that gets a run every

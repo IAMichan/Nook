@@ -575,7 +575,7 @@ enum RunTasks {
 
 /// Where the "working for …" timer of a turn starts (`WorkspaceRun.turnStartedAt`). A new prompt starts it again; the
 /// agent carrying on by itself (background work it waited for ended, a task it delegated reported back) keeps the start
-/// of the work it continues, so the timer does not jump back to zero mid-work.
+/// of the work it continues, so the timer does not jump back to zero mid-work (continuations keep the start).
 enum TurnTimer {
     static func start(continuing: Bool, previous: Date?, now: Date = Date()) -> Date {
         continuing ? (previous ?? now) : now
@@ -980,7 +980,7 @@ struct NewRunConfig: Equatable, Sendable {
     /// Set for a session of a model comparison after its first one (see `ModelComparison`).
     var lineage: RunLineage? = nil
     /// Who started it when it was not you in the composer ("Started by Claude Code in the session …"): the first line of
-    /// its timeline. Set by `session_start`, `nook start` and Nook Chat marks a thread an agent created.
+    /// its timeline. Set by `session_start`, `nook start` and Nook Chat, marking a session an agent created.
     var startedBy: String? = nil
     /// Starts without a first message (`session_start` with a title only): the session waits, ready, for yours.
     var startsIdle = false

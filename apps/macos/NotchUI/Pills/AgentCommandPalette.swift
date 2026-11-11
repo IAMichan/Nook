@@ -19,7 +19,7 @@ struct AgentCommandPalette: View {
     @State private var query = ""
     @State private var index = 0
     /// A step into a list in place of the commands: "New session in…" lists the projects, "Change appearance…" System,
-    /// Light and Dark, "Change theme…" the themes (as).
+    /// Light and Dark, "Change theme…" the themes.
     @State private var sublist: Sublist?
     @FocusState private var focused: Bool
 

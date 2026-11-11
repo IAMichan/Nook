@@ -1,8 +1,8 @@
 import Foundation
 
-// What a screen reader hears from the session you look at: the step the agent
-// is on, the replies it finishes, and a question or approval that waits on you. Built once on the shared timeline
-// shapes (an agent's own transcript, `AgentChatMessage`, and a session Nook runs, `RunEvent`), so every agent gets it.
+// What a screen reader hears from the session you look at: the step the agent is on, the replies it finishes, and a
+// question or approval that waits on you. Built once on the shared timeline shapes (an agent's own transcript,
+// `AgentChatMessage`, and a session Nook runs, `RunEvent`), so every agent gets it.
 // The view side (`AgentAnnouncer`) only speaks while VoiceOver runs and for the session on screen.
 
 /// How much a screen reader hears from the open session (Settings › Sessions).

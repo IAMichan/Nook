@@ -86,7 +86,7 @@ struct SettingText: View {
     }
 }
 
-/// A group of rarely needed settings, folded folds them: the whole group is one row with a chevron, its name,
+/// A group of rarely needed settings, folded away: the whole group is one row with a chevron, its name,
 /// and on the right a summary of what is inside (the current choice, a count), so you know what you would find before
 /// you open it. A search for a setting inside (`keys`) opens it before the page scrolls there. Use it for a whole group
 /// of a page, never for one row inside another group; a row that hides a single step says that step instead.

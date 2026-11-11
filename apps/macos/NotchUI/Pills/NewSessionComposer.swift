@@ -86,7 +86,7 @@ struct NewSessionComposer: View {
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
-        // ⌥⌘↩, and ⌘↩ here as in a draft: start it and keep a fresh box for the next one. Return starts and opens it.
+        // ⌥⌘↩, and ⌘↩ here too: start it and keep a fresh box for the next one. Return starts and opens it.
         // Above the box's own ⌘↩ (`priority`), which would only send.
         .keyCommands(["composer.startInBackground": startInBackgroundKey, "composer.send": startInBackgroundKey],
                      enabled: focused, priority: 1)
@@ -764,8 +764,8 @@ struct NewSessionComposer: View {
         store.openNewSession = draftKey
     }
 
-    /// ⌘N or New session while a session was open: that session's project (its main checkout, not the agent's worktree),
-    /// starts a new thread in the thread's project. A project request (a folder's pencil, a link) comes after
+    /// ⌘N or New session while a session was open: that session's project (its main checkout, not the agent's worktree).
+    /// A project request (a folder's pencil, a link) comes after
     /// and wins.
     private func openOriginProject() {
         guard let origin = app.viewModel.newSessionOrigin else { return }
@@ -919,7 +919,7 @@ struct NewSessionComposer: View {
         config.worktreeRoot = settings.worktreeRoot
     }
 
-    /// A folder picked in the heading. What you typed goes along to it (as a draft moves to the project you pick);
+    /// A folder picked in the heading. What you typed goes along to it;
     /// with nothing typed, that folder's own draft opens.
     private func pick(_ path: String) {
         guard hasTask || !images.isEmpty else { return open(path) }

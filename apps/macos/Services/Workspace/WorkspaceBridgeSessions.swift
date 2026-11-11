@@ -7,8 +7,7 @@ import Foundation
 enum BridgeSessionArguments {
     // MARK: Start
 
-    /// What `session_start` asks for: one or more sessions (`create_threads` and `thread_launch` in one tool),
-    /// all in the same place.
+    /// What `session_start` asks for: one or more sessions, all in the same place.
     struct Start: Equatable, Sendable {
         struct Session: Equatable, Sendable {
             /// The first message; empty starts the session idle, waiting for yours (then `title` names it).
@@ -21,7 +20,7 @@ enum BridgeSessionArguments {
         }
 
         enum Place: Equatable, Sendable {
-            /// The caller's own folder or worktree, beside it.
+            /// The caller's own folder or worktree, beside it (a new session in the same checkout).
             case yours(String)
             /// A project folder; `worktree` nil is the folder's own choice.
             case folder(String, worktree: Bool?)
@@ -111,7 +110,7 @@ enum BridgeSessionArguments {
 
     // MARK: Send
 
-    /// How `session_send` delivers (`thread_send` modes).
+    /// How `session_send` delivers.
     enum SendMode: String, CaseIterable, Sendable {
         /// Starts an idle session, steers a running turn when the agent can take it, otherwise waits in line.
         case auto

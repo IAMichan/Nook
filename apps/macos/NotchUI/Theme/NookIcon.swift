@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 #endif
 
-/// Nook's icons: Lucide (lucide.dev, ISC), the set draws with, bundled as custom symbols in
+/// Nook's icons: Lucide (lucide.dev, ISC), bundled as custom symbols in
 /// `Resources/Lucide.xcassets` so they take the font, weight and color around them exactly as an SF Symbol does.
 ///
 /// Views keep naming icons the SF Symbol way ("folder", "gearshape") and draw them with `Image(icon:)` or

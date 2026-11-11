@@ -208,7 +208,7 @@ private struct ManageAccountSheet: View {
                         .disabled(!nameChanged)
                 }
             }
-            // Its own color, on the account's badge wherever the agent's logo shows (as accent color).
+            // Its own color, on the account's badge wherever the agent's logo shows.
             SheetPart(tr("accounts.color")) {
                 AccountColorPicker(accent: Binding(get: { current.accent },
                                                    set: { app.profiles.setAccent(profile.id, $0) }))

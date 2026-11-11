@@ -89,8 +89,7 @@ version, `0.3.0-beta.2`) and `NookReleaseRepository` (`owner/name`) into its `In
 `NookUpdatePublicKey` from the repository variable `NOOK_UPDATE_PUBLIC_KEY`. Such a build updates itself from the
 releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`):
 
-- **Checking** asks `api.github.com/repos/<repository>/releases` 20 seconds after launch, every 4 minutes (as 
-  desktop app does), after the Mac wakes and when the footer appears. Each request after the first sends the last
+- **Checking** asks `api.github.com/repos/<repository>/releases` 20 seconds after launch, every 4 minutes, after the Mac wakes and when the footer appears. Each request after the first sends the last
   `ETag` (`If-None-Match`), so an unchanged list is a `304` that does not count against GitHub's rate limit. A beta build is offered
   newer betas and releases, a regular release only regular releases; drafts never. Versions compare like SemVer
   (`0.3.0-beta.2` < `0.3.0-beta.10` < `0.3.0`).

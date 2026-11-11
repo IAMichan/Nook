@@ -277,7 +277,7 @@ enum PullRequestToolCall {
 
     /// A forge CLI that merges or closes a pull request from the shell, in every spelling the CLI takes: `gh pr merge`,
     /// `glab mr merge` or `glab mr accept`, `tea pr merge` or `tea pulls m`, `fj pr close`, `cafe pr merge`, and Azure
-    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI. The same list.
+    /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI.
     private static let closing = try? NSRegularExpression(
         pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
             + #"tea\s+(?:pr|pulls?)\s+(?:merge|m|close)|fj\s+pr\s+(?:merge|close)|cafe\s+(?:pr|stack)\s+(?:merge|close)|"#

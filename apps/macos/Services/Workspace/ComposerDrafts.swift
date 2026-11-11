@@ -115,9 +115,9 @@ enum StashAction: Equatable, Sendable {
     }
 }
 
-/// The new-session box keeps one draft per place a session can start: a folder on this Mac, or a machine over SSH. Like a
-/// draft thread, what you typed for one project waits there while you start something in another, and the list
-/// shows it as an unsent draft. The drafts live in `ComposerDrafts` under these keys, beside the running sessions' drafts.
+/// The new-session box keeps one draft per place a session can start: a folder on this Mac, or a machine over SSH. As a
+/// draft thread, what you typed for one project waits there while you start something in another, and the list shows
+/// it as an unsent draft. The drafts live in `ComposerDrafts` under these keys, beside the running sessions' drafts.
 enum NewSessionDraftKey {
     /// The one shared draft of Nook before drafts were kept per folder; read once and moved to the folder it opens on.
     static let legacy = "new-session"

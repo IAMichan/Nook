@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The new-session drafts you typed in and did not start, at the top of the Agents list, newest first lists
-/// its draft threads. Each one is drawn as a session row (`AgentRowLayout`): the project on the first line with a quiet
+/// The new-session drafts you typed in and did not start, at the top of the Agents list, newest first.
+/// Each one is drawn as a session row (`AgentRowLayout`): the project on the first line with a quiet
 /// "Draft" badge where a session shows its status, and the first line of the words as its name. A click opens the
 /// composer on that draft; the × under the pointer throws it away. The draft open in the composer is lit as the open one.
 struct UnsentDraftRows: View {

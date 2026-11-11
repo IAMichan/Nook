@@ -672,8 +672,8 @@ enum TurnChanges {
 
 /// One alert per piece of background work: a monitor wakes the agent for every line it prints, so the turn of such a
 /// wake ends many times while the monitor still runs. That turn's completion is held (no notification, no result for a
-/// delegating session) until a wake turn ends with no monitor left running, or the monitor ends with its process
-/// (`monitorHoldsWakeCompletion`). For every agent whose timeline reports monitors.
+/// delegating session) until a wake turn ends with no monitor left running, or the monitor ends with its process.
+/// For every agent whose timeline reports monitors.
 enum WakeCompletion {
     /// The latest turn is a wake the agent took by itself, and a monitor still runs.
     static func holds(_ events: [RunEvent]) -> Bool {

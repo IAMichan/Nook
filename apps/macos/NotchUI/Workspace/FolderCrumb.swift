@@ -20,8 +20,8 @@ struct FolderCrumb: View {
             Button(action: start) { label(hovering ? NookTheme.paper : NookTheme.textSecondary) }
                 .buttonStyle(.plain)
                 .onHover { hovering = $0 }
-                // A session in a worktree: another session can carry on in that same worktree and branch
-                // "New thread in this worktree". Read from disk only when the menu opens.
+                // A session in a worktree: another session can carry on in that same worktree and branch.
+                // Read from disk only when the menu opens.
                 .contextMenu {
                     Button(tr("inbox.project.newSession", name), action: start)
                     if WorktreeOrigin.checkoutPath(of: worktree) != worktree {

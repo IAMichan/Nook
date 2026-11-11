@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// `nook` in a scenario: state made through the app's own code paths (the Nook equivalent of fixture).
+/// `nook` in a scenario: state made through the app's own code paths.
 /// Sessions start through `WorkspaceManager.start`, the path `session_start` and `nook start` take, and run the replay
 /// agent; `open` hosts the main window's real view offscreen.
 @MainActor

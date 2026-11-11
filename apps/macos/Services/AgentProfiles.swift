@@ -20,14 +20,14 @@ struct AgentProfile: Codable, Identifiable, Hashable {
     /// The icon you gave this account (an SF Symbol name from `AccountTag.symbols`), drawn centered on its badge instead
     /// of the first letter of its name. Nil: the letter, or the personal/work/key symbol.
     var icon: String? = nil
-    /// True once you switched this account off (as enable switch): Nook then leaves it out of every list, menu and
+    /// True once you switched this account off (its enable switch): Nook then leaves it out of every list, menu and
     /// "Auto" pick, but keeps its folder, login and settings. Nil: on.
     var disabled: Bool? = nil
     /// The agent program this account runs instead of the one Nook found (a path, or a name the login shell finds). Nil: Nook's.
     var executablePath: String? = nil
     /// Arguments added to every launch of the agent under this account, one per entry, after Nook's own.
     var extraArguments: [String]? = nil
-    /// Environment variables set for every launch under this account (per-account environment).
+    /// Environment variables set for every launch under this account (a per-account environment).
     var variables: [AccountVariable]? = nil
     /// Models of this account that no list offers (a gateway's, an early-access one), added to its model menus.
     var customModels: [String]? = nil

@@ -304,7 +304,7 @@
   .qtext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .icon { background: none; border: none; padding: 0 3px; font-size: 11px; color: var(--text2); }
   .qnote { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 11.5px; }
-  /* composer surface: one rounded box with a hairline, the prompt on top and the controls in a row under it. */
+  /* The composer surface: one rounded box with a hairline, the prompt on top and the controls in a row under it. */
   .box { border: 1px solid var(--line2); border-radius: var(--radius-composer); background: var(--surface); padding: 10px 8px 8px 12px; display: flex; flex-direction: column; gap: 6px; transition: border-color 120ms ease; }
   .box:focus-within { border-color: color-mix(in srgb, var(--paper) 22%, var(--line2)); }
   textarea { background: transparent; border: none; resize: none; padding: 2px 0; min-height: 44px; max-height: 200px; font-size: 14px; line-height: 1.5; }

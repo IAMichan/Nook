@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts of the connection rows on Settings › Agents (coding agents, accounts, ACP agents), in the 
+// Texts of the connection rows on Settings › Agents (coding agents, accounts, ACP agents), in the
 // shape of `ConnectionRow`. Numbers use %ld, text uses %@.
 
 let connectionsAgentsTranslations: [AppLanguage: [String: String]] = [

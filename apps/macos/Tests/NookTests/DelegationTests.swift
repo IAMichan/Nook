@@ -150,7 +150,7 @@ final class DelegationTests: XCTestCase {
     }
 
     func testATaskWithWorkInItsQueueIsNotDoneYet() {
-        //: a follow-up waits for a run its child queued on its own thread.
+        // A follow-up waits for a run its child queued on its own thread.
         XCTAssertEqual(DelegatedTask.state(.completed, hasQueuedWork: true), .running)
         XCTAssertEqual(DelegatedTask.state(.stopped, hasQueuedWork: true), .running, "a restart goes out right after its stop")
         XCTAssertEqual(DelegatedTask.state(.running, hasPendingQuestion: true, hasQueuedWork: true), .waiting)

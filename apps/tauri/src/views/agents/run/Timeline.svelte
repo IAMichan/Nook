@@ -259,7 +259,7 @@
   .chev.open { transform: rotate(90deg); }
   .inner { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line2) 60%, transparent); }
   .inner.fold { gap: 12px; }
-  /* The live line: status line, quiet text with a spinner. */
+  /* The live line: a status line, quiet text with a spinner. */
   .live { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 0 4px; color: var(--text2); }
   .spin { display: inline-flex; margin-top: 1px; color: var(--text3); animation: spin 1s linear infinite; }
   .spin.waiting { color: var(--amber); animation: none; }

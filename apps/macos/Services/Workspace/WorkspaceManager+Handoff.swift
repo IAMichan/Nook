@@ -77,7 +77,7 @@ extension WorkspaceManager {
         forkNext.remove(id)
         if let now = self.run(id) {
             // "⇄ Context handoff  Claude Code Sonnet 5.5 → Codex GPT-5": a divider with both agents and their models; to
-            // another account of the same agent, each logo carries its account's badge (as).
+            // another account of the same agent, each logo carries its account's badge.
             var change = ModelSwitch(from: before, to: switchEndpoint(now))
             if accountOnly { change.accountHandoff = true }
             var event = RunEvent(kind: .system, text: accountOnly ? ModelSwitchText.plain(change)
