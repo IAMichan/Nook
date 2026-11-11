@@ -217,6 +217,7 @@ struct TranscriptMessageFooter<Actions: View>: View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if trailing, let date { TranscriptTime(date: date).padding(.trailing, NookTheme.Spacing.xs) }
             CopyIconButton(tr("button.copy"), height: 22, showing: $copied) { text }
+            if !trailing { ReadAloudButton(text: text) }
             actions()
             if !trailing, let date { TranscriptTime(date: date).padding(.leading, NookTheme.Spacing.xs) }
         }
@@ -224,5 +225,27 @@ struct TranscriptMessageFooter<Actions: View>: View {
         .padding(trailing ? .trailing : .leading, -NookTheme.Spacing.xs)
         .opacity(visible || copied ? 1 : 0)
         .animation(NookTheme.hover, value: visible)
+    }
+}
+
+/// Reads an answer aloud with the on-device voice (`SpeechOutput`); a second press stops it. In every conversation's
+/// reply footer, so every agent and chat answer has it.
+struct ReadAloudButton: View {
+    let text: String
+    @State private var speaking = false
+
+    var body: some View {
+        ToolbarIconButton(speaking ? "stop.fill" : "speaker.wave.2",
+                          speaking ? tr("agents.message.stopReading") : tr("agents.message.readAloud"),
+                          height: 22, width: 22) {
+            let speech = AppModel.shared.speech
+            if speech.isSpeaking {
+                speech.stop()
+                speaking = false
+            } else {
+                speech.speak(text, language: AppModel.shared.settings.language)
+                speaking = true
+            }
+        }
     }
 }
