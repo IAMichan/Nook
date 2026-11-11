@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Over a browser's page while an agent drives it (`BrowserStore.drivenBy`): the page's edges glow and breathe in Nook's
-/// own color, and a pill at the bottom names the agent with a Stop button. Stopping halts the page and refuses the
-/// agent's next step until you allow agents again, which the same pill offers. Every place that shows a browser's page
-/// (the side panel, the browser page, the popup window, the corner of a chat) lays this over its web view.
+/// Over a browser's page while an agent drives it (`BrowserStore.drivenBy`): the page's edges glow and breathe in the
+/// colors of that agent's logo (`AgentLogo.colors`: Claude's orange, Gemini's blue and violet, …), and a pill at the
+/// bottom names the agent with a Stop button. Stopping halts the page and refuses the agent's next step until you allow
+/// agents again, which the same pill offers. Every place that shows a browser's page (the side panel, the browser page,
+/// the popup window, the corner of a chat) lays this over its web view.
 ///
 /// The glow runs in the render server (`LayerLoop`), so the main thread draws nothing per frame while it breathes, and it
 /// takes no clicks: you can keep using the page under it.
@@ -18,9 +19,9 @@ struct BrowserTakeoverOverlay: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if store.drivenBy != nil {
+            if let agent = store.drivenBy {
                 LayerLoop(shape: .edgeGlow(thickness: compact ? 18 : 34, low: 0.35, high: 1, period: 2.4),
-                          color: NookTheme.iris,
+                          color: NookTheme.iris, palette: AgentLogo.colors(of: agent),
                           fps: reduceMotion ? 0 : energy.plan.progressFrameRate(attended: attended))
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
