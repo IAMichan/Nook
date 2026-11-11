@@ -38,6 +38,9 @@ enum GitHubPullRequestDetail {
             throw NookError("GitHub returned an unexpected response.")
         }
         detail.activityLoaded = false
+        if detail.canBypass, detail.state == .open {
+            detail.canBypass = await adminCanBypass(base: detail.baseBranch, get: get)
+        }
         let sha = detail.headSHA
         if !sha.isEmpty {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
@@ -113,6 +116,22 @@ enum GitHubPullRequestDetail {
     }
 
     /// A GET on the repository's REST address, asked again when it failed on something passing.
+    /// Whether this admin may really merge past the rules of `base`: the rulesets GitHub applies to the branch, and its
+    /// branch protection (404 when there is none). A ruleset that cannot be read leaves the choice to GitHub.
+    static func adminCanBypass(base: String, get: @escaping @Sendable (String) async throws -> Any) async -> Bool {
+        guard let branch = base.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed), !branch.isEmpty else { return true }
+        async let protection = (try? await get("/branches/\(branch)/protection")) as? [String: Any]
+        let rules = ((try? await get("/rules/branches/\(branch)")) as? [[String: Any]]) ?? []
+        let ids = Set(rules.compactMap { $0["ruleset_id"] as? Int })
+        let rulesets = await withTaskGroup(of: [String: Any]?.self) { group in
+            for id in ids { group.addTask { (try? await get("/rulesets/\(id)")) as? [String: Any] } }
+            var found: [[String: Any]] = []
+            for await ruleset in group { if let ruleset { found.append(ruleset) } }
+            return found
+        }
+        return PullRequestDetailParser.adminCanBypass(rulesets: rulesets, protection: await protection)
+    }
+
     private static func getter(repo: String, token: String) -> @Sendable (String) async throws -> Any {
         let auth = headers(token)
         let base = "https://api.github.com/repos/\(repo)"
@@ -145,6 +164,9 @@ enum GitHubPullRequestDetail {
         let repository = (try? await get("")) as? [String: Any]
         guard var detail = PullRequestDetailParser.detail(pull: pull, repository: repository) else {
             throw NookError("GitHub returned an unexpected response.")
+        }
+        if detail.canBypass, detail.state == .open {
+            detail.canBypass = await adminCanBypass(base: detail.baseBranch, get: get)
         }
         let sha = detail.headSHA
         if !sha.isEmpty, detail.state == .open {

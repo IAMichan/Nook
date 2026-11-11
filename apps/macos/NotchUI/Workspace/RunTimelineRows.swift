@@ -28,6 +28,12 @@ struct EventRow: View {
     /// What you chose on a suggested session's card (`SessionSuggestion`); nil where the card cannot act.
     var onSuggestion: ((SessionSuggestion.Choice) -> Void)? = nil
 
+    /// Whether a failed turn's text says a usage limit stopped it (`FailureClassifier`, as the session's limit wait).
+    static func isUsageLimit(_ text: String) -> Bool {
+        if case .usageLimit = FailureClassifier.classify(FailureEvidence(isError: true, messageText: text)) { return true }
+        return false
+    }
+
     var body: some View {
         switch event.kind {
         case .user:
@@ -87,6 +93,11 @@ struct EventRow: View {
         case .approval:
             ApprovalRow(event: event, expanded: expanded, toggle: toggle, decide: decide)
 
+        case .error where Self.isUsageLimit(event.text):
+            // A usage limit is something to wait out or switch away from, not a crash: the amber card the transcript
+            // view shows for one, with the agent's own words under it.
+            TimelineProblemCard(symbol: "hourglass", tint: NookTheme.amber, text: tr("agents.notice.limit"), detail: event.text)
+
         case .error:
             TimelineProblemCard(text: event.text)
 
@@ -124,6 +135,16 @@ struct EventRow: View {
         case .system where event.tool == "clear":
             // `/clear`: the agent starts a new conversation here and remembers nothing above the line.
             TimelineNewDivider(label: event.text)
+
+        case .system where event.tool == "limit":
+            // When the limit that stopped this turn frees up.
+            TranscriptWorkLine(symbol: "hourglass", label: event.text)
+                .help(event.text)
+
+        case .system where event.tool == "resume":
+            // Nook goes on by itself after a limit: on the same account at reset, or on the one you switched to.
+            TranscriptWorkLine(symbol: "play.circle", label: event.text)
+                .help(event.text)
 
         case .system where event.tool == "origin":
             // Another agent, a script or Nook Chat started this session (`NewRunConfig.startedBy`).

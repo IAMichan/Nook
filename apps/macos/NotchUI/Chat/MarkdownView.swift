@@ -311,26 +311,24 @@ struct MarkdownView: View, Equatable {
     /// When set, the options of a question at the end of the answer become buttons that answer it. Read off the main
     /// actor only by `==`, and only for whether it is set.
     nonisolated(unsafe) var onChoose: ((String) -> Void)? = nil
+    /// Builds only the blocks in view: for a whole document in a scroll view of its own (a Markdown file in the side
+    /// panel), where drawing every paragraph, table and code block at once held the main thread for seconds. An answer
+    /// in a conversation is already a row of a lazy timeline and stays eager.
+    var lazy = false
 
     /// The same text at the same size draws the same: a row that redraws on hover or while scrolling past skips it.
     nonisolated static func == (a: MarkdownView, b: MarkdownView) -> Bool {
-        a.text == b.text && a.size == b.size && (a.onChoose == nil) == (b.onChoose == nil)
+        a.text == b.text && a.size == b.size && a.lazy == b.lazy && (a.onChoose == nil) == (b.onChoose == nil)
     }
 
     var body: some View {
         let blocks = MarkdownCache.blocks(text)
         let choices = onChoose == nil ? nil : MarkdownBlock.trailingChoices(blocks)
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            ForEach(MarkdownSegment.split(blocks, keeping: choices?.index), id: \.offset) { segment in
-                if let choices, choices.index == segment.offset {
-                    ChoiceList(options: choices.options, size: size) { onChoose?($0) }
-                } else if segment.prose {
-                    // Segments are keyed by their first block, which a streaming answer never moves; equal blocks
-                    // skip the text view's update, so only the segment still being written is set again.
-                    ProseSegment(blocks: segment.blocks, size: size).equatable()
-                } else {
-                    view(for: segment.blocks[0])
-                }
+        Group {
+            if lazy {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { segments(blocks, choices: choices) }
+            } else {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) { segments(blocks, choices: choices) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -363,6 +361,20 @@ struct MarkdownView: View, Equatable {
             Task { @MainActor in AppModel.shared.openArtifact(url) }
             return .handled
         })
+    }
+
+    private func segments(_ blocks: [MarkdownBlock], choices: (index: Int, options: [String])?) -> some View {
+        ForEach(MarkdownSegment.split(blocks, keeping: choices?.index), id: \.offset) { segment in
+            if let choices, choices.index == segment.offset {
+                ChoiceList(options: choices.options, size: size) { onChoose?($0) }
+            } else if segment.prose {
+                // Segments are keyed by their first block, which a streaming answer never moves; equal blocks
+                // skip the text view's update, so only the segment still being written is set again.
+                ProseSegment(blocks: segment.blocks, size: size).equatable()
+            } else {
+                view(for: segment.blocks[0])
+            }
+        }
     }
 
     @ViewBuilder

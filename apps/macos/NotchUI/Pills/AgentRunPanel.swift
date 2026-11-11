@@ -808,7 +808,10 @@ struct AgentRunPanel: View {
                                            },
                                            help: TimelinePresentation.live(turn).tool)
                     }
-                    if run.status == .failed || run.status == .stopped {
+                    // A usage limit ended the turn: its own card, with the reset and how to go on.
+                    if UsageLimitCard.shows(run) {
+                        UsageLimitCard(run: run)
+                    } else if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
                     TurnPinSpacer(room: pinRoom)
@@ -1141,19 +1144,41 @@ struct AgentRunPanel: View {
     }
 
     private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
-        AdaptiveActionRow(spacing: 10) {
-            HStack(spacing: 10) {
-                Image(icon: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
-                    .foregroundStyle(run.status.color)
+        let failed = run.status == .failed
+        // A stopped turn goes on where it was when the agent kept its conversation; otherwise only a retry helps.
+        let canGoOn = !failed && run.providerSessionID != nil
+        // One main action per card: a sign-in or an update to do first takes it from Retry.
+        let fixFirst = failed && ((AgentSignInFailure.needsSignIn(run.statusDetail) && AgentSignInFailure.canSignInAgain(run.provider))
+            || (!run.isRemote && AgentUpdates.updatable(run.provider) && AgentVersionRejection.parse(run.statusDetail) != nil))
+        let problem = failed ? run.statusDetail.flatMap { $0 == "interrupted" || $0.isEmpty ? nil : $0 } : nil
+        let detail = run.statusDetail == "interrupted" ? tr("ws.recovery.interrupted")
+            : failed ? tr("ws.recovery.failedDetail")
+            : canGoOn ? tr("ws.recovery.stoppedDetail") : tr("ws.recovery.noResume")
+        return AdaptiveActionRow(spacing: 10) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+                BannerMark(symbol: failed ? "exclamationmark.triangle" : "pause.circle",
+                           tint: failed ? NookTheme.coral : NookTheme.textSecondary)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
+                    Text(failed ? tr("ws.recovery.failed") : tr("ws.recovery.stoppedTitle"))
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
-                    Text(run.statusDetail.flatMap { $0 == "interrupted" ? nil : $0 } ?? (run.providerSessionID != nil ? tr("ws.recovery.canResume") : tr("ws.recovery.noResume")))
+                    Text(detail)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(3)
-                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // What went wrong in the agent's own words, apart from the sentence above.
+                    if let problem {
+                        Text(problem)
+                            .font(NookTheme.mono(11))
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(3)
+                            .textSelection(.enabled)
+                            .padding(.horizontal, NookTheme.Spacing.sm)
+                            .padding(.vertical, NookTheme.Spacing.xs)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.chip)
+                            .padding(.top, NookTheme.Spacing.xs)
+                    }
                 }
             }
         } actions: {
@@ -1165,7 +1190,19 @@ struct AgentRunPanel: View {
                     DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(failure, anchor: .center) } }
                 }
             }
-            NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
+            if canGoOn {
+                NookGhostButton(title: tr("ws.action.retryFromLast")) { workspace.retry(runID) }
+                    .help(tr("ws.action.retry.help"))
+                NookPrimaryButton(title: tr("ws.action.goOn")) { _ = workspace.send(runID, text: UsageLimits.resumeMessage) }
+                    .help(tr("ws.action.goOn.help"))
+            } else if fixFirst {
+                // Signing in again or updating the agent is the main action; it runs the turn again itself.
+                NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
+                    .help(tr("ws.action.retry.help"))
+            } else {
+                NookPrimaryButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
+                    .help(tr("ws.action.retry.help"))
+            }
             // The login ran out: sign in again in the browser, and the turn runs again once you are back.
             if run.status == .failed, AgentSignInFailure.needsSignIn(run.statusDetail),
                AgentSignInFailure.canSignInAgain(run.provider) {
@@ -1185,8 +1222,9 @@ struct AgentRunPanel: View {
                 }
             }
         }
-        .padding(10)
-        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.card)
+        .padding(NookTheme.Spacing.md)
+        .cardBackground(NookTheme.surface, stroke: failed ? NookTheme.coral.opacity(0.3) : NookTheme.fieldStroke,
+                        radius: NookTheme.Radius.card)
     }
 
     @ViewBuilder
@@ -1506,7 +1544,6 @@ struct AgentRunPanel: View {
         let primary = ComposerDispatch.resolve(busy: true, intent: preferred, canSteer: canSteer)
         let steers = primary == .steer
         return VStack(alignment: .leading, spacing: 5) {
-            UsageLimitBanner(run: run)
             ConnectorSignInBanner(runID: runID)
             // Its side chats (/btw): open one, or bring its result back here.
             let sideChats = SideChat.children(of: runID, in: workspace.runs)

@@ -1874,8 +1874,9 @@ final class WorkspaceManager: ObservableObject {
                 process?.markHandled(end)
             }
         }
-        process.onExit = { [weak self, weak process] status, stderr in
-            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
+        let token = ObjectIdentifier(process)
+        process.onExit = { [weak self] status, stderr in
+            Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: token) }
         }
     }
 
@@ -1911,8 +1912,9 @@ final class WorkspaceManager: ObservableObject {
                     for line in parsed { self.handle(parsed: line, for: id) }
                 }
             }
-            process.onExit = { [weak self, weak process] status, stderr in
-                Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: process) }
+            let token = ObjectIdentifier(process)
+            process.onExit = { [weak self] status, stderr in
+                Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: token) }
             }
             guard (try? process.start()) != nil else { return }
             parkWarmClaude(id, process, key: claudeKey(run))
@@ -2208,18 +2210,22 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
-    private func processExited(_ id: UUID, status: Int32, stderr: String, process: AgentProcess? = nil) {
+    /// `process` identifies the process that ended (not the process itself: it may be gone by the time this runs).
+    private func processExited(_ id: UUID, status: Int32, stderr: String, process: ObjectIdentifier? = nil) {
         // Quitting: `shutdown()` already settled every session; an exit now must not send queued messages or start a turn.
         guard !quitting else { return }
         // A Claude Code process that waited between turns ended (closed when idle, or gone): nothing else to do.
-        if let process, claudeIdle[id]?.process === process {
+        if let process, let idle = claudeIdle[id]?.process, ObjectIdentifier(idle) == process {
             claudeIdle[id] = nil
             // Subagents it ran in the background ended with it.
             settleOpenWork(id, reason: .processExited)
             noteSubagentsWorking(id)
             return
         }
-        if let process, let current = processes[id], current !== process { return }
+        // A process this session no longer runs: one closed on the way out (a switch to another agent or account, a
+        // stop, `/clear`). Its end must not end the turn that runs now, which may not even be a process (an ACP agent,
+        // Codex's server): that turn failed with "The agent stopped unexpectedly (code 0)".
+        if let process, processes[id].map(ObjectIdentifier.init) != process { return }
         processes[id] = nil
         // A question can no longer be answered once the process is gone.
         questions[id] = nil
