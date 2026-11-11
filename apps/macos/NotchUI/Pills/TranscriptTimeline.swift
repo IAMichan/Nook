@@ -41,6 +41,8 @@ struct TranscriptConversation: View {
     @State private var overflows = false
     /// Read only by the handlers: as state, each start and stop of a scroll drew every row of the conversation again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
+    @State private var drawnRows = DrawnRows()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -135,10 +137,12 @@ struct TranscriptConversation: View {
                                     self.row(row)
                                 }
                                 .pinProbe(row.id, room: pinRoom)
+                                .countsAsDrawnRow(drawnRows)
                                 .id(row.id)
                             } else {
                                 // The "new since" line is a hairline of its own: a fold right above it gives up its own.
-                                self.row(row, ruled: row.id != beforeNew).pinProbe(row.id, room: pinRoom).id(row.id)
+                                self.row(row, ruled: row.id != beforeNew).pinProbe(row.id, room: pinRoom)
+                                    .countsAsDrawnRow(drawnRows).id(row.id)
                             }
                         }
                         // A compaction between turns (your /compact while the agent waits): the line under the last turn.
@@ -186,14 +190,21 @@ struct TranscriptConversation: View {
                     overflows = now
                 }
                 // Never a black conversation: at rest with none of its rows in view, back to the one you last saw (or the end).
-                .recoversBlankRows(String.self, rows: rows.count, idle: { scrollPhase.value == .idle }) { last in
+                .recoversBlankRows(String.self, rows: rows.count, drawn: drawnRows, idle: { scrollPhase.value == .idle }) { last, attempt in
                     var still = Transaction()
                     still.disablesAnimations = true
                     withTransaction(still) {
                         if let last, last != "bottom", !scroll.shouldFollowEnd, !atEnd {
                             proxy.scrollTo(last, anchor: .top)
-                        } else {
+                        } else if attempt == 0 {
                             proxy.scrollTo("bottom", anchor: .bottom)
+                        } else {
+                            // Still blank at the end: let go of the room held under a sent message, land on the last row
+                            // itself (one the lazy stack must draw), and only then on the very end.
+                            scroll.jumpedToEnd()
+                            pinRoom.release()
+                            if let lastRow = rows.last?.id { proxy.scrollTo(lastRow, anchor: .bottom) }
+                            DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
                         }
                     }
                 }
