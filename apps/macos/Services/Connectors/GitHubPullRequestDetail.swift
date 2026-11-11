@@ -350,9 +350,11 @@ enum GitHubPullRequestDetail {
     }
 
     /// The labels of the repository with their colors, to pick from.
-    static func repositoryLabels(repo: String, token: String) async -> [(name: String, color: String)] {
+    static func repositoryLabels(repo: String, token: String) async -> [PullRequestLabelChoice] {
         let answer = ((try? await getter(repo: repo, token: token)("/labels?per_page=100")) as? [[String: Any]]) ?? []
-        return answer.compactMap { label in (label["name"] as? String).map { ($0, (label["color"] as? String) ?? "") } }
+        return answer.compactMap { label in
+            (label["name"] as? String).map { ($0, (label["color"] as? String) ?? "", (label["description"] as? String) ?? "") }
+        }
     }
 
     /// Adds your emoji to a comment, or takes it off when it is there already. REST has no toggle, so it looks first.

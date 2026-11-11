@@ -228,9 +228,14 @@ final class PullRequestForgeGitLabTests: XCTestCase {
                                                     ["iid": 4, "title": "Old", "state": "closed"]], repository: "g/a")
         XCTAssertEqual(issues.map(\.id), ["g/a#3", "g/a#4"])
         XCTAssertEqual(issues.map(\.open), [true, false])
-        let labels = GitLabPullRequestForge.labels([["name": "bug", "color": "#FF0000"]])
+        let labels = GitLabPullRequestForge.labels([["name": "bug", "color": "#FF0000", "description": "Broken"], ["name": "ui"]])
         XCTAssertEqual(labels.first?.name, "bug")
         XCTAssertEqual(labels.first?.color, "FF0000")
+        XCTAssertEqual(labels.map(\.description), ["Broken", ""])
+        let described = GitLabPullRequestForge.detail(mergeRequest: mergeRequest(), project: nil, sourceProject: nil, approvals: nil,
+                                                      labelColors: [:], labelDescriptions: ["bug": "Broken", "other": "Not here"],
+                                                      jobs: [], repo: repo)
+        XCTAssertEqual(described?.labelDescriptions, ["bug": "Broken"])
     }
 
     private let refs: [String: Any] = ["base_sha": "b", "start_sha": "s", "head_sha": "h"]
@@ -307,5 +312,61 @@ final class PullRequestForgeGitLabTests: XCTestCase {
 
     func testUsernamesKeepDotsAndUnderscores() {
         XCTAssertEqual(GitLabPullRequestForge.usernames(["@anna.b, bob_c", "ANNA.B"]), ["anna.b", "bob_c"])
+    }
+
+    func testSHA1() {
+        XCTAssertEqual(GitLabPullRequestForge.sha1Hex(Data("abc".utf8)), "a9993e364706816aba3e25717850c26c9cd0d89d")
+        XCTAssertEqual(GitLabPullRequestForge.sha1Hex(Data()), "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+        XCTAssertEqual(GitLabPullRequestForge.sha1Hex(Data(String(repeating: "a", count: 100).utf8)), "7f9000257a4918d7072655ea468540cdcbd42e0c")
+    }
+
+    func testACommentOnSeveralLinesSendsItsRangeWithLineCodes() throws {
+        let file = PullRequestFile(path: "new.swift", status: "renamed", additions: 2, deletions: 1, patch: patch, previousPath: "old.swift")
+        let hash = "77c9c160104acdbd3677e58045082dc758169d7f"
+        let position = GitLabPullRequestForge.position(.init(path: "new.swift", line: 23, side: "RIGHT", body: "x", startLine: 21, startSide: "RIGHT"),
+                                                       refs: refs, file: file)
+        XCTAssertEqual(position["new_line"] as? Int, 23, "the comment itself sits on its last line")
+        let range = try XCTUnwrap(position["line_range"] as? [String: Any])
+        let start = try XCTUnwrap(range["start"] as? [String: Any]), end = try XCTUnwrap(range["end"] as? [String: Any])
+        XCTAssertEqual(start["line_code"] as? String, hash + "_12_21", "an added line keeps the old counter where it stands")
+        XCTAssertEqual(start["type"] as? String, "new")
+        XCTAssertEqual(start["new_line"] as? Int, 21)
+        XCTAssertNil(start["old_line"])
+        XCTAssertEqual(end["line_code"] as? String, hash + "_12_23")
+        XCTAssertTrue(end["type"] is NSNull, "an unchanged line has no type")
+        XCTAssertEqual(end["old_line"] as? Int, 12)
+        XCTAssertEqual(end["new_line"] as? Int, 23)
+
+        let across = GitLabPullRequestForge.lineRange(.init(path: "new.swift", line: 22, side: "RIGHT", body: "x", startLine: 11, startSide: "LEFT"), file: file)
+        let from = try XCTUnwrap(across?["start"] as? [String: Any])
+        XCTAssertEqual(from["line_code"] as? String, hash + "_11_21", "a removed line keeps the new counter where it stands")
+        XCTAssertEqual(from["type"] as? String, "old")
+        XCTAssertEqual(from["old_line"] as? Int, 11)
+        XCTAssertEqual((across?["end"] as? [String: Any])?["line_code"] as? String, hash + "_12_22")
+    }
+
+    func testACommentOnOneLineHasNoRange() {
+        XCTAssertNil(GitLabPullRequestForge.lineRange(.init(path: "a", line: 3, side: "RIGHT", body: "x"), file: nil))
+        XCTAssertNil(GitLabPullRequestForge.lineRange(.init(path: "a", line: 3, side: "RIGHT", body: "x", startLine: 3, startSide: "RIGHT"), file: nil))
+        let blind = GitLabPullRequestForge.lineRange(.init(path: "a", line: 5, side: "RIGHT", body: "x", startLine: 3), file: nil)
+        XCTAssertEqual((blind?["start"] as? [String: Any])?["new_line"] as? Int, 3, "without the patch each end has only its own side")
+    }
+
+    func testARevertTakesTheMergedCommitAndOpensAMergeRequest() {
+        XCTAssertTrue(GitLabPullRequestForge.forgeFeatures.revert)
+        let merged = GitLabPullRequestForge.revertTarget(mergeRequest(["state": "merged", "merge_commit_sha": "0123456789abcdef", "squash_commit_sha": "fff"]))
+        XCTAssertEqual(merged?.merged, true)
+        XCTAssertEqual(merged?.sha, "0123456789abcdef", "the merge commit before the squash commit")
+        XCTAssertEqual(merged?.targetBranch, "main")
+        XCTAssertEqual(GitLabPullRequestForge.revertTarget(mergeRequest(["state": "merged", "merge_commit_sha": NSNull(), "squash_commit_sha": "abc"]))?.sha, "abc")
+        XCTAssertNil(GitLabPullRequestForge.revertTarget(mergeRequest(["state": "merged"]))?.sha, "a fast-forward records neither")
+        XCTAssertEqual(GitLabPullRequestForge.revertTarget(mergeRequest())?.merged, false)
+        let request = GitLabPullRequestForge.revertRequest(number: 12, title: "Add login", targetBranch: "main", sha: "0123456789abcdef")
+        XCTAssertEqual(request.branch, "revert-01234567")
+        XCTAssertEqual(request.mergeRequest["source_branch"] as? String, "revert-01234567")
+        XCTAssertEqual(request.mergeRequest["target_branch"] as? String, "main")
+        XCTAssertEqual(request.mergeRequest["title"] as? String, "Revert \"Add login\"")
+        XCTAssertEqual(request.mergeRequest["description"] as? String, "This reverts merge request !12")
+        XCTAssertEqual(request.mergeRequest["remove_source_branch"] as? Bool, true)
     }
 }

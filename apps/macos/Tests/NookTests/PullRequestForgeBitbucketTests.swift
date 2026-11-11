@@ -197,4 +197,16 @@ final class PullRequestForgeBitbucketTests: XCTestCase {
         XCTAssertEqual(ids, ["{1}", "{2}"])
         XCTAssertThrowsError(try BitbucketPullRequestForge.reviewerIDs(["nobody"], members: members, current: []))
     }
+
+    func testACommentOnSeveralLinesNamesItsFirstLine() {
+        let range = BitbucketPullRequestForge.lineCommentBody(.init(path: "a", line: 9, side: "RIGHT", body: "x", startLine: 5, startSide: "RIGHT"))
+        let inline = range["inline"] as? [String: Any]
+        XCTAssertEqual(inline?["to"] as? Int, 9)
+        XCTAssertEqual(inline?["start_to"] as? Int, 5)
+        XCTAssertNil(inline?["start_from"])
+        let across = BitbucketPullRequestForge.lineCommentBody(.init(path: "a", line: 9, side: "RIGHT", body: "x", startLine: 4, startSide: "LEFT"))
+        XCTAssertEqual((across["inline"] as? [String: Any])?["start_from"] as? Int, 4)
+        let one = BitbucketPullRequestForge.lineCommentBody(.init(path: "a", line: 9, side: "RIGHT", body: "x", startLine: 9, startSide: "RIGHT"))
+        XCTAssertNil((one["inline"] as? [String: Any])?["start_to"])
+    }
 }

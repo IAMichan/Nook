@@ -387,6 +387,7 @@ targets:
       - path: Services/Connectors/PullRequestForgeGitCafe.swift
       - path: Services/Connectors/PullRequestForgeBitbucket.swift
       - path: Services/Connectors/PullRequestForgeAzureDevOps.swift
+      - path: Services/Connectors/PullRequestEvents.swift
       - path: Services/Connectors/PullRequestChangeBreakdown.swift
       - path: Services/Connectors/PullRequestFilter.swift
       - path: Services/Connectors/PullRequestQuery.swift

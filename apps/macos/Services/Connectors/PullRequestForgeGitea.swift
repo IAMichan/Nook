@@ -9,6 +9,7 @@ struct GiteaPullRequestForge: PullRequestForgeClient {
         var features = PullRequestForgeFeatures()
         features.reactions = false
         features.autoMerge = false
+        // Neither Gitea nor Forgejo has a revert or cherry-pick API.
         features.revert = false
         return features
     }()
@@ -73,10 +74,10 @@ struct GiteaPullRequestForge: PullRequestForgeClient {
         return (user?["login"] as? String) ?? ""
     }
 
-    func labels() async -> [(name: String, color: String)] {
+    func labels() async -> [PullRequestLabelChoice] {
         await allLabels().compactMap { item in
             guard let name = item["name"] as? String else { return nil }
-            return (name, (item["color"] as? String) ?? "")
+            return (name, (item["color"] as? String) ?? "", (item["description"] as? String) ?? "")
         }
     }
 
@@ -339,6 +340,7 @@ struct GiteaPullRequestForge: PullRequestForgeClient {
         if !commit.isEmpty { payload["commit_id"] = commit }
         if !comments.isEmpty {
             payload["comments"] = comments.map { comment -> [String: Any] in
+                // Gitea and Forgejo take one line per review comment, so a comment on several lines sits on its last one.
                 let left = comment.side == "LEFT"
                 return ["path": comment.path, "body": comment.body,
                         "new_position": left ? 0 : comment.line, "old_position": left ? comment.line : 0]

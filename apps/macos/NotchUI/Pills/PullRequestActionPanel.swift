@@ -20,7 +20,7 @@ final class PullRequestActionState: ObservableObject {
     /// Who can be asked for a review, offered as chips under the reviewer field. Nil until GitHub answered.
     @Published var candidates: [String]?
     /// The repository's labels to pick from, with their colors. Nil until GitHub answered.
-    @Published var labelChoices: [(name: String, color: String)]?
+    @Published var labelChoices: [PullRequestLabelChoice]?
     /// Line comments of the Code tab, waiting for the review.
     @Published var lineComments: [PullRequestPendingComment] = [] {
         didSet { Self.keptComments[key] = lineComments }
@@ -439,12 +439,14 @@ struct PullRequestActionPanel: View {
                             state.pending = on ? .removeLabel(label.name) : .addLabels([label.name])
                         } label: {
                             HStack(spacing: NookTheme.Spacing.xs) {
-                                LabelChip(name: label.name, color: label.color)
+                                LabelChip(name: label.name, color: label.color, description: label.description)
                                 if on { Image(icon: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.paper) }
                             }
                         }
                         .buttonStyle(.plain)
-                        .help(tr(on ? "agents.pr.labels.remove" : "agents.pr.labels.add", label.name))
+                        // The button's own tip covers the chip's, so it carries the description too.
+                        .help(tr(on ? "agents.pr.labels.remove" : "agents.pr.labels.add", label.name)
+                              + (label.description.isEmpty ? "" : "\n" + label.description))
                     }
                 }
             } else {

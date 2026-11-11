@@ -150,7 +150,8 @@ final class PullRequestQueryTests: XCTestCase {
         let json = #"""
         {"data": {"viewer": {"login": "ada"},
           "mine": {"nodes": [{"number": 7, "title": "Login", "headRefName": "feature/login",
-                              "labels": {"nodes": [{"name": "bug", "color": "d73a4a"}, {"name": "docs", "color": ""}]},
+                              "labels": {"nodes": [{"name": "bug", "color": "d73a4a", "description": "Something is broken"},
+                                                   {"name": "docs", "color": "", "description": ""}]},
                               "author": {"login": "ada"}, "repository": {"nameWithOwner": "acme/app"}}]},
           "reviews": {"nodes": []}, "mineClosed": {"nodes": []}, "reviewsClosed": {"nodes": []}}}
         """#
@@ -158,9 +159,13 @@ final class PullRequestQueryTests: XCTestCase {
         let row = try XCTUnwrap(parsed.mine.first)
         XCTAssertEqual(row.labels, ["bug", "docs"])
         XCTAssertEqual(row.labelColors, ["bug": "d73a4a"])
+        XCTAssertEqual(row.labelDescriptions, ["bug": "Something is broken"], "an empty description is none")
+        let encoded = try JSONEncoder().encode(row)
+        XCTAssertEqual(try JSONDecoder().decode(PullRequestItem.self, from: encoded).labelDescriptions, row.labelDescriptions)
         XCTAssertEqual(row.headBranch, "feature/login")
         let saved = try JSONDecoder().decode(PullRequestItem.self, from: Data(#"{"repo":"a/b","number":1,"title":"T","draft":false,"author":"x"}"#.utf8))
         XCTAssertEqual(saved.labelColors, [:])
+        XCTAssertEqual(saved.labelDescriptions, [:], "a list saved before descriptions reads without them")
         XCTAssertEqual(saved.headBranch, "")
     }
 }
