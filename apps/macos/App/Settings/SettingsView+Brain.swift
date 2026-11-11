@@ -268,7 +268,7 @@ extension SettingsView {
                 } label: {
                     Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), systemImage: "person.badge.key.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(hasKey ? .regular : .large)
             }
         }
@@ -312,7 +312,7 @@ extension SettingsView {
                     ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKeyNamed", settings.provider.title), detail: tr("confirm.keychain.detail")) {
                         saveKey("")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.nookBorderless)
                     .font(NookTheme.TextStyle.detail)
                 } else {
                     SettingNote(tr("settings.brain.keyStaysInKeychain"))
@@ -393,7 +393,7 @@ extension SettingsView {
                 StatusRow(title: tr("brain.sub.notInstalled", kind.name), detail: tr("brain.sub.notInstalledDetail", kind.name),
                           state: .warning) {
                     Button(tr("agents.installAndLogin")) { app.connect(profile) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                 }
                 HStack {
                     Button(tr("button.searchAgain")) {
@@ -414,7 +414,7 @@ extension SettingsView {
                     Button(tr("hub.signIn.button", accountBrand(settings.provider))) {
                         if !app.signInInBrowser(profile) { app.connect(profile) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 }
             }
         } else if let command = settings.provider.cliCommand {
@@ -438,7 +438,7 @@ extension SettingsView {
                     Button(signedIn ? tr("connect.reauthorize") : tr("hub.signIn.button", accountBrand(settings.provider))) {
                         signInWithCommand(settings.provider)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                 }
             }
         }
@@ -687,7 +687,7 @@ struct BrainModelChooser: View {
             .frame(height: min(CGFloat(max(shown.count, 1)) * 48, 320))
             NookDivider()
             Button(tr("button.fetchModels"), action: fetch)
-                .buttonStyle(.link)
+                .buttonStyle(.nookLink)
         }
         .padding(NookTheme.Spacing.lg)
         .frame(width: 340)

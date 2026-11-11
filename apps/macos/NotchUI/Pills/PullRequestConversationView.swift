@@ -436,7 +436,7 @@ private struct FoldedConversation: View {
                     .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.line2))
                     .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .accessibilityValue(open ? tr("compose.queue.expanded") : "")
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
@@ -462,7 +462,7 @@ private struct FoldedConversation: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .padding(.horizontal, NookTheme.Spacing.lg)
                     .padding(.top, NookTheme.Spacing.xs)
                 }
@@ -499,7 +499,7 @@ struct PullRequestReactionBar: View {
                     .background(NookTheme.shape(NookTheme.Radius.control).fill(NookTheme.line2))
                     .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .disabled(actions == nil || event.reactionPath == nil)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(tr("agents.pr.reaction", reaction.emoji, reaction.count))
@@ -545,6 +545,6 @@ private struct DropdownEmoji: View {
         } label: {
             Text(emoji).font(NookTheme.font(16)).frame(width: 28, height: 28).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 }

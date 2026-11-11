@@ -69,7 +69,7 @@ struct AutocompleteSettingsSection: View {
                 Section {
                     StatusRow(title: tr("autocomplete.offTitle"), detail: tr("autocomplete.offDetail"), state: .todo) {
                         Button(tr("autocomplete.turnOn")) { store.prefs.enabled = true; autocomplete.refresh() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.nookProminent)
                     }
                 }
             }
@@ -113,7 +113,7 @@ struct AutocompleteSettingsSection: View {
                     ProgressView(value: downloads.progress).frame(width: 80).help(model.name)
                 } else {
                     Button(tr("autocomplete.download.named", recommended.name)) { start(recommended) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                 }
             }
         case .failed(let message):
@@ -169,7 +169,7 @@ struct AutocompleteSettingsSection: View {
                             store.prefs.learn = true
                             autocomplete.applyPersonalization()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                     }
                 }
             }
@@ -299,7 +299,7 @@ struct AutocompleteSettingsSection: View {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
                 // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
                 Button { pendingTrash = file } label: { Image(icon: "trash") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.nookBorderless)
                     .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
         }
@@ -371,12 +371,12 @@ struct AutocompleteSettingsSection: View {
                 // Only Nook's own copies can be deleted here, and never the model in use.
                 if ownCopy, !inUse {
                     Button { pendingDelete = model } label: { Image(icon: "trash") }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.nookBorderless)
                         .help(tr("autocomplete.download.delete"))
                 }
             } else {
                 Button(tr("autocomplete.download")) { start(model) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.small)
                     .disabled(downloads.downloading != nil)
             }
@@ -523,7 +523,7 @@ struct AutocompleteSettingsSection: View {
                 autocomplete.applyPersonalization()
             }
             .labelled(tr("autocomplete.samples.delete"))
-            .buttonStyle(.borderless)
+            .buttonStyle(.nookBorderless)
         }
     }
 
@@ -953,10 +953,10 @@ struct CompletionKeyRecorder: View {
                     else if let shortcut { Keycap(label: shortcut.label) }
                     else { Text(tr("shortcut.off")).foregroundStyle(NookTheme.textSecondary) }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.nookBorderless)
                 if shortcut != fallback, !recording {
                     Button { shortcut = fallback } label: { Image(icon: "arrow.uturn.backward") }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.nookBorderless)
                         .help(tr("shortcut.reset"))
                 }
             }

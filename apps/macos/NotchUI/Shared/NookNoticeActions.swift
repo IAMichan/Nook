@@ -79,7 +79,7 @@ struct NookSplitButton: View {
                 .roundedBackground(hoveringPrimary ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hoveringPrimary = $0 }
 
             Button(action: secondary.perform) {
@@ -95,7 +95,7 @@ struct NookSplitButton: View {
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .onHover { hoveringSecondary = $0 }
         }
         .padding(3)
@@ -127,8 +127,8 @@ struct NookMoreMenu: View {
                 .contentShape(Circle())
                 .hoverLift(hovering, scale: 1.03)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
+        .menuStyle(.nookButton)
+        .buttonStyle(.nookPlain)
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { hovering = $0 }

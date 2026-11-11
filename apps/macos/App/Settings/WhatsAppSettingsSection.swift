@@ -173,7 +173,7 @@ struct WhatsAppAddAccountSheet: View {
                         .onSubmit(add)
                     // The step's button, under its field.
                     Button(tr("whatsapp.accounts.link"), action: add)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                 }
             }
             if let added {
@@ -188,7 +188,7 @@ struct WhatsAppAddAccountSheet: View {
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
     }

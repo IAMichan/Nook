@@ -161,7 +161,7 @@ struct TaskChecklistCard: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr(collapsed ? "ws.checklist.expand" : "ws.checklist.collapse"))
             .accessibilityLabel(tr("ws.tasks.accessibility", progress.done, progress.total, progress.current))
             if !collapsed {

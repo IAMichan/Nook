@@ -142,7 +142,7 @@ struct AnswerSourceChip: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering && openable ? NookTheme.smoke : NookTheme.field))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(!openable)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
@@ -176,7 +176,7 @@ struct AnswerOfferChip: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : NookTheme.field))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityLabel("Nook: \(text)")

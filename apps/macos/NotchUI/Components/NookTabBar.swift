@@ -74,7 +74,7 @@ struct NookTabBar<Value: Hashable>: View {
                     }
                     .contentShape(shape)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(item.help ?? "")
                 .accessibilityLabel(item.count > 0 ? item.title + ", \(item.count)" : item.title)
                 .accessibilityAddTraits(item.value == selected ? .isSelected : [])
@@ -89,7 +89,7 @@ struct NookTabBar<Value: Hashable>: View {
                                 .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .padding(.trailing, 4)
                         .help(tr("tab.close"))
                         .accessibilityLabel(tr("tab.close") + " " + item.title)

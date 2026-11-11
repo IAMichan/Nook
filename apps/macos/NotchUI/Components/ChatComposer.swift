@@ -914,7 +914,7 @@ private struct ChatAttachmentThumb: View {
                 .overlay { shape.strokeBorder(shown ? NookTheme.iris : .clear, lineWidth: 1.5) }
                 .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: bin)
         .help(bin ? tr("chat.compose.remove") : file.name)
@@ -1260,7 +1260,7 @@ private struct ChatPickRow: View {
             .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("chat.compose.sendThis", title))
@@ -1431,7 +1431,7 @@ private struct ChatGIFCell: View {
             .hoverLift(hovering, scale: 1.04)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .task(id: gif.id) { preview = await ChatComposerModel.preview(gif) }
@@ -1462,7 +1462,7 @@ private struct ChatStickerCell: View {
             .hoverLift(hovering, scale: 1.04)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("chat.compose.sendSticker"))

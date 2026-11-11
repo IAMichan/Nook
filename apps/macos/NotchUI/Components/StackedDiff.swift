@@ -371,6 +371,7 @@ private struct StackedDiffHeader: View {
             if hovering { NookTheme.paper.opacity(0.24).frame(width: 3) }
         }
         .contentShape(Rectangle())
+        .nookClickable()
         .onTapGesture(perform: toggle)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
@@ -543,7 +544,7 @@ private struct StackedDiffTreeRow: View {
             .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .help(row.path)
     }

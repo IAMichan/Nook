@@ -177,7 +177,7 @@ struct CICheckLogView: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 if showSteps {
                     ScrollView(.vertical) {
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

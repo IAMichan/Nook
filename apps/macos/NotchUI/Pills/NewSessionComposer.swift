@@ -203,7 +203,7 @@ struct NewSessionComposer: View {
             Button(action: chooseNoProject) {
                 HoverUnderlinedLabel(title: tr("compose.startWithoutProject"), color: NookTheme.textSecondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .composerTip(tr("ws.new.noProjectDetail"))
         }
     }

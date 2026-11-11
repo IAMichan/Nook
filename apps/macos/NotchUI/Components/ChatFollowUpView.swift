@@ -87,6 +87,7 @@ private struct ChatFollowUpRow: View {
         .background(hovering ? NookTheme.rowHover : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .nookClickable()
         .onTapGesture { open(turn.chat) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
@@ -117,7 +118,7 @@ private struct ChatFollowUpRow: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.nookBorderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel(tr("chats.snooze"))

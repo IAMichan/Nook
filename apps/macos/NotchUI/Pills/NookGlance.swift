@@ -186,7 +186,7 @@ private struct GlanceCard<Content: View>: View {
             .roundedBackground(hovering ? NookTheme.graphite : NookTheme.field, radius: NookTheme.Radius.panel)
             .roundedHitShape(NookTheme.Radius.panel)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }

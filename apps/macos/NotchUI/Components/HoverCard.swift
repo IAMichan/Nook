@@ -45,7 +45,7 @@ struct HoverCardButton<Label: View>: View {
                 .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .padding(-NookTheme.Spacing.xs)
         .onHover { hovering = $0 }
         .pointerStyle(.link)

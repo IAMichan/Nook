@@ -148,7 +148,7 @@ extension PullRequestDetailView {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr("agents.pr.status.state"))
         .accessibilityLabel(verdict.title + (reason.map { ", " + readinessText($0) } ?? ""))
         .popover(isPresented: $showReadiness, arrowEdge: .bottom) {
@@ -359,7 +359,7 @@ extension PullRequestDetailView {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .disabled(issue.url == nil)
                 .help(issue.title)
             }

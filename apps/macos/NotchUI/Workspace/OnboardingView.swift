@@ -117,7 +117,7 @@ struct OnboardingView: View {
             }
             if let error { Text(error).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral) }
             Button(tr("onboarding.brain.external")) { app.openSettings(section: .brain) }
-                .buttonStyle(.link)
+                .buttonStyle(.nookLink)
                 .foregroundStyle(NookTheme.blue)
         }
     }
@@ -174,7 +174,7 @@ struct OnboardingView: View {
                     .roundedBackground(current ? NookTheme.rowSelected : NookTheme.field, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .help(titles[index])
                 .accessibilityLabel(titles[index])
                 .layoutPriority(current ? 1 : 0)

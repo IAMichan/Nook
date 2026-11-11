@@ -268,7 +268,7 @@ private struct ManageAccountSheet: View {
             } label: {
                 Label(account == nil ? tr("button.login") : tr("accounts.reauth"), systemImage: "arrow.triangle.2.circlepath")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.nookProminent)
 
             if account != nil {
                 ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) {
@@ -290,7 +290,7 @@ private struct ManageAccountSheet: View {
                     Label(app.antigravityUsage.noLogin ? tr("accounts.antigravitySignIn") : tr("accounts.reauth"),
                           systemImage: "arrow.triangle.2.circlepath")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .disabled(progress?.isBusy == true)
 
                 if let progress, progress.isBusy {
@@ -333,7 +333,7 @@ private struct ManageAccountSheet: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Button(tr("accounts.saveKey"), action: saveKey)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                         .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -392,7 +392,7 @@ private struct AccountColorPicker: View {
             .overlay(Circle().stroke(selected ? NookTheme.paper : Color.clear, lineWidth: 1.5))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.color"))
@@ -435,7 +435,7 @@ private struct AccountIconPicker: View {
             .overlay(Circle().stroke(selected ? NookTheme.paper : Color.clear, lineWidth: 1.5))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(tr(name))
         .accessibilityLabel(tr(name))
         .accessibilityHint(tr("accounts.icon"))
@@ -519,7 +519,7 @@ private struct AddAccountSheet: View {
                 .controlSize(.large)
             Button(addTitle) { add() }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
                 .disabled(!canAdd || saving)
         }

@@ -43,7 +43,7 @@ extension SettingsView {
                                 .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
                                 .contentShape(Circle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .accessibilityLabel(tr(swatch.name))
                         .accessibilityHint(tr("settings.display.accent"))
                         .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
@@ -120,7 +120,7 @@ extension SettingsView {
                             .background(NookTheme.shape(NookTheme.Radius.control).fill(selected ? NookTheme.iris : NookTheme.smoke))
                             .contentShape(NookTheme.shape(NookTheme.Radius.control))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
@@ -171,7 +171,7 @@ extension SettingsView {
             .roundedStrokeBorder(selected ? NookTheme.iris : Color.clear, radius: NookTheme.Radius.panel)
             .roundedHitShape(NookTheme.Radius.panel)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -314,7 +314,7 @@ extension SettingsView {
             .roundedStrokeBorder(chosen ? NookTheme.iris : NookTheme.line2, radius: NookTheme.Radius.chip, lineWidth: chosen ? 2 : 1)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(label)
         .accessibilityLabel(label)
         .accessibilityAddTraits(chosen ? .isSelected : [])

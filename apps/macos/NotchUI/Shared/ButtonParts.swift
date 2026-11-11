@@ -27,7 +27,7 @@ struct NookPrimaryButton: View {
             .roundedBackground(hovering ? NookTheme.primaryHover : NookTheme.primary, radius: NookTheme.Radius.control)
             .hoverLift(hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         // A disabled button dims, so it does not look like one that ignores the click.
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
@@ -61,7 +61,7 @@ struct NookGhostButton: View {
             .contentShape(Rectangle())
             .hoverLift(hovering)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }
@@ -88,7 +88,7 @@ struct NookIconButton: View {
                                    radius: NookTheme.Radius.control)
                 .hoverLift(hovering, scale: 1.03)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .labelTip(label, inComposer: inComposer)
         .accessibilityLabel(label)

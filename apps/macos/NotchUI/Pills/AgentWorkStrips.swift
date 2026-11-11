@@ -59,7 +59,7 @@ struct FreshConversationStrip: View {
             }
             Spacer(minLength: 6)
             Button(tr("ws.fresh.keep"), action: keep)
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .foregroundStyle(NookTheme.iris)
                 .help(tr("ws.fresh.keep.help"))
         }
@@ -99,7 +99,7 @@ struct TasksStrip: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .accessibilityLabel(tr("ws.tasks.accessibility", progress.done, progress.total, progress.current))
             if open {
                 VStack(alignment: .leading, spacing: 5) {
@@ -208,7 +208,7 @@ struct SubagentBar: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .accessibilityLabel(tr("ws.subagents.title") + ", " + tr("ws.subagents.progress", done, agents.count))
                 if let openPanel {
                     ToolbarIconButton("sidebar.right", tr("ws.subagents.openPanel"), height: 20, width: 20) {
@@ -257,7 +257,7 @@ struct SubagentBar: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             if shown == agent.id {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     if !agent.prompt.isEmpty {
@@ -545,7 +545,7 @@ struct PullRequestWatchStrip: View {
                 PullRequestLiveStateBadge(url: url, fallback: PullRequestBadge.Glyph(rawValue: watch?.state ?? "open") ?? .open)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(tr("ws.prwatch.open"))
             // In a list of branches the states share one column, so the titles after them line up.
             .frame(minWidth: branch == nil ? nil : Self.stateColumn, alignment: .leading)
@@ -568,6 +568,7 @@ struct PullRequestWatchStrip: View {
         .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
         // The whole row opens the pull request (in the session's side panel); the checks and the eye keep their own click.
         .contentShape(Rectangle())
+        .nookClickable()
         .onTapGesture(perform: open)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: tr("ws.prwatch.open"), open)
@@ -618,7 +619,7 @@ struct PullRequestWatchStrip: View {
                 .frame(minWidth: 22, minHeight: 22)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(ci + " · " + tr("ws.prwatch.ciHelp"))
             .accessibilityLabel(ci)
             .popover(isPresented: $showsCI, arrowEdge: .top) {
@@ -638,7 +639,7 @@ struct PullRequestWatchStrip: View {
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(label + " · " + tr(watching ? "ws.prwatch.stop" : "ws.prwatch.startHelp"))
         .accessibilityLabel(label)
     }
@@ -811,7 +812,7 @@ struct BackgroundCommandBar: View {
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .accessibilityLabel(tr("ws.background.title") + ", " + tr("ws.subagents.running", running)
                                     + (failed > 0 ? ", " + tr("ws.background.failedCount", failed) : ""))
                 if let openPanel {
@@ -875,7 +876,7 @@ struct BackgroundCommandBar: View {
                 .frame(minHeight: 22)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nookPlain)
             .help(command.command)
             if expanded { detail(command) }
         }
@@ -954,7 +955,7 @@ struct BackgroundCommandLink: View {
             .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : NookTheme.field))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .padding(.leading, TranscriptStyle.workIndent)
         .help(tr("ws.background.showInBar"))

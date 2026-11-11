@@ -51,7 +51,7 @@ struct ChatPollView: View {
                         Text(showVoters ? tr("chat.poll.hideVotes") : tr("chat.poll.viewVotes"))
                             .foregroundStyle(NookTheme.blue)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.nookPlain)
                 }
                 if onVote == nil {
                     Spacer(minLength: NookTheme.Spacing.sm)
@@ -118,7 +118,7 @@ struct ChatPollView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(onVote == nil)
         .accessibilityLabel(accessibilityLabel(option))
         .accessibilityAddTraits(option.chosen ? .isSelected : [])

@@ -153,7 +153,7 @@ struct NookSearchLauncher: View {
             .overlay(shape.strokeBorder(hovering ? NookTheme.line2 : NookTheme.fieldStroke, lineWidth: 1))
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(help ?? prompt)
@@ -233,7 +233,7 @@ struct PanelNewButton: View {
                 .roundedBackground(active || hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(label)

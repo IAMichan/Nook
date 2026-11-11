@@ -208,7 +208,7 @@ struct ForgeSetupSheet: View {
             if managing != nil || kind.canCheckToken {
                 Button(tr("settings2.done")) { dismiss() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.large)
             } else {
                 Button(tr("button.cancel")) { dismiss() }
@@ -216,7 +216,7 @@ struct ForgeSetupSheet: View {
                     .controlSize(.large)
                 Button(tr("settings.forge.add"), action: save)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.large)
                     .disabled(!canSave)
             }
@@ -285,7 +285,7 @@ struct ForgeSetupSheet: View {
                         Button(tr("button.cancel")) { withAnimation(NookTheme.reveal) { replacing = false; token = "" } }
                     }
                     Button(tr("button.save"), action: submit)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.nookProminent)
                         .disabled(!canSave || checking)
                 }
             } else {

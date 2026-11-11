@@ -492,7 +492,7 @@ struct AgentInboxList: View {
             .roundedBackground(hovered ? NookTheme.rowHover : .clear, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(group.project)
         .accessibilityLabel(name)
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
@@ -515,7 +515,7 @@ struct AgentInboxList: View {
                         .padding(.horizontal, NookTheme.Spacing.lg)
                         .padding(.vertical, NookTheme.Spacing.sm)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -582,7 +582,7 @@ struct AgentInboxList: View {
             .frame(height: 20)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
         .accessibilityLabel(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
         .accessibilityValue(signal.map { count + ", " + $0.help } ?? count)
@@ -915,7 +915,7 @@ struct AgentInboxList: View {
                             Image(icon: "arrow.uturn.backward")
                         }
                     }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.nookPlain)
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
                         .help(tr("inbox.undo"))

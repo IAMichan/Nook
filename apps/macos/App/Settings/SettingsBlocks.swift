@@ -34,7 +34,7 @@ struct ConfigPreview: View {
                 .controlSize(.large)
             Button(change.install ? tr("button.link") : tr("button.unlink"), action: onConfirm)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
     }
@@ -212,7 +212,7 @@ struct SettingsInfoButton: View {
                 .foregroundStyle(NookTheme.textTertiary)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(text)
         .accessibilityLabel(tr("settings.info.more"))
         .accessibilityHint(text)
@@ -308,7 +308,7 @@ struct SettingsLinkRow: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 }
 
@@ -1138,7 +1138,7 @@ struct WatchedPullRequestsSection: View {
                     .controlSize(.large)
                 Button(tr("settings.pulls.addButton"), action: add)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.nookProminent)
                     .controlSize(.large)
                     .disabled(!canAdd)
             }

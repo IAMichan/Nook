@@ -22,7 +22,7 @@ struct LineageLink: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .disabled(parent == nil)
         .onHover { hovering = $0 }
         .help(parent == nil ? tr("lineage.deleted") : tr("lineage.open"))

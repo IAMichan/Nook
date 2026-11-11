@@ -19,7 +19,7 @@ struct SelectionModeButton: View {
                 .roundedBackground(active ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
         .help(active ? tr("select.done") : tr("select.help"))
         .accessibilityLabel(active ? tr("select.done") : tr("select.start"))
     }
@@ -41,7 +41,7 @@ struct SelectableRow: ViewModifier {
                         .frame(width: 22, height: 30)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .accessibilityLabel(tr("select.start"))
                 .padding(.leading, 2)
                 .transition(.move(edge: .leading).combined(with: .opacity))
@@ -202,7 +202,7 @@ struct SelectionBar: View {
                 .foregroundStyle(NookTheme.iris)
                 .fixedSize()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 
     private func title(_ action: SelectionAction) -> String {
@@ -233,7 +233,7 @@ struct SelectionBar: View {
                     .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.nookPlain)
                 .opacity(usable ? 1 : 0.4)
             }
         }
@@ -254,7 +254,7 @@ struct SelectionBar: View {
                 .roundedBackground(NookTheme.coral.opacity(0.85), radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.nookPlain)
     }
 }
 
