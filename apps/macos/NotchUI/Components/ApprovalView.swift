@@ -44,6 +44,7 @@ struct ApprovalView: View {
         Group {
             if inline { inlineBody } else { cardBody }
         }
+        .background(keyboardShortcuts)
         // A typed secret belongs to its own request only.
         .onChange(of: approval.id) {
             secretValue = ""
@@ -60,6 +61,7 @@ struct ApprovalView: View {
                 content
                 secretField
                 reasonField
+                scopeCaption
                 AdaptiveActionRow {
                     Label(AgentDisplayState.approval.longWord, systemImage: "shield")
                         .font(NookTheme.TextStyle.detail)
@@ -88,6 +90,7 @@ struct ApprovalView: View {
             content
             secretField
             reasonField
+            scopeCaption
         }
         .padding(NookTheme.Spacing.lg)
         .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
@@ -164,6 +167,29 @@ struct ApprovalView: View {
                 }
             }
         }
+    }
+
+    /// What "Always" would allow and how far it reaches, before it is pressed (`PermissionScope`).
+    @ViewBuilder
+    private var scopeCaption: some View {
+        if approval.canAlways, let scope = approval.alwaysScope {
+            Label(tr("approval.scope.always", scope), systemImage: "checkmark.shield")
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// One keystroke decides: ⌘↩ allows, ⇧⌘↩ always allows, ⌘. denies. Not plain letters, which would land in the composer.
+    private var keyboardShortcuts: some View {
+        ZStack {
+            Button("") { allow() }.keyboardShortcut(.return, modifiers: .command)
+            Button("") { deny() }.keyboardShortcut(".", modifiers: .command)
+            if approval.canAlways { Button("") { onDecide(.always) }.keyboardShortcut(.return, modifiers: [.command, .shift]) }
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     /// Where the reason for a denial is typed: Return denies with it, Escape closes it again.
