@@ -316,7 +316,24 @@ struct TranscriptLiveLine: View {
     var openConsole: (() -> Void)? = nil
     var help: String? = nil
 
+    /// What the line says about a step: the step, the terminal it opens and its tooltip.
+    private struct Shown {
+        var activity: AgentActivity
+        var openConsole: (() -> Void)?
+        var help: String?
+    }
+
+    /// The last step the line showed. When it ends and nothing else runs yet, the line goes on showing it for a moment
+    /// (`AgentActivity.holds`, until `released`), so quick or parallel commands read as one steady line instead of a
+    /// blinking one. Decided while the view is drawn, so not even one frame shows the pause in between.
+    @State private var lastStep: Shown?
+    @State private var released = false
+    @State private var ended = 0
+
     var body: some View {
+        let held = released ? nil : lastStep.flatMap { AgentActivity.holds($0.activity, before: activity) ? $0 : nil }
+        let line = held ?? Shown(activity: activity, openConsole: openConsole, help: help)
+        let activity = line.activity, openConsole = line.openConsole, help = line.help
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let tasks { TaskChecklistCard(steps: tasks) }
             if waiting {
@@ -332,6 +349,20 @@ struct TranscriptLiveLine: View {
                                    live: true, link: openConsole == nil ? nil : "sidebar.right", action: openConsole)
                     .help(openConsole == nil ? (help ?? "") : tr("ws.console.open"))
             }
+        }
+        .onChange(of: self.activity, initial: true) { old, new in
+            if new.isStep {
+                lastStep = Shown(activity: new, openConsole: self.openConsole, help: self.help)
+                released = false
+            } else if old.isStep {
+                ended += 1
+            }
+        }
+        .task(id: ended) {
+            guard ended > 0 else { return }
+            try? await Task.sleep(for: .seconds(AgentActivity.stepDwell))
+            guard !Task.isCancelled else { return }
+            released = true
         }
     }
 }
