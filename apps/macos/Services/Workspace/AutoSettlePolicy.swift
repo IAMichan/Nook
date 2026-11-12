@@ -62,8 +62,8 @@ enum AutoSettlePolicy {
     enum SettleReason: String, Equatable, Sendable { case mergedPullRequest, closedPullRequest, inactivity }
 
     enum KeepReason: String, Equatable, Sendable {
-        case disabled, alreadySettled, optedOut, pinned, openRequest, turnRunning, backgroundWork, queuedMessages
-        case snoozed, openPullRequest, recentActivity
+        case disabled, alreadySettled, optedOut, unsettledByYou, pinned, openRequest, turnRunning, backgroundWork
+        case queuedMessages, snoozed, openPullRequest, recentActivity
     }
 
     enum Decision: Equatable, Sendable {
@@ -79,6 +79,8 @@ enum AutoSettlePolicy {
         if row.settled { return .keep(.alreadySettled) }
         guard settings.enabled else { return .keep(.disabled) }
         if settings.perThreadOptOut.contains(row.id) { return .keep(.optedOut) }
+        // You brought it back from Settled: it stays until something new happens in it, then the rules apply again.
+        if let unsettled = row.unsettledAt, row.lastActivity <= unsettled { return .keep(.unsettledByYou) }
         if row.pinned { return .keep(.pinned) }
         if row.needsYou { return .keep(.openRequest) }
         if row.isActive { return .keep(.turnRunning) }
@@ -95,8 +97,11 @@ enum AutoSettlePolicy {
         case .open where settings.keepWithOpenPullRequest: return .keep(.openPullRequest)
         default: break
         }
+        // A snooze that ran out brought the session back to you: its quiet time counts from then.
+        let woke = row.snoozedUntil.flatMap { $0 <= now ? $0 : nil }
+        let quietSince = max(row.lastActivity, woke ?? .distantPast)
         if settings.inactivityDays > 0,
-           row.lastActivity < now.addingTimeInterval(-Double(settings.inactivityDays) * 86_400) {
+           quietSince < now.addingTimeInterval(-Double(settings.inactivityDays) * 86_400) {
             return .settle(.inactivity)
         }
         return .keep(.recentActivity)

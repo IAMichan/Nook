@@ -45,6 +45,24 @@ final class AutoSettlePolicyTests: XCTestCase {
         XCTAssertEqual(decide(row(ageDays: 50), off), .keep(.recentActivity))
     }
 
+    func testReopenedSessionStaysUntilItHasNewActivity() {
+        // Brought back from Settled after it went quiet: the rules leave it alone, also a merged pull request.
+        let reopened = row(ageDays: 30) { $0.unsettledAt = self.now.addingTimeInterval(-86_400) }
+        XCTAssertEqual(decide(reopened), .keep(.unsettledByYou))
+        XCTAssertEqual(decide(reopened, merged: true), .keep(.unsettledByYou))
+        // Something new happened in it after that: the usual rules apply again.
+        let resumed = row(ageDays: 5) { $0.unsettledAt = self.now.addingTimeInterval(-10 * 86_400) }
+        XCTAssertEqual(decide(resumed), .settle(.inactivity))
+    }
+
+    func testQuietTimeCountsFromWhenASnoozeRanOut() {
+        // Quiet for 10 days, but a snooze woke it a day ago: not quiet long enough yet.
+        let woke = row(ageDays: 10) { $0.snoozedUntil = self.now.addingTimeInterval(-86_400) }
+        XCTAssertEqual(decide(woke), .keep(.recentActivity))
+        let wokeLongAgo = row(ageDays: 10) { $0.snoozedUntil = self.now.addingTimeInterval(-5 * 86_400) }
+        XCTAssertEqual(decide(wokeLongAgo), .settle(.inactivity))
+    }
+
     func testMergedPullRequest() {
         XCTAssertEqual(decide(row(ageDays: 0), merged: true), .settle(.mergedPullRequest))
         var s = on; s.settleOnMergedPullRequest = false
@@ -75,8 +93,9 @@ final class AutoSettlePolicyTests: XCTestCase {
     func testSnoozeBlocksUntilItEndsOrWakes() {
         let snoozed = row { $0.snoozedUntil = self.now.addingTimeInterval(3600); $0.snoozedAt = self.now.addingTimeInterval(-86_400 * 6) }
         XCTAssertEqual(decide(snoozed), .keep(.snoozed))
-        // Expired snooze no longer blocks.
-        let expired = row { $0.snoozedUntil = self.now.addingTimeInterval(-1) }
+        // An expired snooze no longer blocks (its quiet time counts from when it ran out, see
+        // testQuietTimeCountsFromWhenASnoozeRanOut).
+        let expired = row { $0.snoozedUntil = self.now.addingTimeInterval(-4 * 86_400) }
         XCTAssertEqual(decide(expired), .settle(.inactivity))
         // Woken early by a failure: not hidden any more, so not protected.
         let failed = row { $0.snoozedUntil = self.now.addingTimeInterval(3600); $0.attention = .failed }

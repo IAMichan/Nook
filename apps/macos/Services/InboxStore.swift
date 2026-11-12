@@ -228,7 +228,7 @@ final class InboxStore: ObservableObject {
     func undo(now: Date = Date()) -> Bool {
         guard let entry = undoLog.undo(now: now) else { return false }
         switch entry.kind {
-        case .settled: for key in entry.ids { FinishedSessions.shared.reopenByUser(key) }
+        case .settled, .autoSettled: for key in entry.ids { FinishedSessions.shared.reopenByUser(key) }
         case .unsettled: for key in entry.ids { FinishedSessions.shared.mark(key) }
         case .pinned: for id in entry.ids { state.unpin(id) }
         case .unpinned: for id in entry.ids { state.pin(id) }
