@@ -94,12 +94,14 @@ struct AgentsTab: View {
                         switch selection {
                         case .live(let session):
                             SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
-                                             agentWorking: session.status == .running || session.status == .waiting) { tools in
+                                             agentWorking: session.status == .running || session.status == .waiting,
+                                             usageProfileID: app.profile(for: session)?.id) { tools in
                                 AgentSessionDetail(selection: .live(session), headerAccessory: tools)
                             }
                             .id(session.id)
                         case .past(let session):
-                            SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
+                            SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
+                                             usageProfileID: app.profile(for: session)?.id) { tools in
                                 // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
                                 // pull request status as one started here. The read-only view is for the rest.
                                 ImportedSession(session: session) {

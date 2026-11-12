@@ -84,8 +84,11 @@ extension AgentRunPanel {
                 }
                 .buttonStyle(.nookPlain)
                 .help(tr("ws.remote.terminal", remote.host))
+                // On another machine the session panel does not dock, so its usage is the ring here.
+                SessionUsageButton(source: SessionUsageSource(runID: runID)).toolbarGroup()
             } else {
-                FolderGitButton(directory: run.workingDirectory, runID: runID, agentWorking: run.status.isActive, showChanges: {
+                FolderGitButton(directory: run.workingDirectory, runID: runID, agentWorking: run.status.isActive,
+                                usage: SessionUsageSource(runID: runID), showChanges: {
                     workspace.markReviewed(runID)
                     // Next to the conversation when it has the side panel, otherwise as a task of its own.
                     if headerAccessory != nil {

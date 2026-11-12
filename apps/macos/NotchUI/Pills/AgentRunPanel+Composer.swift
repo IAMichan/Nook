@@ -172,21 +172,12 @@ extension AgentRunPanel {
         return true
     }
 
-    /// The context ring from the first token (the microphone is the composer's own, `dictating()`). Its card holds what
-    /// fills the window, the choice to summarize before your next message (back at a session whose prompt cache
-    /// expired) and Summarize now.
+    /// Beside send, only while the context or a limit needs a decision (`ComposerUsageAlert`); the numbers themselves are
+    /// in the session panel (`SessionUsageCard`, or the header's ring without the docked panel). The microphone is the
+    /// composer's own (`dictating()`).
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
-        if let usage = workspace.contextUsage(run), ContextMeter.worthShowing(used: usage.usedTokens, window: usage.window) {
-            // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
-            let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
-            ComposerContextRing(usage: usage,
-                                onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") },
-                                autoCompactAt: workspace.autoCompactAt(run),
-                                compactFirst: workspace.offersCompactFirst(run) ? workspace.compactsFirst(run) : nil,
-                                toggleCompactFirst: { workspace.toggleCompactFirst(runID) },
-                                onOpen: { workspace.refreshContextUsage(runID) })
-        }
+        ComposerUsageAlert(source: SessionUsageSource(runID: runID))
     }
 
     // MARK: Composer
@@ -317,7 +308,6 @@ extension AgentRunPanel {
                         modeMenu(run)
                         ComposerDivider()
                     }
-                    ComposerUsageRing.forAccount(app.profile(for: run), app: app)
                 }
                 .rich(composerModel, composerConfig(run))
                 .trailing { composerTrailing(run) }
