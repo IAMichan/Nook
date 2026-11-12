@@ -46,3 +46,18 @@ describe("toasts", () => {
     expect(queue.current).toBeNull();
   });
 });
+
+describe("toasts with a button", () => {
+  it("run the button once, close, and stay a little longer than a plain toast", () => {
+    let undone = 0;
+    const queue = new ToastQueue();
+    queue.show("Gesprek verwijderd", "info", undefined, { label: "Ongedaan maken", run: () => undone++ });
+    queue.advance(TOAST_SECONDS.info, false);
+    expect(queue.current?.action?.label).toBe("Ongedaan maken");
+    queue.act();
+    expect(undone).toBe(1);
+    expect(queue.current).toBeNull();
+    queue.act();
+    expect(undone).toBe(1);
+  });
+});
