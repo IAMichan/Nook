@@ -734,6 +734,26 @@ struct AgentListItem: Identifiable, Equatable {
     }
 }
 
+/// The project a session row names: the name you gave it (else its folder's) and its badge (your icon, else its initials
+/// on a tint picked from the name, `ProjectIcon.defaultIcon`).
+struct RowProject: Equatable {
+    var name: String
+    var icon: ProjectIcon
+    /// The project's folder on this Mac, for the row's Project menu; nil for a project of sessions elsewhere.
+    var path: String?
+}
+
+/// A project's badge in a session row (the row names the project beside it).
+struct ProjectBadge: View {
+    let project: RowProject
+    var size: CGFloat = 14
+
+    var body: some View {
+        ProjectIconView(icon: project.icon, size: size)
+            .foregroundStyle(NookTheme.textSecondary)
+    }
+}
+
 /// What a row can do on hover: the right slot swaps, without shifting the layout, between the
 /// status and these buttons.
 struct AgentRowActions {
@@ -775,6 +795,9 @@ struct AgentListRow: View, Equatable {
     var grouped = false
     /// When a snoozed row wakes, as text ("tot 9:00").
     var wakeLabel: String? = nil
+    /// The project it belongs to, by the name and badge you gave it: on the first line in place of the folder, and before
+    /// the name on a shelf row. Nil for a session without a project.
+    var project: RowProject? = nil
     var actions: AgentRowActions? = nil
     /// The session's pull requests, of its branch now and of the ones it worked on before: "#12" (or "#12 +1") on the row,
     /// and each of them in the card it shows on hover.
@@ -797,7 +820,7 @@ struct AgentListRow: View, Equatable {
         lhs.item == rhs.item && lhs.now == rhs.now && lhs.selected == rhs.selected && lhs.receded == rhs.receded
             && lhs.jumpHint == rhs.jumpHint && lhs.keyFocused == rhs.keyFocused && lhs.sweepOrigin == rhs.sweepOrigin
             && lhs.pinned == rhs.pinned && lhs.woke == rhs.woke && lhs.slim == rhs.slim && lhs.grouped == rhs.grouped
-            && lhs.wakeLabel == rhs.wakeLabel && lhs.pullRequests == rhs.pullRequests
+            && lhs.wakeLabel == rhs.wakeLabel && lhs.pullRequests == rhs.pullRequests && lhs.project == rhs.project
             && lhs.actions?.pinned == rhs.actions?.pinned && lhs.actions?.settled == rhs.actions?.settled
             && (lhs.actions?.onSnoozeUntil != nil) == (rhs.actions?.onSnoozeUntil != nil)
             && (lhs.actions?.onWake != nil) == (rhs.actions?.onWake != nil)
@@ -905,7 +928,7 @@ struct AgentListRow: View, Equatable {
     /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
-        AgentRowLayout(folder: item.folder, folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
+        AgentRowLayout(folder: project?.name ?? item.folder, folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
             fadingSlot
         } title: {
             marks
@@ -914,6 +937,8 @@ struct AgentListRow: View, Equatable {
             logo(size: 14)
         } meta: {
             metaLine
+        } mark: {
+            project.map { AnyView(ProjectBadge(project: $0, size: 14)) }
         }
     }
 
@@ -1041,7 +1066,12 @@ struct AgentListRow: View, Equatable {
 
     private var slimBody: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            AgentMark(agent: item.agent, account: item.account, size: 16, dimmed: true, ring: background)
+            // The project's badge says where it belongs; the agent's logo is in the hover card.
+            if let project {
+                ProjectBadge(project: project, size: 16).opacity(0.8)
+            } else {
+                AgentMark(agent: item.agent, account: item.account, size: 16, dimmed: true, ring: background)
+            }
             Text(item.title)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)

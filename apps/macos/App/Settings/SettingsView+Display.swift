@@ -148,14 +148,14 @@ struct GeneralListAndConfirmations: View {
     /// Whether any of General's own settings differs from its default, so "Restore defaults" has something to do.
     @MainActor static var changed: Bool {
         let inbox = InboxStore.shared
-        return !inbox.groupByProject || !inbox.showWorking
+        return inbox.groupByProject || !inbox.showWorking
             || UserDefaults.standard.object(forKey: AppDelegate.confirmQuitKey) as? Bool == false
             || UserDefaults.standard.bool(forKey: QuitHoldMonitor.enabledKey)
     }
 
     /// Puts General's own settings back to how Nook ships. The languages stay: they are yours, not a default.
     @MainActor static func restoreDefaults() {
-        InboxStore.shared.groupByProject = true
+        InboxStore.shared.groupByProject = false
         InboxStore.shared.showWorking = true
         UserDefaults.standard.removeObject(forKey: AppDelegate.confirmQuitKey)
         UserDefaults.standard.removeObject(forKey: QuitHoldMonitor.enabledKey)
