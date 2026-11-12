@@ -693,13 +693,43 @@ enum NookWindowLook {
         adopted.add(window)
     }
 
-    /// After a change of mode or palette: every adopted window takes the appearance again, which redraws its colors
-    /// (a dynamic color is resolved again when the appearance is set, also to the same one).
+    /// After a change of mode: every adopted window takes the new appearance, and every window draws the palette anew.
     static func refresh() {
-        for window in adopted.allObjects {
-            window.appearance = window.appearance === appearance ? nil : window.appearance
-            window.appearance = appearance
-            window.contentView?.needsDisplay = true
+        for window in adopted.allObjects { window.appearance = appearance }
+        repaint()
+    }
+
+    private static var pendingRepaint: DispatchWorkItem?
+
+    /// After a change of palette: every window of Nook draws its colors anew. A repaint costs a full pass over every
+    /// window (about 150 ms for Settings alone), so it waits until the colors rest for `settle` seconds: a color picker
+    /// sends a change per pointer move, and repainting on each one made dragging stutter. Nothing is rebuilt, so scroll
+    /// positions, open folds, text being typed and the color picker's link to its panel all stay.
+    static func repaintSoon(settle: TimeInterval = 0) {
+        pendingRepaint?.cancel()
+        let work = DispatchWorkItem {
+            pendingRepaint = nil
+            repaint()
+        }
+        pendingRepaint = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + settle, execute: work)
+    }
+
+    /// SwiftUI resolves a dynamic color once per color scheme and keeps it: setting the same appearance again, a new
+    /// value in the environment or a redraw leaves the old color on screen. Only a real change of scheme resolves every
+    /// color again. So each window takes the other scheme, lays out once in it (which resolves its colors), and gets its
+    /// own appearance back in the same pass of the run loop, before anything reaches the screen: one frame in the
+    /// right colors, no flash, no rebuilt views. AppKit views redraw their dynamic colors on the same change.
+    static func repaint() {
+        let dark = NSAppearance(named: .darkAqua), light = NSAppearance(named: .aqua)
+        for window in NSApp.windows where !(window is NSColorPanel) && !(window is NSFontPanel) {
+            guard let content = window.contentView else { continue }
+            let own = window.appearance
+            let isDark = window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua
+            window.appearance = isDark ? light : dark
+            content.layoutSubtreeIfNeeded()
+            window.appearance = own
+            content.needsDisplay = true
             window.invalidateShadow()
         }
     }
