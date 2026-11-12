@@ -158,10 +158,14 @@ struct ChatAppSheet: View {
                 SheetPart(tr("sheet.part.canDo")) { SettingNote(howItReads) }
             }
             // Rarely needed, folded away last, the same words as on the linked app.
-            if app == "whatsapp" {
+            if let link = MessagingApps.known(app)?.ownLink {
                 SettingsFold(ChatOwnAdvanced.title(app)) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
-                        .padding(.top, NookTheme.Spacing.sm)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        switch link {
+                        case .whatsAppGateway: WhatsAppGatewayRows()
+                        }
+                    }
+                    .padding(.top, NookTheme.Spacing.sm)
                 }
             }
         }
@@ -318,7 +322,7 @@ struct ChatLinkSteps: View {
                     Task { await linker.submitBrowser(collected, lastURL: last) }
                 }
             } label: {
-                Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
+                Label(tr("chats.link.browser.open", url.host ?? network.name), icon: "person.badge.key")
             }
             .buttonStyle(.nookProminent)
             .controlSize(.large)
@@ -351,7 +355,7 @@ struct ChatLinkSteps: View {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFit()
             } placeholder: {
-                ProgressView()
+                PatientSpinner()
             }
             .frame(maxWidth: 240, maxHeight: 160)
         case .nothing:

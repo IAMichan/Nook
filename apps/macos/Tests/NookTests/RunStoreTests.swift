@@ -91,6 +91,20 @@ final class RunStoreTests: XCTestCase {
         XCTAssertTrue(store.loadEvents(id).isEmpty)
     }
 
+    /// Deleting in the background follows the saves handed over before it, and drops the ones after it.
+    func testDeletingInTheBackgroundKeepsTheOrderOfSaves() {
+        let store = RunStore(directory: folder)
+        let id = UUID()
+        store.saveEventsAsync(id, [RunEvent(kind: .user, text: "first")])
+        store.appendEventAsync(id, RunEvent(kind: .assistant, text: "second"))
+        store.deleteEventsAsync(id)
+        store.appendEventAsync(id, RunEvent(kind: .assistant, text: "late"))
+        store.saveEventsAsync(id, [RunEvent(kind: .user, text: "late save")])
+        store.flush()
+        XCTAssertTrue(store.loadEvents(id).isEmpty)
+        XCTAssertTrue(RunStore(directory: folder).loadEvents(id).isEmpty)
+    }
+
     func testLongTimelinesAreKeptWhole() throws {
         let store = RunStore(directory: folder)
         let id = UUID()

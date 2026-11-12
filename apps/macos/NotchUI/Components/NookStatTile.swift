@@ -9,7 +9,7 @@ struct NookStatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            Label(title, systemImage: symbol).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+            Label(title, icon: symbol).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
             Text(value).font(NookTheme.rounded(24, .semibold)).monospacedDigit().foregroundStyle(NookTheme.paper)
             Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
         }

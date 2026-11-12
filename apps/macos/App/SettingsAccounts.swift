@@ -266,7 +266,7 @@ private struct ManageAccountSheet: View {
             Button {
                 app.reauthenticate(profile)
             } label: {
-                Label(account == nil ? tr("button.login") : tr("accounts.reauth"), systemImage: "arrow.triangle.2.circlepath")
+                Label(account == nil ? tr("button.login") : tr("accounts.reauth"), icon: "arrow.triangle.2.circlepath")
             }
             .buttonStyle(.nookProminent)
 
@@ -288,7 +288,7 @@ private struct ManageAccountSheet: View {
                     app.reauthenticate(profile)
                 } label: {
                     Label(app.antigravityUsage.noLogin ? tr("accounts.antigravitySignIn") : tr("accounts.reauth"),
-                          systemImage: "arrow.triangle.2.circlepath")
+                          icon: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.nookProminent)
                 .disabled(progress?.isBusy == true)
@@ -310,7 +310,7 @@ private struct ManageAccountSheet: View {
         let stored = profile.kind == .claude ? app.profiles.hasAPIKey(profile) : account != nil
         if stored && key.isEmpty {
             HStack {
-                Label(tr("accounts.keyStored"), systemImage: "key.fill")
+                Label(tr("accounts.keyStored"), icon: "key.fill")
                     .foregroundStyle(NookTheme.mint)
                 Spacer()
                 if profile.kind == .claude {

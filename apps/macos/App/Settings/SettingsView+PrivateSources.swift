@@ -29,7 +29,7 @@ extension SettingsView {
                 // The privacy level can keep a source on this Mac by itself (the screen when strict): shown locked.
                 let byLevel = settings.privacyLevel.localOnlySources.contains(source.id)
                 Toggle(isOn: byLevel ? .constant(true) : localOnlyBinding(source.id)) {
-                    Label(Self.sourceName(source), systemImage: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
+                    Label(Self.sourceName(source), icon: byLevel || settings.localOnlySources.contains(source.id) ? "lock.fill" : "lock.open")
                 }
                 .disabled(byLevel)
                 .help(byLevel ? tr("settings.private.byLevel") : "")

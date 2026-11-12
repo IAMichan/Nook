@@ -273,12 +273,16 @@ enum ClaudeCodeBrain {
                     return
                 }
                 canceller.adopt(process)
-                if let input, let stdin {
-                    input.fileHandleForWriting.write(stdin)
-                    try? input.fileHandleForWriting.close()
-                }
+                try? out.fileHandleForWriting.close()
+                // Armed before the prompt goes in, so a program that never reads it still ends.
                 let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: deadline)
+                if let input, let stdin {
+                    // From a background queue while the answer is read: never blocks, never raises on a closed pipe.
+                    try? input.fileHandleForReading.close()
+                    ProcessRunner.feed(stdin, to: input.fileHandleForWriting, until: Date().addingTimeInterval(120))
+                    try? input.fileHandleForWriting.close()
+                }
                 // Line by line as it arrives, so the answer shows while it is written.
                 var data = Data()
                 var pending = Data()

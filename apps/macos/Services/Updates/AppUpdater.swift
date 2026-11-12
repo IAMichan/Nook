@@ -1150,10 +1150,10 @@ final class Installation: @unchecked Sendable {
         append("\n== \(name) \(arguments.joined(separator: " "))\n")
         let output = try FileHandle(forWritingTo: logURL)
         defer { try? output.close() }
-        output.seekToEndOfFile()
+        _ = try? output.seekToEnd()
         let reader = try FileHandle(forReadingFrom: logURL)
         defer { try? reader.close() }
-        reader.seekToEndOfFile()
+        _ = try? reader.seekToEnd()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -1203,8 +1203,9 @@ final class Installation: @unchecked Sendable {
 
     private func append(_ text: String) {
         guard let handle = try? FileHandle(forWritingTo: logURL) else { return }
-        handle.seekToEndOfFile()
-        handle.write(Data(text.utf8))
+        // The throwing calls: the legacy ones raise an Objective-C exception (a crash) on a full disk or a lost volume.
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(text.utf8))
         try? handle.close()
     }
 }

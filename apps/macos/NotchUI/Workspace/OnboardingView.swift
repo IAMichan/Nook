@@ -94,7 +94,7 @@ struct OnboardingView: View {
     private var brainStep: some View {
         OnboardingPage(title: tr("onboarding.brain.title"), detail: tr("onboarding.brain.detail", EmbeddedModel.memoryGB)) {
             if settings.brainReady {
-                Label(tr("settings.checklist.brain.ready", settings.activeModelName), systemImage: "checkmark.circle.fill")
+                Label(tr("settings.checklist.brain.ready", settings.activeModelName), icon: "checkmark.circle.fill")
                     .foregroundStyle(NookTheme.mint)
             } else if let best = recommendations.first {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -113,7 +113,7 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .panelCard()
             } else {
-                ProgressView()
+                PatientSpinner().frame(height: 60)
             }
             if let error { Text(error).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral) }
             Button(tr("onboarding.brain.external")) { app.openSettings(section: .brain) }
@@ -240,12 +240,7 @@ struct OnboardingView: View {
         StatusRow(title: permission.title, detail: permission.detail, state: granted ? .done : .todo) {
             HStack(spacing: NookTheme.Spacing.md) {
                 if !permission.isRecommended && !granted {
-                    Text(tr("onboarding.permissions.optionalBadge"))
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .padding(.horizontal, NookTheme.Spacing.md)
-                        .padding(.vertical, NookTheme.Spacing.xxs)
-                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
+                    NookTag(tr("onboarding.permissions.optionalBadge"), size: .regular)
                 }
                 if !granted {
                     SmallGhostButton(title: tr("button.allow")) {

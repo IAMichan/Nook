@@ -80,7 +80,7 @@ extension SettingsView {
         Section {
             ForEach(settings.neverReadApps, id: \.self) { bundleID in
                 HStack {
-                    Label(Self.appName(bundleID), systemImage: "eye.slash")
+                    Label(Self.appName(bundleID), icon: "eye.slash")
                     Spacer()
                     Button(tr("settings.privacy.neverRead.remove")) {
                         settings.neverReadApps.removeAll { $0 == bundleID }

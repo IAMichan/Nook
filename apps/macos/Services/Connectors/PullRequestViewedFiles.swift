@@ -78,6 +78,6 @@ struct PullRequestViewedFiles: Codable, Equatable, Sendable {
 
     func save(defaults: UserDefaults = .standard) {
         if defaults === UserDefaults.standard { Self.kept = self }
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey)
+        defaults.setEncoded(self, forKey: Self.defaultsKey)
     }
 }

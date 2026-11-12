@@ -186,7 +186,6 @@ struct PullRequestDiffStatBar: View {
 struct PullRequestHoverRow<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let content: () -> Content
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -194,11 +193,10 @@ struct PullRequestHoverRow<Content: View>: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(hovering ? NookTheme.rowHover : Color.clear)
+                .hoverRowFill(radius: nil)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
     }
 }
 

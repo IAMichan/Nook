@@ -290,7 +290,7 @@ struct ForgeSetupSheet: View {
                 }
             } else {
                 HStack {
-                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
+                    Label(tr("settings2.service.keySafe"), icon: "lock.fill")
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     Button(tr("settings2.service.replaceKey")) { withAnimation(NookTheme.reveal) { replacing = true } }
@@ -313,7 +313,7 @@ struct ForgeSetupSheet: View {
                     .onSubmit { if canSave { submit() } }
                     .onChange(of: token) { _, _ in failed = false }
                 Button { paste() } label: {
-                    Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                    Label(tr("button.pasteClipboard"), icon: "doc.on.clipboard")
                 }
             }
             if failed {

@@ -240,7 +240,7 @@ private struct PanelSidebarTabButton: View {
             .frame(minWidth: named ? nil : PanelSidebarMetrics.tabBarItemMinimum,
                    maxWidth: named ? nil : compact ? PanelSidebarMetrics.row + NookTheme.Spacing.sm : .infinity)
             .frame(height: compact ? PanelSidebarMetrics.row : PanelSidebarMetrics.tabBarItem)
-            .background(shape.fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+            .hoverRowFill($hovering, selected: selected)
             .overlay {
                 if beside {
                     shape.strokeBorder(NookTheme.border, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
@@ -255,7 +255,6 @@ private struct PanelSidebarTabButton: View {
                 Button(tr("split.toWindow")) { TabWindowController.shared.open(tab, app: AppModel.shared) }
             }
         }
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help("\(title) (\(shortcut))")
         .accessibilityLabel(title)

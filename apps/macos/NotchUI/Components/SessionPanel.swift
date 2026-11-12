@@ -249,7 +249,7 @@ struct SessionPanel: View {
         .contextMenu {
             ForEach(Self.optionalRows, id: \.self) { row in
                 Button { toggle(row: row) } label: {
-                    if hiddenRows.contains(row) { Text(tr("agents.panel.row." + row)) } else { Label(tr("agents.panel.row." + row), systemImage: "checkmark") }
+                    if hiddenRows.contains(row) { Text(tr("agents.panel.row." + row)) } else { Label(tr("agents.panel.row." + row), icon: "checkmark") }
                 }
             }
         }
@@ -339,7 +339,7 @@ struct SessionPanel: View {
                                     openInID = option.id
                                     open(option)
                                 } label: {
-                                    if option.id == target?.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
+                                    if option.id == target?.id { Label(option.name, icon: "checkmark") } else { Text(option.name) }
                                 }
                             }
                         }))
@@ -453,7 +453,7 @@ struct SessionPanel: View {
                                     Button {
                                         model.checkout(name)
                                     } label: {
-                                        if name == branch { Label(name, systemImage: "checkmark") } else { Text(name) }
+                                        if name == branch { Label(name, icon: "checkmark") } else { Text(name) }
                                     }
                                 }
                             }

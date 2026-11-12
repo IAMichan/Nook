@@ -197,7 +197,7 @@ struct AddConnectionSheet: View {
                     // Opened on one option from elsewhere: Done closes it, there is no list to go back to.
                     if start == nil {
                         Button { self.chosen = nil } label: {
-                            Label(tr("hub.picker.back"), systemImage: "chevron.left")
+                            Label(tr("hub.picker.back"), icon: "chevron.left")
                         }
                         .buttonStyle(.nookLink)
                         .padding(.horizontal, NookTheme.Spacing.xl)
@@ -411,7 +411,6 @@ struct ServiceSignInSheet: View {
     /// Whether this sheet started the sign-in, so only its own failure shows.
     @State private var started = false
     @State private var showKey = false
-    @State private var confirmDisconnect = false
 
     private var config: MCPServerConfig? { store.servers.first { $0.serviceID == service.id } }
 
@@ -451,11 +450,6 @@ struct ServiceSignInSheet: View {
             }
         } footer: {
             footerButtons
-        }
-        .confirmationDialog(tr("connect.disconnectTitle", service.name), isPresented: $confirmDisconnect) {
-            disconnectButtons
-        } message: {
-            Text(tr("connect.disconnectDetail", service.name))
         }
         .sheet(isPresented: $showKey, onDismiss: { app.connectors.refreshAll() }) {
             keySheet
@@ -510,7 +504,8 @@ struct ServiceSignInSheet: View {
     @ViewBuilder
     private var footerButtons: some View {
             if config != nil, status != .connecting {
-                Button(tr("connect.disconnect"), role: .destructive) { confirmDisconnect = true }
+                ConfirmedButton(tr("connect.disconnect"), question: tr("connect.disconnectTitle", service.name),
+                                detail: tr("connect.disconnectDetail", service.name)) { disconnect() }
             }
             Spacer()
             Button(tr("settings2.done")) {
@@ -522,16 +517,12 @@ struct ServiceSignInSheet: View {
             .controlSize(.large)
     }
 
-    @ViewBuilder
-    private var disconnectButtons: some View {
-            Button(tr("connect.disconnect"), role: .destructive) {
-                guard let target = config else { return }
-                Task {
-                    await MCPSignIn.shared.signOut(target)
-                    MCPServerStore.shared.remove(target.id)
-                }
-            }
-            Button(tr("button.cancel"), role: .cancel) {}
+    private func disconnect() {
+        guard let target = config else { return }
+        Task {
+            await MCPSignIn.shared.signOut(target)
+            MCPServerStore.shared.remove(target.id)
+        }
     }
 
     @ViewBuilder
