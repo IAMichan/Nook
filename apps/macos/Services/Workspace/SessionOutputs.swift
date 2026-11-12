@@ -28,6 +28,9 @@ struct SessionOutput: Identifiable, Equatable, Sendable {
     /// The file, for a design, a document or an image: an absolute path.
     var path: String?
     var date: Date
+    /// The agent handed the file to you on purpose (`SharedFiles`) the last time it touched it, rather than only
+    /// writing it as a step of its work.
+    var shared = false
 
     var isFile: Bool { path != nil }
 }
@@ -57,11 +60,11 @@ enum SessionOutputs {
         var outputs: [SessionOutput] = []
         var files: [String: Int] = [:]
         var latestTasks: (steps: [RunTaskStep], date: Date)?
-        func add(_ raw: String, at date: Date) {
+        func add(_ raw: String, at date: Date, shared: Bool = false) {
             let path = resolve(raw, in: directory)
             guard !path.isEmpty, let kind = kind(path: path) else { return }
             let output = SessionOutput(id: "file:" + path, kind: kind, title: (path as NSString).lastPathComponent,
-                                       path: path, date: date)
+                                       path: path, date: date, shared: shared)
             if let index = files[path] { outputs[index] = output } else { files[path] = outputs.count; outputs.append(output) }
         }
         for event in events {
@@ -71,7 +74,7 @@ enum SessionOutputs {
                 outputs.append(SessionOutput(id: "plan:" + event.id.uuidString, kind: .plan(event.text), title: title, path: nil,
                                              date: event.date))
             case .tool where SharedFiles.isShare(event):
-                for path in SharedFiles.paths(AgentActivity.input(event.detail) ?? [:]) { add(path, at: event.date) }
+                for path in SharedFiles.paths(AgentActivity.input(event.detail) ?? [:]) { add(path, at: event.date, shared: true) }
             case .tool:
                 let input = AgentActivity.input(event.detail) ?? [:]
                 if let steps = taskList(tool: event.tool ?? "", input: input) {
@@ -101,6 +104,19 @@ enum SessionOutputs {
         let name = tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool
         guard taskTools.contains(name) else { return nil }
         return RunTasks.claude(input) ?? RunTasks.codex(input)
+    }
+
+    /// Whether a new output of this turn (made at or after `turnStart`) opens the outputs tab by itself while the agent
+    /// works. A plan, design, image or video does; a Markdown document only when the agent handed it to you, because
+    /// one it merely writes or edits (a README, notes, docs, its own instructions) is part of its work, not something
+    /// to look at now. The task list never does; it has its own bar.
+    static func opensByItself(_ output: SessionOutput, turnStart: Date?) -> Bool {
+        guard output.date >= (turnStart ?? .distantFuture) else { return false }
+        switch output.kind {
+        case .tasks: return false
+        case .document: return output.shared
+        case .plan, .design, .image, .video: return true
+        }
     }
 
     /// Something new since `seen` (the outputs you last looked at), for the dot on the panel's button.
