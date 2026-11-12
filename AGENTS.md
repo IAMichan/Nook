@@ -103,15 +103,15 @@ It keeps the build in `.build/xcode` inside the checkout, so it is removed toget
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
 
-Both `./scripts/xcode.sh` and `./scripts/core-tests.sh` run their build through `./scripts/build-slot.sh`: one heavy build
-at a time on this Mac, at a lower priority. When another agent is building, yours prints that it is waiting and starts
-when that build ends. Do not work around it: several agents compiling at once once drove the load to 185 on 14 cores,
-filled the swap, and froze the Mac and the running Nook. Run any other heavy build (`xcodebuild`, `swift build`,
-`cargo build`) through `./scripts/build-slot.sh` too. `NOOK_BUILD_SLOT=off` skips the wait, only for a quick build the
-user is waiting on.
+Both `./scripts/xcode.sh` and `./scripts/core-tests.sh` run their build through `./scripts/build-slot.sh`: at most two
+heavy builds at a time on this Mac, at nice 10; the tests run after the build, outside the slot. When both slots are
+taken, yours prints that it is waiting and starts when one frees up. Do not work around it: several agents compiling at
+once once drove the load to 185 on 14 cores, filled the swap, and froze the Mac and the running Nook. Run any other
+heavy build (`xcodebuild`, `swift build`, `cargo build`) through `./scripts/build-slot.sh` too. `NOOK_BUILD_SLOT=off`
+skips the wait, only for a quick build the user is waiting on.
 
-Nook itself starts every coding agent behind your own work (`AgentCommand.behindForeground`, nice 10), so a build an
-agent runs yields to the windows, typing and Nook. On top of that `AgentGovernor` watches the Mac while agents run: when
+Nook starts every coding agent at full priority, so agents are as fast as the Mac allows; a heavy build lowers its own
+priority through the build slot. `AgentGovernor` watches the Mac while agents run: when
 memory is tight or the Mac is hot, the commands agents run move to macOS's background band; when the Mac swaps hard, the
 commands of the youngest agents hold still (never the agent itself, never the oldest one, at most two minutes) until
 there is room, with a strip above the composer to let them go on. It finds those commands by the process tree, since

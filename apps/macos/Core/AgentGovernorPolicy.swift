@@ -2,14 +2,14 @@ import Foundation
 
 // How much room the coding agents Nook runs may take, so the Mac and Nook stay quick however many of them build at once.
 //
-// Agents already run behind your own work (`AgentCommand.backgroundPriority`). That is about the processor; it does not stop
-// four agents that each start a build from filling the memory together, and then everything waits for the swap. The
-// governor watches the Mac and steps in, in three steps:
+// Agents run at full priority, so they are as quick as the Mac allows; heavy builds lower their own (scripts/build-slot.sh).
+// That is about the processor; it does not stop four agents that each start a build from filling the memory together,
+// and then everything waits for the swap. The governor watches the Mac and steps in, in three steps:
 //
 // - calm: agents run as usual.
 // - pressed (memory tight, or the Mac hot): the commands agents run move to macOS's background band. The scheduler gives
 //   them what is left over and their disk access is throttled, also for paging, so what you use stays quick. A busy
-//   processor alone does not count: the lower priority covers that, and the background band keeps a build to the
+//   processor alone does not count: the build slot covers that, and the background band keeps a build to the
 //   efficiency cores, which would make it many times slower for nothing.
 // - critical (the Mac keeps reading memory back from swap): the commands of the youngest agents wait, one at a time, until
 //   memory is back. The agent itself keeps running, so its connection stays open; only the build or test it started holds

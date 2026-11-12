@@ -224,14 +224,17 @@ cd "$WORK"
 echo "core tests in $WORK"
 # Tests that read the app's sources (UIConsistencyTests) find them here: the copies in $WORK have another #filePath.
 export NOOK_MACOS_ROOT="$ROOT"
-# One heavy build at a time on this machine, at a lower priority (scripts/build-slot.sh says why).
+# The build takes one of this machine's build slots, at a lower priority (scripts/build-slot.sh says why). The tests
+# run after it, outside the slot: they need a core or two, and another agent's build should not wait for them.
 SLOT="$REPO/scripts/build-slot.sh"
 if [ "$MODE" = some ] && ! "$SLOT" swift build --build-tests; then
   # A picked test may use a helper the selection missed: build them all, and still run only the picked ones.
   echo "the selected tests do not build on their own; building all tests and running the selected ones"
   CLASSES="$(sed -n 's/^test classes: //p' <<< "$REPORT")"
   sync >/dev/null
-  "$SLOT" swift test --filter "\.($CLASSES)/" ${ARGS[@]+"${ARGS[@]}"}
+  "$SLOT" swift build --build-tests
+  swift test --skip-build --filter "\.($CLASSES)/" ${ARGS[@]+"${ARGS[@]}"}
   exit
 fi
-"$SLOT" swift test ${ARGS[@]+"${ARGS[@]}"}
+[ "$MODE" = some ] || "$SLOT" swift build --build-tests
+swift test --skip-build ${ARGS[@]+"${ARGS[@]}"}

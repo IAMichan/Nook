@@ -12,8 +12,9 @@
 #   NOOK_XCODE_SCHEME=NookScenarios scripts/xcode.sh test   # the end-to-end scenarios (scripts/scenarios.sh)
 #
 # The Mac is in use while this builds, so the build stays out of the way:
-#   - it waits for the Mac's single build slot and runs at a lower priority (scripts/build-slot.sh), so the apps you
-#     work in keep the CPU when they need it;
+#   - it waits for one of the Mac's build slots and builds at a lower priority (scripts/build-slot.sh), so the apps
+#     you work in keep the CPU when they need it; `test` builds inside the slot and runs the tests after it, outside
+#     the slot, so another agent's build does not wait for a test run;
 #   - it uses as many parallel jobs as the Mac has performance cores, leaving the efficiency cores and the memory that
 #     extra compiler processes take for everything else;
 #   - it writes no index store (only Xcode's editor reads one, from its own DerivedData) and does not check the
@@ -52,9 +53,14 @@ fi
 
 JOBS="${NOOK_XCODE_JOBS:-$(sysctl -n hw.perflevel0.physicalcpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)}"
 
-# One heavy build at a time on this Mac, at a lower priority (scripts/build-slot.sh says why).
-exec "$REPO/scripts/build-slot.sh" xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS' \
-  -derivedDataPath "$REPO/.build/xcode" -jobs "$JOBS" \
-  -skipMacroValidation -skipPackagePluginValidation \
-  CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
-  "$ACTION" ${EXTRA[@]+"${EXTRA[@]}"} "$@"
+XCODEBUILD=(xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS'
+  -derivedDataPath "$REPO/.build/xcode" -jobs "$JOBS"
+  -skipMacroValidation -skipPackagePluginValidation
+  CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO)
+
+# The build takes one of the Mac's build slots, at a lower priority (scripts/build-slot.sh says why).
+if [ "$ACTION" = test ]; then
+  "$REPO/scripts/build-slot.sh" "${XCODEBUILD[@]}" build-for-testing ${EXTRA[@]+"${EXTRA[@]}"} "$@"
+  exec "${XCODEBUILD[@]}" test-without-building ${EXTRA[@]+"${EXTRA[@]}"} "$@"
+fi
+exec "$REPO/scripts/build-slot.sh" "${XCODEBUILD[@]}" "$ACTION" ${EXTRA[@]+"${EXTRA[@]}"} "$@"
