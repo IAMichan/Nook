@@ -861,7 +861,7 @@ struct ComposerUsageRing: View, Equatable {
 
 }
 
-/// The title with the account, a line per window, and the way to every account's limits.
+/// The title with the account, a line per window, the way to every account's limits, and a refresh button.
 private struct ComposerUsagePanel: View {
     @EnvironmentObject private var app: AppModel
     let limits: [QuotaLimit]
@@ -878,9 +878,14 @@ private struct ComposerUsagePanel: View {
             TimelineView(.nookTicks(every: 60)) { context in
                 UsageLimitRows(limits: limits, now: context.date)
             }
-            SmallGhostButton(title: tr("limits.all")) {
-                open = false
-                app.openUsageModal(.limits)
+            // "All limits" on the left, and on its far right a way to read the limits again right now.
+            HStack(spacing: NookTheme.Spacing.sm) {
+                SmallGhostButton(title: tr("limits.all")) {
+                    open = false
+                    app.openUsageModal(.limits)
+                }
+                Spacer(minLength: 0)
+                UsageRefreshButton()
             }
         }
         .padding(NookTheme.Spacing.md)
