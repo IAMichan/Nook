@@ -211,8 +211,9 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
   key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
   (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
   `.nookToastHost()` once, at its root. What waits for you on that surface (a permission request, an agent's question)
-  shows in the same corner, as narrow as a toast and on top of the stack, through `.nookToastHost { … }` and
-  `PanelNoticeBar(floating: true)`.
+  shows in the same corner, as narrow as a toast and on top of the stack, through `.nookToastHost { … }`: a coding
+  agent's request or question as a `PanelRequestNotice` (the agent's logo with the state as a badge, who asks, the
+  command in a mono well, compact Deny and Allow on the right), anything else as `PanelNoticeBar(floating: true)`.
 - **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
   every toast stays while hovered, and an error with a detail can be copied in one click.
 - **Words:** the title says what happened in a few words ("Pushed", "Couldn't remove the worktree", `toast.failed` for
