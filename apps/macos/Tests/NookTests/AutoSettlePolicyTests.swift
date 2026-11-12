@@ -108,4 +108,21 @@ final class AutoSettlePolicyTests: XCTestCase {
         XCTAssertEqual(s.inactivityDays, 3)
         XCTAssertTrue(s.perThreadOptOut.isEmpty)
     }
+
+    func testOldUntouchedDefaultGetsT3codeRulesOnce() {
+        let old = AutoSettlePolicy.Settings(perThreadOptOut: ["run:a"])
+        let up = AutoSettlePolicy.upgradingOldDefault(old)
+        XCTAssertTrue(up.enabled)
+        XCTAssertEqual(up.inactivityDays, 7)
+        XCTAssertTrue(up.settleOnMergedPullRequest)
+        XCTAssertTrue(up.settleOnClosedPullRequest)
+        XCTAssertEqual(up.perThreadOptOut, ["run:a"])
+    }
+
+    func testChangedSettingsAreNotUpgraded() {
+        let chosen = AutoSettlePolicy.Settings(enabled: false, inactivityDays: 14)
+        XCTAssertEqual(AutoSettlePolicy.upgradingOldDefault(chosen), chosen)
+        let on = AutoSettlePolicy.Settings(enabled: true, inactivityDays: 3)
+        XCTAssertEqual(AutoSettlePolicy.upgradingOldDefault(on), on)
+    }
 }

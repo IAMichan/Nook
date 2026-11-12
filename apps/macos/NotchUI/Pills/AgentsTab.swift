@@ -739,17 +739,20 @@ struct AgentListItem: Identifiable, Equatable {
 struct RowProject: Equatable {
     var name: String
     var icon: ProjectIcon
-    /// The project's folder on this Mac, for the row's Project menu; nil for a project of sessions elsewhere.
+    /// The project's folder on this Mac, for the row's Project menu and its own icon; nil for a project elsewhere.
     var path: String?
+    /// You set the icon yourself (Settings › Projects, or a color from the row's menu): it wins over the project's favicon.
+    var custom = false
 }
 
-/// A project's badge in a session row (the row names the project beside it).
+/// A project's badge in a session row (the row names the project beside it), as t3code's: the icon you set, else the
+/// project's own favicon or app icon (`ProjectFavicons`), else its initials on its tint.
 struct ProjectBadge: View {
     let project: RowProject
-    var size: CGFloat = 14
+    var size: CGFloat = 18
 
     var body: some View {
-        ProjectIconView(icon: project.icon, size: size)
+        ProjectIconView(icon: project.custom ? project.icon : nil, size: size, folder: project.path, fallback: project.icon)
             .foregroundStyle(NookTheme.textSecondary)
     }
 }
@@ -938,7 +941,7 @@ struct AgentListRow: View, Equatable {
         } meta: {
             metaLine
         } mark: {
-            project.map { AnyView(ProjectBadge(project: $0, size: 14)) }
+            project.map { AnyView(ProjectBadge(project: $0)) }
         }
     }
 
@@ -1069,7 +1072,7 @@ struct AgentListRow: View, Equatable {
         HStack(spacing: NookTheme.Spacing.md) {
             // The project's badge says where it belongs; the agent's logo is in the hover card.
             if let project {
-                ProjectBadge(project: project, size: 16).opacity(0.8)
+                ProjectBadge(project: project).opacity(0.8)
             } else {
                 AgentMark(agent: item.agent, account: item.account, size: 16, dimmed: true, ring: background)
             }

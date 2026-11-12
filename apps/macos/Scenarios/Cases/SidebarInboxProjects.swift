@@ -5,7 +5,9 @@ import AppKit
 final class SidebarInboxProjects: Scenario {
     func testSidebarInboxProjects() throws {
         try scenario("One list with the project on every row, Working at the foot, a finished session on top") { nook, screen, app in
-            let shop = try nook.project("shop")
+            // "shop" has a favicon of its own, which its rows show; "blog" has none and shows its initials.
+            let favicon = ##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#f2b25c"/><path d="M9 12h14l-2 10H11z" fill="#1a1a1a"/></svg>"##
+            let shop = try nook.project("shop", files: ["public/favicon.svg": favicon])
             let blog = try nook.project("blog")
             _ = try nook.session(project: shop, title: "Fix the checkout", messages: ["Fix the checkout"])
             let post = try nook.session(project: blog, title: "Write a post", messages: ["Write a post"])
