@@ -24,6 +24,7 @@ final class ProjectScriptsTests: XCTestCase {
     }
 
     func testBlockingCommandWritesItsExitCode() throws {
+        guard FileManager.default.isExecutableFile(atPath: "/bin/zsh") else { throw XCTSkip("needs /bin/zsh, the Mac's shell") }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nook-setup-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

@@ -384,8 +384,8 @@ enum SearchText {
         return haystack.withUTF8 { text in
             needle.withUTF8 { wanted in
                 guard !wanted.isEmpty else { return true }
-                guard wanted.count <= text.count, let base = text.baseAddress else { return false }
-                return memmem(base, text.count, wanted.baseAddress, wanted.count) != nil
+                guard wanted.count <= text.count, let base = text.baseAddress, let pattern = wanted.baseAddress else { return false }
+                return memmem(base, text.count, pattern, wanted.count) != nil
             }
         }
     }
@@ -947,8 +947,9 @@ struct SearchVocabulary: Sendable {
             var parts = 0
             var from = 0
             while parts < 60, from < all.count {
-                guard let found = needle.withUnsafeBufferPointer({ wanted in
-                    memmem(base + from, all.count - from, wanted.baseAddress, wanted.count)
+                guard let found = needle.withUnsafeBufferPointer({ wanted -> UnsafeMutableRawPointer? in
+                    guard let pattern = wanted.baseAddress else { return nil }
+                    return memmem(base + from, all.count - from, pattern, wanted.count)
                 }) else { break }
                 let at = base.distance(to: found.assumingMemoryBound(to: UInt8.self))
                 let index = wordIndex(containing: at)

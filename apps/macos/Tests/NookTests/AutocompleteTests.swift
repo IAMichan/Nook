@@ -1190,6 +1190,7 @@ final class CompletionCandidateTests: XCTestCase {
 }
 
 final class CompletionTextColorTests: XCTestCase {
+    #if canImport(Darwin)
     func testGhostIsATranslucentShadeOfTheText() throws {
         let blue = try XCTUnwrap(CompletionTextColor(cgColor: CGColor(srgbRed: 0, green: 0.4, blue: 1, alpha: 1)))
         let ghost = try XCTUnwrap(blue.ghost)
@@ -1197,10 +1198,13 @@ final class CompletionTextColorTests: XCTestCase {
         XCTAssertEqual(ghost.green, 0.4, accuracy: 0.001)
         XCTAssertEqual(ghost.alpha, CompletionTextColor.ghostAlpha, accuracy: 0.001)
     }
+    #endif
 
     func testReadsAccessibilityColorsOnly() throws {
+        #if canImport(Darwin)
         XCTAssertNotNil(CompletionTextColor(axValue: CGColor(gray: 0.2, alpha: 1)))
         XCTAssertNil(CompletionTextColor(axValue: "black"))
+        #endif
         // A nearly transparent colour says nothing about what is on screen.
         XCTAssertNil(CompletionTextColor(red: 0, green: 0, blue: 0, alpha: 0.1).ghost)
     }

@@ -89,7 +89,8 @@ Text generation), Tab puts the suggestion in the box and Escape dismisses it; ty
 
 - After F6 the Agents list has the keyboard: ↑ ↓ move the lit row without opening it, Return opens it, ← folds its
   project (or its Snoozed or Settled shelf) and → unfolds it, F2 renames it.
-- The command palette (⇧⌘K) lists, in groups: recent sessions (the ones you open often and lately first), what you
+- The command palette (⇧⌘K) lists, in groups: recent sessions (the ones you open often and lately first; for three weeks, the session you last picked
+  after typing the same words comes first when you type them again, `PalettePicks`), what you
   can do with the open session (pin, settle, snooze, rename, fork, copy the branch, path or both, open in your editor,
   show the changes, interrupt), navigation (a new session, **New session in…** with your projects, back and forward,
   the pages and panels) and settings. Each command shows its key; `>` first leaves only the actions.

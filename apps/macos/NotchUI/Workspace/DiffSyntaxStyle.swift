@@ -24,7 +24,7 @@ enum DiffSyntaxStyle {
             guard !Task.isCancelled else { return [:] }
             let row = rows[index]
             let units = Array(row.text.utf16)
-            let tint: Color? = row.kind == .add ? NookTheme.mint : row.kind == .remove ? NookTheme.coral : nil
+            let tint: Color? = row.kind == .add ? NookTheme.diffAdded : row.kind == .remove ? NookTheme.diffRemoved : nil
             var line = AttributedString()
             for segment in DiffSyntax.segments(length: units.count, tokens: tokens, changed: tint == nil ? nil : row.changed) {
                 var part = AttributedString(String(decoding: units[segment.start..<segment.end], as: UTF16.self))

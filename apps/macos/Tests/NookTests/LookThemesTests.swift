@@ -195,6 +195,7 @@ final class LookThemesTests: XCTestCase {
         XCTAssertTrue(MathText.html("\\frac{a}{b}", display: true).hasPrefix(#"<span class="tex display""#))
     }
 
+    #if os(macOS)  // MarkdownBlock is the Mac's (scripts/core-tests.sh leaves it out on Linux)
     func testMarkdownMathBlocks() {
         XCTAssertEqual(MarkdownBlock.parse("```math\n\\int_0^1 x\\,dx\n```"), [.math("\\int_0^1 x\\,dx")])
         XCTAssertEqual(MarkdownBlock.parse("Before\n\n$$\na^2 + b^2 = c^2\n$$\n\nAfter"),
@@ -203,6 +204,7 @@ final class LookThemesTests: XCTestCase {
         // Never closed (still streaming): a paragraph for now.
         XCTAssertEqual(MarkdownBlock.parse("$$\nx"), [.paragraph("$$\nx")])
     }
+    #endif
 
     // MARK: Composer styling
 
@@ -285,5 +287,28 @@ final class LookThemesTests: XCTestCase {
         var quotes = ComposerQuotes()
         quotes.add("cache is warm", source: c)
         XCTAssertEqual(quotes.items.first?.source, c)
+    }
+
+    // MARK: Diff colors
+
+    func testDiffColorsComeFromTheThemesPalette() {
+        for theme in NookColorTheme.builtIn {
+            for palette in [theme.dark, theme.light].compactMap({ $0 }) {
+                XCTAssertEqual(NookDiffColors.redGreen.added(palette), palette.mint, theme.id)
+                XCTAssertEqual(NookDiffColors.redGreen.removed(palette), palette.coral, theme.id)
+                XCTAssertEqual(NookDiffColors.blueOrange.added(palette), palette.blue, theme.id)
+                XCTAssertNotEqual(NookDiffColors.blueOrange.added(palette), NookDiffColors.blueOrange.removed(palette), theme.id)
+                XCTAssertNotEqual(NookDiffColors.blueOrange.modified(palette), palette.blue,
+                                  "\(theme.id): a changed file is not drawn as an added one")
+            }
+        }
+    }
+
+    func testBlueOrangeRemovedIsAnOrange() throws {
+        let palette = try XCTUnwrap(NookColorTheme.nook.dark)
+        let removed = NookColor.components(NookDiffColors.blueOrange.removed(palette))
+        XCTAssertGreaterThan(removed.r, removed.g)
+        XCTAssertGreaterThan(removed.g, removed.b)
+        XCTAssertGreaterThan(removed.g, 0.4, "orange, not the red that red-green color blindness mixes up with green")
     }
 }

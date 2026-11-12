@@ -86,12 +86,70 @@ for path in sources:
 PY
 
 cat > "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'
+import Foundation
+
 // Combine's names for the few core files that mention them (Linux has no Combine).
 #if !canImport(Combine)
 public protocol ObservableObject: AnyObject {}
 @propertyWrapper public struct Published<Value> {
     public var wrappedValue: Value
     public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }
+}
+#endif
+
+// Linux has no Objective-C runtime and so no autorelease pools: the body just runs.
+#if !canImport(ObjectiveC)
+public func autoreleasepool<Result>(invoking body: () throws -> Result) rethrows -> Result { try body() }
+#endif
+
+// APFS clones are the Mac's: on Linux `clonefile` always fails, so WorktreeCheckoutCache falls back as it does off APFS.
+#if !canImport(Darwin)
+public let CLONE_NOFOLLOW: Int32 = 0x0001
+public func clonefile(_ source: String, _ destination: String, _ flags: UInt32) -> Int32 { -1 }
+#endif
+
+// URLRequest, URLSession and HTTPURLResponse live in FoundationNetworking on Linux.
+#if canImport(FoundationNetworking)
+@_exported import FoundationNetworking
+#endif
+
+// Linux's Foundation has no NSDataDetector. Links and mail addresses are found with a pattern close to what Apple's
+// detector finds (for ChatFormat's "Copy link"); dates are not detected here, so their tests skip or run on a Mac.
+#if !canImport(Darwin)
+extension NSTextCheckingResult.CheckingType {
+    public static let date = NSTextCheckingResult.CheckingType(rawValue: 1 << 3)
+    public static let link = NSTextCheckingResult.CheckingType(rawValue: 1 << 5)
+}
+
+public final class NSDataDetector {
+    public struct Match {
+        public let range: NSRange
+        public let url: URL?
+        public let date: Date? = nil
+    }
+
+    private let types: NSTextCheckingResult.CheckingType
+    private static let links = try! NSRegularExpression(pattern:
+        #"(?:mailto:)?[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}|(?:https?://|www\.)[^\s<>"'`()\[\]]*[^\s<>"'`()\[\].,;:!?]"#)
+
+    public init(types: NSTextCheckingResult.CheckingType.RawValue) throws {
+        self.types = NSTextCheckingResult.CheckingType(rawValue: types)
+    }
+
+    public func matches(in string: String, options: NSRegularExpression.MatchingOptions = [], range: NSRange) -> [Match] {
+        guard types.contains(.link) else { return [] }
+        let text = string as NSString
+        return Self.links.matches(in: string, options: options, range: range).compactMap { match in
+            let written = text.substring(with: match.range)
+            let address: String
+            if written.contains("@") && !written.contains("/") {
+                address = written.hasPrefix("mailto:") ? written : "mailto:" + written
+            } else {
+                address = written.hasPrefix("www.") ? "http://" + written : written
+            }
+            return URL(string: address).map { Match(range: match.range, url: $0) }
+        }
+    }
 }
 #endif
 
