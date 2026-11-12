@@ -30,6 +30,16 @@ struct CustomAgent: Codable, Equatable, Identifiable, Sendable {
         "exec " + ([command] + arguments).map(CustomAgents.quote).joined(separator: " ")
     }
 
+    /// The command line that signs in through the agent's terminal method (`AcpAuthMethod.terminal`): its own program
+    /// with the method's arguments, after its environment and the method's, every part quoted.
+    func terminalSignIn(_ method: AcpAuthMethod) -> String {
+        let variables = environment.merging(method.env) { _, new in new }
+            .filter { CustomAgents.isEnvironmentName($0.key) }
+            .sorted { $0.key < $1.key }
+            .map { $0.key + "=" + CustomAgents.quote($0.value) }
+        return (variables + ([command] + arguments + method.args).map(CustomAgents.quote)).joined(separator: " ")
+    }
+
     init(profileID: String, name: String, registryID: String? = nil, version: String? = nil, command: String,
          arguments: [String] = [], environment: [String: String] = [:], installedAt: String? = nil) {
         self.profileID = profileID
@@ -119,6 +129,13 @@ enum CustomAgents {
     }
 
     /// Single quotes around anything that is not plainly safe, as the shell needs it.
+    /// A name a shell takes as a variable (`FOO_BAR`): nothing in it can be read as a command.
+    static func isEnvironmentName(_ name: String) -> Bool {
+        guard let first = name.unicodeScalars.first, name.count <= 128,
+              first == "_" || ("A"..."Z").contains(first) || ("a"..."z").contains(first) else { return false }
+        return name.unicodeScalars.allSatisfy { $0 == "_" || ("A"..."Z").contains($0) || ("a"..."z").contains($0) || ("0"..."9").contains($0) }
+    }
+
     static func quote(_ part: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "@%+=:,./-_"))
         if !part.isEmpty, part.unicodeScalars.allSatisfy({ safe.contains($0) }) { return part }

@@ -168,7 +168,7 @@ final class AgentProcessTests: XCTestCase {
             lines.add(line)
             for event in ClaudeStreamParser.parse(line) {
                 switch event {
-                case .permissionRequest(let request, _, let input, _, _):
+                case .permissionRequest(let request, _, let input, _, _, _):
                     asked.fulfill()
                     process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
                 case .result:

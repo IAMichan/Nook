@@ -104,11 +104,21 @@ final class ApprovalCenter {
             origin: .run(runID: run.id, requestID: pending.id), agentName: run.provider.displayName, project: run.title,
             tool: pending.tool, title: title,
             command: arguments.isEmpty ? command ?? pending.summary : arguments, diff: edit?.lines ?? [],
-            note: mcp == nil || assessment.level == .danger ? assessment.note : tr("ws.approval.mcpNote"),
-            danger: assessment.level == .danger, canAlways: pending.canAlways, canTerminal: false, created: pending.created
+            note: note(pending.ask, assessment: assessment, mcp: mcp != nil, agent: run.provider.kind.shortName),
+            danger: assessment.level == .danger || pending.ask.safetyCheck, canAlways: pending.canAlways, canTerminal: false,
+            created: pending.created
         )
         approval.alwaysScope = PermissionScope.preview(PermissionScope.rules(from: pending.suggestions?.object))
         return approval
+    }
+
+    /// The card's line under the title. The agent's own reason why it asks replaces Nook's general note; Nook's warning
+    /// about a dangerous command stays, with the reason after it.
+    static func note(_ ask: PermissionAsk, assessment: CommandAssessment, mcp: Bool, agent: String) -> String {
+        let general = mcp && assessment.level != .danger ? tr("ws.approval.mcpNote") : assessment.note
+        guard !ask.reason.isEmpty else { return general }
+        let reason = tr("ws.approval.agentReason", agent, ask.reason)
+        return assessment.level == .danger && !general.isEmpty ? general + "\n" + reason : reason
     }
 
     static func make(_ request: BridgeRequest) -> AgentApproval {

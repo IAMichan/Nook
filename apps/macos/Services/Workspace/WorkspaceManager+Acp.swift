@@ -103,7 +103,9 @@ extension WorkspaceManager {
                     self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
                     client.sessionCapabilities = AcpSessionCapabilities(initialize: response.dictionary)
+                    self.acpForks[Self.acpAgentKey(run)] = client.sessionCapabilities.fork
                     client.authMethods = AcpRPC.authMethodIDs(response.dictionary)
+                    client.terminalSignIn = AcpRPC.authMethods(response.dictionary).first { $0.type == AcpAuthMethod.terminal }
                     self.learnModels(provider, AgentModelCatalog.acp(response.dictionary), profileID: profileID)
                     guard provider == .antigravity else {
                         return self.openAcpSession(id, client, bridge: bridge, prompt: prompt, executable: executable)
@@ -124,23 +126,62 @@ extension WorkspaceManager {
         }
     }
 
+    /// Runs the terminal sign-in an agent you added asked for (`acpTerminalSignIns`) in a Terminal window of its own; the
+    /// next turn starts the agent again, which then reads the saved login. False when there is none.
+    @discardableResult
+    func signInAcpInTerminal(profileID: String) -> Bool {
+        guard let method = acpTerminalSignIns[profileID], let agent = CustomAgents.agent(for: profileID) else { return false }
+        let intro = "echo " + TerminalLauncher.shellQuote(tr("accounts.reauthIntro", agent.name))
+        do {
+            try TerminalLauncher.run(command: intro + " && " + agent.terminalSignIn(method),
+                                     in: FileManager.default.homeDirectoryForCurrentUser.path, name: "nook-login-\(profileID)")
+        } catch {
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
+            return false
+        }
+        acpTerminalSignIns[profileID] = nil
+        return true
+    }
+
+    /// The agent an ACP session runs, for what Nook learns of it across sessions (`acpForks`): the agent and the account
+    /// or agent you added (`profileID`).
+    static func acpAgentKey(_ run: WorkspaceRun) -> String { run.provider.rawValue + "|" + run.profileID }
+
+    /// Whether the agent copies a conversation itself (Claude Code's `--fork-session`, an ACP agent's `session/fork` as
+    /// its last `initialize` offered), so a fork or a side chat keeps the conversation instead of a summary of it. Not for
+    /// an agent that may run over a server of its own instead (OpenCode's `opencode serve`): that path does not copy.
+    func forksNatively(_ run: WorkspaceRun) -> Bool {
+        let capabilities = run.provider.capabilities
+        if capabilities.nativeFork { return true }
+        return run.provider.usesACP && capabilities.serverTransport == .none && acpForks[Self.acpAgentKey(run)] == true
+    }
+
     /// A new session, or the earlier one continued: resumed when the agent offers it, else loaded again (its replay is
-    /// dropped: Nook keeps the timeline itself).
+    /// dropped: Nook keeps the timeline itself). A fork (`forkNext`) is copied with `session/fork`.
     /// A session the agent does not know any more starts anew (said in the timeline), and one that needs you to sign in
     /// signs in through the agent's own method first; each once.
     private func openAcpSession(_ id: UUID, _ client: AcpClient, bridge: (command: String, args: [String], env: [String: String])?,
                                 prompt: String?, executable: String, signedIn: Bool = false) {
         guard let run = run(id) else { return }
         let capabilities = client.sessionCapabilities
-        let loadID = capabilities.continues ? run.providerSessionID : nil
+        // A fork of a session this agent can no longer copy (it did when the fork was made): it starts from a summary, so
+        // the original's conversation is never written to.
+        if forkNext.contains(id), run.providerSessionID != nil, !capabilities.fork {
+            forkNext.remove(id)
+            update(id) { $0.providerSessionID = nil }
+            let carried = carryOverConversation(id, prompt: prompt ?? warmPrompts.removeValue(forKey: id))
+            return openAcpSession(id, client, bridge: bridge, prompt: carried, executable: executable, signedIn: signedIn)
+        }
+        let forking = forkNext.contains(id) && run.providerSessionID != nil
+        let loadID = capabilities.continues || forking ? run.providerSessionID : nil
         if run.providerSessionID != nil, loadID == nil {
             append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
         }
         // A session Nook has no conversation of yet (one the agent listed) is loaded with its replay, which fills the
         // timeline; otherwise it is resumed without one when the agent can.
-        let fillsTimeline = loadID != nil && capabilities.load
+        let fillsTimeline = loadID != nil && !forking && capabilities.load
             && !timeline(id).contains { $0.kind == .user || $0.kind == .assistant }
-        let method = loadID == nil ? "session/new" : fillsTimeline ? "session/load" : capabilities.continueMethod
+        let method = loadID == nil ? "session/new" : forking ? "session/fork" : fillsTimeline ? "session/load" : capabilities.continueMethod
         client.replaying = method == "session/load"
         client.keepsReplay = fillsTimeline
         acpReplays[id] = fillsTimeline ? AcpReplay() : nil
@@ -169,6 +210,12 @@ extension WorkspaceManager {
                         let carried = self.carryOverConversation(id, prompt: waiting)
                         return self.openAcpSession(id, client, bridge: bridge, prompt: carried, executable: executable, signedIn: signedIn)
                     }
+                    // An agent Nook has no sign-in of its own for (one you added) that signs in only in a terminal: the
+                    // failed turn offers "Sign in again", which runs its sign-in in a Terminal window (`signInAcpInTerminal`).
+                    if AgentErrorText.needsSignIn(message), client.authMethods.isEmpty, !AgentSignInFailure.canSignInAgain(run.provider),
+                       let method = client.terminalSignIn {
+                        self.acpTerminalSignIns[run.profileID] = method
+                    }
                     if !signedIn, AgentErrorText.needsSignIn(message), let method = client.authMethods.first {
                         // The agent signs in its own way (a browser page, a key from the environment), then the session opens.
                         return client.request("authenticate", ["methodId": method]) { [weak self] result in
@@ -183,7 +230,9 @@ extension WorkspaceManager {
                     }
                     self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
-                    let session = (response.dictionary["sessionId"] as? String) ?? loadID
+                    // A fork answers with the copy's own id; it goes on apart from the original from now on.
+                    if forking { self.forkNext.remove(id) }
+                    let session = (response.dictionary["sessionId"] as? String) ?? (forking ? nil : loadID)
                     client.sessionID = session
                     client.freshSession = loadID == nil
                     if let session { self.update(id) { $0.providerSessionID = session } }
@@ -403,7 +452,7 @@ extension WorkspaceManager {
     private func cancelAcpRequests(_ id: UUID, _ client: AcpClient?) {
         for pending in approvals[id] ?? [] {
             guard let request = acpRequests.removeValue(forKey: pending.id) else { continue }
-            client?.respond(request.rpcID, AcpRPC.cancelledOutcome)
+            client?.respond(request.rpcID, request.call.kind == AcpRPC.elicitationKind ? AcpRPC.elicitationOutcome(nil) : AcpRPC.cancelledOutcome)
         }
     }
 
@@ -420,7 +469,9 @@ extension WorkspaceManager {
     func decideAcp(_ runID: UUID, requestID: String, _ decision: Decision) -> Bool {
         guard let request = acpRequests.removeValue(forKey: requestID) else { return false }
         let pending = approvals[runID]?.first { $0.id == requestID }
-        acpClients[runID]?.respond(request.rpcID, AcpRPC.permissionOutcome(request.options, allow: decision != .deny, always: decision == .always))
+        acpClients[runID]?.respond(request.rpcID, request.call.kind == AcpRPC.elicitationKind
+                                       ? AcpRPC.elicitationOutcome(decision != .deny)
+                                       : AcpRPC.permissionOutcome(request.options, allow: decision != .deny, always: decision == .always))
         approvals[runID]?.removeAll { $0.id == requestID }
         recap?.decision(allowed: decision != .deny)
         if let pending { mutateEvent(runID, pending.eventID) { $0.state = decision == .deny ? .denied : .allowed } }
@@ -437,6 +488,7 @@ extension WorkspaceManager {
         if acpReplays[id] != nil, client.replaying {
             for event in events { acpReplays[id]?.add(event) }
             for case .permission(let rpcID, _, _) in events { client.respond(rpcID, AcpRPC.cancelledOutcome) }
+            for case .elicitation(let rpcID, _, _, _) in events { client.respond(rpcID, AcpRPC.elicitationOutcome(nil)) }
             for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
             let settings = events.filter(\.isSessionState)
             if !settings.isEmpty { applyAcp(id, client, settings) }
@@ -507,13 +559,13 @@ extension WorkspaceManager {
                 feed(id, .thinkingDelta(text))
             case .toolCall(let call):
                 // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput), a read's file as its path.
-                let input = call.editInput ?? call.readInput
+                let input = call.subagentInput ?? call.editInput ?? call.readInput
                 feed(id, .toolStarted(AgentToolCall(id: call.id, name: call.toolName, title: call.title.isEmpty ? call.toolName : call.title,
                                                     detail: input.map { ToolSummary.json($0.object) }, input: input,
                                                     output: call.output, state: Self.state(call.status) ?? .running, paths: call.paths)))
             case .toolCallUpdate(let call):
                 feed(id, .toolUpdated(id: call.id, title: call.title, output: call.output, state: Self.state(call.status), paths: call.paths,
-                                      input: call.editInput))
+                                      input: call.subagentInput ?? call.editInput))
             case .plan(let steps):
                 setTasks(id, steps)
             case .usage(let used, let size, let cost):
@@ -527,6 +579,18 @@ extension WorkspaceManager {
                 } else {
                     presentAcpPermission(id, rpcID: rpcID, call: call, options: options)
                 }
+            case .elicitation(let rpcID, let server, let message, let isConfirmation):
+                // A form with fields: declined at once, so the agent and its server do not wait on it.
+                guard isConfirmation else {
+                    client.respond(rpcID, AcpRPC.elicitationOutcome(false))
+                    append(id, RunEvent(kind: .system, text: tr("ws.elicitation.declined", server.isEmpty ? "MCP" : server)))
+                    continue
+                }
+                pauseLive(id)
+                let requestID = "acp-" + rpcID.text
+                acpRequests[requestID] = (rpcID, [], AcpToolCall(id: requestID, title: message, kind: AcpRPC.elicitationKind,
+                                                                 status: nil, input: nil, output: "", paths: []))
+                presentMcpRequest(id, requestID: requestID, server: server, tool: "", message: message, arguments: [:], suggestions: nil)
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not provide this to agents.")
             case .userChunk:

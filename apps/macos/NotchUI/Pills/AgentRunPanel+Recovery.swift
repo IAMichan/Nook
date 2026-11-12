@@ -10,8 +10,10 @@ extension AgentRunPanel {
         // A stopped turn goes on where it was when the agent kept its conversation; otherwise only a retry helps.
         let canGoOn = !failed && run.providerSessionID != nil
         // One main action per card: a sign-in or an update to do first takes it from Retry.
+        // An agent you added that signs in only in a terminal (`AcpAuthMethod.terminal`) says so when its session opens.
+        let terminalSignIn = failed && workspace.acpTerminalSignIns[run.profileID] != nil
         let fixFirst = failed && ((AgentSignInFailure.needsSignIn(run.statusDetail) && AgentSignInFailure.canSignInAgain(run.provider))
-            || (!run.isRemote && AgentUpdates.updatable(run.provider) && AgentVersionRejection.parse(run.statusDetail) != nil))
+            || terminalSignIn || (!run.isRemote && AgentUpdates.updatable(run.provider) && AgentVersionRejection.parse(run.statusDetail) != nil))
         let problem = failed ? run.statusDetail.flatMap { $0 == "interrupted" || $0.isEmpty ? nil : $0 } : nil
         let detail = run.statusDetail == "interrupted" ? tr("ws.recovery.interrupted")
             : failed ? tr("ws.recovery.failedDetail")
@@ -75,6 +77,11 @@ extension AgentRunPanel {
                     app.reauthenticate(profile) { workspace.retry(runID) }
                 }
                 .disabled(signingIn)
+            } else if terminalSignIn {
+                // Its sign-in runs in a Terminal window; Retry then starts the agent again with the saved login.
+                NookPrimaryButton(title: tr("accounts.reauth"), symbol: "person.badge.key") {
+                    workspace.signInAcpInTerminal(profileID: run.profileID)
+                }
             }
             // The API refused this agent's version for the model: Settings › Agents updates it after you confirm.
             if run.status == .failed, !run.isRemote, AgentUpdates.updatable(run.provider),

@@ -205,6 +205,8 @@ struct TasksStrip: View {
 /// background, also after the turn that started them. The arrow shows them all in the side panel (`openPanel`).
 struct SubagentBar: View {
     let agents: [SubagentInfo]
+    /// Stops one subagent at work in the background, for an agent that can (`ProviderCapabilities.stopsOneSubagent`).
+    var stop: ((SubagentInfo) -> Void)? = nil
     /// Shows the subagents in the side panel's Subagents tab; false when the panel is busy with something else.
     var openPanel: (() -> Bool)? = nil
     @State private var open = false
@@ -262,6 +264,14 @@ struct SubagentBar: View {
         .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
     }
 
+    /// Stop for one subagent still at work in the background, past its elapsed time.
+    @ViewBuilder
+    private func stopButton(_ agent: SubagentInfo) -> some View {
+        if let stop, agent.isRunning, agent.taskID != nil {
+            ToolbarIconButton("stop.fill", tr("ws.subagents.stop"), height: 18, width: 18) { stop(agent) }
+        }
+    }
+
     /// One short bar per subagent: lit while it runs, mint once done, coral when it failed.
     private var segments: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
@@ -275,23 +285,26 @@ struct SubagentBar: View {
 
     private func row(_ agent: SubagentInfo) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            Button {
-                shown = shown == agent.id ? nil : agent.id
-            } label: {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    SubagentStatusMark(agent: agent)
-                    Text(agent.kind)
-                        .font(NookTheme.mono(10.5, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
-                    Text(agent.title).lineLimit(1)
-                    Spacer(minLength: 0)
-                    SubagentElapsed(agent: agent)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Button {
+                    shown = shown == agent.id ? nil : agent.id
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        SubagentStatusMark(agent: agent)
+                        Text(agent.kind)
+                            .font(NookTheme.mono(10.5, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                        Text(agent.title).lineLimit(1)
+                        Spacer(minLength: 0)
+                        SubagentElapsed(agent: agent)
+                    }
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .contentShape(Rectangle())
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .contentShape(Rectangle())
+                .buttonStyle(.nookPlain)
+                stopButton(agent)
             }
-            .buttonStyle(.nookPlain)
             if shown == agent.id {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     if !agent.prompt.isEmpty {

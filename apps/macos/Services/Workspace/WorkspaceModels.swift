@@ -43,8 +43,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
                                         rollback: .resumeAt, canForkFromTurn: true, liveSettings: true,
                                         reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
-                                        ultracode: true, effort: .launchFlag("--effort"), processChannel: .claudeStreamJSON,
-                                        idleConnection: .parkedProcess, probesLaunchFlags: true)
+                                        ultracode: true, stopsOneSubagent: true, effort: .launchFlag("--effort"),
+                                        processChannel: .claudeStreamJSON, idleConnection: .parkedProcess, probesLaunchFlags: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
@@ -176,6 +176,10 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// does not: Nook runs it without `--replay-user-messages`, whose replay only acknowledges receipt. The ACP agents
     /// are steered by interrupting them, so the steer is the next prompt and is read at once.
     var echoesSteers = false
+    /// One subagent at work in the background can be stopped on its own, the turn and the other subagents going on
+    /// (Claude Code's `stop_task`, `WorkspaceManager.stopSubagent`). Codex's subagents end within the turn that waits for
+    /// them, so Stop on the turn ends them; Pi and the ACP agents report no subagents.
+    var stopsOneSubagent = false
     /// How the reasoning effort picked for a session reaches the agent (`EffortDelivery`, `AgentCommand.effortArguments`).
     /// Every agent Nook runs takes one; an ACP agent only when its session offers the option.
     var effort: EffortDelivery

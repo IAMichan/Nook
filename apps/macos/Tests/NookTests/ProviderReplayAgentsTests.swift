@@ -194,7 +194,9 @@ final class ProviderReplayAgentsTests: XCTestCase {
         XCTAssertEqual(initialize["protocolVersion"] as? Int, 2)
         XCTAssertEqual(AcpRPC.generation(initialize), 1)
         client.sessionCapabilities = AcpSessionCapabilities(initialize: initialize)
-        XCTAssertEqual(client.sessionCapabilities, AcpSessionCapabilities(load: true, list: true, resume: false, images: true, delete: true, close: true))
+        // Kiro also copies a session (`session/fork`): Fork keeps the conversation.
+        XCTAssertEqual(client.sessionCapabilities, AcpSessionCapabilities(load: true, list: true, resume: false, images: true, delete: true, close: true,
+                                                                          fork: true))
         let session = try call {
             client.request("session/new", AcpRPC.sessionParams(cwd: Self.workspace, bridge: nil, loadID: nil), completion: $0)
         }.dictionary

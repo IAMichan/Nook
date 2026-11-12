@@ -439,7 +439,8 @@ extension WorkspaceManager {
         let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID, detail: ToolSummary.json(input), state: .pending)
         append(id, event)
         let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
-                                        suggestions: JSONBox(["always"]), eventID: event.id, created: Date())
+                                        suggestions: JSONBox(["always"]), eventID: event.id, created: Date(),
+                                        ask: PermissionAsk(reason: permission.message ?? ""))
         openCodeRequests[requestID] = (id, permission)
         approvals[id, default: []].append(pending)
         update(id) { $0.move(to: .waitingApproval) }

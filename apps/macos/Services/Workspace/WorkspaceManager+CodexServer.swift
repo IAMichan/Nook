@@ -420,31 +420,21 @@ extension WorkspaceManager {
         append(id, event)
         // A non-empty suggestion list enables "Always", which Codex knows as "accept for this session".
         let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
-                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date())
+                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date(),
+                                        // Why a command asks (it wants the network, say); a file change's reason is its title.
+                                        ask: PermissionAsk(reason: isCommand ? request.reason : ""))
         codexRequests[requestID] = request
         approvals[id, default: []].append(pending)
         update(id) { $0.move(to: .waitingApproval) }
         if let run = run(id) { onApproval?(run, pending) }
     }
 
-    /// An MCP server's request through Codex (a tool that wants to run, or something to confirm): the same approval
-    /// card as a command, titled with the tool and its server in readable words.
+    /// An MCP server's request through Codex (a tool that wants to run, or something to confirm). Nook remembers
+    /// "Always" for this tool itself, so it is offered even when Codex cannot remember it.
     private func presentCodexMcpApproval(_ id: UUID, _ request: CodexApprovalRequest, requestID: String) {
-        let tool = "mcp__\(request.server.isEmpty ? "mcp" : request.server)__\(request.tool.isEmpty ? "confirm" : request.tool)"
-        var input: [String: Any] = request.arguments
-        // Without arguments to show, the server's own question says what is being allowed.
-        if input.isEmpty, !request.reason.isEmpty { input["message"] = request.reason }
-        let label = McpToolName(tool)?.label ?? tool
-        let summary = request.reason.isEmpty ? label : "\(label) · \(ToolSummary.oneLine(request.reason, 120))"
-        let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID, detail: ToolSummary.json(input), state: .pending)
-        append(id, event)
-        // Nook remembers "Always" for this tool itself, so it is offered even when Codex cannot remember it.
-        let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
-                                        suggestions: JSONBox(["session"]), eventID: event.id, created: Date())
         codexRequests[requestID] = request
-        approvals[id, default: []].append(pending)
-        update(id) { $0.move(to: .waitingApproval) }
-        if let run = run(id) { onApproval?(run, pending) }
+        presentMcpRequest(id, requestID: requestID, server: request.server, tool: request.tool, message: request.reason,
+                          arguments: request.arguments, suggestions: JSONBox(["session"]))
     }
 
     /// The events only app-server sends, routed here from `handleCodex`.

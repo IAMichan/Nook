@@ -215,6 +215,7 @@ targets:
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
       - path: Core/I18n+AutoModel.swift
+      - path: Core/I18n+AgentAsks.swift
       - path: Core/I18n+WhatsAppAccounts.swift
       - path: Core/I18n+Privacy.swift
       - path: Core/I18n+Toast.swift

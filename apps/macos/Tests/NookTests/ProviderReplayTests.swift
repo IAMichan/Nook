@@ -70,7 +70,7 @@ final class ProviderReplayTests: XCTestCase {
         let outcome = try replay(try fixture("claude_tool_approval"),
                                  prompt: "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP.",
                                  react: { event, process in
-            guard case .permissionRequest(let request, let tool, let input, _, let toolUseID) = event else { return }
+            guard case .permissionRequest(let request, let tool, let input, _, let toolUseID, _) = event else { return }
             asked.set(tool: tool, toolUseID: toolUseID)
             process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
         })
@@ -201,7 +201,7 @@ final class ProviderReplayTests: XCTestCase {
         let log = try XCTUnwrap(ProviderTrafficLog(url: url, provider: "claude"))
         let prompt = "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP."
         let approve: @Sendable (ClaudeStreamEvent, AgentProcess) -> Void = { event, process in
-            if case .permissionRequest(let request, _, let input, _, _) = event {
+            if case .permissionRequest(let request, _, let input, _, _, _) = event {
                 process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
             }
         }

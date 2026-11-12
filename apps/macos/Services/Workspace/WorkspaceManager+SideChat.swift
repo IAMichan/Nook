@@ -23,7 +23,7 @@ extension WorkspaceManager {
         let cutoff = SideChat.cutoff(events: all, turnRunning: running)
         let events = Array(all.prefix(cutoff))
         let start = SideChat.start(provider: parent.provider, session: parent.providerSessionID, turnRunning: running,
-                                   lastFinished: parent.checkpoints?.last?.conversation)
+                                   lastFinished: parent.checkpoints?.last?.conversation, forksNatively: forksNatively(parent))
 
         let newID = UUID()
         var side = branchCopy(of: parent, id: newID, title: tr("ws.side.title", parent.title),

@@ -73,6 +73,52 @@ final class ClaudeStreamParserTests: XCTestCase {
                                                    suggestions: JSONBox([["type": "addRules"]]), toolUseID: "toolu_9")])
     }
 
+    func testPermissionRequestCarriesWhyItAsks() {
+        func ask(_ request: String) -> PermissionAsk? {
+            let line = #"{"type":"control_request","request_id":"r","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{},"tool_use_id":"t","#
+                + request + "}}"
+            guard case .permissionRequest(_, _, _, _, _, let ask)? = ClaudeStreamParser.parse(line).first else { return nil }
+            return ask
+        }
+        XCTAssertEqual(ask(#""decision_reason":"\u001b[33mrm -rf\u001b[0m deletes\nfiles outside the project","decision_reason_type":"safetyCheck","classifier_approvable":false"#),
+                       PermissionAsk(reason: "rm -rf deletes files outside the project", safetyCheck: true),
+                       "colors and line breaks out; a safety check reads as dangerous")
+        XCTAssertEqual(ask(#""decision_reason":"Matches ask rule Bash(git push:*)","decision_reason_type":"rule","suppress_always_allow_rule":true"#),
+                       PermissionAsk(reason: "Matches ask rule Bash(git push:*)", noAlways: true))
+        XCTAssertEqual(ask(#""decision_reason":"Permission mode is default","decision_reason_type":"mode""#), PermissionAsk(),
+                       "the permission mode asking says nothing new")
+        XCTAssertEqual(ask(#""decision_reason_type":"subcommandResults","classifier_approvable":true"#), PermissionAsk(safetyCheck: true),
+                       "a safety check inside a compound command still counts")
+        XCTAssertEqual(PermissionAsk.clean("\u{1B}]8;;https://x\u{07}link\u{1B}]8;;\u{07} ok"), "link ok")
+        XCTAssertEqual(PermissionAsk.clean(String(repeating: "a", count: 500)).count, PermissionAsk.maxReason)
+    }
+
+    func testMcpServerQuestionThroughClaudeCode() {
+        let confirm = #"{"type":"control_request","request_id":"e1","request":{"subtype":"elicitation","mcp_server_name":"deploy","message":"Deploy to production?","requested_schema":{"type":"object","properties":{}},"title":"Deploy"}}"#
+        XCTAssertEqual(ClaudeStreamParser.parse(confirm),
+                       [.elicitation(ClaudeElicitation(requestID: "e1", server: "deploy", message: "Deploy to production?", title: "Deploy",
+                                                       isConfirmation: true))])
+        let form = #"{"type":"control_request","request_id":"e2","request":{"subtype":"elicitation","mcp_server_name":"x","message":"Name?","requested_schema":{"type":"object","properties":{"name":{"type":"string"}}}}}"#
+        guard case .elicitation(let question)? = ClaudeStreamParser.parse(form).first else { return XCTFail("no question") }
+        XCTAssertFalse(question.isConfirmation, "fields to fill in are no yes or no")
+        let link = #"{"type":"control_request","request_id":"e3","request":{"subtype":"elicitation","mcp_server_name":"x","message":"Sign in","mode":"url","url":"https://x"}}"#
+        guard case .elicitation(let page)? = ClaudeStreamParser.parse(link).first else { return XCTFail("no question") }
+        XCTAssertFalse(page.isConfirmation)
+
+        let accept = ClaudeStreamParser.elicitationResponse(requestID: "e1", accept: true)
+        XCTAssertTrue(accept.contains(#""action":"accept""#) && accept.contains(#""request_id":"e1""#) && accept.contains(#""content":{}"#))
+        XCTAssertTrue(ClaudeStreamParser.elicitationResponse(requestID: "e2", accept: false).contains(#""action":"decline""#))
+    }
+
+    func testStopOneBackgroundSubagent() {
+        XCTAssertEqual(Subagents.taskID(launchNote: "Async agent launched successfully.\nagentId: a1b2 (use it to follow up)"), "a1b2")
+        XCTAssertNil(Subagents.taskID(launchNote: "Done: the chats are audited."))
+        let request = ClaudeStreamParser.stopTaskRequest(id: "r1", taskID: "a1b2")
+        XCTAssertTrue(request.contains(#""subtype":"stop_task""#) && request.contains(#""task_id":"a1b2""#))
+        XCTAssertTrue(RunProvider.claude.capabilities.stopsOneSubagent)
+        XCTAssertFalse(RunProvider.codex.capabilities.stopsOneSubagent)
+    }
+
     func testResultWithCostAndContextWindow() {
         let line = #"""
         {"type":"result","subtype":"success","is_error":false,"duration_ms":4200,"num_turns":3,"result":"Klaar.","session_id":"abc","total_cost_usd":0.0421,"usage":{"input_tokens":12,"output_tokens":340,"cache_read_input_tokens":9000,"cache_creation_input_tokens":800},"modelUsage":{"claude-sonnet-4-5":{"inputTokens":12,"contextWindow":200000,"costUSD":0.04}},"permission_denials":[{"tool_name":"Bash"}]}
