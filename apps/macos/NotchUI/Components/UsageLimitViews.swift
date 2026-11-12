@@ -188,6 +188,100 @@ private struct UsageLimitRow: View {
     }
 }
 
+// MARK: - Compact, beside a row
+
+extension QuotaLimit {
+    /// One limit per window ("5 hours", "Week"), for a place with room for only a few: a model group's windows when the
+    /// model is named (Antigravity's "Gemini 4 Pro · Week"), otherwise the fullest of each window across the groups.
+    static func perWindow(_ limits: [QuotaLimit], model: String = "") -> [QuotaLimit] {
+        let named = model.isEmpty ? [] : limits.filter { limit in
+            limit.group.map { model.localizedCaseInsensitiveContains($0) || $0.localizedCaseInsensitiveContains(model) } ?? false
+        }
+        var result: [QuotaLimit] = []
+        for limit in named.isEmpty ? limits : named {
+            var item = limit
+            item.label = limit.window
+            if let index = result.firstIndex(where: { $0.label == item.label }) {
+                if item.percent > result[index].percent { result[index] = item }
+            } else {
+                result.append(item)
+            }
+        }
+        return result
+    }
+}
+
+/// An account's windows side by side, small enough to sit in a row: per window its name and percentage used above a
+/// thin bar, and under it when the window resets. The full reset time and pace are in its tooltip. The usage limit
+/// card's header and its accounts to go on with use it; never draw a lone usage bar in a row instead.
+struct LimitWindowMeters: View {
+    let limits: [QuotaLimit]
+    /// What the bar takes while there is room.
+    var calm: Color = NookTheme.mint
+
+    static let meterWidth: CGFloat = 78
+
+    var body: some View {
+        TimelineView(.nookTicks(every: 30)) { context in
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+                if limits.isEmpty {
+                    meter(label: tr("limits.limits"), limit: nil, now: context.date)
+                } else {
+                    ForEach(limits) { meter(label: $0.label, limit: $0, now: context.date) }
+                }
+            }
+        }
+    }
+
+    private func meter(label: String, limit: QuotaLimit?, now: Date) -> some View {
+        let used = limit.map(UsageLimitRows.used)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
+                Text(label)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text(used.map { "\($0)%" } ?? "–")
+                    .monospacedDigit()
+                    .fontWeight(.semibold)
+                    .foregroundStyle(used.map { UsageTone.text(used: $0) } ?? NookTheme.textTertiary)
+            }
+            Bar(fraction: Double(used ?? 0) / 100, color: used.map { UsageTone.fill(used: $0, calm: calm) } ?? NookTheme.textTertiary)
+                .opacity(used == nil ? 0.5 : 1)
+            Text(resetWords(limit, now: now))
+                .monospacedDigit()
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+        }
+        .font(NookTheme.TextStyle.caption)
+        .frame(width: Self.meterWidth, alignment: .leading)
+        .help(help(label: label, limit: limit, now: now))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(help(label: label, limit: limit, now: now))
+    }
+
+    /// "↻ 2h 13m", "↻ now", or nothing when the window has no reset time (it has not started yet).
+    private func resetWords(_ limit: QuotaLimit?, now: Date) -> String {
+        guard let limit, limit.note == nil, let reset = limit.resetsAt else { return " " }
+        return "↻ " + (reset > now ? AgentFormat.compactDuration(reset.timeIntervalSince(now)) : tr("limits.now"))
+    }
+
+    /// "Week: 62% used", "Resets in 2d 3h · Thu 17:30", the pace.
+    private func help(label: String, limit: QuotaLimit?, now: Date) -> String {
+        guard let limit else { return tr("ws.limit.usedUnknown") }
+        var lines = [tr("limits.rowUsed", label, UsageLimitRows.used(limit))]
+        if let note = limit.note {
+            lines.append(note)
+        } else if let reset = limit.resetsAt, reset > now {
+            lines.append(tr("limits.resetsAt", AgentFormat.compactDuration(reset.timeIntervalSince(now)), AgentFormat.upcoming(reset, now: now)))
+        }
+        if let pace = LimitPool.pace(limit.poolLimit, now: now) {
+            lines.append(tr("limits.pace.\(pace.rawValue).short"))
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 /// Where a share of a bar's width lies, kept 3 pt inside its ends: the even-pace line of the modal's bars and the
 /// composer's cards alike.
 enum LimitSegmentPosition {

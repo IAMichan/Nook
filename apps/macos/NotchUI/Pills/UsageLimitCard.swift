@@ -72,6 +72,13 @@ struct UsageLimitCard: View {
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                // Which window ran out (5 hours or the week) and how full the other one is.
+                if let profile = app.profiles.profile(id: run.profileID) {
+                    let own = QuotaLimit.perWindow(app.quota.limits(for: profile), model: run.model)
+                    if !own.isEmpty {
+                        LimitWindowMeters(limits: own).padding(.top, NookTheme.Spacing.xs)
+                    }
+                }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             TimelineView(.nookTicks(every: 30)) { context in
@@ -100,9 +107,11 @@ struct UsageLimitCard: View {
     private func suggestions() -> [LimitOption] {
         var states: [LimitState] = []
         var profiles: [String: AgentProfile] = [:]
+        var windows: [String: [QuotaLimit]] = [:]
         for provider in app.connectedProviders where workspace.executable(provider) != nil {
             for profile in app.connectedProfiles(for: provider) {
                 let limits = app.quota.limits(for: profile)
+                windows[profile.id] = limits
                 let fraction = limits.map(\.percent).max().map { $0 / 100 }
                 states.append(LimitState(provider: provider, profileID: profile.id, usedFraction: limits.isEmpty ? nil : fraction,
                                          resetAt: limits.compactMap(\.resetsAt).min()))
@@ -118,9 +127,11 @@ struct UsageLimitCard: View {
             guard let profile = profiles[pick.profileID] else { return nil }
             let model = pick.sameAgent ? run.model
                 : workspace.settings.sessionDefaults(for: run.projectPath).model(for: pick.provider)
+            let name = modelName(model, provider: pick.provider, profileID: profile.id)
             return LimitOption(provider: pick.provider, profile: profile, sameAgent: pick.sameAgent,
-                               usedFraction: pick.usedFraction, model: model,
-                               modelName: modelName(model, provider: pick.provider, profileID: profile.id),
+                               usedFraction: pick.usedFraction,
+                               limits: QuotaLimit.perWindow(windows[profile.id] ?? [], model: name), model: model,
+                               modelName: name,
                                title: accountWords(pick.provider, profileID: profile.id),
                                badge: AccountTag.badge(profile, app: app))
         }
@@ -153,6 +164,8 @@ struct LimitOption {
     let profile: AgentProfile
     let sameAgent: Bool
     let usedFraction: Double?
+    /// The account's windows, one per window ("5 hours", "Week"); empty when the agent reports none.
+    let limits: [QuotaLimit]
     /// The model the session goes on with there ("" leaves it to the agent), and its name.
     let model: String
     let modelName: String
@@ -162,7 +175,7 @@ struct LimitOption {
 }
 
 /// One account in the usage limit banner: its logo with the account's badge, the agent and account, the model and
-/// what goes along, how much of its limit is used, and "Go on". The best one is lifted and its button is the main one.
+/// what goes along, its 5-hour and weekly windows (`LimitWindowMeters`), and "Go on". The best one is lifted and its button is the main one.
 struct LimitOptionRow: View {
     let option: LimitOption
     let best: Bool
@@ -199,18 +212,9 @@ struct LimitOptionRow: View {
         .help(tr(option.sameAgent ? "ws.limit.switchHelpSame" : "ws.limit.switchHelp"))
     }
 
-    /// How much of the account's limit is used, as a short bar; a dim empty bar when Nook does not know.
-    @ViewBuilder private var usage: some View {
-        if let used = option.usedFraction {
-            Bar(fraction: used, color: UsageTone.fill(used: Int(used * 100), calm: NookTheme.mint))
-                .frame(width: 44)
-                .help(tr("ws.limit.used", Int((used * 100).rounded())))
-        } else {
-            Bar(fraction: 0, color: NookTheme.textTertiary)
-                .frame(width: 44)
-                .opacity(0.5)
-                .help(tr("ws.limit.usedUnknown"))
-        }
+    /// The account's 5-hour and weekly windows; one dim "–" meter when the agent reports none.
+    private var usage: some View {
+        LimitWindowMeters(limits: option.limits)
     }
 }
 
