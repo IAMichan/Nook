@@ -11,6 +11,8 @@ struct InboxListView: View {
     @Binding var path: [String]
     @State private var query = ""
     @State private var filter = Filter.all
+    /// ⌘F asked for search: the field shows also while the list is short.
+    @Environment(\.searchFocusRequest) private var searchRequest
 
     /// All chats, or only the unread ones.
     enum Filter { case all, unread }
@@ -50,7 +52,7 @@ struct InboxListView: View {
                             }
                         } else {
                             // Finding one among many; a short list needs no search or filter.
-                            if client.inbox.count > 8 {
+                            if client.inbox.count > 8 || searchRequest.asked {
                                 NookSearchField(prompt: "Search chats", text: $query)
                                 HStack(spacing: Theme.Spacing.xs) {
                                     NookFilterChip(title: String(localized: "All"), selected: filter == .all) { filter = .all }
@@ -76,7 +78,7 @@ struct InboxListView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
                         if index > 0 { NookRowSeparator() }
-                        NavigationLink(value: chat.id) { InboxRow(chat: chat) }
+                        OpenLink(value: chat.id) { InboxRow(chat: chat) }
                             .buttonStyle(RowPress())
                             .contextMenu { markButton(chat) }
                     }

@@ -11,6 +11,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Option previews under an agent's question options (mock-ups, code snippets, ASCII layouts) now always show in the
+  code font in Nook and on the iPhone, and "Reply" in the footer of an agent's final answer (or its long-press menu on
+  the phone) puts the answer or your selection from it as a quote at the top of the composer, shown as an inset card
+  when sent.
+
 - The "Viewed" checkmarks on a pull request's Code tab now follow GitHub's own checkbox: a file you mark viewed in
   Nook (or on your phone) is marked viewed on GitHub too, and a file you ticked on github.com shows as viewed in Nook.
   A file that changed since you viewed it shows as changed again. Other forges keep the marks on your Mac, because
@@ -50,6 +55,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   or file contents, and tells every coding agent it starts about the same receiver in that agent's own settings
   (Claude Code, Codex, Gemini CLI, OpenCode and Grok export on their own). Standard `OTEL_EXPORTER_OTLP_*` variables
   override the fields and show as "Set by environment". Off until you set an endpoint.
+
+- Nook Companion runs on the iPad. With room, the tabs become a split view: a section's list on the left (sessions,
+  chats, Nook's chats, pull requests) and what you opened on the right, with a session's files, terminals and pull
+  requests in an inspector beside it. A hardware keyboard gets shortcuts (⌘N new session, ⌘[ and ⌘] the previous or
+  next session, ⌘F search, ⌘K find a session, ⌘1… a section, ⌘↩ send), and pictures, a file, links and text can be
+  dragged into a composer. In Slide Over or a narrow window, and on the iPhone, the layout stays the phone's.
 
 - While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
   the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This

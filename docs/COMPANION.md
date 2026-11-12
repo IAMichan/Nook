@@ -102,6 +102,31 @@ One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protoco
 
 Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`, `steer`, `liveTimeline`, `diff`, `images`, `clock`, `revoke`, `foreground`, `resume`, `pullRequests`, `attachments`, `history`, `compression`, `filePreview`, `liveChats`, `avatars`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
 
+## iPad
+
+The same app runs on an iPad (`TARGETED_DEVICE_FAMILY` 1,2), in every orientation and next to other apps. The iPhone's
+layout does not change.
+
+- **Split view:** at a regular width (`horizontalSizeClass == .regular`) the tabs become one `NavigationSplitView`
+  (`CompanionSplitView` in `SplitViews.swift`): the chosen section's list on the left (Nook's chats, Agents, Chats, Pull
+  requests or Settings, with the sections in a bar under it) and what you opened on the right. The lists and screens are
+  the phone's own; only where a row opens differs (`OpenLink`: a navigation link on the phone, the detail column on the
+  iPad), and the open row is lit (`detailSelected`). Both layouts share the same paths, so what you had open stays open
+  when the window gets narrow (Slide Over, a small Split View, Stage Manager) and the phone's tabs take over.
+- **Workspace beside the session:** a session's Files, Terminals and Pull requests open in an inspector next to the
+  conversation (`SessionWorkspaceMenu`, `WorkspaceInspector`), so you read the files while you follow the agent (where
+  the conversation would get too narrow, as in portrait, the list folds away while the inspector is open); at a compact
+  width they push, as on the phone. Conversations and composers keep a reading width (`readingColumn`).
+- **Keyboard:** with a hardware keyboard, ⌘N starts a new session, ⌘[ and ⌘] open the session above or below in the
+  Agents list, ⌘F shows and focuses the search of the list on screen, ⌘K finds a session, ⌘1… switches section, and
+  ⌘↩ sends from the composer you type in (`CompanionMenuCommands`; hold ⌘ to see them). The pointer lights rows and
+  buttons as the Mac's hover does.
+- **Drag and drop:** pictures, a file, links and text dragged onto a session, the New session sheet or Nook's chat wait
+  in its composer to read first (`composerDrop` in `ComposerDrop.swift`); nothing is sent by dropping. Pictures follow the
+  photo picker's rules (`CompanionImage.maxCount`, needs `images`), one file of at most 150 KB goes with a session's
+  message as from the share sheet (`CompanionFile`, needs `attachments`), and Nook's chat takes words only. What does
+  not fit is named in a notice.
+
 ## Compression
 
 Large messages are compressed before they are sealed (`CompanionWire`, `packages/protocol/Sources/CompanionWire.swift`,

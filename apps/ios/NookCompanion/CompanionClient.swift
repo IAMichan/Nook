@@ -911,16 +911,19 @@ final class CompanionClient: ObservableObject {
 
     /// A message to a session. With a Mac that answers repeats once (`CompanionFeature.retry`) it goes through the
     /// outbox: kept on the phone until the Mac took it, so it is not lost when the Mac cannot be reached right now.
-    func send(_ session: SessionDigest, text: String, steer: Bool = false, images: [CompanionImage] = []) async {
-        await send(sessionID: session.id, text: text, steer: steer, images: images)
+    func send(_ session: SessionDigest, text: String, steer: Bool = false, images: [CompanionImage] = [],
+              files: [CompanionFile] = []) async {
+        await send(sessionID: session.id, text: text, steer: steer, images: images, files: files)
     }
 
     /// A message to a session by its id, as a reply typed in a notification sends it. `steer`: into the running turn now
-    /// rather than after it (a Mac without `CompanionFeature.steer` puts it in line either way).
-    func send(sessionID: String, text: String, steer: Bool = false, images: [CompanionImage] = []) async {
+    /// rather than after it (a Mac without `CompanionFeature.steer` puts it in line either way). `files`: dropped on the
+    /// session (`composerDrop`), for a Mac that takes them (`CompanionFeature.attachments`).
+    func send(sessionID: String, text: String, steer: Bool = false, images: [CompanionImage] = [], files: [CompanionFile] = []) async {
         let request = CompanionRequest(op: .send, session: sessionID, text: text,
                                        steer: steer && can(CompanionFeature.steer) ? true : nil,
-                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images)
+                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images,
+                                       attachments: files.isEmpty || !can(CompanionFeature.attachments) ? nil : files)
         _ = await deliver(request)
     }
 
@@ -1030,12 +1033,21 @@ final class CompanionClient: ObservableObject {
 
     /// One folder or file of a session (`CompanionOp.files`).
     func loadFiles(_ sessionID: String, path: String) async -> FolderDigest? {
+        #if DEBUG
+        if Self.isDemo { return Self.demoFolder(path) }
+        #endif
         guard await supports(CompanionFeature.workspace) else { return nil }
         return await perform(CompanionRequest(op: .files, session: sessionID, item: path), quiet: true)?.folder
     }
 
     /// The terminals of a session (`CompanionOp.terminals`).
     func loadTerminals(_ sessionID: String) async -> [TerminalDigest]? {
+        #if DEBUG
+        if Self.isDemo {
+            return [TerminalDigest(id: "t1", title: "swift test", running: false,
+                                   output: "Test Suite 'RelayClientTests' passed\nExecuted 8 tests, with 0 failures")]
+        }
+        #endif
         guard await supports(CompanionFeature.workspace) else { return nil }
         return await perform(CompanionRequest(op: .terminals, session: sessionID), quiet: true)?.terminals
     }
@@ -1800,13 +1812,46 @@ struct RejectedMessage: Identifiable, Equatable {
 // MARK: Demo
 
 extension CompanionClient {
+    static var isDemo: Bool { ProcessInfo.processInfo.arguments.contains("-NookDemo") }
+
+    /// A session's folder in the demo: a few entries, and one file's text.
+    static func demoFolder(_ path: String) -> FolderDigest {
+        switch path {
+        case "":
+            return FolderDigest(path: "", entries: [.init(name: "Sources", isFolder: true), .init(name: "Tests", isFolder: true),
+                                                    .init(name: "Package.swift", isFolder: false, size: 812),
+                                                    .init(name: "README.md", isFolder: false, size: 2_410)])
+        case "Sources":
+            return FolderDigest(path: path, entries: [.init(name: "RelayClient.swift", isFolder: false, size: 6_120)])
+        default:
+            return FolderDigest(path: path, text: """
+            // swift-tools-version:5.9
+            import PackageDescription
+
+            let package = Package(name: "Relay", targets: [.target(name: "Relay"), .testTarget(name: "RelayTests")])
+            """)
+        }
+    }
+
     /// Sample sessions, chats and a conversation, without a Mac (launch argument `-NookDemo`, Debug builds only): to look
     /// at the screens in the Simulator and compare them with the Mac's.
     func loadDemo() {
         let now = Date().timeIntervalSince1970
         macName = "MacBook Pro"
         features = [CompanionFeature.start, CompanionFeature.fullTranscript, CompanionFeature.timeline, CompanionFeature.chat, CompanionFeature.inbox,
-                    CompanionFeature.manage, CompanionFeature.steer]
+                    CompanionFeature.manage, CompanionFeature.steer, CompanionFeature.images, CompanionFeature.attachments,
+                    CompanionFeature.workspace, CompanionFeature.pullRequests]
+        pulls = [
+            PullDigest(url: "https://github.com/example/nook/pull/1421", repo: "example/nook", number: 1421,
+                       title: "Reset the relay backoff after wake", author: "you", state: "open", ci: "passing", review: "required",
+                       conflict: false, additions: 48, deletions: 12, updated: now - 900, group: "mine",
+                       headBranch: "fix/relay", baseBranch: "main"),
+            PullDigest(url: "https://github.com/example/nook/pull/1418", repo: "example/nook", number: 1418,
+                       title: "Usage page in Settings", author: "anna", state: "open", ci: "pending", review: "required",
+                       conflict: false, additions: 230, deletions: 41, updated: now - 5400, group: "review",
+                       headBranch: "feature/usage", baseBranch: "main"),
+        ]
+        linkedPulls["s2"] = [pulls[0]]
         sessions = [
             SessionDigest(id: "s1", title: "Add the usage page to Settings", agent: "Claude Code", attention: "approval",
                           folder: "nook", branch: "feature/usage", updated: now - 60, excerpt: "",

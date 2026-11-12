@@ -580,6 +580,14 @@ protocol. The filled-in ticks come in each `InboxLine.ticks`. Who read it comes 
 the ticks. Who is typing comes in `InboxChatDigest.typing` for the list and `CompanionResponse.inboxTyping` for the
 open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one gets one, it reads these same fields.
 
+## Platforms and layouts
+
+The iPad layout of the companion (split view, keyboard shortcuts, dropping into a composer; *iPad* in
+[`COMPANION.md`](COMPANION.md)) is built in the companion's shared views, so every section (Nook, Agents, Chats, Pull
+requests, a session's workspace) and every agent and chat app in them gets it at once. The Mac and the Tauri app
+(Windows, Linux, Android) have layouts of their own and are left out of this change; the Tauri app has no
+tablet-specific layout for Android yet.
+
 ## Open gaps
 
 - **Safeguards on other platforms.** Trusting a local dev server's own certificate in the browser
