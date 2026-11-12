@@ -64,7 +64,7 @@ final class AgentHub: ObservableObject {
     }
 
     /// Account directory from hook environment; empty if standard directory.
-    private static func accountHome(_ env: [String: Any], agentID: String) -> String {
+    private nonisolated static func accountHome(_ env: [String: Any], agentID: String) -> String {
         guard let kind = AgentKind(hookAgentID: agentID), let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
         let home = AgentProfile.normalize(kind.home(fromVariable: raw))
         return home == AgentProfile.normalize(kind.defaultHome.path) ? "" : home
@@ -144,8 +144,10 @@ final class AgentHub: ObservableObject {
         let rawQuestions: Any
     }
 
+    /// Every change marks the records to be saved; one snapshot follows once the change is handled (`scheduleSave`), not
+    /// one per write: a hook event writes its record several times.
     private var records: [String: Record] = [:] {
-        didSet { saveRecords() }
+        didSet { scheduleSave() }
     }
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var pendingQuestions: [String: PendingQuestion] = [:] {
@@ -175,10 +177,21 @@ final class AgentHub: ObservableObject {
 
     func start() {
         restoreRecords()
+        // The JSON is read here, on the socket's queue: the status line alone sends several messages a second per Claude
+        // session, and only the parsed message goes to the main thread.
         server.onMessage = { [weak self] data, connection in
+            guard let message = HookMessage.parse(data) else {
+                connection.reply(nil)
+                return
+            }
+            // Sessions run directly by Nook workspace are tracked there (with their own approvals); don't duplicate here.
+            if message.isWorkspaceRun {
+                connection.reply(nil)
+                return
+            }
             Task { @MainActor in
                 if let self {
-                    self.handle(data, connection)
+                    self.handle(message, connection)
                 } else {
                     connection.reply(nil)
                 }
@@ -303,6 +316,22 @@ final class AgentHub: ObservableObject {
     private let launchedAt = Date()
     private var saveWork: Task<Void, Never>?
 
+    /// Whether `records` changed since the last snapshot; a save is then scheduled on the main queue.
+    private var recordsDirty = false
+
+    private func scheduleSave() {
+        guard !recordsDirty else { return }
+        recordsDirty = true
+        // After what runs now (a whole hook event, a scan, a prune) is done: all of its writes become one snapshot.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.recordsDirty else { return }
+                self.recordsDirty = false
+                self.saveRecords()
+            }
+        }
+    }
+
     private func saveRecords() {
         saveWork?.cancel()
         let snapshot = records.map { key, r in
@@ -409,7 +438,7 @@ final class AgentHub: ObservableObject {
         missingScans = missingScans.filter { busy[$0.key] != nil }
         let running = Self.scanned(found)
         for (key, record) in records where record.pid == nil && !record.lineage.isEmpty {
-            // Assigning nil again would still trigger `records`' didSet, and with it a rewrite of the whole file.
+            // Assigning nil again would still trigger `records`' didSet, and with it a save of the whole file.
             if let pid = SessionLiveness.agentProcess(agent: record.agent, lineage: record.lineage, in: running) {
                 records[key]?.pid = pid
             }
@@ -562,38 +591,91 @@ final class AgentHub: ObservableObject {
 
     // MARK: Messages
 
-    private func handle(_ data: Data, _ connection: HookConnection) {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            connection.reply(nil)
-            return
+    /// A hook message as the socket's queue parsed it. The JSON objects in it come from `JSONSerialization` and are never
+    /// changed afterwards, which is what makes handing them to the main thread safe.
+    struct HookMessage: @unchecked Sendable {
+        let event: [String: Any]
+        let env: [String: Any]
+        let agentID: String
+        /// "event", "permission", "ask" or "statusline".
+        let mode: String
+        /// The event's name as Claude Code calls it (`AgentHub.normalize`).
+        let kind: String
+        /// The account directory from the hook's environment; empty for the standard one.
+        let home: String
+        /// What the status line reports of the plan's usage (mode "statusline" only).
+        let usage: PlanUsage?
+
+        /// A session Nook's workspace runs itself: tracked there, with its own approvals. Its status line still counts.
+        var isWorkspaceRun: Bool {
+            guard mode != "statusline", let run = env["NOOK_RUN_ID"] as? String else { return false }
+            return !run.isEmpty
         }
-        let event = (object["event"] as? [String: Any]) ?? [:]
-        let env = (object["env"] as? [String: Any]) ?? [:]
-        var agentID = Self.cleanAgentID((object["agent"] as? String) ?? "agent")
-        if agentID == "claude-code", (env["CLAUDE_CODE_ENTRYPOINT"] as? String) == "claude-desktop" {
-            agentID = "claude-desktop"
+
+        static func parse(_ data: Data) -> HookMessage? {
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            let event = (object["event"] as? [String: Any]) ?? [:]
+            let env = (object["env"] as? [String: Any]) ?? [:]
+            var agentID = AgentHub.cleanAgentID((object["agent"] as? String) ?? "agent")
+            if agentID == "claude-code", (env["CLAUDE_CODE_ENTRYPOINT"] as? String) == "claude-desktop" {
+                agentID = "claude-desktop"
+            }
+            let mode = (object["mode"] as? String) ?? (((object["wait"] as? Bool) ?? false) ? "permission" : "event")
+            let kind = AgentHub.normalize((event["hook_event_name"] as? String) ?? (event["type"] as? String) ?? "")
+            return HookMessage(event: event, env: env, agentID: agentID, mode: mode, kind: kind,
+                               home: AgentHub.accountHome(env, agentID: agentID),
+                               usage: mode == "statusline" ? PlanUsage.parse(event) : nil)
         }
-        let mode = (object["mode"] as? String) ?? (((object["wait"] as? Bool) ?? false) ? "permission" : "event")
-        let kind = Self.normalize((event["hook_event_name"] as? String) ?? (event["type"] as? String) ?? "")
+    }
+
+    /// Handles one hook message: every record change and every card it opens or closes is published as one rebuild, and
+    /// saved as one snapshot.
+    private func handle(_ message: HookMessage, _ connection: HookConnection) {
+        deferringRebuild = true
+        let followUp = apply(message, connection)
+        deferringRebuild = false
+        if rebuildRequested {
+            rebuildRequested = false
+            rebuild()
+        }
+        guard let followUp else { return }
+        // A new prompt is a new turn: a chat you settled comes back now, whether or not the Agents list is on screen.
+        if followUp.reopen, let session = sessions.first(where: { $0.id == followUp.key }) {
+            FinishedSessions.shared.reopen(FinishedSessions.key(session: session))
+        }
+        if followUp.attention, let session = sessions.first(where: { $0.id == followUp.key }) {
+            onAttention?(session)
+        }
+        if followUp.reply { connection.reply(nil) }
+    }
+
+    /// What `handle` does after the sessions are rebuilt, for an event that went through to the end of `apply`.
+    private struct HookFollowUp {
+        let key: String
+        let reopen: Bool
+        let attention: Bool
+        let reply: Bool
+    }
+
+    private func apply(_ message: HookMessage, _ connection: HookConnection) -> HookFollowUp? {
+        let event = message.event
+        let env = message.env
+        let agentID = message.agentID
+        let mode = message.mode
+        let kind = message.kind
 
         if mode == "statusline" {
-            if let usage = PlanUsage.parse(event) {
-                let home = Self.accountHome(env, agentID: agentID)
+            if let usage = message.usage {
+                let home = message.home
                 // The status line runs on every message update, several times a second: a reading that shows nothing new
                 // is only stored once a minute (to keep `updated` fresh), instead of redrawing every view and rewriting
                 // UserDefaults each time.
                 let known = home.isEmpty ? planUsage : profilePlanUsage[home]
-                if let known, !usage.differs(from: known) { connection.reply(nil); return }
+                if let known, !usage.differs(from: known) { connection.reply(nil); return nil }
                 if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
             }
             connection.reply(nil)
-            return
-        }
-
-        // Sessions run directly by Nook workspace are tracked there (with their own approvals); don't duplicate here.
-        if let run = env["NOOK_RUN_ID"] as? String, !run.isEmpty {
-            connection.reply(nil)
-            return
+            return nil
         }
 
         let cwd = (event["cwd"] as? String) ?? (event["workdir"] as? String) ?? ""
@@ -618,7 +700,7 @@ final class AgentHub: ObservableObject {
             }
             rebuild()
             connection.reply(nil)
-            return
+            return nil
         }
 
         // The app's prompt was answered in the app (the tool went on), or the turn moved past it: its card goes.
@@ -652,7 +734,7 @@ final class AgentHub: ObservableObject {
         if let host = env["__CFBundleIdentifier"] as? String, !host.isEmpty {
             record.hostBundleID = host
         }
-        record.home = Self.accountHome(env, agentID: agentID)
+        record.home = message.home
         record.updated = Date()
         // Which process this session runs in; the same session resumed in a new process starts over.
         let sameProcess = record.pid.map { connection.lineage.contains($0) } ?? false
@@ -690,12 +772,12 @@ final class AgentHub: ObservableObject {
             guard kind == "PreToolUse", tool == "AskUserQuestion", let items = AgentQuestionRequest.parse(input) else {
                 records[key] = record
                 connection.reply(nil)
-                return
+                return nil
             }
             askQuestion(key: key, record: &record, items: items, raw: input["questions"] ?? [], connection: connection)
             records[key] = record
             rebuild()
-            return
+            return nil
         }
 
         // Permission: agent is waiting for our response.
@@ -703,7 +785,7 @@ final class AgentHub: ObservableObject {
             if kind == "PermissionRequest" {
                 guard tool != "AskUserQuestion" else {
                     connection.reply(nil)
-                    return
+                    return nil
                 }
                 let suggestions = event["permission_suggestions"]
                 // Claude Code stores the rule it suggests; the OpenCode and Hermes plugins turn it into their own
@@ -714,7 +796,7 @@ final class AgentHub: ObservableObject {
                                 kind: .permission(suggestions: suggestions, canAlways: canAlways), connection: connection)
                 records[key] = record
                 rebuild()
-                return
+                return nil
             }
             if kind == "PreToolUse", PreToolGate.agents.contains(agentID) {
                 // The agent's hook runs before every tool call: ask only where the agent would ask (`PreToolGate`).
@@ -728,13 +810,13 @@ final class AgentHub: ObservableObject {
                                     connection: connection)
                     records[key] = record
                     rebuild()
-                    return
+                    return nil
                 } else {
                     connection.reply(nil)
                 }
                 records[key] = record
                 rebuild()
-                return
+                return nil
             }
             if kind == "PreToolUse", tool == "Bash" {
                 // Legacy integration (prior to PermissionRequest): only commands that are not clearly safe.
@@ -743,12 +825,12 @@ final class AgentHub: ObservableObject {
                     requestApproval(key: key, record: &record, tool: tool, input: input, kind: .preToolUse(grant: nil), connection: connection)
                     records[key] = record
                     rebuild()
-                    return
+                    return nil
                 }
                 records[key] = record
                 rebuild()
                 connection.reply(nil)
-                return
+                return nil
             }
             connection.reply(nil)
         }
@@ -848,14 +930,7 @@ final class AgentHub: ObservableObject {
 
         records[key] = record
         rebuild()
-        // A new prompt is a new turn: a chat you settled comes back now, whether or not the Agents list is on screen.
-        if kind == "UserPromptSubmit", let session = sessions.first(where: { $0.id == key }) {
-            FinishedSessions.shared.reopen(FinishedSessions.key(session: session))
-        }
-        if attention, let session = sessions.first(where: { $0.id == key }) {
-            onAttention?(session)
-        }
-        if mode != "permission" { connection.reply(nil) }
+        return HookFollowUp(key: key, reopen: kind == "UserPromptSubmit", attention: attention, reply: mode != "permission")
     }
 
     // MARK: Permissions
@@ -1087,7 +1162,7 @@ final class AgentHub: ObservableObject {
                                          lastActive: record.updated)
             return !SessionLiveness.isExpired(done: record.status == .done || record.status == .failed, settled: settled, age: now.timeIntervalSince(record.updated))
         }
-        // Only when something expired: every assignment runs `records`' didSet, which rewrites agent-sessions.json.
+        // Only when something expired: every assignment runs `records`' didSet, which saves agent-sessions.json.
         guard kept.count != records.count else { return }
         records = kept
         rebuild()
@@ -1103,6 +1178,9 @@ final class AgentHub: ObservableObject {
     /// When `sessions` was last published, and whether a later publish is waiting (see `rebuild`).
     private var lastPublished: Date = .distantPast
     private var publishPending = false
+    /// Set while `handle` applies a hook event: `rebuild` then only notes that it is wanted.
+    private var deferringRebuild = false
+    private var rebuildRequested = false
     /// How often a session's progress alone is published at most. Each tool call of each agent is a hook event, and each
     /// publish redraws every view of the app: with several agents at work that was several full redraws a second.
     private static let progressInterval: TimeInterval = 1
@@ -1111,6 +1189,11 @@ final class AgentHub: ObservableObject {
     /// that starts, waits, finishes or ends, an approval, a new prompt) is published at once; progress alone (a step, a
     /// reply, the time of the last event, the order that follows from it) at most once every `progressInterval`.
     private func rebuild() {
+        // A hook event being handled rebuilds once, at its end (`handle`).
+        if deferringRebuild {
+            rebuildRequested = true
+            return
+        }
         let newSessions = makeSessions()
         guard sessions != newSessions else { return }
         let wait = lastPublished.timeIntervalSinceNow + Self.progressInterval
@@ -1140,6 +1223,8 @@ final class AgentHub: ObservableObject {
         // The context lines of a finished session are made anew on each rebuild, each with a new id: the ones published
         // already are kept while their text is the same, so an unchanged session stays equal and its rows keep their identity.
         let published = Dictionary(sessions.map { ($0.id, $0.diff) }, uniquingKeysWith: { first, _ in first })
+        // The oldest approval of each session, as `approvals.first { $0.sessionKey == key }` finds it.
+        let approvalIDs = Dictionary(approvals.map { ($0.sessionKey, $0.id) }, uniquingKeysWith: { first, _ in first })
         return records
             .sorted { lhs, rhs in
                 let l = order[lhs.value.status] ?? 9
@@ -1175,7 +1260,7 @@ final class AgentHub: ObservableObject {
                     cwd: record.cwd,
                     hostBundleID: record.hostBundleID,
                     home: record.home,
-                    approvalID: approvals.first { $0.sessionKey == key }?.id,
+                    approvalID: approvalIDs[key],
                     linesAdded: record.linesAdded,
                     linesRemoved: record.linesRemoved,
                     summary: Self.oneLine(record.lastMessage),
@@ -1227,7 +1312,7 @@ final class AgentHub: ObservableObject {
     }
 
     /// Normalizes event names from other agents (Gemini CLI, Antigravity, Copilot, Cursor, etc.) to Claude Code convention.
-    static func normalize(_ name: String) -> String {
+    nonisolated static func normalize(_ name: String) -> String {
         let map: [String: String] = [
             "BeforeTool": "PreToolUse", "AfterTool": "PostToolUse",
             "BeforeAgent": "UserPromptSubmit", "AfterAgent": "Stop",
@@ -1245,7 +1330,7 @@ final class AgentHub: ObservableObject {
         return map[name] ?? HookCompaction.canonical[name] ?? name
     }
 
-    private static func cleanAgentID(_ raw: String) -> String {
+    private nonisolated static func cleanAgentID(_ raw: String) -> String {
         let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
         let clean = String(raw.lowercased().filter { allowed.contains($0) }.prefix(32))
         return clean.isEmpty ? "agent" : clean
