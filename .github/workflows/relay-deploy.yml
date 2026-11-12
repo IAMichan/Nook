@@ -4,6 +4,11 @@ name: Relay deploy
 # from home" with one switch. Needs the repository secrets CLOUDFLARE_API_TOKEN (permission: Workers Scripts edit)
 # and CLOUDFLARE_ACCOUNT_ID; without them the job says so and stops. Set the repository variable NOOK_RELAY_URL to the
 # address it prints, and release.yml builds Nook with it (Info.plist NookRelayURL).
+#
+# Only main deploys: every iPhone and Mac talks to this relay, so *Run workflow* on another branch refuses instead of
+# putting untested code in front of them. The deploy runs in the `production` environment (Settings › Environments
+# can add a required reviewer or a wait timer there) and leaves a "Relay deploy / production" status on the commit, so
+# the commit page shows which code the relay runs.
 
 on:
   push:
@@ -22,8 +27,15 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.address }}
+    permissions:
+      contents: read
+      statuses: write # the "Relay deploy / production" status on the commit
     defaults:
       run:
         working-directory: apps/relay
@@ -40,6 +52,7 @@ jobs:
       - name: Test
         run: npm test
       - name: Deploy
+        id: deploy
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::notice::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set; Nook's relay was not deployed."
@@ -49,5 +62,22 @@ jobs:
           set -o pipefail
           npx --yes wrangler@4 deploy | tee deploy.log
           address="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)"
-          echo "Relay: ${address:-see the log}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Set the repository variable NOOK_RELAY_URL to this address once." >> "$GITHUB_STEP_SUMMARY"
+          version="$(grep -oiE 'version id: *[0-9a-f-]+' deploy.log | head -1 | sed 's/.*: *//' || true)"
+          [ -n "$address" ] && echo "address=$address" >> "$GITHUB_OUTPUT"
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "Relay: ${address:-see the log} (version ${version:-unknown}, commit \`$GITHUB_SHA\`)"
+            echo "Set the repository variable NOOK_RELAY_URL to this address once."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mark the commit
+        # Only when a deploy was attempted: a run without the Cloudflare secrets, or with failing tests, leaves no status.
+        if: always() && (steps.deploy.outputs.deployed == 'true' || steps.deploy.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ steps.deploy.outcome == 'success' && 'success' || 'failure' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$STATE" = success ]; then DESCRIPTION="Nook's relay runs this commit"; else DESCRIPTION="Deploying this commit failed"; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$STATE" -f context="Relay deploy / production" \
+            -f target_url="$RUN_URL" -f description="$DESCRIPTION" >/dev/null || \
+            echo "::warning::Could not set the commit status."

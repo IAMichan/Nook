@@ -1,10 +1,18 @@
 name: Build
 
 # Reusable: ci.yml calls it when the change touches its paths (scripts/ci-changes.sh). *Run workflow* runs only
-# the macOS build and NookTests.
+# the macOS build and NookTests, on any branch: a clean Mac for an agent whose worktree cannot build (disk, the build
+# slot) or a test that only fails on CI. `only-testing` narrows the tests, so iterating on one class costs one build
+# and seconds of tests:
+#   gh workflow run build.yml --ref my-branch -f only-testing=NookTests/RunStoreTests
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      only-testing:
+        description: 'Run only these tests, space-separated (NookTests/RunStoreTests NookTests/Foo/testBar). Empty: all.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -76,7 +84,7 @@ jobs:
           key: macos-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
           restore-keys: macos-dd-${{ steps.xcode.outputs.build }}-
       - name: Install XcodeGen
-        run: brew install xcodegen
+        uses: ./.github/actions/setup-xcodegen
       - name: Generate project
         run: xcodegen
       - name: Resolve Swift packages
@@ -100,10 +108,18 @@ jobs:
           xcodebuild build-for-testing $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" 2>&1 | tee build.log
       - name: Unit tests
         timeout-minutes: 15
+        env:
+          ONLY_TESTING: ${{ inputs.only-testing }}
         run: |
           set -o pipefail
+          SELECTION=(-only-testing:NookTests)
+          if [ -n "$ONLY_TESTING" ]; then
+            SELECTION=()
+            for test in $ONLY_TESTING; do SELECTION+=("-only-testing:$test"); done
+            echo "Running only: $ONLY_TESTING" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           # shellcheck disable=SC2086 # the flags are meant to split into words
-          xcodebuild test-without-building $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" -only-testing:NookTests \
+          xcodebuild test-without-building $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" "${SELECTION[@]}" \
             -resultBundlePath "$RUNNER_TEMP/NookTests.xcresult" 2>&1 | tee test.log
       - name: Errors and warnings
         if: always()
@@ -128,7 +144,9 @@ jobs:
         with:
           path: *cache-paths
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      - uses: ./.github/actions/verified-mark
+      # A run of only some tests verified nothing about the rest, so it leaves no marker.
+      - if: inputs.only-testing == ''
+        uses: ./.github/actions/verified-mark
         with:
           name: macos
           fingerprint: ${{ needs.ui-lint.outputs.fingerprint }}

@@ -138,6 +138,7 @@ the merged pull requests grouped by label (`.github/release.yml`); before releas
 - Match the surrounding style and conventions (Swift, Rust, or Svelte).
 - **Explicit user approval:** Any action that mutates user data or executes on the system (calendar, mail, shell commands, webhooks, system settings) must go through an interactive confirmation card/plan approved by the user and write an entry to the `audit` table in `nook.sqlite`.
 - **Untrusted input:** Always treat external text (screen OCR, calendar events, emails, web pages, tool outputs, agent hooks) as untrusted data, never as instructions.
+- **Limits for new contributors** (until a maintainer adds you to [`.github/VOUCHED.td`](.github/VOUCHED.td)): at most 3 open pull requests at a time; a fourth is closed and can be reopened once one of the others is done. A pull request that conflicts with `main` gets the `needs rebase` label and is closed after 7 days without activity; push or comment to keep it going.
 - **Using a coding agent?** That's welcome. Agents working in this repo should follow [AGENTS.md](AGENTS.md); you remain responsible for reviewing what you submit.
 
 ## Reporting Issues

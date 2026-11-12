@@ -29,7 +29,9 @@ jobs:
         uses: ./.github/actions/verified-check
         with:
           name: ios
-          paths: apps/ios packages/protocol .github/workflows/ios.yml .github/actions
+          paths: >-
+            apps/ios packages/protocol apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/NotchUI/Components/BrandLogo.swift apps/macos/NotchUI/Shared apps/macos/NotchUI/Theme/NookIcon.swift apps/macos/NotchUI/Theme/NookPalette.swift apps/macos/NotchUI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets apps/macos/Resources/katex apps/macos/Resources/mermaid
+            .github/workflows/ios.yml .github/actions
 
   build:
     needs: gate
@@ -49,7 +51,7 @@ jobs:
           if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
           xcodebuild -version
       - name: Install XcodeGen
-        run: brew install xcodegen
+        uses: ./.github/actions/setup-xcodegen
       - name: Generate project
         run: xcodegen
       - name: Build
