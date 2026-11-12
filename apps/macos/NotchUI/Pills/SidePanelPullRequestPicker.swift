@@ -96,6 +96,9 @@ struct SidePanelPullRequestPicker: View {
                 }
             }
                 .padding(NookTheme.Spacing.sm)
+            // The same chips as on the Pull requests page, on the same filter.
+            PullRequestAttentionBar(filter: $filterStore.filter, accounts: store.accounts)
+                .padding(.horizontal, NookTheme.Spacing.sm).padding(.bottom, NookTheme.Spacing.sm)
             PullRequestCloseSweepBar().padding(.horizontal, NookTheme.Spacing.sm).padding(.bottom, NookTheme.Spacing.sm)
             NookDivider()
             ScrollView {
