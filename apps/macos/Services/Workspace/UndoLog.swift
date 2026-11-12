@@ -4,7 +4,8 @@ import Foundation
 // decision lives in a value so the list and the composer line show the same entry. Foundation only.
 
 struct UndoEntry: Equatable, Sendable {
-    enum Kind: String, Codable, Sendable { case settled, snoozed, unsettled, pinned, unpinned, archived, discarded }
+    /// `autoSettled`: settled by the auto-settle rules, not by you; undone the same way as `settled`.
+    enum Kind: String, Codable, Sendable { case settled, autoSettled, snoozed, unsettled, pinned, unpinned, archived, discarded }
     var kind: Kind
     var ids: [String]
     /// Time of the latest action merged into this entry: the 5 s window runs from it.

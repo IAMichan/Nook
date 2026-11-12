@@ -102,6 +102,8 @@ final class AppModel: ObservableObject {
     var quota: QuotaService { QuotaService(hub: hub, codex: codex, antigravity: antigravityUsage) }
     /// Currently selected settings section.
     @Published var settingsSection: SettingsSection = .start
+    /// A project Settings › Projects should show next (`openProjectSettings`); Settings takes it and clears it.
+    @Published var settingsProjectScope: String?
 
     private(set) lazy var tools: NookTools = {
         let tools = NookTools(calendar: calendar, store: store, screen: screen) { [weak self] in

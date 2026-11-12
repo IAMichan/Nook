@@ -502,8 +502,10 @@ struct WorkspaceSettingsSection: View {
     /// One project's own defaults: the project to show, then each row with what it inherits or sets itself.
     @ViewBuilder
     private var projects: some View {
-        let choices = ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects,
-                                                   overrides: ws.projectOverrides)
+        let listed = ProjectSettings.scopeChoices(favorites: ws.favoriteProjects, recent: ws.recentProjects,
+                                                  overrides: ws.projectOverrides)
+        // A project opened from the Agents list is shown even when it is not one of the recent ones.
+        let choices = scope.isEmpty || listed.contains(scope) ? listed : [scope] + listed
         let shown = choices.contains(scope) ? scope : (choices.first ?? "")
         Section {
             if shown.isEmpty {
@@ -511,14 +513,26 @@ struct WorkspaceSettingsSection: View {
             } else {
                 Picker(selection: Binding(get: { shown }, set: { scope = $0 })) {
                     ForEach(choices, id: \.self) { path in
-                        let name = (path as NSString).lastPathComponent
+                        let name = ws.projectDisplayName(path)
                         Text(ws.isArchivedProject(path) ? tr("sc.archive.archivedName", name) : name)
                             .tag(path).help(AgentPathFormat.tilde(path))
                     }
                 } label: {
                     SettingText("settings.projects.project")
                 }
+                ProjectNameRow(path: shown)
                 projectDefaults(shown)
+            }
+            LabeledContent {
+                Button(tr("inbox.project.add")) {
+                    if let path = ProjectFolderPanel.choose() {
+                        ws.addProject(path)
+                        scope = ProjectOverrides.normalize(path)
+                    }
+                }
+                .controlSize(.small)
+            } label: {
+                SettingText("settings.projects.add")
             }
         } header: {
             SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.scope.footer"))

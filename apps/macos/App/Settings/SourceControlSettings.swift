@@ -181,3 +181,47 @@ enum ProjectIconStore {
         return target.path
     }
 }
+
+/// Settings › Projects: the name a project shows in Nook's lists, saved when you press Return or leave the field.
+struct ProjectNameRow: View {
+    let path: String
+    @ObservedObject private var ws = WorkspaceSettings.shared
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        LabeledContent {
+            TextField("", text: $name, prompt: Text((path as NSString).lastPathComponent))
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+                .accessibilityLabel(tr("settings.projects.name"))
+                .frame(width: 220)
+                .focused($focused)
+                .onSubmit(save)
+                .onChange(of: focused) { _, now in if !now { save() } }
+        } label: {
+            SettingText("settings.projects.name")
+        }
+        .help(tr("settings.projects.name.help"))
+        .task(id: path) { name = ws.projectDisplayName(path) }
+    }
+
+    private func save() { ws.setProjectName(name, project: path) }
+}
+
+/// Picks (or makes) the folder of a new project.
+@MainActor
+enum ProjectFolderPanel {
+    static func choose() -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = tr("inbox.project.addPrompt")
+        panel.message = tr("inbox.project.addMessage")
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url.path
+    }
+}

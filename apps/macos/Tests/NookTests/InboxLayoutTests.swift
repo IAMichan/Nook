@@ -139,15 +139,63 @@ final class InboxLayoutTests: XCTestCase {
 
     // MARK: Projects
 
-    func testProjectGroupsHoldWorkingAndActiveRowsPerProject() {
+    func testProjectGroupsHoldActiveRowsPerProjectWithWorkingInTheirFolderWhenTheShelfIsOff() {
         let rows = [row("n1", project: "Nook"), row("w1", .working, age: 50, project: "WhoBench"),
                     row("n2", .working, age: 10, project: "Nook"), row("p", project: "Nook"), row("z", project: "Nook")]
-        let groups = InboxLayout.projectGroups(sections(rows, InboxState(pinned: ["p"], settled: ["z"])))
+        let groups = InboxLayout.projectGroups(sections(rows, InboxState(pinned: ["p"], settled: ["z"]), working: false))
         XCTAssertEqual(groups.map(\.project), ["Nook", "WhoBench"])
         // Newest activity first inside the project; pinned and settled keep their own sections.
         XCTAssertEqual(groups[0].rows.map(\.entry.id), ["n2", "n1"])
-        XCTAssertEqual(groups[0].rows.map(\.kind), [.working, .active])
         XCTAssertEqual(groups[1].rows.map(\.entry.id), ["w1"])
+    }
+
+    func testWorkingShelfStaysUnderTheProjectsWhenOn() {
+        let rows = [row("n1", project: "Nook"), row("w1", .working, age: 50, project: "WhoBench"), row("n2", .working, project: "Nook")]
+        let s = sections(rows)
+        let groups = InboxLayout.projectGroups(s)
+        XCTAssertEqual(groups.map(\.project), ["Nook"])
+        XCTAssertEqual(groups[0].rows.map(\.entry.id), ["n1"])
+        XCTAssertEqual(Set(ids(s, .working)), ["w1", "n2"])
+    }
+
+    func testPinnedProjectsLeadInPinOrderAndStayWhenEmpty() {
+        let rows = [row("a", project: "Alpha"), row("z", project: "Zed"), row("s", project: InboxProject.none)]
+        let groups = InboxLayout.projectGroups(sections(rows), pinned: ["Zed", "Empty"])
+        XCTAssertEqual(groups.map(\.project), ["Zed", "Empty", "Alpha", InboxProject.none])
+        XCTAssertEqual(groups.map(\.pinned), [true, true, false, false])
+        XCTAssertTrue(groups[1].rows.isEmpty)
+    }
+
+    func testArchivedProjectsComeLastAndOnlyWithActiveSessions() {
+        let rows = [row("o", project: "Old"), row("a", project: "Alpha"), row("s", project: InboxProject.none)]
+        let groups = InboxLayout.projectGroups(sections(rows), pinned: ["Gone"], archived: ["Old", "Gone"])
+        XCTAssertEqual(groups.map(\.project), ["Alpha", InboxProject.none, "Old"])
+        XCTAssertEqual(groups.map(\.archived), [false, false, true])
+    }
+
+    func testFolderDotSaysTheMostUrgentState() {
+        func dot(_ attentions: [AgentAttention]) -> InboxProjectGroup.Dot? {
+            let rows = attentions.enumerated().map { row("r\($0.offset)", $0.element) }
+            return InboxLayout.projectGroups(sections(rows, working: false)).first?.dot
+        }
+        XCTAssertEqual(dot([.working, .ready, .failed, .approval]), .needsYou)
+        XCTAssertEqual(dot([.working, .ready, .limited]), .failed)
+        XCTAssertEqual(dot([.working, .ready]), .done)
+        XCTAssertEqual(dot([.idle, .working]), .working)
+        XCTAssertNil(dot([.idle, .finished]))
+    }
+
+    func testSessionsWithoutAProjectShareOneGroup() {
+        let root = "/Users/me/.nook/scratch"
+        func key(_ folder: String, _ path: String) -> String {
+            InboxProject.key(folder: folder, path: path, scratchRoot: root, home: "/Users/me")
+        }
+        XCTAssertEqual(key("2026-11-04-fix-the-login-a1b2c3", root + "/2026-11-04-fix-the-login-a1b2c3"), InboxProject.none)
+        XCTAssertEqual(key("sub", root + "/2026-11-04-x-a1b2c3/sub"), InboxProject.none)
+        XCTAssertEqual(key("me", "/Users/me/"), InboxProject.none)
+        XCTAssertEqual(key("no folder", ""), InboxProject.none)
+        XCTAssertEqual(key("nook", "/Users/me/code/nook"), "nook")
+        XCTAssertEqual(key("scratchy", "/Users/me/.nook/scratchy"), "scratchy")
     }
 
     func testProjectsKeepTheirPlaceWhenOneChanges() {

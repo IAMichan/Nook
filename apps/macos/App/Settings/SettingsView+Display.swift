@@ -134,7 +134,6 @@ struct GeneralListAndConfirmations: View {
         Section {
             Toggle(isOn: $inbox.groupByProject) { SettingText("settings.ws.inboxProjects") }
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
-                .disabled(inbox.groupByProject)
         } header: {
             SettingText("settings.general.sessionList")
         }
