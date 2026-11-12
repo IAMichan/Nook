@@ -177,6 +177,11 @@ final class ChatCaptureService: ObservableObject {
     private var backfillDue: [String: Date] = [:]
     /// When each chat was last asked.
     private var backfillAsked: [String: Date] = [:]
+    /// When each app last had live traffic (a notification, a read that brought something, a chat you opened): its
+    /// backfill waits `ChatBackfill.liveQuiet` after it.
+    private var liveAt: [String: Date] = [:]
+    /// The free disk space as last looked at, and when (`ChatBackfill.diskCheck`).
+    private var freeBytes: (bytes: Int64?, at: Date)?
     /// Chats whose stretch scrolled back to from the archive is being laid beside their app's (`checkStored`).
     private var checking: Set<String> = []
     private var bridgeDue: [String: Date] = [:]
@@ -557,6 +562,7 @@ final class ChatCaptureService: ObservableObject {
     private func nudge(_ app: String, at date: Date) {
         // A bridge that keeps failing waits out its backoff: a nudge would otherwise ask a refusing service every second.
         // The chat helper reads the apps it covers: a notification of one of them nudges it, as any other bridge.
+        liveAt[app] = date
         for bridge in bridges where watches(bridge, [app]) && bridgeFailures[bridge.bridgeID] == nil {
             bridgeDue[bridge.bridgeID] = nil
             catchUp.expect(bridge.bridgeID, at: date)
@@ -644,6 +650,10 @@ final class ChatCaptureService: ObservableObject {
             archiveBeyondWindow(chats, in: merged)
             let told = (bridge as? ChatNewsBridge)?.takeNews()
             if mergedAny {
+                // A new message is live traffic: that app's backfill rests a while (`ChatBackfill.liveQuiet`).
+                let readApps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
+                let now = Date()
+                for app in readApps where !ChatInbox.added(before: before, after: merged, apps: [app]).isEmpty { liveAt[app] = now }
                 if catchUp.isOwed(bridge.bridgeID) {
                     let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
                     catchUp.read(bridge.bridgeID, brought: ChatInbox.added(before: before, after: merged, apps: apps))
@@ -687,6 +697,7 @@ final class ChatCaptureService: ObservableObject {
     func refresh(_ id: String) {
         ensureLoaded()
         guard enabled, let thread = inbox.threads[id], thread.bridged == true else { return }
+        liveAt[thread.app] = Date()
         if serviceBridge.refresh(app: thread.app, name: thread.name) {
             bridgeDue[serviceBridge.app] = nil
         } else if let bridge = bridge(for: thread.app) {
@@ -1012,14 +1023,18 @@ final class ChatCaptureService: ObservableObject {
     /// and again after `ChatBackfill.rewalk` (first after each launch, which closes what came in while Nook was not
     /// running). Each app has its own pace (`ChatBackfill.pause`). The chat's window in memory stays as it is.
     func backfillTick(now: Date = Date()) async {
-        guard enabled, loaded, !backfilling, let archive = ChatArchive.shared,
-              ChatBackfill.allowed(EnergyMonitor.shared.plan, freeBytes: DiskSpace.available()) else { return }
+        guard enabled, loaded, !backfilling, let archive = ChatArchive.shared else { return }
+        if freeBytes.map({ now.timeIntervalSince($0.at) >= ChatBackfill.diskCheck }) ?? true {
+            freeBytes = (DiskSpace.available(), now)
+        }
+        guard ChatBackfill.allowed(EnergyMonitor.shared.plan, freeBytes: freeBytes?.bytes) else { return }
         // Chats with something written (a walk starts below it), newest first; among them the one asked longest ago, so
         // one long chat does not keep the others waiting.
         let candidates = inbox.sorted.filter { thread in
             oldestStored[thread.id] != nil && isShown(thread) && !thread.messages.isEmpty
                 && (walks[thread.id] != nil || now.timeIntervalSince(walkedAt[thread.id] ?? .distantPast) >= ChatBackfill.rewalk)
                 && (backfillDue[thread.app] ?? .distantPast) <= now
+                && !liveBusy(thread.app, now: now)
         }
         let ordered = candidates.enumerated().sorted { a, b in
             let (x, y) = (backfillAsked[a.element.id] ?? .distantPast, backfillAsked[b.element.id] ?? .distantPast)
@@ -1043,7 +1058,7 @@ final class ChatCaptureService: ObservableObject {
         backfillDue[thread.app] = now.addingTimeInterval(ChatBackfill.pause(local: source.local))
         let fetched: Fetched
         do {
-            fetched = try await source.fetch(walk.cursor, walk.cursorID)
+            fetched = try await ChatBackfill.$filling.withValue(true) { try await source.fetch(walk.cursor, walk.cursorID) }
         } catch {
             // The app could not answer now (signed out, offline, too many questions): it waits longer.
             backfillDue[thread.app] = Date().addingTimeInterval(ChatBackfill.pause(local: source.local) * 10)
@@ -1092,6 +1107,15 @@ final class ChatCaptureService: ObservableObject {
         next.empty += 1
         walks[key] = next
         if next.empty >= ChatBackfill.emptyToFinish { endWalk(key, now: now, atStart: true) }
+    }
+
+    /// Whether an app's live reads go first now: it had live traffic moments ago, a quick read is still owed to one of
+    /// its bridges, or one of them waits out a refusal (`ChatBackoff`), which a page of old history would only prolong.
+    private func liveBusy(_ app: String, now: Date) -> Bool {
+        if now.timeIntervalSince(liveAt[app] ?? .distantPast) < ChatBackfill.liveQuiet { return true }
+        return bridges.contains { bridge in
+            watches(bridge, [app]) && (bridgeFailures[bridge.bridgeID] != nil || catchUp.isOwed(bridge.bridgeID))
+        }
     }
 
     private func endWalk(_ key: String, now: Date, atStart: Bool) {

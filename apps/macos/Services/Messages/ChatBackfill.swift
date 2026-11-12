@@ -16,8 +16,23 @@ enum ChatBackfill {
     static let emptyToFinish = 3
 
     /// How long an app rests after a batch: its own data on this Mac is quick to read; a service is asked rarely, so it
-    /// never notices.
-    static func pause(local: Bool) -> TimeInterval { local ? 2 : 20 }
+    /// never notices. A service's limit (Slack's ~50 calls a minute, Microsoft Graph's throttling, Meta's) is shared with
+    /// the live reads, and a live read it refuses waits a minute, then two, four… (`ChatBackoff`): the backfill keeps
+    /// far below it.
+    static func pause(local: Bool) -> TimeInterval { local ? 2 : 60 }
+
+    /// How long an app's backfill waits after live traffic (a notification, a message its bridge brought, a chat you
+    /// opened): new messages always go first, and their quick follow-up reads (`ChatCatchUp`) never share the app's
+    /// limit with a page of old history.
+    static let liveQuiet: TimeInterval = 120
+
+    /// How often the free disk space is looked at again: a volume query on the main thread every tick is wasted work.
+    static let diskCheck: TimeInterval = 60
+
+    /// Set while a page is fetched for the backfill: the bridges then leave the files of old messages where they are
+    /// (`ChatMedia.fetchingFiles`), so a walk through years of history never downloads them in the background. Opening
+    /// or scrolling back in a chat fetches them as before.
+    @TaskLocal static var filling = false
 
     /// How long after a chat's walk ended it is walked again: edits and deletions of old messages reach the archive
     /// within this. Each launch walks every chat once, so what came in while Nook was not running closes first.
