@@ -22,6 +22,21 @@ struct WAChatInfo: Equatable, Sendable {
     var pinned: Bool? = nil
     /// Whether the chat is muted on the phone, when the gateway says (OpenWA); nil when it does not.
     var muted: Bool? = nil
+
+    /// The chat list as the gateway gives it again, with the names it already learned: GOWA lists every group as
+    /// "Group 1203…", so a group named earlier keeps its name instead of falling back to its id until it is named again.
+    static func keepingNames(_ chats: [WAChatInfo], from previous: [WAChatInfo]) -> [WAChatInfo] {
+        var learned: [String: String] = [:]
+        for chat in previous where learned[chat.jid] == nil && !WAJID.isPlaceholderName(chat.name, for: chat.jid) {
+            learned[chat.jid] = chat.name
+        }
+        return chats.map { chat in
+            guard WAJID.isPlaceholderName(chat.name, for: chat.jid), let name = learned[chat.jid] else { return chat }
+            var named = chat
+            named.name = name
+            return named
+        }
+    }
 }
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
@@ -697,6 +712,13 @@ enum WAJID {
         let onlyNumbers = !trimmed.contains { $0.isLetter } && trimmed.filter(\.isNumber).count >= 7
         return trimmed.isEmpty || trimmed == jid || trimmed == displayNumber(jid) || (!user.isEmpty && trimmed.contains(user))
             || onlyNumbers
+    }
+
+    /// A group's name as handed to the shared inbox: one only known by its id ("Group 1203…", until the gateway names it)
+    /// keeps the real name the inbox already `shown`, from before a relaunch or an earlier read, instead of losing it.
+    static func keepingGroupName(_ name: String, for jid: String, shown: String?) -> String {
+        guard isGroup(jid), isPlaceholderName(name, for: jid), let shown, !isPlaceholderName(shown, for: jid) else { return name }
+        return shown
     }
 
     /// Two letters for the avatar: "Marie Dupont" → "MD", "+33 6…" → "#".
