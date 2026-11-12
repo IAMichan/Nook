@@ -312,32 +312,13 @@ extension WorkspaceManager {
     }
 
     private func proposePullRequest(_ target: QuickGitTarget, hooks: QuickGitHooks, progress: @escaping (String) -> Void) async throws -> URL {
-        let git = target.git, directory = target.directory, sessionBase = target.baseBranch, root = target.root
+        let git = target.git, directory = target.directory
         let found = await Task.detached { (SourceForge.repository(remoteURL: git.remoteURL(directory)), git.currentBranch(directory)) }.value
         guard let repo = found.0 else { throw StartError.git(tr("ws.quick.noForge")) }
         guard let branch = found.1 else { throw StartError.git(tr("ws.error.detached")) }
         progress(tr("ws.quick.generatingPR"))
-        let facts = try await Task.detached(priority: .userInitiated) { () -> (base: String?, commits: String, stat: String, patch: String, template: String?) in
-            let remotes = git.remotes(directory)
-            let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-            guard let base = Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote) else {
-                return (nil, "", "", "", nil)
-            }
-            let context = try git.pullRequestContext(directory, base: git.comparisonBase(directory, base: base, remote: remote))
-            return (base, context.commits, context.stat, context.patch, GitService.pullRequestTemplate(root))
-        }.value
-        guard let base = facts.base, base != branch else { throw StartError.git(tr("ws.quick.onBase", branch)) }
-        let style = await commitStyleRules(git, directory: directory, pullRequest: true)
-        let answer = await generateText(TextGeneration.pullRequestPrompt(base: base, head: branch, commits: facts.commits, stat: facts.stat,
-                                                                        patch: facts.patch, template: facts.template, style: style),
-                                        schema: TextGeneration.pullRequestSchema, task: .gitText, prefer: target.provider, profileID: target.profileID,
-                                        cwd: target.isRemote ? NSHomeDirectory() : directory)
-        let title = TextGeneration.pullRequestTitle((answer?["title"] as? String) ?? (facts.commits.split(separator: "\n").first.map {
-            String($0.drop { $0 != " " }.dropFirst())
-        } ?? ""))
-        let generatedBody = (answer?["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let templateBody = facts.template?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = (generatedBody?.isEmpty == false ? generatedBody : nil) ?? templateBody ?? ""
+        guard let draft = try await writePullRequest(target, head: branch) else { throw StartError.git(tr("ws.quick.onBase", branch)) }
+        let base = draft.base, title = draft.title, body = draft.body
         progress(tr("ws.quick.creatingPR"))
         do {
             if let create = pullRequestCreate, let link = try await create(repo, title, body, branch, base) {
@@ -356,6 +337,57 @@ extension WorkspaceManager {
         hooks.openedRequestPage(compare, branch)
         hooks.log(RunEvent(kind: .system, text: tr("ws.event.prCompare", branch)))
         return compare
+    }
+
+    /// A pull request written for the branch: its base, and a title and description in English that follow the
+    /// repository's template and its own rules for pull requests (AGENTS.md, CLAUDE.md, CONTRIBUTING.md). Nil when the
+    /// branch is its own base or there is none.
+    struct PullRequestDraft: Equatable {
+        let base: String
+        let title: String
+        let body: String
+    }
+
+    private func writePullRequest(_ target: QuickGitTarget, head branch: String) async throws -> PullRequestDraft? {
+        let git = target.git, directory = target.directory, sessionBase = target.baseBranch, root = target.root
+        let facts = try await Task.detached(priority: .userInitiated) {
+            () -> (base: String?, commits: String, stat: String, patch: String, template: String?, guidelines: String?) in
+            let remotes = git.remotes(directory)
+            let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+            guard let base = Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote) else {
+                return (nil, "", "", "", nil, nil)
+            }
+            let context = try git.pullRequestContext(directory, base: git.comparisonBase(directory, base: base, remote: remote))
+            return (base, context.commits, context.stat, context.patch, GitService.pullRequestTemplate(root),
+                    GitService.pullRequestGuidelines(root))
+        }.value
+        guard let base = facts.base, base != branch else { return nil }
+        let style = await commitStyleRules(git, directory: directory, pullRequest: true)
+        let answer = await generateText(TextGeneration.pullRequestPrompt(base: base, head: branch, commits: facts.commits, stat: facts.stat,
+                                                                        patch: facts.patch, template: facts.template,
+                                                                        guidelines: facts.guidelines, style: style),
+                                        schema: TextGeneration.pullRequestSchema, task: .gitText, prefer: target.provider, profileID: target.profileID,
+                                        cwd: target.isRemote ? NSHomeDirectory() : directory)
+        let title = TextGeneration.pullRequestTitle((answer?["title"] as? String) ?? (facts.commits.split(separator: "\n").first.map {
+            String($0.drop { $0 != " " }.dropFirst())
+        } ?? ""))
+        let generatedBody = (answer?["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let templateBody = facts.template.map(TextGeneration.pullRequestTemplateBody)
+        let body = (generatedBody?.isEmpty == false ? generatedBody.map { TextGeneration.conformPullRequestBody($0, template: facts.template) } : nil)
+            ?? templateBody ?? ""
+        return PullRequestDraft(base: base, title: title, body: body)
+    }
+
+    /// The same text for the pull request sheet of a session: nil when nothing could write it.
+    func draftPullRequest(_ id: UUID) async -> PullRequestDraft? {
+        guard let run = run(id), let target = quickTarget(run), let branch = await currentBranch(id) else { return nil }
+        return try? await writePullRequest(target, head: branch)
+    }
+
+    /// The same for a repository Nook only sees, by its root.
+    func draftPullRequest(folder root: String) async -> PullRequestDraft? {
+        guard let target = quickTarget(folder: root), let branch = await currentBranch(folder: root) else { return nil }
+        return try? await writePullRequest(target, head: branch)
     }
 
     /// The forge's page for a new pull request opens in Nook's browser, in the corner of the session's chat, never in a

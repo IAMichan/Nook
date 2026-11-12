@@ -97,7 +97,7 @@ enum TextGeneration {
     }
 
     static func pullRequestPrompt(base: String, head: String, commits: String, stat: String, patch: String, template: String?,
-                                  style: [String] = []) -> String {
+                                  guidelines: String? = nil, style: [String] = []) -> String {
         let template = template?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         let bodyRules = template == nil ? [
             "- body must be markdown and include headings '## Summary' and '## Testing'",
@@ -115,10 +115,82 @@ enum TextGeneration {
         var lines = ["You write source control change request content in English.", "Return a JSON object with keys: title, body.", "Rules:",
                      "- write title and body in English",
                      "- title should be concise and specific"] + bodyRules + style
+        if let guidelines = guidelines?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            lines += ["- the repository's own rules for change requests below come first: where they ask for something else "
+                        + "(headings, wording, issue links, checks), follow them"]
+            lines += ["", "Repository rules for change requests:", limit(guidelines, 6_000)]
+        }
         if let template { lines += ["", "Repository change request template:", limit(template, 8_000)] }
         lines += ["", "Base branch: \(base)", "Head branch: \(head)", "", "Commits:", limit(commits, 12_000), "",
                   "Diff stat:", limit(stat, 12_000), "", "Diff patch:", limit(patch, 40_000)]
         return lines.joined(separator: "\n")
+    }
+
+    /// A pull request template without its HTML comments (the hints for whoever fills it in), as the body to start from.
+    static func pullRequestTemplateBody(_ template: String) -> String {
+        let stripped = template.replacingOccurrences(of: #"<!--[\s\S]*?-->"#, with: "", options: .regularExpression)
+        return stripped.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The headings (`#`…`######`) of a markdown text, in order, outside code blocks.
+    static func markdownHeadings(_ text: String) -> [String] {
+        var inFence = false
+        return text.components(separatedBy: .newlines).compactMap { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { inFence.toggle() }
+            guard !inFence, line.hasPrefix("#") else { return nil }
+            let level = line.prefix { $0 == "#" }.count
+            guard level <= 6, line.dropFirst(level).first == " " else { return nil }
+            return line
+        }
+    }
+
+    /// The template's headings the body leaves out.
+    static func missingTemplateHeadings(body: String, template: String?) -> [String] {
+        guard let template else { return [] }
+        let present = Set(markdownHeadings(body).map { $0.lowercased() })
+        return markdownHeadings(template).filter { !present.contains($0.lowercased()) }
+    }
+
+    /// A generated body that keeps every heading of the template, in the template's order: a section the model left out
+    /// comes back with "None", and sections of its own follow the template's.
+    static func conformPullRequestBody(_ body: String, template: String?) -> String {
+        guard let template else { return body }
+        let wanted = markdownHeadings(template)
+        guard !wanted.isEmpty else { return body }
+        let found = markdownHeadings(body)
+        let wantedKeys = wanted.map { $0.lowercased() }
+        if found.map({ $0.lowercased() }).filter(wantedKeys.contains) == wantedKeys { return body }
+        // The body by section: what comes before the first heading, then each heading with the lines under it.
+        var preamble: [String] = []
+        var sections: [(heading: String, lines: [String])] = []
+        var inFence = false
+        for raw in body.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { inFence.toggle() }
+            if !inFence, found.contains(line), line.hasPrefix("#") {
+                sections.append((line, []))
+            } else if sections.isEmpty {
+                preamble.append(raw)
+            } else {
+                sections[sections.count - 1].lines.append(raw)
+            }
+        }
+        func text(_ lines: [String]) -> String { lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines) }
+        var out: [String] = []
+        if !text(preamble).isEmpty { out.append(text(preamble)) }
+        var used = Set<Int>()
+        for heading in wanted {
+            let index = sections.indices.first { !used.contains($0) && sections[$0].heading.lowercased() == heading.lowercased() }
+            if let index { used.insert(index) }
+            let content = index.map { text(sections[$0].lines) } ?? ""
+            out.append(heading + "\n\n" + (content.isEmpty ? "None" : content))
+        }
+        for index in sections.indices where !used.contains(index) {
+            out.append([sections[index].heading, text(sections[index].lines)].filter { !$0.isEmpty }.joined(separator: "\n\n"))
+        }
+        return out.joined(separator: "\n\n")
     }
 
     // MARK: Commands
