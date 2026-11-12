@@ -642,6 +642,7 @@ targets:
       - path: Services/Workspace/WorktreeCheckoutCache.swift
       - path: Services/Workspace/SourceControl.swift
       - path: Services/Workspace/AddProjectSource.swift
+      - path: Services/Workspace/ProjectFavicon.swift
       - path: Services/Workspace/GitService+SourceControl.swift
       - path: Services/Workspace/GitCloneProgress.swift
       - path: Services/Connectors/ZipText.swift

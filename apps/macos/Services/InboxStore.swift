@@ -108,7 +108,10 @@ final class InboxStore: ObservableObject {
         // The first trace an earlier Nook left (`FinishedSessions` writes it on its first launch): an install that has it
         // keeps auto-settle as it was, a new one starts with it on.
         let usedSince = defaults.object(forKey: Self.usedSinceKey) as? Date
-        autoSettle = AutoSettlePolicy.initial(stored: stored?.autoSettle, usedSince: usedSince)
+        let initial = AutoSettlePolicy.initial(stored: stored?.autoSettle, usedSince: usedSince)
+        // Auto-settle: an install that never touched the old default (off) gets it on, once.
+        let upgrade = !defaults.bool(forKey: Self.autoSettleUpgradedKey)
+        autoSettle = upgrade ? AutoSettlePolicy.upgradingOldDefault(initial) : initial
         groupByProject = stored?.groupByProject ?? false
         collapsedProjects = stored?.collapsedProjects ?? []
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
@@ -121,8 +124,14 @@ final class InboxStore: ObservableObject {
         // read at all: that one stays as it is until the user changes something.
         var unreadable = false
         if case .unreadable = outcome { unreadable = true }
-        if stored?.autoSettle == nil, !unreadable { save() }
+        if (stored?.autoSettle == nil || upgrade), !unreadable {
+            save()
+            defaults.set(true, forKey: Self.autoSettleUpgradedKey)
+        }
     }
+
+    /// Set once the old default of auto-settle was looked at (`AutoSettlePolicy.upgradingOldDefault`).
+    private static let autoSettleUpgradedKey = "agents.autoSettle.Defaults"
 
     /// `FinishedSessions.keepsOpenSince`: when this Mac first ran a Nook with an Agents list.
     private static let usedSinceKey = "agents.keepsUnsettledSince"

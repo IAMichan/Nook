@@ -477,7 +477,9 @@ struct AgentInboxList: View {
         let name = group.archived ? tr("sc.archive.archivedName", named) : named
         return ProjectHeaderRow(
             project: folder.map(AgentPathFormat.tilde) ?? group.project, name: name, open: open, dot: group.dot,
-            count: group.rows.count, icon: folderIcon(group, folder: folder), pinned: group.pinned,
+            count: group.rows.count, icon: folderIcon(group, folder: folder),
+            favicon: folder.flatMap { path in settings.projectIcon(path) == nil ? path : nil },
+            pinned: group.pinned,
             toggle: {
                 withAnimation(NookTheme.reveal) {
                     if store.collapsedProjects.contains(group.project) {
@@ -586,8 +588,9 @@ struct AgentInboxList: View {
         let settings = app.workspace.settings
         let path = projects[key] ?? (item.machine == MachineName.local && (item.path as NSString).lastPathComponent == key ? item.path : nil)
         let name = path.map(settings.projectDisplayName) ?? key
-        let icon = path.flatMap(settings.projectIcon) ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
-        return RowProject(name: name, icon: icon, path: path)
+        let own = path.flatMap(settings.projectIcon)
+        let icon = own ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
+        return RowProject(name: name, icon: icon, path: path, custom: own != nil)
     }
 
     /// The row's Project menu: what a project folder's menu does, from any of its sessions, so the list does not have to
@@ -1206,6 +1209,8 @@ private struct ProjectHeaderRow: View {
     let dot: InboxProjectGroup.Dot?
     let count: Int
     let icon: ProjectIcon?
+    /// The folder whose own favicon replaces `icon` once it is found (no icon of yours set); nil for none.
+    let favicon: String?
     let pinned: Bool
     let toggle: () -> Void
     /// Nil for a project without a folder on this Mac: no "+".
@@ -1265,7 +1270,7 @@ private struct ProjectHeaderRow: View {
             // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
             HStack(spacing: Self.gap) {
                 if let icon {
-                    ProjectIconView(icon: icon, size: 15)
+                    ProjectIconView(icon: favicon == nil ? icon : nil, size: 16, folder: favicon, fallback: icon)
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: NookTheme.Spacing.xl)
                 } else {
