@@ -106,6 +106,130 @@ enum MailIndex {
         return nil
     }
 
+    // MARK: Recent mail per account
+
+    /// An inbox, Sent or Trash mailbox in the index. `account` is Mail's id of its account (the host of its url), `path` the
+    /// name a script reaches it by ("INBOX", "[Gmail]/Sent Mail", "Postvak IN").
+    struct Box: Equatable {
+        enum Kind: Equatable { case inbox, sent, trash }
+        var id: Int64
+        var account: String
+        var path: String
+        var kind: Kind
+    }
+
+    /// What Mail's inbox is called, in the languages Mail and its servers use (Exchange names it in yours).
+    static let inboxNames: Set<String> = ["inbox", "postvak in", "posteingang", "boîte de réception", "bandeja de entrada"]
+
+    static let mailboxesSQL = "SELECT ROWID AS id, url FROM mailboxes"
+
+    /// The inbox, Sent and Trash mailboxes among Mail's mailboxes, by the last part of their url; `sentNames` and
+    /// `trashNames` are their names across providers and languages (`MailChatData.sentNames`, `trashNames`).
+    static func boxes(_ raw: [[String: Any]], sentNames: [String], trashNames: [String] = []) -> [Box] {
+        let sent = Set(sentNames.map { $0.lowercased() })
+        let trash = Set(trashNames.map { $0.lowercased() })
+        return raw.compactMap { row -> Box? in
+            guard let id = (row["id"] as? NSNumber)?.int64Value, let url = row["url"] as? String,
+                  let scheme = url.range(of: "://") else { return nil }
+            let parts = url[scheme.upperBound...].split(separator: "/").map { $0.removingPercentEncoding ?? String($0) }
+            guard parts.count > 1, let last = parts.last?.lowercased() else { return nil }
+            let kind: Box.Kind
+            if parts.count == 2, inboxNames.contains(last) {
+                kind = .inbox
+            } else if sent.contains(last) {
+                kind = .sent
+            } else if trash.contains(last) {
+                kind = .trash
+            } else {
+                return nil
+            }
+            return Box(id: id, account: parts[0], path: parts.dropFirst().joined(separator: "/"), kind: kind)
+        }
+    }
+
+    /// The messages in a mailbox: the ones stored in it, and the ones it holds as a label (Gmail keeps every message in
+    /// All Mail and its inbox as a label on it).
+    private static func members(_ box: Int64) -> String {
+        "m.ROWID IN (SELECT ROWID FROM messages WHERE mailbox = \(box) UNION SELECT message_id FROM labels WHERE mailbox_id = \(box))"
+    }
+
+    /// The newest `limit` messages of one mailbox, with what the Chats tab and the Mail connector show of each: subject
+    /// (with its "Re: "), sender, first To recipient, date, read, replied (flag bit 2, Mail's "was replied to"), Mail's
+    /// own summary of the text, and the mailbox its file is in.
+    static func recentSQL(box: Int64, limit: Int) -> String {
+        select(where: members(box), limit: limit)
+    }
+
+    /// One person's mail in these mailboxes received in [`from`, `to`), newest first: what they sent, and what went to
+    /// them (To or Cc), for Nook's archive of a mail chat (`MailBridge.backfillPage`).
+    static func historySQL(boxes: [Int64], address: String, from: Date, to: Date, limit: Int) -> String {
+        let who = "'" + address.lowercased().replacingOccurrences(of: "'", with: "''") + "'"
+        let inBoxes = boxes.map { "(\(members($0)))" }.joined(separator: " OR ")
+        let person = "(a.address = \(who) COLLATE NOCASE OR EXISTS (SELECT 1 FROM recipients r JOIN addresses x ON x.ROWID = r.address "
+            + "WHERE r.message = m.ROWID AND x.address = \(who) COLLATE NOCASE))"
+        let when = "m.date_received >= \(Int(from.timeIntervalSince1970)) AND m.date_received < \(Int(to.timeIntervalSince1970.rounded(.up)))"
+        return select(where: "(\(inBoxes.isEmpty ? "0" : inBoxes)) AND \(person) AND \(when)", limit: limit)
+    }
+
+    private static func select(where condition: String, limit: Int) -> String {
+        """
+        SELECT m.ROWID AS id, COALESCE(m.subject_prefix, '') || s.subject AS subject, a.address AS address, a.comment AS name,
+               m.date_received AS date, m.read AS read, (m.flags >> 2) & 1 AS replied, su.summary AS summary, b.url AS mailbox,
+               (SELECT x.address FROM recipients r JOIN addresses x ON x.ROWID = r.address WHERE r.message = m.ROWID AND r.type = 0
+                ORDER BY r.position LIMIT 1) AS to_address,
+               (SELECT x.comment FROM recipients r JOIN addresses x ON x.ROWID = r.address WHERE r.message = m.ROWID AND r.type = 0
+                ORDER BY r.position LIMIT 1) AS to_name
+        FROM messages m JOIN subjects s ON s.ROWID = m.subject JOIN mailboxes b ON b.ROWID = m.mailbox
+        LEFT JOIN addresses a ON a.ROWID = m.sender LEFT JOIN summaries su ON su.ROWID = m.summary
+        WHERE m.deleted = 0 AND \(condition)
+        ORDER BY m.date_received DESC LIMIT \(limit)
+        """
+    }
+
+    /// How many messages in the mailbox are unread.
+    static func unreadSQL(box: Int64) -> String {
+        "SELECT count(*) AS unread FROM messages m WHERE m.deleted = 0 AND m.read = 0 AND \(members(box))"
+    }
+
+    /// A mark that changes whenever mail comes, goes, or is read or unread anywhere in Mail: the newest message and the
+    /// counts Mail keeps per mailbox. Cheap, so it can be asked every round without Mail noticing.
+    static let changeSQL = """
+    SELECT (SELECT max(ROWID) FROM messages) || '|' || (SELECT total(unread_count) FROM mailboxes) || '|' ||
+           (SELECT total(total_count) FROM mailboxes) AS mark
+    """
+
+    /// One message as `recentSQL` lists it.
+    struct Recent: Equatable {
+        var id: Int64
+        var subject: String
+        /// "Name <address>", or the address alone.
+        var sender: String
+        var recipient: String
+        var date: Date
+        var read: Bool
+        var replied: Bool
+        var summary: String
+        /// The url of the mailbox its file is in (All Mail for a Gmail inbox message), for `messageFile`.
+        var mailbox: String
+    }
+
+    static func recent(_ raw: [[String: Any]]) -> [Recent] {
+        func person(_ address: Any?, _ name: Any?) -> String {
+            let address = (address as? String) ?? ""
+            let name = ((name as? String) ?? "").trimmingCharacters(in: .whitespaces)
+            guard !address.isEmpty else { return name }
+            return name.isEmpty ? address : "\(name) <\(address)>"
+        }
+        return raw.compactMap { row -> Recent? in
+            guard let id = (row["id"] as? NSNumber)?.int64Value, let stamp = (row["date"] as? NSNumber)?.doubleValue else { return nil }
+            return Recent(id: id, subject: (row["subject"] as? String) ?? "", sender: person(row["address"], row["name"]),
+                          recipient: person(row["to_address"], row["to_name"]), date: Date(timeIntervalSince1970: stamp),
+                          read: ((row["read"] as? NSNumber)?.intValue ?? 0) != 0,
+                          replied: ((row["replied"] as? NSNumber)?.intValue ?? 0) != 0,
+                          summary: (row["summary"] as? String) ?? "", mailbox: (row["mailbox"] as? String) ?? "")
+        }
+    }
+
     // MARK: Reading a message file
 
     struct Message: Equatable {

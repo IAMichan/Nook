@@ -24,6 +24,8 @@ enum MailChatData {
         var name: String
         /// Its own addresses, lower case: mail from one of them is yours.
         var addresses: [String]
+        /// Mail's id of the account, the host in the url of each of its mailboxes in Mail's index (`MailIndex`).
+        var id: String = ""
     }
 
     /// One message as the script lists it.
@@ -56,7 +58,7 @@ enum MailChatData {
 
     // MARK: Scripts
 
-    /// The enabled accounts, one per line: "ACC|||name|||address,address".
+    /// The enabled accounts, one per line: "ACC|||name|||address,address|||id".
     static let accountsScript = """
     tell application "Mail"
         set out to ""
@@ -67,7 +69,7 @@ enum MailChatData {
                     set AppleScript's text item delimiters to ","
                     set joined to addrs as text
                     set AppleScript's text item delimiters to ""
-                    set out to out & "ACC|||" & (name of acc) & "|||" & joined & linefeed
+                    set out to out & "ACC|||" & (name of acc) & "|||" & joined & "|||" & (id of acc) & linefeed
                 end if
             end try
         end repeat
@@ -79,7 +81,7 @@ enum MailChatData {
     static func isMail(_ nookID: String) -> Bool { nookID.hasPrefix("mail-") }
 
     /// The names Mail's Trash mailboxes go by, across providers and languages.
-    static let trashNames = ["Trash", "Deleted Messages", "Deleted Items", "Bin", "Prullenmand", "Verwijderde items",
+    static let trashNames = ["Trash", "Deleted Messages", "Deleted Items", "Bin", "Prullenbak", "Prullenmand", "Verwijderde items",
                              "Verwijderde berichten", "Papierkorb", "Gelöschte Objekte", "Gelöschte Elemente", "Corbeille",
                              "Éléments supprimés", "Papelera", "Elementos eliminados", "Elementos borrados"]
 
@@ -764,7 +766,8 @@ enum MailChatData {
             let addresses = parts.count > 2
                 ? parts[2].components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
                 : []
-            return Account(name: name, addresses: addresses)
+            let id = parts.count > 3 ? parts[3].trimmingCharacters(in: .whitespaces) : ""
+            return Account(name: name, addresses: addresses, id: id)
         }
     }
 
