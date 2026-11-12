@@ -10,6 +10,9 @@ import Foundation
 @MainActor
 final class SnapchatBridge: ChatHistoryBridge {
     let app = SnapchatWebData.app
+    /// The website keeps no history beyond what it shows, so walking back finds nothing older; edits and deletions are
+    /// found by laying each read beside what Nook keeps (`SnapchatWebData.changes`).
+    var historyChanges: Bool { false }
     let interval: TimeInterval = 30
     private(set) var isWorking = false
 

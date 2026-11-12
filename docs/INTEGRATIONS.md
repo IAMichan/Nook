@@ -155,7 +155,7 @@ member cannot do:
 | An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Nook answers in the chat when you ask it to (`chat_send`, through `chatRoute` and `runInChat`; you approve the text first) | ✓ (also `whatsapp_send`) | ✓ (also `whatsapp_send`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`chat_send`, as a reply through Mail) |
 | A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ | – (no sign-in: Mail's own accounts; a refused Automation permission says how to give it) |
-| Search everything (⌘K) finds a message in the whole history, not only the newest ones the inbox keeps (`ChatSearchBridge`) | ✓ (every message the linked accounts hold, plus WhatsApp on this Mac's database when it is installed) | ✓ (same) | ✓ (the whole database, as `search_messages`) | ✓ (`searchMessages` on Telegram's servers) | – (the helper has no search call yet: the newest messages Nook keeps) | ✓ (`search.messages`; a pasted token needs search:read) | – (no search Nook can reach without a Graph search scope: the newest messages Nook keeps) | – (the website has no search) | – (not yet: the newest messages Nook keeps; `search_mail` searches Mail for Nook) |
+| Search everything (⌘K) finds a message in the whole history, not only the newest ones the inbox keeps (`ChatSearchBridge`) | ✓ (every message the linked accounts hold, plus WhatsApp on this Mac's database when it is installed) | ✓ (same) | ✓ (the whole database, as `search_messages`) | ✓ (`searchMessages` on Telegram's servers) | ✓ (Nook's archive, as far back as the backfill reached; the helper has no search call) | ✓ (`search.messages`; a pasted token needs search:read) | ✓ (Nook's archive, as far back as the backfill reached) | ✓ (Nook's archive, as far back as the backfill reached) | – (what Nook keeps of it; `search_mail` searches Mail for Nook) |
 
 ### Follow-ups, people and snooze
 
@@ -186,11 +186,56 @@ cards in the notch, search, the iPhone companion and what Nook reads (`chat_inbo
 chats show (`ChatCaptureService.isShown`: the app is on, you did not hide the chat, and WhatsApp comes from one place at
 a time). Each app's bridge only translates what its app keeps into it. WhatsApp through the linked phone is one of them
 (`WhatsAppGatewayBridge`): its link keeps WhatsApp's own state (the gateway, the JIDs, each person's emoji, each voter's
-choice, each member's ticks) and `WhatsAppExport` turns it into the shared shape. Its messages are kept in memory only, as
-they always were (`BridgedChat.ephemeral`: `chat-inbox.json` holds WhatsApp's chats without their messages); the files a
-chat showed stay in Nook's caches like every other chat app's (`WhatsAppLink.fileKey`, at most `filesLimit`, removed when
-WhatsApp is turned off), so they show at once after a restart. The
+choice, each member's ticks) and `WhatsAppExport` turns it into the shared shape. The files a chat showed stay in Nook's
+caches like every other chat app's (`WhatsAppLink.fileKey`, at most `filesLimit`, removed when WhatsApp is turned off),
+so they show at once after a restart. The
 link tells which message is news (live, not history, not a catch-up after the Mac slept: `ChatNewsBridge`).
+
+### One archive for every app's history
+
+Every message any bridge or notification brought, from every app, is kept in one SQLite file on this Mac
+(`chats.sqlite`, `ChatStore`, run off the main thread by `ChatArchive`), built the way WhatsApp, Signal and Telegram keep
+theirs: one row per message with its text stored once, paging by `(chat, date)` and never by offset, a contentless
+trigram index for search (no second copy of the text), and no files (those stay in the caches, all bridges together
+within `ChatMedia.totalLimit`, the ones opened longest ago going first). The inbox in memory holds each chat's newest
+messages (`ChatInbox.keep`); a save writes only what changed since the last one. Scrolling back reads the archive first
+and asks the app only past what it holds. Search everything asks the archive beside the apps' own searches
+(`ChatArchiveSearch`), so every app is searched through its whole stored history, also the ones without a search call.
+Removing a chat, an account or an app from Nook removes its messages from the archive too. `chat-inbox.json` is brought
+over once and kept as `chat-inbox.imported.json`.
+
+The archive keeps itself in step with each app in the background (`ChatBackfill`), a page at a time, only at full pace
+on power with room on the disk, and never with files. Each chat is walked from the oldest message it shows down to its
+start, and every page from the app is laid beside what the archive holds of the same stretch (`ChatReconcile`,
+`ChatStore.reconcile`):
+
+- what Nook missed is added, so a hole closes (messages that came in while Nook was not running, or that a read never
+  brought because it read only the newest), and past the oldest stored message the archive grows back to the chat's start;
+- an edit of an old message brings the new text and keeps the old one (`message_version`);
+- a message the app says was deleted, or (where the app leaves deleted messages out of its history) one the page lacks
+  inside the stretch it covers, is marked deleted, keeping what someone else wrote. Never your own, never one only a
+  notification brought, never a line about the group;
+- a copy a notification left of a message the page has under the app's own id goes.
+
+Every chat is walked once after each launch (what came in while Nook was not running closes first) and again six hours
+after its last walk (`ChatBackfill.rewalk`). An app whose old messages never change (`ChatBridge.historyChanges` false) is
+walked again only until a page brings nothing new. Scrolling back reads the archive first and lays the stretch it showed
+beside the app right after (`checkStored`), so a hole there or a change the walk has not reached yet shows at once.
+
+| Source | Walk and backfill | Old edits | Old deletions |
+|---|---|---|---|
+| Messages | ✓ (its database on this Mac, quickly) | ✓ (`date_edited`) | ✓ (unsent) |
+| WhatsApp on this Mac | ✓ (its database on this Mac, quickly) | ✓ (the database keeps only the new words and no edit mark: a row saved again (`Z_OPT`) with other words is an edit, and on a page a known message with other words is one: `historyTextChangeIsEdit`) | ✓ (deleted for everyone) |
+| WhatsApp through the linked phone (GOWA, OpenWA) | ✓ (`ChatBackfillBridge`: GOWA pages by offset; OpenWA by fetching more of the newest; `ChatBackfill.page` moves the offset on when the archive's count is off) | ✓ | ✓ (revoked) |
+| Telegram, Slack | ✓ (scrolling back by name, one page every 20 seconds per app) | ✓ | ✓ (by absence: `historyOmitsDeleted`) |
+| Teams | ✓ (same) | ✓ | ✓ (Teams lists them) |
+| Snapchat | – (the website keeps no history beyond what it shows) | ✓ (each read laid beside what Nook keeps, `SnapchatWebData.changes`: other words from the same person in a message's place) | ✓ (same: a message gone while the ones around it stayed; the oldest dropping off the top is Snapchat letting go of seen messages and says nothing) |
+| Chat helper networks (Instagram, Signal, Messenger, X, LinkedIn) | ✓ (the helper's own history call, slowly) | ✓ | ✓ (the helper lists them) |
+| Mail | ✓ (`MailBridge.backfill`: each person's mail through Mail, stretches of time growing from three months; not while Mail is in front) | n/a (mail is not edited) | ✓ (a mail in a Trash mailbox, found by person, subject and time since Mail may give it a new id: `trashScript` on each read, the Trash of each stretch on a walk; its text stays, yours too) |
+| Chats only notifications bring | – (nothing older exists than what came in; every one of those is kept) | – | – |
+
+"Edited" and "Deleted" beside a message's time open what it said before (`MessageVersionsView`), with when each text was
+replaced, for every app.
 
 A chat its app knows by an id of its own (`BridgedChat.chatID`, WhatsApp's chat key across accounts) is kept by it, so a
 new name never splits it and two chats with one name stay two. Ids from before (`wa|<key>`) are read as the new ones
@@ -563,11 +608,11 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   WhatsApp's gateways do (`mentionsMe`). Telegram (`contains_unread_mention`), Slack (`<@you>` in the text) and Teams
   (a message's mentions) say it too, but their bridges do not read it yet, so a quiet group of theirs stays quiet.
 
-- **Searching the whole chat history from Search everything** (`ChatSearchBridge`) reaches Messages, WhatsApp (this
-  Mac's database and what the linked phone brought), Telegram and Slack. The chat helper's networks, Teams, Snapchat and
-  Mail are searched in the newest messages Nook keeps of each chat (`ChatInbox.keep`) only: the helper has no search call
-  yet, Teams' search needs a Graph scope Nook does not ask for, Snapchat's website has none, and Mail's search goes
-  through AppleScript, too slow for every keystroke.
+- **Searching the whole chat history from Search everything** (`ChatSearchBridge`) asks Messages, WhatsApp (this
+  Mac's database and what the linked phone brought), Telegram and Slack themselves. The chat helper's networks, Teams and
+  Snapchat are searched through Nook's archive (`ChatArchiveSearch`), as far back as the backfill reached: the helper has
+  no search call yet, Teams' search needs a Graph scope Nook does not ask for, and Snapchat's website has none. Mail is
+  searched in what Nook keeps of it: its search goes through AppleScript, too slow for every keystroke.
 
 - **Music players: queue and Up next.** "Add to queue" in the Music tab goes to the playing player's own queue: Spotify
   through its Web API (`SpotifyWebAPI`, after connecting Spotify in Settings › Services with the user's own client ID;
