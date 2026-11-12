@@ -25,7 +25,7 @@ struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
                 Image(icon: "folder").font(NookTheme.textFont(9.5, .semibold))
                 Text(folder)
                     .lineLimit(1)
-                    .help(folderHelp)
+                    .sharedTip(folderHelp)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 slot()
             }
@@ -79,12 +79,25 @@ struct AgentRowBranch: View {
             if worktree {
                 Image(icon: "arrow.triangle.branch.square")
                     .font(NookTheme.textFont(9.5, .semibold))
-                    .help(sharedText("agents.row.worktree", "Works in its own worktree"))
+                    .sharedTip(sharedText("agents.row.worktree", "Works in its own worktree"))
             }
             Text(branch)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+extension View {
+    /// A short label on hover for a part of a row: on the Mac the fast window tip (`nookTip`, NookTooltip.swift), which
+    /// is Mac-only, so the iPhone app, which shares this file, keeps `help`. Empty text or `enabled: false` adds none.
+    @ViewBuilder
+    func sharedTip(_ text: String, enabled: Bool = true) -> some View {
+        #if os(macOS)
+        nookTip(text, enabled: enabled)
+        #else
+        if enabled, !text.isEmpty { help(text) } else { self }
+        #endif
     }
 }

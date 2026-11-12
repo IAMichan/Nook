@@ -249,7 +249,6 @@ struct SubagentBar: View {
                     ToolbarIconButton("sidebar.right", tr("ws.subagents.openPanel"), height: 20, width: 20) {
                         if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
                     }
-                    .help(tr("ws.subagents.openPanel"))
                 }
             }
             if open {
@@ -853,7 +852,6 @@ struct BackgroundCommandBar: View {
                     ToolbarIconButton("sidebar.right", tr("ws.background.openPanel"), height: 20, width: 20) {
                         if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
                     }
-                    .help(tr("ws.background.openPanel"))
                 }
             }
             if open {
@@ -935,7 +933,6 @@ struct BackgroundCommandBar: View {
                     ToolbarIconButton("arrow.up.to.line", tr("ws.background.showInConversation"), height: 18, width: 18) {
                         reveal(command.id)
                     }
-                    .help(tr("ws.background.showInConversation"))
                 }
             }
             if let printed = command.printed {

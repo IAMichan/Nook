@@ -158,6 +158,14 @@ extension AppModel {
         return id
     }
 
+    /// The Nook session that already took over this earlier conversation, if any (no disk, no await), so opening it
+    /// can show that session at once instead of taking it over again.
+    func adoptedRun(for session: PastSession) -> UUID? {
+        guard !session.sessionID.isEmpty,
+              let provider = nookProvider(for: session.agent) ?? summaryProvider(for: session.agent) else { return nil }
+        return workspace.takenRun(provider: provider, sessionID: session.sessionID)?.id
+    }
+
     /// Resumes an earlier session in Nook, optionally with a first message.
     @discardableResult
     func continueInNook(_ session: PastSession, message: String? = nil, choice: AgentChoice? = nil,
@@ -166,15 +174,22 @@ extension AppModel {
         guard let provider = nookProvider(for: session.agent) ?? summaryProvider(for: session.agent) else {
             throw NookError(tr("agents.nook.unsupported", session.agent.name))
         }
-        let folder = session.resumeFolder
-        guard FileManager.default.fileExists(atPath: folder) else {
-            throw NookError(tr("agents.nook.folderGone", folder))
-        }
         let shown = viewModel.selectedAgentID
-        let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
-        let earlier = await earlierConversation(path: session.path, prompt: session.lastPrompt, reply: session.lastReply)
-        let id = try await workspace.adopt(provider: provider, sessionID: session.sessionID, profileID: profile.id,
+        let id: UUID
+        if let taken = workspace.takenRun(provider: provider, sessionID: session.sessionID) {
+            // Taken over before: open that session at once, without looking at its folder or reading its transcript again.
+            workspace.reopenTaken(taken)
+            id = taken.id
+        } else {
+            let folder = session.resumeFolder
+            // Off the main thread: the folder may sit on a slow or disconnected volume.
+            let folderExists = await Task.detached(priority: .userInitiated) { FileManager.default.fileExists(atPath: folder) }.value
+            guard folderExists else { throw NookError(tr("agents.nook.folderGone", folder)) }
+            let profile = self.profile(for: session) ?? profiles.preferredProfile(session.agent)
+            let earlier = await earlierConversation(path: session.path, prompt: session.lastPrompt, reply: session.lastReply)
+            id = try await workspace.adopt(provider: provider, sessionID: session.sessionID, profileID: profile.id,
                                            directory: folder, title: session.title, history: earlier, continuesConversation: continues)
+        }
         try applyChoice(choice, to: id)
         applySettings(settings, to: id)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }

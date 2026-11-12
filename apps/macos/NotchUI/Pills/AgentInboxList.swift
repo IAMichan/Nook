@@ -26,8 +26,6 @@ struct AgentInboxList: View {
 
     @Environment(\.inPanelSidebar) private var inSidebar
     @State private var settledLimit = InboxLayout.settledPage
-    /// The project header under the pointer: it shows its "+".
-    @State private var hoveredProject: String?
     @State private var selection = ListSelection<String>()
     /// The rows as shown, kept for the click closures: the rows are not redrawn when only this order changes.
     @State private var shownOrder: [String] = []
@@ -40,6 +38,8 @@ struct AgentInboxList: View {
     /// The list has the keyboard (F6): ↑/↓ move `keyRow` without opening it, Return opens it, ←/→ fold and unfold.
     @FocusState private var listFocused: Bool
     @State private var keyRow: String?
+    /// Waits for the pointer to rest on a row before reading its session (`prefetch`). Not observed: hovering redraws nothing.
+    @State private var hoverPrefetch = InboxHoverPrefetch()
     /// The row being renamed from its menu, by its id.
     @State private var renaming: String?
     /// The session "Custom…" snoozes, while its sheet is open.
@@ -405,31 +405,21 @@ struct AgentInboxList: View {
     private func projectHeader(_ group: InboxProjectGroup, folder: String?, byID: [String: AgentListItem]) -> some View {
         let open = !store.collapsedProjects.contains(group.project) || !store.query.isEmpty
         let name = group.project.isEmpty || group.project == "no folder" ? tr("inbox.project.none") : group.project
-        let hovered = hoveredProject == group.project
-        return foldButton(group, name: name, open: open, hovered: hovered, canStart: folder != nil)
-            .overlay(alignment: .trailing) {
-                if let folder {
-                    ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name),
-                                      height: Self.newSessionWidth, width: Self.newSessionWidth) {
-                        newSession(in: folder)
+        return ProjectHeaderRow(
+            project: group.project, name: name, open: open, needsYou: group.needsYou, count: group.rows.count,
+            icon: folderIcon(group),
+            toggle: {
+                withAnimation(NookTheme.reveal) {
+                    if store.collapsedProjects.contains(group.project) {
+                        store.collapsedProjects.remove(group.project)
+                    } else {
+                        store.collapsedProjects.insert(group.project)
                     }
-                    // Just before the chevron, in the room `foldButton` keeps free.
-                    .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
                 }
-            }
-        .contextMenu {
-            // The folder comes back by itself when a new session starts in it; its sessions stay under Settled.
-            Button(tr("inbox.project.remove"), role: .destructive) { removeProject(group, byID: byID) }
-        }
-        .onHover { inside in
-            withAnimation(NookTheme.hover) {
-                if inside { hoveredProject = group.project } else if hoveredProject == group.project { hoveredProject = nil }
-            }
-        }
+            },
+            newSession: folder.map { path -> () -> Void in { newSession(in: path) } },
+            remove: { removeProject(group, byID: byID) })
     }
-
-    private static let chevronWidth: CGFloat = 12
-    private static let newSessionWidth: CGFloat = 24
 
     /// The icon the group's project set for itself (Settings › Projects), found by the project's folder name.
     private func folderIcon(_ group: InboxProjectGroup) -> ProjectIcon? {
@@ -437,65 +427,6 @@ struct AgentInboxList: View {
         guard !group.project.isEmpty, !settings.projectOverrides.byProject.isEmpty else { return nil }
         let path = settings.projectOverrides.projects.first { ($0 as NSString).lastPathComponent == group.project }
         return path.flatMap(settings.projectIcon)
-    }
-
-    private func foldButton(_ group: InboxProjectGroup, name: String, open: Bool, hovered: Bool, canStart: Bool) -> some View {
-        Button {
-            withAnimation(NookTheme.reveal) {
-                if store.collapsedProjects.contains(group.project) {
-                    store.collapsedProjects.remove(group.project)
-                } else {
-                    store.collapsedProjects.insert(group.project)
-                }
-            }
-        } label: {
-            // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
-            HStack(spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) {
-                if let icon = folderIcon(group) {
-                    ProjectIconView(icon: icon, size: 15)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .frame(width: NookTheme.Spacing.xl)
-                } else {
-                    Image(icon: open ? "folder" : "folder.fill")
-                        .font(NookTheme.font(13, .medium))
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .frame(width: NookTheme.Spacing.xl)
-                }
-                Text(name)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.textStrong)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                // Folded, the header still says that something in it waits for you.
-                if !open && group.needsYou {
-                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
-                }
-                Spacer(minLength: 0)
-                if !open {
-                    Text("\(group.rows.count)")
-                        .font(NookTheme.TextStyle.detail.monospacedDigit())
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                // Keeps the name and the count clear of the new-session button laid over this row. The button sits closer
-                // to the chevron than this stack's spacing, so the room it needs here is that much smaller.
-                if canStart {
-                    Color.clear.frame(width: Self.newSessionWidth - NookTheme.Spacing.md, height: 1)
-                }
-                Image(icon: "chevron.down")
-                    .font(NookTheme.font(10, .semibold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: Self.chevronWidth)
-            }
-            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .frame(height: 32)
-            .roundedBackground(hovered ? NookTheme.rowHover : .clear, radius: NookTheme.Radius.chip)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.nookPlain)
-        .help(group.project)
-        .accessibilityLabel(name)
-        .accessibilityValue(open ? tr("compose.queue.expanded") : "")
     }
 
     /// A shelf docked at the foot of the list: opening it lifts its header and lays its rows out below, scrolling on their
@@ -572,7 +503,7 @@ struct AgentInboxList: View {
                     .lineLimit(1)
                 if let signal {
                     Circle().fill(signal.color).frame(width: 6, height: 6)
-                        .help(signal.help)
+                        .nookTip(signal.help)
                 }
                 Spacer(minLength: 0)
             }
@@ -583,7 +514,7 @@ struct AgentInboxList: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .help(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
+        .nookTip(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
         .accessibilityLabel(open ? tr("inbox.thread.hide") : tr("inbox.thread.show"))
         .accessibilityValue(signal.map { count + ", " + $0.help } ?? count)
     }
@@ -640,8 +571,14 @@ struct AgentInboxList: View {
                 }
             }
             .nested(entry.depth)
-            // Read the session's timeline while the pointer rests on it, so the click opens it without a hitch.
-            .onHover { inside in if inside, let id = runID(item) { app.workspace.prefetchTimeline(id) } }
+            // Read the session's timeline or transcript once the pointer rests on it, so the click opens it without a hitch.
+            .onHover { inside in
+                if inside {
+                    hoverPrefetch.enter(item.id, after: Self.restBeforePrefetch) { prefetch(item) }
+                } else {
+                    hoverPrefetch.exit(item.id)
+                }
+            }
             // Dragged onto an agent's composer, the row becomes that session's chip (`SessionLink`).
             .sessionLinkDrag(id: runID(item)?.uuidString, title: item.title)
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
@@ -671,6 +608,39 @@ struct AgentInboxList: View {
                 }
             }
         }
+    }
+
+    /// How long the pointer rests on a row before its session is read ahead of the click.
+    private static let restBeforePrefetch: Duration = .milliseconds(120)
+
+    /// Reads what opening this row shows, off the main thread: a session Nook runs its timeline, an earlier session the
+    /// session that took it over (else its transcript), a running session its transcript.
+    private func prefetch(_ item: AgentListItem) {
+        if let id = runID(item) {
+            app.workspace.prefetchTimeline(id)
+            return
+        }
+        // The demo's sessions have no transcript on disk.
+        guard !app.demoMode else { return }
+        if item.id.hasPrefix("past:") {
+            guard let session = pastSession(item.id) else { return }
+            // One Nook took over opens as its session: that timeline is what it shows.
+            if let taken = app.adoptedRun(for: session) {
+                app.workspace.prefetchTimeline(taken)
+            } else {
+                TranscriptPrefetch.warm(path: session.path)
+            }
+            return
+        }
+        guard let session = app.agentSessions.first(where: { $0.id == item.id }) else { return }
+        TranscriptPrefetch.warm(path: session.transcriptPath.isEmpty ? (transcriptPath(of: session) ?? "") : session.transcriptPath)
+    }
+
+    /// The transcript of a running session whose hooks did not report one: the earlier session that holds its
+    /// conversation, once the history has read it (as `AgentsTab` finds it).
+    private func transcriptPath(of session: AgentSession) -> String? {
+        guard let kind = AgentKind(agentName: session.name), let conversation = app.conversationID(for: session) else { return nil }
+        return app.history.sessions.first { $0.agent == kind && ($0.sessionID == conversation || $0.earlierIDs.contains(conversation)) }?.path
     }
 
     /// A click on a row: opens the session, or with ⌘, ⇧ or while selecting, picks it.
@@ -838,7 +808,7 @@ struct AgentInboxList: View {
         let archivable = picked.filter { !$0.isBusy && runID($0) != nil }
         var actions: [SelectionAction] = [
             picked.contains(where: \.unseen)
-                ? SelectionAction(symbol: "envelope.open", label: tr("select.markRead")) { for item in picked { visits.visit(item.id) } }
+                ? SelectionAction(symbol: "envelope.open", label: tr("select.markRead")) { visits.visit(picked.map(\.id)) }
                 : SelectionAction(symbol: "envelope.badge", label: tr("select.markUnread")) { for item in picked { visits.markUnread(item.id) } },
             allPinned
                 ? SelectionAction(symbol: "pin.slash", label: tr("select.unpin")) { store.unpin(picked.map(\.id)) }
@@ -918,7 +888,7 @@ struct AgentInboxList: View {
                         .buttonStyle(.nookPlain)
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
-                        .help(tr("inbox.undo"))
+                        .nookTip(tr("inbox.undo"))
                         .layoutPriority(1)
                         // ⌘Z, while no text field has the keyboard (there it undoes typing).
                         .keyCommand("session.undo") { store.undo() }
@@ -1007,6 +977,128 @@ extension AgentInboxList {
         if keyRow != current { select(keyRow) }
         SessionRenameRequest.shared.request(id)
         return true
+    }
+}
+
+/// A project's header in the list grouped by project: folds the project, and when the project has a folder on this Mac
+/// starts a new session in it. It keeps its own hover, so the pointer moving over the headers redraws only the header
+/// it crosses, never the whole list.
+private struct ProjectHeaderRow: View {
+    /// The project's folder name, shown in full as the tip (the name may be cut off in the middle).
+    let project: String
+    let name: String
+    /// Unfolded (or opened by a search): handed in as a value, so a fold anywhere redraws the header.
+    let open: Bool
+    let needsYou: Bool
+    let count: Int
+    let icon: ProjectIcon?
+    let toggle: () -> Void
+    /// Nil for a project without a folder on this Mac: no "+".
+    let newSession: (() -> Void)?
+    let remove: () -> Void
+    @State private var hovering = false
+
+    private static let chevronWidth: CGFloat = 12
+    private static let newSessionWidth: CGFloat = 24
+
+    var body: some View {
+        foldButton
+            .overlay(alignment: .trailing) {
+                if let newSession {
+                    ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name),
+                                      height: Self.newSessionWidth, width: Self.newSessionWidth) { newSession() }
+                    // Just before the chevron, in the room `foldButton` keeps free.
+                    .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
+                }
+            }
+            .contextMenu {
+                // The folder comes back by itself when a new session starts in it; its sessions stay under Settled.
+                Button(tr("inbox.project.remove"), role: .destructive, action: remove)
+            }
+            .onHover { hovering = $0 }
+    }
+
+    private var foldButton: some View {
+        Button(action: toggle) {
+            // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
+            HStack(spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) {
+                if let icon {
+                    ProjectIconView(icon: icon, size: 15)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .frame(width: NookTheme.Spacing.xl)
+                } else {
+                    Image(icon: open ? "folder" : "folder.fill")
+                        .font(NookTheme.font(13, .medium))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .frame(width: NookTheme.Spacing.xl)
+                }
+                Text(name)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                // Folded, the header still says that something in it waits for you.
+                if !open && needsYou {
+                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
+                }
+                Spacer(minLength: 0)
+                if !open {
+                    Text("\(count)")
+                        .font(NookTheme.TextStyle.detail.monospacedDigit())
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                // Keeps the name and the count clear of the new-session button laid over this row. The button sits closer
+                // to the chevron than this stack's spacing, so the room it needs here is that much smaller.
+                if newSession != nil {
+                    Color.clear.frame(width: Self.newSessionWidth - NookTheme.Spacing.md, height: 1)
+                }
+                Image(icon: "chevron.down")
+                    .font(NookTheme.font(10, .semibold))
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: Self.chevronWidth)
+            }
+            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .frame(height: 32)
+            // The fill lifts in the frame the pointer arrives, as session rows do.
+            .background {
+                NookTheme.shape(NookTheme.Radius.chip).fill(hovering ? NookTheme.rowHover : .clear)
+                    .transaction { $0.animation = nil }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .nookTip(project)
+        .accessibilityLabel(name)
+        .accessibilityValue(open ? tr("compose.queue.expanded") : "")
+    }
+}
+
+/// Reads a row's session ahead of the click once the pointer has rested on it a moment (`AgentInboxList.restBeforePrefetch`),
+/// so sweeping the pointer across the list starts no read per row it crosses. One for the whole list: only one row is
+/// under the pointer at a time, and entering the next row cancels the wait on the last.
+@MainActor
+final class InboxHoverPrefetch {
+    private var pending: Task<Void, Never>?
+    private var rowID: String?
+
+    func enter(_ id: String, after delay: Duration, _ work: @escaping @MainActor () -> Void) {
+        pending?.cancel()
+        rowID = id
+        pending = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.rowID == id else { return }
+            self.pending = nil
+            self.rowID = nil
+            work()
+        }
+    }
+
+    func exit(_ id: String) {
+        guard rowID == id else { return }
+        pending?.cancel()
+        pending = nil
+        rowID = nil
     }
 }
 
