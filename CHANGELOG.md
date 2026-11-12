@@ -38,6 +38,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - Settings › General › "Hold ⌘Q to quit" (off by default): a quick ⌘Q shows a hint instead of quitting, and holding
   it for a moment quits. Quit from a menu, logging out and restarting are never held up. Works with the notch off.
 
+- OpenCode 2.0.18 and newer now runs through its own server (`opencode serve`) instead of ACP. Its questions show
+  with their options in place of the composer, "Deny with reason" reaches OpenCode with your words without stopping
+  the turn, and the effort level picks the model's variant. Sessions of the same account share one server, which only
+  listens on this Mac and stops when no session needs it. An older OpenCode, or a server that does not start, keeps
+  using ACP. Settings › Agents › "OpenCode via its own server" turns it off.
+
 - While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
   the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
   holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.

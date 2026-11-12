@@ -60,6 +60,8 @@ extension WorkspaceManager {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        // OpenCode's server is shared and stays: the session is asked once more and no longer followed.
+        forceStopOpenCode(id)
         processes[id] = nil
         pauseLive(id)
         turns[id] = nil

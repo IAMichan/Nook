@@ -19,6 +19,7 @@ extension WorkspaceManager {
         closeClaudeProcess(id)
         closeCodexServer(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         switch plan {
         case .fresh:
             append(id, RunEvent(kind: .system, text: tr("ws.event.restarted", run.provider.displayName)))
@@ -41,6 +42,8 @@ extension WorkspaceManager {
         case .claude, .codex, .pi:
             return AgentRestart.resumesNatively(run.provider)
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
+            // OpenCode's own server reads a session back by its id.
+            if openCodeLinks[id]?.sessionID != nil { return true }
             // Its capabilities are in once a session is open on it.
             guard let client = acpClients[id], client.isRunning, client.sessionID != nil else {
                 return AgentRestart.resumesNatively(run.provider)

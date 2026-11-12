@@ -166,6 +166,7 @@ enum SettingsSearch {
         .init("ws.section.tidy", .sessions),
         .init("settings.ws.showCost", .usage),
         .init("settings.ws.codexAppServer", .agents),
+        .init("settings.ws.openCodeServer", .agents),
         .init("settings.ws.trafficLog", .maintenance),
         .init("settings.maintenance.diagnostics", .maintenance),
         .init("diagnostics.export", .maintenance),

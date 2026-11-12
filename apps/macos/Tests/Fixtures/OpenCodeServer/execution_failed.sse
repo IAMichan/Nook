@@ -1,0 +1,18 @@
+data: {"id":"evt_fixture5900000000000000000","type":"server.connected","data":{}}
+
+: heartbeat
+
+data: {"id":"evt_fixture6000000000000000000","created":1794481857533,"type":"session.created","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0200000000000000000","slug":"curious-nebula","version":"2.2.7","projectID":"0000000000000000000000000000000000000000","location":{"directory":"/Users/me/project"},"subpath":"project","model":{"id":"no-such-model","providerID":"opencode"}},"durable":{"aggregateID":"ses_fixture0200000000000000000","seq":0,"version":1}}
+
+data: {"id":"evt_fixture6100000000000000000","created":1794481857540,"type":"project.updated","data":{"id":"0000000000000000000000000000000000000000","canonical":"/Users/me/repo","vcs":"git","time":{"created":1794480396599,"updated":1794480396599,"active":1794481857537},"sandboxes":[]}}
+
+data: {"id":"evt_fixture6200000000000000000","created":1794481860124,"type":"session.inbox.enqueued","location":{"directory":"/Users/me/project"},"data":{"inboxID":"msg_fixture0500000000000000000","sessionID":"ses_fixture0200000000000000000","item":{"type":"user","payload":{"text":"Say hi."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fixture0200000000000000000","seq":1,"version":1}}
+
+data: {"id":"evt_fixture6300000000000000000","created":1794481860126,"type":"session.execution.started","data":{"sessionID":"ses_fixture0200000000000000000"},"durable":{"aggregateID":"ses_fixture0200000000000000000","seq":2,"version":1}}
+
+data: {"id":"evt_fixture6400000000000000000","created":1794481860142,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0200000000000000000","delta":{"core/codemode":"b9321aa27fe3f9eb6662ad886008492dd401333a0049c044c54ac2323b9ead1e","core/skill-guidance":"e44b73342ed337be92c3dc62bbe26b70edb85d6389d2321dddaf4b07868de659","core/instructions":"498cd9ee5effbffa18d91558ffa2476c71c248a6b51757c6c0672c5af3c7c571","core/date":"a7e13a150687c80c4d0443d32fcf7d9efe5c87e5523d17f39302e1f532dde9d8","core/environment":"a1ba6342fe1c03bad0616d1718eb55e7baba282253650789cd8d42442b5a126e"}},"durable":{"aggregateID":"ses_fixture0200000000000000000","seq":3,"version":2}}
+
+data: {"id":"evt_fixture6500000000000000000","created":1794481860143,"type":"session.inbox.delivered","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0200000000000000000","inboxID":"msg_fixture0500000000000000000"},"durable":{"aggregateID":"ses_fixture0200000000000000000","seq":4,"version":1}}
+
+data: {"id":"evt_fixture6600000000000000000","created":1794481860152,"type":"session.execution.failed","data":{"sessionID":"ses_fixture0200000000000000000","error":{"type":"provider.no-route","message":"Model unavailable: opencode/no-such-model"}},"durable":{"aggregateID":"ses_fixture0200000000000000000","seq":5,"version":1}}
+

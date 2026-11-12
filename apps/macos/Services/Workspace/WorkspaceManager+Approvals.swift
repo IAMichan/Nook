@@ -19,9 +19,11 @@ extension WorkspaceManager {
     /// The reason for a denial, for an agent whose answer to a request carries no text: steered into the running turn
     /// (Codex `turn/steer`; an ACP agent is interrupted and gets it as the next prompt). While more requests wait on you
     /// the turn cannot be steered, so it waits in the queue for the end of the turn.
-    func deliverDenyReason(_ id: UUID, _ reason: String) {
+    /// `delivery`: how this transport takes it, when it differs from the agent's own (OpenCode over ACP, where its server
+    /// would carry it in the answer).
+    func deliverDenyReason(_ id: UUID, _ reason: String, delivery: DenyReasonDelivery? = nil) {
         guard !reason.isEmpty, let run = run(id) else { return }
-        switch run.provider.capabilities.denyReason {
+        switch delivery ?? run.provider.capabilities.denyReason {
         case .inResponse:
             return
         case .followUpMessage:
