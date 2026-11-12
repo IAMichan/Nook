@@ -686,12 +686,14 @@ struct ContextUsageCard: View {
 struct ComposerUsageRing: View, Equatable {
     let limits: [QuotaLimit]
     let account: String
+    /// The account whose limits these are: the popover reads them again from the app, so a refresh shows in it at once.
+    var profileID: String?
     @State private var open = false
     @State private var hovering = false
-    private static let shownLimits = 6
+    fileprivate static let shownLimits = 6
 
     static func == (a: ComposerUsageRing, b: ComposerUsageRing) -> Bool {
-        a.limits == b.limits && a.account == b.account
+        a.limits == b.limits && a.account == b.account && a.profileID == b.profileID
     }
 
     /// The ring for an account, in every session composer and from the first percent, working or not: nothing only for an
@@ -702,7 +704,7 @@ struct ComposerUsageRing: View, Equatable {
         if let profile {
             let limits = app.quota.limits(for: profile)
             if !limits.isEmpty {
-                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app)).equatable()
+                ComposerUsageRing(limits: limits, account: AccountLabel.name(profile, app: app), profileID: profile.id).equatable()
             }
         }
     }
@@ -712,13 +714,6 @@ struct ComposerUsageRing: View, Equatable {
     /// "Limits of Work: 5 hours: 38% used · Week: 12% used".
     private var help: String {
         tr("compose.limits.help", account, limits.map { tr("limits.rowUsed", $0.label, UsageLimitRows.used($0)) }.joined(separator: " · "))
-    }
-
-    /// The fullest windows when there are many (an agent with a quota per model), in the agent's order.
-    private var shown: [QuotaLimit] {
-        guard limits.count > Self.shownLimits else { return limits }
-        let busiest = Set(limits.sorted { $0.percent > $1.percent }.prefix(Self.shownLimits).map(\.id))
-        return limits.filter { busiest.contains($0.id) }
     }
 
     var body: some View {
@@ -757,7 +752,7 @@ struct ComposerUsageRing: View, Equatable {
         .fixedSize()
         .composerTip(help)
         .accessibilityLabel(help)
-        .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: shown, account: account, open: $open) }
+        .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: limits, account: account, profileID: profileID, open: $open) }
     }
 
     /// The short window as the outer ring, the long one inside it, each filled from the top in its own tone. Both
@@ -779,9 +774,26 @@ struct ComposerUsageRing: View, Equatable {
 /// The title with the account, a line per window, the way to every account's limits, and a refresh button.
 private struct ComposerUsagePanel: View {
     @EnvironmentObject private var app: AppModel
+    /// The limits when the ring was drawn; only used when the account is gone.
     let limits: [QuotaLimit]
     let account: String
+    let profileID: String?
     @Binding var open: Bool
+
+    /// Read from the app on every redraw rather than kept from when the popover opened: the ring is equatable and the
+    /// popover's content does not always follow it, so after the refresh button the numbers stayed as they were.
+    private var current: [QuotaLimit] {
+        guard let profile = profileID.flatMap({ app.profiles.profile(id: $0) }) else { return limits }
+        return app.quota.limits(for: profile)
+    }
+
+    /// The fullest windows when there are many (an agent with a quota per model), in the agent's order.
+    private var shown: [QuotaLimit] {
+        let limits = current
+        guard limits.count > ComposerUsageRing.shownLimits else { return limits }
+        let busiest = Set(limits.sorted { $0.percent > $1.percent }.prefix(ComposerUsageRing.shownLimits).map(\.id))
+        return limits.filter { busiest.contains($0.id) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -791,7 +803,7 @@ private struct ComposerUsagePanel: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             TimelineView(.nookTicks(every: 60)) { context in
-                UsageLimitRows(limits: limits, now: context.date)
+                UsageLimitRows(limits: shown, now: context.date)
             }
             // "All limits" on the left, and on its far right a way to read the limits again right now.
             HStack(spacing: NookTheme.Spacing.sm) {
