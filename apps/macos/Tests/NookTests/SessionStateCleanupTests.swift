@@ -40,6 +40,42 @@ final class SessionStateCleanupTests: XCTestCase {
         }
     }
 
+    /// State WorkspaceManager owns through a small type of its own, kept in the extension file that uses it: each type
+    /// forgets its per-session entries in `forget(_:)`, and `forgetSessionState` calls that.
+    private static let ownedState: [(file: String, type: String, property: String)] = [
+        ("Services/Workspace/WorkspaceManager+TimelineStore.swift", "TimelineStore", "timelineStore"),
+        ("Services/Workspace/WorkspaceManager+Git.swift", "GitRefreshState", "gitRefresh"),
+        ("Services/Workspace/WorkspaceManager+PullRequestWatch.swift", "PullRequestWatcher", "pullRequestWatcher"),
+        ("Services/Workspace/WorkspaceManager+Capacity.swift", "CapacityScheduler", "capacity"),
+    ]
+
+    func testOwnedPerSessionStateIsForgottenToo() throws {
+        let manager = try String(contentsOf: Self.root.appendingPathComponent("Services/Workspace/WorkspaceManager.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(manager.range(of: "func forgetSessionState(_ id: UUID) {"))
+        let rest = manager[start.upperBound...]
+        let forgetSession = try String(rest[..<XCTUnwrap(rest.range(of: "\n    }\n")).lowerBound])
+        let pattern = #"(?m)^    (?:private\s+)?var\s+(\w+):\s*(?:\[UUID\s*:|Set<UUID>)"#
+        let regex = try NSRegularExpression(pattern: pattern)
+        for owned in Self.ownedState {
+            XCTAssertTrue(forgetSession.contains(owned.property + ".forget(id)"),
+                          "forgetSessionState must call \(owned.property).forget(id)")
+            let source = try String(contentsOf: Self.root.appendingPathComponent(owned.file), encoding: .utf8)
+            let typeStart = try XCTUnwrap(source.range(of: "struct \(owned.type) {"), "\(owned.type) not found in \(owned.file)")
+            let body = String(source[typeStart.upperBound...])
+            let names = regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).compactMap {
+                Range($0.range(at: 1), in: body).map { String(body[$0]) }
+            }
+            XCTAssertFalse(names.isEmpty, "the pattern no longer finds \(owned.type)'s properties")
+            let forgetStart = try XCTUnwrap(body.range(of: "mutating func forget(_ id: UUID) {"), "\(owned.type) needs forget(_:)")
+            let forgetRest = body[forgetStart.upperBound...]
+            let forget = try String(forgetRest[..<XCTUnwrap(forgetRest.range(of: "\n    }\n")).lowerBound])
+            for name in names {
+                XCTAssertNotNil(forget.range(of: #"\b"# + name + #"\b"#, options: .regularExpression),
+                                "\(owned.type).\(name) is per-session state: forget it in \(owned.type).forget(_:)")
+            }
+        }
+    }
+
     /// Helpers `forgetSessionState` calls, and what each one forgets.
     private static let helpers: [String: Set<String>] = [
         "forgetConnectorSignIns(id)": ["connectorSignIns", "connectorSignInChecks"],
