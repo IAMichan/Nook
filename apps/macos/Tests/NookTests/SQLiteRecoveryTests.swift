@@ -84,6 +84,9 @@ final class SQLiteRecoveryTests: XCTestCase {
             _ = log.append(UUID(), .event, Data("{}".utf8))
         }
         XCTAssertTrue(incidents.all.isEmpty)
+        // Apple's SQLite keeps the write-ahead log after the last connection closes; stock SQLite (Linux) checkpoints and
+        // deletes it. Only a log that is there can go with the copy.
+        let hadWriteAheadLog = FileManager.default.fileExists(atPath: url.path + "-wal")
         // Then damage the header's magic string, as a failing disk could.
         let handle = try FileHandle(forWritingTo: url)
         try handle.seek(toOffset: 0)
@@ -96,7 +99,7 @@ final class SQLiteRecoveryTests: XCTestCase {
         XCTAssertEqual(incidents.all.first?.kind, .damaged)
         XCTAssertEqual(try Data(contentsOf: copy).prefix(16), Data(repeating: 0x5A, count: 16))
         // The write-ahead log and its index went with the copy, under its name; the fresh file has its own.
-        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path + "-wal"), "\(files())")
+        XCTAssertEqual(FileManager.default.fileExists(atPath: copy.path + "-wal"), hadWriteAheadLog, "\(files())")
         XCTAssertEqual(reopened.runIDs(), [])
     }
 
