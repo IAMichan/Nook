@@ -220,16 +220,13 @@ struct MusicTransport: View {
                 service.setShuffle(!info.shuffle)
             }
             NookIconButton(systemName: "backward.fill", label: tr("music.previous"), size: large ? 36 : 28) { service.control(.previous) }
-                .help(tr("music.previous"))
             NookIconButton(
                 systemName: info.isPlaying ? "pause.fill" : "play.fill",
                 label: info.isPlaying ? tr("music.pause") : tr("music.play"),
                 filled: true,
                 size: large ? 48 : 32
             ) { service.control(.playPause) }
-                .help(info.isPlaying ? tr("music.pause") : tr("music.play"))
             NookIconButton(systemName: "forward.fill", label: tr("music.next"), size: large ? 36 : 28) { service.control(.next) }
-                .help(tr("music.next"))
             MusicToggleButton(systemName: "repeat", label: tr("music.repeat"), isOn: info.repeating, size: large ? 34 : 28) {
                 service.setRepeat(!info.repeating)
             }

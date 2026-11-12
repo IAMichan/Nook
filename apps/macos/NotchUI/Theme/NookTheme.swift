@@ -383,6 +383,10 @@ enum NookTheme {
     static let tabSettle: Duration = .milliseconds(320)
     /// Hover feedback on buttons and chips: quick and settled.
     static let hover = Animation.spring(duration: 0.2, bounce: 0)
+    /// A tooltip (`.nookTip`) fading in once the pointer rests: brief, so the tip reads as instant.
+    static let tipFade = Animation.easeOut(duration: 0.1)
+    /// The widest a tooltip (`.nookTip`, `.nookTipCard`) grows before its text wraps.
+    static let tooltipMaxWidth: CGFloat = 320
     /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.
     static let reveal = Animation.spring(duration: 0.24, bounce: 0)
     /// Scrolling a list to a message or a line.

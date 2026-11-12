@@ -328,16 +328,13 @@ struct PanelView: View {
                 if !inWindow, headerHover {
                     // Go on in the main window, on this tab, with more room.
                     NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
-                        .help(tr("menu.window"))
                         .transition(.opacity)
                 }
                 if gear {
                     NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
-                        .help(tr("button.settings"))
                 }
                 if !inWindow {
                     NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30) { viewModel.show(.idle) }
-                        .help(tr("button.close"))
                 }
             }
         }
@@ -370,10 +367,8 @@ struct PanelView: View {
                 .padding(.horizontal, NookTheme.Spacing.sm)
             if !app.demoMode {
                 NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
-                    .help(tr("search.button"))
             }
             NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
-                .help(tr("button.talk"))
             // A second tab beside this one: the chats, the music or the Nook chat while you work here.
             if !app.demoMode { PanelSplitButton(current: tab) }
         }

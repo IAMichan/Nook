@@ -94,8 +94,20 @@ struct AgentRunPanel: View {
     @State private var seenSubagents: String?
     /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
     @State var countedLines: [String: TurnLines] = [:]
-    /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke).
-    @State var derived = RunTimelineDerived()
+    /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke); the
+    /// session's own from its last visit (`RunTimelineDerived.forRun`), so opening it again lays nothing out.
+    @State var derived: RunTimelineDerived
+    /// Git, the agent's connection and the repository, started once the session stayed open a moment: passing through
+    /// sessions with the arrow keys starts no process for each.
+    @State private var settleTask: Task<Void, Never>?
+
+    init(workspace: WorkspaceManager, timelines: TimelineChanges, runID: UUID, headerAccessory: AnyView? = nil) {
+        _workspace = ObservedObject(wrappedValue: workspace)
+        _timelines = ObservedObject(wrappedValue: timelines)
+        self.runID = runID
+        self.headerAccessory = headerAccessory
+        _derived = State(initialValue: .forRun(runID))
+    }
 
     var draft: String {
         get { composerState.draft }
@@ -116,7 +128,9 @@ struct AgentRunPanel: View {
 
     var body: some View {
         if let run = workspace.run(runID) {
-            let _ = derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run))
+            // While an evicted timeline is read from disk again, what it showed last time stays (and its caches with it).
+            let _ = workspace.isTimelineLoaded(runID) || !derived.hasContent
+                ? derived.update(workspace.timeline(runID), run: run, detail: timelineDetail(run)) : derived
             let outputs = derived.outputs
             let signatures = derived.outputSignatures
             VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -172,19 +186,31 @@ struct AgentRunPanel: View {
                 landsOnLoad = !workspace.isTimelineLoaded(runID)
                 visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
                 if let visit { openBlocks = visit.open }
-                // Quiet: the branch shown so far stays up while it is read again, and only a change redraws (a spinner
-                // first would redraw every view that follows the workspace twice as the session opens).
-                if run.repoRoot != nil { workspace.refreshGit(runID, quiet: true) }
-                // The agent's connection opens now, so your first message goes straight in.
-                workspace.prewarm(runID)
                 focused = true
                 // What was there before you opened the session is not news.
                 seenOutputs = Set(signatures)
                 seenSubagents = derived.subagentsSignature
-                Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
+                settleTask?.cancel()
+                let (id, hasRepository) = (runID, run.repoRoot != nil)
+                settleTask = Task { @MainActor in
+                    try? await Task.sleep(for: NookTheme.tabSettle)
+                    guard !Task.isCancelled else { return }
+                    // Quiet: the branch shown so far stays up while it is read again, and only a change redraws (a
+                    // spinner first would redraw every view that follows the workspace twice as the session opens).
+                    if hasRepository { workspace.refreshGit(id, quiet: true) }
+                    // The agent's connection opens now, so your first message goes straight in.
+                    workspace.prewarm(id)
+                    let found = await workspace.githubRepository(id)
+                    guard !Task.isCancelled else { return }
+                    repository = found
+                }
             }
-            .onDisappear { rememberVisit(runID) }
+            .onDisappear {
+                settleTask?.cancel()
+                settleTask = nil
+                rememberVisit(runID)
+            }
             .onAppear { workspace.timelineShown(runID) }
             .onDisappear { workspace.timelineHidden(runID) }
             // What the side panel hands to this session lands in the draft, to read before sending; also when it

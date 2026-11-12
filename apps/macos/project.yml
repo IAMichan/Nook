@@ -701,6 +701,7 @@ targets:
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift
+      - path: Core/TooltipTiming.swift
       - path: Services/Music/MusicLibrary.swift
       - path: Services/Music/MusicHistory.swift
       - path: Services/Music/MusicOutputs.swift

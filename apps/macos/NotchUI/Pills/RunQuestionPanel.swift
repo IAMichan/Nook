@@ -47,7 +47,6 @@ struct RunQuestionPanel: View {
                     Spacer(minLength: 6)
                     if index > 0 {
                         ToolbarIconButton("chevron.left", tr("ws.question.back")) { goBack() }
-                            .help(tr("ws.question.back"))
                     }
                     if question.questions.count > 1 {
                         Text("\(index + 1)/\(question.questions.count)")

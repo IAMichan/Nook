@@ -131,11 +131,8 @@ private struct TaskRow: View {
             HStack(spacing: NookTheme.Spacing.xxs) {
                 NookIconButton(systemName: "play.fill", label: tr("sched.runNow"), size: 28, action: runNow)
                     .disabled(running || !canRun)
-                    .help(tr("sched.runNow"))
                 NookIconButton(systemName: "pencil", label: tr("sched.edit"), size: 28, action: edit)
-                    .help(tr("sched.edit"))
                 NookIconButton(systemName: "trash", label: tr("sched.delete"), size: 28, action: delete)
-                    .help(tr("sched.delete"))
                 Toggle(tr("sched.enabled"), isOn: Binding(get: { task.enabled }, set: toggle))
                     .labelsHidden()
                     .toggleStyle(.switch)
