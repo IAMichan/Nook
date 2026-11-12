@@ -1421,6 +1421,7 @@ final class WorkspaceManager: ObservableObject {
         forkLaunched.remove(id)
         displayPrompt[id] = nil
         reopeningWorktrees.remove(id)
+        keptReplays[id] = nil
         capacity.forget(id)
         runPositions = nil
         subThreadCounts = nil

@@ -324,7 +324,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "session_id": ["type": "string", "description": "The session id from session_list."],
                 "message": ["type": "string", "description": "The message; complete and self-contained."],
                 "mode": ["type": "string", "enum": BridgeSessionArguments.SendMode.allCases.map(\.rawValue),
-                         "description": "queue (default), auto, steer or restart."]
+                         "description": "queue (default), auto, steer or restart."],
+                "client_request_id": ["type": "string", "description": "A retry sends nothing twice."]
             ], required: ["session_id", "message"])
         case .sessionWait:
             return object([

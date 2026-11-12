@@ -138,8 +138,14 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertFalse(launch.environment(runID: id).values.contains(token))
     }
 
-    func testBothHelpersReadTheTokenFile() {
-        for script in [WorkspaceBridgeScript.contents, SudoAskpass.contents] {
+    private static let macosRoot: URL = {
+        if let path = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"] { return URL(fileURLWithPath: path) }
+        return URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }()
+
+    func testBothHelpersReadTheTokenFile() throws {
+        let bridgeFile = try String(contentsOf: Self.macosRoot.appendingPathComponent("Services/Workspace/WorkspaceBridgeScript.swift"), encoding: .utf8)
+        for script in [bridgeFile, SudoAskpass.contents] {
             XCTAssertTrue(script.contains("NOOK_BRIDGE_TOKEN_FILE"))
             XCTAssertTrue(script.contains("NOOK_BRIDGE_TOKEN"), "a session started before still works")
         }

@@ -244,8 +244,12 @@ struct GuestHold: Equatable {
     }
 
     private(set) var messages: [Held] = []
+    private var seenIDs: Set<String> = []
 
     var bytes: Int { messages.reduce(0) { $0 + $1.bytes } }
+
+    /// Whether this link already took the guest's message `wireID` (holding it now, or already sent or dismissed).
+    func hasSeen(_ wireID: String) -> Bool { seenIDs.contains(wireID) }
 
     /// Whether a message of `bytes` may wait now; nil when it may.
     func refusal(forBytes bytes: Int) -> GuestLink.Refusal? {
@@ -254,7 +258,10 @@ struct GuestHold: Equatable {
         return nil
     }
 
-    mutating func add(_ held: Held) { messages.append(held) }
+    mutating func add(_ held: Held, wireID: String? = nil) {
+        guard seenIDs.insert(wireID ?? held.id).inserted else { return }
+        messages.append(held)
+    }
 
     /// Takes a message out (sent or dismissed).
     mutating func take(_ id: String) -> Held? {
