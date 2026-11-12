@@ -24,10 +24,14 @@
   let pending = $state(false);
   let itemsElement: HTMLDivElement;
   const deleted = new Set<string>();
+  /// Deleted with Undo still on screen: hidden right away, removed for good once the undo time is over.
+  let hidden = $state<Set<string>>(new Set());
+  const UNDO_MS = 7000;
 
-  const groups = $derived(query.trim()
+  const groups = $derived((query.trim()
     ? search.kind === "ready" ? [{ id: "search", title: "Search results", items: search.items }] : []
-    : conversationGroups(nook.nooks, nook.activeId));
+    : conversationGroups(nook.nooks, nook.activeId))
+    .map((group) => ({ ...group, items: group.items.filter((item) => !hidden.has(item.id)) })));
   const list = $derived(groups.flatMap((group) => group.items));
 
   onMount(() => { refresh(); });
@@ -76,6 +80,50 @@
     catch (e) { toast.error("Could not create Nook", e); }
   }
 
+  /// Delete without a confirmation step: the row goes at once and the toast offers Undo for a few seconds.
+  async function deleteWithUndo(item: ConversationSummary) {
+    if (hidden.has(item.id)) return;
+    const index = list.findIndex((row) => row.id === item.id);
+    const wasActive = nook.activeId === item.id;
+    hidden = new Set(hidden).add(item.id);
+    menu = null;
+    confirming = null;
+    let state: "waiting" | "undone" | "deleted" = "waiting";
+    const unhide = () => {
+      const next = new Set(hidden);
+      next.delete(item.id);
+      hidden = next;
+    };
+    if (wasActive) {
+      const next = list.find((row) => row.id !== item.id && !hidden.has(row.id));
+      if (next) await select(next.id);
+      else { nook.activeId = null; nook.active = null; }
+    }
+    const timer = setTimeout(async () => {
+      if (state !== "waiting") return;
+      state = "deleted";
+      try {
+        await api.deleteNook(item.id);
+        deleted.add(item.id);
+        await nook.refreshList();
+      } catch (e) {
+        toast.error("Could not delete conversation", e);
+      } finally { unhide(); }
+    }, UNDO_MS);
+    toast.withAction(`Deleted “${item.title}”`, {
+      label: "Undo",
+      run: () => {
+        if (state !== "waiting") return;
+        state = "undone";
+        clearTimeout(timer);
+        unhide();
+        if (wasActive) select(item.id);
+      },
+    });
+    await tick();
+    focusRow(Math.min(index, list.length - 1));
+  }
+
   async function mutate(item: ConversationSummary, action: "pin" | "archive" | "delete") {
     if (pending) return;
     pending = true;
@@ -112,6 +160,10 @@
     if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
       e.preventDefault();
       focusRow(e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : Math.max(0, Math.min(list.length - 1, index + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Delete" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const item = list[index];
+      if (item) deleteWithUndo(item);
     } else if (e.key === "F10" && e.shiftKey) {
       e.preventDefault();
       menu = id;
@@ -163,7 +215,7 @@
               {:else}
                 <button class="ghost" disabled={pending} onclick={() => mutate(item, "pin")}>{item.pinned ? "Unpin" : "Pin"}</button>
                 <button class="ghost" disabled={pending} onclick={() => mutate(item, "archive")}>{item.archived ? "Restore" : "Archive"}</button>
-                <button class="ghost danger" disabled={pending} onclick={() => { confirming = item.id; tick().then(() => itemsElement.querySelector<HTMLButtonElement>(".actions button")?.focus()); }}>Delete…</button>
+                <button class="ghost danger" disabled={pending} title="Delete (Del) · undo from the message that follows" onclick={() => deleteWithUndo(item)}>Delete</button>
               {/if}
             </div>
           {/if}

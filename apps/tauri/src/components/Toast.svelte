@@ -82,6 +82,9 @@
             <div class="title">{current.title}</div>
             {#if current.detail}<div class="detail">{current.detail}</div>{/if}
           </div>
+          {#if current.action}
+            <button class="act" onclick={() => toast.act(current.id)}>{current.action.label}</button>
+          {/if}
           {#if current.kind === "error" && current.detail}
             <button class="icon" title="Melding kopiëren" aria-label="Melding kopiëren" onclick={() => copy(current.id)}>
               {copied === current.id ? "✓" : "⧉"}
@@ -141,6 +144,7 @@
   .title { font-size: 13px; font-weight: 600; color: var(--paper); }
   .detail { font-size: 11.5px; color: var(--text2); display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .icon { flex: none; width: 24px; height: 20px; padding: 0; background: transparent; border: none; color: var(--text2); font-size: 11px; }
+  .act { flex: none; align-self: center; padding: 3px 10px; font-size: 12px; font-weight: 600; border-radius: 999px; background: color-mix(in srgb, var(--tone) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent); color: var(--paper); }
   .icon:hover { color: var(--paper); }
   @media (prefers-reduced-motion: reduce) { .stack, .toast, .row { transition: none; } }
 </style>
