@@ -14,9 +14,7 @@ struct ConnectorSignInBanner: View {
             let waiting = shown.first(where: \.waiting)
             AdaptiveActionRow {
                 HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                    Image(icon: "powerplug")
-                        .font(NookTheme.font(12, .semibold))
-                        .foregroundStyle(NookTheme.amber)
+                    ConnectorLogos(connectors: shown)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(tr("ws.connector.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
                         Text(waiting.map { tr("ws.connector.waiting", $0.title) }
@@ -56,8 +54,18 @@ struct ConnectorSignInMenu: View {
     var body: some View {
         Menu {
             ForEach(connectors) { connector in
-                Button(connector.waiting ? tr("ws.connector.waiting", connector.title) : connector.title) {
+                Button {
                     workspace.signInConnector(runID, name: connector.name)
+                } label: {
+                    Label {
+                        Text(connector.waiting ? tr("ws.connector.waiting", connector.title) : connector.title)
+                    } icon: {
+                        if let logo = SourceBrand.menuImage(for: "", domain: connector.iconDomain) {
+                            Image(nsImage: logo)
+                        } else {
+                            Image(icon: "powerplug")
+                        }
+                    }
                 }
                 .disabled(connector.waiting)
             }
@@ -109,12 +117,29 @@ struct ConnectorSignInGroup: View {
 
     private var rows: some View {
         ForEach(connectors) { connector in
-            DropdownRow(symbol: connector.waiting ? "hourglass" : "person.badge.key",
+            DropdownRow(symbol: connector.waiting ? "hourglass" : "powerplug", site: connector.iconDomain,
                         title: connector.waiting ? tr("ws.connector.waiting", connector.title) : connector.title,
                         trailing: connector.waiting ? nil : tr("ws.connector.signIn"),
                         disabledReason: connector.waiting ? tr("ws.connector.waitingHelp") : nil) {
                 workspace.signInConnector(runID, name: connector.name)
             }
         }
+    }
+}
+
+/// The logos of the connectors that need you, in front of the row above the composer: one logo for one connector, the
+/// first three side by side for more. A connector without a known website shows the connector symbol.
+struct ConnectorLogos: View {
+    let connectors: [ConnectorSignIn]
+    private static let limit = 3
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            ForEach(connectors.prefix(Self.limit)) { connector in
+                SiteIcon(domain: connector.iconDomain, fallback: "powerplug", tint: NookTheme.amber, size: 16)
+                    .help(connector.title)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

@@ -128,6 +128,9 @@ struct DropdownRow: View {
     var brand: BrandLogo? = nil
     /// A project's own icon (Settings › Projects), drawn instead of the symbol.
     var projectIcon: ProjectIcon? = nil
+    /// A service's logo (its website's icon, a connector's), drawn instead of the symbol; the symbol stays while it loads
+    /// or when the site has none.
+    var site: String? = nil
     let title: String
     var detail: String? = nil
     var trailing: String? = nil
@@ -169,6 +172,9 @@ struct DropdownRow: View {
                         .padding(.trailing, account == nil ? 0 : 3)
                 } else if let projectIcon {
                     ProjectIconView(icon: projectIcon, size: 15)
+                        .padding(.top, detail == nil ? 0 : 1)
+                } else if let site {
+                    SiteIcon(domain: site, fallback: symbol ?? "link", tint: tint ?? NookTheme.textSecondary, size: 15)
                         .padding(.top, detail == nil ? 0 : 1)
                 } else if let thumbnail {
                     Image(nsImage: thumbnail)

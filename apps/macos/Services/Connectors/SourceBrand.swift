@@ -71,6 +71,44 @@ enum SourceBrand {
         return mcpServices.first { text.contains($0.0) }?.1
     }
 
+    /// Connectors an agent reports by name only (claude.ai connectors, plugin servers), whose name does not lead to their
+    /// website by itself: the name, lowercased with dashes and underscores as spaces, to the website whose icon stands for it.
+    private static let connectorNames: [String: String] = [
+        "google calendar": "calendar.google.com", "gmail": "mail.google.com", "google drive": "drive.google.com",
+        "google docs": "docs.google.com", "google sheets": "sheets.google.com", "google maps": "maps.google.com",
+        "microsoft 365": "microsoft.com", "outlook": "outlook.com", "microsoft teams": "teams.microsoft.com",
+        "onedrive": "onedrive.live.com", "sharepoint": "microsoft.com", "box": "box.com", "close": "close.com",
+        "clay": "clay.com", "monday": "monday.com", "monday.com": "monday.com", "otter ai": "otter.ai", "otter": "otter.ai",
+        "apollo": "apollo.io", "gong": "gong.io", "granola": "granola.ai", "intercom": "intercom.com",
+        "datadog": "datadoghq.com", "pagerduty": "pagerduty.com", "ahrefs": "ahrefs.com", "amplitude": "amplitude.com",
+        "amplitude eu": "amplitude.com", "canva": "canva.com", "klaviyo": "klaviyo.com", "similarweb": "similarweb.com",
+        "supermetrics": "supermetrics.com", "calendly": "calendly.com", "crunchbase": "crunchbase.com",
+        "fireflies": "fireflies.ai", "lusha": "lusha.com", "zoominfo": "zoominfo.com", "salesforce": "salesforce.com",
+        "zendesk": "zendesk.com", "webflow": "webflow.com", "wix": "wix.com", "paypal": "paypal.com",
+        "square": "squareup.com", "plaid": "plaid.com", "netlify": "netlify.com", "neon": "neon.tech",
+        "prisma": "prisma.io", "mixpanel": "mixpanel.com", "posthog": "posthog.com", "miro": "miro.com",
+        "clickup": "clickup.com", "egnyte": "egnyte.com", "harvey": "harvey.ai", "pitchbook": "pitchbook.com",
+        "hex": "hex.tech", "snowflake": "snowflake.com", "databricks": "databricks.com", "bigquery": "cloud.google.com",
+        "dropbox": "dropbox.com", "evernote": "evernote.com", "loom": "loom.com", "zoom": "zoom.us",
+        "cloudinary": "cloudinary.com", "contentful": "contentful.com", "sanity": "sanity.io", "railway": "railway.app",
+        "render": "render.com", "fly": "fly.io", "heroku": "heroku.com", "pinecone": "pinecone.io",
+        "claude in chrome": "claude.ai"
+    ]
+
+    /// The website for a connector an agent reports by name only ("claude.ai Google Calendar", "plugin:design:linear",
+    /// as `ConnectorSignIns.title` leaves it): a name Nook knows, a service it signs in to itself, or a known word in it.
+    static func connectorDomain(name: String) -> String? {
+        let key = name.lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty else { return nil }
+        if let known = connectorNames[key] { return known }
+        if let service = MCPRemoteService.all.first(where: { $0.id == key || $0.name.lowercased() == key }) { return service.domain }
+        let dashed = key.replacingOccurrences(of: " ", with: "-")
+        return mcpServices.first { dashed.contains($0.0) }?.1
+    }
+
     /// A local MCP server that works with the Mac's own files or apps shows that app ("server-filesystem" → Finder).
     static func mcpAppSource(name: String, transport: MCPServerConfig.Transport) -> String? {
         guard case .stdio(let command, let arguments) = transport else { return nil }
