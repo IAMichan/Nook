@@ -2,7 +2,7 @@ import Foundation
 
 /// Builds that coding agents leave behind: Xcode build folders (`-derivedDataPath`) and `scripts/core-tests.sh`
 /// packages in temporary folders, agent scratchpads, a worktree's `.scratch/` and `.build/` (where `scripts/xcode.sh`
-/// builds), and Xcode DerivedData of worktrees that no longer exist. Each is several hundred MB to 5 GB, and nothing else
+/// and `scripts/core-tests.sh` build), and Xcode DerivedData of worktrees that no longer exist. Each is several hundred MB to 5 GB, and nothing else
 /// removes them: macOS leaves `/private/tmp`, scratchpads and DerivedData alone, and a worktree's `.scratch/` and
 /// `.build/` live as long as the worktree, which is for good while the cleanup rules are off (137 worktrees with a
 /// 3.7 GB `.build/xcode` each filled a 1 TB disk).

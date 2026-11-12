@@ -27,7 +27,7 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
    - For coding agents: an improvement to Claude Code goes to Codex, Gemini CLI, Antigravity, OpenCode, Cursor, Grok and the ACP agents too. Build it on `ProviderCapabilities` or an exhaustive `switch`, not a `provider == .claude` check (`AgentParityTests` fails on new ones), and fill in its row in the coding agent feature matrix.
    - Build it in the family's shared type or view. Give each member only the translation from its app's data. Leave a member out only when its app does not say it, and record that in [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) and in your summary.
 5. **Verification:**
-   - Run `./scripts/core-tests.sh` (which includes `I18nCoverageTests` and `UIConsistencyTests`) before creating a commit or pull request.
+   - Run `./scripts/core-tests.sh` (which includes `I18nCoverageTests` and `UIConsistencyTests`) before creating a commit or pull request. While iterating, `./scripts/core-tests.sh --changed` runs only the tests your change can affect; the build in `.build/core-tests` is incremental, so later runs are fast.
    - Build or test the full app with `./scripts/xcode.sh` (never `xcodebuild` into `/tmp` or the scratchpad: those builds are never removed).
    - Run `./scripts/ui-lint.sh` whenever `apps/macos/NotchUI` or `apps/macos/App` changed.
    - If you add or remove files in `apps/macos` or `apps/ios`, update `project.yml` if needed and regenerate the project with `xcodegen`.
