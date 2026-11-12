@@ -300,6 +300,23 @@ final class LookThemesTests: XCTestCase {
         XCTAssertNil(NookColorToken.named("accent"), "the accent has its own control")
     }
 
+    /// Every color in Settings › Colors has a name and an ⓘ that says where it shows (the keys are built from the
+    /// token's id, so the coverage test does not see them; it does check that each key is in every language).
+    func testEveryColorTokenIsNamedAndExplained() throws {
+        // `apps/macos`: from the environment when the tests run as a throwaway package (core-tests.sh), else from here.
+        let root = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"].map { URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let file = root.appendingPathComponent("Core/I18n+LookThemes.swift")
+        let text = try String(contentsOf: file, encoding: .utf8)
+        for token in NookColorToken.all {
+            XCTAssertTrue(text.contains("\"colors.token.\(token.id)\":"), "colors.token.\(token.id)")
+            XCTAssertTrue(text.contains("\"colors.info.\(token.id)\":"), "colors.info.\(token.id)")
+        }
+        for group in NookColorToken.Group.allCases {
+            XCTAssertTrue(text.contains("\"colors.group.\(group.rawValue)\":"), "colors.group.\(group.rawValue)")
+        }
+    }
+
     func testNoOverridesKeepNooksColors() {
         let choice = NookThemeChoice()
         XCTAssertEqual(choice.palette(dark: true, themes: NookColorTheme.builtIn), .nookDark)

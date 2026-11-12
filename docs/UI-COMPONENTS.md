@@ -40,8 +40,15 @@ built-in theme (the default "Nook": a true black canvas, 8 % white lines, neutra
 `VSCodeThemeImport` turns a VS Code color theme JSON into a `NookCustomTheme` (editor, sidebar and accent colors).
 State colors keep their meaning in every theme. Every palette color is a `NookColorToken` and can be set one by one
 in Settings › Appearance › Colors, per appearance (`NookColorOverrides`, laid over the chosen theme; empty by default, so
-Nook's colors are the defaults). A new color a view needs becomes a palette field and a token, never a literal in the
-view, so it can be set there too. A file that must draw its own colors takes them from the palette or
+Nook's colors are the defaults). Each token has a name and an ⓘ that says where it shows (`colors.token.<id>` and
+`colors.info.<id>`; a test checks both exist). A new color a view needs becomes a palette field and a token, never a
+literal in the view, so it can be set there too. A new palette never rebuilds a view: `NookWindowLook.repaintSoon()`
+makes every window resolve its dynamic colors again, so scroll positions, folds and an open color picker stay. A
+repaint is a full pass over every window, so color edits wait until the picker rests (`settle`); while dragging, only
+`ColorTokensPreview` in Settings follows, drawn straight from the edited palette. That only reaches colors drawn from the palette at draw time (`NookTheme` colors, `NSColor(NookTheme.x)`);
+a hex worked out from the palette in a view's body or cached in a layer stays until the view redraws for another reason,
+so hand AppKit the dynamic color and redo layer colors in `viewDidChangeEffectiveAppearance`. Only a new density
+rebuilds the window roots (`themeRevision`). A file that must draw its own colors takes them from the palette or
 stays on the allow-list with a reason. The notch stays dark in every theme. The tests check text contrast (WCAG AA) of
 every theme in both appearances.
 

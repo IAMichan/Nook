@@ -204,6 +204,7 @@ struct SettingsPageBar: View {
     /// Watched so "Restore defaults" dims the moment nothing on the page differs from the defaults any more.
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var colorEdits = NookColorEdits.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @AppStorage(QuitHoldMonitor.enabledKey) private var holdToQuit = false
 

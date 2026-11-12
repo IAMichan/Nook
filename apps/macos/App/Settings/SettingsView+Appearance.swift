@@ -353,25 +353,36 @@ extension SettingsView {
 // MARK: Colors
 
 /// Settings › Appearance › Colors: every named color Nook draws with, grouped (surfaces, lines, text, state, changes,
-/// chats, code), each with a picker for dark or for light. A color set here lies over the chosen theme and changes every
-/// place that uses it; "Reset" brings the theme's own color back. Nothing is set by default.
+/// chats, code), each with a picker for dark or for light and an ⓘ that says where it is used. A color set here lies
+/// over the chosen theme and changes every place that uses it at once (`NookWindowLook.repaintSoon`); "Reset" brings
+/// the theme's own color back. Nothing is set by default.
 struct ColorTokensSettings: View {
     @ObservedObject private var settings = AppSettings.shared
-    @State private var dark = true
+    /// The overrides are not published by `AppSettings` (a picker changes them on every pointer move); this is.
+    @ObservedObject private var edits = NookColorEdits.shared
+    @Environment(\.colorScheme) private var scheme
+    /// The appearance being edited; until one is picked, the one Nook shows now.
+    @State private var picked: Bool?
 
+    private var dark: Bool { picked ?? (scheme == .dark) }
     private var themePalette: NookPalette { settings.themeChoice.themePalette(dark: dark, themes: settings.themes) }
     private var overrides: [String: UInt32] { settings.colorOverrides.values(dark: dark) }
 
     var body: some View {
         Group {
             Section {
-                Picker(selection: $dark) {
+                Picker(selection: Binding(get: { dark }, set: { picked = $0 })) {
                     Text(tr("theme.mode.dark")).tag(true)
                     Text(tr("theme.mode.light")).tag(false)
                 } label: {
                     SettingText("colors.editFor")
                 }
                 .pickerStyle(.segmented)
+                if dark != (scheme == .dark) {
+                    SettingNote(tr(dark ? "colors.notShown.dark" : "colors.notShown.light"))
+                }
+                // Follows every step of a drag; the rest of Nook follows once the picker rests.
+                ColorTokensPreview(palette: themePalette.applying(overrides))
                 if !overrides.isEmpty {
                     HStack {
                         Text(tr("colors.changed", overrides.count))
@@ -386,9 +397,7 @@ struct ColorTokensSettings: View {
                     }
                 }
             } header: {
-                Text(tr("colors.header"))
-            } footer: {
-                SettingNote(tr("colors.footer"))
+                SettingsSectionTitle(tr("colors.header"), info: tr("colors.info"))
             }
             ForEach(NookColorToken.Group.allCases) { group in
                 let tokens = NookColorToken.all.filter { $0.group == group }
@@ -412,7 +421,10 @@ struct ColorTokensSettings: View {
         let value = overrides[token.id] ?? themeValue
         let changed = overrides[token.id] != nil
         return HStack(spacing: NookTheme.Spacing.md) {
-            SettingText("colors.token.\(token.id)")
+            HStack(spacing: NookTheme.Spacing.xs) {
+                SettingText("colors.token.\(token.id)")
+                SettingsInfoButton(text: tr("colors.info.\(token.id)"))
+            }
             Spacer(minLength: NookTheme.Spacing.md)
             if changed {
                 ToolbarIconButton("arrow.counterclockwise", tr("colors.reset"), height: 22, width: 22) {
@@ -435,5 +447,91 @@ struct ColorTokensSettings: View {
         all.set(token.id, to: hex, dark: dark, themeValue: themeValue)
         guard all != settings.colorOverrides else { return }
         settings.colorOverrides = all
+    }
+}
+
+/// A small piece of Nook drawn straight from the palette being edited: background, a card with a selected and a hovered
+/// row, the composer, state colors, a diff, chat bubbles and a line of code. Drawn from the hex values (not the live
+/// theme), so it follows a color picker on every step without the windows repainting.
+struct ColorTokensPreview: View {
+    let palette: NookPalette
+
+    private func c(_ token: KeyPath<NookPalette, UInt32>) -> Color { Color(hex: palette[keyPath: token]) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    row(tr("colors.preview.session"), detail: tr("colors.preview.working"), dot: \.blue, fill: \.rowSelected)
+                    row(tr("colors.preview.review"), detail: tr("colors.preview.needsYou"), dot: \.amber, fill: \.rowHover)
+                    row(tr("colors.preview.tests"), detail: tr("colors.preview.done"), dot: \.mint, fill: \.rowRest)
+                }
+                .padding(NookTheme.Spacing.sm)
+                .background(NookTheme.shape(NookTheme.Radius.card).fill(c(\.surface)))
+                .overlay(NookTheme.shape(NookTheme.Radius.card).strokeBorder(c(\.line), lineWidth: 1))
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(tr("colors.preview.ask")).foregroundStyle(c(\.textTertiary))
+                    Spacer(minLength: 0)
+                    Text("+12").foregroundStyle(c(\.added))
+                    Text("−3").foregroundStyle(c(\.removed))
+                }
+                .font(NookTheme.TextStyle.detail)
+                .padding(.horizontal, NookTheme.Spacing.md)
+                .frame(height: 30)
+                .background(NookTheme.shape(NookTheme.Radius.control).fill(c(\.composer)))
+                .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(c(\.fieldStroke), lineWidth: 1))
+            }
+            Rectangle().fill(c(\.border)).frame(width: 1)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                bubble(tr("colors.preview.theirs"), fill: \.chatTheirs, leading: true)
+                bubble(tr("colors.preview.mine"), fill: \.chatMine, leading: false)
+                (Text("func ").foregroundColor(c(\.syntaxKeyword))
+                    + Text("greet").foregroundColor(c(\.syntaxProperty))
+                    + Text("(").foregroundColor(c(\.textStrong))
+                    + Text("\"hi\"").foregroundColor(c(\.syntaxString))
+                    + Text(", ").foregroundColor(c(\.textStrong))
+                    + Text("42").foregroundColor(c(\.syntaxNumber))
+                    + Text(") ").foregroundColor(c(\.textStrong))
+                    + Text("// ok").foregroundColor(c(\.syntaxComment)))
+                    .font(NookTheme.mono(11))
+                    .lineLimit(1)
+                    .padding(NookTheme.Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(c(\.well)))
+            }
+        }
+        .padding(NookTheme.Spacing.md)
+        .background(NookTheme.shape(NookTheme.Radius.card).fill(c(\.canvas)))
+        .overlay(NookTheme.shape(NookTheme.Radius.card).strokeBorder(c(\.border), lineWidth: 1))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tr("colors.preview"))
+    }
+
+    private func row(_ title: String, detail: String, dot: KeyPath<NookPalette, UInt32>,
+                     fill: KeyPath<NookPalette, UInt32>) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Circle().fill(c(dot)).frame(width: 6, height: 6)
+            Text(title).foregroundStyle(c(\.paper))
+            Spacer(minLength: NookTheme.Spacing.sm)
+            Text(detail).foregroundStyle(c(\.textSecondary))
+        }
+        .font(NookTheme.TextStyle.detail)
+        .lineLimit(1)
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .frame(height: 24)
+        .background(NookTheme.shape(NookTheme.Radius.control).fill(c(fill)))
+    }
+
+    private func bubble(_ text: String, fill: KeyPath<NookPalette, UInt32>, leading: Bool) -> some View {
+        HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.xs) {
+            Text(text).foregroundStyle(c(\.paper))
+            Text("09:41").font(NookTheme.TextStyle.caption).foregroundStyle(c(\.chatStamp))
+        }
+        .font(NookTheme.TextStyle.detail)
+        .lineLimit(1)
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .background(NookTheme.shape(NookTheme.Radius.chatBubble).fill(c(fill)))
+        .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
     }
 }
