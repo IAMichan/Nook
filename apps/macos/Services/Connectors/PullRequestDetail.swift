@@ -167,6 +167,12 @@ struct PullRequestDetail: Equatable, Sendable {
         !canBypass && features.autoMerge && autoMergeAllowed && mergeable != nil && !nodeID.isEmpty
             && (checkSummary == .pending || mergeState == "blocked")
     }
+    /// An admin who may merge past the checks or reviews can still choose to wait for them: auto-merge sits beside
+    /// Merge in its dropdown.
+    var offersAutoMergeBesideMerge: Bool {
+        canBypass && autoMerge == nil && features.autoMerge && autoMergeAllowed && mergeable != nil && !nodeID.isEmpty
+            && !conflicted && canPush != false && (checkSummary == .pending || mergeState == "blocked")
+    }
     /// Merging now goes past what holds it back (checks, reviews, an auto-merge that waits): only an admin may.
     var bypassesRules: Bool { canBypass && (checkSummary == .pending || mergeState == "blocked" || autoMerge != nil) }
 
