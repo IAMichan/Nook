@@ -297,6 +297,18 @@ enum TaskChecklist {
         return true
     }
 
+    /// The Tasks strip above the composer: the step (phase) the agent works on now while it works, so it stays in sight
+    /// while you scroll or type, and the list it left behind once it stops.
+    static func showsAboveComposer(_ steps: [RunTaskStep]?) -> Bool {
+        guard let steps, !steps.isEmpty else { return false }
+        return true
+    }
+
+    /// The strip shows the step as running (with the live light) only while the agent works on it.
+    static func isRunning(_ steps: [RunTaskStep], active: Bool) -> Bool {
+        active && activeStep(steps) != nil
+    }
+
     /// The text of the step that runs, else nil: a list where nothing runs yet (or any more) has no current step.
     static func activeStep(_ steps: [RunTaskStep]) -> String? {
         steps.first { $0.status == .active }?.text
