@@ -563,7 +563,6 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.new.cloneAction": "Klonen",
         "ws.new.cloneHint": "Landet in %@",
         "ws.new.clonePlaceholder": "https://github.com/owner/repo.git",
-        "ws.new.cloning": "Wird geklont…",
         "ws.new.detached": "kein Branch",
         "ws.new.dirty": "%ld Änderungen",
         "ws.new.dirtyNotIncluded": "Du hast %ld nicht committete Änderungen. Sie kommen nicht in den neuen Worktree; er startet vom Basis-Branch.",

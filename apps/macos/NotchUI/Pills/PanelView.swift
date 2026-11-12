@@ -186,6 +186,8 @@ struct PanelView: View {
             if sheet == nil {
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
             }
+            // A clone that runs in the background, with how far it is and Cancel.
+            CloneNoticeStack()
         }
     }
 

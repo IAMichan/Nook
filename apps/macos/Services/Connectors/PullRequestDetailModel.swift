@@ -227,7 +227,7 @@ final class PullRequestDetailModel: ObservableObject {
     private static func readActivity(repo: String, number: Int, token: String, counts: PullRequestDetail?,
                                       forge: PullRequestForgeClient?) -> Task<PullRequestActivity, Never> {
         Task.detached(priority: .userInitiated) {
-            if let forge { return await forge.activity(number: number) }
+            if let forge { return await forge.activityWithViewed(number: number) }
             return await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: counts)
         }
     }
@@ -250,7 +250,7 @@ final class PullRequestDetailModel: ObservableObject {
         let repo = item.repo, number = item.number, started = Date()
         // Both at once, as on a page; the summary is kept the moment it lands, so a click meanwhile shows it.
         let activity = Task.detached(priority: priority) {
-            if let forge { return await forge.activity(number: number) }
+            if let forge { return await forge.activityWithViewed(number: number) }
             return await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
         }
         let summary = Task { () -> (detail: PullRequestDetail, at: Date)? in

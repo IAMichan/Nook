@@ -153,6 +153,12 @@ struct PullRequestDetailView: View {
             .onChange(of: settled) { _, _ in applyFocus() }
             .onChange(of: focus) { _, request in takeFocus(request) }
             .environment(\.pullRequestCommentActions, commentActions)
+            // The forge's own "Viewed" checkboxes (GitHub's) win over the marks on this Mac; toggles that waited go again.
+            .onChange(of: detail?.viewedOnForge, initial: true) { _, _ in
+                guard let detail else { return }
+                let marks = $viewed
+                PullRequestViewedSync.adopt(detail, accountID: accountID, marks: &viewed) { marks.wrappedValue = $0 }
+            }
             // A new push, a moved base: compare again.
             .task(id: detail.map { "\($0.headSHA) \($0.mergeState) \($0.updated?.timeIntervalSince1970 ?? 0)" }) {
                 await readBehind()

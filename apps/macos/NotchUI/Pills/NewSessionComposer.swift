@@ -1,5 +1,6 @@
-import SwiftUI
 import AppKit
+import Combine
+import SwiftUI
 
 /// Starting a session in the notch: one question, one field, and a few quiet choices underneath.
 /// "What should we build in nook?" — type the task, press Return. Agent and account, mode, permissions, effort,
@@ -38,7 +39,10 @@ struct NewSessionComposer: View {
     /// The last project request from the Agents list this composer applied (`PromptLinkInbox.requestProject`).
     @State var appliedProjectRequest: UUID?
     @State var cloneURL = ""
-    @State var cloning = false
+    /// The clone this box started (`CloneCenter`) and the project it showed then: once the clone is done, the box opens
+    /// on it, unless you picked another project meanwhile.
+    @State var pendingClone: UUID?
+    @State var pendingCloneFrom: String?
     @State var pendingID = UUID()
     /// On another machine over SSH (see RemoteMachines): which one, and the folder there.
     @State var remoteMachine: RemoteMachine?
@@ -85,6 +89,8 @@ struct NewSessionComposer: View {
         .onDisappear(perform: keepDraft)
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: promptLinks.pendingProject) { _, _ in applyRequestedProject() }
+        // Only when a clone ends, not on its progress: the box does not watch the clone itself.
+        .onReceive(CloneCenter.shared.$finished.removeDuplicates()) { finished in adoptClone(finished) }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
         // ⌥⌘↩, and ⌘↩ here too: start it and keep a fresh box for the next one. Return starts and opens it.
         // Above the box's own ⌘↩ (`priority`), which would only send.

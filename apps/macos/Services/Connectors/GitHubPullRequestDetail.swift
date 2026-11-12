@@ -83,11 +83,13 @@ enum GitHubPullRequestDetail {
         async let threads = reviewThreads(repo: repo, number: number, token: token)
         async let issues = linkedIssues(repo: repo, number: number, token: token)
         async let issue = (try? await get("/issues/\(number)")) as? [String: Any]
+        async let viewed = viewedFiles(repo: repo, number: number, token: token)
         let commits = PullRequestDetailParser.commits(await commitList)
         let events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
                                                     timeline: await timeline, commits: commits)
         return PullRequestActivity(events: PullRequestDetailParser.applying(await threads, to: events), commits: commits,
-                                   files: PullRequestDetailParser.files(await fileList), issues: await issues)
+                                   files: PullRequestDetailParser.files(await fileList), issues: await issues,
+                                   viewedOnForge: await viewed)
             .withReactions(PullRequestDetailParser.reactions((await issue)?["reactions"]))
     }
 
@@ -105,6 +107,31 @@ enum GitHubPullRequestDetail {
               let url = URL(string: "https://api.github.com/graphql") else { return [] }
         let answer = try? await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body)
         return PullRequestDetailParser.linkedIssues(answer)
+    }
+
+    /// The "Viewed" checkbox of every file for this account, from GraphQL, page by page. Best effort: nil when GitHub
+    /// could not be asked, and the marks on this Mac stay as they are.
+    static func viewedFiles(repo: String, number: Int, token: String) async -> [String: PullRequestFileViewedState]? {
+        guard let url = URL(string: "https://api.github.com/graphql") else { return nil }
+        var states: [String: PullRequestFileViewedState] = [:]
+        var after: String?
+        for _ in 0..<PullRequestViewedGraphQL.pageLimit {
+            guard let body = PullRequestViewedGraphQL.filesBody(repo: repo, number: number, after: after),
+                  let answer = try? await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body),
+                  let page = PullRequestViewedGraphQL.parse(answer) else { return states.isEmpty ? nil : states }
+            states.merge(page.states) { _, new in new }
+            guard let next = page.next else { break }
+            after = next
+        }
+        return states
+    }
+
+    /// Ticks or clears a file's "Viewed" checkbox on GitHub, after your click. Throws GitHub's refusal in words.
+    static func setFileViewed(_ viewed: Bool, path: String, nodeID: String, token: String) async throws {
+        guard let body = PullRequestViewedGraphQL.setViewedBody(nodeID: nodeID, path: path, viewed: viewed),
+              let url = URL(string: "https://api.github.com/graphql") else { throw NookError("Nothing to send.") }
+        let answer = try await ConnectorHTTP.json(url, headers: headers(token), method: "POST", body: body)
+        if let object = answer as? [String: Any], let message = PullRequestAction.graphQLError(object) { throw NookError(message) }
     }
 
     /// One page of a list, handed from the task that read it. Parsed JSON is only read after the group is done.

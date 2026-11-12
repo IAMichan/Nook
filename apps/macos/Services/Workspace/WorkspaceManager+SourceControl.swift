@@ -102,11 +102,14 @@ extension WorkspaceManager {
 extension WorkspaceManager {
     /// Clones a repository (into `<host>/<owner>/<repo>` with that layout on), then selects it as the active project.
     /// An SSH address that SSH refuses is cloned over HTTPS; the result says so.
-    func clone(url: String, into parent: String) async throws -> GitService.CloneResult {
+    /// With `progress` (on a background queue) and `cancel`, see `GitService.clone`; `CloneCenter` runs it that way.
+    func clone(url: String, into parent: String, progress: (@Sendable (GitCloneProgress) -> Void)? = nil,
+               cancel: ProcessRunner.StopFlag? = nil) async throws -> GitService.CloneResult {
         guard let git = gitService else { throw StartError.noGit }
         let layout = settings.cloneHostLayout
-        let result = try await Task.detached(priority: .userInitiated) {
-            try git.clone(url: url, into: parent, hostLayout: layout)
+        // Behind what you are doing: a clone is a long download you are not waiting at.
+        let result = try await Task.detached(priority: progress == nil ? .userInitiated : .utility) {
+            try git.clone(url: url, into: parent, hostLayout: layout, progress: progress, cancel: cancel)
         }.value
         settings.rememberProject(result.path)
         return result

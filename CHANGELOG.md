@@ -11,6 +11,18 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- The "Viewed" checkmarks on a pull request's Code tab now follow GitHub's own checkbox: a file you mark viewed in
+  Nook (or on your phone) is marked viewed on GitHub too, and a file you ticked on github.com shows as viewed in Nook.
+  A file that changed since you viewed it shows as changed again. Other forges keep the marks on your Mac, because
+  their APIs have no viewed state (see docs/INTEGRATIONS.md).
+
+- Close several pull requests at once from the selection bar, with an optional comment that is posted on each before
+  it closes. When some do not close, the note names each one and says why; the rest still close.
+
+- Cloning a repository from the new session box now runs in the background: the box is free again at once, and a
+  quiet notice in the corner shows git's stage and percentage, with Hide and Cancel. When it is done a note offers
+  Open, and the box that started it switches to the new project by itself.
+
 - While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
   the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
   holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.

@@ -237,6 +237,7 @@ targets:
       - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
       - path: Core/I18n+SourceControl.swift
+      - path: Core/I18n+ForgeWork.swift
       - path: Core/I18n+Remote.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
@@ -409,6 +410,7 @@ targets:
       - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/WorkflowRuns.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
+      - path: Services/Connectors/PullRequestBatchClose.swift
       - path: Services/Connectors/GitHubMarkdown.swift
       - path: Services/Connectors/PullRequestForge.swift
       - path: Services/Connectors/PullRequestForgeGitLab.swift
@@ -627,6 +629,7 @@ targets:
       - path: Services/Workspace/WorktreeCheckoutCache.swift
       - path: Services/Workspace/SourceControl.swift
       - path: Services/Workspace/GitService+SourceControl.swift
+      - path: Services/Workspace/GitCloneProgress.swift
       - path: Services/Connectors/ZipText.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/TimelineMemory.swift
