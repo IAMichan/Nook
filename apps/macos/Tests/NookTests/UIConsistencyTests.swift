@@ -146,11 +146,9 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift)")
     }
 
-    /// Files that still name a `Label`'s icon with `systemImage:` while another change rewrites them (the chats and the
-    /// conversation of a session Nook runs). Move each off this list once that work lands; keep in step with
-    /// `LABEL_SYSTEM_IMAGE_PENDING` in `scripts/ui-lint.sh`.
-    private static let labelSystemImagePending = ["NotchUI/Chat/", "NotchUI/Components/Chat", "NotchUI/Pills/Chats",
-                                                  "NotchUI/Pills/AgentRunPanel.swift"]
+    /// Files that still name a `Label`'s icon with `systemImage:` while another change rewrites them (the chats). Move
+    /// each off this list once that work lands; keep in step with `LABEL_SYSTEM_IMAGE_PENDING` in `scripts/ui-lint.sh`.
+    private static let labelSystemImagePending = ["NotchUI/Chat/", "NotchUI/Components/Chat", "NotchUI/Pills/Chats"]
 
     /// A `Label`'s icon goes through `Image(icon:)` too: `Label(_:icon:)` (`NookIcon.swift`), never
     /// `Label(_:systemImage:)`, which draws the raw SF Symbol beside Nook's Lucide icons.

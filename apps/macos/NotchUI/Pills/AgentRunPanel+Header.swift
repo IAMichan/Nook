@@ -80,7 +80,7 @@ extension AgentRunPanel {
             if let remote = run.remote {
                 // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
                 Button { openRemoteTerminal(remote) } label: {
-                    Label(remote.name, systemImage: "server.rack")
+                    Label(remote.name, icon: "server.rack")
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                 }

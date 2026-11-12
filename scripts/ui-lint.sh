@@ -47,13 +47,12 @@ OWN_COLORS=(
   "App/Settings/SettingsView+Appearance.swift"
 )
 
-# Path prefixes that still use Label(_:systemImage:) while the chats and the run panel are being rewritten elsewhere;
+# Path prefixes that still use Label(_:systemImage:) while the chats are being rewritten elsewhere;
 # drop each once that work lands.
 LABEL_SYSTEM_IMAGE_PENDING=(
   "NotchUI/Chat/"
   "NotchUI/Components/Chat"
   "NotchUI/Pills/Chats"
-  "NotchUI/Pills/AgentRunPanel.swift"
 )
 
 status=0
