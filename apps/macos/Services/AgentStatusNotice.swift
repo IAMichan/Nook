@@ -51,6 +51,12 @@ struct AgentStatusNotice: Equatable, Sendable {
 
     var hasChanges: Bool { added + removed > 0 }
 
+    /// The macOS notification's subtitle: the folder and which session, in one short line.
+    var bannerSubtitle: String { BannerText.subtitle(project: project, topic: topic) }
+
+    /// The macOS notification's body: the gist of what the agent said, not the whole reply.
+    var bannerBody: String { BannerText.gist(summary) }
+
     /// What the notice is about for `NoticePacer`: its session, and a failure apart, so a session that ends in an error
     /// right after a finished turn still tells you.
     var pace: String { "agent:" + session + (state == .failed ? ":failed" : "") }
@@ -83,5 +89,81 @@ struct AgentStatusNotice: Equatable, Sendable {
         let cut = clean.prefix(topicLimit - 1)
         let word = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
         return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
+    }
+}
+
+/// Text for a macOS notification: a banner has room for about two short lines, so it gets the gist (the first sentence
+/// in plain words) instead of the whole reply. The full text stays one click away, in the session.
+/// Pure, so what a banner says can be tested without a Mac.
+enum BannerText {
+    /// Longest body line of an agent's banner.
+    static let limit = 90
+    /// Longest topic in a banner's subtitle, next to the folder.
+    static let subtitleLimit = 48
+
+    /// The first sentence of `text` without Markdown, links shortened ("#1394", "github.com"), and cut at a word
+    /// to at most `limit` characters.
+    static func gist(_ text: String, limit: Int = BannerText.limit) -> String {
+        let first = text.split(whereSeparator: \.isNewline)
+            .map { plain(String($0)) }
+            .first { !$0.isEmpty } ?? ""
+        return cut(firstSentence(first), to: limit)
+    }
+
+    /// `text` without Markdown marks and with its links shortened, on one line.
+    static func plain(_ text: String) -> String {
+        var line = text
+        // [title](url) → title
+        line = replace(#"\[([^\]]+)\]\([^)]+\)"#, in: line, with: "$1")
+        // A pull request or issue link → its number.
+        line = replace(#"https?://[^\s)]+/(?:pull|issues|merge_requests)/(\d+)[^\s)]*"#, in: line, with: "#$1")
+        // Any other link → its host.
+        line = replace(#"https?://(?:www\.)?([^/\s)]+)[^\s)]*"#, in: line, with: "$1")
+        line = replace(#"\*\*|__|`"#, in: line, with: "")
+        line = replace(#"^\s*(?:#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)"#, in: line, with: "")
+        line = replace(#"\s+"#, in: line, with: " ")
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Up to the end of the first sentence that says something (a few words at least): "Done. Tests pass." → "Done.".
+    static func firstSentence(_ text: String) -> String {
+        let minimum = 12
+        var index = text.startIndex
+        while index < text.endIndex {
+            let next = text.index(after: index)
+            if ".!?".contains(text[index]), next == text.endIndex || text[next] == " ",
+               text.distance(from: text.startIndex, to: index) >= minimum {
+                return String(text[...index])
+            }
+            index = next
+        }
+        return text
+    }
+
+    /// At most `limit` characters, cut at a word with an ellipsis.
+    static func cut(_ text: String, to limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit - 1)
+        let word = head.lastIndex(of: " ").map { head[..<$0] } ?? head
+        return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
+    }
+
+    /// "Nook · Fix the login bug": where, and which session, in one short line.
+    static func subtitle(project: String, topic: String) -> String {
+        let topic = cut(AgentStatusNotice.short(topic), to: subtitleLimit)
+        return [project, topic].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// An approval's context without the agent's name when the title already says it ("Claude Code · Fix it" under
+    /// "Claude Code wants to …" → "Fix it").
+    static func context(_ context: String, title: String) -> String {
+        let parts = context.components(separatedBy: " · ")
+        guard parts.count > 1, let agent = parts.first, !agent.isEmpty, title.contains(agent) else { return context }
+        return cut(parts.dropFirst().joined(separator: " · "), to: subtitleLimit + 20)
+    }
+
+    private static func replace(_ pattern: String, in text: String, with template: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return text }
+        return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
     }
 }
