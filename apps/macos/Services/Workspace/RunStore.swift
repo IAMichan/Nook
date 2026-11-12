@@ -238,6 +238,15 @@ final class RunStore: @unchecked Sendable {
         try? fileManager.removeItem(at: eventsURL(id))
     }
 
+    /// `deleteEvents` on the background queue, after the saves handed to it before: deleting a long session's rows is a
+    /// write to runs.sqlite the main thread need not wait for. Saves handed to the queue after it are dropped, as the
+    /// timeline is marked deleted by then.
+    func deleteEventsAsync(_ id: UUID) {
+        ioQueue.async { [weak self] in
+            self?.deleteEvents(id)
+        }
+    }
+
     /// Waits until every save handed to the background queue is written.
     func flush() {
         ioQueue.sync {}

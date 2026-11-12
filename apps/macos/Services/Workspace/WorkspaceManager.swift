@@ -433,6 +433,12 @@ final class WorkspaceManager: ObservableObject {
     private var prefetching: Set<UUID> = []
     /// Of those, the ones a view waits for (`requestTimeline`): their arrival redraws it.
     private var awaitedTimelines: Set<UUID> = []
+    /// What waits for a timeline being read back (`whenTimelineLoaded`), run once it is in memory.
+    private var timelineWaiters: [UUID: [() -> Void]] = [:]
+    /// Events appended to a timeline while it is read back from disk, added to it once it is here (`installTimeline`).
+    private var bufferedAppends: [UUID: [RunEvent]] = [:]
+    /// Sessions whose message waits for their timeline to be read back before its turn starts (`send`).
+    private var readingToSend: Set<UUID> = []
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose `git status` is being read: a refresh asked for meanwhile runs once after it, not alongside it.
     private var gitReading: Set<UUID> = []
@@ -646,6 +652,7 @@ final class WorkspaceManager: ObservableObject {
     /// does not count as using the timeline (so polling summaries do not keep every timeline in memory).
     func lastAnswer(_ id: UUID) -> String {
         if let loaded = events[id] { return loaded.last(where: { $0.kind == .assistant })?.text ?? "" }
+        if let answer = bufferedAppends[id]?.last(where: { $0.kind == .assistant }) { return answer.text }
         return evictedAnswers[id] ?? ""
     }
 
@@ -662,24 +669,61 @@ final class WorkspaceManager: ObservableObject {
             self.prefetching.remove(id)
             let awaited = self.awaitedTimelines.remove(id) != nil
             // Opened (or written to) meanwhile: what is in memory is newer than what was read.
-            guard self.events[id] == nil else { return }
-            self.evictedTimelines.remove(id)
-            self.evictedAnswers[id] = nil
+            guard self.events[id] == nil else {
+                // Events appended while it was read still join it.
+                if let buffered = self.bufferedAppends.removeValue(forKey: id), let current = self.events[id] {
+                    self.events[id] = TimelineMerge.merge(current, buffered)
+                    self.scheduleEventSave(id)
+                }
+                self.runTimelineWaiters(id)
+                return
+            }
             self.timelineUse[id] = Date()
-            // News only for a view that is waiting for it; a prefetch nobody shows yet redraws nothing.
-            self.quietEvents = !awaited
-            self.countingBytes = true
-            self.events[id] = loaded
-            self.timelineBytes.loaded(id, loaded)
-            self.countingBytes = false
+            // News only for a view that is waiting for it, or for events that came while it was read; a prefetch nobody
+            // shows yet redraws nothing.
+            self.quietEvents = !awaited && self.bufferedAppends[id] == nil
+            self.installTimeline(id, loaded)
             self.quietEvents = false
             self.evictTimelines()
+            self.runTimelineWaiters(id)
         }
+    }
+
+    /// Runs `body` once the session's timeline is in memory: now when it is, else after it is read off the main thread.
+    func whenTimelineLoaded(_ id: UUID, _ body: @escaping () -> Void) {
+        guard events[id] == nil else { return body() }
+        timelineWaiters[id, default: []].append(body)
+        prefetchTimeline(id)
+        // Not a session in the list: nothing to read in the background, as before.
+        if !prefetching.contains(id) { loadTimeline(id) }
+    }
+
+    private func runTimelineWaiters(_ id: UUID) {
+        guard events[id] != nil, let waiters = timelineWaiters.removeValue(forKey: id) else { return }
+        for waiter in waiters { waiter() }
+    }
+
+    /// Puts a timeline read from disk in memory, with the events appended to it while it was read.
+    private func installTimeline(_ id: UUID, _ loaded: [RunEvent]) {
+        evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
+        let buffered = bufferedAppends.removeValue(forKey: id) ?? []
+        let timeline = TimelineMerge.merge(loaded, buffered)
+        countingBytes = true
+        events[id] = timeline
+        timelineBytes.loaded(id, timeline)
+        countingBytes = false
+        guard !buffered.isEmpty else { return }
+        // What `append` and `mutateEvent` leave for a timeline in memory: a save of what changed, and the pull request a
+        // turn that ended meanwhile made.
+        scheduleEventSave(id)
+        if buffered.contains(where: { $0.kind == .result }) { noticeCreatedPullRequest(id) }
     }
 
     /// For a view that shows the timeline: reads it off the main thread when it is not in memory and redraws the view
     /// once it is here, so opening an older session never waits for its log on the main thread. Actions that need the
-    /// events right away (send, handoff, rollback) use `loadTimeline`.
+    /// events right away (handoff, rollback) use `loadTimeline`; a message you send and an event appended to a released
+    /// timeline wait for the same read (`whenTimelineLoaded`, `append`).
     func requestTimeline(_ id: UUID) {
         timelineUse[id] = Date()
         guard events[id] == nil else { return }
@@ -691,14 +735,9 @@ final class WorkspaceManager: ObservableObject {
     func loadTimeline(_ id: UUID) {
         timelineUse[id] = Date()
         guard events[id] == nil else { return }
-        evictedTimelines.remove(id)
-        evictedAnswers[id] = nil
-        let loaded = store.loadEvents(id)
-        countingBytes = true
-        events[id] = loaded
-        timelineBytes.loaded(id, loaded)
-        countingBytes = false
+        installTimeline(id, store.loadEvents(id))
         evictTimelines()
+        runTimelineWaiters(id)
     }
 
     /// Releases the longest unused timelines of idle sessions, beyond `timelineLimit` or `timelineByteBudget`.
@@ -1305,8 +1344,9 @@ final class WorkspaceManager: ObservableObject {
         }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
-        // Its worktree is being made again for an earlier message: this one follows that turn.
-        if reopeningWorktrees.contains(id) {
+        // Its worktree is being made again for an earlier message: this one follows that turn. The same while its
+        // timeline is read back for a message that goes out first.
+        if reopeningWorktrees.contains(id) || readingToSend.contains(id) {
             enqueue(id, text: clean, origin: origin)
             return true
         }
@@ -1336,6 +1376,36 @@ final class WorkspaceManager: ObservableObject {
             append(id, RunEvent(kind: .error, text: tr("ws.error.folderGone", run.workingDirectory)))
             return false
         }
+        // Its timeline was released while the session sat idle: it is read back off the main thread (a long one took the
+        // main thread with it), and the turn starts once it is here. A message meanwhile waits in the queue behind it.
+        if events[id] == nil {
+            readingToSend.insert(id)
+            let continues = QueuedMessage.Origin.continuesWork(origin)
+            whenTimelineLoaded(id) { [weak self] in
+                guard let self, self.readingToSend.remove(id) != nil, let run = self.run(id) else { return }
+                // A turn started meanwhile: the message goes after it, as it would have had it come a moment later.
+                guard self.processes[id] == nil else {
+                    if !shown {
+                        self.enqueue(id, text: clean, origin: origin)
+                    } else if clean == "/compact" {
+                        // Nook's own summary is not sent after all (what its caller does when `send` says false).
+                        self.idleCompacting.remove(id)
+                        self.sizeCompacting.remove(id)
+                    }
+                    return
+                }
+                if continues { self.continuingTurns.insert(id) }
+                defer { self.continuingTurns.remove(id) }
+                self.startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+            }
+            return true
+        }
+        return startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+    }
+
+    /// The end of `send`, once the timeline is in memory: the turn for the message `clean` starts.
+    @discardableResult
+    private func startTurn(_ id: UUID, sending clean: String, shown: Bool, run: WorkspaceRun, executable: String) -> Bool {
         // The previous turn's snapshot is still being made (a moment): your message shows at once, the session enters
         // its working state immediately, and the turn goes out right after the snapshot so its edits stay out of it.
         if checkpointing.contains(id) {
@@ -2624,7 +2694,7 @@ final class WorkspaceManager: ObservableObject {
         SessionBrowsers.shared.discard(run: id)
         WorkspaceBridge.shared.forgetSecrets(run: id)
         forgetSessionState(id)
-        store.deleteEvents(id)
+        store.deleteEventsAsync(id)
         if selectedRunID == id { selectedRunID = runs.first { !$0.archived }?.id }
         scheduleSave()
         if let leftWorktree {
@@ -2693,6 +2763,9 @@ final class WorkspaceManager: ObservableObject {
         evictedTimelines.remove(id)
         evictedAnswers[id] = nil
         pullRequestBeforeTurn[id] = nil
+        timelineWaiters[id] = nil
+        bufferedAppends[id] = nil
+        readingToSend.remove(id)
         // Per-session state that would otherwise stay for every session ever made, until Nook quits.
         gitRefreshes.removeValue(forKey: id)?.cancel()
         sessionTimelines[id] = nil
@@ -3285,19 +3358,19 @@ final class WorkspaceManager: ObservableObject {
         changingTimeline = id
         defer { changingTimeline = nil }
         timelineUse[id] = Date()
-        if events[id] == nil {
-            evictedTimelines.remove(id)
-            evictedAnswers[id] = nil
-            let loaded = store.loadEvents(id)
+        if events[id] == nil, runIndex(id) != nil {
+            // Released while idle: read back off the main thread, and this event joins it once it is here
+            // (`installTimeline`). The log gets it now, as always.
+            bufferedAppends[id, default: []].append(event)
+            prefetchTimeline(id)
+        } else {
+            // Not a session in the list: nothing to read in the background, as before.
+            if events[id] == nil { installTimeline(id, store.loadEvents(id)) }
             countingBytes = true
-            events[id] = loaded
-            timelineBytes.loaded(id, loaded)
+            events[id]?.append(event)
+            timelineBytes.appended(id, event)
             countingBytes = false
         }
-        countingBytes = true
-        events[id]?.append(event)
-        timelineBytes.appended(id, event)
-        countingBytes = false
         store.appendEventAsync(id, event)
         if event.countsAsActivity(runActive: runIndex(id).map { runs[$0].status.isActive } ?? false) {
             // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
@@ -3332,7 +3405,13 @@ final class WorkspaceManager: ObservableObject {
 
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
         // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
-        guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else { return }
+        guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else {
+            // Appended while its timeline is read back: changed where it waits (`installTimeline` saves it).
+            if events[id] == nil, let at = bufferedAppends[id]?.lastIndex(where: { $0.id == eventID }) {
+                change(&bufferedAppends[id]![at])
+            }
+            return
+        }
         changingTimeline = id
         countingBytes = true
         let before = events[id]![index].approximateBytes

@@ -66,3 +66,26 @@ final class TimelineMemoryTests: XCTestCase {
         XCTAssertEqual(bytes.count(id), TimelineBytes.total(list))
     }
 }
+
+/// Events appended while a released timeline is read back join it once it is here, after what the log held.
+final class TimelineMergeTests: XCTestCase {
+    func testBufferedEventsFollowWhatWasRead() {
+        let old = [RunEvent(kind: .user, text: "hi"), RunEvent(kind: .assistant, text: "hello")]
+        let new = [RunEvent(kind: .user, text: "again"), RunEvent(kind: .assistant, text: "sure")]
+        XCTAssertEqual(TimelineMerge.merge(old, new), old + new)
+        XCTAssertEqual(TimelineMerge.merge(old, []), old)
+        XCTAssertEqual(TimelineMerge.merge([], new), new)
+    }
+
+    func testAnEventTheReadAlreadyHeldIsNotAddedTwiceAndKeepsItsLatestVersion() {
+        let old = [RunEvent(kind: .user, text: "hi")]
+        var streamed = RunEvent(kind: .assistant, text: "hel")
+        // The log got the event before the read; it grew in the buffer afterwards.
+        let read = old + [streamed]
+        streamed.text = "hello there"
+        let next = RunEvent(kind: .system, text: "done")
+        let merged = TimelineMerge.merge(read, [streamed, next])
+        XCTAssertEqual(merged.map(\.text), ["hi", "hello there", "done"])
+        XCTAssertEqual(merged.map(\.id), read.map(\.id) + [next.id])
+    }
+}

@@ -46,3 +46,23 @@ struct TimelineBytes {
 
     func count(_ id: UUID) -> Int? { counts[id] }
 }
+
+/// A timeline read back from disk while events were added to it (`WorkspaceManager.append` buffers them until the read is
+/// done, instead of reading on the main thread). Each buffered event was handed to the log as it came, so the read may
+/// hold it already, possibly before it changed: the buffered version is the newer one.
+enum TimelineMerge {
+    static func merge(_ loaded: [RunEvent], _ buffered: [RunEvent]) -> [RunEvent] {
+        guard !buffered.isEmpty else { return loaded }
+        var events = loaded
+        var index = Dictionary(loaded.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { _, last in last })
+        for event in buffered {
+            if let at = index[event.id] {
+                events[at] = event
+            } else {
+                index[event.id] = events.count
+                events.append(event)
+            }
+        }
+        return events
+    }
+}
