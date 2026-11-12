@@ -476,8 +476,13 @@ struct SelectableProse: NSViewRepresentable {
                 if run[CitationMark.self] == nil, MarkdownBlock.isSafeLink(link) { attributes[.toolTip] = link.absoluteString }
             }
             attributes[.font] = font
-            // A link takes the link blue here, a citation keeps its own grey (the view sets no color for links).
-            let linkColor = run.link != nil && run[CitationMark.self] == nil ? NookTheme.blue : nil
+            // A web link takes the link blue here, a citation keeps its own grey (the view sets no color for links). A link
+            // to a file or a commit reads as a neutral chip file mentions: white on its code wash, so a
+            // reply full of paths stays black and white and blue keeps meaning "goes to the web".
+            let linkColor: Color? = {
+                guard let link = run.link, run[CitationMark.self] == nil else { return nil }
+                return MarkdownBlock.isSafeLink(link) ? NookTheme.blue : NookTheme.paper
+            }()
             attributes[.foregroundColor] = NSColor(linkColor ?? run[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] ?? color)
             result.append(NSAttributedString(string: String(source[run.range].characters), attributes: attributes))
         }

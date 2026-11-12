@@ -69,23 +69,24 @@ struct AgentRowTitle: View {
     }
 }
 
-/// The branch on a session's third line, cut in the middle when it is long; only a worktree's has a mark.
+/// The branch on a session's third line, cut in the middle when it is long. It starts in the title's column for every
+/// session; a worktree says so in its tooltip rather than with a mark that would push its branch to the right.
 struct AgentRowBranch: View {
     let branch: String
     var worktree = false
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            if worktree {
-                Image(icon: "arrow.triangle.branch.square")
-                    .font(NookTheme.textFont(9.5, .semibold))
-                    .sharedTip(sharedText("agents.row.worktree", "Works in its own worktree"))
-            }
-            Text(branch)
-                .lineLimit(1)
-                .truncationMode(.middle)
+        if worktree {
+            label.sharedTip(sharedText("agents.row.worktree", "Works in its own worktree"))
+        } else {
+            label
         }
-        .accessibilityElement(children: .combine)
+    }
+
+    private var label: some View {
+        Text(branch)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 }
 

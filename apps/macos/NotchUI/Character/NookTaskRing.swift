@@ -200,7 +200,7 @@ private final class TaskRingLayerView: NSView {
     private static let hoverGrow = 0.15
     /// How long a piece takes to slide to its new place when one comes or goes.
     private static let reflow = 0.35
-    private static let track = Color(hex: 0x141419)
+    private static let track = Color(hex: 0x141414)
 
     /// Centered in the view and turned upside down, so the drawing below is y-down like SwiftUI's.
     private let ring = CALayer()
@@ -697,7 +697,7 @@ struct NookTaskRingLabel: View {
                     .fixedSize()
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(NookTheme.shape(NookTheme.Radius.control).fill(Color(hex: 0x17171D)))
+                    .background(NookTheme.shape(NookTheme.Radius.control).fill(Color(hex: 0x171717)))
                     .overlay(NookTheme.shape(NookTheme.Radius.control).stroke(NookTheme.line2, lineWidth: 1))
                     .contentShape(NookTheme.shape(NookTheme.Radius.control))
                 }

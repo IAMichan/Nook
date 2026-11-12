@@ -6,8 +6,8 @@ enum WS {
     static let background = NookTheme.canvas
     /// The sidebar and the inspector: the canvas lifted a little.
     static let sidebar = NookTheme.surface
-    static let surface = Color(hex: 0x151517)
-    static let raised = Color(hex: 0x1B1B1E)
+    static let surface = NookTheme.graphite
+    static let raised = NookTheme.graphite
     static let border = NookTheme.border
     static let subtle = NookTheme.wash.opacity(0.04)
     /// A row or control under the pointer.
@@ -17,7 +17,7 @@ enum WS {
     static let text = NookTheme.paper
     static let secondary = NookTheme.textSecondary
     static let tertiary = NookTheme.textTertiary
-    static let code = Color(hex: 0x08080A)
+    static let code = NookTheme.well
 }
 
 extension RunStatus {
@@ -69,7 +69,7 @@ extension GitChangeKind {
         case .added, .untracked: return NookTheme.diffAdded
         case .deleted: return NookTheme.diffRemoved
         case .conflicted: return NookTheme.amber
-        case .modified, .typeChanged: return NookTheme.iris
+        case .modified, .typeChanged: return NookTheme.diffModified
         case .renamed, .copied: return NookTheme.blue
         }
     }

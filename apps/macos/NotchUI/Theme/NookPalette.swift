@@ -8,6 +8,11 @@ import Foundation
 /// Every named color of Nook's design, as 0xRRGGBB. The names are `NookTheme`'s: change a palette and every view that
 /// takes its colors from `NookTheme` follows. State colors (mint, amber, coral, violet) keep their meaning in every
 /// palette; a light palette only darkens them so they read on a light surface.
+///
+/// Color is rare on purpose: everything is black, white and grey, and a hue appears only where it means
+/// something (a change in a diff, a session that is working, waits on you, is done or failed). In dark the state colors
+/// are the soft 300 shades at 90 % (status tones), so a list of them stays calm; diff counts keep the brighter
+/// 400 shades in `added` and `removed`, because a change is what the eye should find first.
 struct NookPalette: Equatable, Sendable {
     var isDark: Bool
 
@@ -50,22 +55,27 @@ struct NookPalette: Equatable, Sendable {
     var coralSoft: UInt32
     var violet: UInt32
     var music: UInt32
+    /// Added and removed lines in a diff and in change counts (diff-addition and diff-deletion foregrounds).
+    var added: UInt32
+    var removed: UInt32
 
     /// Nook's color when the user kept the default accent: soft white on dark, near black on light.
     var accent: UInt32
 
     /// Nook's own dark look: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
     /// white over it, and separation by 8 % white lines and hover fills rather than grey panels. Text is neutral-100
-    /// with neutral-400 for what is quieter; state colors are Tailwind's 400 shades. Nook's accent (the main action) is soft white.
+    /// with neutral-400 for what is quieter. State colors are status tones (emerald, amber, sky and violet 300
+    /// at 90 % on black; red 400 for errors); a sent message is a neutral grey, not a colored bubble. Nook's accent (the
+    /// main action) is soft white.
     static let nookDark = NookPalette(
         isDark: true,
         canvas: 0x000000, well: 0x0A0A0A, surface: 0x111111, field: 0x0D0D0D, graphite: 0x191A1D, smoke: 0x242424,
-        rowRest: 0x0A0A0A, rowHover: 0x141415, rowSelected: 0x1C1C1E, bubble: 0x1E1E1E, chatMine: 0x17493A, chatTheirs: 0x1E1E1E,
+        rowRest: 0x0A0A0A, rowHover: 0x141415, rowSelected: 0x1C1C1E, bubble: 0x1E1E1E, chatMine: 0x2A2A2A, chatTheirs: 0x171717,
         line: 0x1A1A1A, line2: 0x262626, hairline: 0x171717, border: 0x1A1A1A, separator: 0x1F1F1F, fieldStroke: 0x262626,
         paper: 0xF5F5F5, textStrong: 0xE5E5E5, textSecondary: 0xA1A1A1, textMuted: 0x8F8F8F, textTertiary: 0x8F8F8F,
-        chatStamp: 0xA3B0AB,
-        blue: 0x51A2FF, mint: 0x00D492, mintSoft: 0x5EE9B5, amber: 0xFFB900, coral: 0xFF6467, coralSoft: 0xFCA5A5,
-        violet: 0xA684FF, music: 0xF0936A,
+        chatStamp: 0xA3A3A3,
+        blue: 0x5DAACC, mint: 0x55D2A3, mintSoft: 0x5EE9B5, amber: 0xE6BD2B, coral: 0xFF6467, coralSoft: 0xFCA5A5,
+        violet: 0xB0A2E6, music: 0xE6A660, added: 0x00D492, removed: 0xFF6467,
         accent: 0xF4F3F7)
 
     /// Nook in light: an off-white canvas (zinc-25), white cards, zinc lines and zinc-900 text, with the
@@ -73,12 +83,12 @@ struct NookPalette: Equatable, Sendable {
     static let nookLight = NookPalette(
         isDark: false,
         canvas: 0xFCFCFC, well: 0xFAFAFA, surface: 0xFFFFFF, field: 0xFFFFFF, graphite: 0xF4F4F5, smoke: 0xE4E4E7,
-        rowRest: 0xFAFAFA, rowHover: 0xF4F4F5, rowSelected: 0xEBEBED, bubble: 0xEBEBED, chatMine: 0xD2EFE2, chatTheirs: 0xF0F0F2,
+        rowRest: 0xFAFAFA, rowHover: 0xF4F4F5, rowSelected: 0xEBEBED, bubble: 0xEBEBED, chatMine: 0xE4E4E7, chatTheirs: 0xF4F4F5,
         line: 0xE4E4E7, line2: 0xD4D4D8, hairline: 0xEDEDEF, border: 0xE4E4E7, separator: 0xE4E4E7, fieldStroke: 0xD4D4D8,
         paper: 0x18181B, textStrong: 0x27272A, textSecondary: 0x52525C, textMuted: 0x5C5C66, textTertiary: 0x62626C,
-        chatStamp: 0x4E5A55,
+        chatStamp: 0x52525C,
         blue: 0x1447E6, mint: 0x006E4D, mintSoft: 0x007A55, amber: 0x973C00, coral: 0xC10007, coralSoft: 0xB91C1C,
-        violet: 0x7008E7, music: 0xA84A18,
+        violet: 0x7008E7, music: 0xA84A18, added: 0x007A55, removed: 0xC10007,
         accent: 0x1E1E22)
 
     /// The text colors and what they must stay readable on, for the contrast check.
@@ -256,12 +266,12 @@ enum NookDiffColors: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 
     func added(_ palette: NookPalette) -> UInt32 {
-        self == .redGreen ? palette.mint : palette.blue
+        self == .redGreen ? palette.added : palette.blue
     }
 
     func removed(_ palette: NookPalette) -> UInt32 {
         // The theme's amber pulled a little toward its coral: an orange, away from the blue in hue.
-        self == .redGreen ? palette.coral : NookColor.mix(palette.amber, palette.coral, 0.45)
+        self == .redGreen ? palette.removed : NookColor.mix(palette.amber, palette.coral, 0.45)
     }
 
     /// A changed file (neither added nor removed): blue with green and red, a quiet grey where blue means added.
@@ -394,9 +404,13 @@ enum VSCodeThemeImport {
         }
         if let value = color("sideBar.foreground") { palette.textStrong = value }
         if let value = color("descriptionForeground") { palette.textSecondary = value }
-        if let value = color("terminal.ansiGreen", "gitDecoration.addedResourceForeground") { palette.mint = value; palette.mintSoft = value }
+        if let value = color("terminal.ansiGreen", "gitDecoration.addedResourceForeground") {
+            palette.mint = value; palette.mintSoft = value; palette.added = value
+        }
         if let value = color("terminal.ansiYellow", "editorWarning.foreground") { palette.amber = value }
-        if let value = color("terminal.ansiRed", "errorForeground", "editorError.foreground") { palette.coral = value; palette.coralSoft = value }
+        if let value = color("terminal.ansiRed", "errorForeground", "editorError.foreground") {
+            palette.coral = value; palette.coralSoft = value; palette.removed = value
+        }
         if let value = color("terminal.ansiMagenta") { palette.violet = value }
         let name = (object["name"] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? fallbackName
         return Result(name: name, palette: palette.readable())

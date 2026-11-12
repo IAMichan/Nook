@@ -599,7 +599,7 @@ struct ChatAudioView: View {
                     .font(NookTheme.font(13, .semibold))
                     .foregroundStyle(NookTheme.onPaper)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(fromMe ? NookTheme.mint : NookTheme.paper))
+                    .background(Circle().fill(NookTheme.paper))
                     .contentShape(Circle())
             }
             .buttonStyle(.nookPlain)
@@ -617,7 +617,7 @@ struct ChatAudioView: View {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule().fill(NookTheme.line2)
-                        Capsule().fill(fromMe ? NookTheme.mint : NookTheme.paper)
+                        Capsule().fill(NookTheme.paper)
                             .frame(width: geometry.size.width * player.progress)
                     }
                     .contentShape(Rectangle())
