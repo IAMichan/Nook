@@ -347,7 +347,7 @@ final class AppSettings: ObservableObject {
     @Published var diffColors: NookDiffColors {
         didSet {
             UserDefaults.standard.set(diffColors.rawValue, forKey: "diffColors")
-            if NookTheme.apply(diffColors: diffColors) { themeRevision = NookTheme.revision }
+            if NookTheme.apply(diffColors: diffColors) { NookWindowLook.repaintSoon() }
         }
     }
     /// VS Code color themes the user imported, kept as their JSON (`NookCustomTheme`).
@@ -359,12 +359,29 @@ final class AppSettings: ObservableObject {
         }
     }
     private var customThemeCache: [NookColorTheme] = []
-    /// Colors set one by one (Settings › Appearance › Colors), over the chosen themes, per appearance.
-    @Published var colorOverrides: NookColorOverrides {
+    /// Colors set one by one (Settings › Appearance › Colors), over the chosen themes, per appearance. Not published
+    /// here: a color picker changes it on every pointer move, and every view that watches the settings would redraw for
+    /// it. Only what shows the colors themselves watches `NookColorEdits`; the rest of Nook just repaints.
+    var colorOverrides: NookColorOverrides {
         didSet {
-            UserDefaults.standard.setEncoded(colorOverrides, forKey: "colorOverrides")
-            applyTheme()
+            guard colorOverrides != oldValue else { return }
+            NookColorEdits.shared.changed()
+            saveColorOverridesSoon()
+            // The Colors section previews the edit at once; the windows follow once the picker rests.
+            applyTheme(settle: 0.25)
         }
+    }
+    private var colorOverridesSave: DispatchWorkItem?
+
+    /// Written once the colors rest for a moment, not on every step of a drag.
+    private func saveColorOverridesSoon() {
+        colorOverridesSave?.cancel()
+        let save = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            UserDefaults.standard.setEncoded(self.colorOverrides, forKey: "colorOverrides")
+        }
+        colorOverridesSave = save
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: save)
     }
 
     /// Typeset TeX in answers and Markdown previews (`MathView`); off shows the TeX as written.
@@ -387,19 +404,21 @@ final class AppSettings: ObservableObject {
     }
 
     /// Hands the chosen palettes to `NookTheme` and the mode to the windows; a change redraws them.
-    func applyTheme() {
+    func applyTheme(settle: TimeInterval = 0) {
         let choice = themeChoice
         let changed = NookTheme.apply(dark: choice.palette(dark: true, themes: themes),
                                       light: choice.palette(dark: false, themes: themes))
         let modeChanged = NookWindowLook.mode != appearanceMode
         NookWindowLook.mode = appearanceMode
-        if changed || modeChanged {
+        if modeChanged {
             NookWindowLook.refresh()
-            themeRevision = NookTheme.revision
+        } else if changed {
+            NookWindowLook.repaintSoon(settle: settle)
         }
     }
 
-    /// `NookTheme.revision` as published: roots key their `.id` on it, so a new palette draws everywhere at once.
+    /// Goes up when the density changes: roots key their `.id` on it, as new text sizes need every view built anew.
+    /// A new palette does not rebuild anything; the windows repaint (`NookWindowLook.repaintSoon`).
     @Published private(set) var themeRevision = 0
 
     /// Nook's appearance: eye and mouth style, gloss, glow and blush (Settings › Appearance).
@@ -844,4 +863,14 @@ final class AppSettings: ObservableObject {
         refreshProviderKey()
         applyTheme()
     }
+}
+
+/// Goes up whenever a color under Settings › Appearance › Colors changes, so the views that show those colors (the
+/// Colors section, the page's "Restore defaults") redraw without every view that watches `AppSettings` redrawing too.
+@MainActor
+final class NookColorEdits: ObservableObject {
+    static let shared = NookColorEdits()
+    @Published private(set) var revision = 0
+
+    func changed() { revision += 1 }
 }
