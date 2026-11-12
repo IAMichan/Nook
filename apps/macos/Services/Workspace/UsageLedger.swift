@@ -273,10 +273,11 @@ struct UsageInsights: Equatable, Sendable {
     var unpricedShare: Double { tokens.total > 0 ? Double(unpricedTokens) / Double(tokens.total) : 0 }
 
     /// Builds the window from the ledger. `sessions` are the sessions per agent that ended in the window; `agent` and
-    /// `model` narrow everything to one agent or one model (the model sheet).
+    /// `model` narrow everything to one agent or one model (the model sheet); the agents in `hidden` are left out (the
+    /// usage modal's agent filter).
     static func make(_ ledger: UsageLedger, window: UsageWindow, now: Date = Date(), calendar: Calendar = .current,
                      prices: PriceTable = PriceTable(), sessions: [String: Int] = [:],
-                     agent onlyAgent: String? = nil, model onlyModel: String? = nil) -> UsageInsights {
+                     agent onlyAgent: String? = nil, model onlyModel: String? = nil, hidden: Set<String> = []) -> UsageInsights {
         var insights = UsageInsights(window: window)
         insights.columns = window.columns(now: now, calendar: calendar)
         guard let first = insights.columns.first else { return insights }
@@ -288,6 +289,7 @@ struct UsageInsights: Equatable, Sendable {
 
         for (key, tokens) in ledger.buckets where key.hour >= first && key.hour <= end {
             if let onlyAgent, key.agent != onlyAgent { continue }
+            if hidden.contains(key.agent) { continue }
             if let onlyModel, key.model != onlyModel { continue }
             let price = ModelRates.price(agent: key.agent, model: key.model, custom: prices)
             let cost = UsageCost.of(tokens, at: price)
@@ -327,7 +329,7 @@ struct UsageInsights: Equatable, Sendable {
                 if count > 0 { counts[agent] = count }
             }
         }
-        for (agent, count) in counts where onlyModel == nil && (onlyAgent == nil || onlyAgent == agent) {
+        for (agent, count) in counts where onlyModel == nil && (onlyAgent == nil || onlyAgent == agent) && !hidden.contains(agent) {
             agents[agent, default: AgentTotal(agent: agent)].sessions = count
             insights.sessions += count
         }
@@ -352,7 +354,7 @@ struct UsageInsights: Equatable, Sendable {
             return lhs.tokens.total != rhs.tokens.total ? lhs.tokens.total > rhs.tokens.total : lhs.id < rhs.id
         }
 
-        insights.chats = UsageChats.totals(ledger, from: first, to: end, prices: prices, agent: onlyAgent, model: onlyModel)
+        insights.chats = UsageChats.totals(ledger, from: first, to: end, prices: prices, agent: onlyAgent, model: onlyModel, hidden: hidden)
 
         let order = insights.agents.map(\.agent)
         insights.points = insights.columns.flatMap { column in
@@ -370,12 +372,14 @@ enum UsageChats {
     /// The chats with tokens in `from...to`, the costliest first (unpriced ones by tokens after them). `profile`, `agent`
     /// and `model` narrow it down.
     static func totals(_ ledger: UsageLedger, from: Date, to: Date, prices: PriceTable = PriceTable(), profile: String? = nil,
-                       agent onlyAgent: String? = nil, model onlyModel: String? = nil) -> [UsageInsights.ChatTotal] {
+                       agent onlyAgent: String? = nil, model onlyModel: String? = nil,
+                       hidden: Set<String> = []) -> [UsageInsights.ChatTotal] {
         var found: [(key: UsageLedger.ChatKey, tokens: UsageTokens)] = []
         for (key, tokens) in ledger.chatBuckets where key.slot >= from.addingTimeInterval(-UsageLedger.slotLength) && key.slot <= to {
             if let onlyModel, key.model != onlyModel { continue }
             guard let chat = ledger.chats[key.chat] else { continue }
             if let onlyAgent, chat.agent != onlyAgent { continue }
+            if hidden.contains(chat.agent) { continue }
             if let profile, chat.profileID != profile { continue }
             found.append((key, tokens))
         }

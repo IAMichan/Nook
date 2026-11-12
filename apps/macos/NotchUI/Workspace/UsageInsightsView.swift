@@ -743,12 +743,14 @@ struct UsageInsightsPanel: View {
     @ObservedObject var history: AgentHistory
     let metric: UsageMetric
     let window: UsageWindow
+    /// The agents the modal's filter hides.
+    var hidden: Set<String> = []
     @State private var byDay = false
     @State private var openModel: UsageInsights.ModelTotal?
     @State private var prices = UsagePrices.load()
 
     var body: some View {
-        let insights = UsageInsights.make(history.ledger, window: window, prices: prices)
+        let insights = UsageInsights.make(history.ledger, window: window, prices: prices, hidden: hidden)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             UsageOverviewBlocks(insights: insights, metric: metric, window: window, loading: history.loading, byDay: $byDay) {
                 openModel = $0

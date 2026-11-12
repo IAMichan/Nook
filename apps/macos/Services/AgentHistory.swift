@@ -1641,7 +1641,7 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private static func claudePlan(_ plan: [String: String]) -> String {
-        for key in ["subscriptionType", "planType", "rateLimitTier"] {
+        for key in ["subscriptionType", "planType", "rateLimitTier", "organizationRateLimitTier"] {
             if let value = plan[key], !value.isEmpty { return planName(value) }
         }
         return ""

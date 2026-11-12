@@ -327,9 +327,10 @@ struct UsageLimitSection: Identifiable, Equatable {
 
 extension UsageLimitSection {
     /// Every connected agent with limits, in the order of `AgentKind`, and a notice for each account that reports none.
+    /// The agents in `hidden` (the modal's agent filter) are left out.
     @MainActor
-    static func make(_ app: AppModel, now: Date) -> (sections: [UsageLimitSection], notices: [String]) {
-        let byKind = Dictionary(grouping: app.connectedProfiles, by: \.kind)
+    static func make(_ app: AppModel, now: Date, hidden: Set<String> = []) -> (sections: [UsageLimitSection], notices: [String]) {
+        let byKind = Dictionary(grouping: app.connectedProfiles.filter { !hidden.contains($0.kind.rawValue) }, by: \.kind)
         let prices = UsagePrices.load()
         var sections: [UsageLimitSection] = []
         var notices: [String] = []
@@ -353,7 +354,9 @@ extension UsageLimitSection {
                     blocks += UsageBlocks.make(app.history.ledger, profile: profile.id, duration: duration, anchor: anchor, now: now,
                                                prices: prices)
                 }
-                return LimitPool.Account(id: profile.id, name: AccountLabel.name(profile, app: app), limits: limits.map(\.poolLimit))
+                let weights = LimitPool.weights(agent: kind.rawValue, plan: plan)
+                return LimitPool.Account(id: profile.id, name: AccountLabel.name(profile, app: app), limits: limits.map(\.poolLimit),
+                                         sessionWeight: weights.session, weeklyWeight: weights.weekly)
             }
             if let pool = LimitPool.make(accounts, now: now) {
                 blocks.sort { $0.start > $1.start }
@@ -373,6 +376,28 @@ extension UsageLimitSection {
         case .opencode, .cursor, .grok, .pi, .acp: return tr("agents.usage.acpNoLimits")
         case .antigravity: return app.antigravityUsage.noLogin ? tr("agents.usage.antigravityNoToken") : tr("ws.usage.quotaUnavailable")
         }
+    }
+
+    /// The agent's own page of its plan's usage, where you see and buy more of it; nil when it has none.
+    static func usagePage(_ kind: AgentKind) -> URL? {
+        switch kind {
+        case .claude: return URL(string: "https://claude.ai/settings/usage")
+        case .codex: return URL(string: "https://chatgpt.com/codex/settings/usage")
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp: return nil
+        }
+    }
+}
+
+/// The agents the usage modal leaves out (its filter), kept as their raw values, comma separated.
+enum UsageHiddenAgents {
+    static let storageKey = "usage.modal.hiddenAgents"
+
+    static func decode(_ raw: String) -> Set<String> {
+        Set(raw.split(separator: ",").map(String.init))
+    }
+
+    static func encode(_ hidden: Set<String>) -> String {
+        hidden.sorted().joined(separator: ",")
     }
 }
 
@@ -394,8 +419,10 @@ struct UsageLimitsModal: View {
     let close: () -> Void
     @AppStorage(UsageModalTab.storageKey) private var tabRaw = UsageModalTab.limits.rawValue
     @AppStorage("usage.window") private var windowRaw = UsageWindow.week.rawValue
+    @AppStorage(UsageHiddenAgents.storageKey) private var hiddenRaw = ""
 
     private var tab: UsageModalTab { UsageModalTab(rawValue: tabRaw) ?? .limits }
+    private var hidden: Set<String> { UsageHiddenAgents.decode(hiddenRaw) }
     private var window: UsageWindow { UsageWindow(rawValue: windowRaw) ?? .week }
 
     var body: some View {
@@ -419,7 +446,7 @@ struct UsageLimitsModal: View {
                     case .limits:
                         // Once a minute the reset times count down and the pace line moves on.
                         TimelineView(.nookTicks(every: 60)) { context in
-                            let read = UsageLimitSection.make(app, now: context.date)
+                            let read = UsageLimitSection.make(app, now: context.date, hidden: hidden)
                             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
                                 UsageLimitPools(sections: read.sections, notices: read.notices, now: context.date)
                                 if !app.cliProxy.hubs.isEmpty { hubs(now: context.date) }
@@ -427,7 +454,7 @@ struct UsageLimitsModal: View {
                             }
                         }
                     case .cost, .tokens:
-                        UsageInsightsPanel(history: app.history, metric: tab == .cost ? .cost : .tokens, window: window)
+                        UsageInsightsPanel(history: app.history, metric: tab == .cost ? .cost : .tokens, window: window, hidden: hidden)
                     }
                 }
                 .padding(.horizontal, NookTheme.Spacing.xxl)
@@ -437,7 +464,53 @@ struct UsageLimitsModal: View {
         .frame(maxWidth: 720)
         .frame(minHeight: 320, idealHeight: 560, maxHeight: 760)
         .background(NookTheme.surface)
+        .background(tabShortcuts)
         .task { await app.watchQuotas() }
+    }
+
+    /// ⌘1, ⌘2 and ⌘3 switch between Cost, Tokens and Limits, in the order of the tabs.
+    private var tabShortcuts: some View {
+        ZStack {
+            ForEach(Array(UsageModalTab.allCases.enumerated()), id: \.element) { index, value in
+                Button("") { withAnimation(NookTheme.swap) { tabRaw = value.rawValue } }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+            }
+        }
+        .buttonStyle(.nookPlain)
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// The agents that can show anything here: connected ones and the ones with usage on this Mac.
+    private var filterableAgents: [AgentKind] {
+        let connected = Set(app.connectedProfiles.map(\.kind))
+        let used = Set(app.history.ledger.sessionEnds.keys)
+        return AgentKind.allCases.filter { connected.contains($0) || used.contains($0.rawValue) || hidden.contains($0.rawValue) }
+    }
+
+    /// Which agents the modal shows, for every tab; lit while it hides any.
+    private var agentFilter: some View {
+        ComposerDropdown(width: 240) {
+            PanelHeaderIcon(symbol: "line.3.horizontal.decrease", active: !hidden.isEmpty)
+        } content: {
+            DropdownHeader(title: tr("usage.filter.agents"))
+            ForEach(filterableAgents) { kind in
+                let shown = !hidden.contains(kind.rawValue)
+                DropdownRow(agent: kind.rawValue, title: kind.name, trailing: shown ? "✓" : nil, chosen: shown, staysOpen: true) {
+                    var next = hidden
+                    if shown { next.insert(kind.rawValue) } else { next.remove(kind.rawValue) }
+                    withAnimation(NookTheme.reveal) { hiddenRaw = UsageHiddenAgents.encode(next) }
+                }
+            }
+            if !hidden.isEmpty {
+                DropdownRow(symbol: "eye", title: tr("usage.filter.showAll"), staysOpen: true) {
+                    withAnimation(NookTheme.reveal) { hiddenRaw = "" }
+                }
+            }
+        }
+        .help(tr("usage.filter.agents"))
+        .accessibilityLabel(tr("usage.filter.agents"))
     }
 
     private func header(range: Bool) -> some View {
@@ -455,6 +528,7 @@ struct UsageLimitsModal: View {
             ], selected: tab, onSelect: { value in withAnimation(NookTheme.swap) { tabRaw = value.rawValue } }, segmented: true)
                 .fixedSize()
             if range && tab != .limits { rangePicker }
+            agentFilter
             UsageRefreshButton()
             NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: close)
                 .keyboardShortcut(.cancelAction)
@@ -549,6 +623,7 @@ struct UsageLimitPools: View {
     let sections: [UsageLimitSection]
     let notices: [String]
     let now: Date
+    @StateObject private var focus = LimitDetailsFocus()
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
@@ -560,6 +635,7 @@ struct UsageLimitPools: View {
             ForEach(sections) { section in
                 LimitPoolSectionView(section: section, now: now)
             }
+            .environmentObject(focus)
             if !notices.isEmpty {
                 HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                     Image(icon: "exclamationmark.triangle")
@@ -594,6 +670,12 @@ private struct LimitPoolSectionView: View {
                 Text(section.kind.name)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
+                Spacer(minLength: NookTheme.Spacing.md)
+                // The agent's own usage page, where the plan's usage is managed and more of it bought.
+                if let page = UsageLimitSection.usagePage(section.kind) {
+                    SmallGhostButton(title: tr("limits.manage") + " ↗") { NSWorkspace.shared.open(page) }
+                        .help(page.host ?? page.absoluteString)
+                }
             }
             ForEach(section.pool.windows) { window in
                 LimitWindowCard(window: window, section: section, now: now)
@@ -718,35 +800,49 @@ private struct LimitWindowCard: View {
     let section: UsageLimitSection
     let now: Date
 
+    /// The narrowest the bar can be beside the summary; narrower, it goes under it, across the whole card.
+    private static let barBeside: CGFloat = 280
+
     var body: some View {
-        HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                Text(window.label)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(2)
-                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Text("\(window.used)%")
-                        .font(NookTheme.font(30, .semibold).monospacedDigit())
-                        .foregroundStyle(NookTheme.paper)
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        Text(tr("limits.usedWord"))
-                            .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(NookTheme.textSecondary)
-                        if let pace = window.pace { LimitPaceIcon(pace: pace) }
-                    }
-                }
-                if window.columns.count > 1, let refill = window.nextRefill {
-                    Text(tr("limits.refill", refill.restores))
-                        .font(NookTheme.TextStyle.label.monospacedDigit())
-                        .foregroundStyle(NookTheme.paper)
-                }
+        // Beside each other when the card is wide enough, else the summary over the bar.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: NookTheme.Spacing.xxl) {
+                summary.frame(width: 176, alignment: .leading)
+                LimitPoolBar(window: window, section: section, now: now)
+                    .frame(minWidth: Self.barBeside)
             }
-            .frame(width: 176, alignment: .leading)
-            LimitPoolBar(window: window, section: section, now: now)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                summary
+                LimitPoolBar(window: window, section: section, now: now)
+            }
         }
         .padding(NookTheme.Spacing.xl)
         .cardBackground(Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            Text(window.label)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                Text("\(window.used)%")
+                    .font(NookTheme.font(30, .semibold).monospacedDigit())
+                    .foregroundStyle(NookTheme.paper)
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Text(tr("limits.usedWord"))
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    if let pace = window.pace { LimitPaceIcon(pace: pace) }
+                }
+            }
+            if window.columns.count > 1, let refill = window.nextRefill {
+                Text(tr("limits.refill", refill.restores))
+                    .font(NookTheme.TextStyle.label.monospacedDigit())
+                    .foregroundStyle(NookTheme.paper)
+            }
+        }
     }
 }
 
@@ -796,17 +892,20 @@ private struct LimitSegment: View {
     let index: Int
     let wide: Bool
     let showName: Bool
-    @State private var open = false
+    @EnvironmentObject private var focus: LimitDetailsFocus
     @State private var hovering = false
 
+    private var focusID: String { "\(section.id)|\(window.id)|\(member.accountID)|\(wide ? "bar" : "narrow")" }
+
     var body: some View {
+        let open = focus.open == focusID
         if let limit = member.limit, let used = member.used {
             let color = section.kind.color
             let elapsed = LimitPool.timeElapsed(limit, now: now)
             let reset = window.resets.first { $0.accountID == member.accountID }
             let resetsIn = AgentFormat.resetsIn(limit.resetsAt, now: now)
             let credits = section.details[member.accountID]?.credits ?? 0
-            Button { open.toggle() } label: {
+            Button { focus.click(focusID) } label: {
                 ZStack(alignment: .leading) {
                     GeometryReader { proxy in
                         let width = proxy.size.width
@@ -872,11 +971,15 @@ private struct LimitSegment: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .onHover { hovering = $0 }
-            .help(summary(used: used, elapsed: elapsed, resetsIn: resetsIn, credits: credits))
+            .onHover { inside in
+                hovering = inside
+                focus.hover(focusID, inside)
+            }
             .accessibilityLabel(summary(used: used, elapsed: elapsed, resetsIn: resetsIn, credits: credits))
-            .popover(isPresented: $open, arrowEdge: .top) {
-                LimitSegmentDetails(member: member, window: window, details: section.details[member.accountID], reset: reset, now: now)
+            .popover(isPresented: focus.binding(focusID), arrowEdge: .top) {
+                LimitSegmentDetails(kind: section.kind, member: member, window: window, details: section.details[member.accountID],
+                                    reset: reset, now: now)
+                    .onHover { focus.hoverDetails($0) }
             }
         } else {
             // The account does not report this window: an empty column, so the others stay in place.
@@ -929,12 +1032,15 @@ private struct LimitLegendRow: View {
     let section: UsageLimitSection
     let now: Date
     let index: Int
-    @State private var open = false
+    @EnvironmentObject private var focus: LimitDetailsFocus
     @State private var hovering = false
+
+    private var focusID: String { "\(section.id)|\(window.id)|\(member.accountID)|legend" }
 
     var body: some View {
         let credits = section.details[member.accountID]?.credits ?? 0
-        Button { open.toggle() } label: {
+        let open = focus.open == focusID
+        Button { focus.click(focusID) } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text("\(index)")
                     .font(NookTheme.TextStyle.caption.weight(.semibold).monospacedDigit())
@@ -964,6 +1070,8 @@ private struct LimitLegendRow: View {
                 }
                 .font(NookTheme.TextStyle.caption.monospacedDigit())
                 .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .fixedSize()
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 26)
@@ -971,10 +1079,14 @@ private struct LimitLegendRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
-        .popover(isPresented: $open, arrowEdge: .top) {
-            LimitSegmentDetails(member: member, window: window, details: section.details[member.accountID],
+        .onHover { inside in
+            hovering = inside
+            focus.hover(focusID, inside)
+        }
+        .popover(isPresented: focus.binding(focusID), arrowEdge: .top) {
+            LimitSegmentDetails(kind: section.kind, member: member, window: window, details: section.details[member.accountID],
                                 reset: window.resets.first { $0.accountID == member.accountID }, now: now)
+                .onHover { focus.hoverDetails($0) }
         }
     }
 }
@@ -982,6 +1094,7 @@ private struct LimitLegendRow: View {
 /// An account's details in one window: who it is, its plan, how much it used, when it resets, where even spending would
 /// be and what the reset frees in the pool.
 private struct LimitSegmentDetails: View {
+    let kind: AgentKind
     let member: LimitPool.Member
     let window: LimitPool.Window
     let details: LimitAccountDetails?
@@ -991,10 +1104,13 @@ private struct LimitSegmentDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(member.name)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    AgentLogo(kind, size: 16)
+                    Text(member.name)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                }
                 if let email = details?.email {
                     RedactedText(value: email)
                 }
@@ -1104,5 +1220,76 @@ private struct PaceSlot: View {
                 Rectangle().fill(Color.white)
             }
         }
+    }
+}
+
+/// Which account's details are open in the limits modal: one at a time, as one popover that moves along the bars.
+/// Hovering a segment opens its details after a moment, and moving on to the next segment moves them there at once;
+/// leaving the segment and its details closes them again, unless they were opened with a click.
+@MainActor
+final class LimitDetailsFocus: ObservableObject {
+    @Published private(set) var open: String?
+    private var pinned = false
+    private var overDetails = false
+    private var pending: Task<Void, Never>?
+
+    func binding(_ id: String) -> Binding<Bool> {
+        Binding(get: { [weak self] in self?.open == id }, set: { [weak self] shown in
+            guard let self else { return }
+            if shown {
+                self.open = id
+            } else if self.open == id {
+                self.close()
+            }
+        })
+    }
+
+    func hover(_ id: String, _ inside: Bool) {
+        guard !pinned else { return }
+        pending?.cancel()
+        if !inside {
+            closeSoon()
+        } else if open != nil {
+            open = id
+        } else {
+            pending = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                self?.open = id
+            }
+        }
+    }
+
+    /// A click keeps the details open until you click again or beside them.
+    func click(_ id: String) {
+        pending?.cancel()
+        if open == id && pinned {
+            close()
+        } else {
+            open = id
+            pinned = true
+        }
+    }
+
+    func hoverDetails(_ inside: Bool) {
+        overDetails = inside
+        guard !pinned else { return }
+        pending?.cancel()
+        if !inside { closeSoon() }
+    }
+
+    private func closeSoon() {
+        pending = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, let self, !self.overDetails, !self.pinned else { return }
+            self.open = nil
+        }
+    }
+
+    private func close() {
+        pending?.cancel()
+        open = nil
+        pinned = false
+        overDetails = false
     }
 }
