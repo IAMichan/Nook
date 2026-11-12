@@ -261,7 +261,7 @@ enum AgentActivity: Equatable, Sendable {
         let turn = TimelinePresentation.split(events).last ?? []
         // While it compacts, the agent does nothing else.
         if CompactionProgress.running(in: turn) != nil { return .compacting }
-        if let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) { return of(running) }
+        if let running = turn.last(where: TimelinePresentation.isLive) { return of(running) }
         guard let last = turn.last(where: { [.assistant, .thinking, .tool, .fileChange, .error, .user].contains($0.kind) }) else {
             return .starting
         }
