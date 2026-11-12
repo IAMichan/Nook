@@ -8,8 +8,9 @@ name: Release
 # New release: Actions › Release › Run workflow, pick what to bump (on the GitHub app too), and run it.
 #   beta   next beta of the current version: v0.1.0-beta.1 → v0.1.0-beta.2 (the default)
 #   patch / minor / major   first beta of the next version: v0.1.1-beta.1, v0.2.0-beta.1, v1.0.0-beta.1
-#   stable the current version without the suffix (v0.1.0), built from the commit of its newest beta, so a regular
-#          release only ships code that beta users already ran. Starts from main only.
+#   stable the current version without the suffix (v0.1.0), built from its newest beta, so a regular release only
+#          ships code that beta users already ran. Run it on that beta's tag (Run workflow › Use workflow from › Tags ›
+#          v0.1.0-beta.4); the beta must be on main.
 # The tag is computed by scripts/next-release-tag.sh. Pushing a tag yourself (`git push origin v0.3.0-beta.1`) works
 # too. A tag with a suffix (-beta.N) becomes a pre-release; one without (v1.0.0) a regular release.
 # The version without the suffix becomes the app's CFBundleShortVersionString.
@@ -112,13 +113,13 @@ jobs:
             workflow_dispatch)
               TAG="$(scripts/next-release-tag.sh "$BUMP")"
               if [ "$BUMP" = stable ]; then
-                if [ "$GITHUB_REF" != refs/heads/main ]; then
-                  echo "::error::A stable release starts from main (this run is on $GITHUB_REF)."; exit 1
-                fi
-                # Built from the newest beta of this version, which is what beta users have been running.
+                # Built from the newest beta of this version, which is what beta users have been running. The run
+                # itself starts on that tag, so every job checks out exactly that commit (no checkout of a computed ref).
                 SOURCE="$(git tag -l "$TAG-beta.*" | sort -V | tail -n 1)"
-                COMMIT="$(git rev-list -n 1 "$SOURCE")"
-                if ! git merge-base --is-ancestor "$COMMIT" "$GITHUB_SHA"; then
+                if [ "$GITHUB_REF" != "refs/tags/$SOURCE" ]; then
+                  echo "::error::Run a stable release on the tag of its newest beta: Run workflow › Use workflow from › Tags › $SOURCE (this run is on $GITHUB_REF)."; exit 1
+                fi
+                if ! git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/main; then
                   echo "::error::$SOURCE is not on main; a stable release is made from a beta that landed on main."; exit 1
                 fi
                 echo "Promoting $SOURCE ($COMMIT) to $TAG." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -153,9 +154,9 @@ jobs:
       run:
         working-directory: apps/macos
     steps:
+      # The commit the run started on: main, the pushed tag, or the beta tag of a stable release (see `plan`).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.plan.outputs.commit }}
           persist-credentials: false
       - name: Choose the version
         id: version

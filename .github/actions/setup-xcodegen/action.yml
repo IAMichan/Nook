@@ -7,11 +7,13 @@ description: >-
 runs:
   using: composite
   steps:
+    # Adds only the directory of the pinned, checksummed XcodeGen it just unpacked to the PATH; no input from a pull
+    # request or the event reaches GITHUB_PATH.
     - shell: bash
       env:
         VERSION: 2.46.0
         SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
-      run: |
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
         dir="$RUNNER_TEMP/xcodegen-$VERSION"
         curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" \

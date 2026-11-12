@@ -135,8 +135,9 @@ the pull request by a maintainer (issue templates only label the issue). The sho
 ## Releases (`release.yml`)
 
 - **Plan first.** A seconds-long ubuntu job picks the tag and the commit before a macOS runner starts. `beta`, `patch`,
-  `minor` and `major` release `main`; `stable` releases the current version without its suffix, built from the commit
-  of its newest beta, so a regular release only ships code beta users already ran.
+  `minor` and `major` release `main`; `stable` releases the current version without its suffix, built from its newest
+  beta, so a regular release only ships code beta users already ran. Run `stable` on that beta's tag (*Use workflow
+  from* › *Tags*); the beta must be on `main`.
 - **Fresh beta.** With the variable `NOOK_FRESH_BETA=true`, a daily schedule releases the next beta, but only when
   `main` changed something besides docs since the newest release and that release is at least 20 hours old.
 - **Launch check.** Before anything is published, the app is started from the final `.dmg` with an empty home folder
