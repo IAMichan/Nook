@@ -11,6 +11,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
+  the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
+  holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.
+
 - Double Tap suggests what Nook can do with what is in front of you: under its field, one-click chips such as
   **Improve this**, **Translate this into English** and **Explain the selected text** for a selection, **Write a
   reply** for an empty message box, **Fill in the form** for a form with empty fields, and **Put this in my calendar**

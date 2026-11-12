@@ -94,8 +94,12 @@ struct ResourceWaitStrip: View {
     }
 }
 
+/// "Tasks  Phase 2: agent parity  1/5" above the composer, opening to the whole list. While the agent works the step it
+/// is on shimmers, so the phase that runs stays in sight while you scroll or type.
 struct TasksStrip: View {
     let steps: [RunTaskStep]
+    /// The agent works on the list now.
+    var working = false
     @State private var open = false
 
     var body: some View {
@@ -107,10 +111,15 @@ struct TasksStrip: View {
                 HStack(spacing: NookTheme.Spacing.md) {
                     Image(icon: "checklist").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.tasks.title")).foregroundStyle(NookTheme.textTertiary)
-                    Text(progress.current)
-                        .foregroundStyle(NookTheme.paper.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    Group {
+                        if TaskChecklist.isRunning(steps, active: working) {
+                            ShimmerText(text: progress.current)
+                        } else {
+                            Text(progress.current).foregroundStyle(NookTheme.paper.opacity(0.85))
+                        }
+                    }
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     Spacer(minLength: 6)
                     Text("\(progress.done)/\(progress.total)")
                         .font(NookTheme.mono(11, .medium))

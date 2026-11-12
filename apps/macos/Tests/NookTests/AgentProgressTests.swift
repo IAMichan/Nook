@@ -122,6 +122,18 @@ final class AgentProgressTests: XCTestCase {
         XCTAssertNil(TaskChecklist.activeStep([RunTaskStep(text: "Check", status: .pending)]))
     }
 
+    func testStripAboveComposerShowsThePhaseWhileWorking() {
+        let steps = [RunTaskStep(text: "Phase 1: crash fixes", status: .done),
+                     RunTaskStep(text: "Phase 2: agent parity", status: .active),
+                     RunTaskStep(text: "Phase 3: hot paths", status: .pending)]
+        XCTAssertTrue(TaskChecklist.showsAboveComposer(steps), "the phase that runs shows above the composer too")
+        XCTAssertTrue(TaskChecklist.isRunning(steps, active: true))
+        XCTAssertFalse(TaskChecklist.isRunning(steps, active: false), "a stopped agent runs no phase")
+        XCTAssertFalse(TaskChecklist.isRunning([RunTaskStep(text: "Check", status: .pending)], active: true))
+        XCTAssertFalse(TaskChecklist.showsAboveComposer([]))
+        XCTAssertFalse(TaskChecklist.showsAboveComposer(nil))
+    }
+
     // MARK: Transcripts
 
     private func message(_ id: String, _ kind: AgentChatMessage.Kind, _ text: String = "", steps: [AgentToolStep] = [],
