@@ -378,7 +378,7 @@ struct PullRequestSheet: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !embedded { Text(tr("ws.pr.title")).font(NookTheme.TextStyle.title) }
             if loading {
-                ProgressView()
+                PatientSpinner().frame(height: 60)
             } else if repo == nil {
                 Text(tr("ws.pr.notGitHub")).font(NookTheme.TextStyle.body).foregroundStyle(WS.secondary)
             } else {

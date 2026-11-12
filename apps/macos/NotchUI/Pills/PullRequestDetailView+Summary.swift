@@ -272,7 +272,7 @@ extension PullRequestDetailView {
     /// One line of the Summary's top: a name in a narrow column on the left, its value on the right.
     func metaRow<Value: View>(symbol: String, title: String, @ViewBuilder value: () -> Value) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            Label(title, systemImage: symbol)
+            Label(title, icon: symbol)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 96, alignment: .leading)

@@ -322,7 +322,7 @@ struct ChatLinkSteps: View {
                     Task { await linker.submitBrowser(collected, lastURL: last) }
                 }
             } label: {
-                Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
+                Label(tr("chats.link.browser.open", url.host ?? network.name), icon: "person.badge.key")
             }
             .buttonStyle(.nookProminent)
             .controlSize(.large)
@@ -355,7 +355,7 @@ struct ChatLinkSteps: View {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFit()
             } placeholder: {
-                ProgressView()
+                PatientSpinner()
             }
             .frame(maxWidth: 240, maxHeight: 160)
         case .nothing:

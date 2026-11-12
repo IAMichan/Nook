@@ -297,9 +297,7 @@ struct MailMessageCard: View {
         if let failure, whole == nil { failureLine(failure) }
         if text.own.isEmpty, text.quoted.isEmpty {
             if whole == nil, canLoad, failure == nil { PatientSpinner().frame(height: 40) } else if failure == nil {
-                Text(tr("chats.mail.empty"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("chats.mail.empty"))
             }
         } else {
             if !text.own.isEmpty { ChatMessageText(text: text.own) }
@@ -307,7 +305,7 @@ struct MailMessageCard: View {
                 Button {
                     withAnimation(NookTheme.reveal) { showsQuoted.toggle() }
                 } label: {
-                    Label(showsQuoted ? tr("chats.mail.hideQuoted") : tr("chats.mail.showQuoted"), systemImage: "ellipsis")
+                    Label(showsQuoted ? tr("chats.mail.hideQuoted") : tr("chats.mail.showQuoted"), icon: "ellipsis")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .padding(.horizontal, NookTheme.Spacing.sm)
@@ -327,15 +325,8 @@ struct MailMessageCard: View {
     /// The whole mail did not come: why, and what to do about it. The start of its text, when the conversation has it,
     /// still shows under it.
     private func failureLine(_ reason: String) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(reason)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                SmallGhostButton(title: tr("chats.mail.tryAgain"), action: onRetry)
-                SmallGhostButton(title: tr("button.openInMail")) { onAction(.openInMail) }
-            }
+        LoadFailedNote(reason, retryTitle: tr("chats.mail.tryAgain"), retry: onRetry) {
+            SmallGhostButton(title: tr("button.openInMail")) { onAction(.openInMail) }
         }
     }
 
@@ -361,7 +352,7 @@ struct MailMessageCard: View {
             if !unsaved.isEmpty {
                 ChipFlow {
                     ForEach(Array(unsaved.enumerated()), id: \.offset) { _, item in
-                        Label(item.name, systemImage: "paperclip")
+                        Label(item.name, icon: "paperclip")
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)

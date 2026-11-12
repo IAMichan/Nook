@@ -146,6 +146,21 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use Image(icon:) or NookIcon.nsImage (NotchUI/Theme/NookIcon.swift)")
     }
 
+    /// Files that still name a `Label`'s icon with `systemImage:` while another change rewrites them (the chats and the
+    /// conversation of a session Nook runs). Move each off this list once that work lands; keep in step with
+    /// `LABEL_SYSTEM_IMAGE_PENDING` in `scripts/ui-lint.sh`.
+    private static let labelSystemImagePending = ["NotchUI/Chat/", "NotchUI/Components/Chat", "NotchUI/Pills/Chats",
+                                                  "NotchUI/Pills/AgentRunPanel.swift"]
+
+    /// A `Label`'s icon goes through `Image(icon:)` too: `Label(_:icon:)` (`NookIcon.swift`), never
+    /// `Label(_:systemImage:)`, which draws the raw SF Symbol beside Nook's Lucide icons.
+    func testLabelsGoThroughNookIcon() {
+        let found = offenders(#"\bsystemImage:"#) { path in
+            Self.labelSystemImagePending.contains { path.hasPrefix($0) }
+        }
+        XCTAssertEqual(found, [], "use Label(_:icon:) (NotchUI/Theme/NookIcon.swift)")
+    }
+
     /// Every button shows the pointing hand, so it reads as clickable: buttons use Nook's pointer styles
     /// (`.nookPlain`, `.nookBorderless`, `.nookProminent`, `.nookLink`) instead of the system ones, which keep the arrow.
     func testButtonsShowThePointingHand() {

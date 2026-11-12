@@ -58,14 +58,21 @@ extension View {
     /// dialog opens on this view; its red button runs `action` with the item.
     func confirmDelete<Item>(_ item: Binding<Item?>, question: @escaping (Item) -> String, detail: String? = nil,
                              confirmTitle: String, action: @escaping (Item) -> Void) -> some View {
+        confirmDelete(item, question: question, detail: { _ in detail }, confirmTitle: { _ in confirmTitle }, action: action)
+    }
+
+    /// The same, where what is lost and the red button's words depend on the item (a worktree with changes is removed
+    /// with them).
+    func confirmDelete<Item>(_ item: Binding<Item?>, question: @escaping (Item) -> String, detail: @escaping (Item) -> String?,
+                             confirmTitle: @escaping (Item) -> String, action: @escaping (Item) -> Void) -> some View {
         confirmationDialog(item.wrappedValue.map(question) ?? "",
                            isPresented: Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } }),
                            titleVisibility: .visible,
                            presenting: item.wrappedValue) { value in
-            Button(confirmTitle, role: .destructive) { action(value) }
+            Button(confirmTitle(value), role: .destructive) { action(value) }
             Button(tr("button.cancel"), role: .cancel) {}
-        } message: { _ in
-            if let detail { Text(detail) }
+        } message: { value in
+            if let detail = detail(value) { Text(detail) }
         }
     }
 }

@@ -13,7 +13,6 @@ struct SessionPullRequestRow: View {
     let runID: UUID?
     let directory: String
     let open: () -> Void
-    @State private var hovering = false
     @State private var armed = false
     @State private var running = false
 
@@ -69,8 +68,7 @@ struct SessionPullRequestRow: View {
         }
         .padding(.horizontal, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.xs)
-        .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
-        .onHover { hovering = $0 }
+        .hoverRowFill()
         .help(link.url)
         .hoverCard(arrowEdge: .leading) {
             HoverCard(title: link.title ?? "#\(link.number)") {

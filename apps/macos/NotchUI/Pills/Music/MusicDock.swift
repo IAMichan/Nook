@@ -37,7 +37,6 @@ private struct MusicBar: View {
     let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
     let onExpand: () -> Void
-    @State private var hoveringTrack = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xl) {
@@ -58,12 +57,10 @@ private struct MusicBar: View {
                 }
                 .padding(NookTheme.Spacing.xs)
                 .padding(.trailing, NookTheme.Spacing.sm)
-                .roundedBackground(NookTheme.rowFill(selected: false, hovering: hoveringTrack, rest: .clear),
-                                   radius: NookTheme.Radius.panel)
+                .hoverRowFill(radius: NookTheme.Radius.panel)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .onHover { hoveringTrack = $0 }
             .help(tr("music.openNowPlaying"))
             .accessibilityLabel("\(info.title), \(subtitle)")
             .accessibilityHint(tr("music.openNowPlaying"))
@@ -89,7 +86,6 @@ private struct MusicBar: View {
         // The cover sits as far from the box's edge as from its top, so the box's corner runs around it.
         .padding(.leading, NookTheme.Spacing.sm)
         .padding(.trailing, NookTheme.Spacing.lg)
-        .animation(NookTheme.hover, value: hoveringTrack)
     }
 
     private var subtitle: String { musicSubtitle(info) }

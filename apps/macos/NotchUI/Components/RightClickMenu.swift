@@ -32,7 +32,7 @@ struct NookMenuItems: View {
     @ViewBuilder
     private func label(_ entry: NookMenuEntry) -> some View {
         if let symbol = entry.symbol {
-            Label(entry.title, systemImage: symbol)
+            Label(entry.title, icon: symbol)
         } else {
             Text(entry.title)
         }

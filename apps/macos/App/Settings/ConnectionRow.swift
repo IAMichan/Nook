@@ -118,7 +118,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
             }
         }
         .onAppear { if startsOpen { open = true } }
-        .confirmationDialog(removal?.question ?? "", isPresented: $confirmRemove) {
+        .confirmationDialog(removal?.question ?? "", isPresented: $confirmRemove, titleVisibility: .visible) {
             if let removal {
                 Button(removal.title, role: .destructive, action: removal.action)
             }
@@ -249,7 +249,7 @@ struct ConnectionListAddLabel: View {
     let symbol: String
 
     var body: some View {
-        Label(title, systemImage: symbol)
+        Label(title, icon: symbol)
             .font(NookTheme.TextStyle.control)
             .foregroundStyle(NookTheme.textStrong)
     }

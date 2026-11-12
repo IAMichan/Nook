@@ -33,19 +33,17 @@ struct MusicPlaylistsView: View {
     private var overview: some View {
         switch service.playlistsState {
         case .connectSpotify:
-            MusicPlaceholder(symbol: "link", title: tr("music.playlists.connectSpotify"),
-                             detail: tr("music.playlists.connectSpotifyDetail", tr("settings.section.connections"))) {
+            WSEmptyState(symbol: "link", title: tr("music.playlists.connectSpotify"),
+                         message: tr("music.playlists.connectSpotifyDetail", tr("settings.section.connections"))) {
                 SmallPrimaryButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
             }
         case .reconnectSpotify:
-            MusicPlaceholder(symbol: "arrow.triangle.2.circlepath", title: tr("music.playlists.reconnect"),
-                             detail: tr("music.playlists.reconnectDetail", tr("settings.section.connections"))) {
+            WSEmptyState(symbol: "arrow.triangle.2.circlepath", title: tr("music.playlists.reconnect"),
+                         message: tr("music.playlists.reconnectDetail", tr("settings.section.connections"))) {
                 SmallPrimaryButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
             }
         case .failed(let message) where service.playlists.isEmpty:
-            MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.playlists.loadFailed"), detail: message) {
-                SmallGhostButton(title: tr("music.lyrics.retry")) { service.refreshPlaylists() }
-            }
+            WSEmptyState(loadFailed: tr("music.playlists.loadFailed"), message: message) { service.refreshPlaylists() }
         case .idle where service.playlists.isEmpty, .loading where service.playlists.isEmpty:
             PatientSpinner()
         default:
@@ -54,11 +52,11 @@ struct MusicPlaylistsView: View {
                     toolbar
                 }
                 if service.playlists.isEmpty {
-                    MusicPlaceholder(symbol: "music.note.list", title: tr("music.playlists.empty"), detail: tr("music.playlists.emptyDetail")) {
+                    WSEmptyState(symbol: "music.note.list", title: tr("music.playlists.empty"), message: tr("music.playlists.emptyDetail")) {
                         SmallPrimaryButton(title: tr("music.playlists.new")) { service.playlistPrompt = .create(adding: nil) }
                     }
                 } else if shown.isEmpty {
-                    MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.empty", filter))
+                    WSEmptyState(symbol: "magnifyingglass", title: tr("music.search.empty", filter))
                 } else {
                     MusicShelf(note: note, items: shown.map(item), service: service)
                 }
@@ -214,23 +212,21 @@ private struct MusicPlaylistDetailView: View {
         case .loading where detail.tracks.isEmpty, .idle:
             PatientSpinner().frame(maxWidth: .infinity, minHeight: 200)
         case .reconnectSpotify:
-            MusicPlaceholder(symbol: "arrow.triangle.2.circlepath", title: tr("music.playlists.reconnect"),
-                             detail: tr("music.playlists.reconnectDetail", tr("settings.section.connections")))
+            WSEmptyState(symbol: "arrow.triangle.2.circlepath", title: tr("music.playlists.reconnect"),
+                         message: tr("music.playlists.reconnectDetail", tr("settings.section.connections")))
                 .frame(minHeight: 240)
         case .failed(let message) where detail.tracks.isEmpty:
-            MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.playlists.loadFailed"), detail: message) {
-                SmallGhostButton(title: tr("music.lyrics.retry")) { service.reloadPlaylistDetail() }
-            }
+            WSEmptyState(loadFailed: tr("music.playlists.loadFailed"), message: message) { service.reloadPlaylistDetail() }
             .frame(minHeight: 240)
         default:
             if detail.tracks.isEmpty {
-                MusicPlaceholder(symbol: "music.note", title: tr("music.playlists.emptyPlaylist"),
-                                 detail: playlist.editable ? tr("music.playlists.emptyPlaylistDetail") : nil)
+                WSEmptyState(symbol: "music.note", title: tr("music.playlists.emptyPlaylist"),
+                             message: playlist.editable ? tr("music.playlists.emptyPlaylistDetail") : nil)
                     .frame(minHeight: 240)
             } else {
                 let rows = detail.tracks(matching: filter)
                 if rows.isEmpty {
-                    MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.empty", filter))
+                    WSEmptyState(symbol: "magnifyingglass", title: tr("music.search.empty", filter))
                         .frame(minHeight: 240)
                 } else {
                     ForEach(rows) { row in
@@ -313,11 +309,10 @@ struct MusicTrackRow: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .frame(height: MusicLayout.rowHeight)
-            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
         .contextMenu {

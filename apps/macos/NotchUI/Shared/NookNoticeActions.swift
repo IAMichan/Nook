@@ -115,7 +115,7 @@ struct NookMoreMenu: View {
         Menu {
             ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
                 Button(action: action.perform) {
-                    if let symbol = action.symbol { Label(action.label, systemImage: symbol) } else { Text(action.label) }
+                    if let symbol = action.symbol { Label(action.label, icon: symbol) } else { Text(action.label) }
                 }
             }
         } label: {

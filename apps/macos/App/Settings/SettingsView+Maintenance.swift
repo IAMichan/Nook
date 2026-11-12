@@ -42,9 +42,7 @@ extension SettingsView {
             ("Language", I18n.shared.currentLanguage.rawValue),
             ("Demo mode", app.demoMode ? "on" : "off"),
         ]
-        let text = DiagnosticsRedactor.report(header: header, log: [])
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Pasteboard.copy(DiagnosticsRedactor.report(header: header, log: []))
     }
 
     // MARK: About

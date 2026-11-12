@@ -187,18 +187,10 @@ struct PullRequestDetailView: View {
                         .transition(.opacity)
                 }
             } else if let error = model.error, settled {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                    Text(tr("agents.pr.loadFailed")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
-                    Text(error)
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.coralSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                    NookPrimaryButton(title: tr("agents.pr.retry")) { Task { await model.refresh(activity: true) } }
-                        .padding(.top, NookTheme.Spacing.xs)
+                WSEmptyState(loadFailed: tr("agents.pr.loadFailed"), message: error, retryTitle: tr("agents.pr.retry")) {
+                    Task { await model.refresh(activity: true) }
                 }
-                .padding(.top, NookTheme.Spacing.lg)
                 .pullRequestPageColumn()
-                Spacer(minLength: 0)
             } else {
                 PullRequestDetailGhost().padding(.top, NookTheme.Spacing.lg).pullRequestPageColumn()
                 Spacer(minLength: 0)
@@ -709,12 +701,12 @@ struct PullRequestDetailView: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 if detail.activityLoaded {
                     let approvals = detail.verdicts.filter(\.approved).count
-                    Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", systemImage: "bubble.left")
+                    Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", icon: "bubble.left")
                         .help(tr("agents.pr.count.comments"))
-                    Label("\(detail.commits.count)", systemImage: "circle.and.line.horizontal")
+                    Label("\(detail.commits.count)", icon: "circle.and.line.horizontal")
                         .help(tr("agents.pr.count.commits"))
                     if approvals > 0 {
-                        Label("\(approvals)", systemImage: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
+                        Label("\(approvals)", icon: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
                             .foregroundStyle(PullRequestIcon.tint(PullRequestIcon.Review.approved))
                             .help(tr("agents.pr.count.approvals"))
                     }

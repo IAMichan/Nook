@@ -89,7 +89,7 @@ struct SimulatorView: View {
                 if chosen != nil, stream.frame != nil {
                     SimulatorScreen(stream: stream)
                 } else if chosen != nil {
-                    ProgressView()
+                    PatientSpinner()
                 } else {
                     Text(hub.devices.isEmpty ? tr("sim.noDevices") : tr("sim.pick"))
                         .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)

@@ -516,11 +516,10 @@ private struct TerminalGroupHeader: View {
             .foregroundStyle(active || hovering ? NookTheme.textStrong : NookTheme.textTertiary)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: TerminalMetrics.groupHeader)
-            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
 }
@@ -681,7 +680,7 @@ struct TerminalsView: View {
                 Button {
                     chooseFolder()
                 } label: {
-                    Label(tr("workbench.terminal.inFolder"), systemImage: "folder")
+                    Label(tr("workbench.terminal.inFolder"), icon: "folder")
                 }
                 .controlSize(.small)
                 Spacer(minLength: NookTheme.Spacing.md)

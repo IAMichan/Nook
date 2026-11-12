@@ -262,7 +262,6 @@ struct WorkflowRunRow: View {
     /// The clock the row's time is counted against (the list's tick), so the time moves on while the list is open.
     var now = Date()
     let onOpen: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: onOpen) {
@@ -298,9 +297,7 @@ struct WorkflowRunRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
+        .hoverRowFill(selected: selected)
         .help(run.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {

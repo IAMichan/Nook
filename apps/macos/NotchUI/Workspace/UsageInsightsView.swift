@@ -416,7 +416,6 @@ struct UsageModelRow: View {
     let fraction: Double
     let share: Double
     let open: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: open) {
@@ -452,13 +451,12 @@ struct UsageModelRow: View {
                 }
                 .font(NookTheme.TextStyle.body.monospacedDigit())
                 .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
-                .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.control)
+                .hoverRowFill()
                 NookDivider()
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
     }
 }
 
@@ -480,18 +478,16 @@ struct UsageChatRow: View {
     var fraction = 0.0
     var share = 0.0
     var compact = false
-    @State private var hovering = false
 
     var body: some View {
         let target = app.usageChatTarget(chat.chat)
         if let target {
             Button { app.openUsageChat(target) } label: {
                 row(title: target.title)
-                    .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.control)
+                    .hoverRowFill()
                     .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
-            .onHover { hovering = $0 }
             .help(tr("usage.chat.open", target.title))
         } else {
             row(title: chat.chat.displayTitle).help(chat.chat.displayTitle)

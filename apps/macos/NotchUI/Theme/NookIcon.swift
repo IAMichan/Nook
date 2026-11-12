@@ -493,6 +493,14 @@ enum NookIcon {
     #endif
 }
 
+extension Label where Title == Text, Icon == Image {
+    /// A title with its icon (a menu item, a button), the icon named the SF Symbol way and drawn through `Image(icon:)`,
+    /// so it is Nook's Lucide icon where there is one. Use it instead of `Label(_:systemImage:)`.
+    init(_ title: String, icon symbol: String) {
+        self.init { Text(title) } icon: { Image(icon: symbol) }
+    }
+}
+
 extension Image {
     /// An icon named the SF Symbol way, drawn as Nook's Lucide icon when there is one (`NookIcon`).
     init(icon symbol: String) {
