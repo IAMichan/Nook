@@ -55,6 +55,10 @@ targets:
       - path: ../macos/Brain/MarkdownBlock.swift
         group: Shared from the Mac
         createIntermediateGroups: false
+      # Replying to an answer and the quote a message of yours starts with (`AnswerReply`), as on the Mac.
+      - path: ../macos/Services/Workspace/ComposerQuotes.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
       - path: ../macos/Brain/ChatChart.swift
         group: Shared from the Mac
         createIntermediateGroups: false

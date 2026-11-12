@@ -91,6 +91,9 @@ struct RunQuestionPanel: View {
                                 record(item, [option.label])
                             }
                         }
+                        // What the option would look like, under it (Claude Code's `preview`).
+                        QuestionOptionPreview(text: QuestionPreview.display(option.preview), indent: QuestionOptionRow.labelIndent)
+                            .padding(.bottom, option.preview.isEmpty ? 0 : NookTheme.Spacing.xs)
                     }
                 }
 
@@ -295,6 +298,9 @@ struct RunQuestionPanel: View {
 
 /// An interactive option row with clear hover state, keycap badge, and intuitive indicator
 private struct QuestionOptionRow: View {
+    /// Where the option's words start: the row's padding, the keycap and the room after it.
+    static let labelIndent = NookTheme.Spacing.md + 20 + NookTheme.Spacing.md
+
     let option: RunQuestionOption
     let number: Int
     let isPicked: Bool

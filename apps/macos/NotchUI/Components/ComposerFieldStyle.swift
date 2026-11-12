@@ -50,6 +50,29 @@ enum ComposerFieldStyle {
         }
     }
 
+    /// As `placeCaret`, for a field that is only now getting the keyboard: it tries again for a moment while the field
+    /// takes it (and after AppKit's own select-all on focus), and stops trying once the field shows other words.
+    static func placeCaretSoon(_ offset: Int, expecting text: String) {
+        for delay in [0.0, 0.05, 0.15, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard let editor = focusedEditor(expecting: text) else { return }
+                editor.setSelectedRange(NSRange(location: min(max(offset, 0), (text as NSString).length), length: 0))
+                editor.scrollRangeToVisible(editor.selectedRange())
+            }
+        }
+    }
+
+    /// "Reply" on an answer (`AnswerReply`): `answer` as a quote at the top of `draft`, and once the composer has the
+    /// keyboard (the caller gives it), the caret on the line under the quote. The same for every session's composer.
+    static func reply(to answer: String, in draft: inout String) {
+        let placed = AnswerReply.inserting(AnswerReply.quote(answer), into: draft)
+        guard placed.text != draft else { return }
+        draft = placed.text
+        let words = ComposerAttachments.split(placed.text).body
+        placeCaretSoon(ComposerChips.displayOffset(draft: min(placed.caret, words.utf16.count), in: words),
+                       expecting: ComposerChips.display(words))
+    }
+
     /// The field editor that has the keyboard in the key window, whatever it shows.
     static func focusedFieldEditor() -> NSTextView? {
         guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView,

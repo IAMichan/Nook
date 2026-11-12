@@ -276,6 +276,7 @@ enum PiStreamParser {
         let title = ((object["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let detail = [object["message"], object["placeholder"]].compactMap { $0 as? String }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+        // Plain labels: Pi's dialogs have no description or preview per option (docs/INTEGRATIONS.md).
         let options = method == "select"
             ? ((object["options"] as? [String]) ?? []).filter { !$0.isEmpty }.map { RunQuestionOption(label: $0, description: "") }
             : []

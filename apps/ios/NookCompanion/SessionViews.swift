@@ -22,6 +22,8 @@ struct SessionDetailView: View {
     @State private var images: [CompanionImage] = []
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
+    /// The keyboard is in the composer (after "Reply" on an answer).
+    @FocusState private var composerFocused: Bool
 
     /// From the live list, or an older session opened from the settled ones or a search.
     private var session: SessionDigest? { client.session(sessionID) }
@@ -39,6 +41,11 @@ struct SessionDetailView: View {
                                 EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(proxy) }
                             }
                             TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
+                                // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
+                                .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
+                                    message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
+                                    composerFocused = true
+                                } : nil)
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: String(localized: "Latest reply"))
                             TranscriptReply(text: session.excerpt, footer: false)
@@ -104,12 +111,14 @@ struct SessionDetailView: View {
                                     SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
                                                     canSend: true, busy: stoppable(session),
                                                     onStop: canStop(session) ? { confirmStop = true } : nil,
+                                                    focus: $composerFocused,
                                                     onSend: { send(session) }) {
                                         steerMenu
                                     }
                                 } else {
                                     SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
-                                                    onStop: canStop(session) ? { confirmStop = true } : nil) { send(session) }
+                                                    onStop: canStop(session) ? { confirmStop = true } : nil,
+                                                    focus: $composerFocused) { send(session) }
                                 }
                             }
                         }
@@ -458,6 +467,10 @@ struct ItemView: View {
                         ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                             QuestionOptionRow(title: option, number: number) {
                                 Haptics.success(); Task { await client.answer(session, item: item, text: option) }
+                            }
+                            // What the option would look like, under it (an agent question's preview), as on the Mac.
+                            if let previews = item.optionPreviews, previews.indices.contains(number) {
+                                QuestionOptionPreview(text: previews[number], indent: Theme.Spacing.lg, lineLimit: 10)
                             }
                         }
                     }

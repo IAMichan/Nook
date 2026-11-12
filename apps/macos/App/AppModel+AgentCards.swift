@@ -148,7 +148,10 @@ extension AppModel {
             : tr("card.status.question")
 
         let titleLines = max(1, Int(ceil(Double(item.question.count) / 46.0)))
-        let optionsHeight = item.options.reduce(CGFloat(0)) { $0 + ($1.description.isEmpty ? 40 : 58) }
+        let choices = item.options.map {
+            ChoiceOption(label: $0.label, description: $0.description, preview: QuestionPreview.display($0.preview))
+        }
+        let optionsHeight = choices.reduce(CGFloat(0)) { $0 + ($1.description.isEmpty ? 40 : 58) + $1.previewHeight }
         let card = NookCard(
             id: token,
             mood: .waiting,
@@ -156,12 +159,12 @@ extension AppModel {
             title: item.question,
             detail: .choices(ChoiceSet(
                 id: choiceID,
-                options: item.options.map { ChoiceOption(label: $0.label, description: $0.description) },
+                options: choices,
                 multiSelect: item.multiSelect
             )),
             primary: CardAction(label: tr("approval.inTerminal"), outcome: .callback("\(token)#terminal", "")),
             secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: min(470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0)),
+            contentHeight: min(choices.contains { !$0.preview.isEmpty } ? 560 : 470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0)),
             urgent: true,
             status: CardStatus(text: status, tone: .waiting)
         )
