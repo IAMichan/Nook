@@ -45,12 +45,18 @@ struct InboxState: Codable, Equatable, Sendable {
     var pinned: [String] = []
     /// Manual order of the Active section (ids that are gone are harmless).
     var order: [String] = []
+    /// When you gave each row of `order` its place. As in t3code, a place holds only until the session comes back with
+    /// something new (`InboxRow.lastActivity` after it): then it is unordered again and comes up on top of the list.
+    /// A row in `order` without a time keeps its place.
+    var orderedAt: [String: Date] = [:]
     var settled: Set<String> = []
     var dismissedWoke: Set<String> = []
 
-    init(pinned: [String] = [], order: [String] = [], settled: Set<String> = [], dismissedWoke: Set<String> = []) {
+    init(pinned: [String] = [], order: [String] = [], orderedAt: [String: Date] = [:], settled: Set<String> = [],
+         dismissedWoke: Set<String> = []) {
         self.pinned = pinned
         self.order = order
+        self.orderedAt = orderedAt
         self.settled = settled
         self.dismissedWoke = dismissedWoke
     }
@@ -58,9 +64,20 @@ struct InboxState: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pinned = (try? c.decode([String].self, forKey: .pinned)) ?? []
-        order = (try? c.decode([String].self, forKey: .order)) ?? []
+        // An order saved before the places had times was the old fixed order: it is let go, so sessions that come back
+        // rise to the top as they do now.
+        let times = try? c.decode([String: Date].self, forKey: .orderedAt)
+        order = times == nil ? [] : (try? c.decode([String].self, forKey: .order)) ?? []
+        orderedAt = times ?? [:]
         settled = (try? c.decode(Set<String>.self, forKey: .settled)) ?? []
         dismissedWoke = (try? c.decode(Set<String>.self, forKey: .dismissedWoke)) ?? []
+    }
+
+    /// The manual place of a row in Active, or nil when it has none: never placed, or back with something new since.
+    func activeRank(_ row: InboxRow, ranks: [String: Int]) -> Int? {
+        guard let rank = ranks[row.id] else { return nil }
+        if let placed = orderedAt[row.id], row.lastActivity > placed { return nil }
+        return rank
     }
 
     /// Pins `id` at `index` (default: on top). Pinning removes nothing else; the layout lets a pin win over settled.
@@ -70,11 +87,12 @@ struct InboxState: Codable, Equatable, Sendable {
     }
 
     /// Unpins; `index` places it in the manual Active order where it was dropped.
-    mutating func unpin(_ id: String, at index: Int? = nil) {
+    mutating func unpin(_ id: String, at index: Int? = nil, now: Date = Date()) {
         pinned.removeAll { $0 == id }
         guard let index else { return }
         order.removeAll { $0 == id }
         order.insert(id, at: min(max(index, 0), order.count))
+        orderedAt[id] = now
     }
 
     /// Settling a pinned thread unpins it.
@@ -89,7 +107,7 @@ struct InboxState: Codable, Equatable, Sendable {
 
     /// Moves `id` to `toIndex` (a final index) inside the section as it is shown.
     /// Only Pinned and Active have a manual order. Ids hidden from the section keep their relative place after it.
-    mutating func reorder(_ id: String, toIndex: Int, within section: InboxSection) {
+    mutating func reorder(_ id: String, toIndex: Int, within section: InboxSection, now: Date = Date()) {
         guard section.kind == .pinned || section.kind == .active else { return }
         var ids = section.rows.map(\.row.id)
         guard let from = ids.firstIndex(of: id) else { return }
@@ -103,6 +121,9 @@ struct InboxState: Codable, Equatable, Sendable {
         default:
             rest = order.filter { !ids.contains($0) }
             order = ids + rest
+            // Every row shown now has the place you see it in.
+            for id in ids { orderedAt[id] = now }
+            orderedAt = orderedAt.filter { order.contains($0.key) }
         }
     }
 }
@@ -301,10 +322,18 @@ enum InboxLayout {
         }
 
         pinned.sort { (pinRank[$0.id] ?? Int.max, $1.row.lastActivity, $0.id) < (pinRank[$1.id] ?? Int.max, $0.row.lastActivity, $1.id) }
+        // As t3code's inbox: what needs you first, then the sessions that came back (finished, failed, a new message) with
+        // the newest on top, then the ones you gave a place, in that order. A placed session that comes back with something
+        // new loses its place and rises to the top again.
         active.sort {
-            if $0.row.effectiveAttention != $1.row.effectiveAttention { return $0.row.effectiveAttention < $1.row.effectiveAttention }
-            let (a, b) = (orderRank[$0.id] ?? Int.max, orderRank[$1.id] ?? Int.max)
-            if a != b { return a < b }
+            let (needsA, needsB) = ($0.row.needsYou, $1.row.needsYou)
+            if needsA != needsB { return needsA }
+            switch (state.activeRank($0.row, ranks: orderRank), state.activeRank($1.row, ranks: orderRank)) {
+            case (nil, _?): return true
+            case (_?, nil): return false
+            case let (a?, b?) where a != b: return a < b
+            default: break
+            }
             if $0.row.lastActivity != $1.row.lastActivity { return $0.row.lastActivity > $1.row.lastActivity }
             return $0.id < $1.id
         }
@@ -359,10 +388,11 @@ enum InboxLayout {
         var settledPage = Array(settled.prefix(limit))
         if let open = settled.dropFirst(limit).first(where: { $0.id == selectedID }) { settledPage.append(open) }
         var result: [InboxSection] = [
-            // Running agents come first: they are the ones you usually want to open.
-            InboxSection(kind: .working, rows: working),
             InboxSection(kind: .pinned, rows: pinned),
             InboxSection(kind: .active, rows: active),
+            // As in t3code: what works and needs nothing from you sits at the foot of the list, above Snoozed and Settled.
+            // A session that finishes leaves it and comes up on top of Active.
+            InboxSection(kind: .working, rows: working),
             InboxSection(kind: .snoozed, rows: snoozed),
             InboxSection(kind: .settled, rows: settledPage, hiddenCount: settled.count - settledPage.count),
         ]
@@ -372,8 +402,8 @@ enum InboxLayout {
 
     /// Where "Move Up" or "Move Down" puts a row of Pinned or Active: the final index (for `InboxState.reorder`) of the
     /// nearest row in that direction it can trade places with, or nil when there is none. Only top-level rows move,
-    /// since a nested one follows its parent; in Active the rows are sorted by attention first, so a row only moves among
-    /// those with the same attention.
+    /// since a nested one follows its parent; in Active what needs you sorts first, so a row only moves among rows that
+    /// need you, or among rows that do not.
     static func moveTarget(_ id: String, up: Bool, in section: InboxSection) -> Int? {
         guard section.kind == .pinned || section.kind == .active,
               let from = section.rows.firstIndex(where: { $0.id == id }), section.rows[from].depth == 0 else { return nil }
@@ -381,7 +411,7 @@ enum InboxLayout {
         let candidates = up ? Array((0..<from).reversed()) : Array((from + 1)..<section.rows.count)
         return candidates.first { index in
             let other = section.rows[index]
-            return other.depth == 0 && (section.kind == .pinned || other.row.effectiveAttention == row.effectiveAttention)
+            return other.depth == 0 && (section.kind == .pinned || other.row.needsYou == row.needsYou)
         }
     }
 

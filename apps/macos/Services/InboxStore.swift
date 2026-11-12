@@ -14,7 +14,8 @@ final class InboxStore: ObservableObject {
     /// Sessions that work and need nothing from you fold into their own shelf; one that needs you jumps back up.
     @Published var showWorking: Bool { didSet { save() } }
     @Published var autoSettle: AutoSettlePolicy.Settings { didSet { save() } }
-    /// The sessions that work or wait sit in a dropdown per project, as in Claude's own sidebar.
+    /// The sessions that work or wait sit in a dropdown per project instead of one list. Off by default: as in t3code,
+    /// the list is one inbox with the newest on top and every row names its project (folders are its "boring mode").
     @Published var groupByProject: Bool { didSet { save() } }
     /// The projects you folded in that view.
     @Published var collapsedProjects: Set<String> { didSet { save() } }
@@ -57,8 +58,11 @@ final class InboxStore: ObservableObject {
         /// Fields that were there but could not be read (not stored).
         var skipped = 0
 
+        /// `groupByProject` is stored as "projectFolders": the old key held a default of on, from before the list became one
+        /// inbox, and is not read again.
         private enum CodingKeys: String, CodingKey {
-            case state, showWorking, autoSettle, groupByProject, collapsedProjects, collapsedShelves, foldedThreads, openedThreads
+            case state, showWorking, autoSettle, collapsedProjects, collapsedShelves, foldedThreads, openedThreads
+            case groupByProject = "projectFolders"
         }
 
         init(state: InboxState?, showWorking: Bool?, autoSettle: AutoSettlePolicy.Settings?, groupByProject: Bool?,
@@ -105,7 +109,7 @@ final class InboxStore: ObservableObject {
         // keeps auto-settle as it was, a new one starts with it on.
         let usedSince = defaults.object(forKey: Self.usedSinceKey) as? Date
         autoSettle = AutoSettlePolicy.initial(stored: stored?.autoSettle, usedSince: usedSince)
-        groupByProject = stored?.groupByProject ?? true
+        groupByProject = stored?.groupByProject ?? false
         collapsedProjects = stored?.collapsedProjects ?? []
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
         foldedThreads = Set(stored?.foldedThreads ?? [])
