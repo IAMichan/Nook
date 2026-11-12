@@ -27,7 +27,10 @@ final class QuitHoldMonitor {
     func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
-            MainActor.assumeIsolated { self?.handle(event) ?? event }
+            // Local monitors are called on the main thread; NSEvent is not Sendable, so it crosses as unchecked.
+            nonisolated(unsafe) let event = event
+            let passOn = MainActor.assumeIsolated { self.map { $0.handle(event) != nil } ?? true }
+            return passOn ? event : nil
         }
     }
 
