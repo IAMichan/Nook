@@ -97,7 +97,8 @@ extension ClaudeStreamEvent {
 
 /// News about a task Claude Code runs in the background.
 struct BackgroundTaskUpdate: Equatable, Sendable {
-    enum Status: String, Sendable { case completed, failed, stopped }
+    /// `killed`: Claude Code ended it, at the agent's request (TaskStop) or because it ran past its time limit.
+    enum Status: String, Sendable { case completed, failed, stopped, killed }
 
     var taskID: String?
     var toolUseID: String?

@@ -596,6 +596,25 @@ enum BackgroundCommands {
         return events.last { isCommand($0) && $0.output?.contains("ID: " + task) == true }
     }
 
+    /// How a command's end counts: a failure, or one Claude Code killed that the agent did not ask to stop (it hung
+    /// past its time limit, say). One the agent stopped itself (TaskStop) ended as it wanted.
+    static func failed(_ status: BackgroundTaskUpdate.Status, update: BackgroundTaskUpdate, in events: [RunEvent]) -> Bool {
+        switch status {
+        case .completed, .stopped: return false
+        case .failed: return true
+        case .killed: return !stoppedByAgent(update, in: events)
+        }
+    }
+
+    /// The agent asked to stop this task itself (Claude Code's TaskStop, or the older KillShell/KillBash).
+    static func stoppedByAgent(_ update: BackgroundTaskUpdate, in events: [RunEvent]) -> Bool {
+        guard let task = update.taskID, !task.isEmpty else { return false }
+        let stops: Set<String> = ["TaskStop", "KillShell", "KillBash"]
+        return events.contains { event in
+            event.kind == .tool && stops.contains(event.tool ?? "") && (event.detail?.contains(task) == true || event.text.contains(task))
+        }
+    }
+
     /// The order to list them in: those still at work first, then the failed ones, then the rest; newest first within each.
     static func ordered(_ commands: [BackgroundCommandInfo]) -> [BackgroundCommandInfo] {
         let rank: (BackgroundCommandInfo) -> Int = { $0.isRunning ? 0 : ($0.failed ? 1 : 2) }
