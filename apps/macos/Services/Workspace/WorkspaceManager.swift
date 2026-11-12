@@ -341,6 +341,11 @@ final class WorkspaceManager: ObservableObject {
     var remoteHomes: [String: String] = [:]
     var remoteBridgeInstalling: Set<String> = []
     var bridgeTokens: [UUID: String] = [:]
+    /// Where each local session's token file goes (`BridgeTokenFiles`); tests point it at a folder of their own.
+    var bridgeTokenDirectory: URL = NookPaths.bridgeTokenDirectory
+    /// Receipts of session commands that may come more than once (`SessionCommandReceipts`), kept across a restart.
+    lazy var commandReceipts = SessionCommandReceipts.load(from: commandReceiptsURL)
+    var commandReceiptsURL: URL = NookPaths.supportDirectory.appendingPathComponent("command-receipts.json")
     var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
     var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
@@ -460,6 +465,9 @@ final class WorkspaceManager: ObservableObject {
         var stopping = false
         var lastError: String?
         var started = Date()
+        /// Which turn this is, as the phone sees it (`SessionDigest.turn`): a command meant for this turn leaves a later
+        /// one alone (`SessionTurnCheck`).
+        var identity = UUID().uuidString.lowercased()
         /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
@@ -1366,6 +1374,7 @@ final class WorkspaceManager: ObservableObject {
         idleCompacting.remove(id)
         sizeCompacting.remove(id)
         bridgeTokens[id] = nil
+        BridgeTokenFiles.remove(id, in: bridgeTokenDirectory)
         codexGoalStarting[id] = nil
         codexGoalWaiting[id] = nil
         antigravitySignIns.remove(id)

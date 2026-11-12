@@ -79,14 +79,70 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertFalse(BridgeIdentity.matches("abc", "abcd"))
     }
 
-    func testLocalSessionsGetTheirTokenInTheServersEnvironment() {
+    func testLocalSessionsGetTheFileWithTheirTokenNeverTheToken() {
         let id = UUID()
         var launch = BridgeLaunch(script: "/x")
         XCTAssertNil(launch.environment(runID: id)["NOOK_BRIDGE_TOKEN"])
-        launch.token = "t1"
-        XCTAssertEqual(launch.environment(runID: id)["NOOK_BRIDGE_TOKEN"], "t1")
+        launch.tokenFile = "/s/bridge-tokens/a"
+        XCTAssertNil(launch.environment(runID: id)["NOOK_BRIDGE_TOKEN"])
+        XCTAssertEqual(launch.environment(runID: id)[BridgeTokenFiles.variable], "/s/bridge-tokens/a")
         XCTAssertEqual(launch.environment(runID: id)["NOOK_RUN_ID"], id.uuidString)
         XCTAssertNil(launch.environment(runID: id)["NOOK_BRIDGE_SOCK"])
+    }
+
+    func testTokenFilesAreOnlyYoursAndGoAway() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("nook-tokens-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = UUID()
+        let url = try BridgeTokenFiles.write("secret-1", for: id, in: directory)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "secret-1")
+        func mode(_ path: String) throws -> Int {
+            try XCTUnwrap(FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int)
+        }
+        XCTAssertEqual(try mode(url.path), 0o600)
+        XCTAssertEqual(try mode(directory.path), 0o700)
+        XCTAssertEqual(try BridgeTokenFiles.write("secret-1", for: id, in: directory), url, "the same token: left as it is")
+        _ = try BridgeTokenFiles.write("secret-2", for: id, in: directory)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "secret-2")
+        XCTAssertEqual(try mode(url.path), 0o600)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 1, "no staging file left behind")
+        BridgeTokenFiles.remove(id, in: directory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        _ = try BridgeTokenFiles.write("secret-3", for: UUID(), in: directory)
+        BridgeTokenFiles.removeAll(in: directory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    /// The token proves a call comes from the session; on a command line `ps` shows it to every process on the Mac.
+    func testNoLaunchPutsTheTokenOnTheCommandLine() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("nook-tokens-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = UUID()
+        let token = "token-" + UUID().uuidString
+        let file = try BridgeTokenFiles.write(token, for: id, in: directory)
+        let launch = BridgeLaunch(script: "/s/nook-mcp", tokenFile: file.path)
+        for provider in RunProvider.allCases {
+            let input = AgentCommand.Input(provider: provider, executable: "/bin/\(provider.rawValue)", prompt: "hi", model: "",
+                                           mode: .agent, permission: .ask, instructions: "", workingDirectory: "/w",
+                                           resumeSessionID: nil, accountEnvironment: [:], runID: id, bridge: launch)
+            let spec = AgentCommand.spec(input)
+            XCTAssertFalse(spec.arguments.joined(separator: " ").contains(token), provider.rawValue)
+            XCTAssertFalse(spec.initialInput.joined().contains(token), provider.rawValue)
+        }
+        XCTAssertFalse(launch.claudeArguments(runID: id).joined().contains(token))
+        XCTAssertTrue(launch.claudeArguments(runID: id).joined().contains(file.path), "Claude Code's server reads the file")
+        XCTAssertFalse(launch.codexArguments(runID: id).joined().contains(token))
+        XCTAssertTrue(launch.codexArguments(runID: id).joined().contains(BridgeTokenFiles.variable))
+        let servers = try JSONSerialization.data(withJSONObject: launch.codexMCPServers(runID: id))
+        XCTAssertFalse(String(decoding: servers, as: UTF8.self).contains(token))
+        XCTAssertFalse(launch.environment(runID: id).values.contains(token))
+    }
+
+    func testBothHelpersReadTheTokenFile() {
+        for script in [WorkspaceBridgeScript.contents, SudoAskpass.contents] {
+            XCTAssertTrue(script.contains("NOOK_BRIDGE_TOKEN_FILE"))
+            XCTAssertTrue(script.contains("NOOK_BRIDGE_TOKEN"), "a session started before still works")
+        }
     }
 
     func testEveryToolThatMayAskIsAskedForSomewhere() {
