@@ -412,6 +412,9 @@ final class WorkspaceManager: ObservableObject {
     /// The last answer of each released timeline, so a summary (the phone's session list) can show it without reading
     /// the whole timeline back from disk and keeping it in memory again.
     private var evictedAnswers: [UUID: String] = [:]
+    /// The last pull request link before each session's current turn, as the end of its last turn with one found it
+    /// (`RunPullRequestLinks.created`), so a turn's end reads that turn and not the whole conversation again.
+    private var pullRequestBeforeTurn: [UUID: RunPullRequestLinks.BeforeTurn] = [:]
     private static let timelineLimit = 16
     /// What the timelines in memory may hold together: measured on 2026-11-06, a session was 2 MB and the longest 6.5 MB.
     private static let timelineByteBudget = 64 * 1024 * 1024
@@ -2671,6 +2674,7 @@ final class WorkspaceManager: ObservableObject {
         timelineUse[id] = nil
         evictedTimelines.remove(id)
         evictedAnswers[id] = nil
+        pullRequestBeforeTurn[id] = nil
         // Per-session state that would otherwise stay for every session ever made, until Nook quits.
         gitRefreshes.removeValue(forKey: id)?.cancel()
         sessionTimelines[id] = nil
@@ -3289,9 +3293,7 @@ final class WorkspaceManager: ObservableObject {
     /// At the end of a turn: a pull request link the turn brought that the conversation did not have before is the one
     /// the agent just made, also when it used its own `gh` instead of pull_request_create.
     private func noticeCreatedPullRequest(_ id: UUID) {
-        guard let all = events[id], let start = all.lastIndex(where: { $0.kind == .user }) else { return }
-        guard let made = RunPullRequestLinks.last(in: Array(all[start...])),
-              made != RunPullRequestLinks.last(in: Array(all[..<start])) else { return }
+        guard let all = events[id], let made = RunPullRequestLinks.created(in: all, before: &pullRequestBeforeTurn[id]) else { return }
         pullRequestCreated?(id, made)
         watchCreatedPullRequest(id, url: made)
     }
