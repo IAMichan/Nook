@@ -582,6 +582,7 @@ struct ChatGroupChange: Codable, Equatable, Sendable {
 extension ChatGroupChange {
     /// "7 days", "24 hours", "1 hour, 30 minutes", in your language.
     static func duration(_ seconds: Double) -> String {
+        #if canImport(Darwin)
         let formatter = DateComponentsFormatter()
         formatter.unitsStyle = .full
         formatter.maximumUnitCount = 2
@@ -591,6 +592,14 @@ extension ChatGroupChange {
         calendar.locale = Locale(identifier: NookDates.appLocale)
         formatter.calendar = calendar
         return formatter.string(from: seconds) ?? "\(Int(seconds)) s"
+        #else
+        // swift-corelibs-foundation (the core tests on Linux) has no DateComponentsFormatter: the largest whole unit.
+        let units: [(Double, String)] = [(7 * 86_400, "w"), (86_400, "d"), (3_600, "h"), (60, "min")]
+        for (size, name) in units where seconds >= size && seconds.truncatingRemainder(dividingBy: size) == 0 {
+            return "\(Int(seconds / size)) \(name)"
+        }
+        return "\(Int(seconds)) s"
+        #endif
     }
 }
 

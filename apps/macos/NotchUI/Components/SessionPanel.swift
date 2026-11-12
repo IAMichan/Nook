@@ -611,8 +611,8 @@ struct SessionPanel: View {
         return PanelRow(icon: symbol("plus.forwardslash.minus"),
                         title: files.isEmpty ? tr("agents.panel.changes") : tr("agents.git.changes", files.count),
                         trailing: AnyView(HStack(spacing: 5) {
-                            Text("+\(added)").foregroundStyle(added > 0 ? NookTheme.mint : NookTheme.textTertiary)
-                            Text("−\(removed)").foregroundStyle(removed > 0 ? NookTheme.coral : NookTheme.textTertiary)
+                            Text("+\(added)").foregroundStyle(added > 0 ? NookTheme.diffAdded : NookTheme.textTertiary)
+                            Text("−\(removed)").foregroundStyle(removed > 0 ? NookTheme.diffRemoved : NookTheme.textTertiary)
                         }.font(NookTheme.mono(11.5))),
                         disabledReason: files.isEmpty ? tr("agents.git.noChanges") : nil,
                         action: { done(showChanges) })

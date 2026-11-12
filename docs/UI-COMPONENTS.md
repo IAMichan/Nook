@@ -13,6 +13,7 @@ copying it again.
 | `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
+| `NookTheme.diffAdded`, `diffRemoved`, `diffModified` | Added, removed and changed lines, files and counts in diffs and pull requests: green and red, or blue and orange with Settings › Appearance › Diff colors (`NookDiffColors`). Never `mint`/`coral` for a diff |
 | `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action: a button filled with Nook's accent (soft white by default) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
 | `NookTheme.outlineFill`, `outlineStroke` | The outline button: a faint fill and an input-colored edge |
 | `Image(icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |

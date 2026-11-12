@@ -68,6 +68,18 @@ enum NookTheme {
 
     static func palette(dark: Bool) -> NookPalette { dark ? darkPalette : lightPalette }
 
+    /// The colors of added and removed lines (`NookDiffColors`, Settings › Appearance).
+    nonisolated(unsafe) static var diffColors = NookDiffColors.redGreen
+
+    /// Sets the diff colors; true when they changed. Bumps `revision`, so every root draws them anew.
+    @discardableResult
+    static func apply(diffColors next: NookDiffColors) -> Bool {
+        guard next != diffColors else { return false }
+        diffColors = next
+        revision += 1
+        return true
+    }
+
     /// Sets the palettes; true when something changed.
     @discardableResult
     static func apply(dark: NookPalette, light: NookPalette) -> Bool {
@@ -164,6 +176,12 @@ enum NookTheme {
     /// A merged pull request, as forges show it.
     static let violet = themed(\.violet)
     static let mintSoft = themed(\.mintSoft)
+    /// Added and removed lines, files and counts in diffs, green and red or blue and orange (`NookDiffColors`). Use these,
+    /// not `mint` and `coral`, wherever a color says "added" or "removed".
+    static let diffAdded = adaptive { diffColors.added(palette(dark: $0)) }
+    static let diffRemoved = adaptive { diffColors.removed(palette(dark: $0)) }
+    /// A changed file beside added and removed ones.
+    static let diffModified = adaptive { diffColors.modified(palette(dark: $0)) }
     static let music = themed(\.music)
 
     /// The canvas behind every window: the Workspace, Settings, and the Today window share it. Pure black in Nook's dark

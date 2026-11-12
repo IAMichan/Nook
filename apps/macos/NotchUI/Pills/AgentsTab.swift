@@ -925,8 +925,8 @@ struct AgentListRow: View, Equatable {
     private var changeCount: some View {
         if item.linesAdded + item.linesRemoved > 0 {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Text("+\(item.linesAdded)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.mint)
-                Text("−\(item.linesRemoved)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.coral)
+                Text("+\(item.linesAdded)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.diffAdded)
+                Text("−\(item.linesRemoved)").foregroundStyle(dimmed ? NookTheme.textTertiary : NookTheme.diffRemoved)
             }
             .font(NookTheme.mono(10.5))
             .fixedSize()

@@ -222,6 +222,15 @@ extension SettingsView {
             }
             .pickerStyle(.segmented)
             SettingNote(tr("theme.densityNote"))
+            Picker(selection: $settings.diffColors) {
+                ForEach(NookDiffColors.allCases) { colors in
+                    Text(tr("theme.diffColors.\(colors.rawValue)")).tag(colors)
+                }
+            } label: {
+                SettingText("theme.diffColors")
+            }
+            .pickerStyle(.segmented)
+            SettingNote(tr("theme.diffColorsNote"))
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
                 ForEach(settings.themes) { theme in
                     themeCard(theme)
