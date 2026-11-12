@@ -186,7 +186,7 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
                   decide: @escaping (ApprovalDecision) -> Void, show: @escaping () -> Void, fallback: @escaping () -> Void) {
         let content = UNMutableNotificationContent()
         content.title = approval.title
-        content.subtitle = context
+        content.subtitle = BannerText.context(context, title: approval.title)
         // It waits on you: it may come through a Focus (where macOS lets Nook), and leads its group.
         let banner = NoticeBanner(target: target, level: .timeSensitive)
         apply(banner, to: content)
@@ -194,9 +194,10 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
             content.body = approval.command
             content.categoryIdentifier = approval.canAlways ? Category.approvalAlways : Category.approval
         } else {
-            let command = approval.command.count > Self.bannerLimit
-                ? String(approval.command.prefix(Self.bannerLimit)) + "…" : approval.command
-            content.body = [command, tr("noticeDelivery.review")].filter { !$0.isEmpty }.joined(separator: "\n")
+            // Decided after a click anyway, where it shows in full: the banner only says what it is about.
+            let gist = approval.prose ? BannerText.gist(approval.command, limit: 120)
+                : BannerText.cut(approval.command.split(whereSeparator: \.isNewline).first.map(String.init) ?? "", to: 120)
+            content.body = [gist, tr("noticeDelivery.review")].filter { !$0.isEmpty }.joined(separator: "\n")
             content.categoryIdentifier = Category.review
         }
         post(id: approval.cardToken, content: content, handlers: Handlers(decide: decide, show: show, banner: banner),

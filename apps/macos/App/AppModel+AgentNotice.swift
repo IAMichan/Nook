@@ -18,8 +18,8 @@ extension AppModel {
         logNotice(Self.noticeKind(notice.state), title: notice.headline, detail: notice.historyDetail,
                   context: notice.project, target: target, source: .agents, app: app)
         deliverNotice(.agents, app: app, id: notice.cardID, pace: notice.pace,
-                      urgent: notice.state == .waiting, title: notice.headline, subtitle: notice.project,
-                      body: notice.summary, sound: Self.noticeSound(notice.state), watching: watching,
+                      urgent: notice.state == .waiting, title: notice.headline, subtitle: notice.bannerSubtitle,
+                      body: notice.bannerBody, sound: Self.noticeSound(notice.state), watching: watching,
                       kind: Self.toastKind(notice.state),
                       card: { [weak self] in self?.showAgentNotice(notice, open: open, openApp: openApp) },
                       strip: { [weak self] in self?.showAgentStrip(notice, open: open) },

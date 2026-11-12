@@ -119,7 +119,7 @@ extension AppModel {
             NookSound.play(.attention)
             let show: () -> Void = { [weak self] in self?.presentQuestion(request, inNotch: true) }
             SystemNotifier.shared.notice(id: token, title: tr("noticeDelivery.question", request.agentName),
-                                         subtitle: request.project, body: item.question,
+                                         subtitle: request.project, body: BannerText.cut(BannerText.plain(item.question), to: 140),
                                          banner: NoticeBanner(target: .agent(request.sessionKey), level: .timeSensitive),
                                          open: show, fallback: show)
             return
