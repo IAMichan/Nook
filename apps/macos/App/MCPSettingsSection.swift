@@ -213,12 +213,7 @@ private struct MCPServerDetailSheet: View {
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                     Spacer()
-                                    Text(tool.kind == .read ? tr("mcp.tool.read") : tr("mcp.tool.action"))
-                                        .font(NookTheme.TextStyle.label)
-                                        .padding(.horizontal, NookTheme.Spacing.sm)
-                                        .padding(.vertical, NookTheme.Spacing.xxs)
-                                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
-                                        .foregroundStyle(NookTheme.textSecondary)
+                                    NookTag(tool.kind == .read ? tr("mcp.tool.read") : tr("mcp.tool.action"), size: .regular)
                                 }
                             }
                         }

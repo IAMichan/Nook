@@ -347,12 +347,7 @@ struct ApprovalView: View {
                 .roundedBackground(NookTheme.field, radius: NookTheme.Radius.chip)
 
                 if pr.isDraft {
-                    Text("Draft")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.amber)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.18)))
+                    NookTag(tr("agents.pr.state.draft"), tint: NookTheme.amber)
                 }
 
                 Spacer(minLength: 0)

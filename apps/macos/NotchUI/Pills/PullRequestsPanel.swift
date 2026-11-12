@@ -431,7 +431,7 @@ struct PullRequestsPanel: View {
                 Text(title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1).truncationMode(.middle)
                 Text("\(rows.count)").font(NookTheme.TextStyle.caption).monospacedDigit().foregroundStyle(NookTheme.textMuted)
-                if waiting > 0 { PullRequestTag(text: tr("agents.pulls.toReview", waiting), color: NookTheme.amber) }
+                if waiting > 0 { NookTag(tr("agents.pulls.toReview", waiting), tint: NookTheme.amber) }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 Image(icon: "chevron.down")
                     .font(NookTheme.font(8.5, .bold))

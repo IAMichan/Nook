@@ -202,10 +202,10 @@ struct PullRequestRow: View, Equatable {
                             .help(item.repo)
                     }
                     if item.draft, item.state == .open {
-                        PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
+                        NookTag(tr("agents.pulls.draft").localizedCapitalized, tint: NookTheme.textSecondary)
                     }
                     // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
-                    if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
+                    if role == .review, item.state == .open, !showRepo { NookTag(tr("agents.pulls.scope.reviews"), tint: NookTheme.amber) }
                     if linked != nil {
                         branches.layoutPriority(-2)
                     } else {
@@ -319,22 +319,6 @@ extension PullRequestRow {
         case .changesRequested: return "agents.pulls.review.changes"
         default: return "agents.pulls.review.required"
         }
-    }
-}
-
-/// A small tinted capsule on a row or a group heading: "Draft", "Reviews", "2 to review".
-struct PullRequestTag: View {
-    let text: String
-    let color: Color
-
-    var body: some View {
-        Text(text)
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(color)
-            .padding(.horizontal, NookTheme.Spacing.xs)
-            .padding(.vertical, 1)
-            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.14)))
-            .fixedSize()
     }
 }
 

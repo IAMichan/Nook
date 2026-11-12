@@ -240,12 +240,7 @@ struct OnboardingView: View {
         StatusRow(title: permission.title, detail: permission.detail, state: granted ? .done : .todo) {
             HStack(spacing: NookTheme.Spacing.md) {
                 if !permission.isRecommended && !granted {
-                    Text(tr("onboarding.permissions.optionalBadge"))
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .padding(.horizontal, NookTheme.Spacing.md)
-                        .padding(.vertical, NookTheme.Spacing.xxs)
-                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
+                    NookTag(tr("onboarding.permissions.optionalBadge"), size: .regular)
                 }
                 if !granted {
                     SmallGhostButton(title: tr("button.allow")) {

@@ -194,26 +194,21 @@ enum ConnectionHealth: Equatable {
     }
 }
 
-/// Small colored capsule: "Werkt", "Uit", "Er gaat iets mis".
+/// A connection's state beside a sheet's title ("Works", "Off", "Something is wrong"): its dot (a small spinner while
+/// busy) and its word in the state's color, without a fill, as every status reads (`StatusBadgeLabel`).
 struct HealthPill: View {
     let health: ConnectionHealth
     var text: String? = nil
 
     var body: some View {
-        HStack(spacing: 5) {
+        StatusBadgeLabel(word: text ?? health.label,
+                         tint: health == .off || health == .notLinked ? NookTheme.textSecondary : health.color) {
             if health == .busy {
                 ProgressView().controlSize(.mini)
             } else {
                 Circle().fill(health.color).frame(width: 6, height: 6)
             }
-            Text(text ?? health.label)
-                .font(NookTheme.TextStyle.label)
-                .lineLimit(1)
         }
-        .foregroundStyle(health == .off || health == .notLinked ? NookTheme.textSecondary : health.color)
-        .padding(.horizontal, NookTheme.Spacing.md)
-        .padding(.vertical, 3)
-        .background(NookTheme.shape(NookTheme.Radius.chip).fill(health.color.opacity(0.12)))
     }
 }
 

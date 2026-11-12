@@ -338,11 +338,7 @@ struct AutocompleteSettingsSection: View {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Text(model.name)
                     if model == recommended {
-                        Text(tr("autocomplete.recommended"))
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(NookTheme.textStrong)
-                            .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, 1)
-                            .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
+                        NookTag(tr("autocomplete.recommended"), size: .regular)
                     }
                 }
                 if downloads.downloading == model {

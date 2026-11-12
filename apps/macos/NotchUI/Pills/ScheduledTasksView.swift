@@ -153,15 +153,9 @@ private struct TaskRow: View {
     private var statusChip: some View {
         if let status = effectiveStatus {
             let color = ScheduledTaskText.color(status)
-            HStack(spacing: 5) {
+            StatusBadgeLabel(word: tr("sched.status." + status.rawValue), tint: color) {
                 Circle().fill(color).frame(width: 6, height: 6)
-                Text(tr("sched.status." + status.rawValue))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(color)
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, 3)
-            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.12)))
         } else {
             Text(tr("sched.never"))
                 .font(NookTheme.TextStyle.detail)
