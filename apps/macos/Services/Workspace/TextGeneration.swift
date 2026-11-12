@@ -144,7 +144,7 @@ enum TextGeneration {
          "--config", "features.shell_tool=false", "--config", "features.unified_exec=false",
          "--config", "features.view_image=false", "--config", "features.multi_agent=false",
          "--config", #"web_search="disabled""#,
-         "--config", "developer_instructions=" + SubscriptionBrain.tomlString(system),
+         "--config", "developer_instructions=" + AgentTelemetry.tomlString(system),
          "--config", #"model_reasoning_effort="low""#, "--output-schema", schemaPath,
          "--output-last-message", outputPath, "-"]
     }
