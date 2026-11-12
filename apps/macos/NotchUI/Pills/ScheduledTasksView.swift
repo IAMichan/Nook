@@ -67,14 +67,8 @@ struct ScheduledTasksView: View {
             ScheduledTaskEditor(existing: target.existing) { editing = nil }
                 .environmentObject(app)
         }
-        .confirmationDialog(deleting.map { tr("sched.delete.confirm", $0.title) } ?? "", isPresented: Binding(
-            get: { deleting != nil }, set: { if !$0 { deleting = nil } }
-        )) {
-            Button(tr("sched.delete"), role: .destructive) {
-                if let task = deleting { store.delete(task.id) }
-                deleting = nil
-            }
-            Button(tr("button.cancel"), role: .cancel) { deleting = nil }
+        .confirmDelete($deleting, question: { tr("sched.delete.confirm", $0.title) }, confirmTitle: tr("sched.delete")) { task in
+            store.delete(task.id)
         }
     }
 

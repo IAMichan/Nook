@@ -46,7 +46,6 @@ private struct MusicConnectionForm: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
     @AppStorage("spotifyClientID") private var clientID = ""
     @State private var copiedRedirect = false
-    @State private var confirmSignOut = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -117,19 +116,14 @@ private struct MusicConnectionForm: View {
             }
         } footer: {
             if spotify.isSignedIn {
-                Button(tr("music.connect.signOut"), role: .destructive) { confirmSignOut = true }
+                ConfirmedButton(tr("music.connect.signOut"), question: tr("confirm.logout", "Spotify"),
+                                detail: tr("connection.signOutDetail", "Spotify")) { spotify.signOut() }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.nookProminent)
                 .controlSize(.large)
-        }
-        .confirmationDialog(tr("confirm.logout", "Spotify"), isPresented: $confirmSignOut) {
-            Button(tr("music.connect.signOut"), role: .destructive) { spotify.signOut() }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("connection.signOutDetail", "Spotify"))
         }
     }
 }

@@ -6,7 +6,6 @@ import SwiftUI
 struct RemoteMCPSettingsSection: View {
     @ObservedObject var ws: WorkspaceSettings
     @ObservedObject private var server = RemoteMCPServer.shared
-    @State private var confirmReset = false
 
     var body: some View {
         Section {
@@ -61,12 +60,9 @@ struct RemoteMCPSettingsSection: View {
         if server.access.grants.isEmpty && server.access.waiting.isEmpty {
             SettingNote(tr("remotemcp.none"), tone: .info)
         }
-        Button(tr("remotemcp.reset"), role: .destructive) { confirmReset = true }
+        ConfirmedButton(tr("remotemcp.reset"), question: tr("remotemcp.reset.confirm")) { server.resetEverything() }
             .controlSize(.small)
             .help(tr("remotemcp.reset.help"))
-            .confirmationDialog(tr("remotemcp.reset.confirm"), isPresented: $confirmReset) {
-                Button(tr("remotemcp.reset"), role: .destructive) { server.resetEverything() }
-            }
     }
 
     private func levelPicker(_ level: RemoteAccessLevel, set: @escaping (RemoteAccessLevel) -> Void) -> some View {

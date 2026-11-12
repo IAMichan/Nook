@@ -85,16 +85,11 @@ struct WorktreesView: View {
         }
         .onAppear { workspace.worktreesShown(true) }
         .onDisappear { workspace.worktreesShown(false) }
-        .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
-                            presenting: confirm) { row in
-            if (row.changedFiles ?? 0) > 0 {
-                Button(tr("ws.worktree.removeForce"), role: .destructive) { remove(row, force: true) }
-            } else {
-                Button(tr("ws.worktree.remove"), role: .destructive) { remove(row, force: false) }
-            }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: { row in
-            Text((row.changedFiles ?? 0) > 0 ? tr("ws.worktree.removeDirty", row.changedFiles ?? 0) : tr("ws.worktree.removeClean"))
+        // A worktree with changes is removed with them (`--force`), and the dialog says so.
+        .confirmDelete($confirm, question: { _ in tr("ws.worktree.removeTitle") },
+                       detail: { row in (row.changedFiles ?? 0) > 0 ? tr("ws.worktree.removeDirty", row.changedFiles ?? 0) : tr("ws.worktree.removeClean") },
+                       confirmTitle: { row in (row.changedFiles ?? 0) > 0 ? tr("ws.worktree.removeForce") : tr("ws.worktree.remove") }) { row in
+            remove(row, force: (row.changedFiles ?? 0) > 0)
         }
     }
 

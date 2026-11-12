@@ -118,7 +118,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
             }
         }
         .onAppear { if startsOpen { open = true } }
-        .confirmationDialog(removal?.question ?? "", isPresented: $confirmRemove) {
+        .confirmationDialog(removal?.question ?? "", isPresented: $confirmRemove, titleVisibility: .visible) {
             if let removal {
                 Button(removal.title, role: .destructive, action: removal.action)
             }

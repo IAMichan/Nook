@@ -21,7 +21,6 @@ struct MemorySettingsSection: View {
     @State private var editText = ""
     /// Why the edited text cannot be kept; the field stays open until it can.
     @State private var editProblem: String?
-    @State private var confirmClear = false
     @State private var importable: [ImportFile] = []
     @State private var imported: Int?
 
@@ -75,18 +74,12 @@ struct MemorySettingsSection: View {
                 LabeledContent(tr("memory.settings.sources")) {
                     Text(tr("memory.settings.sourcesValue", app.memory.learnedWords)).foregroundStyle(NookTheme.textSecondary)
                 }
-                Button(tr("memory.settings.clear"), role: .destructive) { confirmClear = true }
-                    .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
-            }
-            // On this one section: on the Group the dialog would be attached to every section in it.
-            .confirmationDialog(tr("memory.settings.clearConfirm"), isPresented: $confirmClear) {
-                Button(tr("memory.settings.clear"), role: .destructive) {
+                ConfirmedButton(tr("memory.settings.clear"), question: tr("memory.settings.clearConfirm"),
+                                detail: tr("memory.settings.clearDetail")) {
                     app.memory.clear()
                     app.store.audit(tool: "geheugen_gewist", args: "", result: "")
                 }
-                Button(tr("button.cancel"), role: .cancel) {}
-            } message: {
-                Text(tr("memory.settings.clearDetail"))
+                .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
             }
 
             // Bringing over the old MCP memory server is needed once, if ever: last.

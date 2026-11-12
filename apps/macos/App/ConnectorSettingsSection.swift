@@ -235,7 +235,6 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     @State private var stored: Set<String> = []
     @State private var note = ""
     @State private var replacing = false
-    @State private var confirmDisconnect = false
     @State private var showKeySteps = false
 
     private var health: ConnectionHealth { ServiceState.health(of: connector, configured: configured, isOn: isOn) }
@@ -254,19 +253,14 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             capabilityNote
         } footer: {
             if configured {
-                Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
+                ConfirmedButton(tr("settings2.disconnect"), question: tr("connect.disconnectTitle", connector.title),
+                                detail: tr("confirm.keychain.detail")) { clear() }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.nookProminent)
                 .controlSize(.large)
-        }
-        .confirmationDialog(tr("connect.disconnectTitle", connector.title), isPresented: $confirmDisconnect) {
-            Button(tr("settings2.disconnect"), role: .destructive) { clear() }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("confirm.keychain.detail"))
         }
         .onAppear {
             load()
@@ -607,7 +601,6 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             Keychain.write("", account: field.account)
         }
         load()
-        confirmDisconnect = false
         note = tr("connector.keysCleared")
         refreshNow()
         dismiss()

@@ -92,7 +92,8 @@ struct GitQuickButton: View {
             .environmentObject(workspace)
         }
         .confirmationDialog(tr("ws.quick.defaultTitle", state?.branch ?? ""),
-                            isPresented: Binding(get: { confirmDefault != nil }, set: { if !$0 { confirmDefault = nil } })) {
+                            isPresented: Binding(get: { confirmDefault != nil }, set: { if !$0 { confirmDefault = nil } }),
+                            titleVisibility: .visible) {
             Button(tr("ws.quick.confirm")) { if let action = confirmDefault { perform(action) } }
             Button(tr("button.cancel"), role: .cancel) {}
         } message: {
