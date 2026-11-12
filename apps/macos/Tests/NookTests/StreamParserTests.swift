@@ -225,6 +225,15 @@ final class ConnectorSignInTests: XCTestCase {
         XCTAssertEqual(merged.filter(\.waiting).map(\.name), ["claude.ai Supabase"])
     }
 
+    func testConnectorsShowTheirLogo() {
+        XCTAssertEqual(ConnectorSignIn(name: "claude.ai Google Calendar").iconDomain, "calendar.google.com")
+        XCTAssertEqual(ConnectorSignIn(name: "plugin:engineering:linear").iconDomain, "linear.app")
+        XCTAssertEqual(ConnectorSignIn(name: "plugin:sales:microsoft-365").iconDomain, "microsoft.com")
+        XCTAssertEqual(ConnectorSignIn(name: "claude.ai Supabase").iconDomain, "supabase.com")
+        XCTAssertEqual(ConnectorSignIn(name: "Hugging Face").iconDomain, "huggingface.co")
+        XCTAssertNil(ConnectorSignIn(name: "my-own-server").iconDomain)
+    }
+
     func testDismissedOnesHideUnlessWaiting() {
         let all = [ConnectorSignIn(name: "a"), ConnectorSignIn(name: "b", waiting: true), ConnectorSignIn(name: "c")]
         XCTAssertEqual(ConnectorSignIns.shown(all, dismissed: ["a", "b"]).map(\.name), ["b", "c"])
