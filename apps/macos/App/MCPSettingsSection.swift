@@ -197,22 +197,11 @@ private struct MCPServerDetailSheet: View {
                     } else {
                         VStack(spacing: NookTheme.Spacing.md) {
                             ForEach(connector.tools, id: \.name) { tool in
-                                HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                                    Image(icon: tool.kind == .read ? "eye.fill" : "bolt.fill")
-                                        .font(NookTheme.font(12))
-                                        .foregroundStyle(tool.kind == .read ? NookTheme.mint : NookTheme.amber)
-                                        .padding(.top, NookTheme.Spacing.xxs)
-
-                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                                        Text(connector.title(ofTool: tool.name))
-                                            .font(NookTheme.TextStyle.strong)
-                                        // The "[Server] " prefix is for the model; the sheet already names the server.
-                                        Text(tool.description.replacingOccurrences(of: "[\(config.name)] ", with: ""))
-                                            .font(NookTheme.TextStyle.detail)
-                                            .foregroundStyle(NookTheme.textSecondary)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                    Spacer()
+                                // The "[Server] " prefix is for the model; the sheet already names the server.
+                                IconDetailRow(symbol: tool.kind == .read ? "eye.fill" : "bolt.fill",
+                                              tint: tool.kind == .read ? NookTheme.mint : NookTheme.amber,
+                                              title: connector.title(ofTool: tool.name),
+                                              detail: tool.description.replacingOccurrences(of: "[\(config.name)] ", with: "")) {
                                     NookTag(tool.kind == .read ? tr("mcp.tool.read") : tr("mcp.tool.action"), size: .regular)
                                 }
                             }

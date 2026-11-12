@@ -115,17 +115,9 @@ struct OnboardingAgentsStep: View {
 
     private func projectRow(_ candidate: AgentReadiness.ProjectCandidate) -> some View {
         let added = candidate.added || ws.recentProjects.contains(candidate.path) || ws.isFavoriteProject(candidate.path)
-        return HStack(spacing: NookTheme.Spacing.lg) {
-            Image(icon: "folder").foregroundStyle(NookTheme.textSecondary).frame(width: 20)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(candidate.name).font(NookTheme.TextStyle.strong)
-                Text(AgentPathFormat.tilde(candidate.parent) + " · " + tr("onboarding.projects.sessions", candidate.sessions))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: NookTheme.Spacing.md)
+        return IconDetailRow(symbol: "folder", symbolSize: 13, title: candidate.name,
+                             detail: AgentPathFormat.tilde(candidate.parent) + " · " + tr("onboarding.projects.sessions", candidate.sessions),
+                             detailLines: 1, detailTruncation: .middle) {
             if added {
                 Label(tr("onboarding.projects.added"), systemImage: "checkmark")
                     .font(NookTheme.TextStyle.label)

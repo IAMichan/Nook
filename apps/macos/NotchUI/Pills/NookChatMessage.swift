@@ -141,20 +141,8 @@ private struct ChatErrorCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                Image(icon: "exclamationmark.circle.fill")
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.coralSoft)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(tr("chat.error.title"))
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                    Text(explanation)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            IconDetailRow(symbol: "exclamationmark.circle.fill", tint: NookTheme.coralSoft, symbolSize: 13,
+                          title: tr("chat.error.title"), detail: explanation)
             // The fix first, try again second, and the raw message tucked behind Details.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 HStack(spacing: NookTheme.Spacing.xs) {
