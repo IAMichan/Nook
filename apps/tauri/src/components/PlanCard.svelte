@@ -5,7 +5,7 @@
   import { brainApi } from "../lib/brain";
   import type { ChatMessage, PlanStep } from "../lib/types";
 
-  let { nookId, message }: { nookId: string; message: ChatMessage } = $props();
+  let { nookId, message, last = false }: { nookId: string; message: ChatMessage; last?: boolean } = $props();
   let steps = $state<PlanStep[]>([]);
   let open = $state<Record<number, boolean>>({});
   let editing = $state<Record<string, string>>({});
@@ -63,13 +63,29 @@
     }
   }
 
+  let running = false;
   async function run() {
+    if (running) return;
+    running = true;
     error = null;
     try {
       await api.executePlan(nookId, message.id, included);
     } catch (e) {
       error = String(e);
+    } finally {
+      running = false;
     }
+  }
+
+  /** Ctrl+Enter runs the newest plan that waits for you, without reaching for the mouse. */
+  function runKey(e: KeyboardEvent) {
+    if (!last || !editable || blocked || running || !included.some(Boolean)) return;
+    if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.isComposing || e.defaultPrevented) return;
+    const target = e.target instanceof Element ? e.target : null;
+    // Ctrl+Enter inside a field you are editing in the plan stays there.
+    if (target?.closest(".plan textarea, .plan input")) return;
+    e.preventDefault();
+    run();
   }
 
   /** Zet de cursor meteen in een veld dat je gaat aanpassen. */
@@ -89,6 +105,8 @@
       : planState === "running" ? "BEZIG" : planState === "cancelled" ? "GEANNULEERD" : "UITGEVOERD",
   );
 </script>
+
+<svelte:window onkeydown={runKey} />
 
 <div class="plan" class:done={planState === "done"} class:failed={planState === "failed"}>
   <div class="head">
@@ -145,7 +163,7 @@
     <div class="buttons">
       <button class="ghost" onclick={() => api.cancelPlan(nookId, message.id)}>Annuleer</button>
       <button class="primary" disabled={!included.some(Boolean) || blocked} title={blocked ? "Los eerst de problemen bij de stappen op" : ""} onclick={run}>
-        {planState === "failed" ? "Verder met de rest" : "Uitvoeren"}
+        {planState === "failed" ? "Verder met de rest" : "Uitvoeren"}{#if last}<kbd>Ctrl ↵</kbd>{/if}
       </button>
     </div>
   {/if}
@@ -174,4 +192,5 @@
   .value.multi { white-space: pre-wrap; }
   .tiny { padding: 2px 8px; font-size: 11px; }
   .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .buttons kbd { margin-left: 8px; font-size: 10px; opacity: 0.7; }
 </style>

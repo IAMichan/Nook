@@ -280,6 +280,24 @@ pub async fn start_local_brain(name: String) -> Res<String> {
     }
 }
 
+/// The tray tooltip follows what waits on you and what Nook is working on.
+#[tauri::command]
+pub fn tray_status(app: AppHandle, waiting: usize, working: usize) {
+    #[cfg(desktop)]
+    crate::platform::desktop::tray_status(&app, waiting, working);
+    #[cfg(not(desktop))]
+    let _ = (app, waiting, working);
+}
+
+/// The global shortcuts (by action) that another app already holds.
+#[tauri::command]
+pub fn shortcut_problems() -> Vec<String> {
+    #[cfg(desktop)]
+    return crate::platform::desktop::shortcut_problems();
+    #[cfg(not(desktop))]
+    vec![]
+}
+
 /// De route die het hoofdvenster moet tonen, één keer.
 #[tauri::command]
 pub fn take_route(state: State<'_, AppState>) -> Option<String> {
