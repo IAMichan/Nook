@@ -88,11 +88,11 @@ struct PullRequestSelectionBar: View {
                                              confirmTitle: tr("agents.pulls.select.mergeYes"),
                                              confirmDetail: Self.mergeDetail(mergeable, skipped: skipped),
                                              count: mergeable.count, primary: true,
-                                             disabledHelp: skipped.joined(separator: "\n")) {
+                                             leftOutHelp: skipped.joined(separator: "\n")) {
                                  merge(mergeable)
                              },
                          ],
-                         detail: Self.numbers(picked),
+                         detail: Self.detail(picked, skipped: skipped),
                          toggleAll: { selection.toggleAll(shown) },
                          done: { withAnimation(NookTheme.reveal) { selection.clear() } })
                 .padding([.horizontal, .bottom], inset)
@@ -109,6 +109,12 @@ struct PullRequestSelectionBar: View {
         let shown = requests.prefix(8).map { "#\($0.item.number)" }
         let more = requests.count - shown.count
         return shown.joined(separator: " · ") + (more > 0 ? " " + tr("agents.pulls.select.more", more) : "")
+    }
+
+    /// Which are picked, and under them which merge leaves out and why, so "Merge (2 of 3)" never comes as a surprise.
+    private static func detail(_ picked: [PullRequestOpenRequest], skipped: [String]) -> String {
+        guard !skipped.isEmpty else { return numbers(picked) }
+        return numbers(picked) + "\n" + tr("agents.pulls.select.skipped", skipped.joined(separator: "; "))
     }
 
     /// Which go, in what order, and which are left out and why.
