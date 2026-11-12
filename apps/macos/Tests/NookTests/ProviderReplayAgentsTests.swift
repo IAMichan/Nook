@@ -49,7 +49,7 @@ final class ProviderReplayAgentsTests: XCTestCase {
     // MARK: Codex app-server
 
     /// A Codex app-server session as the workspace opens it: `initialize`, `initialized`, `thread/start`.
-    private func codex(_ name: String, react: @escaping @Sendable (CodexStreamEvent, CodexAppServerClient) -> Void = { _, _ in })
+    private func codex(_ name: String, model: String = "gpt-6-luna", react: @escaping @Sendable (CodexStreamEvent, CodexAppServerClient) -> Void = { _, _ in })
         throws -> (CodexAppServerClient, ReplayTransport, Collected<CodexStreamEvent>, XCTestExpectation, String) {
         let transport = try transport(name)
         let client = CodexAppServerClient(spec: spec("/usr/local/bin/codex", ["app-server"]), transport: transport,
@@ -67,7 +67,7 @@ final class ProviderReplayAgentsTests: XCTestCase {
         _ = try call { client.request("initialize", CodexRPC.initializeParams(), completion: $0) }
         client.notify("initialized")
         let thread = try call {
-            client.request("thread/start", CodexRPC.threadParams(cwd: Self.workspace, model: "gpt-6-luna", mcpServers: nil, resumeID: nil),
+            client.request("thread/start", CodexRPC.threadParams(cwd: Self.workspace, model: model, mcpServers: nil, resumeID: nil),
                            completion: $0)
         }
         let threadID = try XCTUnwrap((thread.dictionary["thread"] as? [String: Any])?["id"] as? String)
@@ -75,8 +75,9 @@ final class ProviderReplayAgentsTests: XCTestCase {
         return (client, transport, events, exited, threadID)
     }
 
-    private func startTurn(_ client: CodexAppServerClient, thread: String, text: String, permission: PermissionPolicy = .bypass) throws -> String {
-        let params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: Self.workspace, model: "gpt-6-luna", mode: .agent,
+    private func startTurn(_ client: CodexAppServerClient, thread: String, text: String, model: String = "gpt-6-luna",
+                           permission: PermissionPolicy = .bypass) throws -> String {
+        let params = CodexRPC.turnStartParams(threadID: thread, text: text, cwd: Self.workspace, model: model, mode: .agent,
                                               permission: permission, planModel: nil)
         let response = try call { client.request("turn/start", params, completion: $0) }
         let turn = try XCTUnwrap((response.dictionary["turn"] as? [String: Any])?["id"] as? String)
@@ -147,14 +148,14 @@ final class ProviderReplayAgentsTests: XCTestCase {
 
     func testCodexToolApproval() throws {
         let asked = Collected<CodexApprovalRequest>()
-        let (client, transport, events, exited, thread) = try codex("codex_tool_approval") { event, client in
+        let (client, transport, events, exited, thread) = try codex("codex_tool_approval", model: "gpt-6-sol") { event, client in
             guard case .approval(let request) = event else { return }
             asked.add(request)
             client.respond(request.rpcID, CodexRPC.decision(request, allow: true, always: false))
         }
         _ = try startTurn(client, thread: thread,
                           text: "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP.",
-                          permission: .acceptEdits)
+                          model: "gpt-6-sol", permission: .acceptEdits)
         events.wait { self.finished(events).count == 1 }
         let request = try XCTUnwrap(asked.all.first)
         XCTAssertEqual(asked.all.count, 1)
@@ -248,9 +249,9 @@ final class ProviderReplayAgentsTests: XCTestCase {
         }
         XCTAssertEqual(reason, "cancelled", "the workspace marks such a turn stopped")
         XCTAssertFalse(reply(events).contains("should not finish naturally"))
-        let cancel = transport.written.first { $0.contains("session/cancel") }
-        XCTAssertNotNil(cancel)
-        XCTAssertFalse(cancel?.contains("\"id\"") ?? true, "a notification carries no id")
+        let frames = transport.written.compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
+        let cancel = try XCTUnwrap(frames.first { $0["method"] as? String == "session/cancel" })
+        XCTAssertNil(cancel["id"], "a notification carries no id")
         finish(transport, stop: client.stop, exited: exited)
     }
 
