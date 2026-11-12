@@ -589,11 +589,15 @@ final class CodexAppServerClient: @unchecked Sendable {
     private var _threadID: String?
     private var _turnID: String?
 
-    init(spec: LaunchSpec) {
-        process = AgentProcess(spec: spec)
+    /// `transport` and `scheduler` replace the process and the clock in tests (a recorded agent, `ReplayTransport`).
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
+        process = AgentProcess(spec: spec, transport: transport, scheduler: scheduler)
         // A keeper's agent has seen ids from an earlier Nook: answers to those must not match new requests.
-        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
+        if spec.keeper?.offset != nil { nextID = AcpRPC.reattachedFirstID() }
     }
+
+    /// Held while a line is written, with the id it takes: everything reaches Codex in the order Nook sent it.
+    private let writeLock = NSLock()
 
     var isRunning: Bool { process.isRunning }
 
@@ -615,25 +619,27 @@ final class CodexAppServerClient: @unchecked Sendable {
     }
 
     func request(_ method: String, _ params: [String: Any]? = nil, completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        let id = lock.withLock { () -> Int in
-            let id = nextID
-            nextID += 1
-            pending[id] = completion
-            return id
+        writeLock.withLock {
+            let id = lock.withLock { () -> Int in
+                let id = nextID
+                nextID = AcpRPC.nextRequestID(after: id)
+                pending[id] = completion
+                return id
+            }
+            process.send(CodexRPC.request(id: id, method: method, params: params))
         }
-        process.send(CodexRPC.request(id: id, method: method, params: params))
     }
 
     func notify(_ method: String, _ params: [String: Any]? = nil) {
-        process.send(CodexRPC.notification(method: method, params: params))
+        writeLock.withLock { process.send(CodexRPC.notification(method: method, params: params)) }
     }
 
     func respond(_ id: RPCID, _ result: [String: Any]) {
-        process.send(CodexRPC.response(id: id, result: result))
+        writeLock.withLock { process.send(CodexRPC.response(id: id, result: result)) }
     }
 
     func respondError(_ id: RPCID, code: Int = -32601, message: String) {
-        process.send(CodexRPC.errorResponse(id: id, code: code, message: message))
+        writeLock.withLock { process.send(CodexRPC.errorResponse(id: id, code: code, message: message)) }
     }
 
     func stop() {

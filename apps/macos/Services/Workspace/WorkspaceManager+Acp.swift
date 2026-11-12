@@ -62,6 +62,10 @@ extension WorkspaceManager {
             guard let url = AntigravityAcp.signInURL(inLine: line) else { return }
             Task { @MainActor in self?.openAntigravitySignIn(id, url) }
         }
+        // A frame Nook cannot read is skipped, not the end of the session; the log says what it was.
+        client.onBrokenFrame = { line in
+            Log.agents.warning("ACP agent wrote a line Nook cannot read: \(String(line.prefix(200)), privacy: .private)")
+        }
         client.onMessage = { [weak self] message, events in
             let end = client.process.consumed
             Task { @MainActor in
@@ -138,8 +142,12 @@ extension WorkspaceManager {
         client.replaying = method == "session/load"
         client.keepsReplay = fillsTimeline
         acpReplays[id] = fillsTimeline ? AcpReplay() : nil
-        client.request(method,
-                       AcpRPC.sessionParams(cwd: run.workingDirectory, bridge: bridge, loadID: loadID)) { [weak self] result in
+        let params = AcpRPC.sessionParams(cwd: run.workingDirectory, bridge: bridge, loadID: loadID)
+        // A load also ends when its replay has gone quiet: some agents never answer it (see `AcpClient.load`).
+        let open: (@escaping (Result<JSONBox, CodexAppServerError>) -> Void) -> Void = { completion in
+            if method == "session/load" { client.load(method, params, completion: completion) } else { client.request(method, params, completion: completion) }
+        }
+        open { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 client.replaying = false
@@ -256,8 +264,10 @@ extension WorkspaceManager {
                                              effort: run.effort ?? client.startingEffort, appliedEffort: client.appliedEffort,
                                              mode: wantedAcpMode(run, client), appliedMode: client.appliedMode)
         guard let step = steps.first else { return finishAcpSettings(client) }
-        client.request(step.method, step.params) { [weak self] result in
+        client.request(step.method, step.params, tracksConfig: true) { [weak self] result, superseded in
             Task { @MainActor in
+                // The agent announced newer options while this was on its way: those count, not the ones in this answer.
+                let result = superseded ? result.map { _ in JSONBox([String: Any]()) } : result
                 guard let self, self.acpClients[id] === client, client.isRunning else {
                     client.applyingSettings = false
                     client.afterSettings.removeAll()
