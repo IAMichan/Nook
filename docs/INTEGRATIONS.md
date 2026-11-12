@@ -528,6 +528,23 @@ tokens and cost per step. Subagent sessions are followed only for their permissi
 show on the parent session; their steps are not shown, as for the other ACP agents. Replay tests read recorded
 streams in `apps/macos/Tests/Fixtures/OpenCodeServer` (`OpenCodeServerTests`).
 
+Recorded sessions of Claude Code, Codex app-server, Kiro (an ACP agent) and Pi are replayed through Nook's own clients
+and mappers in `ProviderReplayTests` and `ProviderReplayAgentsTests` (`apps/macos/Tests/Fixtures/ProviderReplay`):
+one turn, two turns, a stop, a tool approval, and steering for Codex and Pi. ACP has no steering: Nook stops the
+turn and sends your message as the next prompt (`SteerRoute.interruptRestart`), so Kiro's own `_session/steer` is not
+used, and Pi has no approval fixture (its recordings ran with `--approve`).
+
+What the ACP client does where agents differ from the schema (`AcpRPC`, `AcpClient`): it reads the protocol generation
+from the shape of the `initialize` answer, not its number (Kiro and Antigravity report version 2 in the v1 shape); it
+writes requests, answers and notifications in one order, and a notification (`session/cancel`) carries no `id`; request
+ids stay inside a signed 32-bit integer; text an agent prints between frames is skipped and a frame Nook cannot read is
+logged, without ending the session; a `session/load` that replays the conversation but never answers counts as done
+after two quiet seconds; and a `session/set_config_option` answer is ignored when the agent pushed a
+`config_option_update` while it was on its way. Nook does not advertise `session.notices` (it has nothing to show from
+them). It never sends `session/cancel` before the prompt request (Stop during the settings before a prompt ends the turn
+without sending the prompt), but ACP gives no sign that a prompt has started, so a cancel right after the prompt is not
+held back for an agent that ignores it then (Kiro's `cancelAfterPromptStarts` in t3code).
+
 Sessions in a terminal are read from the agent's own transcript (`AgentTranscript`). Claude Code and Codex give
 messages, thinking, steps with their outcome and output, compactions and errors. Gemini CLI's chat file gives messages,
 thoughts and its `toolCalls` as the same steps (with outcome, output and the lines an edit changed).
