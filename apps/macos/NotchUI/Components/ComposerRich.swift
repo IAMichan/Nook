@@ -529,14 +529,14 @@ enum ComposerFilePicker {
     }
 }
 
-/// How full the agent's context window is: a small ring that starts at the top. It turns amber above 80 % and coral above
+/// How full the agent's context window is: a ring that starts at the top, with the percentage beside it. It turns amber above 80 % and coral above
 /// 90 % of the auto-compact point (or of the window when there is none), and amber too while your next message would go
 /// after a summary. Hover (or click) opens `ContextUsageCard`: what fills the window, the choice to summarize before your
 /// next message, and the button that summarizes now.
 struct ComposerContextRing: View {
     let usage: ContextUsage
     var onCompact: (() -> Void)? = nil
-    /// Where the agent summarizes by itself (`AutoCompactMark`): a tick on the ring, and a line in the card.
+    /// Where the agent summarizes by itself (`AutoCompactMark`): a line in the card (the ring's tint follows it).
     var autoCompactAt: Int? = nil
     /// Back at a long session whose prompt cache expired (`ReturnCompaction`): whether your next message goes after a
     /// summary, and how to switch it. Nil when that is not on offer.
@@ -545,16 +545,11 @@ struct ComposerContextRing: View {
     /// Asks the agent for its breakdown, as the card opens.
     var onOpen: () -> Void = {}
     @State private var open = false
+    @State private var hovering = false
 
     private var fraction: Double { usage.fraction }
     /// Measured against the auto-compact point: when it is time to summarize (`ContextMeter.pressure`).
     private var pressure: Double { ContextMeter.pressure(used: usage.usedTokens, window: usage.window, autoCompactAt: autoCompactAt) }
-
-    /// The tick's place on the ring, when it falls inside the window.
-    private var markFraction: Double? {
-        guard let autoCompactAt, usage.window > 0, autoCompactAt < usage.window else { return nil }
-        return Double(autoCompactAt) / Double(usage.window)
-    }
 
     /// "Context window 84% · 168k/200k".
     private var help: String {
@@ -563,24 +558,29 @@ struct ComposerContextRing: View {
 
     var body: some View {
         let level = ContextMeter.level(pressure)
-        let tint: Color = level == .critical ? NookTheme.coral
-            : (level == .warning || compactFirst == true ? NookTheme.amber : NookTheme.textSecondary)
+        let calm = level == .normal && compactFirst != true
+        let tint: Color = level == .critical ? NookTheme.coral : (calm ? NookTheme.textSecondary : NookTheme.amber)
         Button { open.toggle() } label: {
-            ZStack {
-                Circle().stroke(NookTheme.line2, lineWidth: 2)
-                Circle().trim(from: 0, to: fraction)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                if let mark = markFraction {
-                    // The auto-compact point: a short, bright stretch of the ring.
-                    Circle().trim(from: max(0, mark - 0.012), to: min(1, mark + 0.012))
-                        .stroke(NookTheme.paper, style: StrokeStyle(lineWidth: 3.5))
+            // Like the limits chip beside it (`ComposerUsageRing`): the ring and the percentage, one control high.
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ZStack {
+                    Circle().inset(by: 1.25).stroke(NookTheme.line2, lineWidth: 2.5)
+                    Circle().inset(by: 1.25).trim(from: 0, to: fraction)
+                        .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }
+                .frame(width: 18, height: 18)
+                Text(ContextMeter.percentText(fraction))
+                    .font(NookTheme.TextStyle.caption.monospacedDigit())
+                    .foregroundStyle(calm && hovering ? NookTheme.paper : tint)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(width: 16, height: 16)
-            .frame(width: 26, height: 26)
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .frame(height: 28)
+            .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
         }
         .buttonStyle(.nookPlain)
         .accessibilityLabel(help)
