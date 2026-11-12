@@ -41,6 +41,14 @@ extension AgentRunPanel {
         focused = true
     }
 
+    /// "Reply" on an answer: the answer (or what you selected of it) as a quote at the top of the draft, the caret under it.
+    func replyToAnswer(_ answer: String) {
+        var text = draft
+        ComposerFieldStyle.reply(to: answer, in: &text)
+        draft = text
+        focused = true
+    }
+
     func addTerminalOutput(_ run: WorkspaceRun) {
         guard let terminal = TerminalStore.shared.sessions(in: run.workingDirectory).last else { return }
         let output = terminal.output(lines: 80).trimmingCharacters(in: .whitespacesAndNewlines)

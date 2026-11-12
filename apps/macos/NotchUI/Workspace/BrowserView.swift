@@ -145,6 +145,9 @@ final class BrowserStore: ObservableObject {
     var canGoForward: Bool { page.canGoForward }
     var openedBy: String? { page.openedBy }
     var lastError: String? { page.lastError }
+    var certificateQuestion: CertificateQuestion? { page.certificateQuestion }
+    func trustCertificate(always: Bool) { page.trustCertificate(always: always) }
+    func dismissCertificateQuestion() { page.dismissCertificateQuestion() }
     var webView: WKWebView { page.webView }
     var pageURL: URL? { page.pageURL }
     var pageTitle: String { page.pageTitle }
@@ -327,6 +330,9 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var openedBy: String?
     /// Why the last page did not load, if it did not.
     @Published private(set) var lastError: String?
+    /// A local server whose certificate macOS does not trust: the bar above the page asks whether to trust it. Only your
+    /// click answers it (`trustCertificate`); the browser tools agents use act inside the page and cannot reach the bar.
+    @Published private(set) var certificateQuestion: CertificateQuestion?
     /// When the page was last loaded again after its process crashed.
     private var lastCrashReload = Date.distantPast
     let webView: WKWebView
@@ -547,15 +553,65 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate {
 
     // MARK: WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { refresh(loading: true) }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // A new load asks again if it has to; the question was about the page before.
+        if certificateQuestion != nil { certificateQuestion = nil }
+        refresh(loading: true)
+    }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { refresh(loading: false) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        lastError = error.localizedDescription
+        lastError = failure(error)
         refresh(loading: false)
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        lastError = error.localizedDescription
+        if certificateQuestion != nil, let failing = (error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+            certificateQuestion?.pageURL = failing
+            address = failing.absoluteString
+        }
+        lastError = failure(error)
         refresh(loading: false)
+    }
+
+    /// Why a load failed, as an agent reads it from `load`. A certificate waiting for you says that only you can approve it.
+    private func failure(_ error: Error) -> String {
+        guard let question = certificateQuestion else { return error.localizedDescription }
+        return error.localizedDescription + " The certificate of \(question.hostLabel) is not trusted by macOS. "
+            + "Nook's browser asks the user whether to trust it; only the user can approve it there, then load the page again."
+    }
+
+    /// A server's certificate. One macOS trusts goes as usual. One it does not trust is accepted only for a local host
+    /// (`LocalCertificateTrust.isLocal`) you approved for this host, port and certificate; for another local host the
+    /// load fails as before and the bar above the page asks you. A public host always keeps WebKit's own answer.
+    func webView(_ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge) async
+        -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        let space = challenge.protectionSpace
+        guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust, let trust = space.serverTrust,
+              LocalCertificateTrust.isLocal(space.host) else { return (.performDefaultHandling, nil) }
+        guard !SecTrustEvaluateWithError(trust, nil), let certificate = ServerCertificate(trust) else {
+            return (.performDefaultHandling, nil)
+        }
+        let approval = CertificateApproval(host: space.host, port: space.port, fingerprint: certificate.fingerprint)
+        if CertificateTrustStore.shared.isTrusted(approval) { return (.useCredential, URLCredential(trust: trust)) }
+        // One question at a time: the page's own server first, a second one (a socket on another port) after reloading.
+        if certificateQuestion == nil {
+            certificateQuestion = CertificateQuestion(approval: approval, certificate: certificate, pageURL: webView.url)
+        }
+        return (.performDefaultHandling, nil)
+    }
+
+    /// Your answer in the bar above the page: trust the certificate (for this session, or `always`) and load the page
+    /// again. Nothing else calls this; no tool an agent has does.
+    func trustCertificate(always: Bool) {
+        guard let question = certificateQuestion else { return }
+        certificateQuestion = nil
+        guard CertificateTrustStore.shared.trust(question.approval, always: always) else { return }
+        lastError = nil
+        if let url = question.pageURL { webView.load(URLRequest(url: url)) } else { webView.reload() }
+    }
+
+    /// "Not now": the page stays as it failed.
+    func dismissCertificateQuestion() {
+        certificateQuestion = nil
     }
 
     /// The tab was closed: its page goes and its web view stops.
@@ -816,6 +872,7 @@ struct BrowserView: View {
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
+            if let question = store.certificateQuestion { certificateQuestion(question) }
             if let site = store.signInQuestion { signInQuestion(site) }
             if let picked { pickBar(picked) }
             // A line only above a page; the empty browser runs on into the background.
@@ -860,6 +917,23 @@ struct BrowserView: View {
                 primary: NookNoticeAction(tr("browser.signIns.keep")) { store.answerSignIns(keep: true) },
                 secondary: NookNoticeAction(tr("browser.signIns.forget")) { store.answerSignIns(keep: false) },
                 extra: [NookNoticeAction(tr("browser.signIns.later")) { store.answerSignIns(keep: nil) }])
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.bottom, NookTheme.Spacing.sm)
+    }
+
+    /// A local server's certificate macOS does not trust (a dev server's own, mkcert's): trust it for this session or for
+    /// good, and the page loads again. Never asked for a public site.
+    private func certificateQuestion(_ question: CertificateQuestion) -> some View {
+        PanelNoticeBar(title: tr("browser.cert.title", question.hostLabel),
+                       detail: tr("browser.cert.detail", question.certificate.subject.isEmpty ? question.approval.host : question.certificate.subject,
+                                  question.certificate.shortFingerprint),
+                       symbol: "lock.trianglebadge.exclamationmark", tone: NookTheme.amber,
+                       help: question.certificate.fingerprint) {
+            NookNoticeActions(
+                primary: NookNoticeAction(tr("browser.cert.trustSession")) { store.trustCertificate(always: false) },
+                secondary: NookNoticeAction(tr("browser.cert.notNow")) { store.dismissCertificateQuestion() },
+                extra: [NookNoticeAction(tr("browser.cert.trustAlways")) { store.trustCertificate(always: true) }])
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.bottom, NookTheme.Spacing.sm)

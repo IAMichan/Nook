@@ -27,7 +27,10 @@ final class SessionControlsTests: XCTestCase {
             switch provider {
             case .claude:
                 XCTAssertEqual(provider.capabilities.denyReason, .inResponse, "control_response carries a message")
-            case .codex, .gemini, .antigravity, .opencode, .cursor, .grok, .pi, .acp:
+            case .opencode:
+                // Its own server's reject carries the message; over ACP `AcpTurnDriver` sends it as a message instead.
+                XCTAssertEqual(provider.capabilities.denyReason, .inResponse, "permission reply carries a message")
+            case .codex, .gemini, .antigravity, .cursor, .grok, .pi, .acp:
                 // Codex's decline and ACP's reject outcome have no text: the reason follows as a message.
                 XCTAssertEqual(provider.capabilities.denyReason, .followUpMessage, provider.rawValue)
             }

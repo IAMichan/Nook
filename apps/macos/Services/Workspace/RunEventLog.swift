@@ -49,28 +49,35 @@ final class RunEventLog {
         """
     ]
 
-    /// Opens (or creates) the log. Nil when the file cannot be opened as a database.
+    /// The first failure while the log sets itself up, for `SQLiteRecovery` to tell damage from other trouble.
+    private var setupFailure: Int32 = SQLITE_OK
+
+    /// Opens (or creates) the log. A damaged file is moved aside and a fresh one made (`SQLiteRecovery`); nil when there
+    /// is no file to use this session.
     /// - Parameter readOnly: a second connection to a log that exists, only for reading. With WAL it sees the last commit
-    ///   and never waits for a write, nor a write for it.
-    init?(url: URL, readOnly: Bool = false) {
+    ///   and never waits for a write, nor a write for it. It never moves the file.
+    init?(url: URL, readOnly: Bool = false, incidents: DatabaseIncidents = .shared) {
         let flags = (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) | SQLITE_OPEN_FULLMUTEX
-        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
-            sqlite3_close(db)
-            return nil
-        }
         if readOnly {
+            guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
+                sqlite3_close(db)
+                return nil
+            }
             sqlite3_busy_timeout(db, 2_000)
             return
         }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        sqlite3_busy_timeout(db, 2_000)
-        exec("PRAGMA journal_mode = WAL;")
-        // Durable across a crash of Nook; only a power cut can lose the last commits, never corrupt the file.
-        exec("PRAGMA synchronous = NORMAL;")
-        guard migrate() else {
-            sqlite3_close(db)
-            return nil
+        db = SQLiteRecovery.open(url, flags: flags, incidents: incidents) { handle in
+            db = handle
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            sqlite3_busy_timeout(handle, 2_000)
+            exec("PRAGMA journal_mode = WAL;")
+            // Durable across a crash of Nook; only a power cut can lose the last commits, never corrupt the file.
+            exec("PRAGMA synchronous = NORMAL;")
+            setupFailure = SQLITE_OK
+            guard migrate() else { return setupFailure == SQLITE_OK ? SQLITE_ERROR : setupFailure }
+            return SQLITE_OK
         }
+        guard db != nil else { return nil }
         // The search index is extra: a SQLite without FTS5 or its trigram tokenizer only means search scans instead.
         dropSearchWithText()
         searchAvailable = exec(Self.searchSchema(contentless: true)) || exec(Self.searchSchema(contentless: false))
@@ -285,7 +292,11 @@ final class RunEventLog {
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
-        sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+            if setupFailure == SQLITE_OK { setupFailure = sqlite3_extended_errcode(db) }
+            return false
+        }
+        return true
     }
 
     /// Runs `body` in one transaction: all of its rows are written, or none.

@@ -67,7 +67,7 @@ struct PullRequestListView: View {
 
     private func rows(_ pulls: [PullDigest]) -> some View {
         ForEach(pulls) { pull in
-            NavigationLink(value: PullRoute(url: pull.url)) { PullRow(pull: pull) }
+            OpenLink(value: PullRoute(url: pull.url)) { PullRow(pull: pull) }
                 .buttonStyle(RowPress())
         }
     }

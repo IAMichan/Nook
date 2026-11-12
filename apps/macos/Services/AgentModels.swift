@@ -50,6 +50,9 @@ struct ApprovalRequest: Identifiable {
 struct AgentQuestionOption: Equatable {
     var label: String
     var description: String
+    /// What the option would look like (a mock-up, a code snippet, an ASCII layout), shown in the code font under the
+    /// option; empty when the agent sent none (`QuestionPreview`).
+    var preview: String = ""
 }
 
 struct AgentQuestionItem: Equatable {
@@ -77,7 +80,8 @@ struct AgentQuestionRequest: Identifiable {
             var options: [AgentQuestionOption] = []
             for option in rawOptions {
                 guard let label = option["label"] as? String, !label.isEmpty else { return nil }
-                options.append(AgentQuestionOption(label: label, description: (option["description"] as? String) ?? ""))
+                options.append(AgentQuestionOption(label: label, description: (option["description"] as? String) ?? "",
+                                                   preview: QuestionPreview.read(option)))
             }
             items.append(AgentQuestionItem(
                 question: question,
@@ -87,6 +91,15 @@ struct AgentQuestionRequest: Identifiable {
             ))
         }
         return items
+    }
+
+    /// Claude Code's `annotations` for these answers: the preview of the option chosen on each question that had one,
+    /// keyed by the question's text, so the agent knows which mock-up you picked. Empty when no chosen option had one.
+    static func annotations(items: [AgentQuestionItem], selections: [[String]]) -> [String: Any] {
+        QuestionPreview.annotations(items.enumerated().map { index, item in
+            (question: item.question, options: item.options.map { (label: $0.label, preview: $0.preview) },
+             chosen: index < selections.count ? selections[index] : [])
+        })
     }
 
     /// Answers formatted for Claude Code: question string → chosen label (or list for multi-select).

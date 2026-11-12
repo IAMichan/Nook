@@ -23,6 +23,9 @@ extension SettingsView {
                 Toggle(isOn: $workspace.codexAppServer) {
                     Label { SettingText("settings.ws.codexAppServer") } icon: { LogoImage.agent(.codex) }
                 }
+                Toggle(isOn: $workspace.openCodeServer) {
+                    Label { SettingText("settings.ws.openCodeServer") } icon: { LogoImage.agent(.opencode) }
+                }
             } header: {
                 ConnectionListHeader(title: tr("settings.agents.linkAgents"), info: tr("agents.link.info"))
             }

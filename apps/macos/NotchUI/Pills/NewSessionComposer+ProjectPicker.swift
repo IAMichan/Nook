@@ -150,8 +150,8 @@ extension NewSessionComposer {
                     let repository = CloneLayout.repositoryURL(fromPage: typed)
                     if repository != typed.trimmingCharacters(in: .whitespacesAndNewlines) { cloneURL = repository }
                 }
-            SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
-                .disabled(cloning || !GitService.isCloneURL(cloneURL))
+            SmallGhostButton(title: tr("ws.new.cloneAction"), action: clone)
+                .disabled(!GitService.isCloneURL(cloneURL))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { showClone = false }
         }
         .frame(maxWidth: 640)

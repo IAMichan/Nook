@@ -62,6 +62,8 @@ extension CompanionServer {
         guard let reader = PullReader(app: app, address: request.item) else { return .failure(request.id, .unknownItem) }
         do {
             let detail = try await reader.read()
+            var marks = PullRequestViewedFiles.load()
+            PullRequestViewedSync.adopt(detail, accountID: reader.account, marks: &marks)
             return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url))
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
@@ -79,8 +81,8 @@ extension CompanionServer {
                 let detail = try await reader.read()
                 guard let file = detail.files.first(where: { $0.path == action.path }) else { return .failure(request.id, .unknownItem) }
                 var marks = PullRequestViewedFiles.load()
-                marks.setViewed(action.kind == .viewed, file: file, in: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number))
-                marks.save()
+                PullRequestViewedSync.adopt(detail, accountID: reader.account, marks: &marks)
+                PullRequestViewedSync.toggle(action.kind == .viewed, file: file, detail: detail, accountID: reader.account, marks: &marks)
                 return CompanionResponse(id: request.id, ok: true, pull: Self.digest(detail, url: reader.url))
             case .approve, .requestChanges, .comment:
                 let detail = try await reader.read()
@@ -211,7 +213,7 @@ struct PullReader {
         let token = try token()
         let forge = forge, repo = item.repo, number = item.number
         async let activity = Task.detached(priority: .userInitiated) { () -> PullRequestActivity in
-            if let forge { return await forge.activity(number: number) }
+            if let forge { return await forge.activityWithViewed(number: number) }
             return await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
         }.value
         var detail = try await Task.detached(priority: .userInitiated) { () -> PullRequestDetail in

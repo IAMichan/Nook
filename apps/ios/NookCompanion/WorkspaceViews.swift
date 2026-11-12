@@ -1,25 +1,40 @@
 import SwiftUI
 
-/// The session's menu for its files and terminals, where the Mac offers them.
+/// The session's menu for its files and terminals, where the Mac offers them. On the phone each opens as a pushed
+/// screen; on an iPad with room (a regular width) in an inspector beside the conversation, so you read the files while
+/// you follow and answer the agent.
 struct SessionWorkspaceMenu: ViewModifier {
     @EnvironmentObject private var client: CompanionClient
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let sessionID: String
     @State private var showsFiles = false
     @State private var showsTerminals = false
     @State private var showsPulls = false
+    /// The iPad's inspector: open, and which pane it shows.
+    @State private var inspecting = false
+    @State private var pane = WorkspacePane.files
+    /// The split view's list, folded away while the inspector needs its room (an iPad in portrait).
+    @Environment(\.sidebarRoom) private var sidebarRoom
+    @State private var width: CGFloat = 0
+    @State private var foldedSidebar = false
+
+    private var panes: [WorkspacePane] {
+        WorkspacePane.allCases.filter { pane in
+            switch pane {
+            case .files, .terminals: return client.can(CompanionFeature.workspace)
+            case .pulls: return client.can(CompanionFeature.pullRequests)
+            }
+        }
+    }
 
     func body(content: Content) -> some View {
         content
             .toolbar {
-                if client.can(CompanionFeature.workspace) || client.can(CompanionFeature.pullRequests) {
+                if !panes.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            if client.can(CompanionFeature.workspace) {
-                                Button { showsFiles = true } label: { Label("Files", systemImage: "folder") }
-                                Button { showsTerminals = true } label: { Label("Terminals", systemImage: "terminal") }
-                            }
-                            if client.can(CompanionFeature.pullRequests) {
-                                Button { showsPulls = true } label: { Label("Pull requests", systemImage: "arrow.triangle.pull") }
+                            ForEach(panes, id: \.self) { pane in
+                                Button { show(pane) } label: { Label(pane.title, systemImage: pane.symbol) }
                             }
                         } label: {
                             Image(icon: "ellipsis.circle")
@@ -31,6 +46,102 @@ struct SessionWorkspaceMenu: ViewModifier {
             .navigationDestination(isPresented: $showsFiles) { SessionFilesView(sessionID: sessionID) }
             .navigationDestination(isPresented: $showsTerminals) { SessionTerminalsView(sessionID: sessionID) }
             .navigationDestination(isPresented: $showsPulls) { PullRequestListView(session: sessionID) }
+            .inspector(isPresented: $inspecting) {
+                WorkspaceInspector(sessionID: sessionID, panes: panes, pane: $pane)
+                    .inspectorColumnWidth(min: CompanionLayout.inspectorMin, ideal: CompanionLayout.inspectorIdeal,
+                                          max: CompanionLayout.inspectorMax)
+            }
+            // The window got narrow (Slide Over, a small Split View): the inspector would turn into a sheet over the
+            // conversation, so it closes; the menu pushes from then on.
+            .onChange(of: sizeClass) { _, size in
+                if size != .regular { inspecting = false }
+            }
+            // Beside the list and the inspector the conversation would get too narrow to read: the list folds away
+            // while the inspector is open, and comes back when it closes.
+            .background { GeometryReader { proxy in Color.clear.onAppear { width = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, new in width = new } } }
+            .onChange(of: inspecting) { _, open in
+                if open, width - CompanionLayout.inspectorIdeal < CompanionLayout.conversationMin, let sidebarRoom {
+                    foldedSidebar = true
+                    sidebarRoom.fold()
+                } else if !open, foldedSidebar {
+                    foldedSidebar = false
+                    sidebarRoom?.unfold()
+                }
+            }
+            #if DEBUG
+            // `-NookDemoShow files` with `-NookDemo`: the session with its files open.
+            .task {
+                if UserDefaults.standard.string(forKey: "NookDemoShow") == "files", !panes.isEmpty { show(.files) }
+            }
+            #endif
+    }
+
+    private func show(_ pane: WorkspacePane) {
+        if sizeClass == .regular {
+            self.pane = pane
+            inspecting = true
+            return
+        }
+        switch pane {
+        case .files: showsFiles = true
+        case .terminals: showsTerminals = true
+        case .pulls: showsPulls = true
+        }
+    }
+}
+
+/// What a session's inspector shows: its files, its terminals or its pull requests.
+enum WorkspacePane: CaseIterable {
+    case files, terminals, pulls
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .files: return "Files"
+        case .terminals: return "Terminals"
+        case .pulls: return "Pull requests"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .files: return "folder"
+        case .terminals: return "terminal"
+        case .pulls: return "arrow.triangle.pull"
+        }
+    }
+}
+
+/// The iPad's inspector beside a session: the phone's Files, Terminals and Pull requests screens, one at a time, picked
+/// at its top. Each has a stack of its own, so a folder or a pull request opens inside the inspector.
+private struct WorkspaceInspector: View {
+    let sessionID: String
+    let panes: [WorkspacePane]
+    @Binding var pane: WorkspacePane
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch pane {
+                case .files: SessionFilesView(sessionID: sessionID)
+                case .terminals: SessionTerminalsView(sessionID: sessionID)
+                case .pulls: PullRequestListView(session: sessionID)
+                }
+            }
+            .id(pane)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if panes.count > 1 {
+                    Picker("Show", selection: $pane) {
+                        ForEach(panes, id: \.self) { pane in Label(pane.title, systemImage: pane.symbol).tag(pane) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelStyle(.titleOnly)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.canvas)
+                }
+            }
+        }
     }
 }
 

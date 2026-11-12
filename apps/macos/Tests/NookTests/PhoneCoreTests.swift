@@ -1,7 +1,7 @@
 import XCTest
 
 /// The phone's Foundation-only logic (`apps/ios/Core`): dictation languages and text, diagrams and math in messages, and
-/// where a comment on a line of a pull request's diff lands.
+/// where a comment on a line of a pull request's diff lands, and the iPad layout's session stepping and dropped text.
 final class PhoneCoreTests: XCTestCase {
     // MARK: Dictation
 
@@ -75,5 +75,31 @@ final class PhoneCoreTests: XCTestCase {
         XCTAssertEqual(comment.startLine, 2)
         XCTAssertEqual(comment.side, "RIGHT")
         XCTAssertNil(PatchPositions.comment(path: "f", picked: 0...0, positions: positions, body: "x"))
+    }
+
+    // MARK: iPad layout
+
+    func testSessionSteppingMovesThroughTheListAndHoldsAtTheEnds() {
+        let order = ["a", "b", "c"]
+        XCTAssertEqual(SessionStepping.target(order: order, current: "b", step: 1), "c")
+        XCTAssertEqual(SessionStepping.target(order: order, current: "b", step: -1), "a")
+        XCTAssertEqual(SessionStepping.target(order: order, current: "c", step: 1), "c")
+        XCTAssertEqual(SessionStepping.target(order: order, current: "a", step: -1), "a")
+    }
+
+    func testSessionSteppingWithNothingOpenStartsAtAnEnd() {
+        let order = ["a", "b", "c"]
+        XCTAssertEqual(SessionStepping.target(order: order, current: nil, step: 1), "a")
+        XCTAssertEqual(SessionStepping.target(order: order, current: nil, step: -1), "c")
+        XCTAssertEqual(SessionStepping.target(order: order, current: "gone", step: 1), "a")
+        XCTAssertNil(SessionStepping.target(order: [], current: nil, step: 1))
+    }
+
+    func testDroppedTextJoinsWhatWasTyped() {
+        XCTAssertEqual(DroppedText.merge(current: "", dropped: "https://example.com"), "https://example.com")
+        XCTAssertEqual(DroppedText.merge(current: "Look at this ", dropped: " https://example.com\n"),
+                       "Look at this\n\nhttps://example.com")
+        XCTAssertEqual(DroppedText.merge(current: "Typed", dropped: "  "), "Typed")
+        XCTAssertEqual(DroppedText.clip(String(repeating: "x", count: DroppedText.maxLength + 10)).count, DroppedText.maxLength)
     }
 }

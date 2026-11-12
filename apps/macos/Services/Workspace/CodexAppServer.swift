@@ -54,6 +54,49 @@ struct RunQuestion: Equatable, Sendable {
 struct RunQuestionOption: Equatable, Sendable {
     var label: String
     var description: String
+    /// A mock-up or code snippet shown under the option in the code font (`QuestionPreview`); only Claude Code sends
+    /// one, empty otherwise.
+    var preview: String = ""
+}
+
+/// The preview an option of Claude Code's AskUserQuestion can carry (`options[].preview`, Markdown: a mock-up, a code
+/// snippet, an ASCII layout). Every question view shows it under its option in the code font (`QuestionOptionPreview`);
+/// the agents that send no previews (Codex, Pi, the ACP agents) simply leave it empty.
+enum QuestionPreview {
+    /// The most of a preview that is kept: enough for a screen-sized mock-up, not a whole file.
+    static let characterLimit = 4_000
+
+    /// An option's preview as it came, trimmed and cut at `characterLimit`; empty when there is none.
+    static func read(_ option: [String: Any]) -> String {
+        guard let raw = option["preview"] as? String else { return "" }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > characterLimit ? String(trimmed.prefix(characterLimit)) + "…" : trimmed
+    }
+
+    /// The preview as it shows in the code font: a code fence around the whole of it is taken off (the box already
+    /// reads as code), trailing spaces of each line too; the layout of the lines stays as it is.
+    static func display(_ preview: String) -> String {
+        var lines = preview.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        if lines.count >= 2, lines[0].hasPrefix("```"), lines[lines.count - 1].trimmingCharacters(in: .whitespaces) == "```" {
+            lines = Array(lines.dropFirst().dropLast())
+        }
+        return lines.map { line in
+            var line = line
+            while line.last == " " || line.last == "\t" { line.removeLast() }
+            return line
+        }.joined(separator: "\n")
+    }
+
+    /// Claude Code's `annotations` (keyed by question text): the preview of the option chosen on each question, for
+    /// a single choice only (several chosen options have no one preview). Empty when none of them had one.
+    static func annotations(_ questions: [(question: String, options: [(label: String, preview: String)], chosen: [String])]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        for entry in questions where entry.chosen.count == 1 {
+            guard let option = entry.options.first(where: { $0.label == entry.chosen[0] }), !option.preview.isEmpty else { continue }
+            result[entry.question] = ["preview": option.preview]
+        }
+        return result
+    }
 }
 
 /// Codex asks permission for a command or a file change.
@@ -453,6 +496,7 @@ enum CodexAppServerMapper {
         case "item/tool/requestUserInput":
             let questions = ((params["questions"] as? [[String: Any]]) ?? []).compactMap { raw -> RunQuestion? in
                 guard let qid = raw["id"] as? String, let text = raw["question"] as? String else { return nil }
+                // No `preview`: Codex's options carry only a label and a description (docs/INTEGRATIONS.md).
                 let options = ((raw["options"] as? [[String: Any]]) ?? []).compactMap { option -> RunQuestionOption? in
                     guard let label = option["label"] as? String else { return nil }
                     return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "")

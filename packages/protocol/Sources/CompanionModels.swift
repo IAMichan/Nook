@@ -454,6 +454,19 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
         /// The phone may allow this one. When false it can only deny it or leave it to the Mac.
         var canAllow: Bool
         var options: [String]
+        /// A question's option previews (a mock-up or code snippet per option, in the code font), one per `options`
+        /// entry, empty for an option without one. Nil when no option has one, and from an older Mac; an older phone
+        /// leaves it unread.
+        var optionPreviews: [String]? = nil
+
+        /// The most of one preview that travels: a phone-sized mock-up.
+        static let previewLimit = 1_200
+
+        /// Previews as they travel: each cut at `previewLimit`, nil when every one is empty.
+        static func previews(_ previews: [String]) -> [String]? {
+            guard previews.contains(where: { !$0.isEmpty }) else { return nil }
+            return previews.map { $0.count > previewLimit ? String($0.prefix(previewLimit)) + "…" : $0 }
+        }
     }
 
     var id: String

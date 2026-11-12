@@ -296,6 +296,11 @@ extension WorkspaceManager {
                 questions[runID] = nil
                 return
             }
+        case .openCode:
+            guard openCodeLinks[runID] != nil else {
+                questions[runID] = nil
+                return
+            }
         case .codex, .message:
             break
         }
@@ -313,6 +318,8 @@ extension WorkspaceManager {
         case .pi(let requestID):
             processes[runID]?.send(PiRPC.dialogResponse(requestID: requestID,
                                                         value: question.questions.first.flatMap { answers[$0.id]?.first }))
+        case .openCode(let form):
+            answerOpenCode(runID, form: form, answers: answers)
         case .message:
             // Into the turn when the agent takes it there, else as the next message: your bubble shows it either way.
             _ = deliver(runID, text: shown, mode: .auto)

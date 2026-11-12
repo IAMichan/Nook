@@ -64,6 +64,7 @@ extension WorkspaceManager {
         closeClaudeProcess(id)
         closeCodexServer(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         forkNext.remove(id)
         update(id) {
             $0.providerSessionID = nil

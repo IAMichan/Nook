@@ -14,6 +14,8 @@ struct GitCafePullRequestForge: PullRequestForgeClient {
         features.revert = false
         features.deleteBranch = false
         features.commitView = false
+        // GitCafe's API has no per-file viewed state.
+        features.viewedFiles = false
         return features
     }()
 

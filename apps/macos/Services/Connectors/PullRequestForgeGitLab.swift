@@ -7,6 +7,8 @@ struct GitLabPullRequestForge: PullRequestForgeClient {
     static let forgeFeatures: PullRequestForgeFeatures = {
         var features = PullRequestForgeFeatures()
         features.reactions = false
+        // GitLab keeps a file's "Viewed" tick in the browser (local storage), with no API to read or write it.
+        features.viewedFiles = false
         return features
     }()
 

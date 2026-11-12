@@ -11,6 +11,57 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Option previews under an agent's question options (mock-ups, code snippets, ASCII layouts) now always show in the
+  code font in Nook and on the iPhone, and "Reply" in the footer of an agent's final answer (or its long-press menu on
+  the phone) puts the answer or your selection from it as a quote at the top of the composer, shown as an inset card
+  when sent.
+
+- The "Viewed" checkmarks on a pull request's Code tab now follow GitHub's own checkbox: a file you mark viewed in
+  Nook (or on your phone) is marked viewed on GitHub too, and a file you ticked on github.com shows as viewed in Nook.
+  A file that changed since you viewed it shows as changed again. Other forges keep the marks on your Mac, because
+  their APIs have no viewed state (see docs/INTEGRATIONS.md).
+
+- Close several pull requests at once from the selection bar, with an optional comment that is posted on each before
+  it closes. When some do not close, the note names each one and says why; the rest still close.
+
+- Cloning a repository from the new session box now runs in the background: the box is free again at once, and a
+  quiet notice in the corner shows git's stage and percentage, with Hide and Cancel. When it is done a note offers
+  Open, and the box that started it switches to the new project by itself.
+
+- Nook's browser can open a local dev server that uses its own HTTPS certificate (`vite --https`, mkcert, a
+  self-signed one). For `localhost`, `*.localhost`, `*.local`, `127.0.0.1` and private network addresses, a bar above
+  the page asks whether to trust that certificate for this session or always, instead of the page silently failing.
+  Public sites are never offered this, and only you can approve it, not an agent. Settings › Editor & browser lists how many
+  you always trust and can forget them.
+
+- When one of Nook's own databases (`nook.sqlite`, `chats.sqlite`, `runs.sqlite`) cannot be opened, Nook says so
+  instead of quietly running without it: which file, why, and what to do. A damaged file is moved aside under a dated
+  name (never deleted) and a fresh one takes its place; the notice shows the copy in Finder and copies the command
+  that recovers what is still readable. A file that is out of reach for another reason (a full disk, a lock) is left
+  where it is.
+
+- Settings › General › "Hold ⌘Q to quit" (off by default): a quick ⌘Q shows a hint instead of quitting, and holding
+  it for a moment quits. Quit from a menu, logging out and restarting are never held up. Works with the notch off.
+
+- OpenCode 2.0.18 and newer now runs through its own server (`opencode serve`) instead of ACP. Its questions show
+  with their options in place of the composer, "Deny with reason" reaches OpenCode with your words without stopping
+  the turn, and the effort level picks the model's variant. Sessions of the same account share one server, which only
+  listens on this Mac and stops when no session needs it. An older OpenCode, or a server that does not start, keeps
+  using ACP. Settings › Agents › "OpenCode via its own server" turns it off.
+
+- OpenTelemetry export, in Settings › Maintenance › Diagnostics: give each signal (traces, metrics, logs) an OTLP HTTP
+  endpoint, with optional headers kept in the Keychain and a Test that sends an empty export. Nook then sends its own
+  agent turns (agent, model, outcome, duration, tokens), scheduled task runs and launch time, without prompts, answers
+  or file contents, and tells every coding agent it starts about the same receiver in that agent's own settings
+  (Claude Code, Codex, Gemini CLI, OpenCode and Grok export on their own). Standard `OTEL_EXPORTER_OTLP_*` variables
+  override the fields and show as "Set by environment". Off until you set an endpoint.
+
+- Nook Companion runs on the iPad. With room, the tabs become a split view: a section's list on the left (sessions,
+  chats, Nook's chats, pull requests) and what you opened on the right, with a session's files, terminals and pull
+  requests in an inspector beside it. A hardware keyboard gets shortcuts (⌘N new session, ⌘[ and ⌘] the previous or
+  next session, ⌘F search, ⌘K find a session, ⌘1… a section, ⌘↩ send), and pictures, a file, links and text can be
+  dragged into a composer. In Slide Over or a narrow window, and on the iPhone, the layout stays the phone's.
+
 - While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
   the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
   holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.

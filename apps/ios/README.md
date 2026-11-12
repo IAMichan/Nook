@@ -1,6 +1,6 @@
 # Nook for iOS (`NookCompanion`)
 
-This directory contains **Nook Companion**, the iPhone app that shows which coding-agent sessions on your Mac need your attention, with support for approving or denying tool calls, answering questions, sending follow-up messages, and stopping sessions. It is Nook's panel made for iPhone, laid out with a tab bar along the bottom: Nook (chat with Nook), Agents (sessions you can start and follow), Chats (your chat apps), Pull requests, and Settings (your Mac and the connection, this iPhone's choices, plan usage, pairing). It communicates directly with Nook on your Mac over your local Wi-Fi network; see [`docs/COMPANION.md`](../../docs/COMPANION.md).
+This directory contains **Nook Companion**, the iPhone app that shows which coding-agent sessions on your Mac need your attention, with support for approving or denying tool calls, answering questions, sending follow-up messages, and stopping sessions. It is Nook's panel made for iPhone, laid out with a tab bar along the bottom: Nook (chat with Nook), Agents (sessions you can start and follow), Chats (your chat apps), Pull requests, and Settings (your Mac and the connection, this iPhone's choices, plan usage, pairing). On an iPad with room the tabs become a split view, a section's list beside what you opened (see *iPad* in `docs/COMPANION.md`). It communicates directly with Nook on your Mac over your local Wi-Fi network; see [`docs/COMPANION.md`](../../docs/COMPANION.md).
 
 ## Building
 
@@ -28,6 +28,8 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
   ChatPictures.swift     the chats' own pictures from the Mac, kept in the caches folder
   LiveActivities.swift   Live Activity tokens for the Mac, the switch, updates while the app is open
+  SplitViews.swift       the iPad: the split view at a regular width, where rows open, keyboard shortcuts
+  ComposerDrop.swift     dragging pictures, a file, links and text into a composer
 NookActivity/    widget extension: the Live Activity on the Lock Screen and in the Dynamic Island
 Shared/          what the app and the extension share (ActivityKit attributes, how a phase looks)
 ```

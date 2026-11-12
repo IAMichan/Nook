@@ -56,8 +56,13 @@ extension WorkspaceManager {
                 claudeChangedDuringTurn.insert(id)
             }
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
-            guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort,
-                  let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
+            guard old.model != new.model || old.mode != new.mode || old.permission != new.permission || old.effort != new.effort else { return }
+            // OpenCode over its own server: the session's model, agent and rules count from its next step.
+            if openCodeLinks[id]?.sessionID != nil {
+                Task { await applyOpenCodeSettings(id) }
+                return
+            }
+            guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
         case .codex, .pi:
             break

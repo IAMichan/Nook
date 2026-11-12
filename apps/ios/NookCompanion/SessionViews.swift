@@ -20,8 +20,12 @@ struct SessionDetailView: View {
     @AppStorage("nook.companion.steerByDefault") private var steerByDefault = false
     /// Pictures that go with the next message.
     @State private var images: [CompanionImage] = []
+    /// A file dropped on the session that goes with the next message (`CompanionFeature.attachments`).
+    @State private var files: [CompanionFile] = []
     /// The session's changes are open (`SessionChangesView`).
     @State private var reviewing = false
+    /// The keyboard is in the composer (after "Reply" on an answer).
+    @FocusState private var composerFocused: Bool
 
     /// From the live list, or an older session opened from the settled ones or a search.
     private var session: SessionDigest? { client.session(sessionID) }
@@ -39,6 +43,11 @@ struct SessionDetailView: View {
                                 EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(proxy) }
                             }
                             TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
+                                // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
+                                .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
+                                    message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
+                                    composerFocused = true
+                                } : nil)
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: String(localized: "Latest reply"))
                             TranscriptReply(text: session.excerpt, footer: false)
@@ -52,6 +61,7 @@ struct SessionDetailView: View {
                     }
                     .padding(.horizontal, Theme.Spacing.xl)
                     .padding(.bottom, Theme.Spacing.lg)
+                    .readingColumn()
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: entries.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
@@ -59,70 +69,11 @@ struct SessionDetailView: View {
                 .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                 .defaultScrollAnchor(.bottom)
                 .modifier(ScrollEndTracker(atEnd: $atEnd))
-                .safeAreaInset(edge: .bottom) {
-                VStack(spacing: Theme.Spacing.md) {
-                    FloatingWorkingControl(
-                        workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
-                        working: session.attention == "working",
-                        snoozed: actions(session).contains(.unsnooze),
-                        onWake: { manage(session, .unsnooze) },
-                        showScrollToEnd: !atEnd) {
-                        withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-                    }
-                // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
-                // What waits on you, docked right above the composer, so it stays in
-                // sight however far up you read; while it waits it takes the composer's place.
-                if let item = session.items.first {
-                    PendingItemDock(session: session, item: item, more: session.items.count - 1)
-                } else {
-                // A message your Mac refused stays here with why, to edit and send again.
-                ForEach(client.rejected.filter { $0.session == sessionID }) { refused in
-                    RejectedMessageCard(message: refused) {
-                        let back = client.takeRejected(refused)
-                        message = back.text
-                        images = back.images
-                    } discard: {
-                        _ = client.takeRejected(refused)
-                    }
-                }
-                ComposerDock {
-                    if !client.allows(.operate) {
-                        Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
-                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
-                            .card(padding: Theme.Spacing.lg)
-                    } else if session.canSend != false {
-                        // The Mac's composer: send, or stop while the agent works and nothing is typed. While it works and
-                        // the turn can take a message, a choice under the text says whether it steers now or waits.
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            ImageTray(images: $images)
-                            HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
-                                // Pictures for the agent, as from the Mac's composer (a Mac that takes them).
-                                if client.can(CompanionFeature.images) {
-                                    AttachPictureButton(images: $images).padding(.bottom, Theme.Spacing.sm)
-                                }
-                                if steerable(session) {
-                                    SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
-                                                    canSend: true, busy: stoppable(session),
-                                                    onStop: canStop(session) ? { confirmStop = true } : nil,
-                                                    onSend: { send(session) }) {
-                                        steerMenu
-                                    }
-                                } else {
-                                    SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
-                                                    onStop: canStop(session) ? { confirmStop = true } : nil) { send(session) }
-                                }
-                            }
-                        }
-                    } else {
-                        Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
-                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
-                            .card(padding: Theme.Spacing.lg)
-                    }
-                }
-                }
-                }
-                }
+                .safeAreaInset(edge: .bottom) { dock(session, proxy) }
             }
+            // Pictures, a file, links and text dragged onto the session wait in its composer (`composerDrop`).
+            .composerDrop(text: $message, images: dropImages, files: dropFiles,
+                          enabled: client.allows(.operate) && session.canSend != false && session.items.isEmpty)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // Who works where, in the bar as the thread's header, so the conversation starts at the top.
@@ -191,6 +142,83 @@ struct SessionDetailView: View {
 
     private static let bottom = "bottom"
 
+    /// What a drop may add: pictures and a file where this Mac takes them.
+    private var dropImages: Binding<[CompanionImage]>? { client.can(CompanionFeature.images) ? $images : nil }
+    private var dropFiles: Binding<[CompanionFile]>? { client.can(CompanionFeature.attachments) ? $files : nil }
+
+    /// Under the conversation, at the reading width: the working control, then what waits on you or the composer.
+    private func dock(_ session: SessionDigest, _ proxy: ScrollViewProxy) -> some View {
+        VStack(spacing: Theme.Spacing.md) {
+            FloatingWorkingControl(
+                workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
+                working: session.attention == "working",
+                snoozed: actions(session).contains(.unsnooze),
+                onWake: { manage(session, .unsnooze) },
+                showScrollToEnd: !atEnd) {
+                withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+            }
+            // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
+            // What waits on you, docked right above the composer, so it stays in
+            // sight however far up you read; while it waits it takes the composer's place.
+            if let item = session.items.first {
+                PendingItemDock(session: session, item: item, more: session.items.count - 1)
+            } else {
+                // A message your Mac refused stays here with why, to edit and send again.
+                ForEach(client.rejected.filter { $0.session == sessionID }) { refused in
+                    RejectedMessageCard(message: refused) {
+                        let back = client.takeRejected(refused)
+                        message = back.text
+                        images = back.images
+                    } discard: {
+                        _ = client.takeRejected(refused)
+                    }
+                }
+                ComposerDock { composer(session) }
+            }
+        }
+        .readingColumn()
+    }
+
+    /// The composer under the conversation, or why there is none.
+    @ViewBuilder
+    private func composer(_ session: SessionDigest) -> some View {
+        if !client.allows(.operate) {
+            Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                .card(padding: Theme.Spacing.lg)
+        } else if session.canSend != false {
+            // The Mac's composer: send, or stop while the agent works and nothing is typed. While it works and
+            // the turn can take a message, a choice under the text says whether it steers now or waits.
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                ImageTray(images: $images)
+                FileTray(files: $files)
+                HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
+                    // Pictures for the agent, as from the Mac's composer (a Mac that takes them).
+                    if client.can(CompanionFeature.images) {
+                        AttachPictureButton(images: $images).padding(.bottom, Theme.Spacing.sm)
+                    }
+                    if steerable(session) {
+                        SessionComposer(text: $message, prompt: steerByDefault ? "Steer the agent" : "Message for after this turn",
+                                        canSend: true, busy: stoppable(session),
+                                        onStop: canStop(session) ? { confirmStop = true } : nil,
+                                        focus: $composerFocused,
+                                        onSend: { send(session) }) {
+                            steerMenu
+                        }
+                    } else {
+                        SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
+                                        onStop: canStop(session) ? { confirmStop = true } : nil,
+                                        focus: $composerFocused) { send(session) }
+                    }
+                }
+            }
+        } else {
+            Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                .card(padding: Theme.Spacing.lg)
+        }
+    }
+
     /// "Claude Code · nook · main": the agent, its folder and its branch.
     static func subtitle(_ session: SessionDigest) -> String {
         [session.agent, session.folder, session.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -213,13 +241,15 @@ struct SessionDetailView: View {
     /// the agent rests, after the turn while it works).
     private func send(_ session: SessionDigest) {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !images.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         let pictures = images
+        let attached = files
         message = ""
         images = []
+        files = []
         Haptics.tap()
         let steer = steerable(session) && steerByDefault
-        Task { await client.send(session, text: text, steer: steer, images: pictures) }
+        Task { await client.send(session, text: text, steer: steer, images: pictures, files: attached) }
     }
 
     /// The agent works and its turn can take a message now (a Mac that says so, `CompanionFeature.steer`).
@@ -459,6 +489,10 @@ struct ItemView: View {
                             QuestionOptionRow(title: option, number: number) {
                                 Haptics.success(); Task { await client.answer(session, item: item, text: option) }
                             }
+                            // What the option would look like, under it (an agent question's preview), as on the Mac.
+                            if let previews = item.optionPreviews, previews.indices.contains(number) {
+                                QuestionOptionPreview(text: previews[number], indent: Theme.Spacing.lg, lineLimit: 10)
+                            }
                         }
                     }
                     SessionComposer(text: $text, prompt: "Your own answer") {
@@ -553,6 +587,8 @@ struct NewSessionView: View {
             Group {
                 if let options {
                     content(options)
+                        // A picture, a link or text dragged onto the sheet goes into the task.
+                        .composerDrop(text: $task, images: client.can(CompanionFeature.images) ? $images : nil)
                 } else if loaded {
                     WSEmptyState(symbol: "wifi.slash", title: String(localized: "Your Mac does not answer."),
                                message: String(localized: "Is the companion on, and are you on the same Wi‑Fi?"))

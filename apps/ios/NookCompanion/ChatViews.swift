@@ -7,6 +7,18 @@ enum ChatRoute: Hashable {
     case open(String)
 }
 
+/// The screen a chat route opens: pushed on the phone, beside the list on the iPad (`CompanionSplitView`).
+struct ChatDestination: View {
+    let route: ChatRoute
+
+    var body: some View {
+        switch route {
+        case .new(_, let prompt): ChatView(conversationID: nil, prompt: prompt)
+        case .open(let id): ChatView(conversationID: id)
+        }
+    }
+}
+
 /// A few first questions, so an empty chat is never a blank page.
 enum ChatSuggestions {
     static var all: [String] {
@@ -57,7 +69,7 @@ struct ChatListView: View {
                         .padding(.bottom, Theme.Spacing.xs)
                     VStack(spacing: Theme.Spacing.xxs) {
                         ForEach(client.conversations) { conversation in
-                            NavigationLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
+                            OpenLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
                                 .buttonStyle(RowPress())
                         }
                     }
@@ -81,12 +93,7 @@ struct ChatListView: View {
         }
         .refreshable { await client.loadChats() }
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(for: ChatRoute.self) { route in
-            switch route {
-            case .new(_, let prompt): ChatView(conversationID: nil, prompt: prompt)
-            case .open(let id): ChatView(conversationID: id)
-            }
-        }
+        .navigationDestination(for: ChatRoute.self) { route in ChatDestination(route: route) }
         .screen()
         .task {
             // A Mac that sends Nook's conversations by itself (`liveChats`) needs one look; otherwise every few seconds.
@@ -208,6 +215,7 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
                 .padding(.vertical, Theme.Spacing.lg)
+                .readingColumn()
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: lines.last?.text) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
@@ -222,7 +230,10 @@ struct ChatView: View {
                     send(question)
                 }
             }
+            .readingColumn()
         }
+        // Nook's chat takes words only: a dropped link or text lands in the box.
+        .composerDrop(text: $text)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .principal) { SheetTitle(title: title, subtitle: "Nook") } }
         .screen()

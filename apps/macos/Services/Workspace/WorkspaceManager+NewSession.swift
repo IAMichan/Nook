@@ -479,6 +479,10 @@ extension WorkspaceManager {
         case .pi:
             break
         case .gemini, .opencode, .cursor, .grok, .antigravity, .acp:
+            if openCodeLinks[id]?.sessionID != nil {
+                Task { await applyOpenCodeSettings(id) }
+                return
+            }
             guard let client = acpClients[id], client.isRunning, client.sessionID != nil else { return }
             applyAcpSettings(id, client) {}
         }

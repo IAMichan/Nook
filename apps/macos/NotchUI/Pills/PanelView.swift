@@ -186,6 +186,8 @@ struct PanelView: View {
             if sheet == nil {
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
             }
+            // A clone that runs in the background, with how far it is and Cancel.
+            CloneNoticeStack()
         }
     }
 
@@ -417,6 +419,7 @@ struct PanelApprovalBar: View {
     /// for an approval or has a question.
     let workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    @ObservedObject private var storage = StorageNotices.shared
     @EnvironmentObject private var app: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -424,6 +427,7 @@ struct PanelApprovalBar: View {
     private var shownID: String? {
         if let approval = app.approvals.pending.first(where: { !onScreen($0) }) { return "approval-\(approval.id)" }
         if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) { return "question-\(question.id)" }
+        if let incident = storage.shown.first { return "storage-\(incident.id)" }
         return viewModel.panelNotice.map { "notice-\($0.id)" }
     }
 
@@ -455,9 +459,27 @@ struct PanelApprovalBar: View {
             .transition(.nookToast(reduceMotion: reduceMotion))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
             questionBar(question, more: hub.questions.count - 1)
+        } else if let incident = storage.shown.first {
+            storageBar(incident)
         } else if let notice = viewModel.panelNotice {
             noticeBar(notice)
         }
+    }
+
+    /// A database of Nook's own that could not be opened (`SQLiteRecovery`): which file and why, with the copy in Finder
+    /// and the command that recovers it. Stays until you dismiss it; the whole story is in its help and the notice history.
+    private func storageBar(_ incident: DatabaseIncident) -> some View {
+        let words = AppModel.storageWords(incident)
+        let dismiss = NookNoticeAction(tr("app.ok")) { storage.dismiss(incident.id) }
+        let reveal = NookNoticeAction(tr("storage.action.reveal")) { app.revealStorageCopy(incident) }
+        let copy = incident.recoverCommand.map { _ in NookNoticeAction(tr("storage.action.copy")) { app.copyRecoveryCommand(incident) } }
+        let help = [words.detail, words.recover, incident.movedTo?.path].compactMap { $0 }.joined(separator: "\n\n")
+        return PanelNoticeBar(title: words.title, detail: words.detail, symbol: "externaldrive.badge.exclamationmark",
+                              tone: NookTheme.coral, help: help, floating: true) {
+            NookNoticeActions(primary: reveal, secondary: dismiss, extra: copy.map { [$0] } ?? [])
+                .fixedSize()
+        }
+        .transition(.nookToast(reduceMotion: reduceMotion))
     }
 
     /// A short notice (a session Nook runs asks something, a note is ready), with its one action.

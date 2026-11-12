@@ -248,20 +248,36 @@ final class PullRequestQuickMerges: ObservableObject {
 @MainActor
 enum PullRequestQuickRunner {
     static func run(_ action: PullRequestQuickAction, item: PullRequestItem, accountID: String, app: AppModel) async throws {
-        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { throw NookError(tr("agents.pr.noToken")) }
         if action == .merge {
             _ = try await quickMerge(item, accountID: accountID, app: app)
             return
         }
         guard let request = action.action(for: item) else { return }
+        try await send(request, item: item, accountID: accountID, app: app)
+    }
+
+    /// One action on a row's pull request, on the forge it lives on (GitHub, or a `PullRequestForgeClient` for the
+    /// account it was listed under), written to the action log. `refresh` false leaves reading the list again to the
+    /// caller, for a batch that reads it once at the end.
+    static func send(_ request: PullRequestAction, item: PullRequestItem, accountID: String, app: AppModel,
+                     refresh: Bool = true) async throws {
         let args = request.auditArgs(repo: item.repo, number: item.number)
         do {
+            if let forge = PullRequestForges.client(account: accountID, path: item.repo) {
+                // A forge's write can need what the pull request is now (GitCafe fences every write on its version).
+                let detail = try await forge.summary(number: item.number)
+                try await forge.perform(request, number: item.number, detail: detail)
+                app.store.audit(tool: request.auditTool, args: args, result: "ok")
+                if refresh { await PullRequestStore.shared.refresh(force: true) }
+                return
+            }
+            guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { throw NookError(tr("agents.pr.noToken")) }
             let reply = try await GitHubPullRequestDetail.perform(request, repo: item.repo, number: item.number, token: token)
             app.store.audit(tool: request.auditTool, args: args, result: "ok")
             if let reply {
                 PullRequestStore.shared.apply(reply, to: item.id)
                 if let state = reply.linkState { PullRequestSync.shared.mark(repository: item.repo, number: item.number, state: state) }
-            } else {
+            } else if refresh {
                 await PullRequestStore.shared.refresh(force: true)
             }
         } catch {
@@ -410,20 +426,24 @@ final class PullRequestCloseSweep: ObservableObject {
         }
     }
 
-    /// Closes pull requests one after the other, says how it went, and reads the list again.
-    static func close(_ requests: [PullRequestOpenRequest], app: AppModel) async {
-        var failed = 0
-        for request in requests {
-            do {
-                try await PullRequestQuickRunner.run(.close, item: request.item, accountID: request.account, app: app)
-            } catch {
-                failed += 1
-            }
-        }
-        if failed > 0 {
-            ToastCenter.shared.error(NookError(tr("agents.pulls.sweep.failed", failed)))
+    /// Closes pull requests one after the other on their own forges, each after `comment` when there is one
+    /// (`PullRequestBatchClose`), says how it went with every one that did not close and why, and reads the list again
+    /// once. A failure never stops the rest.
+    static func close(_ requests: [PullRequestOpenRequest], comment: String? = nil, app: AppModel) async {
+        let outcomes = await PullRequestBatchClose.run(requests, comment: comment, post: { request, text in
+            try await PullRequestQuickRunner.send(.comment(text), item: request.item, accountID: request.account, app: app, refresh: false)
+        }, close: { request in
+            try await PullRequestQuickRunner.send(.close, item: request.item, accountID: request.account, app: app, refresh: false)
+        })
+        let report = PullRequestBatchClose.report(outcomes) { "#\($0.item.number)" }
+        if report.allClosed {
+            ToastCenter.shared.success(report.total == 1 ? tr("agents.pulls.quick.done.close", "#\(requests[0].item.number)")
+                                                         : tr("agents.pulls.sweep.done", report.total))
         } else {
-            ToastCenter.shared.success(tr("agents.pulls.sweep.done", requests.count))
+            let lines = report.failures.map { failure in
+                tr(failure.commentOnly ? "agents.pulls.close.commentFailed" : "agents.pulls.close.failedOne", failure.name, failure.reason)
+            }
+            ToastCenter.shared.error(tr("agents.pulls.close.partial", report.closed, report.total), detail: lines.joined(separator: "\n"))
         }
         await PullRequestStore.shared.refresh(force: true)
     }

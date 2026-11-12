@@ -37,6 +37,20 @@ struct ChoiceOption: Equatable, Identifiable {
     var id: String { label }
     var label: String
     var description: String
+    /// What the option would look like (an agent question's `preview`), ready to show in the code font; empty for none.
+    var preview: String = ""
+}
+
+extension ChoiceOption {
+    /// The most lines of a preview the card in the notch shows.
+    static let cardPreviewLines = 6
+
+    /// The room the preview takes on the card: its lines (at most `cardPreviewLines`) and the well around them.
+    var previewHeight: CGFloat {
+        guard !preview.isEmpty else { return 0 }
+        let lines = min(preview.split(separator: "\n", omittingEmptySubsequences: false).count, Self.cardPreviewLines)
+        return CGFloat(lines) * 16 + 20
+    }
 }
 
 /// A prompt with options. `id` references a handler that calls `NotchViewModel.choose`.
