@@ -116,8 +116,16 @@ final class WorkspaceManager: ObservableObject {
     /// here, and the views that draw a timeline hear about it through `timelines`, at most every `eventsPublishInterval`
     /// (see `eventsDidChange`).
     var events: [UUID: [RunEvent]] = [:] {
-        didSet { eventsDidChange(changingTimeline) }
+        didSet {
+            // A change that does not keep the byte counts right itself: which timeline it touched is not known here.
+            if !countingBytes { timelineBytes.forgetAll() }
+            eventsDidChange(changingTimeline)
+        }
     }
+    /// What each timeline in memory holds, for `evictTimelines`: kept by loads, `append`, `mutateEvent` and evictions.
+    private var timelineBytes = TimelineBytes()
+    /// Set while a change to `events` updates `timelineBytes` itself.
+    private var countingBytes = false
     /// The session whose timeline `append` or `mutateEvent` is changing, so only views of that session hear about it.
     /// Any other change to `events` (a load, a rollback, a fork) is announced to every session.
     private var changingTimeline: UUID?
@@ -660,7 +668,10 @@ final class WorkspaceManager: ObservableObject {
             self.timelineUse[id] = Date()
             // News only for a view that is waiting for it; a prefetch nobody shows yet redraws nothing.
             self.quietEvents = !awaited
+            self.countingBytes = true
             self.events[id] = loaded
+            self.timelineBytes.loaded(id, loaded)
+            self.countingBytes = false
             self.quietEvents = false
             self.evictTimelines()
         }
@@ -682,7 +693,11 @@ final class WorkspaceManager: ObservableObject {
         guard events[id] == nil else { return }
         evictedTimelines.remove(id)
         evictedAnswers[id] = nil
-        events[id] = store.loadEvents(id)
+        let loaded = store.loadEvents(id)
+        countingBytes = true
+        events[id] = loaded
+        timelineBytes.loaded(id, loaded)
+        countingBytes = false
         evictTimelines()
     }
 
@@ -695,12 +710,15 @@ final class WorkspaceManager: ObservableObject {
             let idle = used < unusedSince && shownTimelines[id] == nil
                 && eventSaves[id] == nil && processes[id] == nil && turns[id] == nil && codexServers[id] == nil
                 && claudeIdle[id] == nil && acpClients[id] == nil && !(run(id)?.status.isActive ?? false)
-            return TimelineEviction.Candidate(id: id, lastUsed: used, bytes: list.reduce(0) { $0 + $1.approximateBytes }, idle: idle)
+            return TimelineEviction.Candidate(id: id, lastUsed: used, bytes: timelineBytes.bytes(id, of: list), idle: idle)
         }
         for id in TimelineEviction.pick(candidates, limit: Self.timelineLimit, budget: Self.timelineByteBudget) {
             // Only the start: a summary shows a short excerpt of it, and a long answer need not stay in memory whole.
             evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant }).map { String($0.text.prefix(2_000)) }
+            countingBytes = true
             events[id] = nil
+            timelineBytes.forget(id)
+            countingBytes = false
             timelineUse[id] = nil
             evictedTimelines.insert(id)
         }
@@ -3270,9 +3288,16 @@ final class WorkspaceManager: ObservableObject {
         if events[id] == nil {
             evictedTimelines.remove(id)
             evictedAnswers[id] = nil
-            events[id] = store.loadEvents(id)
+            let loaded = store.loadEvents(id)
+            countingBytes = true
+            events[id] = loaded
+            timelineBytes.loaded(id, loaded)
+            countingBytes = false
         }
+        countingBytes = true
         events[id]?.append(event)
+        timelineBytes.appended(id, event)
+        countingBytes = false
         store.appendEventAsync(id, event)
         if event.countsAsActivity(runActive: runIndex(id).map { runs[$0].status.isActive } ?? false) {
             // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
@@ -3309,7 +3334,11 @@ final class WorkspaceManager: ObservableObject {
         // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
         guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else { return }
         changingTimeline = id
+        countingBytes = true
+        let before = events[id]![index].approximateBytes
         change(&events[id]![index])
+        timelineBytes.changed(id, from: before, to: events[id]![index].approximateBytes)
+        countingBytes = false
         changingTimeline = nil
         scheduleEventSave(id)
     }
