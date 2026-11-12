@@ -7,7 +7,7 @@ import Combine
 /// they keep into the shared inbox's chats (`WhatsAppExport`), each time one of them changes. Their messages stay in
 /// memory only (`BridgedChat.ephemeral`), as they always did.
 @MainActor
-final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatSearchBridge {
+final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatSearchBridge, ChatBackfillBridge {
     let app = "whatsapp"
     /// WhatsApp on this Mac (`WhatsAppDesktopBridge`) reads the same app while no phone is linked: each keeps its own turns.
     let bridgeID = "whatsapp-link"
@@ -199,6 +199,22 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
     }
 
     // MARK: Older messages
+
+    func canBackfill(chatID: String) -> Bool {
+        WhatsAppAccounts.shared.route(chatID).0.isConnected
+    }
+
+    /// The gateway pages from the newest back: the archive's count of the chat is where the next page starts, a little
+    /// overlap included (`ChatBackfill.page`, which moves on when the archive misses messages or holds ones the phone
+    /// does not have).
+    func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage] {
+        let (link, jid) = WhatsAppAccounts.shared.route(chatID)
+        let key = ChatInbox.key(app: app, id: chatID)
+        let stored = await ChatArchive.shared?.read { $0.messageCount(key) } ?? 0
+        return try await ChatBackfill.page(before: before, guess: stored, limit: limit) { offset in
+            try await link.backfill(jid, offset: offset, limit: limit)
+        }
+    }
 
     func canLoadOlder(chatID: String) -> Bool {
         let (link, jid) = WhatsAppAccounts.shared.route(chatID)

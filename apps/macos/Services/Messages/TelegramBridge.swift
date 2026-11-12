@@ -197,6 +197,14 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         viewersAsked = [:]
     }
 
+    /// An edit of a message older than what this bridge holds: Nook's archive takes it, under the chat's key in the
+    /// shared inbox. A deletion needs none of this: `deleted` names every one, held or not.
+    private func archiveChange(_ chat: Int64, message: String, edited text: String?) {
+        guard let known = chats[chat], !known.title.isEmpty else { return }
+        let key = ChatInbox.key(app: app, chat: shownName(known))
+        ChatCaptureService.shared.archiveChange(chat: key, message: message, edited: text)
+    }
+
     // MARK: ChatBridge
 
     func read() async throws -> [BridgedChat] {
@@ -486,8 +494,15 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateMessageContent":
             // A poll's votes moved (or a message was edited): the chat shows the new content.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
-               let content = object["new_content"] as? [String: Any],
-               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
+               let content = object["new_content"] as? [String: Any] {
+                guard let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) else {
+                    // Older than what this bridge holds: Nook's archive takes the new text.
+                    if TelegramData.poll(content) == nil, let text = TelegramData.text(content), !text.isEmpty,
+                       TelegramData.file(content) == nil {
+                        archiveChange(chat, message: "telegram-\(chat)-\(id)", edited: text)
+                    }
+                    break
+                }
                 if let poll = TelegramData.poll(content) {
                     messages[chat]?[index].poll = poll
                 } else if let text = TelegramData.text(content), !text.isEmpty, TelegramData.file(content) == nil {
@@ -498,11 +513,15 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridg
         case "updateMessageEdited":
             // A message's text or caption was changed: it says "Edited" from now on.
             if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
-               (TelegramData.int64(object["edit_date"]) ?? 0) > 0,
-               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }),
-               messages[chat]?[index].edited != true {
-                messages[chat]?[index].edited = true
-                changed.insert(chat)
+               (TelegramData.int64(object["edit_date"]) ?? 0) > 0 {
+                guard let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) else {
+                    archiveChange(chat, message: "telegram-\(chat)-\(id)", edited: nil)
+                    break
+                }
+                if messages[chat]?[index].edited != true {
+                    messages[chat]?[index].edited = true
+                    changed.insert(chat)
+                }
             }
         case "updateMessageInteractionInfo":
             // Someone put an emoji on a message, or took theirs back: the chat shows it.

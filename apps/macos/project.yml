@@ -309,6 +309,8 @@ targets:
       - path: Services/EmbeddedApps/WhatsAppWeb.swift
       - path: Services/Messages/ChatInbox.swift
       - path: Services/Messages/ChatHistorySearch.swift
+      - path: Services/Messages/ChatStore.swift
+      - path: Services/Messages/ChatBackfill.swift
       - path: Services/Messages/ChatReceipts.swift
       - path: Services/Messages/ChatTyping.swift
       - path: Services/Messages/SlackData.swift

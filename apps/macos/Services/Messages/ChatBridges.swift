@@ -142,6 +142,11 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
     /// (`date_edited`, `date_retracted`: a database from before messages could be edited does not).
     private var lastEdit: Int64?
     private var keepsEdits = true
+    /// The same for the whole database, looked at every `fullEditSweep`: an edit or unsend of a message older than the
+    /// `window` every read looks at still reaches Nook's archive, so scrolling back shows it edited or deleted.
+    private var lastFullEdit: Int64?
+    private var fullEditSweepAt: Date = .distantPast
+    private static let fullEditSweep: TimeInterval = 300
 
     var isReady: Bool { FileManager.default.fileExists(atPath: path) }
 
@@ -253,7 +258,17 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
         let (retapped, tapbackCursor) = try await tapped()
-        let (changedRows, unsent, editCursor) = try await changed(since: recent)
+        var (changedRows, unsent, editCursor) = try await changed(since: recent, after: lastEdit)
+        // Now and then the whole database (no index helps there, so not on every read).
+        let sweepsAll = Date().timeIntervalSince(fullEditSweepAt) >= Self.fullEditSweep
+        var fullCursor: Int64?
+        if sweepsAll {
+            let all = try await changed(since: "1 = 1", after: lastFullEdit)
+            let known = Set(changedRows.compactMap { NotificationRecord.integer($0["id"]) })
+            changedRows += all.rows.filter { NotificationRecord.integer($0["id"]).map { !known.contains($0) } ?? false }
+            unsent.formUnion(all.unsent)
+            fullCursor = all.cursor
+        }
         let unnamed = try await groupNames(rows, contacts: contacts)
         let files = try await attachments(rows)
         let extra = try await extras(rows, contacts: contacts)
@@ -355,6 +370,10 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
         lastRow = newest
         lastTapback = tapbackCursor
         if let editCursor { lastEdit = editCursor }
+        if sweepsAll {
+            fullEditSweepAt = Date()
+            if let fullCursor { lastFullEdit = fullCursor }
+        }
         // A read without the write-ahead log may have missed the newest message: the next turn reads again.
         lastChange = partial ? nil : change
         isWorking = true
@@ -544,7 +563,7 @@ final class MessagesBridge: ChatHistoryBridge, ChatSearchBridge {
     /// then come with its own messages.
     /// The messages (in the window the reads look at, `recent`) edited or unsent since the last read, as full rows, with
     /// the unsent ones among them by row, and how far this read looked. The first read only notes where it starts.
-    private func changed(since recent: String) async throws -> (rows: [[String: Any]], unsent: Set<Int64>, cursor: Int64?) {
+    private func changed(since recent: String, after lastEdit: Int64?) async throws -> (rows: [[String: Any]], unsent: Set<Int64>, cursor: Int64?) {
         guard keepsEdits else { return ([], [], nil) }
         let stamp = "MAX(COALESCE(m.date_edited, 0), COALESCE(m.date_retracted, 0))"
         do {

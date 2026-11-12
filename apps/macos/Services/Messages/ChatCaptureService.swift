@@ -103,7 +103,8 @@ final class ChatCaptureService: ObservableObject {
 
     /// The bridges that search their app's whole history now (`ChatSearchBridge`): ready, and their app switched on.
     var historySearchers: [any ChatSearchBridge] {
-        bridges.compactMap { $0 as? any ChatSearchBridge }.filter { bridge in
+        let archive: [any ChatSearchBridge] = ChatArchiveSearch.shared.searchesHistory ? [ChatArchiveSearch.shared] : []
+        return archive + bridges.compactMap { $0 as? any ChatSearchBridge }.filter { bridge in
             bridge.searchesHistory && (bridge.alwaysOn || sources.isOn(bridge.app))
         }
     }
@@ -161,6 +162,22 @@ final class ChatCaptureService: ObservableObject {
     @Published private(set) var bridged: Set<String> = []
     /// Chats the helper has nothing older of (scrolled back to their start).
     private var noOlder: Set<String> = []
+    /// The inbox as it was last handed to the archive (`ChatArchive`): each save writes only what changed since.
+    private var lastSaved: ChatInbox?
+    /// When each chat's oldest stored message is: scrolling back reads from the archive before asking its app.
+    private var oldestStored: [String: Date] = [:]
+    private var archiveUpkeep: Timer?
+    private var backfillTimer: Timer?
+    /// A backfill batch is underway: one at a time.
+    private var backfilling = false
+    /// Chats the backfill reached the start of (also kept in the archive, `ChatStore.markComplete`).
+    private var backfillComplete: Set<String> = []
+    /// When each app may be asked for its next batch.
+    private var backfillDue: [String: Date] = [:]
+    /// When each chat was last asked.
+    private var backfillAsked: [String: Date] = [:]
+    /// Batches in a row that brought nothing older, per chat (`ChatBackfill.emptyToFinish`).
+    private var backfillEmpty: [String: Int] = [:]
     private var bridgeDue: [String: Date] = [:]
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
     /// message a few seconds (sometimes much longer) after it notified, so it reads again until the message is there.
@@ -220,21 +237,75 @@ final class ChatCaptureService: ObservableObject {
     /// before, so a change made from an empty inbox never replaces the chats on disk.
     private var loaded = false
 
-    private nonisolated static func readInbox() -> ChatInbox {
-        var inbox = SafeStorage.load(ChatInbox.self, from: file).value ?? ChatInbox()
-        inbox.renameMessageIDs()
-        inbox.trim()
-        return inbox
+    /// What launch reads: the inbox (each chat with its newest messages), the inbox as it is written (what the first
+    /// save compares with), and when each chat's oldest stored message is.
+    private struct Loaded: Sendable {
+        var inbox: ChatInbox
+        var saved: ChatInbox?
+        var oldest: [String: Date]
     }
 
-    private func finishLoading(_ read: ChatInbox) {
+    /// From the archive, after bringing over `chat-inbox.json` once (kept beside it as `chat-inbox.imported.json`).
+    /// Without the archive, the JSON file as before.
+    private nonisolated static func readInbox() -> Loaded {
+        guard let archive = ChatArchive.shared else {
+            var inbox = SafeStorage.load(ChatInbox.self, from: file).value ?? ChatInbox()
+            inbox.renameMessageIDs()
+            inbox.trim()
+            return Loaded(inbox: inbox, saved: nil, oldest: [:])
+        }
+        return archive.writeNow { store in
+            if store.state("inbox") == nil, let legacy = SafeStorage.load(ChatInbox.self, from: file).value {
+                var inbox = legacy
+                inbox.renameMessageIDs()
+                if store.apply(from: nil, to: inbox) {
+                    try? FileManager.default.moveItem(at: file, to: importedFile)
+                    Log.connectors.info("Chats: brought \(inbox.threads.count) chats over into the archive")
+                }
+            }
+            guard let (stored, oldest) = store.loadInbox(window: ChatInbox.keep) else {
+                // Nothing written yet, or bringing the file over failed: the file as it is, written in full at the first save.
+                var inbox = SafeStorage.load(ChatInbox.self, from: file).value ?? ChatInbox()
+                inbox.renameMessageIDs()
+                inbox.trim()
+                return Loaded(inbox: inbox, saved: nil, oldest: [:])
+            }
+            var inbox = stored
+            inbox.renameMessageIDs()
+            inbox.trim()
+            return Loaded(inbox: inbox, saved: stored, oldest: oldest)
+        }
+    }
+
+    private nonisolated static var importedFile: URL { NookPaths.supportDirectory.appendingPathComponent("chat-inbox.imported.json") }
+
+    private func finishLoading(_ read: Loaded) {
         guard !loaded else { return }
         loaded = true
-        inbox = read
+        inbox = read.inbox
+        lastSaved = read.saved
+        oldestStored = read.oldest
+        // What launch tidied (`ChatInbox.trim`) is written: chats that left, messages that went.
+        if read.saved != read.inbox { save() }
+        startArchiveUpkeep()
+        startBackfill()
         if startWhenLoaded {
             startWhenLoaded = false
             start()
         }
+    }
+
+    /// Every hour while Nook runs: the archive gives free room back to the disk and tidies its index (`ChatStore.maintain`),
+    /// and the fetched files stay within their limit (`ChatMedia.trimAll`).
+    private func startArchiveUpkeep() {
+        guard let archive = ChatArchive.shared, archiveUpkeep == nil else { return }
+        let upkeep: @Sendable () -> Void = {
+            archive.write { $0.maintain() }
+            // The files every bridge fetched, together: what nobody opened for the longest goes first.
+            DispatchQueue.global(qos: .background).async { ChatMedia.trimAll() }
+        }
+        upkeep()
+        archiveUpkeep = Timer.scheduledCoalesced(withTimeInterval: 3600) { _ in upkeep() }
     }
 
     /// `start` came before the inbox was read.
@@ -569,6 +640,7 @@ final class ChatCaptureService: ObservableObject {
             let before = inbox
             var merged = inbox
             let mergedAny = merged.merge(chats)
+            archiveBeyondWindow(chats, in: merged)
             let told = (bridge as? ChatNewsBridge)?.takeNews()
             if mergedAny {
                 if catchUp.isOwed(bridge.bridgeID) {
@@ -818,16 +890,204 @@ final class ChatCaptureService: ObservableObject {
         return { before, oldest in try await bridge.older(name: thread.name, before: before, oldestID: oldest) }
     }
 
+    /// What a read brought of messages older than what their chat shows: an edit or a deletion of an older message, or
+    /// older history it brought along. The inbox lets go of those (the window holds the newest), so they go straight into
+    /// the archive under the same rules (`ChatStore.saveMerged`, `withdraw`), and scrolling back shows them as they are
+    /// now: "Edited", "Deleted", with the text an edit replaced kept. Nothing from before you removed a chat comes back.
+    private func archiveBeyondWindow(_ chats: [BridgedChat], in inbox: ChatInbox) {
+        guard let archive = ChatArchive.shared else { return }
+        var work: [(key: String, thread: InboxThread, messages: [InboxMessage], deleted: [String])] = []
+        for chat in chats where !chat.gone {
+            let key = ChatInbox.key(of: chat)
+            guard let thread = inbox.threads[key] else { continue }
+            let shown = Set(thread.messages.map(\.id))
+            let start = thread.messages.first?.date ?? .distantFuture
+            let removed = inbox.removed?[key] ?? .distantPast
+            let older = chat.messages.filter { !shown.contains($0.id) && $0.date < start && $0.date > removed }
+            let deleted = chat.deleted.filter { !shown.contains($0) }
+            if !older.isEmpty || !deleted.isEmpty { work.append((key, thread, older, deleted)) }
+        }
+        guard !work.isEmpty else { return }
+        for item in work {
+            if let first = item.messages.map(\.date).min(), oldestStored[item.key].map({ first < $0 }) ?? true {
+                oldestStored[item.key] = first
+            }
+        }
+        archive.write { store in
+            store.transaction {
+                work.allSatisfy { item in
+                    guard let chat = store.chatID(item.key) ?? store.saveChat(item.thread) else { return false }
+                    return item.messages.allSatisfy { store.saveMerged($0, chat: chat) } && store.withdraw(item.deleted, chat: chat)
+                }
+            }
+        }
+    }
+
+    /// An edit or a deletion an app told of one message, for a message its bridge no longer holds (older than what it
+    /// keeps in memory): the archive takes it, so scrolling back shows it edited or deleted. The same for every bridge
+    /// that hears of changes one message at a time (WhatsApp through the linked phone, Telegram). A message the chat
+    /// shows goes through the bridge's own read, as before. `text` nil: the app said it was edited, not to what.
+    func archiveChange(chat key: String, message id: String, edited text: String? = nil, deleted: Bool = false) {
+        guard let archive = ChatArchive.shared else { return }
+        if inbox.threads[key]?.messages.contains(where: { $0.id == id }) == true { return }
+        archive.write { store in
+            guard let chat = store.chatID(key) else { return }
+            store.transaction { deleted ? store.withdraw([id], chat: chat) : store.edit(id, chat: chat, to: text) }
+        }
+    }
+
+    // MARK: Backfill
+
+    /// How a backfill asks a chat's app for the batch before a message: the bridge that scrolls back in it by its name
+    /// (Messages, WhatsApp on this Mac, Slack, Telegram, Teams, Snapchat) or the chat helper (Instagram, Signal,
+    /// Messenger, X, LinkedIn). Its app's own data on this Mac is read quickly; a service is asked slowly. A chat its app
+    /// knows by an id goes through `ChatBackfillBridge`.
+    private func backfillSource(_ thread: InboxThread) -> (local: Bool, fetch: (Date, String?) async throws -> [InboxMessage])? {
+        if let chatID = thread.chatID {
+            guard let bridge = bridges.compactMap({ $0 as? ChatBackfillBridge }).first(where: { $0.app == thread.app && $0.isReady }),
+                  bridge.canBackfill(chatID: chatID) else { return nil }
+            return (bridge.readsLocally, { before, _ in try await bridge.backfill(chatID: chatID, before: before, limit: ChatBackfill.step) })
+        }
+        if serviceBridge.chatID(app: thread.app, name: thread.name) != nil {
+            return (false, { [serviceBridge] before, _ in
+                try await serviceBridge.older(app: thread.app, name: thread.name, before: before).chat?.messages ?? []
+            })
+        }
+        guard let bridge = bridge(for: thread.app) as? ChatHistoryBridge, bridge.isReady, bridge.canLoadOlder(name: thread.name) else {
+            return nil
+        }
+        return (bridge.readsLocally, { before, oldest in
+            try await bridge.older(name: thread.name, before: before, oldestID: oldest).chat?.messages ?? []
+        })
+    }
+
+    /// Starts filling the archive with each chat's whole history, in the background (`ChatBackfill`).
+    private func startBackfill() {
+        guard ChatArchive.shared != nil, backfillTimer == nil else { return }
+        backfillTimer = Timer.scheduledCoalesced(withTimeInterval: ChatBackfill.tick) { [weak self] _ in
+            Task { @MainActor in await self?.backfillTick() }
+        }
+    }
+
+    /// One batch of one chat's history, older than what the archive holds of it, straight into the archive (the chat's
+    /// window in memory stays as it is). Each app has its own pace (`ChatBackfill.pause`); a chat whose start was
+    /// reached is not asked again.
+    func backfillTick(now: Date = Date()) async {
+        guard enabled, loaded, !backfilling, let archive = ChatArchive.shared,
+              ChatBackfill.allowed(EnergyMonitor.shared.plan, freeBytes: DiskSpace.available()) else { return }
+        // Chats with something written (the backfill goes on from there), newest first; among them the one asked
+        // longest ago, so one long chat does not keep the others waiting.
+        let candidates = inbox.sorted.filter { thread in
+            oldestStored[thread.id] != nil && isShown(thread) && !backfillComplete.contains(thread.id)
+                && (backfillDue[thread.app] ?? .distantPast) <= now
+        }
+        let ordered = candidates.enumerated().sorted { a, b in
+            let (x, y) = (backfillAsked[a.element.id] ?? .distantPast, backfillAsked[b.element.id] ?? .distantPast)
+            return x != y ? x < y : a.offset < b.offset
+        }.map(\.element)
+        guard let (thread, source) = ordered.lazy.compactMap({ thread in self.backfillSource(thread).map { (thread, $0) } }).first
+        else { return }
+        backfillAsked[thread.id] = now
+        backfilling = true
+        defer { backfilling = false }
+        let key = thread.id
+        let cursor = await archive.read { store -> ChatBackfill.Cursor in
+            ChatBackfill.Cursor(complete: store.isComplete(key), oldest: store.oldest(key))
+        }
+        if cursor.complete {
+            backfillComplete.insert(key)
+            return
+        }
+        // Nothing written of it yet: its window is written with the next save, and the backfill comes after.
+        guard let oldest = cursor.oldest else { return }
+        backfillDue[thread.app] = now.addingTimeInterval(ChatBackfill.pause(local: source.local))
+        let fetched: [InboxMessage]
+        do {
+            fetched = try await source.fetch(oldest.date, oldest.id)
+        } catch {
+            // The app could not answer now (signed out, offline, too many questions): it waits longer.
+            backfillDue[thread.app] = Date().addingTimeInterval(ChatBackfill.pause(local: source.local) * 10)
+            return
+        }
+        // The chat was removed or cleared while its app answered: nothing of it comes back, nor anything from before you
+        // cleared it.
+        guard inbox.threads[key] != nil else { return }
+        let removedAt = inbox.removed?[key]
+        let older = ChatBackfill.older(fetched, than: oldest).filter { message in removedAt.map { message.date > $0 } ?? true }
+        let fresh = older.isEmpty ? 0 : await archive.written { $0.saveBackfill(older, key: key) }
+        guard let fresh else { return }
+        if let first = older.map(\.date).min(), oldestStored[key].map({ first < $0 }) ?? true { oldestStored[key] = first }
+        // Nothing new: the chat's start, or a bridge busy with the same chat this moment (you scrolling back there), or a
+        // batch of messages of one second it already gave. Only nothing a few times in a row, each after the app's
+        // pause, counts as the start.
+        guard fresh == 0 else {
+            backfillEmpty[key] = nil
+            return
+        }
+        let empty = (backfillEmpty[key] ?? 0) + 1
+        backfillEmpty[key] = empty
+        guard empty >= ChatBackfill.emptyToFinish else { return }
+        backfillComplete.insert(key)
+        archive.write { $0.markComplete(key) }
+    }
+
     /// A chat whose app keeps older messages than Nook shows, until its start was reached.
     func canLoadOlder(_ id: String) -> Bool {
-        guard let thread = inbox.threads[id], !noOlder.contains(id), thread.hasOlder != false else { return false }
+        guard let thread = inbox.threads[id] else { return false }
+        if storesOlder(thread) { return true }
+        guard !noOlder.contains(id), thread.hasOlder != false else { return false }
         return history(thread) != nil
+    }
+
+    /// The archive holds messages of this chat older than the ones it shows.
+    private func storesOlder(_ thread: InboxThread) -> Bool {
+        guard let oldest = oldestStored[thread.id] else { return false }
+        return oldest < thread.messages.first?.date ?? .distantFuture
+    }
+
+    /// The batch before the oldest message a chat shows, from the archive: one index lookup, no app asked. False when
+    /// the archive has none.
+    private func loadStoredOlder(_ id: String) async -> Bool {
+        guard let archive = ChatArchive.shared, let thread = inbox.threads[id], storesOlder(thread) else { return false }
+        let window = Set(thread.messages.map(\.id))
+        let before = thread.messages.first?.date ?? Date()
+        let older = await archive.read { $0.older(id, before: before, excluding: window, limit: ChatHistory.step) }
+        guard var current = inbox.threads[id] else { return false }
+        let known = Set(current.messages.map(\.id))
+        let fresh = older.filter { !known.contains($0.id) }
+        guard !fresh.isEmpty else {
+            // Nothing older after all (the dates said otherwise): the app is asked from now on.
+            oldestStored[id] = current.messages.first?.date
+            return false
+        }
+        current.messages = Self.inserting(fresh, into: current.messages)
+        current.capacity = current.messages.count
+        inbox.threads[id] = current
+        // Already written: the next save need not write them again.
+        if var saved = lastSaved?.threads[id] {
+            let savedIDs = Set(saved.messages.map(\.id))
+            saved.messages = Self.inserting(fresh.filter { !savedIDs.contains($0.id) }, into: saved.messages)
+            saved.capacity = current.capacity
+            lastSaved?.threads[id] = saved
+        }
+        return true
+    }
+
+    /// `messages` put in their places by date among `list` (oldest first), as the inbox places a message.
+    static func inserting(_ messages: [InboxMessage], into list: [InboxMessage]) -> [InboxMessage] {
+        var result = list
+        for message in messages.sorted(by: { $0.date < $1.date }) {
+            let index = result.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
+            result.insert(message, at: index)
+        }
+        return result
     }
 
     /// Scrolls back in a chat: the batch before the oldest message it shows, kept from now on. No cap: each scroll back
     /// goes further, as far as the app keeps the chat. False when no older one came in.
     func loadOlder(_ id: String) async -> Bool {
         ensureLoaded()
+        if await loadStoredOlder(id) { return true }
         guard let thread = inbox.threads[id], let history = history(thread) else { return false }
         let before = thread.messages.count
         let oldest = thread.messages.first
@@ -838,6 +1098,7 @@ final class ChatCaptureService: ObservableObject {
             var merged = inbox
             merged.grow(id, by: chat.messages.count)
             merged.merge(chat)
+            archiveBeyondWindow([chat], in: merged)
             let after = merged.threads[id]?.messages.count ?? before
             guard after > before else { return false }
             inbox = merged
@@ -856,6 +1117,8 @@ final class ChatCaptureService: ObservableObject {
         next.forgetMessages(of: ids)
         guard next != inbox else { return }
         inbox = next
+        ChatArchive.shared?.write { store in store.transaction { ids.allSatisfy { store.deleteChat($0, keepChat: true) } } }
+        for id in ids { oldestStored[id] = nil }
         save()
     }
 
@@ -866,6 +1129,8 @@ final class ChatCaptureService: ObservableObject {
         let gone = ids.filter { inbox.threads[$0] != nil }
         guard !gone.isEmpty else { return }
         for id in gone { inbox.threads[id] = nil }
+        ChatArchive.shared?.write { store in store.transaction { gone.allSatisfy { store.deleteChat($0) } } }
+        for id in gone { oldestStored[id] = nil }
         save()
     }
 
@@ -874,6 +1139,7 @@ final class ChatCaptureService: ObservableObject {
         ensureLoaded()
         var changed = 0
         for chat in chats where inbox.merge(chat) { changed += 1 }
+        archiveBeyondWindow(chats, in: inbox)
         if changed > 0 { save() }
         return changed
     }
@@ -886,6 +1152,9 @@ final class ChatCaptureService: ObservableObject {
         inbox = ChatInbox()
         inbox.lastRecord = last
         inbox.lookedBack = lookedBack
+        ChatArchive.shared?.write { $0.deleteAll() }
+        lastSaved = nil
+        oldestStored = [:]
         save()
         // A linked phone's chats are WhatsApp's own, not collected: they come back at once.
         whatsAppGatewayBridge.handAllOver()
@@ -912,11 +1181,26 @@ final class ChatCaptureService: ObservableObject {
         }
     }
 
-    /// Writes what is waiting now; `wait` holds on until it is on disk (Nook quits).
+    /// Writes what is waiting now; `wait` holds on until it is on disk (Nook quits). With the archive only what changed
+    /// since the last save is written: a read that brought one message writes one row, not the whole inbox.
     private func flushSave(wait: Bool = false) {
         guard savePending, loaded else { return }
         savePending = false
         let inbox = inbox
+        if let archive = ChatArchive.shared {
+            let previous = lastSaved
+            lastSaved = inbox
+            for thread in inbox.threads.values {
+                guard let first = thread.messages.first?.date else { continue }
+                if oldestStored[thread.id].map({ first < $0 }) ?? true { oldestStored[thread.id] = first }
+            }
+            let write: @Sendable (ChatStore) -> Void = { store in
+                // A write that failed leaves the archive as it was: the next one writes everything again.
+                if !store.apply(from: previous, to: inbox) { store.apply(from: nil, to: inbox) }
+            }
+            if wait { archive.writeNow(write) } else { archive.write(write) }
+            return
+        }
         let file = Self.file
         let write: @Sendable () -> Void = {
             // A chat whose app keeps its messages (WhatsApp through the linked phone) is written without them.

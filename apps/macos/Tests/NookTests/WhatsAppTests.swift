@@ -1160,7 +1160,7 @@ final class WhatsAppTests: XCTestCase {
         try fm.setAttributes([.modificationDate: now.addingTimeInterval(-3 * 86_400)], ofItemAtPath: old.path)
         try fm.setAttributes([.modificationDate: now.addingTimeInterval(-3 * 86_400)], ofItemAtPath: sending.path)
 
-        XCTAssertEqual(WhatsAppGOWAProcess.pruneStatics(statics, olderThan: 86_400, now: now), 2)
+        XCTAssertEqual(WAGOWA.pruneStatics(statics, olderThan: 86_400, now: now), 2)
         XCTAssertFalse(fm.fileExists(atPath: old.path))
         XCTAssertFalse(fm.fileExists(atPath: old.deletingLastPathComponent().path), "the emptied date folder goes too")
         XCTAssertFalse(fm.fileExists(atPath: sending.path))
