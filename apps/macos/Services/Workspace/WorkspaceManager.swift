@@ -1344,9 +1344,15 @@ final class WorkspaceManager: ObservableObject {
         }
         // You carry on yourself: whatever waited behind a failure or a stop goes on after this turn.
         if var held = queued[id], held.isHeld { held.resume(); queued[id] = held }
-        // Its worktree is being made again for an earlier message: this one follows that turn. The same while its
-        // timeline is read back for a message that goes out first.
-        if reopeningWorktrees.contains(id) || readingToSend.contains(id) {
+        // Its worktree is being made again for an earlier message: this one follows that turn.
+        if reopeningWorktrees.contains(id) {
+            enqueue(id, text: clean, origin: origin)
+            return true
+        }
+        // Its timeline is read back for a message of yours whose turn starts right after: yours waits behind it, and a
+        // hidden one is refused as it is while a turn runs (`processes` below), so its caller cleans up.
+        if readingToSend.contains(id) {
+            guard !shown else { return false }
             enqueue(id, text: clean, origin: origin)
             return true
         }
@@ -1378,20 +1384,16 @@ final class WorkspaceManager: ObservableObject {
         }
         // Its timeline was released while the session sat idle: it is read back off the main thread (a long one took the
         // main thread with it), and the turn starts once it is here. A message meanwhile waits in the queue behind it.
-        if events[id] == nil {
+        // Only for a message you see: a hidden one (Nook's summary, a recovery, a notice) reads it here as before, so its
+        // caller still hears false when it cannot go out and cleans up after it.
+        if events[id] == nil, !shown {
             readingToSend.insert(id)
             let continues = QueuedMessage.Origin.continuesWork(origin)
             whenTimelineLoaded(id) { [weak self] in
                 guard let self, self.readingToSend.remove(id) != nil, let run = self.run(id) else { return }
                 // A turn started meanwhile: the message goes after it, as it would have had it come a moment later.
                 guard self.processes[id] == nil else {
-                    if !shown {
-                        self.enqueue(id, text: clean, origin: origin)
-                    } else if clean == "/compact" {
-                        // Nook's own summary is not sent after all (what its caller does when `send` says false).
-                        self.idleCompacting.remove(id)
-                        self.sizeCompacting.remove(id)
-                    }
+                    self.enqueue(id, text: clean, origin: origin)
                     return
                 }
                 if continues { self.continuingTurns.insert(id) }

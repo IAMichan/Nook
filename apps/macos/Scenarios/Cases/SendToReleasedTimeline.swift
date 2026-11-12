@@ -16,7 +16,14 @@ final class SendToReleasedTimeline: Scenario {
             // Released, as `evictTimelines` releases an idle session's timeline.
             workspace.events[session.id] = nil
 
-            try nook.send(session, "And once more, please", wait: false)
+            guard workspace.send(session.id, text: "And once more, please") else {
+                throw ScenarioFailure.assertion("the session did not take the message")
+            }
+            // A hidden message (Nook's own summary, a recovery) meanwhile is refused, as while a turn runs, so its caller
+            // cleans up; it is not queued behind yours.
+            guard workspace.events[session.id] == nil, !workspace.sendHidden(session.id, text: "/compact") else {
+                throw ScenarioFailure.assertion("a hidden message was taken while the timeline was read back for yours")
+            }
             // The turn starts once the timeline is back: its prompt shows in it then.
             let end = Date().addingTimeInterval(20)
             while (workspace.events[session.id] ?? []).filter({ $0.kind == .user }).count < 2 {
@@ -36,9 +43,23 @@ final class SendToReleasedTimeline: Scenario {
             guard prompts == ["Give me a short tour", "And once more, please"] else {
                 throw ScenarioFailure.assertion("the prompts read \(prompts)")
             }
+            guard (workspace.queued[session.id]?.isEmpty ?? true) else {
+                throw ScenarioFailure.assertion("the refused hidden message was queued")
+            }
             try nook.open(session)
             try expect(screen.text("And once more, please").first).toBeVisible()
             try app.screenshot("second-turn")
+
+            // A hidden message to a released timeline reads it on the spot, as before: its turn starts at once, or its
+            // caller hears false right away.
+            ScenarioClock.spin(nanoseconds: 6_000_000_000)
+            workspace.events[session.id] = nil
+            guard workspace.sendHidden(session.id, text: "Look once more"), workspace.events[session.id] != nil else {
+                throw ScenarioFailure.assertion("a hidden message did not read the released timeline at once")
+            }
+            try nook.waitForTurn(session)
+            let shown = workspace.timeline(session.id).filter { $0.kind == .user }.map(\.text)
+            guard shown == prompts else { throw ScenarioFailure.assertion("the hidden message shows as \(shown)") }
         }
     }
 }
