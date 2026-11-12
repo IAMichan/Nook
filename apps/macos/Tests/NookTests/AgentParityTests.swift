@@ -47,7 +47,7 @@ final class AgentParityTests: XCTestCase {
         "NotchUI/Pills/NewSessionComposer.swift": (2, "Antigravity has to be installed first"),
         "NotchUI/Workspace/UsageView.swift": (1, "only Gemini CLI reports usage per profile from disk"),
         "Services/AgentHistory.swift": (13, "where each agent keeps its files and logins on disk; `.acp` placeholder"),
-        "Services/AgentHub.swift": (1, "Claude Code's hook id says which Claude runs it (desktop or CLI)"),
+        "Services/AgentHub+HookIngest.swift": (1, "Claude Code's hook id says which Claude runs it (desktop or CLI)"),
         "Services/AgentProfiles.swift": (3, "only Claude Code takes an API key per account"),
         "Services/ClaudeUsage.swift": (1, "Claude's plan usage endpoint"),
         "Services/CodexRateLimits.swift": (1, "Codex's own rate-limit payload"),
