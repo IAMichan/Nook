@@ -354,6 +354,7 @@ targets:
       - path: Brain/BrainSelection.swift
       - path: Brain/PrivateBrief.swift
       - path: Brain/AIProvider.swift
+      - path: Core/ProviderKeys.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
       - path: Core/LineDiff.swift

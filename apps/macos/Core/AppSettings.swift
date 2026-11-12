@@ -197,7 +197,6 @@ typealias Keychain = SecretStore
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    private static let keyAccount = "anthropic-api-key"
 
     /// Language of the app interface (Nederlands, English, Deutsch).
     @Published var appLanguage: AppLanguage {
@@ -279,7 +278,6 @@ final class AppSettings: ObservableObject {
     @Published var localModel: String {
         didSet { UserDefaults.standard.set(localModel, forKey: "localModel") }
     }
-    @Published private(set) var hasAPIKey: Bool
 
     /// Which display Nook is shown on: "auto" (display with notch, otherwise main display), "main", "mouse"
     /// (follows mouse) or display name.
@@ -645,7 +643,7 @@ final class AppSettings: ObservableObject {
         if let routed = ScreenBrain.routed { return !routed.model.isEmpty }
         if useLocal { return !localModel.isEmpty }
         switch provider {
-        case .claude: return hasAPIKey
+        case .claude: return hasKey(for: .claude)
         case .claudeCode: return ClaudeCodeBrain.executable != nil
         // Your subscription through the agent: ready once it is installed and signed in.
         case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
@@ -692,31 +690,40 @@ final class AppSettings: ObservableObject {
     /// Key for the selected provider.
     var providerKey: String? { key(for: provider) }
 
+    /// Every provider's API key, Claude's too, through one store (`ProviderKeys`) in the Keychain.
+    private static let keys = ProviderKeys(read: { Keychain.read($0) }, write: { Keychain.write($0, account: $1) })
+
+    /// Keys the Keychain refused this session: they still work until Nook quits.
+    private var unsavedKeys: [AIProvider: String] = [:]
+
     /// Key for a provider, active or not.
     func key(for provider: AIProvider) -> String? {
-        provider == .claude ? apiKey : Keychain.read(provider.keyAccount)
+        unsavedKeys[provider] ?? Self.keys.key(provider: provider.rawValue)
     }
 
     private func refreshProviderKey() {
-        hasProviderKey = provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
+        hasProviderKey = hasKey(for: provider)
     }
 
-    /// Saves the key for a provider other than Claude.
+    /// Saves the key for a provider; an empty one removes it. Returns the Keychain's error, nil when it was saved.
     @discardableResult
     func saveProviderKey(_ key: String, for provider: AIProvider) -> String? {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
-        let status = Keychain.write(trimmed, account: provider.keyAccount)
+        let status = Self.keys.save(key, provider: provider.rawValue)
+        let clean = ProviderKeys.clean(key)
+        unsavedKeys[provider] = status == errSecSuccess || clean.isEmpty ? nil : clean
         refreshProviderKey()
         objectWillChange.send()
         return status == errSecSuccess ? nil : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain error \(status)")
     }
 
     func hasKey(for provider: AIProvider) -> Bool {
-        provider == .claude ? hasAPIKey : !(Keychain.read(provider.keyAccount) ?? "").isEmpty
+        key(for: provider) != nil
     }
 
-    private var cachedKey: String?
-    var apiKey: String? { cachedKey }
+    /// Only the ends of a provider's saved key, to see which key it is.
+    func maskedKey(for provider: AIProvider) -> String? {
+        ProviderKeys.masked(key(for: provider))
+    }
 
     private init() {
         // Haiku is much faster than Sonnet and sufficient for Nook's tasks. One-time migration for users on the old default.
@@ -742,7 +749,7 @@ final class AppSettings: ObservableObject {
         let storedProvider = defaults.string(forKey: "provider")
         useLocal = BrainSelection.initialUseLocal(
             stored: storedUseLocal, storedProvider: storedProvider,
-            hasAnthropicKey: storedUseLocal == nil && storedProvider == nil && !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
+            hasAnthropicKey: storedUseLocal == nil && storedProvider == nil && Self.keys.hasKey(provider: AIProvider.claude.rawValue))
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
@@ -811,34 +818,11 @@ final class AppSettings: ObservableObject {
         useMemory = defaults.object(forKey: "useMemory") as? Bool ?? true
         learnFromChats = defaults.object(forKey: "learnFromChats") as? Bool ?? true
         // Existing users (key or model present) do not need to repeat onboarding.
-        let key = Keychain.read(Self.keyAccount)
-        cachedKey = key
-        hasAPIKey = !(key ?? "").isEmpty
+        let key = Self.keys.key(provider: AIProvider.claude.rawValue)
         // Local values: `self` cannot be read yet, as initialization is in progress.
         onboardingDone = defaults.bool(forKey: "onboardingDone") || !(key ?? "").isEmpty
             || !(defaults.string(forKey: "localModel") ?? "").isEmpty
         refreshProviderKey()
         applyTheme()
-    }
-
-    /// Saves the key. Active for at least this session; `keychainError` is set if Keychain failed.
-    @discardableResult
-    func saveAPIKey(_ key: String) -> (keychainError: String?, looksValid: Bool) {
-        // Pasting often includes whitespace, newlines, or quotes.
-        let trimmed = key
-            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`")))
-        let status = Keychain.write(trimmed, account: Self.keyAccount)
-        cachedKey = trimmed.isEmpty ? nil : trimmed
-        hasAPIKey = !trimmed.isEmpty
-        refreshProviderKey()
-        let error: String? = status == errSecSuccess ? nil
-            : ((SecCopyErrorMessageString(status, nil) as String?) ?? "Keychain error \(status)")
-        return (error, trimmed.hasPrefix("sk-ant-") && !trimmed.contains(" "))
-    }
-
-    /// Only the tail of the key, to verify which key is saved.
-    var maskedKey: String? {
-        guard let key = cachedKey, key.count > 12 else { return nil }
-        return "\(key.prefix(7))…\(key.suffix(4))"
     }
 }

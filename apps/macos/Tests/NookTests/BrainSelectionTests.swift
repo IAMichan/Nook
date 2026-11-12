@@ -120,4 +120,12 @@ final class ScreenBrainTests: XCTestCase {
         XCTAssertFalse(ScreenBrain.needsBoth("Wat staat hier?"))
         XCTAssertFalse(ScreenBrain.needsBoth("Zet dit in mijn agenda"))
     }
+
+    /// Claude's key stays where every earlier version saved it, so nobody loses it to the shared key store.
+    func testEveryProvidersKeyAccountIsTheOneItHadBefore() {
+        XCTAssertEqual(AIProvider.claude.keyAccount, "anthropic-api-key")
+        for provider in AIProvider.allCases where provider != AIProvider.claude {
+            XCTAssertEqual(provider.keyAccount, "\(provider.rawValue)-api-key")
+        }
+    }
 }
