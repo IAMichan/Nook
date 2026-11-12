@@ -76,37 +76,8 @@ struct AgentInboxList: View {
 
     // MARK: Rows
 
-    private func attention(_ item: AgentListItem) -> AgentAttention {
-        switch item.status {
-        case .waiting: return .approval
-        case .input: return .input
-        case .failed: return .failed
-        case .limited: return .limited
-        case .working: return .working
-        case .idle: return item.unseen ? .ready : .idle
-        case .finished: return .finished
-        }
-    }
-
     private func row(_ item: AgentListItem) -> InboxRow {
-        let isPast = item.id.hasPrefix("past:")
-        // A busy session settles only when you settled it during this busy spell (a turn that hangs).
-        let settledBusy = item.isBusy && finishedMarks.isMarkedWhileBusy(item.finishKey)
-        // Only you settle a chat (or the auto-settle rules you switched on): one that went quiet stays until you handled it,
-        // across a restart of Nook too.
-        let settled = isPast || settledBusy || (!item.isBusy && finishedMarks.contains(item.finishKey))
-        return InboxRow(
-            id: item.id, title: item.title, project: InboxProject.key(folder: item.folder, path: item.path),
-            attention: attention(item),
-            pinned: store.state.pinned.contains(item.id), settled: settled,
-            snoozedUntil: item.snoozedUntil, snoozedAt: item.snoozedAt, limitedAt: item.limitedAt,
-            lastActivity: item.started ?? .distantPast,
-            hasOpenRequest: item.status == .waiting || item.status == .input,
-            isActive: item.isBusy || item.status == .working,
-            unread: item.unseen,
-            parentID: item.parentID,
-            unsettledAt: finishedMarks.kept[item.finishKey]
-        )
+        InboxRow(item, store: store, finished: finishedMarks, workspace: app.workspace)
     }
 
     private func runID(_ item: AgentListItem?) -> UUID? {
@@ -160,16 +131,6 @@ struct AgentInboxList: View {
         if let opened = workspace.openPullRequests[id] { return opened }
         guard let events = workspace.events[id], !events.isEmpty else { return nil }
         return RunPullRequestLinks.shared.url(id, events: events)
-    }
-
-    /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier
-    /// ones of the last three days (older ones keep the state they had).
-    private var pullRequestFolders: [PullRequestSync.Folder] {
-        let recent = past.filter { ($0.started ?? .distantPast) > now.addingTimeInterval(-3 * 24 * 3600) }
-        return (items + recent).compactMap { item in
-            guard runID(item) == nil, let branch = item.branch else { return nil }
-            return PullRequestSync.Folder(path: item.path, branch: branch, busy: item.isBusy, quietSince: item.started)
-        }
     }
 
     // MARK: Body
@@ -300,25 +261,7 @@ struct AgentInboxList: View {
         // Only while the list is on screen: holding ⌘ shows the ⌘-numbers.
         .onAppear { commandHold.start() }
         .onDisappear { commandHold.stop() }
-        .onAppear {
-            shownOrder = shown
-            pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: now)
-            store.undoSnooze = { ids in
-                for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.unsnooze(uuid) } }
-            }
-            store.undoArchive = { ids in
-                for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.setArchived(uuid, false) } }
-            }
-            // Only sessions Nook sees through hooks; the ones it runs itself ("run:…") end their own turns.
-            store.settleBusy = { ids in
-                for id in ids where !id.hasPrefix("run:") { app.hub.settleByUser(id) }
-            }
-            store.settled = { items in app.applySettleActions(items) }
-        }
-        .onChange(of: now) { _, current in
-            autoSettle(rows: rows, byID: byID, now: current)
-            pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: current)
-        }
+        .onAppear { shownOrder = shown }
     }
 
     /// Nothing here yet and nothing being searched or read: the coding agents step of the first-run flow installs or
@@ -942,7 +885,7 @@ struct AgentInboxList: View {
             .disabled(down == nil)
         }
         // With auto-settle on, one session can stay out of it (`AutoSettlePolicy.Settings.perThreadOptOut`).
-        if store.autoSettle.enabled, !entry.row.settled {
+        if store.autoSettleRules(machine: entry.row.machine).enabled, !entry.row.settled {
             let optedOut = store.autoSettle.perThreadOptOut.contains(item.id)
             Button(tr(optedOut ? "inbox.autoSettle.allow" : "inbox.autoSettle.keep")) {
                 if optedOut { store.autoSettle.perThreadOptOut.remove(item.id) } else { store.autoSettle.perThreadOptOut.insert(item.id) }
@@ -1052,21 +995,6 @@ struct AgentInboxList: View {
                             actions: actions,
                             toggleAll: { selection.toggleAll(shown) },
                             done: { withAnimation(NookTheme.reveal) { selection.clear() } })
-    }
-
-    // MARK: Auto-settle
-
-    private func autoSettle(rows: [InboxRow], byID: [String: AgentListItem], now: Date) {
-        let workspace = app.workspace
-        let ids = store.autoSettleCandidates(rows: rows, pullRequest: { id in
-            runID(byID[id]).map { run in pullRequests.autoSettleState(run, since: workspace.lastWrittenAt(run)) } ?? .none
-        }, now: now)
-        let settle = ids.compactMap { byID[$0] }
-        guard !settle.isEmpty else { return }
-        store.settle(settle, now: now, record: false)
-        // As a settle of yours: a few seconds to take it back (⌘Z); after that Reopen on the Settled shelf brings it back,
-        // and it then stays until it has new activity.
-        store.note(.autoSettled, ids: settle.map(\.finishKey), now: now)
     }
 
     // MARK: Undo

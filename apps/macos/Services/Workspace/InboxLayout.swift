@@ -31,6 +31,9 @@ struct InboxRow: Identifiable, Equatable, Sendable {
     /// When you last brought it back from Settled (Reopen, or undoing a settle): until it has new activity after that, it
     /// does not settle by itself again (`AutoSettlePolicy`).
     var unsettledAt: Date? = nil
+    /// The SSH machine it runs on (`RemoteMachine.id`), nil on this Mac: which auto-settle rules apply
+    /// (`AutoSettlePolicy.Rules`).
+    var machine: String? = nil
 
     /// Needs you, from either source: the derived attention or a raw request flag.
     var needsYou: Bool { hasOpenRequest || attention.needsYou }

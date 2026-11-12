@@ -407,7 +407,6 @@ struct WorkspaceSettingsSection: View {
     let part: Part
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var ws = WorkspaceSettings.shared
-    @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
     @ObservedObject private var relay = WebhookRelayClient.shared
     @AppStorage(AgentCredits.settingKey) private var stripAgentCredits = false
@@ -934,15 +933,7 @@ struct WorkspaceSettingsSection: View {
     /// The session list keeps itself tidy: sessions settle and archive by themselves.
     private var sessionTidying: some View {
         Section {
-            Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
-            if inbox.autoSettle.enabled {
-                Toggle(tr("settings.ws.autoSettleMerged"), isOn: $inbox.autoSettle.settleOnMergedPullRequest)
-                Toggle(tr("settings.ws.autoSettleClosed"), isOn: $inbox.autoSettle.settleOnClosedPullRequest)
-                Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
-                        value: $inbox.autoSettle.inactivityDays, in: 1...30)
-                Toggle(tr("settings.ws.autoSettleKeepOpenPR"), isOn: $inbox.autoSettle.keepWithOpenPullRequest)
-                    .help(tr("settings.ws.autoSettleKeepOpenPR.help"))
-            }
+            AutoSettleRulesRows()
             Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
                 Text(tr("settings.ws.never")).tag(0)
                 Text(tr("settings.ws.days", 7)).tag(7)

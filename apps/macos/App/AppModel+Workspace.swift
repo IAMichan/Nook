@@ -328,6 +328,8 @@ extension AppModel {
         }
         workspace.pullRequestCreated = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
         PullRequestSync.shared.found = { [weak self] run, url in self?.showCreatedPullRequest(url, run: run) }
+        // Auto-settle and the branch pull request sync run with or without a list on screen, from just after launch.
+        SessionTidier.shared.start(app: self)
         // Project scripts run in a terminal that belongs to the session's folder, without taking you away from where you are.
         workspace.runScript = { folder, command, title in
             let terminal = TerminalStore.shared.open(in: folder, command: command, title: title)
