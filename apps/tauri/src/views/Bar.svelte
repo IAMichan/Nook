@@ -482,7 +482,7 @@
         <span class="spacer"></span>
         <button class="ghost icon lang" title={tr("Taal: klik voor English", "Language: click for Nederlands")} onclick={toggleLanguage}>{english() ? "EN" : "NL"}</button>
         <button class="ghost icon lock" class:on={locked} title={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} onclick={() => { locked = !locked; if (locked) pinnedOpen = true; }}><Icon name={locked ? "lock" : "unlock"} size={14} /></button>
-        <button class="ghost icon" title={tr("Open in venster", "Open in window")} onclick={() => api.showMain("chat")}>⧉</button>
+        <button class="ghost icon" title={tr("Verder in het venster (dit gesprek)", "Continue in the window (this conversation)")} onclick={() => api.showMain(nook.activeId ? `nook:${nook.activeId}` : "chat")}>⧉</button>
         <button class="ghost icon" title={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}>⚙</button>
       </header>
       <AgentAlerts

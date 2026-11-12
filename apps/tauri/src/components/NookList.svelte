@@ -135,7 +135,7 @@
 <aside class="list" aria-label="Conversations">
   <header><span>Conversations</span><span class="count">{list.length}</span></header>
   <button class="new-nook" onclick={newNook}><Icon name="plus" size={16} /><span>New Nook</span><kbd>Ctrl N</kbd></button>
-  <label class="search"><Icon name="search" size={15} /><input aria-label="Search conversations" placeholder="Search conversations" bind:value={query} onkeydown={(e) => { if (e.key === "ArrowDown" && list.length) { e.preventDefault(); focusRow(0); } }} />{#if query}<button class="ghost" aria-label="Clear search" onclick={() => query = ""}>×</button>{/if}</label>
+  <label class="search"><Icon name="search" size={15} /><input aria-label="Search conversations" placeholder="Search conversations (Ctrl+F)" bind:value={query} onkeydown={(e) => { if (e.key === "ArrowDown" && list.length) { e.preventDefault(); focusRow(0); } }} />{#if query}<button class="ghost" aria-label="Clear search" onclick={() => query = ""}>×</button>{/if}</label>
   <div class="items" bind:this={itemsElement} aria-busy={query.trim() ? search.kind === "loading" : loading}>
     {#if query.trim() && search.kind === "loading" || !query.trim() && loading && !list.length}
       <p class="state" role="status">{query.trim() ? "Searching conversations…" : "Loading conversations…"}</p>
