@@ -529,67 +529,6 @@ enum ComposerFilePicker {
     }
 }
 
-/// How full the agent's context window is: a ring that starts at the top, with the percentage beside it. It turns amber above 80 % and coral above
-/// 90 % of the auto-compact point (or of the window when there is none), and amber too while your next message would go
-/// after a summary. Hover (or click) opens `ContextUsageCard`: what fills the window, the choice to summarize before your
-/// next message, and the button that summarizes now.
-struct ComposerContextRing: View {
-    let usage: ContextUsage
-    var onCompact: (() -> Void)? = nil
-    /// Where the agent summarizes by itself (`AutoCompactMark`): a line in the card (the ring's tint follows it).
-    var autoCompactAt: Int? = nil
-    /// Back at a long session whose prompt cache expired (`ReturnCompaction`): whether your next message goes after a
-    /// summary, and how to switch it. Nil when that is not on offer.
-    var compactFirst: Bool? = nil
-    var toggleCompactFirst: () -> Void = {}
-    /// Asks the agent for its breakdown, as the card opens.
-    var onOpen: () -> Void = {}
-    @State private var open = false
-    @State private var hovering = false
-
-    private var fraction: Double { usage.fraction }
-    /// Measured against the auto-compact point: when it is time to summarize (`ContextMeter.pressure`).
-    private var pressure: Double { ContextMeter.pressure(used: usage.usedTokens, window: usage.window, autoCompactAt: autoCompactAt) }
-
-    /// "Context window 84% · 168k/200k".
-    private var help: String {
-        tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: usage.usedTokens, window: usage.window))
-    }
-
-    var body: some View {
-        let level = ContextMeter.level(pressure)
-        let calm = level == .normal && compactFirst != true
-        let tint: Color = level == .critical ? NookTheme.coral : (calm ? NookTheme.textSecondary : NookTheme.amber)
-        Button { open.toggle() } label: {
-            // Like the limits chip beside it (`ComposerUsageRing`): the ring and the percentage, one control high.
-            HStack(spacing: NookTheme.Spacing.xs) {
-                ProgressRing(fraction: fraction, tint: tint, lineWidth: 2.5)
-                    .frame(width: 18, height: 18)
-                Text(ContextMeter.percentText(fraction))
-                    .font(NookTheme.TextStyle.caption.monospacedDigit())
-                    .foregroundStyle(calm && hovering ? NookTheme.paper : tint)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .frame(height: 28)
-            .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-        }
-        .buttonStyle(.nookPlain)
-        .accessibilityLabel(help)
-        .hoverCard(arrowEdge: .top) { card }
-        .popover(isPresented: $open, arrowEdge: .top) { card }
-    }
-
-    private var card: some View {
-        ContextUsageCard(usage: usage, pressure: pressure, autoCompactAt: autoCompactAt, onCompact: onCompact,
-                         compactFirst: compactFirst, toggleCompactFirst: toggleCompactFirst)
-            .onAppear(perform: onOpen)
-    }
-}
-
 /// What fills the context window, as Claude Code's `/context` says it: how much is used, a bar in the colors of its
 /// parts, a line per part with its size and share, the parts loaded only when needed, and how many tools, memory files,
 /// agents and skills there are. For an agent that only reports the conversation's size: that, the room kept for
@@ -679,21 +618,7 @@ struct ContextUsageCard: View {
         }
     }
 
-    /// One bar across the card: each part in the window in its color, the buffer dim, the free space empty.
-    private var bar: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 1) {
-                ForEach(usage.inWindow.filter { $0.kind != .free }) { category in
-                    Rectangle().fill(Self.color(category))
-                        .frame(width: max(1, geometry.size.width * usage.share(category)))
-                }
-                Spacer(minLength: 0)
-            }
-        }
-        .frame(height: 4)
-        .background(NookTheme.line2)
-        .mask { Capsule() }
-    }
+    private var bar: some View { ContextUsageBar(usage: usage) }
 
     private func row(_ category: ContextUsage.Category) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {

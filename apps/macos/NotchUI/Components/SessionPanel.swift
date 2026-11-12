@@ -158,7 +158,8 @@ struct SessionPanel: View {
     private static let shownPullRequests = 5
 
     /// The rows that can be turned off, in the order they show.
-    private static let optionalRows = ["machine", "openIn", "scripts", "branch", "commit", "changes", "pullRequests"]
+    /// "usage" is the card under the panel (`SessionUsageCard`).
+    private static let optionalRows = ["machine", "openIn", "scripts", "branch", "commit", "changes", "pullRequests", SessionUsageCard.row]
 
     private var hiddenRows: Set<String> { Set(hiddenRaw.split(separator: ",").map(String.init)) }
 

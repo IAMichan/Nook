@@ -215,15 +215,19 @@ struct FolderGitButton: View {
     let showChanges: () -> Void
     /// Called after a push or branch switch, so a session Nook runs can refresh its own view of git.
     var onChange: (() -> Void)? = nil
+    /// Whose context and limits the ring at the end of the button shows, and the popover under the session panel.
+    var usage: SessionUsageSource = .none
     @State private var open = false
     /// With room beside the conversation the session panel stays open on the right (`DockedSessionPanel`); this
     /// button, which opens it as a popover, steps aside.
     @Environment(\.sessionPanelDocked) private var docked
 
-    init(directory: String, runID: UUID? = nil, agentWorking: Bool, showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
+    init(directory: String, runID: UUID? = nil, agentWorking: Bool, usage: SessionUsageSource = .none,
+         showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
         _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
         self.runID = runID
         self.agentWorking = agentWorking
+        self.usage = usage
         self.showChanges = showChanges
         self.onChange = onChange
     }
@@ -242,7 +246,13 @@ struct FolderGitButton: View {
                     .buttonStyle(.nookPlain)
                     .help(model.error ?? (model.root.map(AgentPathFormat.tilde) ?? AgentPathFormat.tilde(model.directory)))
                     .popover(isPresented: $open, arrowEdge: .bottom) {
-                        SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) { open = false }
+                        // The same panel as docked, with its usage under it.
+                        VStack(alignment: .leading, spacing: 0) {
+                            SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) { open = false }
+                            SessionUsageCard(source: usage, divided: true)
+                        }
+                        .frame(width: PanelLayout.sessionPanel)
+                        .background(DropdownStyle.panel)
                     }
                     // The counts open the changes themselves.
                     if model.isRepository, !model.changes.isEmpty {
@@ -262,8 +272,16 @@ struct FolderGitButton: View {
                         .help(tr("agents.git.changes", model.changes.count))
                         .fixedSize()
                     }
+                    // How full the context and the limits are; the docked panel shows them in its card instead.
+                    if usage != .none {
+                        ToolbarGroupDivider()
+                        SessionUsageButton(source: usage)
+                    }
                 }
                 .toolbarGroup()
+            } else if model.directory.isEmpty, !docked, usage != .none {
+                // No folder, so no branch: the ring alone opens the session's usage.
+                SessionUsageButton(source: usage).toolbarGroup()
             }
         }
         .task(id: "\(model.directory)|\(docked)|\(agentWorking)") {
@@ -308,22 +326,29 @@ struct DockedSessionPanel: View {
     @StateObject private var model: FolderGitModel
     let runID: UUID?
     let agentWorking: Bool
+    /// Whose context and limits the card under the panel shows.
+    let usage: SessionUsageSource
     let showChanges: () -> Void
 
-    init(directory: String, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void) {
+    init(directory: String, runID: UUID?, agentWorking: Bool, usage: SessionUsageSource, showChanges: @escaping () -> Void) {
         _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
         self.runID = runID
         self.agentWorking = agentWorking
+        self.usage = usage
         self.showChanges = showChanges
     }
 
     var body: some View {
         ScrollView {
-            SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges, close: {}, docked: true)
-                .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.conversationCard)
-                // The scroll view would cut off the card's outline.
-                .padding(.vertical, NookTheme.Spacing.xxs)
-                .padding(.trailing, NookTheme.Spacing.sm)
+            VStack(spacing: NookTheme.Spacing.md) {
+                SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges, close: {}, docked: true)
+                    .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.conversationCard)
+                // The context and the limits, out of the composer: a card of its own under the panel.
+                SessionUsageCard(source: usage, boxed: true)
+            }
+            // The scroll view would cut off the cards' outline.
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .padding(.trailing, NookTheme.Spacing.sm)
         }
         .scrollIndicators(.never)
         .task(id: "\(model.directory)|\(agentWorking)") { await model.follow(agentWorking: agentWorking) }

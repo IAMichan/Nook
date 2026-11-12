@@ -255,6 +255,9 @@ struct SessionWorkbench<Conversation: View>: View {
     /// Whether the session panel docks on the right when the window has room; the session views that have a branch button.
     var dockSessionPanel = false
     var agentWorking = false
+    /// The account of a session Nook only sees, for the limits under the docked session panel (a session Nook runs has
+    /// `runID`).
+    var usageProfileID: String? = nil
     @ViewBuilder var conversation: (AnyView) -> Conversation
     @EnvironmentObject var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -399,7 +402,8 @@ struct SessionWorkbench<Conversation: View>: View {
                     // or file panel to its right. It starts level with the conversation, under the header's line.
                     VStack(alignment: .trailing, spacing: 0) {
                         tools.frame(height: 30)
-                        DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
+                        DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking,
+                                           usage: SessionUsageSource(runID: runID, profileID: usageProfileID)) {
                             if let runID { workspace.markReviewed(runID) }
                             viewModel.sessionTool = .changes
                         }
