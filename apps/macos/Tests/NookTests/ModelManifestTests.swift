@@ -10,7 +10,8 @@ final class ModelManifestTests: XCTestCase {
 
     private func json(updatedAt: String = "2026-10-01T00:00:00Z", version: Int = 1, claude: String? = nil) -> Data {
         let models = claude ?? """
-        [{"id": "alpha-2", "name": "Alpha 2", "status": "current", "badge": "new", "aliases": ["alpha"],
+        [{"id": "alpha-2", "name": "Alpha 2", "status": "current", "badge": "new", "released": "2026-10-01T00:00:00Z",
+          "aliases": ["alpha"],
           "adapter": {"claude": {"minVersion": "2.1.300"}}},
          {"id": "beta-1", "name": "Beta 1", "status": "current"},
          {"id": "alpha-1", "name": "Alpha 1", "status": "legacy", "adapter": {"claude": {"minVersion": "2.0.0"}}}]
@@ -181,7 +182,8 @@ final class ModelManifestTests: XCTestCase {
     // MARK: Menus
 
     func testChoicesFromTheManifest() throws {
-        let choices = ModelChoice.list(manifest: try manifest(), provider: .claude, offered: [], installed: "2.1.250")
+        let choices = ModelChoice.list(manifest: try manifest(), provider: .claude, offered: [], installed: "2.1.250",
+                                       now: Self.date("2026-10-05T00:00:00Z"))
         XCTAssertEqual(choices.map(\.id), ["alpha-2", "beta-1", "alpha-1"])
         XCTAssertEqual(choices[0].requiredVersion, "2.1.300")
         XCTAssertTrue(choices[0].isNew && choices[0].needsUpdate)
@@ -189,6 +191,25 @@ final class ModelManifestTests: XCTestCase {
         XCTAssertTrue(choices[2].isLegacy)
         XCTAssertFalse(choices[2].needsUpdate)
     }
+
+    func testTheNewLabelGoesAwayByItself() throws {
+        let alpha = try XCTUnwrap(try manifest().model("alpha-2", for: .claude))
+        XCTAssertTrue(alpha.isNew(at: Self.date("2026-10-14T00:00:00Z")))
+        XCTAssertFalse(alpha.isNew(at: Self.date("2026-10-15T00:00:00Z")), "two weeks after release a model is no longer new")
+        let later = ModelChoice.list(manifest: try manifest(), provider: .claude, offered: [], installed: "2.1.250",
+                                     now: Self.date("2026-11-12T00:00:00Z"))
+        XCTAssertFalse(later.contains(where: \.isNew))
+        let offered = [AgentModel(id: "alpha", name: "Alpha", isDefault: false)]
+        XCTAssertFalse(ModelChoice.list(manifest: try manifest(), provider: .claude, offered: offered, installed: nil,
+                                        now: Self.date("2026-11-12T00:00:00Z"))[0].isNew)
+    }
+
+    func testABadgeNeedsAReleaseDate() {
+        let claude = #"[{"id": "alpha-2", "name": "Alpha 2", "status": "current", "badge": "new"}]"#
+        XCTAssertThrowsError(try ModelManifest.parse(json(claude: claude)))
+    }
+
+    private static func date(_ text: String) -> Date { ISO8601DateFormatter().date(from: text)! }
 
     func testAnAgentsOwnListComesFirstAndOnlyUpdatesAreAdded() throws {
         let offered = [AgentModel(id: "gamma", name: "Gamma (agent)", isDefault: true), AgentModel(id: "own", name: "Own")]
