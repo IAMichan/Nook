@@ -152,11 +152,10 @@ final class InstructionsTests: XCTestCase {
         XCTAssertEqual(sheet.entries.first { $0.command == "shortcuts.cheatSheet" }?.group, .navigation)
     }
 
-    func testCheatSheetHasTheQuestionMarkKey() {
+    func testCheatSheetOpensWithCommandSlashAndLeavesQuestionMarkForTyping() {
         let rules = Keybindings.effective(user: [])
-        let key = KeyChord.parse("shift+/")
-        XCTAssertEqual(Keybindings.match(key!, context: [:], rules: rules), "shortcuts.cheatSheet")
-        XCTAssertNil(Keybindings.match(key!, context: ["composerFocus": true], rules: rules))
+        XCTAssertEqual(Keybindings.match(KeyChord.parse("mod+/")!, context: [:], rules: rules), "shortcuts.cheatSheet")
+        XCTAssertNil(Keybindings.match(KeyChord.parse("shift+/")!, context: [:], rules: rules), "? must stay typeable")
         XCTAssertTrue(Keybindings.commandIDs.contains("shortcuts.cheatSheet"))
     }
 
