@@ -314,7 +314,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
                 } label: {
-                    Label(tr("settings2.openSite", connector.title), systemImage: "arrow.up.forward.app")
+                    Label(tr("settings2.openSite", connector.title), icon: "arrow.up.forward.app")
                 }
             }
             fieldsAndPaste
@@ -326,7 +326,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
     private var ghCLIButton: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Button { gitHubSignIn.reconnect() } label: {
-                Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), systemImage: "person.badge.key.fill")
+                Label(configured ? tr("connector.relinkGitHub") : tr("connector.useGitHubCLI"), icon: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.nookProminent)
@@ -464,7 +464,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             HStack {
                 if connector.configFields.contains(where: \.secret) {
                     Button { pasteFromClipboard() } label: {
-                        Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                        Label(tr("button.pasteClipboard"), icon: "doc.on.clipboard")
                     }
                     .buttonStyle(.nookProminent)
                 }
@@ -532,7 +532,7 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
             }
         case .idle, .checkingCLI, .waitingForCLI, .done:
             Button { gitHubSignIn.start() } label: {
-                Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), systemImage: "person.badge.key.fill")
+                Label(configured ? tr("connector.relinkGitHub") : tr("connector.linkWithGitHub"), icon: "person.badge.key.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.nookProminent)

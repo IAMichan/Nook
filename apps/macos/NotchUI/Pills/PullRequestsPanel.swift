@@ -382,7 +382,7 @@ struct PullRequestsPanel: View {
     /// The token was rejected: say so in plain words and offer the fix right here.
     private var expiredCard: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Label(tr("agents.pulls.expired"), systemImage: "exclamationmark.triangle.fill")
+            Label(tr("agents.pulls.expired"), icon: "exclamationmark.triangle.fill")
                 .font(NookTheme.TextStyle.title)
                 .foregroundStyle(NookTheme.paper)
             Text(tr("agents.pulls.expiredDetail"))

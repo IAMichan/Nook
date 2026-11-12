@@ -322,7 +322,7 @@ struct ChatLinkSteps: View {
                     Task { await linker.submitBrowser(collected, lastURL: last) }
                 }
             } label: {
-                Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
+                Label(tr("chats.link.browser.open", url.host ?? network.name), icon: "person.badge.key")
             }
             .buttonStyle(.nookProminent)
             .controlSize(.large)

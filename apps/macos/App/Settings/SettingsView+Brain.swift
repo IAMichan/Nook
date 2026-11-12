@@ -255,7 +255,7 @@ extension SettingsView {
         let hasKey = settings.hasKey(for: .openrouter)
         HStack {
             if hasKey {
-                Label(tr("brain.openrouter.signedIn"), systemImage: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
+                Label(tr("brain.openrouter.signedIn"), icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
                 Spacer()
             }
             switch openRouter.phase {
@@ -267,7 +267,7 @@ extension SettingsView {
                 Button {
                     openRouter.signIn(settings: settings)
                 } label: {
-                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), systemImage: "person.badge.key.fill")
+                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), icon: "person.badge.key.fill")
                 }
                 .buttonStyle(.nookProminent)
                 .controlSize(hasKey ? .regular : .large)
@@ -291,7 +291,7 @@ extension SettingsView {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
                 } label: {
-                    Label(tr("brain.key.get", settings.provider.title), systemImage: "arrow.up.forward.app")
+                    Label(tr("brain.key.get", settings.provider.title), icon: "arrow.up.forward.app")
                 }
                 .controlSize(.large)
                 SettingNote(tr("brain.key.autoPaste"))
@@ -307,7 +307,7 @@ extension SettingsView {
             }
             HStack {
                 if settings.hasKey(for: settings.provider) {
-                    Label(settings.maskedKey(for: settings.provider).map { "\(tr("settings.brain.keyInKeychain")): \($0)" } ?? tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
+                    Label(settings.maskedKey(for: settings.provider).map { "\(tr("settings.brain.keyInKeychain")): \($0)" } ?? tr("settings.brain.keyInKeychain"), icon: "key.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKeyNamed", settings.provider.title), detail: tr("confirm.keychain.detail")) {

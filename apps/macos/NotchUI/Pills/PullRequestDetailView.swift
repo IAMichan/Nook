@@ -701,12 +701,12 @@ struct PullRequestDetailView: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 if detail.activityLoaded {
                     let approvals = detail.verdicts.filter(\.approved).count
-                    Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", systemImage: "bubble.left")
+                    Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", icon: "bubble.left")
                         .help(tr("agents.pr.count.comments"))
-                    Label("\(detail.commits.count)", systemImage: "circle.and.line.horizontal")
+                    Label("\(detail.commits.count)", icon: "circle.and.line.horizontal")
                         .help(tr("agents.pr.count.commits"))
                     if approvals > 0 {
-                        Label("\(approvals)", systemImage: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
+                        Label("\(approvals)", icon: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
                             .foregroundStyle(PullRequestIcon.tint(PullRequestIcon.Review.approved))
                             .help(tr("agents.pr.count.approvals"))
                     }

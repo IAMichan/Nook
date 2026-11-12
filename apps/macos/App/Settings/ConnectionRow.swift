@@ -249,7 +249,7 @@ struct ConnectionListAddLabel: View {
     let symbol: String
 
     var body: some View {
-        Label(title, systemImage: symbol)
+        Label(title, icon: symbol)
             .font(NookTheme.TextStyle.control)
             .foregroundStyle(NookTheme.textStrong)
     }

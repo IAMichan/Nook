@@ -63,7 +63,7 @@ struct ApprovalView: View {
                 reasonField
                 scopeCaption
                 AdaptiveActionRow {
-                    Label(AgentDisplayState.approval.longWord, systemImage: "shield")
+                    Label(AgentDisplayState.approval.longWord, icon: "shield")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(approval.danger ? NookTheme.coral : NookTheme.amber)
                 } actions: {
@@ -173,7 +173,7 @@ struct ApprovalView: View {
     @ViewBuilder
     private var scopeCaption: some View {
         if approval.canAlways, let scope = approval.alwaysScope {
-            Label(tr("approval.scope.always", scope), systemImage: "checkmark.shield")
+            Label(tr("approval.scope.always", scope), icon: "checkmark.shield")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

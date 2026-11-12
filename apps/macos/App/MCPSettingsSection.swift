@@ -285,7 +285,7 @@ struct AddMCPServerWizardSheet: View {
                 }
 
                 if !problem.isEmpty {
-                    Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    Label(problem, icon: "exclamationmark.triangle.fill")
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.coral)
                 }

@@ -32,7 +32,7 @@ struct MemorySettingsSection: View {
                 SettingToggle(tr("memory.settings.learn"), detail: tr("memory.settings.learnDetail"), isOn: $settings.learnFromChats)
                     .disabled(!settings.useMemory)
                 if settings.localOnlySources.contains(SourceCatalog.memory) {
-                    Label(tr("memory.settings.localOnlyAll"), systemImage: "lock.fill")
+                    Label(tr("memory.settings.localOnlyAll"), icon: "lock.fill")
                         .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

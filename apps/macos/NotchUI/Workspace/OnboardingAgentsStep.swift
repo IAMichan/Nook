@@ -119,7 +119,7 @@ struct OnboardingAgentsStep: View {
                              detail: AgentPathFormat.tilde(candidate.parent) + " · " + tr("onboarding.projects.sessions", candidate.sessions),
                              detailLines: 1, detailTruncation: .middle) {
             if added {
-                Label(tr("onboarding.projects.added"), systemImage: "checkmark")
+                Label(tr("onboarding.projects.added"), icon: "checkmark")
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.mint)
             } else {

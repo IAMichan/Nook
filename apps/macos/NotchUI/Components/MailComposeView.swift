@@ -154,7 +154,7 @@ struct MailComposeView: View {
             }
             HStack(spacing: NookTheme.Spacing.sm) {
                 if draft.state == .sent {
-                    Label(tr("chat.mail.sent"), systemImage: "checkmark")
+                    Label(tr("chat.mail.sent"), icon: "checkmark")
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.mint)
                 } else {

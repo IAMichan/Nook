@@ -57,7 +57,7 @@ private struct MusicConnectionForm: View {
         } content: {
             if spotify.isSignedIn {
                 SheetPart(tr("chats.manage.accounts")) {
-                    Label(tr("music.connect.spotifyConnected"), systemImage: "checkmark.seal.fill")
+                    Label(tr("music.connect.spotifyConnected"), icon: "checkmark.seal.fill")
                         .foregroundStyle(NookTheme.mint)
                     SettingNote(tr("music.connect.spotifyConnectedDetail"))
                 }
@@ -75,7 +75,7 @@ private struct MusicConnectionForm: View {
                             copiedRedirect.copy(SpotifyWebAPI.redirectURI)
                         } label: {
                             Label(copiedRedirect.copied ? tr("button.copied") : tr("button.copy"),
-                                  systemImage: copiedRedirect.copied ? "checkmark" : "doc.on.doc")
+                                  icon: copiedRedirect.copied ? "checkmark" : "doc.on.doc")
                         }
                     }
                     .help(tr("music.connect.redirectURI"))
@@ -98,7 +98,7 @@ private struct MusicConnectionForm: View {
                         Button {
                             spotify.signIn(clientID: clientID)
                         } label: {
-                            Label(tr("music.connect.spotifyButton"), systemImage: "person.badge.key.fill")
+                            Label(tr("music.connect.spotifyButton"), icon: "person.badge.key.fill")
                         }
                         .buttonStyle(.nookProminent)
                         .disabled(clientID.trimmingCharacters(in: .whitespaces).isEmpty)

@@ -197,7 +197,7 @@ struct AddConnectionSheet: View {
                     // Opened on one option from elsewhere: Done closes it, there is no list to go back to.
                     if start == nil {
                         Button { self.chosen = nil } label: {
-                            Label(tr("hub.picker.back"), systemImage: "chevron.left")
+                            Label(tr("hub.picker.back"), icon: "chevron.left")
                         }
                         .buttonStyle(.nookLink)
                         .padding(.horizontal, NookTheme.Spacing.xl)

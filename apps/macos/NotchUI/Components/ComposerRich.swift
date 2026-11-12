@@ -498,9 +498,9 @@ struct ComposerPlusMenu<Extra: View>: View {
 
     var body: some View {
         Menu {
-            Button(action: attach) { Label(attachLabel, systemImage: "paperclip") }
+            Button(action: attach) { Label(attachLabel, icon: "paperclip") }
             if let screenshot {
-                Button(action: screenshot) { Label(tr("compose.plus.screenshot"), systemImage: "camera.viewfinder") }
+                Button(action: screenshot) { Label(tr("compose.plus.screenshot"), icon: "camera.viewfinder") }
             }
             extra()
         } label: {

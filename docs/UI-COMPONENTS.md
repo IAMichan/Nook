@@ -15,7 +15,7 @@ copying it again.
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action: a button filled with Nook's accent (soft white by default) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
 | `NookTheme.outlineFill`, `outlineStroke` | The outline button: a faint fill and an input-colored edge |
-| `Image(icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
+| `Image(icon:)`, `Label(_:icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon, also the one of a `Label` (a menu item, a button): `Label(title, icon: "trash")`, never `Label(_:systemImage:)`. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
 | `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected; a row that lifts under the pointer uses `.hoverRowFill` instead of keeping its own hover state |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
@@ -136,7 +136,9 @@ Nook has one visual language, and the repository guards it in three places:
    `./scripts/core-tests.sh`.
    It also fails when a search field or a 1 pt divider is built inline instead of with `NookSearchField` or
    `NookDivider`, so these look and behave the same everywhere, and when a pull request icon is named or sized by hand
-   (`arrow.triangle.pull`, a `PullRequestStateGlyph` outside `PullRequestIcons.swift`) instead of through `PullRequestIcon`.
+   (`arrow.triangle.pull`, a `PullRequestStateGlyph` outside `PullRequestIcons.swift`) instead of through `PullRequestIcon`,
+   and when an icon bypasses `NookIcon` (`Image(systemName:)`, or a `Label(_:systemImage:)` instead of `Label(_:icon:)`;
+   the chat files another change is rewriting are listed in `labelSystemImagePending` until it lands).
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` (started by `ci.yml`) runs it on every pull request that touches the app.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.

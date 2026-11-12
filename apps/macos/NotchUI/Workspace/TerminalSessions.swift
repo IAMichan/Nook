@@ -680,7 +680,7 @@ struct TerminalsView: View {
                 Button {
                     chooseFolder()
                 } label: {
-                    Label(tr("workbench.terminal.inFolder"), systemImage: "folder")
+                    Label(tr("workbench.terminal.inFolder"), icon: "folder")
                 }
                 .controlSize(.small)
                 Spacer(minLength: NookTheme.Spacing.md)

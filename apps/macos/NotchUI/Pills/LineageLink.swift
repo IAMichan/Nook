@@ -16,7 +16,7 @@ struct LineageLink: View {
             if parent.archived { workspace.setArchived(parent.id, false) }
             app.viewModel.selectedAgentID = "run:" + parent.id.uuidString
         } label: {
-            Label(tr(lineage.labelKey, parent?.title ?? tr("lineage.deleted")), systemImage: lineage.symbol)
+            Label(tr(lineage.labelKey, parent?.title ?? tr("lineage.deleted")), icon: lineage.symbol)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(parent != nil && hovering ? NookTheme.blue : NookTheme.textTertiary)
                 .lineLimit(1)

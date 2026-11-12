@@ -198,7 +198,7 @@ struct GitLabSetupSheet: View {
                 tokenField
             } else {
                 HStack {
-                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
+                    Label(tr("settings2.service.keySafe"), icon: "lock.fill")
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
@@ -216,7 +216,7 @@ struct GitLabSetupSheet: View {
                 .onSubmit(save)
             HStack {
                 Button { pasteFromClipboard() } label: {
-                    Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                    Label(tr("button.pasteClipboard"), icon: "doc.on.clipboard")
                 }
                 .buttonStyle(.nookProminent)
                 Button(tr("button.save"), action: save)

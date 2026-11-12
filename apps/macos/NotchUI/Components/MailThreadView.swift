@@ -305,7 +305,7 @@ struct MailMessageCard: View {
                 Button {
                     withAnimation(NookTheme.reveal) { showsQuoted.toggle() }
                 } label: {
-                    Label(showsQuoted ? tr("chats.mail.hideQuoted") : tr("chats.mail.showQuoted"), systemImage: "ellipsis")
+                    Label(showsQuoted ? tr("chats.mail.hideQuoted") : tr("chats.mail.showQuoted"), icon: "ellipsis")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .padding(.horizontal, NookTheme.Spacing.sm)
@@ -352,7 +352,7 @@ struct MailMessageCard: View {
             if !unsaved.isEmpty {
                 ChipFlow {
                     ForEach(Array(unsaved.enumerated()), id: \.offset) { _, item in
-                        Label(item.name, systemImage: "paperclip")
+                        Label(item.name, icon: "paperclip")
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)

@@ -94,7 +94,7 @@ struct OnboardingView: View {
     private var brainStep: some View {
         OnboardingPage(title: tr("onboarding.brain.title"), detail: tr("onboarding.brain.detail", EmbeddedModel.memoryGB)) {
             if settings.brainReady {
-                Label(tr("settings.checklist.brain.ready", settings.activeModelName), systemImage: "checkmark.circle.fill")
+                Label(tr("settings.checklist.brain.ready", settings.activeModelName), icon: "checkmark.circle.fill")
                     .foregroundStyle(NookTheme.mint)
             } else if let best = recommendations.first {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {

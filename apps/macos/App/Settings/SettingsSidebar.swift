@@ -226,7 +226,7 @@ struct SettingsPageBar: View {
                                     restore.run()
                                     ToastCenter.shared.success(tr("settings.general.restored"))
                                 }) {
-                    Label(tr("settings.general.restore"), systemImage: "arrow.counterclockwise")
+                    Label(tr("settings.general.restore"), icon: "arrow.counterclockwise")
                 }
                 .controlSize(.small)
                 .disabled(!restore.changed)

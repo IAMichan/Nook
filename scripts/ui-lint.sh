@@ -23,7 +23,10 @@
 #  10. Buttons use Nook's pointer styles (.nookPlain / .nookBorderless / .nookProminent / .nookLink), which show the
 #      pointing hand, never the system .plain / .borderless / .borderedProminent / .link, which keep the arrow; menus
 #      likewise use .nookBorderlessButton / .nookButton.
-# Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
+#  11. A Label's icon goes through Image(icon:) as well: Label(_:icon:) (NotchUI/Theme/NookIcon.swift), never
+#      Label(_:systemImage:). LABEL_SYSTEM_IMAGE_PENDING lists the chat files another change is rewriting.
+# Keep OWN_COLORS equal to UIConsistencyTests.ownColors, and LABEL_SYSTEM_IMAGE_PENDING to
+# UIConsistencyTests.labelSystemImagePending.
 set -uo pipefail
 # `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
 shopt -s lastpipe
@@ -42,6 +45,15 @@ OWN_COLORS=(
   "App/MCPSettingsSection.swift"
   "App/Settings/SettingsStyle.swift"
   "App/Settings/SettingsView+Appearance.swift"
+)
+
+# Path prefixes that still use Label(_:systemImage:) while the chats and the run panel are being rewritten elsewhere;
+# drop each once that work lands.
+LABEL_SYSTEM_IMAGE_PENDING=(
+  "NotchUI/Chat/"
+  "NotchUI/Components/Chat"
+  "NotchUI/Pills/Chats"
+  "NotchUI/Pills/AgentRunPanel.swift"
 )
 
 status=0
@@ -85,6 +97,11 @@ grep -rnE 'Image\((systemName|icon): "magnifyingglass"\)' NotchUI App --include=
 grep -rnE '(^|[^A-Za-z])Image\(systemName:|NSImage\(systemSymbolName:' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Theme/NookIcon.swift:' \
   | report "icons go through Image(icon:) / NookIcon.nsImage, so they are Nook's Lucide icons (no raw SF Symbols)"
+
+pending=()
+for prefix in "${LABEL_SYSTEM_IMAGE_PENDING[@]}"; do pending+=(-e "^$prefix"); done
+grep -rnE '\bsystemImage:' NotchUI App --include='*.swift' | grep -v "${pending[@]}" \
+  | report "labels draw their icon through Label(_:icon:) (no Label(_:systemImage:))"
 
 grep -rnE 'RoundedRectangle\(cornerRadius:' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Theme/NookTheme.swift:' \

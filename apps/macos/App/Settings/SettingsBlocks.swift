@@ -351,7 +351,7 @@ struct InUseLabel: View {
     init(_ title: String) { self.title = title }
 
     var body: some View {
-        Label(title, systemImage: "checkmark.circle.fill")
+        Label(title, icon: "checkmark.circle.fill")
             .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.mint)
             .lineLimit(1)
