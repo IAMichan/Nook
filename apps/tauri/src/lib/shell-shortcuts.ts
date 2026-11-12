@@ -14,6 +14,6 @@ export function shellShortcut(e: Key, context: Context): Shortcut | null {
   if (key === ".") return "stop";
   if (key === "f") return "search";
   // Ctrl+1 … Ctrl+9 jump straight to a page, in the order of the rail.
-  if (/^[1-9]$/.test(key)) return `go-${key}`;
+  if (/^[1-9]$/.test(key)) return `go-${Number(key)}`;
   return null;
 }
