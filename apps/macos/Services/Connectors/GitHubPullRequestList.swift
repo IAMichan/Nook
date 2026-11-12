@@ -335,6 +335,10 @@ final class PullRequestStore: ObservableObject {
     /// When each pull request's page was last read (see `update(with:)`). A list read that began before then must not put
     /// back what it saw: the page read is newer, and the row would show a state the page no longer does.
     private var pageReadAt: [String: Date] = [:]
+    /// The reads after a merge from Nook (see `followMerge`): the repositories merged into, and reads since the last merge.
+    private var follow: Task<Void, Never>?
+    private var followedRepos: Set<String> = []
+    private var followReads = 0
     private let file = NookPaths.supportDirectory.appendingPathComponent("pull-requests.json")
 
     private init() {
@@ -597,6 +601,29 @@ final class PullRequestStore: ObservableObject {
         mergedHere[id] = Date()
         accounts = accounts.map(settled)
         fetchedAt = .distantPast
+        if let repo = id.split(separator: "#").first { followMerge(in: String(repo)) }
+    }
+
+    /// Reads the list again a few times after a merge into `repo`, until GitHub has worked out again whether the other
+    /// open pull requests there still merge (see `PullRequestMergeFollowUp`). A merge while it runs starts the count over.
+    func followMerge(in repo: String) {
+        followedRepos.insert(repo)
+        followReads = 0
+        guard follow == nil else { return }
+        follow = Task { [weak self] in
+            while let self {
+                try? await Task.sleep(for: .seconds(PullRequestMergeFollowUp.wait(before: self.followReads)))
+                // Only the quick read of the open rows: the slow closed and watched searches keep their own pace.
+                self.markStale()
+                if self.loading { self.again = true }
+                await self.refresh(quiet: true)
+                self.followReads += 1
+                let pending = PullRequestMergeFollowUp.pending(self.accounts, repos: self.followedRepos)
+                guard PullRequestMergeFollowUp.goesOn(reads: self.followReads, pending: pending) else { break }
+            }
+            self?.follow = nil
+            self?.followedRepos = []
+        }
     }
 
     private func settled(_ account: AccountPullRequests) -> AccountPullRequests {
