@@ -8,6 +8,7 @@
   import { renderMarkdown } from "../lib/markdown";
   import { visibleNotices } from "../lib/sources";
   import { nook } from "../lib/state.svelte";
+  import { toast } from "../lib/toast.svelte";
   import type { ChatMessage } from "../lib/types";
   import ChartView from "./ChartView.svelte";
   import MailDraftView from "./MailDraftView.svelte";
@@ -35,18 +36,36 @@
   function recoveryTitle(r: Recovery): string {
     switch (r.kind) {
       case "chooseModel": return tr("Kies een model", "Choose a model");
-      case "openLocalServer": return tr(`Hoe start ik ${r.name}?`, `How do I start ${r.name}?`);
+      case "openLocalServer": return starting ? tr(`${r.name} starten…`, `Starting ${r.name}…`) : tr(`Start ${r.name} en probeer opnieuw`, `Start ${r.name} and retry`);
       case "reconnectBrain":
       case "reconnectConnection": return tr("Opnieuw koppelen", "Reconnect");
       default: return tr("Instellingen", "Settings");
     }
   }
 
-  function recover(r: Recovery) {
-    if (r.kind === "openLocalServer") {
-      openUrl(r.name === "Ollama" ? "https://ollama.com/download" : "https://lmstudio.ai");
-      return;
+  // A local brain that is installed but not running is started by Nook itself, and the question asked again. Only
+  // when it is not installed does the button lead to the download page.
+  let starting = $state(false);
+  async function startLocal(name: string) {
+    if (starting) return;
+    starting = true;
+    try {
+      const outcome = await api.startLocalBrain(name);
+      if (outcome === "notInstalled") {
+        openUrl(name === "Ollama" ? "https://ollama.com/download" : "https://lmstudio.ai");
+        return;
+      }
+      if (outcome === "noAnswer") return void toast.warning(`${name} start niet`, "Hij is gestart maar antwoordt nog niet. Probeer het zo nog eens.");
+      await brainApi.retryLast(nookId);
+    } catch (e) {
+      toast.error(`${name} kon niet starten`, e);
+    } finally {
+      starting = false;
     }
+  }
+
+  function recover(r: Recovery) {
+    if (r.kind === "openLocalServer") return void startLocal(r.name);
     localStorage.setItem("settings.section", r.kind === "reconnectConnection" ? "connections" : "brain");
     api.showMain("settings");
     window.dispatchEvent(new CustomEvent("nook-navigate", { detail: "settings" }));
@@ -100,7 +119,7 @@
     {/if}
     {#if message.recovery || (message.isError && last)}
       <div class="offers">
-        {#if message.recovery}<button onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
+        {#if message.recovery}<button class:primary={message.recovery.kind === "openLocalServer"} disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
         {#if last}<button class="ghost" onclick={() => brainApi.retryLast(nookId)}>{tr("Probeer opnieuw", "Try again")}</button>{/if}
       </div>
     {/if}
