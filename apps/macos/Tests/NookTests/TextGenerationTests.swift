@@ -17,6 +17,26 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(templated.contains("Repository change request template:\n## Summary"))
         XCTAssertTrue(templated.contains("write 'None'"), "a body without issues still keeps the issues section")
         XCTAssertTrue(templated.contains("'Not run yet'"), "testing says what ran instead of ticking boxes it cannot know")
+        XCTAssertFalse(templated.contains("Repository rules for change requests"), "no rules, no section")
+        let ruled = TextGeneration.pullRequestPrompt(base: "main", head: "feat", commits: "", stat: "", patch: "", template: "## Summary\n",
+                                                     guidelines: "No other headings than the template's.")
+        XCTAssertTrue(ruled.contains("Repository rules for change requests:\nNo other headings than the template's."))
+        XCTAssertTrue(ruled.contains("come first"), "the repository's rules win over Nook's defaults")
+    }
+
+    func testPullRequestBodyKeepsEveryTemplateSectionInOrder() {
+        let template = "## Summary\n\n## Related issues\n\n<!-- Closes #1 -->\n\n## Why\n\n## Testing\n\n- [ ] Build succeeds"
+        XCTAssertEqual(TextGeneration.pullRequestTemplateBody(template),
+                       "## Summary\n\n## Related issues\n\n## Why\n\n## Testing\n\n- [ ] Build succeeds")
+        let good = "## Summary\n- a\n\n## Related issues\nNone\n\n## Why\nb\n\n## Testing\n- [x] Build succeeds"
+        XCTAssertEqual(TextGeneration.conformPullRequestBody(good, template: template), good, "a body that follows it stays as it is")
+        XCTAssertEqual(TextGeneration.missingTemplateHeadings(body: good, template: template), [])
+
+        let partial = "## Why\nb\n\n## Summary\n- a\n\n## Changes\n- c"
+        XCTAssertEqual(TextGeneration.missingTemplateHeadings(body: partial, template: template), ["## Related issues", "## Testing"])
+        XCTAssertEqual(TextGeneration.conformPullRequestBody(partial, template: template),
+                       "## Summary\n\n- a\n\n## Related issues\n\nNone\n\n## Why\n\nb\n\n## Testing\n\nNone\n\n## Changes\n\n- c")
+        XCTAssertEqual(TextGeneration.conformPullRequestBody(partial, template: nil), partial)
     }
 
     func testTitleRulesAndLaterMessages() {

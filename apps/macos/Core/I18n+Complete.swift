@@ -601,6 +601,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.new.worktreeNeedsRepo": "Ein Worktree braucht ein Git-Repository.",
         "ws.pr.base": "Nach",
         "ws.pr.body": "Beschreibung",
+        "ws.pr.missingSections": "Der Beschreibung fehlen Abschnitte aus der Vorlage des Repositorys: %@",
         "ws.pr.bodyDefault": "Mit einem Agent in Nook erstellt.\n\nAufgabe:\n%@",
         "ws.pr.create": "Pull Request erstellen",
         "ws.pr.created": "Pull Request erstellt: öffnen",
