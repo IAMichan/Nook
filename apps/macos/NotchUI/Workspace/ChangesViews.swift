@@ -420,7 +420,9 @@ struct PullRequestSheet: View {
                 let run = workspace.run(runID)
                 title = run?.title ?? ""
                 base = run?.baseBranch ?? ""
-                bodyText = run.map { tr("ws.pr.bodyDefault", $0.task) } ?? ""
+                let root = run?.repoRoot ?? run?.workingDirectory
+                let template = root.flatMap { GitService.pullRequestTemplate($0) }
+                bodyText = template ?? (run.map { tr("ws.pr.bodyDefault", $0.task) } ?? "")
                 repo = await workspace.remoteRepository(runID)
                 branch = await workspace.currentBranch(runID)
                 if base.isEmpty { base = await workspace.pullRequestBaseBranch(runID) ?? "" }
@@ -428,6 +430,9 @@ struct PullRequestSheet: View {
                 repo = await workspace.remoteRepository(folder: folder)
                 branch = await workspace.currentBranch(folder: folder)
                 base = await workspace.pullRequestBaseBranch(folder: folder) ?? ""
+                if let template = GitService.pullRequestTemplate(folder) {
+                    bodyText = template
+                }
             }
             loading = false
         }
