@@ -836,9 +836,12 @@ struct ChatsTab: View {
     /// Your own picture in each of the chosen app's accounts, for their rows in the sidebar: WhatsApp gives it per linked
     /// phone; the other apps do not say who you are there with a picture, and keep the person mark.
     private var accountPictures: [String: String] {
-        guard filter == "whatsapp" else { return [:] }
-        let whatsApp = WhatsAppAccounts.shared
-        return Dictionary(accounts.compactMap { name in whatsApp.picture(ofAccount: name).map { (name, $0) } }) { a, _ in a }
+        guard let filter, let link = MessagingApps.known(filter)?.ownLink else { return [:] }
+        let picture: (String) -> String?
+        switch link {
+        case .whatsAppGateway: picture = { WhatsAppAccounts.shared.picture(ofAccount: $0) }
+        }
+        return Dictionary(accounts.compactMap { name in picture(name).map { (name, $0) } }) { a, _ in a }
     }
 
     /// The account the list narrows to: the chosen one, as long as the chosen app still has chats in it.

@@ -158,10 +158,14 @@ struct ChatAppSheet: View {
                 SheetPart(tr("sheet.part.canDo")) { SettingNote(howItReads) }
             }
             // Rarely needed, folded away last, the same words as on the linked app.
-            if app == "whatsapp" {
+            if let link = MessagingApps.known(app)?.ownLink {
                 SettingsFold(ChatOwnAdvanced.title(app)) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
-                        .padding(.top, NookTheme.Spacing.sm)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                        switch link {
+                        case .whatsAppGateway: WhatsAppGatewayRows()
+                        }
+                    }
+                    .padding(.top, NookTheme.Spacing.sm)
                 }
             }
         }
