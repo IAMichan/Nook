@@ -183,7 +183,8 @@ struct PullRequestQuickActionButtons: View {
 }
 
 /// The merges of the Pull request rows and of the selection bar: the queue's rules are in `PullRequestQuickMergeQueue`;
-/// this sends them to GitHub one at a time, says how it went once the queue is empty, and reads the list again then.
+/// this sends them to GitHub one at a time and says how it went once the queue is empty. After each merge the store
+/// keeps reading the list (`PullRequestStore.followMerge`), so a conflict it causes in another row shows within seconds.
 @MainActor
 final class PullRequestQuickMerges: ObservableObject {
     static let shared = PullRequestQuickMerges()
@@ -213,7 +214,12 @@ final class PullRequestQuickMerges: ObservableObject {
                     }
                     do {
                         switch try await PullRequestQuickRunner.quickMerge(request.item, accountID: request.account, app: app) {
-                        case .merged: queue.finish(success: true)
+                        case .merged:
+                            queue.finish(success: true)
+                            // The row shows merged now, and the list is read again in a moment and a few times after,
+                            // so a pull request this merge put in conflict shows so while the rest still go.
+                            PullRequestStore.shared.markMerged(id)
+                            PullRequestSync.shared.markMerged(repository: request.item.repo, number: request.item.number)
                         case .autoMerge: queue.finishAutoMerge()
                         }
                     } catch {
