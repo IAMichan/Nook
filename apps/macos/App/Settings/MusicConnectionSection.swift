@@ -45,7 +45,7 @@ struct MusicConnectionSection: View {
 private struct MusicConnectionForm: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
     @AppStorage("spotifyClientID") private var clientID = ""
-    @State private var copiedRedirect = false
+    @StateObject private var copiedRedirect = CopiedMoment()
 
     @Environment(\.dismiss) private var dismiss
 
@@ -72,11 +72,10 @@ private struct MusicConnectionForm: View {
                             .font(NookTheme.mono(12))
                             .textSelection(.enabled)
                         Button {
-                            Pasteboard.copy(SpotifyWebAPI.redirectURI)
-                            copiedRedirect = true
+                            copiedRedirect.copy(SpotifyWebAPI.redirectURI)
                         } label: {
-                            Label(copiedRedirect ? tr("button.copied") : tr("button.copy"),
-                                  systemImage: copiedRedirect ? "checkmark" : "doc.on.doc")
+                            Label(copiedRedirect.copied ? tr("button.copied") : tr("button.copy"),
+                                  systemImage: copiedRedirect.copied ? "checkmark" : "doc.on.doc")
                         }
                     }
                     .help(tr("music.connect.redirectURI"))

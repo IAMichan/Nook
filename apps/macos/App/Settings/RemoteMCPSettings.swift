@@ -4,6 +4,8 @@ import SwiftUI
 /// the grants (each 30 days) with their access level and a revoke button. Read when the rows appear and when something
 /// changes; nothing polls, so an open Settings window costs nothing.
 struct RemoteMCPSettingsSection: View {
+    /// The address button says "Copied" for a moment after a click.
+    @StateObject private var copiedAddress = CopiedMoment()
     @ObservedObject var ws: WorkspaceSettings
     @ObservedObject private var server = RemoteMCPServer.shared
 
@@ -27,11 +29,8 @@ struct RemoteMCPSettingsSection: View {
         }
         if let url = server.publicURL {
             LabeledContent {
-                Button(tr("remotemcp.copy")) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                }
-                .controlSize(.small)
+                Button(copiedAddress.copied ? tr("button.copied") : tr("remotemcp.copy")) { copiedAddress.copy(url) }
+                    .controlSize(.small)
             } label: {
                 SettingLabel(tr("remotemcp.address"), detail: tr("remotemcp.address.detail"))
             }
