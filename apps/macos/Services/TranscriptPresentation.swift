@@ -523,7 +523,7 @@ extension SessionOutputs {
                         let path = resolve(raw, in: directory)
                         guard let kind = kind(path: path) else { continue }
                         let output = SessionOutput(id: "file:" + path, kind: kind, title: (path as NSString).lastPathComponent,
-                                                   path: path, date: date)
+                                                   path: path, date: date, shared: true)
                         if let at = files[path] { outputs[at] = output } else { files[path] = outputs.count; outputs.append(output) }
                     }
                 }

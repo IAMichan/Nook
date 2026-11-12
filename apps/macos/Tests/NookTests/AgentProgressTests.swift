@@ -214,6 +214,22 @@ final class AgentProgressTests: XCTestCase {
                        "the list the session keeps wins over the one in its timeline")
     }
 
+    func testEditedMarkdownDoesNotOpenOutputsByItself() {
+        let edit = event(.tool, "Edit · README.md", tool: "Edit", detail: #"{"file_path":"/p/README.md"}"#, state: .done, at: 2)
+        let page = event(.tool, "Write · index.html", tool: "Write", detail: #"{"file_path":"/p/index.html"}"#, state: .done, at: 3)
+        let share = event(.tool, "SendUserFile · notes.md", tool: "SendUserFile", detail: #"{"files":["notes.md"]}"#,
+                          state: .done, at: 4)
+        let outputs = SessionOutputs.collect([edit, page, share], tasks: nil, directory: "/p")
+        func opens(_ id: String) -> Bool {
+            SessionOutputs.opensByItself(outputs.first { $0.id == id }!, turnStart: start)
+        }
+        XCTAssertFalse(opens("file:/p/README.md"), "a Markdown file the agent edits stays in the outputs tab")
+        XCTAssertTrue(opens("file:/p/index.html"), "a page still opens by itself")
+        XCTAssertTrue(opens("file:/p/notes.md"), "a document handed to you still opens")
+        XCTAssertFalse(SessionOutputs.opensByItself(outputs[0], turnStart: start.addingTimeInterval(60)),
+                       "earlier work does not open")
+    }
+
     func testNewOutputs() {
         let page = SessionOutput(id: "file:/p/a.html", kind: .design, title: "a.html", path: "/p/a.html", date: start)
         let seen = Set([SessionOutputs.signature(page)])
