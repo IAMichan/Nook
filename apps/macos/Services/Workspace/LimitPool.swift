@@ -29,6 +29,11 @@ struct LimitPool: Equatable, Sendable {
         var resetsAt: Date?
         /// How long the window lasts, when known; with `resetsAt` it places the window's start and so its pace.
         var duration: TimeInterval? = nil
+
+        /// The model group of a label like "Gemini 4 Argon · Week" ("Gemini 4 Argon"), or nil for a plain window ("Week").
+        var group: String? {
+            label.range(of: " · ", options: .backwards).map { String(label[..<$0.lowerBound]) }
+        }
     }
 
     struct Account: Equatable, Sendable {
@@ -130,12 +135,13 @@ struct LimitPool: Equatable, Sendable {
         return LimitPool(accounts: order, windows: sorted.map(\.element))
     }
 
-    /// An account's window as the pool counts it. While the account's week is spent, its session window is spent too: it
-    /// reads as empty, without a pace, and comes back with whichever of the two resets frees it.
+    /// An account's window as the pool counts it. While the account's week of the same model group is spent, its session
+    /// window is spent too: it reads as empty, without a pace, and comes back with whichever of the two resets frees it.
+    /// A spent week of another group ("Gemini 4 Argon · Week") leaves the session window ("Gemini · 5 hours") alone.
     static func member(_ account: Account, _ limit: Limit, now: Date) -> Member {
         let plain = Member(accountID: account.id, name: account.name, limit: limit, refill: limit.used)
         guard Kind(duration: limit.duration) == .session,
-              let week = account.limits.first(where: { Kind(duration: $0.duration) == .weekly && $0.used >= 100 }) else { return plain }
+              let week = account.limits.first(where: { Kind(duration: $0.duration) == .weekly && $0.group == limit.group && $0.used >= 100 }) else { return plain }
         var spent = limit
         spent.used = 100
         spent.duration = nil
