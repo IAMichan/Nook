@@ -331,8 +331,8 @@ final class BrainService {
     /// One answer without tools. With Claude, a fast model does this small job; the chosen model still answers.
     private func complete(system: String, prompt: String, profile: ModelProfile) async throws -> String {
         let selection = settings.selection
-        if selection.runtime == .external, selection.provider == .claude {
-            guard let key = settings.apiKey, !key.isEmpty else { throw NookError("No API key configured.") }
+        if selection.runtime == .external, selection.provider.textWire == .anthropicMessages {
+            guard let key = settings.key(for: selection.provider), !key.isEmpty else { throw NookError("No API key configured.") }
             let model = "claude-haiku-5-5"
             var body: [String: Any] = ["model": model, "max_tokens": 600, "system": system, "messages": [["role": "user", "content": prompt]]]
             Self.applySpeed(to: &body, model: model)
@@ -403,7 +403,7 @@ final class BrainService {
             conversation = OllamaConversation(model: selection.model, system: system,
                                               history: [], prompt: fittedHistory + prompt, images: images, profile: profile)
         case .claude:
-            guard let key = settings.apiKey, !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
+            guard let key = settings.key(for: .claude), !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
             conversation = AnthropicConversation(
                 model: settings.model, system: system, history: history, prompt: prompt, images: images,
                 webSearchTool: webAllowed ? Self.webSearchTool(for: settings.model) : nil, maxTokens: 8192,
@@ -552,7 +552,7 @@ final class BrainService {
         case .ollama:
             conversation = OllamaConversation(model: settings.activeProviderModel, system: "You are a test.", history: [], prompt: probe, profile: settings.brainProfile)
         case .claude:
-            guard let key = settings.apiKey, !key.isEmpty else { throw NookError("No API key saved yet.") }
+            guard let key = settings.key(for: .claude), !key.isEmpty else { throw NookError("No API key saved yet.") }
             var body: [String: Any] = ["model": settings.model, "max_tokens": 1024, "messages": [["role": "user", "content": probe]]]
             Self.applySpeed(to: &body, model: settings.model)
             let response = try await send(body, key: key)
@@ -569,8 +569,8 @@ final class BrainService {
     func prewarm() {
         guard !settings.isLocalBrain else { return }
         let target: URL
-        if settings.provider == .claude {
-            guard settings.apiKey != nil else { return }
+        if settings.provider.textWire == .anthropicMessages {
+            guard settings.key(for: settings.provider) != nil else { return }
             target = endpoint
         } else {
             guard !settings.provider.isSubscription, let url = URL(string: settings.provider.baseURL + "/models") else { return }

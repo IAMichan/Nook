@@ -634,25 +634,9 @@ private struct ChoiceRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                Image(icon: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(checked ? NookTheme.mint : (hovering ? NookTheme.paper : NookTheme.textTertiary))
-                    .padding(.top, 1)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(option.label)
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                    if !option.description.isEmpty {
-                        Text(option.description)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
+            IconDetailRow(symbol: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle",
+                          tint: checked ? NookTheme.mint : (hovering ? NookTheme.paper : NookTheme.textTertiary),
+                          symbolSize: 14, title: option.label, detail: option.description, detailLines: 2)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -164,7 +164,6 @@ struct SettingsSidebarRow: View {
     let selected: Bool
     var badge = 0
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -190,11 +189,10 @@ struct SettingsSidebarRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(minHeight: detail == nil ? 30 : 40)
-            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+            .hoverRowFill(selected: selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -228,7 +226,7 @@ struct SettingsPageBar: View {
                                     restore.run()
                                     ToastCenter.shared.success(tr("settings.general.restored"))
                                 }) {
-                    Label(tr("settings.general.restore"), systemImage: "arrow.counterclockwise")
+                    Label(tr("settings.general.restore"), icon: "arrow.counterclockwise")
                 }
                 .controlSize(.small)
                 .disabled(!restore.changed)

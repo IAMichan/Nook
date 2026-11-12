@@ -139,11 +139,10 @@ struct TodayRow: View {
             .padding(.horizontal, NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
             .padding(.vertical, NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity)
-            .background(hovering ? NookTheme.rowHover : Color.clear)
+            .hoverRowFill($hovering, radius: nil)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
 }

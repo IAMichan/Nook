@@ -26,7 +26,7 @@ extension AppModel {
     /// FaceTime as another way to call this person: where their number or address is known, outside Messages (whose
     /// own calls are FaceTime already).
     func chatFaceTimeHandle(_ entry: ChatsEntry) -> String? {
-        guard entry.app != "messages", entry.kind != .group else { return nil }
+        guard MessagingApps.known(entry.app)?.callsAreFaceTime != true, entry.kind != .group else { return nil }
         return chatPhone(entry) ?? ChatProfile.text(entry.profile?.email)
     }
 
@@ -40,7 +40,7 @@ extension AppModel {
             launch = ChatCalls.launch(kind, for: chatCallPerson(entry))
         }
         guard let launch else { return }
-        let viaFaceTime = faceTime || entry.app == "messages" && launch.isDirect
+        let viaFaceTime = faceTime || MessagingApps.known(entry.app)?.callsAreFaceTime == true && launch.isDirect
         let workspace = NSWorkspace.shared
         var opened = false
         if let url = launch.url, workspace.urlForApplication(toOpen: url) != nil {

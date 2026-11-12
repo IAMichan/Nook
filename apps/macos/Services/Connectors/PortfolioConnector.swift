@@ -318,9 +318,12 @@ final class PortfolioConnector: ObservableObject, ContextSource {
     }
 
     private static func loadWallets() -> [PortfolioWallet] {
-        guard let data = UserDefaults.standard.data(forKey: walletsKey),
-              let stored = try? JSONDecoder().decode([StoredWallet].self, from: data) else { return [] }
-        // Skip an unknown network (from a newer version) instead of losing the entire list.
+        // Wallet by wallet. An unknown network (from a newer version) or an entry that cannot be read is skipped instead of
+        // losing the entire list, and the stored list is kept aside first (`SafeStorage`), so the next save loses nothing.
+        let outcome = SafeStorage.decode(LossyArray<StoredWallet>.self, defaults: .standard, key: walletsKey, skipped: { list in
+            list.skipped + list.elements.filter { PortfolioNetwork(rawValue: $0.network) == nil }.count
+        })
+        guard let stored = outcome.value?.elements else { return [] }
         return stored.compactMap { item in
             PortfolioNetwork(rawValue: item.network).map { PortfolioWallet(network: $0, address: item.address) }
         }
@@ -328,9 +331,7 @@ final class PortfolioConnector: ObservableObject, ContextSource {
 
     private func saveWallets() {
         let stored = wallets.map { StoredWallet(network: $0.network.rawValue, address: $0.address) }
-        if let data = try? JSONEncoder().encode(stored) {
-            UserDefaults.standard.set(data, forKey: Self.walletsKey)
-        }
+        UserDefaults.standard.setEncoded(stored, forKey: Self.walletsKey)
     }
 
     private static func credentials(for exchange: PortfolioExchange) -> PortfolioCredentials? {

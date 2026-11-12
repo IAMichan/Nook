@@ -26,7 +26,8 @@ struct AgentUpdatesSection: View {
                                  symbol: "arrow.down.circle")
         }
         .onAppear { app.refreshAgentUpdates() }
-        .confirmationDialog(question, isPresented: Binding(get: { updater.pending != nil }, set: { if !$0 { updater.pending = nil } })) {
+        .confirmationDialog(question, isPresented: Binding(get: { updater.pending != nil }, set: { if !$0 { updater.pending = nil } }),
+                            titleVisibility: .visible) {
             Button(tr("agentUpdate.confirm")) { app.confirmAgentUpdate() }
             Button(tr("button.cancel"), role: .cancel) { updater.pending = nil }
         } message: {

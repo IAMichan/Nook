@@ -141,6 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Secrets delivered to agents as private files never outlive Nook.
         WorkspaceBridge.shared.removeAllSecrets()
         model.recap.flush()
+        // Debounced saves still waiting for their moment: written now, or the last edits are lost with the process.
+        model.chat.flush()
+        ComposerDraftStore.shared.flush()
         UpdateTrialRunner.cleanExit()
         AutocompleteController.shared.flush()
         ChatHelper.shared.stop()

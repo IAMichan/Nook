@@ -455,7 +455,7 @@ struct AgentSessionDetail: View {
                     ForEach([nil] + levels.map { Optional($0) }, id: \.self) { level in
                         Button { turnSettings.effort = level } label: {
                             let title = app.workspace.effortTitle(level, for: provider, profileID: choice?.profileID)
-                            if turnSettings.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
+                            if turnSettings.effort == level { Label(title, icon: "checkmark") } else { Text(title) }
                         }
                     }
                 } label: {

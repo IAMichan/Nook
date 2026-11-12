@@ -336,6 +336,8 @@ enum AutocompleteField {
     /// never covers it. Only when the cursor is on a new line (wrapped or after a return) does the empty range decide.
     private static func caretRect(in element: AXUIElement, at location: Int, text: NSString) -> CGRect? {
         let empty = bounds(in: element, location: location, length: 0)
+        // The location comes from another app: never read past either end of the text it describes.
+        let location = min(max(0, location), text.length)
         let previousIsNewline = location > 0 && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: location - 1))
         if location > 0, !previousIsNewline, let previous = bounds(in: element, location: location - 1, length: 1),
            previous.width > 0, previous.width < 200 {
@@ -343,8 +345,10 @@ enum AutocompleteField {
         }
         // Notes and other rich text views often have no box for the last character, but do for the line it ends: the cursor
         // at the end of that line is at the line's right edge.
-        if location > 0, !previousIsNewline, let line = lineRange(in: element, containing: location - 1) {
-            var length = line.length
+        if location > 0, !previousIsNewline, let line = lineRange(in: element, containing: location - 1),
+           line.location >= 0, line.location < location {
+            // The other app's line range is checked on both ends, so every index below lies inside the text.
+            var length = min(max(0, line.length), text.length - line.location)
             while length > 0, line.location + length > location || [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: line.location + length - 1)) {
                 length -= 1
             }

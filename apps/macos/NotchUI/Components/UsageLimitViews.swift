@@ -540,12 +540,7 @@ private struct UsageBlockRows: View {
                                 .font(NookTheme.TextStyle.body.weight(.medium))
                                 .foregroundStyle(NookTheme.paper)
                             if block.active {
-                                Text(tr("limits.block.running"))
-                                    .font(NookTheme.TextStyle.caption.weight(.semibold))
-                                    .foregroundStyle(NookTheme.paper)
-                                    .padding(.horizontal, NookTheme.Spacing.sm)
-                                    .padding(.vertical, NookTheme.Spacing.xxs)
-                                    .roundedBackground(NookTheme.wash.opacity(0.08), radius: NookTheme.Radius.chip / 2)
+                                NookTag(tr("limits.block.running"))
                             }
                         }
                         Text(detail(block))
@@ -572,9 +567,7 @@ private struct UsageBlockRows: View {
             if open {
                 VStack(spacing: 0) {
                     if block.chats.isEmpty {
-                        Text(tr("limits.block.empty"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
+                        ListEmptyNote(tr("limits.block.empty"))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, NookTheme.Spacing.md)
                     }

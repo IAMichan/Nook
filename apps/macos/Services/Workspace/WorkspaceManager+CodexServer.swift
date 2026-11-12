@@ -183,16 +183,20 @@ extension WorkspaceManager {
         }
         let mark: RunEvent.SteerKind = promoted ? .promoted : .steer
         if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean, mark: mark) }
-        if let process = processes[id], run(id)?.provider == .claude {
-            append(id, steerEvent(id, text: clean, mark: mark))
-            turns[id]?.steered = true
-            process.send(ClaudeStreamParser.userMessage(clean, steer: true))
-            return true
-        }
-        if let process = processes[id], run(id)?.provider == .pi {
-            append(id, steerEvent(id, text: clean, mark: mark))
-            process.send(PiRPC.prompt(clean, steer: true))
-            return true
+        if let process = processes[id], let channel = run(id)?.provider.capabilities.processChannel {
+            switch channel {
+            case .claudeStreamJSON:
+                append(id, steerEvent(id, text: clean, mark: mark))
+                turns[id]?.steered = true
+                process.send(ClaudeStreamParser.userMessage(clean, steer: true))
+                return true
+            case .piRPC:
+                append(id, steerEvent(id, text: clean, mark: mark))
+                process.send(PiRPC.prompt(clean, steer: true))
+                return true
+            case .none:
+                break
+            }
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
         append(id, steerEvent(id, text: clean, mark: mark))
@@ -218,7 +222,7 @@ extension WorkspaceManager {
 
     func steerRoute(_ id: UUID) -> SteerRoute {
         guard let run = run(id) else { return .unavailable }
-        let nativeReady = run.provider == .claude || run.provider == .pi
+        let nativeReady = run.provider.capabilities.processChannel != .none
             ? processes[id]?.isRunning == true && questions[id] == nil
             : codexServers[id]?.turnID != nil
         return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive && turns[id] != nil,

@@ -110,20 +110,10 @@ enum LocalServers {
     /// Asks once; nothing keeps watching.
     static func scan() async -> [LocalServer] {
         await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-            process.arguments = ["-nP", "-iTCP", "-sTCP:LISTEN", "-FcnP"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-            defer {
-                try? pipe.fileHandleForReading.close()
-                try? pipe.fileHandleForWriting.close()
-            }
-            guard (try? process.run()) != nil else { return [] }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            return parse(String(decoding: data, as: UTF8.self))
+            // lsof can hang on an unreachable network volume: the deadline keeps the scan from waiting on it forever.
+            guard let result = try? ProcessRunner.run("/usr/sbin/lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-FcnP"], timeout: 10)
+            else { return [] }
+            return parse(result.stdout)
         }.value
     }
 }

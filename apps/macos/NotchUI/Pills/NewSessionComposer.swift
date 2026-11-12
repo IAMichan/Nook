@@ -6,10 +6,10 @@ import AppKit
 /// where it works (this folder or a new worktree) and the branch it starts from are small menus, already set to
 /// your last choices in this folder. Nothing else to fill in: title, branch name and worktree location are derived.
 struct NewSessionComposer: View {
-    @EnvironmentObject private var app: AppModel
-    @EnvironmentObject private var workspace: WorkspaceManager
-    @EnvironmentObject private var settings: WorkspaceSettings
-    @ObservedObject private var antigravity = AntigravityInstaller.shared
+    @EnvironmentObject var app: AppModel
+    @EnvironmentObject var workspace: WorkspaceManager
+    @EnvironmentObject var settings: WorkspaceSettings
+    @ObservedObject var antigravity = AntigravityInstaller.shared
     /// The panels' icons (terminal, browser, bottom and side panel) at the top right, as in a running session.
     var headerAccessory: AnyView? = nil
     /// Called with the folder the new session will work in, so its panels open there; empty on another machine.
@@ -19,48 +19,48 @@ struct NewSessionComposer: View {
 
     /// Every choice for the new session. Its `task` stays empty while you type: the words live in `task` below, and
     /// `checkedConfig` puts them in when the session starts.
-    @State private var config = NewRunConfig()
+    @State var config = NewRunConfig()
     /// The words in the box, held outside the panel's own state: only the field reads them, so a keystroke redraws the
     /// field and not every menu, the heading and the tray of this panel (that cost a frame or more per key).
-    @State private var task = NewSessionTask()
+    @State var task = NewSessionTask()
     /// Whether the box holds more than whitespace: all the panel itself needs of the words (the start button, the
     /// notice). It changes only when the box becomes empty or not.
-    @State private var hasTask = false
-    @State private var images: [ImageAttachment] = []
-    @State private var project: ProjectInfo?
-    @State private var inspecting = false
-    @State private var starting = false
-    @State private var error: String?
-    @State private var allowShared = false
-    @State private var showClone = false
+    @State var hasTask = false
+    @State var images: [ImageAttachment] = []
+    @State var project: ProjectInfo?
+    @State var inspecting = false
+    @State var starting = false
+    @State var error: String?
+    @State var allowShared = false
+    @State var showClone = false
     /// A project just made with "New project…": the sheet that offers to publish it.
-    @State private var newProjectPlan: PublishPlan?
+    @State var newProjectPlan: PublishPlan?
     /// The last project request from the Agents list this composer applied (`PromptLinkInbox.requestProject`).
-    @State private var appliedProjectRequest: UUID?
-    @State private var cloneURL = ""
-    @State private var cloning = false
-    @State private var pendingID = UUID()
+    @State var appliedProjectRequest: UUID?
+    @State var cloneURL = ""
+    @State var cloning = false
+    @State var pendingID = UUID()
     /// On another machine over SSH (see RemoteMachines): which one, and the folder there.
-    @State private var remoteMachine: RemoteMachine?
-    @State private var remoteFolder = ""
+    @State var remoteMachine: RemoteMachine?
+    @State var remoteFolder = ""
     /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
     /// list does not redraw this whole panel.
-    @State private var composerModel = ComposerModel()
-    @ObservedObject private var promptLinks = PromptLinkInbox.shared
-    @State private var linkNotice: String?
+    @State var composerModel = ComposerModel()
+    @ObservedObject var promptLinks = PromptLinkInbox.shared
+    @State var linkNotice: String?
     /// A pull request link's branch is being checked out (`promptLinks.pendingCheckout`).
-    @State private var checkingOut = false
+    @State var checkingOut = false
     /// Set once the session started: what is left in the box then is not worth bringing back.
-    @State private var started = false
+    @State var started = false
     /// The other models the prompt also goes to, each in a session and worktree of its own (`ModelComparison`).
-    @State private var comparing: [ComparisonTarget] = []
+    @State var comparing: [ComparisonTarget] = []
     /// "New session in this worktree": the session works in the folder as it is, whatever this folder's default says.
-    @State private var keepCheckout = false
-    @FocusState private var focused: Bool
+    @State var keepCheckout = false
+    @FocusState var focused: Bool
 
     /// Where this draft's words are kept in `ComposerDraftStore`: one draft per folder, or per machine over SSH, so what
     /// you typed for one project waits there (and in the list's unsent rows) while you start something in another.
-    private var draftKey: String {
+    var draftKey: String {
         if let remoteMachine { return NewSessionDraftKey.machine(remoteMachine.id) }
         return NewSessionDraftKey.folder(config.projectPath)
     }
@@ -107,7 +107,7 @@ struct NewSessionComposer: View {
         images = []
     }
 
-    private func setTask(_ text: String) {
+    func setTask(_ text: String) {
         guard text != task.text else { return }
         task.text = text
         let filled = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -147,190 +147,6 @@ struct NewSessionComposer: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: Heading
-
-    /// One line while it fits; in a narrow column the folder moves to a line of its own under the question, instead of
-    /// the question being squeezed to a word per line beside a long folder name. Under it, a quiet way out of the project ("or start without a project"); once without one, the question drops
-    /// the folder and the line under it ("No project") opens the projects to pick one again.
-    private var heading: some View {
-        VStack(spacing: NookTheme.Spacing.sm) {
-            Group {
-                if startsWithoutProject {
-                    Text(tr("compose.headingNoProject")).foregroundStyle(NookTheme.paper)
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 0) {
-                            headingLead
-                            projectPicker
-                        }
-                        VStack(spacing: NookTheme.Spacing.xxs) {
-                            headingLead
-                            projectPicker
-                        }
-                    }
-                }
-            }
-            .font(NookTheme.TextStyle.display)
-            subheading
-        }
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        // On the heading, not the picker: "New project…" is also in the "No project" line's menu.
-        .sheet(item: $newProjectPlan) { plan in
-            PublishRepositorySheet(plan: plan) { _ in newProjectPlan = nil }
-                .environmentObject(workspace)
-        }
-    }
-
-    /// The session works in a folder of its own under ~/.nook/scratch, not in a project.
-    private var startsWithoutProject: Bool {
-        remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)
-    }
-
-    /// "or start without a project" under a project; "No project", with the projects to go back to, without one.
-    @ViewBuilder
-    private var subheading: some View {
-        if startsWithoutProject {
-            ComposerDropdown(width: 320) {
-                HoverUnderlinedLabel(title: tr("ws.new.noProject"), color: NookTheme.paper)
-            } content: {
-                projectMenuContent
-            }
-            .composerTip(tr("compose.noProject.help"))
-        } else if remoteMachine == nil {
-            Button(action: chooseNoProject) {
-                HoverUnderlinedLabel(title: tr("compose.startWithoutProject"), color: NookTheme.textSecondary)
-            }
-            .buttonStyle(.nookPlain)
-            .composerTip(tr("ws.new.noProjectDetail"))
-        }
-    }
-
-    private var headingLead: some View {
-        Text(tr("compose.heading"))
-            .foregroundStyle(NookTheme.paper)
-    }
-
-    /// The folder (or machine) the session works in, then the question mark, kept together on one line.
-    private var projectPicker: some View {
-        HStack(spacing: 0) {
-            ComposerDropdown(width: 320) {
-                Text(projectLabel)
-                    .foregroundStyle(NookTheme.paper)
-                    .underline(true, pattern: .dot, color: NookTheme.textTertiary)
-            } content: {
-                projectMenuContent
-            }
-            .composerTip(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
-            Text("?").foregroundStyle(NookTheme.paper)
-            if inspecting {
-                ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
-            }
-        }
-    }
-
-    /// The projects to pick from, shared by the folder in the question and the "No project" line under it.
-    @ViewBuilder
-    private var projectMenuContent: some View {
-        let menu = projectMenu
-        if !menu.favorites.isEmpty {
-            DropdownHeader(title: tr("ws.new.favorites"))
-            ForEach(menu.favorites, id: \.self) { path in
-                projectRow(path)
-            }
-        }
-        if !menu.recent.isEmpty {
-            DropdownHeader(title: tr("ws.new.recent"))
-            ForEach(menu.recent, id: \.self) { path in
-                projectRow(path)
-            }
-        }
-        if !menu.favorites.isEmpty || !menu.recent.isEmpty {
-            DropdownDivider()
-        }
-        DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.chooseFolder")) { chooseFolder() }
-        // A folder of its own under ~/.nook/scratch, for a question or a try-out that belongs to no project.
-        DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
-                    chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
-        DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
-        // A new folder with a repository in it, offered to publish on GitHub at once.
-        DropdownRow(symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"), detail: tr("sc.newProject.detail")) {
-            chooseNewProject()
-        }
-        // Another machine over SSH (Settings › Agents › Workspace › Machines).
-        let machines = RemoteMachines.load()
-        if !machines.isEmpty {
-            DropdownDivider()
-            DropdownHeader(title: tr("ws.remote.header"))
-            ForEach(machines) { machine in
-                DropdownRow(symbol: "server.rack", title: machine.name, detail: machine.host,
-                            chosen: remoteMachine?.id == machine.id) { pickMachine(machine) }
-            }
-        }
-    }
-
-    private func projectRow(_ path: String) -> some View {
-        let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
-        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: (path as NSString).lastPathComponent,
-                           detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { pick(path) }
-    }
-
-    private func favoriteBinding(_ path: String) -> Binding<Bool> {
-        Binding(get: { settings.isFavoriteProject(path) },
-                set: { if $0 != settings.isFavoriteProject(path) { settings.toggleFavoriteProject(path) } })
-    }
-
-    private var cloneRow: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            TextField(tr("ws.new.clonePlaceholder"), text: $cloneURL)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.code)
-                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .frame(height: 30)
-                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
-                .onSubmit(clone)
-                // A page copied from the browser (`…/tree/main`) shows as the repository it clones.
-                .onChange(of: cloneURL) { _, typed in
-                    let repository = CloneLayout.repositoryURL(fromPage: typed)
-                    if repository != typed.trimmingCharacters(in: .whitespacesAndNewlines) { cloneURL = repository }
-                }
-            SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
-                .disabled(cloning || !GitService.isCloneURL(cloneURL))
-            NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { showClone = false }
-        }
-        .frame(maxWidth: 640)
-    }
-
-    /// "app", "buildbox:app", or the invitation to pick one.
-    private var projectLabel: String {
-        if let remoteMachine {
-            let folder = remoteFolder.isEmpty ? "…" : (remoteFolder as NSString).lastPathComponent
-            return remoteMachine.name + ":" + folder
-        }
-        if let project, ScratchProjects.isScratch(project.path) { return tr("ws.new.noProject") }
-        return project?.name ?? tr("compose.pickProject")
-    }
-
-    /// The folder on the remote machine, typed: there is no folder panel for another machine.
-    private var remoteRow: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(icon: "server.rack").foregroundStyle(NookTheme.textTertiary)
-            // A long machine name gives way, so the field keeps room to type a path.
-            Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(1).truncationMode(.middle)
-            TextField("~/code/app", text: $remoteFolder)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.code)
-                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                .frame(minWidth: 140)
-                .frame(height: 30)
-                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
-            NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
-        }
-        .font(NookTheme.TextStyle.body)
-        .frame(maxWidth: 640)
     }
 
     // MARK: The box
@@ -389,254 +205,9 @@ struct NewSessionComposer: View {
         focused = true
     }
 
-    // MARK: Choices in the box
-
-    /// Agent, account and model in one panel: agents in a rail, their models with a search.
-    private var agentMenu: some View {
-        let profile = app.profiles.profile(id: config.profileID)
-        // On Auto the agent is picked from the prompt as the session starts, so the pill shows Auto's own mark and word,
-        // not the logo of the agent chosen last.
-        let auto = config.model == AutoModel.id && comparing.isEmpty
-        let model = config.model.isEmpty ? config.provider.displayName
-            : ComposerModelLabel.compact(app.modelMenuName(config.model, for: config.provider, profileID: config.profileID),
-                                         agent: config.provider.displayName)
-        let plain = auto || !comparing.isEmpty
-        return ModelPickerDropdown(holdsOptions: true, hasSideColumn: reasoning != nil) {
-            ComposerPill(symbol: auto ? AutoModel.symbol : nil,
-                         agent: auto ? nil : config.provider.displayName,
-                         account: auto ? nil : profile.map { AccountTag.of($0, app: app) },
-                         text: auto ? tr("auto.model") : comparing.isEmpty ? model : tr("compare.pill", comparing.count + 1),
-                         detail: plain ? nil : effortWord,
-                         badge: plain || !subThreadsOn ? nil : ("app.connected.to.app.below.fill", tr("compose.mainThread.on")),
-                         showsChevron: false)
-        } content: {
-            let providers = app.connectedProviders(in: remoteMachine == nil ? config.projectPath : nil)
-            if providers.isEmpty {
-                DropdownHeader(title: tr(app.connectedProviders.isEmpty ? "agents.noneConnected" : "sc.agents.allOff"))
-            } else {
-                AgentModelPicker(providers: providers, provider: config.provider, profileID: config.profileID,
-                                 model: config.model,
-                                 footer: AnyView(options), trailing: reasoning.map { AnyView(ModelPickerReasoning(effort: $0)) }) { provider, account, model in
-                    if provider != config.provider || (account != nil && account != config.profileID) {
-                        choose(provider, account: account ?? rememberedProfile(for: provider) ?? config.profileID)
-                    }
-                    if let model { config.model = model }
-                    remember()
-                }
-            }
-        }
-        .composerTip(tr("ws.new.accountPinned"))
-    }
-
-    private var modeMenu: some View {
-        ModeToggle(mode: Binding(get: { config.mode }, set: { config.mode = $0; remember() }))
-    }
-
-    /// Access, speed and sub-threads, in the footer of the model picker (the agent decides on Plan itself).
-    private var options: some View {
-        ModelPickerOptions(
-            access: .init(provider: config.provider, chosen: config.permission, readOnly: config.mode == .plan,
-                          pick: { config.permission = $0; remember() }),
-            speedTiers: speedTiers, speed: config.speedTier, pickSpeed: { config.speedTier = $0 },
-            ultracodeOffered: Ultracode.offered(provider: config.provider, model: config.model),
-            ultracode: config.ultracode == true, setUltracode: { config.ultracode = $0 },
-            mainThreadOffered: MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess),
-            mainThread: config.mainThread == true, setMainThread: { config.mainThread = $0 ? true : nil })
-    }
-
-    /// The chosen effort as the model pill says it ("High"); nil on the agent's default.
-    private var effortWord: String? {
-        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
-            guard let level = family.members.first(where: { $0.id == config.model })?.level, !level.isEmpty else { return nil }
-            return tr(EffortLevels.label(variant: level))
-        }
-        return config.effort.map { workspace.effortTitle($0, for: config.provider, profileID: config.profileID) }
-    }
-
-    /// Main thread (or Ultracode, the same choice in the picker) is on for the new session.
-    private var subThreadsOn: Bool {
-        MainThread.offered(provider: config.provider, access: workspace.settings.bridgeAccess) ? config.mainThread == true
-            : Ultracode.offered(provider: config.provider, model: config.model) && config.ultracode == true
-    }
-
-    /// The reasoning levels, in the column beside the models; nil when the agent has none for this model.
-    private var reasoning: ModelPickerOptions.Effort? {
-        let levels = workspace.effortLevels(for: config.provider, profileID: config.profileID,
-                                            model: config.model.isEmpty ? nil : config.model)
-        let effort = ModelPickerOptions.Effort(
-            family: app.modelFamily(config.model, for: config.provider, profileID: config.profileID),
-            model: config.model,
-            modelName: config.model.isEmpty ? config.provider.displayName
-                : app.modelMenuName(config.model, for: config.provider, profileID: config.profileID),
-            levels: levels, chosen: config.effort,
-            title: { workspace.effortTitle($0, for: config.provider, profileID: config.profileID) },
-            pickLevel: { config.effort = $0; remember() },
-            pickModel: { config.model = $0; remember() })
-        return effort.family != nil || !levels.isEmpty ? effort : nil
-    }
-
-    /// The subscription limits of the chosen account, beside the effort as in a running session, for every agent that
-    /// reports them: you see how much room is left before you start.
-    private var usageLimits: some View {
-        ComposerUsageRing.forAccount(app.profiles.profile(id: config.profileID), app: app)
-    }
-
-    /// The faster tiers the chosen agent offers for the chosen model (`SpeedTiers`).
-    private var speedTiers: [SpeedTier] {
-        SpeedTiers.tiers(for: config.provider, model: config.model,
-                         listed: workspace.offeredModels(config.provider, profileID: config.profileID))
-    }
-
-    /// `effort.increase` / `effort.decrease`: the next level up or down (`EffortStep`). An agent that lists one model per
-    /// level steps through that family's models instead. False when the agent has no levels, so the key goes on.
-    private func stepEffort(_ direction: EffortStep.Direction) -> Bool {
-        if let family = app.modelFamily(config.model, for: config.provider, profileID: config.profileID) {
-            let ids = family.members.map(\.id)
-            guard let index = ids.firstIndex(of: config.model) else { return false }
-            let next = direction == .up ? min(index + 1, ids.count - 1) : max(index - 1, 0)
-            config.model = ids[next]
-        } else {
-            let levels = workspace.effortLevels(for: config.provider, profileID: config.profileID,
-                                                model: config.model.isEmpty ? nil : config.model)
-            guard !levels.isEmpty else { return false }
-            config.effort = EffortStep.next(current: config.effort, levels: levels, direction: direction)
-        }
-        remember()
-        return true
-    }
-
-    // MARK: Below the box
-
-    private var belowBox: some View {
-        ComposerTray(edge: .bottom) { belowBoxRow }
-    }
-
-    private var belowBoxRow: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            if let remoteMachine {
-                // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
-                ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
-                    .composerTip(tr("ws.remote.limits"))
-                isolationDropdown(worktreeAllowed: true, reason: "")
-                Spacer(minLength: 8)
-                if config.isolation == .worktree {
-                    Image(icon: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
-                    TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
-                        .textFieldStyle(.plain)
-                        .font(NookTheme.TextStyle.detail)
-                        .frame(minWidth: 90, maxWidth: 150)
-                        .composerTip(tr("ws.remote.baseHelp"))
-                }
-            } else {
-                // A folder that is no git repository has no branch or worktree to choose.
-                if project == nil || project?.repoRoot != nil {
-                    isolationDropdown(worktreeAllowed: worktreeAllowed, reason: worktreeBlockedReason)
-                }
-
-                Spacer(minLength: 8)
-
-                if config.isolation == .worktree, let branches = project?.branches, !branches.isEmpty {
-                    ComposerDropdown(width: 280) {
-                        // A long branch name is cut short, so the row stays inside a narrow tab.
-                        ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: tr("compose.from", config.baseBranch))
-                            .frame(maxWidth: 220)
-                    } content: {
-                        BranchPicker(branches: sortedBranches(branches), selected: config.baseBranch) { config.baseBranch = $0 }
-                    }
-                    .composerTip(tr("compose.from.help"))
-                } else if let branch = project?.currentBranch {
-                    ComposerPill(symbol: "arrow.triangle.branch", dot: nil, text: branch, showsChevron: false)
-                        .frame(maxWidth: 220)
-                        .composerTip(tr("compose.currentBranch.help"))
-                }
-            }
-        }
-    }
-
-    /// Where the agent works: the folder as it is, or a new worktree.
-    private func isolationDropdown(worktreeAllowed: Bool, reason: String) -> some View {
-        ComposerDropdown(width: 300) {
-            ComposerPill(symbol: config.isolation == .worktree ? "square.stack.3d.up" : "folder", dot: nil,
-                 text: config.isolation == .worktree ? tr("compose.newWorktree") : tr("compose.currentCheckout"))
-        } content: {
-            DropdownHeader(title: tr("compose.whereWorks"))
-            DropdownRow(symbol: "folder", title: tr("compose.currentCheckout"), detail: tr("compose.currentCheckoutDetail"),
-                        chosen: config.isolation == .folder) {
-                config.isolation = .folder
-                remember()
-            }
-            DropdownRow(symbol: "square.stack.3d.up", title: tr("compose.newWorktree"), detail: tr("ws.new.worktreeExplain"),
-                        chosen: config.isolation == .worktree, disabledReason: worktreeAllowed ? nil : reason) {
-                config.isolation = .worktree
-                remember()
-            }
-        }
-        .composerTip(worktreeAllowed ? tr("ws.new.worktreeExplain") : reason)
-    }
-
-    /// One line, only when something needs saying: why you cannot start yet, or what went wrong.
-    @ViewBuilder
-    private var notice: some View {
-        if let link = promptLinks.pendingCheckout, let pull = link.pullRequest {
-            // A pull request link no session works on: the checkout waits for you, as it runs the project's setup.
-            PanelNoticeBar(title: tr("promptLink.pr.title", "\(pull.repository)#\(pull.number)"),
-                           detail: tr("promptLink.pr.detail"), symbol: PullRequestIcon.generic, tone: NookTheme.amber) {
-                if checkingOut {
-                    ProgressView().controlSize(.small)
-                } else {
-                    NookNoticeActions(primary: NookNoticeAction(tr("promptLink.pr.checkout")) { checkOutLinkedPullRequest(link, pull) },
-                                      secondary: NookNoticeAction(tr("button.cancel")) { promptLinks.pendingCheckout = nil })
-                }
-            }
-            .padding(.horizontal, NookTheme.Spacing.md)
-        } else if let error {
-            Text(error)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.coralSoft)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, NookTheme.Spacing.md)
-        } else if let linkNotice {
-            Text(linkNotice)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.amber)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, NookTheme.Spacing.md)
-        } else if let remoteMachine {
-            // On another machine the agent uses that machine's own login; what needs this Mac stays off.
-            Text(tr("ws.remote.notice", remoteMachine.name))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, NookTheme.Spacing.md)
-        } else if config.provider == .antigravity, antigravity.installed == nil {
-            AntigravitySetupRow().padding(.horizontal, NookTheme.Spacing.md)
-        } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("ws.new.accountNotLoggedIn")).foregroundStyle(NookTheme.amber)
-                SmallGhostButton(title: tr("agents.login")) { app.connect(profile) }
-            }
-            .font(NookTheme.TextStyle.detail)
-            .padding(.horizontal, NookTheme.Spacing.md)
-        } else if !sharing.isEmpty, config.isolation == .folder {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("ws.new.sharedWarning", sharing.map(\.title).joined(separator: ", ")))
-                    .foregroundStyle(NookTheme.amber)
-                    .lineLimit(2)
-                Toggle(tr("ws.new.sharedAllow"), isOn: $allowShared).toggleStyle(.checkbox)
-            }
-            .font(NookTheme.TextStyle.detail)
-            .padding(.horizontal, NookTheme.Spacing.md)
-        } else if let reason = blockingReason, project != nil, hasTask {
-            Text(reason)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .padding(.horizontal, NookTheme.Spacing.md)
-        }
-    }
-
     // MARK: State
 
-    private var projectMenu: (favorites: [String], recent: [String]) {
+    var projectMenu: (favorites: [String], recent: [String]) {
         // Folders of sessions without a project stay out of Recent; one you turned into a project is a favorite.
         // An archived project stays out (Settings › Projects brings it back), unless it is the one chosen now.
         ProjectSettings.projectMenu(
@@ -648,12 +219,12 @@ struct NewSessionComposer: View {
         )
     }
 
-    private var worktreeAllowed: Bool {
+    var worktreeAllowed: Bool {
         guard let project, project.verdict == .ok else { return false }
         return project.repoRoot != nil && project.hasCommits && workspace.gitAvailable == true
     }
 
-    private var worktreeBlockedReason: String {
+    var worktreeBlockedReason: String {
         if workspace.gitAvailable == false { return tr("ws.error.noGit") }
         guard let project else { return tr("ws.new.pickWorkspace") }
         if project.repoRoot == nil { return tr("ws.new.worktreeNeedsRepo") }
@@ -661,12 +232,12 @@ struct NewSessionComposer: View {
         return ""
     }
 
-    private var sharing: [WorkspaceRun] {
+    var sharing: [WorkspaceRun] {
         guard let project, project.verdict == .ok else { return [] }
         return workspace.activeRuns(sharing: project.repoRoot ?? project.path)
     }
 
-    private var blockingReason: String? {
+    var blockingReason: String? {
         if let problem = shownConfig.problem { return tr("ws.error.config." + problem.rawValue) }
         // On another machine the agent is looked up there, not on this Mac.
         if let machine = remoteMachine {
@@ -689,22 +260,22 @@ struct NewSessionComposer: View {
     }
 
     /// Every model the prompt goes to, the chosen one first.
-    private var comparisonTargets: [ComparisonTarget] {
+    var comparisonTargets: [ComparisonTarget] {
         ModelComparison.targets(primary: ComparisonTarget(provider: config.provider, profileID: config.profileID, model: config.model),
                                 extras: comparing)
     }
 
-    private var canStart: Bool { !starting && blockingReason == nil }
+    var canStart: Bool { !starting && blockingReason == nil }
 
     /// The configuration as it will start: with the branch name derived from the task, which only gets filled in at the
     /// moment of starting. Checking `config` itself would see an empty branch name and refuse every new worktree.
-    private var checkedConfig: NewRunConfig { configured(task: task.text) }
+    var checkedConfig: NewRunConfig { configured(task: task.text) }
 
     /// `checkedConfig` as the panel checks it while you type, without reading the words (see `task`): the check only
     /// asks whether there are any, and a branch name derived from words is always a valid one.
     private var shownConfig: NewRunConfig { configured(task: hasTask ? "task" : "") }
 
-    private func configured(task text: String) -> NewRunConfig {
+    func configured(task text: String) -> NewRunConfig {
         var copy = config
         copy.task = text
         copy.branchName = WorktreeNaming.branchName(task: text, id: pendingID)
@@ -716,7 +287,7 @@ struct NewSessionComposer: View {
     }
 
     /// The default branch first ("origin/main"), then the rest alphabetically.
-    private func sortedBranches(_ branches: [String]) -> [String] {
+    func sortedBranches(_ branches: [String]) -> [String] {
         let base = project?.defaultBase
         return branches.sorted { a, b in
             if a == base { return true }
@@ -725,563 +296,12 @@ struct NewSessionComposer: View {
         }
     }
 
-    // MARK: Actions
-
-    /// A link only fills the draft (and picks a project, agent or model when they exist here); you read it and press send.
-    private func applyPromptLink() {
-        guard let link = promptLinks.pending else { return }
-        promptLinks.pending = nil
-        // What you were writing stays, under the link's text.
-        // A link for a project fills that project's draft.
-        if let path = link.project, FileManager.default.fileExists(atPath: path) { open(path) }
-        let draft = task.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        setTask(draft.isEmpty || draft == link.text ? link.text : link.text + "\n\n" + draft)
-        if let name = link.agent?.lowercased(),
-           let provider = RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) {
-            choose(provider, account: rememberedProfile(for: provider) ?? app.profiles.preferredProfile(provider.kind).id)
-            if let model = link.model { config.model = model }
-        }
-        linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
-    }
-
-    /// "Check out" on a pull request link: the branch in a worktree of its own, the composer on it with the link's words
-    /// as the draft (nothing is sent), and the checkout in the action log.
-    private func checkOutLinkedPullRequest(_ link: PromptLink, _ pull: PromptLink.PullRequest) {
-        checkingOut = true
-        Task {
-            let label = "\(pull.repository)#\(pull.number)"
-            do {
-                let path = try await app.pullRequestLinkWorktree(pull)
-                app.store.audit(tool: "prompt_link_pr_checkout", args: label, result: path)
-                promptLinks.pendingCheckout = nil
-                var draft = link
-                draft.pullRequest = nil
-                if !draft.text.isEmpty { promptLinks.pending = draft }
-                promptLinks.requestProject(path)
-            } catch {
-                app.store.audit(tool: "prompt_link_pr_checkout", args: label, result: "error: " + error.localizedDescription)
-                ToastCenter.shared.error(error, title: tr("agents.pr.checkout.failed"))
-            }
-            checkingOut = false
-        }
-    }
-
-    /// A project's "+" in the Agents list (or an unsent draft's row) opens the composer on that folder's own draft.
-    private func applyRequestedProject() {
-        guard let request = promptLinks.pendingProject, request.id != appliedProjectRequest else { return }
-        appliedProjectRequest = request.id
-        showClone = false
-        if let id = NewSessionDraftKey.machineID(request.path) {
-            if let machine = RemoteMachines.load().first(where: { $0.id == id }) { openMachine(machine) }
-        } else if FileManager.default.fileExists(atPath: request.path) {
-            open(request.path, isolation: request.isolation)
-            if let text = request.text, text != task.text {
-                if hasTask { ComposerDraftStore.shared.pushToStash(task.text); ToastCenter.shared.success(tr("ws.new.draftStashed")) }
-                setTask(text)
-            }
-        } else if ScratchProjects.isScratch(request.path) {
-            // A draft without a project whose empty folder went: a new one, with the words.
-            openNoProject(draft: NewSessionDraftKey.folder(request.path))
-        }
-        DispatchQueue.main.async { focused = true }
-    }
-
-    /// Back where you left it when the notch closed, else a fresh box with your last choices (and the task you were
-    /// typing before Nook quit). Opened from a session, the box shows that session's project.
-    private func restoreOrPrepare() {
-        if let key = NewSessionDraft.lastKey, let draft = NewSessionDraft.saved[key] {
-            load(draft)
-        } else {
-            prepare()
-        }
-        // The one shared draft of an earlier Nook goes to the folder it opens on, or to the stash when that has its own.
-        let store = ComposerDraftStore.shared
-        if let legacy = store.draft(for: NewSessionDraftKey.legacy) {
-            store.save(sessionID: NewSessionDraftKey.legacy, text: "")
-            if !hasTask { setTask(legacy) } else if legacy != task.text { store.pushToStash(legacy) }
-        }
-        openOriginProject()
-        store.openNewSession = draftKey
-    }
-
-    /// ⌘N or New session while a session was open: that session's project (its main checkout, not the agent's worktree).
-    /// A project request (a folder's pencil, a link) comes after
-    /// and wins.
-    private func openOriginProject() {
-        guard let origin = app.viewModel.newSessionOrigin else { return }
-        app.viewModel.newSessionOrigin = nil
-        guard let folder = originFolder(origin) else { return }
-        open(folder)
-    }
-
-    /// The folder a session at `id` works in on this Mac; nil for a page, a session elsewhere, or one without a project.
-    private func originFolder(_ id: String) -> String? {
-        let path: String?
-        if id.hasPrefix("run:"), let uuid = UUID(uuidString: String(id.dropFirst(4))) {
-            guard let run = workspace.run(uuid), run.remote == nil else { return nil }
-            path = run.projectPath
-        } else if id.hasPrefix("past:") {
-            let key = String(id.dropFirst(5))
-            path = app.history.sessions.first { $0.id == key }?.cwd
-        } else {
-            path = app.agentSessions.first { $0.id == id }?.cwd
-        }
-        guard let path, !path.isEmpty, !ScratchProjects.isScratch(path) else { return nil }
-        let folder = WorktreeOrigin.checkoutPath(of: path)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue,
-              !ScratchProjects.isScratch(folder) else { return nil }
-        return folder
-    }
-
-    /// Shows a parked draft: its words, pictures and every choice around them.
-    private func load(_ draft: NewSessionDraft) {
-        started = false
-        error = nil
-        linkNotice = nil
-        config = draft.config
-        config.task = ""
-        setTask(draft.config.task)
-        images = draft.images
-        project = draft.project
-        allowShared = draft.allowShared
-        showClone = draft.showClone
-        cloneURL = draft.cloneURL
-        pendingID = draft.pendingID
-        remoteMachine = draft.remoteMachine
-        remoteFolder = draft.remoteFolder
-        keepCheckout = draft.keepCheckout
-        for (id, text) in draft.excerpts { composerModel.keep(id, text: text) }
-        // A project still being inspected when the notch closed is looked at again.
-        if project == nil, !config.projectPath.isEmpty, remoteMachine == nil,
-           FileManager.default.fileExists(atPath: config.projectPath) {
-            select(config.projectPath)
-        }
-    }
-
-    /// Closing the notch (or switching tabs) parks the box; it comes back on the same draft.
-    private func keepDraft() {
-        park()
-        NewSessionDraft.lastKey = draftKey
-        if ComposerDraftStore.shared.openNewSession == draftKey { ComposerDraftStore.shared.openNewSession = nil }
-    }
-
-    /// Keeps this draft as it is for when its folder opens again. A folder made for "No project" with nothing typed goes.
-    private func park() {
-        let key = draftKey
-        guard !started else { NewSessionDraft.saved[key] = nil; return }
-        if remoteMachine == nil, ScratchProjects.isScratch(config.projectPath), !hasTask, images.isEmpty {
-            ScratchProjects.discardIfEmpty(config.projectPath)
-            NewSessionDraft.saved[key] = nil
-            return
-        }
-        NewSessionDraft.saved[key] = NewSessionDraft(
-            config: configured(task: task.text), images: images, project: project, allowShared: allowShared, showClone: showClone,
-            cloneURL: cloneURL, pendingID: pendingID, remoteMachine: remoteMachine, remoteFolder: remoteFolder,
-            excerpts: composerModel.excerpts, comparing: comparing, keepCheckout: keepCheckout)
-    }
-
-    /// Opens `folder`'s own draft: parked as you left it, else its words from `ComposerDraftStore` with the folder's
-    /// choices, else an empty box with them. The draft shown before waits under its own folder.
-    private func open(_ folder: String, isolation: IsolationMode? = nil) {
-        let key = NewSessionDraftKey.folder(folder)
-        if key != draftKey {
-            park()
-            if let draft = NewSessionDraft.saved[key] {
-                load(draft)
-            } else {
-                clearBox()
-                select(folder)
-                if let words = ComposerDraftStore.shared.draft(for: key) { setTask(words) }
-            }
-        }
-        if let isolation {
-            config.isolation = isolation
-            keepCheckout = isolation == .folder
-        }
-    }
-
-    /// A "No project" draft whose empty folder went (Nook removes those): a new folder for it, with its words.
-    private func openNoProject(draft key: String) {
-        park()
-        clearBox()
-        let store = ComposerDraftStore.shared
-        let words = store.draft(for: key) ?? ""
-        do {
-            select(try ScratchProjects.create(prompt: words))
-            if !words.isEmpty { setTask(words) }
-            store.save(sessionID: key, text: "")
-        } catch let failure {
-            error = failure.localizedDescription
-        }
-    }
-
-    /// Drops an unsent draft from the list: its words and, when it was parked, everything around them.
-    static func discardDraft(_ key: String) {
-        NewSessionDraft.discard(key)
-        ComposerDraftStore.shared.save(sessionID: key, text: "")
-        if case .folder(let path) = NewSessionDraftKey.place(of: key) { ScratchProjects.discardIfEmpty(path) }
-    }
-
-    /// The same for a machine over SSH.
-    private func openMachine(_ machine: RemoteMachine) {
-        let key = NewSessionDraftKey.machine(machine.id)
-        guard key != draftKey else { return }
-        park()
-        if let draft = NewSessionDraft.saved[key] {
-            load(draft)
-        } else {
-            clearBox()
-            applyFolderDefaults(nil)
-            chooseMachine(machine)
-            if let words = ComposerDraftStore.shared.draft(for: key) { setTask(words) }
-        }
-    }
-
-    /// An empty box with nothing chosen yet, without touching the stored words of the draft shown before.
-    private func clearBox() {
-        task.text = ""
-        hasTask = false
-        started = false
-        images = []
-        comparing = []
-        project = nil
-        showClone = false
-        cloneURL = ""
-        remoteMachine = nil
-        remoteFolder = ""
-        allowShared = false
-        keepCheckout = false
-        error = nil
-        linkNotice = nil
-        pendingID = UUID()
-        config = NewRunConfig()
-        config.worktreeRoot = settings.worktreeRoot
-    }
-
-    /// A folder picked in the heading. What you typed goes along to it;
-    /// with nothing typed, that folder's own draft opens.
-    private func pick(_ path: String) {
-        guard hasTask || !images.isEmpty else { return open(path) }
-        moveDraft { select(path) }
-    }
-
-    private func pickMachine(_ machine: RemoteMachine) {
-        guard hasTask || !images.isEmpty else { return openMachine(machine) }
-        moveDraft { chooseMachine(machine) }
-    }
-
-    /// Moves the words of this draft to wherever `change` points the box. A draft the new place already had goes to the
-    /// stash (⌘S brings it back), so no words are lost.
-    private func moveDraft(_ change: () -> Void) {
-        let old = draftKey
-        change()
-        let new = draftKey
-        guard new != old else { return }
-        let store = ComposerDraftStore.shared
-        if let earlier = store.draft(for: new), earlier != task.text {
-            store.pushToStash(earlier)
-            ToastCenter.shared.success(tr("ws.new.draftStashed"))
-        }
-        // The new place first: the box clears itself when its own draft disappears from the store (`dropIfDiscarded`).
-        if !started { store.save(sessionID: new, text: task.text) }
-        store.save(sessionID: old, text: "")
-        NewSessionDraft.saved[old] = nil
-        NewSessionDraft.saved[new] = nil
-    }
-
-    private func prepare() {
-        config.worktreeRoot = settings.worktreeRoot
-        let menu = projectMenu
-        let last = settings.lastProject.isEmpty ? (menu.favorites.first ?? menu.recent.first) : settings.lastProject
-        let initial = last.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
-        applyFolderDefaults(initial)
-        if let initial { select(initial) }
-        if !hasTask, let words = ComposerDraftStore.shared.draft(for: draftKey) { setTask(words) }
-    }
-
-    private func choose(_ provider: RunProvider, account: String) {
-        if config.provider != provider {
-            config.provider = provider
-            let defaults = settings.composerDefaults(for: config.projectPath)
-            config.model = defaults.model(for: provider)
-            config.effort = defaults.effort(for: provider)
-            config.speedTier = nil
-            config.permission = config.permission.steppedDown(within: provider.capabilities.policies)
-        }
-        config.profileID = account
-    }
-
-    /// The account you last chose for this agent in this folder or else anywhere, while it is still connected, else its
-    /// first connected one.
-    private func rememberedProfile(for provider: RunProvider) -> String? {
-        settings.composerDefaults(for: config.projectPath)
-            .profile(for: provider, connected: app.connectedProfiles(for: provider).map(\.id))
-    }
-
-    /// Keeps what you just chose for the next new session in this folder, and as the start for folders without choices
-    /// of their own. What the project sets for itself (Settings › Workspace, per project) stays out of the global defaults.
-    private func remember() {
-        let path = config.projectPath
-        if !settings.isOverridden(.provider, for: path) { settings.defaultProvider = config.provider }
-        settings.setProfile(config.profileID, for: config.provider)
-        if !settings.isOverridden(.model(config.provider), for: path) { settings.setModel(config.model, for: config.provider) }
-        settings.defaultMode = config.mode
-        if !settings.isOverridden(.permission, for: path) { settings.defaultPermission = config.permission }
-        settings.setEffort(config.effort, for: config.provider)
-        if !settings.isOverridden(.isolation, for: path) { settings.defaultIsolation = config.isolation }
-        // What runs on another machine says nothing about this folder.
-        if remoteMachine == nil { settings.rememberFolderChoices(config) }
-    }
-
-    /// Sets the choices to what a new session in `folder` starts with. Your agent for it, unless that is not connected:
-    /// then your default one, or else the first that is.
-    private func applyFolderDefaults(_ folder: String?) {
-        let defaults = settings.composerDefaults(for: folder)
-        // An agent the project switched off is never the one it starts with.
-        let connected = app.connectedProviders(in: folder)
-        let provider = [defaults.provider, settings.defaultProvider].first(where: connected.contains)
-            ?? connected.first ?? defaults.provider
-        config.provider = provider
-        config.profileID = defaults.profile(for: provider, connected: app.connectedProfiles(for: provider).map(\.id))
-            ?? app.profiles.preferredProfile(provider.kind).id
-        config.model = defaults.model(for: provider)
-        config.mode = defaults.mode
-        config.permission = defaults.permission(for: provider)
-        config.effort = defaults.effort(for: provider)
-        config.isolation = defaults.isolation
-    }
-
-    private func chooseMachine(_ machine: RemoteMachine) {
-        remoteMachine = machine
-        remoteFolder = UserDefaults.standard.string(forKey: "agents.remoteFolder." + machine.id) ?? "~"
-        config.isolation = .folder
-        // The branches here mean nothing there: a worktree starts from the branch that folder is on, unless you type one.
-        config.baseBranch = ""
-        error = nil
-    }
-
-    private func select(_ path: String) {
-        remoteMachine = nil
-        // A folder made for "No project" that nothing started in goes again when you pick another.
-        if config.projectPath != path {
-            ScratchProjects.discardIfEmpty(config.projectPath)
-            applyFolderDefaults(path)
-        }
-        config.projectPath = path
-        // The next new session opens on the project you chose last, also when this one never started; a session
-        // without a project leaves that alone.
-        // Nor does a session in an agent's worktree: the next one opens on the repository.
-        if !ScratchProjects.isScratch(path), WorktreeOrigin.checkoutPath(of: path) == path { settings.lastProject = path }
-        error = nil
-        if let cached = workspace.cachedProject(path) {
-            applyInspectedProject(cached, for: path)
-            inspecting = false
-        } else {
-            inspecting = true
-        }
-        Task {
-            let info = await workspace.inspectProject(path)
-            guard config.projectPath == path, remoteMachine == nil else { return }
-            applyInspectedProject(info, for: path)
-            inspecting = false
-        }
-    }
-
-    private func applyInspectedProject(_ info: ProjectInfo, for path: String) {
-        project = info
-        let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
-        if !canWorktree {
-            config.isolation = .folder
-        } else if !keepCheckout, config.isolation == .folder && settings.composerDefaults(for: path).isolation == .worktree {
-            config.isolation = .worktree
-        }
-        if !config.baseBranch.isEmpty, info.branches.contains(config.baseBranch) {
-            return
-        }
-        if let base = info.defaultBase, info.branches.contains(base) {
-            config.baseBranch = base
-        } else {
-            config.baseBranch = info.currentBranch ?? info.branches.first ?? ""
-        }
-    }
-
-    /// "No project": a new empty folder under ~/.nook/scratch, named after today and what you typed so far; it takes
-    /// the prompt's name when the session starts.
-    private func chooseNoProject() {
-        do {
-            pick(try ScratchProjects.create(prompt: task.text))
-        } catch let failure {
-            error = failure.localizedDescription
-        }
-    }
-
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.prompt = tr("ws.new.choosePrompt")
-        panel.message = tr("ws.new.chooseMessage")
-        if let current = project?.path { panel.directoryURL = URL(fileURLWithPath: current) }
-        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
-        settings.rememberProject(url.path)
-        pick(url.path)
-    }
-
-    /// "New project…": a new folder where you choose, with an empty repository, then the offer to publish it on GitHub
-    /// (Cancel keeps it on this Mac only).
-    private func chooseNewProject() {
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = tr("sc.newProject.defaultName")
-        panel.prompt = tr("sc.newProject.create")
-        panel.message = tr("sc.newProject.message")
-        panel.directoryURL = URL(fileURLWithPath: WorkspaceManager.cloneParent(project: project.map { $0.repoRoot ?? $0.path },
-                                                                               hostLayout: false))
-        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
-        error = nil
-        Task {
-            do {
-                let plan = try await workspace.createProject(at: url.path)
-                settings.rememberProject(plan.folder)
-                pick(plan.folder)
-                newProjectPlan = plan
-            } catch let failure {
-                error = failure.localizedDescription
-            }
-        }
-    }
-
-    private func clone() {
-        cloneURL = CloneLayout.repositoryURL(fromPage: cloneURL)
-        guard !cloning, GitService.isCloneURL(cloneURL) else { return }
-        cloning = true
-        error = nil
-        let parent = WorkspaceManager.cloneParent(project: project.map { $0.repoRoot ?? $0.path },
-                                                  hostLayout: settings.cloneHostLayout)
-        Task {
-            do {
-                let cloned = try await workspace.clone(url: cloneURL, into: parent)
-                showClone = false
-                cloneURL = ""
-                if cloned.usedHTTPS { ToastCenter.shared.success(tr("sc.clone.usedHTTPS")) }
-                pick(cloned.path)
-            } catch let failure {
-                error = failure.localizedDescription
-            }
-            cloning = false
-        }
-    }
-
-    /// `background` (⌥⌘↩): the session starts without opening, and the box stays for the next one with the same folder,
-    /// agent and worktree choices.
-    private func start(background: Bool = false) {
-        guard canStart else { return }
-        if !comparing.isEmpty, remoteMachine == nil { return startComparison(background: background) }
-        starting = true
-        error = nil
-        var request = checkedConfig
-        // A folder made for "No project" before the prompt was typed gets the prompt's name now.
-        if request.remote == nil, ScratchProjects.isScratch(request.projectPath) {
-            request.projectPath = ScratchProjects.rename(request.projectPath, prompt: request.task)
-        }
-        // References in the text reach the agent as markers plus the context envelope.
-        request.task = composerModel.outgoing(request.task).send
-        // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.
-        if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
-        let finalConfig = request
-        let shared = allowShared
-        let key = draftKey
-        Task {
-            do {
-                let id = try await workspace.start(finalConfig, allowSharedFolder: shared)
-                if let remote = finalConfig.remote {
-                    UserDefaults.standard.set(remote.directory, forKey: "agents.remoteFolder." + remote.machineID)
-                }
-                remember()
-                ComposerDraftStore.shared.save(sessionID: key, text: "")
-                started = true
-                NewSessionDraft.saved[key] = nil
-                setTask("")
-                images = []
-                pendingID = UUID()
-                starting = false
-                if background {
-                    startedInBackground()
-                } else {
-                    onStarted(id)
-                }
-            } catch let failure {
-                error = failure.localizedDescription
-                starting = false
-            }
-        }
-    }
-
-    /// One prompt to several models: a session per model, each in its own worktree, grouped under the first. When a model
-    /// fails, the prompt stays in the box (and in `ComposerDraftStore`) with only the failed models still chosen, and the
-    /// box says which ones failed and why.
-    private func startComparison(background: Bool = false) {
-        starting = true
-        error = nil
-        var base = checkedConfig
-        base.task = composerModel.outgoing(base.task).send
-        if base.mode == .plan { base.permission = base.provider.capabilities.policies.first ?? .acceptEdits }
-        let targets = comparisonTargets
-        let key = draftKey
-        let configs = ModelComparison.configs(base: base, targets: targets, ids: targets.map { _ in UUID() },
-                                              modelName: comparisonName)
-        Task {
-            let outcome = await workspace.startComparison(configs, targets: targets)
-            starting = false
-            if !outcome.started.isEmpty { remember() }
-            guard let retry = ModelComparison.retrySelection(after: outcome) else {
-                ComposerDraftStore.shared.save(sessionID: key, text: "")
-                started = true
-                NewSessionDraft.saved[key] = nil
-                setTask("")
-                images = []
-                comparing = []
-                pendingID = UUID()
-                if background {
-                    startedInBackground()
-                } else if let leader = outcome.leader {
-                    onStarted(leader)
-                }
-                return
-            }
-            ComposerDraftStore.shared.save(sessionID: key, text: task.text)
-            if retry.primary.provider != config.provider || retry.primary.profileID != config.profileID {
-                choose(retry.primary.provider, account: retry.primary.profileID)
-            }
-            config.model = retry.primary.model
-            comparing = retry.extras
-            pendingID = UUID()
-            error = tr("compare.failed", outcome.failed.map { comparisonName($0.target) + ": " + $0.message }.joined(separator: "\n"))
-            if !outcome.started.isEmpty { ToastCenter.shared.success(tr("compare.started", outcome.started.count)) }
-        }
-    }
-
-    /// After ⌥⌘↩: the session runs in the list, and this box is a fresh draft with the same choices and the keyboard.
-    private func startedInBackground() {
-        started = false
-        ToastCenter.shared.success(tr("ws.new.startedInBackground"))
-        focused = true
-    }
-
-    /// "Claude Code · Opus": how a model of a comparison is named in its session's title and in an error.
-    private func comparisonName(_ target: ComparisonTarget) -> String {
-        target.model.isEmpty ? target.provider.displayName
-            : target.provider.displayName + " · " + app.modelMenuName(target.model, for: target.provider, profileID: target.profileID)
-    }
 }
 
 /// A new-session draft as you left it: the task, its pictures and big pastes, and every choice around it. One per folder
 /// (or machine), kept in memory only; the task alone also goes to `ComposerDraftStore` for after a relaunch.
 @MainActor
-private struct NewSessionDraft {
+struct NewSessionDraft {
     static var saved: [String: NewSessionDraft] = [:]
     /// The draft the box showed when it last closed, which it opens on again.
     static var lastKey: String?
@@ -1310,7 +330,7 @@ private struct NewSessionDraft {
 /// not redraw the panel around it.
 @MainActor
 @Observable
-private final class NewSessionTask {
+final class NewSessionTask {
     var text = ""
 }
 
@@ -1326,7 +346,7 @@ private struct TaskField<Content: View>: View {
 }
 
 /// A quiet line under the composer's question that is underlined while the pointer is on it, like a link.
-private struct HoverUnderlinedLabel: View {
+struct HoverUnderlinedLabel: View {
     let title: String
     let color: Color
     @State private var hovering = false

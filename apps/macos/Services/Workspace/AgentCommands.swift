@@ -59,7 +59,10 @@ enum AgentCommands {
 
     /// Pi compacts through its own `compact` command, which Nook sends for `/compact` (`PiRPC.turnInput`).
     static func hasBuiltInCompact(_ provider: RunProvider) -> Bool {
-        provider == .pi || hasBuiltInGoal(provider)
+        switch provider {
+        case .claude, .codex, .pi: return true
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        }
     }
 
     /// Whether the agent compacts its context on `/compact`: built in, or announced by the agent itself.

@@ -122,8 +122,29 @@ struct ProjectOverrides: Codable, Equatable, Sendable {
     init(byProject: [String: [String: SettingValue]] = [:]) { self.byProject = byProject }
 
     init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        byProject = (try? c.decode([String: [String: SettingValue]].self, forKey: .byProject)) ?? [:]
+        self = try Lossy(from: decoder).overrides
+    }
+
+    /// Folder by folder and value by value: one value a later Nook wrote differently is left out instead of every folder's
+    /// overrides with it. `skipped` counts what was left out, so the caller can keep the original aside (`SafeStorage`).
+    struct Lossy: Decodable {
+        var overrides: ProjectOverrides
+        var skipped = 0
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            guard c.contains(.byProject) else {
+                overrides = ProjectOverrides()
+                return
+            }
+            guard let folders = try? c.decode(LossyDictionary<LossyDictionary<SettingValue>>.self, forKey: .byProject) else {
+                overrides = ProjectOverrides()
+                skipped = 1
+                return
+            }
+            overrides = ProjectOverrides(byProject: folders.values.mapValues(\.values))
+            skipped = folders.skipped + folders.values.values.reduce(0) { $0 + $1.skipped }
+        }
     }
 
     /// The folders that override anything, sorted.

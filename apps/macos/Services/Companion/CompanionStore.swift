@@ -34,11 +34,13 @@ final class CompanionStore: ObservableObject {
 
     init() {
         enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
-        push = UserDefaults.standard.data(forKey: Self.pushKey).flatMap { try? JSONDecoder().decode(PushSettings.self, from: $0) } ?? PushSettings()
+        // What cannot be read is kept aside first (`SafeStorage`), so the next save never loses it for good.
+        push = SafeStorage.decode(PushSettings.self, defaults: .standard, key: Self.pushKey).value ?? PushSettings()
         apnsKeyID = UserDefaults.standard.string(forKey: Self.keyIDKey) ?? ""
         apnsTeamID = UserDefaults.standard.string(forKey: Self.teamIDKey) ?? ""
-        if let data = UserDefaults.standard.data(forKey: Self.listKey),
-           let list = try? JSONDecoder().decode([PairedDevice].self, from: data) {
+        // Device by device: one that cannot be read no longer unpairs the others.
+        if let list = SafeStorage.decode(LossyArray<PairedDevice>.self, defaults: .standard, key: Self.listKey,
+                                         skipped: { $0.skipped }).value?.elements {
             devices = list.filter { Self.key(for: $0.id) != nil }
         }
     }
@@ -51,7 +53,7 @@ final class CompanionStore: ObservableObject {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(devices) { UserDefaults.standard.set(data, forKey: Self.listKey) }
+        UserDefaults.standard.setEncoded(devices, forKey: Self.listKey)
     }
 
     /// Opens a pairing window and returns the key to show. The key becomes a device only when the phone proves it holds it.

@@ -29,7 +29,7 @@ final class InboxStore: ObservableObject {
         didSet {
             let cleaned = SnoozeOption.cleaned(snoozeOptions)
             if cleaned != snoozeOptions { snoozeOptions = cleaned; return }
-            defaults.set(try? JSONEncoder().encode(snoozeOptions), forKey: Self.snoozeOptionsKey)
+            defaults.setEncoded(snoozeOptions, forKey: Self.snoozeOptionsKey)
         }
     }
     private static let snoozeOptionsKey = "agents.snoozeOptions.v1"
@@ -54,11 +54,51 @@ final class InboxStore: ObservableObject {
         var collapsedShelves: Set<InboxSection.Kind>?
         var foldedThreads: [String]?
         var openedThreads: [String]?
+        /// Fields that were there but could not be read (not stored).
+        var skipped = 0
+
+        private enum CodingKeys: String, CodingKey {
+            case state, showWorking, autoSettle, groupByProject, collapsedProjects, collapsedShelves, foldedThreads, openedThreads
+        }
+
+        init(state: InboxState?, showWorking: Bool?, autoSettle: AutoSettlePolicy.Settings?, groupByProject: Bool?,
+             collapsedProjects: Set<String>?, collapsedShelves: Set<InboxSection.Kind>?, foldedThreads: [String]?,
+             openedThreads: [String]?) {
+            self.state = state
+            self.showWorking = showWorking
+            self.autoSettle = autoSettle
+            self.groupByProject = groupByProject
+            self.collapsedProjects = collapsedProjects
+            self.collapsedShelves = collapsedShelves
+            self.foldedThreads = foldedThreads
+            self.openedThreads = openedThreads
+        }
+
+        /// Field by field: one a later Nook wrote differently falls back to its default instead of taking the rest along.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            var skipped = 0
+            func field<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+                guard container.contains(key) else { return nil }
+                do { return try container.decodeIfPresent(type, forKey: key) } catch { skipped += 1; return nil }
+            }
+            state = field(InboxState.self, .state)
+            showWorking = field(Bool.self, .showWorking)
+            autoSettle = field(AutoSettlePolicy.Settings.self, .autoSettle)
+            groupByProject = field(Bool.self, .groupByProject)
+            collapsedProjects = field(Set<String>.self, .collapsedProjects)
+            collapsedShelves = field(Set<InboxSection.Kind>.self, .collapsedShelves)
+            foldedThreads = field([String].self, .foldedThreads)
+            openedThreads = field([String].self, .openedThreads)
+            self.skipped = skipped
+        }
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let stored = defaults.data(forKey: Self.key).flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
+        // Kept aside first when something in it cannot be read (`SafeStorage`), so a later save never loses it for good.
+        let outcome = SafeStorage.decode(Stored.self, defaults: defaults, key: Self.key, skipped: { $0.skipped })
+        let stored = outcome.value
         state = stored?.state ?? InboxState()
         showWorking = stored?.showWorking ?? true
         // The first trace an earlier Nook left (`FinishedSessions` writes it on its first launch): an install that has it
@@ -70,10 +110,14 @@ final class InboxStore: ObservableObject {
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
         foldedThreads = Set(stored?.foldedThreads ?? [])
         openedThreads = Set(stored?.openedThreads ?? [])
-        snoozeOptions = SnoozeOption.cleaned(defaults.data(forKey: Self.snoozeOptionsKey)
-            .flatMap { try? JSONDecoder().decode([SnoozeOption].self, from: $0) } ?? SnoozeOption.defaults)
-        // The choice is kept, so a later launch reads it instead of guessing again.
-        if stored?.autoSettle == nil { save() }
+        let options = SafeStorage.decode(LossyArray<SnoozeOption>.self, defaults: defaults, key: Self.snoozeOptionsKey,
+                                         skipped: { $0.skipped }).value?.elements
+        snoozeOptions = SnoozeOption.cleaned(options ?? SnoozeOption.defaults)
+        // The choice is kept, so a later launch reads it instead of guessing again. Never over a state that could not be
+        // read at all: that one stays as it is until the user changes something.
+        var unreadable = false
+        if case .unreadable = outcome { unreadable = true }
+        if stored?.autoSettle == nil, !unreadable { save() }
     }
 
     /// `FinishedSessions.keepsOpenSince`: when this Mac first ran a Nook with an Agents list.
@@ -84,7 +128,7 @@ final class InboxStore: ObservableObject {
                             groupByProject: groupByProject, collapsedProjects: collapsedProjects,
                             collapsedShelves: collapsedShelves,
                             foldedThreads: Array(foldedThreads), openedThreads: Array(openedThreads))
-        if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.key) }
+        defaults.setEncoded(stored, forKey: Self.key)
     }
 
     /// Folds or opens a shelf of the list.

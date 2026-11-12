@@ -454,6 +454,19 @@ extension View {
     }
 }
 
+extension View {
+    /// The pointing hand while `enabled`. macOS only: the iPhone companion compiles this file too and has no pointer
+    /// cursor to set, so there it leaves the view as it is.
+    @ViewBuilder
+    func nookPointingHand(_ enabled: Bool) -> some View {
+        #if os(macOS)
+        pointerStyle(enabled ? .link : nil)
+        #else
+        self
+        #endif
+    }
+}
+
 /// The press state of Nook's own buttons: a hair smaller and dimmer while the button is down, then back with the quick
 /// curve. Reduce Motion keeps the dim and drops the scale.
 struct NookPressStyle: ButtonStyle {
@@ -467,7 +480,7 @@ struct NookPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(NookTheme.Motion.quick, value: configuration.isPressed)
-            .pointerStyle(isEnabled ? .link : nil)
+            .nookPointingHand(isEnabled)
     }
 }
 
@@ -487,7 +500,7 @@ struct NookPointerButtonStyle<Base: PrimitiveButtonStyle>: PrimitiveButtonStyle 
     func makeBody(configuration: Configuration) -> some View {
         Button(configuration)
             .buttonStyle(base)
-            .pointerStyle(isEnabled ? .link : nil)
+            .nookPointingHand(isEnabled)
     }
 }
 
@@ -506,10 +519,13 @@ extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<BorderedProm
     static var nookProminent: Self { NookPointerButtonStyle(base: .borderedProminent) }
 }
 
+#if os(macOS)
+/// `.link` exists on macOS only; the iPhone companion compiles this file too.
 extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<LinkButtonStyle> {
     /// `.link` with the pointing hand.
     static var nookLink: Self { NookPointerButtonStyle(base: .link) }
 }
+#endif
 
 /// A system menu style that also shows the pointing hand over an enabled menu button, like `NookPointerButtonStyle`.
 /// Use `.nookBorderlessButton` / `.nookButton` instead of `.borderlessButton` / `.button`.
@@ -528,11 +544,11 @@ struct NookPointerMenuStyle<Base: MenuStyle>: MenuStyle {
             Menu(configuration)
                 .menuStyle(base)
                 .buttonStyle(PlainButtonStyle())
-                .pointerStyle(isEnabled ? .link : nil)
+                .nookPointingHand(isEnabled)
         } else {
             Menu(configuration)
                 .menuStyle(base)
-                .pointerStyle(isEnabled ? .link : nil)
+                .nookPointingHand(isEnabled)
         }
     }
 }
@@ -551,7 +567,7 @@ extension View {
     /// The pointing hand over a view that acts on a click without being a `Button` (a row or tab with
     /// `.onTapGesture`), so it reads as clickable like every button. `enabled: false` keeps the arrow.
     func nookClickable(_ enabled: Bool = true) -> some View {
-        pointerStyle(enabled ? .link : nil)
+        nookPointingHand(enabled)
     }
 }
 

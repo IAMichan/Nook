@@ -79,7 +79,7 @@ private struct TextGeneratorRow: View {
     private func saveKey(_ provider: AIProvider) {
         let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        let error = provider.textWire == .anthropicMessages ? brain.saveAPIKey(key).keychainError : brain.saveProviderKey(key, for: provider)
+        let error = brain.saveProviderKey(key, for: provider)
         if let error {
             ToastCenter.shared.error(tr("settings.brain.keyNotSaved"), detail: error)
         } else {

@@ -217,6 +217,46 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
         default: return nil
         }
     }
+
+    /// The agent of a hook event's agent id (`claude-code`, `codex`, …), mapped once where the event comes in
+    /// (`AgentHub`); nil for an agent Nook knows only by its hooks (Copilot CLI, Amp, Hermes, Muse Code, Qwen Code).
+    init?(hookAgentID id: String) {
+        switch id {
+        // `claude-code`, and `claude-desktop` for the one Claude's app runs.
+        case let id where id.hasPrefix("claude"): self = .claude
+        case "codex": self = .codex
+        case "gemini": self = .gemini
+        case "antigravity": self = .antigravity
+        case "cursor": self = .cursor
+        case "opencode": self = .opencode
+        default: return nil
+        }
+    }
+
+    /// The agent takes an "always" answer to a permission request it hooked: Claude Code stores the rule it suggests,
+    /// Nook's OpenCode plugin turns it into OpenCode's own "always". Codex's, Gemini CLI's, Antigravity's and Cursor's
+    /// hooks take no rule back; Grok and Pi have no hooks.
+    var hookTakesAlwaysRule: Bool {
+        switch self {
+        case .claude, .opencode: return true
+        case .codex, .gemini, .antigravity, .cursor, .grok, .pi, .acp: return false
+        }
+    }
+
+    /// Where a hooked session's transcript is when its hook does not say: Antigravity names its conversation in the
+    /// environment and keeps its log under its app data. The other agents send `transcript_path` (or have none).
+    func hookTranscript(sessionID: String, env: [String: Any]) -> (sessionID: String, path: String)? {
+        switch self {
+        case .antigravity:
+            let id = !sessionID.isEmpty ? sessionID : (env["ANTIGRAVITY_CONVERSATION_ID"] as? String) ?? ""
+            guard !id.isEmpty else { return nil }
+            let appData = (env["ANTIGRAVITY_APP_DATA_DIR"] as? String)
+                ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity"
+            return (id, "\(appData)/brain/\(id)/.system_generated/logs/transcript.jsonl")
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp:
+            return nil
+        }
+    }
 }
 
 /// Tokens from a transcript. `cacheRead` represents cached reads: cheap, but still counted against rate limits.
@@ -897,24 +937,28 @@ private final class HistoryScanner: @unchecked Sendable {
         default: file = home.appendingPathComponent("auth.json")
         }
         guard let data = try? Data(contentsOf: file) else {
+            switch kind {
             // Grok keeps its login elsewhere in its folder, and Pi may sign in with an API key from the environment: the
             // folder itself means it was set up.
-            return kind == .grok || kind == .pi ? AgentAccount(agent: kind, name: kind.name, organization: "", plan: "") : nil
+            case .grok, .pi: return AgentAccount(agent: kind, name: kind.name, organization: "", plan: "")
+            case .claude, .codex, .gemini, .antigravity, .opencode, .cursor, .acp: return nil
+            }
         }
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        if kind == .cursor {
+        switch kind {
+        case .cursor:
             let auth = object["authInfo"] as? [String: Any]
             guard let auth else { return nil }
             return AgentAccount(agent: kind, name: (auth["email"] as? String) ?? kind.name, organization: "", plan: "")
-        }
-        if kind == .opencode || kind == .pi {
+        case .opencode, .pi:
             // auth.json lists the providers you signed in to ("anthropic", "openai", …).
             let providers = object.keys.sorted()
             guard !providers.isEmpty else { return nil }
             return AgentAccount(agent: kind, name: providers.joined(separator: ", "), organization: "", plan: "")
+        case .claude, .codex, .gemini, .antigravity, .grok, .acp:
+            let email = (object["email"] as? String) ?? ((object["user"] as? [String: Any])?["email"] as? String)
+            return AgentAccount(agent: kind, name: email ?? kind.name, organization: "", plan: "")
         }
-        let email = (object["email"] as? String) ?? ((object["user"] as? [String: Any])?["email"] as? String)
-        return AgentAccount(agent: kind, name: email ?? kind.name, organization: "", plan: "")
     }
 
     /// Fast first pass for the Accounts view: logins and executables at known locations, without reading transcripts
@@ -997,24 +1041,8 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private static func run(_ path: String, _ arguments: [String], timeout: TimeInterval) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        do { try process.run() } catch { return nil }
-        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        stop.cancel()
-        return String(data: data, encoding: .utf8)
+        guard let result = try? ProcessRunner.run(path, arguments, timeout: timeout), !result.timedOut else { return nil }
+        return String(data: result.stdoutData, encoding: .utf8)
     }
 
     // MARK: Usage

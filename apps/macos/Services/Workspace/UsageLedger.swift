@@ -516,7 +516,7 @@ enum UsagePrices {
     }
 
     static func save(_ table: PriceTable, defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(table), forKey: defaultsKey)
+        defaults.setEncoded(table, forKey: defaultsKey)
     }
 }
 
