@@ -40,3 +40,5 @@ apps/macos/Vendor/
 
 # Local build logs (scripts/pr-files-check.sh rejects *.log in pull requests)
 *.log
+*-log.txt
+.*-log.txt
