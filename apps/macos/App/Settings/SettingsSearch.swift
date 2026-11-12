@@ -44,6 +44,7 @@ enum SettingsSearch {
         .init("settings.notch.openOnHover", .notch),
         .init("settings.window.openAtLaunch", .notch),
         .init("update.settings.title", .maintenance),
+        .init("update.channel.title", .maintenance),
         .init("settings.notch.demoData", .maintenance),
         .init("settings.energy.title", .maintenance),
         .init("settings.energy.mode", .maintenance),

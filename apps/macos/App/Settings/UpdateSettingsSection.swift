@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Maintenance › Updates: which build this is, whether main (or, for a downloaded build, GitHub Releases) has
-/// something newer, checking now, and whether Nook checks by itself. Installing happens from the button in the panel
+/// something newer, which release channel a downloaded build follows, checking now, and whether Nook checks by itself. Installing happens from the button in the panel
 /// footer, which this opens.
 struct UpdateSettingsSection: View {
     @ObservedObject private var updater = AppUpdater.shared
@@ -26,6 +26,16 @@ struct UpdateSettingsSection: View {
                         .foregroundStyle(NookTheme.textSecondary)
                         .textSelection(.enabled)
                 }
+                Picker(selection: $updater.channel) {
+                    Text(tr("update.channel.stable")).tag(UpdateChannel.stable)
+                    Text(tr("update.channel.beta")).tag(UpdateChannel.beta)
+                } label: {
+                    SettingText("update.channel.title")
+                }
+                .pickerStyle(.segmented)
+                .disabled(installing)
+                .help(tr("update.channel.detail"))
+                SettingNote(channelNote(for: release))
                 if let manual = updater.manualRelease {
                     StatusRow(title: tr("update.release.manual.title", manual.version.description),
                               detail: tr(release.publicKey == nil ? "update.release.noKey" : "update.release.unsigned"), state: .warning) {
@@ -44,6 +54,23 @@ struct UpdateSettingsSection: View {
         } header: {
             SettingsSectionTitle(tr("update.settings.title"),
                                  info: tr(updater.isReleaseBuild ? "update.release.footer" : "update.settings.footer"))
+        }
+    }
+
+    /// An install under way keeps the channel it started on.
+    private var installing: Bool {
+        switch updater.phase {
+        case .installing, .readyToRestart: return true
+        default: return false
+        }
+    }
+
+    /// What the chosen channel brings; a beta on Stable says it waits for the next regular release.
+    private func channelNote(for release: ReleaseBuild) -> String {
+        switch updater.channel {
+        case .beta: return tr("update.channel.betaNote")
+        case .stable where release.version.isPrerelease: return tr("update.channel.waitNote", release.version.description)
+        case .stable: return tr("update.channel.stableNote")
         }
     }
 
