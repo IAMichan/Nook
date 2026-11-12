@@ -621,27 +621,27 @@ struct ChatAttachPanel: View {
     @ViewBuilder
     private var mediaTiles: some View {
         if sends.contains(.photo) || sends.contains(.video) {
-            DropdownTile(symbol: "photo.on.rectangle.angled", title: tr("chat.compose.tile.photoVideo"), tint: NookTheme.blue) {
+            DropdownTile(symbol: "photo.on.rectangle.angled", title: tr("chat.compose.tile.photoVideo"), tint: NookTheme.textStrong) {
                 pick(nil, [.image, .movie])
             }
         }
         if sends.contains(.file) {
-            DropdownTile(symbol: "doc.fill", title: tr("chat.compose.tile.file"), tint: NookTheme.violet) {
+            DropdownTile(symbol: "doc.fill", title: tr("chat.compose.tile.file"), tint: NookTheme.textStrong) {
                 pick(.file, [])
             }
         }
         if sends.contains(.audio) {
-            DropdownTile(symbol: "headphones", title: tr("chat.media.audio"), tint: NookTheme.music) {
+            DropdownTile(symbol: "headphones", title: tr("chat.media.audio"), tint: NookTheme.textStrong) {
                 pick(.audio, [.audio])
             }
         }
         if sends.contains(.gif) {
-            DropdownTile(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tint: NookTheme.mint) {
+            DropdownTile(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tint: NookTheme.textStrong) {
                 model.open(.gifs)
             }
         }
         if sends.contains(.sticker) {
-            DropdownTile(symbol: "face.smiling.inverse", title: tr("chat.compose.tile.stickers"), tint: NookTheme.amber) {
+            DropdownTile(symbol: "face.smiling.inverse", title: tr("chat.compose.tile.stickers"), tint: NookTheme.textStrong) {
                 model.open(.stickers)
             }
         }
@@ -651,19 +651,19 @@ struct ChatAttachPanel: View {
     private var shareRows: some View {
         if sends.contains(.poll) {
             DropdownRow(symbol: "chart.bar.fill", title: tr("chat.compose.poll"), detail: tr("chat.compose.poll.detail"),
-                        tile: NookTheme.amber) {
+                        tile: NookTheme.textStrong) {
                 model.open(.poll)
             }
         }
         if sends.contains(.location) {
             DropdownRow(symbol: "mappin.and.ellipse", title: tr("chat.compose.place"), detail: tr("chat.compose.place.detail"),
-                        tile: NookTheme.coral) {
+                        tile: NookTheme.textStrong) {
                 model.open(.place)
             }
         }
         if sends.contains(.contact) {
             DropdownRow(symbol: "person.crop.circle.fill", title: tr("chat.compose.contact"),
-                        detail: tr("chat.compose.contact.detail"), tile: NookTheme.blue) {
+                        detail: tr("chat.compose.contact.detail"), tile: NookTheme.textStrong) {
                 // The panel looks them up itself as it opens (`ChatContactForm`).
                 model.open(.contact)
             }

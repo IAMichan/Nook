@@ -922,9 +922,10 @@ struct AgentListRow: View, Equatable {
     }
 
     private func logo(size: CGFloat) -> some View {
-        AgentMark(agent: item.agent, account: item.account, size: size, dimmed: dimmed, ring: background,
-                  quiet: !hovering && !selected)
-            .padding(.trailing, item.account == nil ? 0 : 3)
+        // Always grey, as every icon in a list: the brand color says nothing about the session. The 3 pt for the account
+        // badge is kept on every row, so logos with and without a badge stand in one column.
+        AgentMark(agent: item.agent, account: item.account, size: size, dimmed: dimmed, ring: background, quiet: true)
+            .padding(.trailing, 3)
     }
 
     private var shownBranch: String? {
@@ -937,16 +938,16 @@ struct AgentListRow: View, Equatable {
     /// Anything for the line under the name: a branch, changes, or a pull request.
     private var hasMeta: Bool { shownBranch != nil || hasChanges || !pullRequests.isEmpty }
 
-    /// "[worktree] feature/calm-ui  [#12]  +120 −8": the branch (a worktree's with the worktree mark), cut in the middle
-    /// when it is long, then the pull request and what the session changed.
+    /// "feature/calm-ui  +120 −8  [#12]": the branch, cut in the middle when it is long, then what the session changed
+    /// and the pull request last, so its mark keeps one column at the right edge whether or not a row has changes.
     private var metaLine: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if let branch = shownBranch {
                 AgentRowBranch(branch: branch, worktree: item.worktree)
             }
             Spacer(minLength: 0)
-            pullRequestPill
             changes
+            pullRequestPill
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textTertiary)

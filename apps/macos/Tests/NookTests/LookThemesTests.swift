@@ -294,8 +294,8 @@ final class LookThemesTests: XCTestCase {
     func testDiffColorsComeFromTheThemesPalette() {
         for theme in NookColorTheme.builtIn {
             for palette in [theme.dark, theme.light].compactMap({ $0 }) {
-                XCTAssertEqual(NookDiffColors.redGreen.added(palette), palette.mint, theme.id)
-                XCTAssertEqual(NookDiffColors.redGreen.removed(palette), palette.coral, theme.id)
+                XCTAssertEqual(NookDiffColors.redGreen.added(palette), palette.added, theme.id)
+                XCTAssertEqual(NookDiffColors.redGreen.removed(palette), palette.removed, theme.id)
                 XCTAssertEqual(NookDiffColors.blueOrange.added(palette), palette.blue, theme.id)
                 XCTAssertNotEqual(NookDiffColors.blueOrange.added(palette), NookDiffColors.blueOrange.removed(palette), theme.id)
                 XCTAssertNotEqual(NookDiffColors.blueOrange.modified(palette), palette.blue,

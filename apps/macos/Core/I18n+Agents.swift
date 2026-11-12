@@ -247,7 +247,7 @@ let agentsTranslations: [AppLanguage: [String: String]] = [
         "agents.cloud.explain": "Sessies uit de Claude-app en claude.ai/code draaien in de cloud van Anthropic. Je opent ze daar; Nook leest ze niet met je Claude Code-login.",
         "agents.cloud.open": "Cloudsessies in claude.ai/code",
         "agents.thought": "Dacht na",
-        "agents.step.ran": "Voerde uit",
+        "agents.step.ran": "Uitgevoerd",
         "agents.step.read": "Las",
         "agents.step.listed": "Bekeek",
         "agents.step.edited": "Bewerkte",

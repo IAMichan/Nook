@@ -90,6 +90,10 @@ struct ResourceWaitStrip: View {
             }
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textSecondary)
+            // The same card as the subagent and background strips under it, so their icons share one column.
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, 7)
+            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
         }
     }
 }
@@ -225,13 +229,9 @@ struct SubagentBar: View {
                             .foregroundStyle(NookTheme.paper.opacity(0.85))
                             .lineLimit(1)
                         Spacer(minLength: 6)
-                        if running > 0 {
-                            Text(tr("ws.subagents.running", running))
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.iris)
-                        }
+                        // "2 of 4 done" alone: the spinner already says that some run, a "2 running" beside it said it twice.
                         Text(tr("ws.subagents.progress", done, agents.count))
-                            .font(NookTheme.mono(11, .medium))
+                            .font(NookTheme.TextStyle.detail.monospacedDigit())
                             .foregroundStyle(NookTheme.textSecondary)
                         if agents.count > 1 && agents.count <= 10 { segments }
                         Image(icon: "chevron.up")
@@ -816,16 +816,11 @@ struct BackgroundCommandBar: View {
                         }
                         Text(tr("ws.background.title")).foregroundStyle(NookTheme.textTertiary)
                         Text(commands.last(where: \.isRunning)?.title ?? commands.last?.title ?? "")
+                            .font(NookTheme.mono(11))
                             .foregroundStyle(NookTheme.paper.opacity(0.85))
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 6)
-                        if running > 0 {
-                            Text(tr("ws.subagents.running", running))
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.iris)
-                                .fixedSize()
-                        }
                         if failed > 0 {
                             Text(tr("ws.background.failedCount", failed))
                                 .font(NookTheme.TextStyle.caption)
@@ -833,7 +828,7 @@ struct BackgroundCommandBar: View {
                                 .fixedSize()
                         }
                         Text(tr("ws.subagents.progress", commands.count - running, commands.count))
-                            .font(NookTheme.mono(11, .medium))
+                            .font(NookTheme.TextStyle.detail.monospacedDigit())
                             .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize()
                         Image(icon: "chevron.up")

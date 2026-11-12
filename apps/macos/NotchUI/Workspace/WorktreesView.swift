@@ -62,7 +62,7 @@ struct WorktreesView: View {
                     TableColumn(tr("ws.worktrees.col.changes")) { row in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Text(row.changedFiles.map { $0 == 0 ? tr("ws.inspector.clean") : tr("ws.inspector.filesChanged", $0) } ?? tr("ws.unavailable"))
-                                .foregroundStyle((row.changedFiles ?? 0) > 0 ? NookTheme.amber : WS.secondary)
+                                .foregroundStyle((row.changedFiles ?? 0) > 0 ? NookTheme.paper : WS.secondary)
                             if let ahead = row.ahead, let behind = row.behind {
                                 Text(tr("ws.inspector.aheadBehind", ahead, behind)).foregroundStyle(WS.tertiary)
                             }
