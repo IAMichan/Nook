@@ -16,7 +16,7 @@ struct AuditLogSection: View {
                     if !Task.isCancelled { load() }
                 }
             if entries.isEmpty {
-                Text(tr("privacy.log.empty")).foregroundStyle(NookTheme.textSecondary)
+                ListEmptyNote(tr("privacy.log.empty"))
             }
             ForEach(entries.prefix(100)) { entry in
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {

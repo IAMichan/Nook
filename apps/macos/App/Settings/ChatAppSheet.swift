@@ -355,7 +355,7 @@ struct ChatLinkSteps: View {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFit()
             } placeholder: {
-                ProgressView()
+                PatientSpinner()
             }
             .frame(maxWidth: 240, maxHeight: 160)
         case .nothing:

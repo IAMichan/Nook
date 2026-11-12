@@ -567,9 +567,7 @@ private struct UsageBlockRows: View {
             if open {
                 VStack(spacing: 0) {
                     if block.chats.isEmpty {
-                        Text(tr("limits.block.empty"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
+                        ListEmptyNote(tr("limits.block.empty"))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, NookTheme.Spacing.md)
                     }

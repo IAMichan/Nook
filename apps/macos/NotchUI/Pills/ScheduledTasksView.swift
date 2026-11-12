@@ -606,9 +606,7 @@ private struct ScheduledTaskEditor: View {
         DisclosureGroup(isExpanded: $showsDeliveries) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 if records.isEmpty {
-                    Text(tr("automation.hook.deliveries.empty"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
+                    ListEmptyNote(tr("automation.hook.deliveries.empty"))
                 }
                 ForEach(records) { record in
                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {

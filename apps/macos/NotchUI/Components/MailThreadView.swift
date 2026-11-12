@@ -297,9 +297,7 @@ struct MailMessageCard: View {
         if let failure, whole == nil { failureLine(failure) }
         if text.own.isEmpty, text.quoted.isEmpty {
             if whole == nil, canLoad, failure == nil { PatientSpinner().frame(height: 40) } else if failure == nil {
-                Text(tr("chats.mail.empty"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("chats.mail.empty"))
             }
         } else {
             if !text.own.isEmpty { ChatMessageText(text: text.own) }

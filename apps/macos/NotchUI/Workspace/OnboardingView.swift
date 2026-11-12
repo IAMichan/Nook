@@ -113,7 +113,7 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .panelCard()
             } else {
-                ProgressView()
+                PatientSpinner().frame(height: 60)
             }
             if let error { Text(error).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral) }
             Button(tr("onboarding.brain.external")) { app.openSettings(section: .brain) }
