@@ -257,8 +257,8 @@ struct AgentCommandPalette: View {
                 app.usageModalOpen = true; return false
             },
             Entry(id: "x:triage", group: .settings, symbol: "stethoscope", title: tr("palette.triage")) {
-                let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-                PromptLinkInbox.shared.pending = PromptLink(text: NookTriage.prompt(version: version, supportFolder: NookPaths.supportDirectory.path))
+                let build = NookTriage.build(info: Bundle.main.infoDictionary ?? [:])
+                PromptLinkInbox.shared.pending = PromptLink(text: NookTriage.prompt(build: build, supportFolder: NookPaths.supportDirectory.path))
                 viewModel.selectedAgentID = "new"
                 return false
             },

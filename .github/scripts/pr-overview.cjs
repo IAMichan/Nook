@@ -11,6 +11,8 @@ const REQUIRED_APPROVALS = 1;
 const GATE = "Check";
 const DESCRIPTION = "Description follows template";
 const AGENT_CONTEXT = "Agent context does not grow";
+// The job of macos-preview.yml; it gets a row of its own instead of counting as CI.
+const PREVIEW = "Build preview app";
 // Bookkeeping jobs that say nothing about the pull request itself.
 const IGNORED = new Set(["label", "Collect pull requests", "Publish overview", "Welcome", "Changes"]);
 const IGNORED_PREFIXES = ["Label ("];
@@ -54,16 +56,52 @@ function labelValue(labels, prefix) {
   return label ? label.slice(prefix.length) : null;
 }
 
-function summarize({ pr, checkRuns, reviews }) {
+// Test cases a pull request adds and removes, counted from declarations in the diff of each test file. A count, not a
+// timing, so it is the same on every run. Swift (XCTest `func test…` and Swift Testing `@Test`), JavaScript and
+// TypeScript (`it(`, `test(`), Go (`func TestX(`) and Rust (`#[test]`).
+const TEST_CASES = [
+  { file: /(^|\/)Tests?\/.*\.swift$|Tests\.swift$/, line: /^\s*(?:@Test\b|(?:@\w+\s+)*(?:(?:override|public|private|internal|static|final)\s+)*func\s+test\w*\s*\()/ },
+  { file: /\.(?:test|spec)\.[cm]?[jt]sx?$/, line: /^\s*(?:it|test)(?:\.\w+)*\s*[(<]/ },
+  { file: /_test\.go$/, line: /^func\s+Test\w*\s*\(/ },
+  { file: /\.rs$/, line: /^\s*#\[(?:tokio::)?test\b/ },
+];
+
+function countTestDelta(files) {
+  let added = 0;
+  let removed = 0;
+  let incomplete = false;
+  for (const file of files ?? []) {
+    const kind = TEST_CASES.find((candidate) => candidate.file.test(file.filename));
+    if (!kind) continue;
+    // GitHub leaves out the patch of a very large file; the count is then a lower bound.
+    if (file.patch === undefined) {
+      if (file.changes > 0) incomplete = true;
+      continue;
+    }
+    for (const line of file.patch.split("\n")) {
+      if (line.startsWith("+") && kind.line.test(line.slice(1))) added += 1;
+      else if (line.startsWith("-") && kind.line.test(line.slice(1))) removed += 1;
+    }
+  }
+  return { added, removed, incomplete };
+}
+
+// The run page of a check run (where its artifacts are), from the job page GitHub links to.
+function runUrl(url) {
+  return url ? url.replace(/\/job\/\d+.*$/, "") : url;
+}
+
+function summarize({ pr, checkRuns, reviews, files = [] }) {
   const labels = (pr.labels ?? []).map((label) => (typeof label === "string" ? label : label.name));
   const runs = latestByName(checkRuns);
   const gate = runs.get(GATE);
   const description = runs.get(DESCRIPTION);
   const agentContext = runs.get(AGENT_CONTEXT);
+  const preview = runs.get(PREVIEW);
 
   const jobs = [...runs.values()].filter(
     (run) =>
-      ![GATE, DESCRIPTION, AGENT_CONTEXT].includes(run.name) &&
+      ![GATE, DESCRIPTION, AGENT_CONTEXT, PREVIEW].includes(run.name) &&
       !IGNORED.has(run.name) &&
       !IGNORED_PREFIXES.some((prefix) => run.name.startsWith(prefix)),
   );
@@ -88,6 +126,8 @@ function summarize({ pr, checkRuns, reviews }) {
     failedJobs: failedJobs.map((run) => ({ name: run.name, url: run.html_url })),
     description: { state: state(description), url: description?.html_url },
     agentContext: agentContext ? { state: state(agentContext), url: agentContext.html_url } : null,
+    preview: preview ? { state: state(preview), url: runUrl(preview.html_url) } : null,
+    tests: countTestDelta(files),
     approved: review.approved,
     changesRequested: review.changesRequested,
     keepOpen: labels.includes("keep open"),
@@ -177,6 +217,20 @@ function render(model, repoUrl = "https://github.com/IAMichan/nook") {
   if (model.vouch) rows.push(["Author", VOUCH_TEXT[model.vouch] ?? model.vouch]);
   if (model.areaLabels.length) rows.push(["Areas", model.areaLabels.join(", ")]);
   rows.push(["CI", ciLine(model)]);
+  const { added, removed, incomplete } = model.tests ?? { added: 0, removed: 0, incomplete: false };
+  if (added || removed || incomplete) {
+    const counted = `+${added} / −${removed} test case${added + removed === 1 ? "" : "s"}${incomplete ? " (some files too large to count)" : ""}`;
+    rows.push(["Tests", removed > added ? `${counted}: removes more tests than it adds.` : `${counted}.`]);
+  }
+  if (model.preview) {
+    const preview = {
+      passed: `${link("Download the app", model.preview.url)} (\`nook-macOS-preview\`; unzip, then \`xattr -cr Nook.app\`).`,
+      running: "Building.",
+      failed: `${link("Build failed", model.preview.url)}.`,
+      missing: "Not built yet.",
+    }[model.preview.state];
+    rows.push(["Preview", preview]);
+  }
   if (!model.draft) {
     const description = {
       passed: "Follows the template.",
@@ -254,7 +308,12 @@ async function run({ github, context, core }) {
     pull_number: number,
     per_page: 100,
   });
-  const body = render(summarize({ pr, checkRuns, reviews }), pr.base.repo.html_url);
+  const files = await github.paginate(github.rest.pulls.listFiles, {
+    ...context.repo,
+    pull_number: number,
+    per_page: 100,
+  });
+  const body = render(summarize({ pr, checkRuns, reviews, files }), pr.base.repo.html_url);
 
   const comments = await github.paginate(github.rest.issues.listComments, {
     ...context.repo,
@@ -290,4 +349,4 @@ async function run({ github, context, core }) {
   }
 }
 
-module.exports = { MARKER, summarize, render, nextSteps, run, findPullNumber, overviewComments };
+module.exports = { MARKER, summarize, render, nextSteps, run, findPullNumber, overviewComments, countTestDelta };

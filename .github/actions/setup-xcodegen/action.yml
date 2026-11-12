@@ -1,0 +1,27 @@
+name: Set up XcodeGen
+description: >-
+  Puts a pinned XcodeGen release on the PATH, checked against its SHA-256. Replaces `brew install xcodegen`: Homebrew
+  updates its index first (often a minute or more on a macOS runner), installs whatever version is current that day,
+  and fails the build when Homebrew itself is down. Bump VERSION and SHA256 together; the version should match the
+  XcodeGen developers use locally.
+runs:
+  using: composite
+  steps:
+    # Adds only the directory of the pinned, checksummed XcodeGen it just unpacked to the PATH; no input from a pull
+    # request or the event reaches GITHUB_PATH.
+    - shell: bash
+      env:
+        VERSION: 2.46.0
+        SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        dir="$RUNNER_TEMP/xcodegen-$VERSION"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" \
+          "https://github.com/yonaskolb/XcodeGen/releases/download/$VERSION/xcodegen.zip"
+        echo "$SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+        mkdir -p "$dir"
+        unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$dir"
+        rm "$RUNNER_TEMP/xcodegen.zip"
+        # The binary finds its setting presets in ../share/xcodegen, so it stays inside the unpacked folder.
+        echo "$dir/xcodegen/bin" >> "$GITHUB_PATH"
+        "$dir/xcodegen/bin/xcodegen" --version
