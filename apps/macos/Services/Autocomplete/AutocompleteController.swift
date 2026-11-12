@@ -1156,7 +1156,14 @@ final class AutocompleteController: ObservableObject {
         let bundleID = app.bundleIdentifier
         let midLine = prefs.midLine(inApp: bundleID)
         let policy = CompletionPolicy(midLine: midLine)
-        guard policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
+        guard policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else {
+            // An empty field (a message just sent, the conversation on screen changed): read its prompt into the model now, so
+            // the first letter of the next message only adds that letter and the suggestion shows at once.
+            if power.warms, !snapshot.hasSelection, snapshot.before.allSatisfy(\.isWhitespace), let completer {
+                completer.warm(prompt: prompt(for: snapshot, in: app))
+            }
+            return
+        }
         let options = completionOptions(before: snapshot.before, continuing: continuing)
         let maxWords = suggestionWords
         let token = readToken
