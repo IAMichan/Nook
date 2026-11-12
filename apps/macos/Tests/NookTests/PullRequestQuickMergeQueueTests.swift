@@ -40,6 +40,21 @@ final class PullRequestQuickMergeQueueTests: XCTestCase {
         XCTAssertNil(queue.phase("a#1"))
     }
 
+    func testAWaitingMergeComesOutOfTheQueue() {
+        var queue = PullRequestQuickMergeQueue()
+        queue.add("a#1")
+        queue.add("b#2")
+        queue.add("c#3")
+        XCTAssertEqual(queue.next(), "a#1")
+        XCTAssertFalse(queue.remove("a#1"), "one at GitHub goes on")
+        XCTAssertTrue(queue.remove("b#2"))
+        XCTAssertNil(queue.phase("b#2"))
+        queue.finish(success: true)
+        XCTAssertEqual(queue.next(), "c#3", "the next one skips the removed one")
+        XCTAssertFalse(queue.remove("x#9"))
+        XCTAssertTrue(queue.add("b#2"), "and can be queued again")
+    }
+
     func testAPullRequestIsQueuedOnce() {
         var queue = PullRequestQuickMergeQueue()
         queue.add("a#1")
@@ -64,6 +79,6 @@ final class PullRequestQuickMergeQueueTests: XCTestCase {
         XCTAssertEqual(PullRequestQuickAction.mergeBlocker(conflicted), "agents.pulls.quick.blocked.conflict")
         var failing = item()
         failing.ci = .failing
-        XCTAssertEqual(PullRequestQuickAction.mergeBlocker(failing), "agents.pulls.quick.blocked.checks")
+        XCTAssertNil(PullRequestQuickAction.mergeBlocker(failing), "Failing checks are GitHub's call: an admin may merge past them")
     }
 }

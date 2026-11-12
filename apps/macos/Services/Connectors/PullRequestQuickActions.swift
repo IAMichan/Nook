@@ -29,7 +29,9 @@ enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Why the list already knows a pull request will not merge, as the `tr` key of `PullRequestQuickRunner.blocker`
-    /// (takes its number); nil when it may. The merge itself checks again against GitHub's answer.
+    /// (takes its number); nil when it may. Failing checks do not hold it back: an admin may merge past them, as on the
+    /// pull request's page, and GitHub refuses (or turns on auto-merge) for anyone else. The merge itself checks again
+    /// against GitHub's answer.
     static func mergeBlocker(_ item: PullRequestItem) -> String? {
         switch item.state {
         case .merged: return "agents.pulls.quick.blocked.merged"
@@ -38,7 +40,6 @@ enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
         }
         if item.draft { return "agents.pulls.quick.blocked.draft" }
         if item.conflict { return "agents.pulls.quick.blocked.conflict" }
-        if item.ci == .failing { return "agents.pulls.quick.blocked.checks" }
         return nil
     }
 
@@ -80,6 +81,15 @@ struct PullRequestQuickMergeQueue: Equatable, Sendable {
     mutating func add(_ id: String) -> Bool {
         guard phase(id) == nil else { return false }
         waiting.append(id)
+        return true
+    }
+
+    /// Takes a merge out of the queue while it still waits its turn; false once it is at GitHub or done, when there is
+    /// nothing left to stop.
+    @discardableResult
+    mutating func remove(_ id: String) -> Bool {
+        guard let index = waiting.firstIndex(of: id) else { return false }
+        waiting.remove(at: index)
         return true
     }
 

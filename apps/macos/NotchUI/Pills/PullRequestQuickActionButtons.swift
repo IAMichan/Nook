@@ -63,8 +63,12 @@ struct PullRequestQuickActionButtons: View {
         let confirming = armed == action || (action == .close && sweep.isSwept(item.id))
         let phase = action == .merge ? merges.queue.phase(item.id) : nil
         let look = Self.look(action, confirming: confirming, phase: phase, hovering: hovered == action)
+        // A merge that still waits its turn comes out of the queue again with a click; its button says so on hover.
+        let unqueue = phase == .waiting && hovered == action
         return Button {
-            if confirming {
+            if phase == .waiting {
+                merges.remove(item)
+            } else if confirming {
                 armed = nil
                 if action == .merge {
                     merges.add(item, accountID: accountID, app: app)
@@ -79,13 +83,14 @@ struct PullRequestQuickActionButtons: View {
                 if running == action || phase == .merging {
                     ProgressView().controlSize(.mini)
                 } else if phase == .waiting {
-                    NookSymbol("clock", size: 11)
+                    NookSymbol(unqueue ? "xmark" : "clock", size: 11)
                 } else if phase == .autoMerge {
                     NookSymbol("bolt", size: 11)
                 } else {
                     NookSymbol(Self.symbol(action), size: 11)
                 }
-                Text(Self.title(action, confirming: confirming, phase: phase)).lineLimit(1).fixedSize()
+                Text(unqueue ? tr("agents.pulls.quick.unqueue") : Self.title(action, confirming: confirming, phase: phase))
+                    .lineLimit(1).fixedSize()
             }
             .font(NookTheme.TextStyle.label)
             .foregroundStyle(look.text)
@@ -97,11 +102,12 @@ struct PullRequestQuickActionButtons: View {
             .animation(NookTheme.hover, value: hovered == action)
         }
         .buttonStyle(.nookPlain)
-        .disabled(running != nil || merges.queue.phase(item.id) != nil)
+        .disabled(running != nil || (phase != nil && phase != .waiting))
         .onHover { inside in
             if inside { hovered = action } else if hovered == action { hovered = nil }
         }
-        .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
+        .help(tr(phase == .waiting ? "agents.pulls.quick.unqueueHelp"
+                 : action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
         // Close, dragged up or down over other rows, takes those along.
         .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
     }
@@ -120,7 +126,9 @@ struct PullRequestQuickActionButtons: View {
                      phase: PullRequestQuickMergeQueue.Phase?, hovering: Bool) -> Look {
         switch phase {
         case .waiting:
-            return Look(text: NookTheme.textSecondary, fill: NookTheme.outlineFill, stroke: NookTheme.outlineStroke)
+            return Look(text: hovering ? NookTheme.coral : NookTheme.textSecondary,
+                        fill: hovering ? NookTheme.coral.opacity(0.12) : NookTheme.outlineFill,
+                        stroke: hovering ? NookTheme.coral.opacity(0.35) : NookTheme.outlineStroke)
         case .merging:
             return Look(text: NookTheme.onPrimary, fill: NookTheme.primary.opacity(0.7), stroke: .clear)
         case .merged:
@@ -199,6 +207,12 @@ final class PullRequestQuickMerges: ObservableObject {
         guard queue.add(item.id) else { return }
         requests[item.id] = (item, accountID)
         work(app: app)
+    }
+
+    /// Takes a merge out of the queue while it waits; one already at GitHub goes on.
+    func remove(_ item: PullRequestItem) {
+        guard queue.remove(item.id) else { return }
+        requests[item.id] = nil
     }
 
     private func work(app: AppModel) {
@@ -301,7 +315,7 @@ enum PullRequestQuickRunner {
     }
 
     /// Merges one pull request at the head GitHub reports right now, after checking it can go: open, not a draft, no
-    /// conflict, write access and no failing checks. With `autoMerge`, one that must wait (`waitsForAutoMerge`) gets
+    /// conflict and write access. With `autoMerge`, one that must wait (`waitsForAutoMerge`) gets
     /// auto-merge instead; a stack passes false, since the next one needs this one merged before it can be retargeted.
     static func merge(repo: String, number: Int, token: String, app: AppModel, autoMerge: Bool) async throws -> MergeOutcome {
         let detail = try await GitHubPullRequestDetail.loadForMerge(repo: repo, number: number, token: token)
@@ -335,7 +349,9 @@ enum PullRequestQuickRunner {
         }
     }
 
-    /// Why a pull request cannot be merged now, as a `tr` key that takes its number; nil when it can.
+    /// Why a pull request cannot be merged now, as a `tr` key that takes its number; nil when it can. Like the merge
+    /// button on the pull request's page, it holds back only what certainly fails: failing checks are GitHub's call,
+    /// since an admin may merge past them.
     static func blocker(_ detail: PullRequestDetail) -> String? {
         switch detail.state {
         case .merged: return "agents.pulls.quick.blocked.merged"
@@ -345,7 +361,6 @@ enum PullRequestQuickRunner {
         }
         if detail.canPush == false { return "agents.pulls.quick.blocked.access" }
         if detail.conflicted { return "agents.pulls.quick.blocked.conflict" }
-        if detail.checkSummary == .failing { return "agents.pulls.quick.blocked.checks" }
         return nil
     }
 
