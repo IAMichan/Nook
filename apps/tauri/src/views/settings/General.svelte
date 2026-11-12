@@ -66,6 +66,10 @@
         <button onclick={repairShortcut}>Herstellen</button>
       </div>
     {/if}
+    <label class="row">
+      <span>Lokaal brein zelf starten<br /><small class="faint">Is Ollama of LM Studio geïnstalleerd maar niet gestart? Dan start Nook hem op de achtergrond.</small></span>
+      <input type="checkbox" checked={s.startLocalBrain} onchange={(e) => nook.saveSettings({ startLocalBrain: e.currentTarget.checked })} />
+    </label>
     <label class="row"><span>Groter paneel</span><input type="checkbox" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
   {/if}
   <div class="row">

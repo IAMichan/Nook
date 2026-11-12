@@ -74,6 +74,9 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
         if before.placement != saved.placement || before.panel_large != saved.panel_large {
             crate::platform::desktop::place_bar(&app, false);
         }
+        if before.provider != saved.provider && saved.start_local_brain {
+            crate::platform::desktop::start_local_brain(&app, saved.provider);
+        }
     }
     let _ = app.emit("settings-changed", &saved);
     saved
@@ -257,6 +260,24 @@ pub fn show_main(app: AppHandle, route: String) {
     crate::platform::desktop::show_main(&app, &route);
     #[cfg(not(desktop))]
     let _ = (app, route);
+}
+
+/// Starts the local brain by name ("Ollama", "LM Studio") when it is installed but not running: "alreadyRunning",
+/// "started", "notInstalled" or "noAnswer".
+#[tauri::command]
+pub async fn start_local_brain(name: String) -> Res<String> {
+    #[cfg(desktop)]
+    {
+        use crate::platform::local_brain::{ensure_running, Server};
+        let server = Server::from_name(&name).ok_or_else(|| format!("{name} is geen lokaal brein."))?;
+        let outcome = ensure_running(server).await;
+        Ok(serde_json::to_value(outcome).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = name;
+        Ok("notInstalled".into())
+    }
 }
 
 /// De route die het hoofdvenster moet tonen, één keer.

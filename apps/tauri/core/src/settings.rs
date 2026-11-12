@@ -119,6 +119,8 @@ pub struct Settings {
     pub focus_mode: String,
     /// When you last looked at the inbox (RFC 3339), so "Catch me up" can summarise what came after.
     pub inbox_seen_at: Option<String>,
+    /// Start a local brain (Ollama, LM Studio) that is installed but not running, at launch and from a chat error.
+    pub start_local_brain: bool,
 }
 
 impl Default for Settings {
@@ -172,6 +174,7 @@ impl Default for Settings {
             inbox_snoozed: BTreeMap::new(),
             focus_mode: "all".into(),
             inbox_seen_at: None,
+            start_local_brain: true,
         }
     }
 }
