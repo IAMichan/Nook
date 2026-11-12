@@ -151,7 +151,7 @@ extension PullRequestDetailView {
             .help(tr("agents.pr.note.conflict"))
         } else if detail.waitsForAutoMerge {
             // While the checks or reviews still hold it back, the main action is to let GitHub merge when they are done. An
-            // admin gets Merge instead, which goes past them; auto-merge stays in the ⋯ menu.
+            // admin gets Merge instead, which goes past them; auto-merge stays in Merge's dropdown and the ⋯ menu.
             SmallPrimaryButton(title: tr("agents.pr.action.enableAutoMerge"), systemName: "bolt", compact: true) {
                 actions.close()
                 actions.pending = .enableAutoMerge(nodeID: detail.nodeID, method: method)
@@ -193,6 +193,14 @@ extension PullRequestDetailView {
                     DropdownRow(title: tr(option.titleKey), chosen: option == method) {
                         methodRaw = option.rawValue
                     }
+                }
+                if detail.offersAutoMergeBesideMerge {
+                    DropdownDivider()
+                    DropdownRow(symbol: "bolt", title: tr("agents.pr.action.enableAutoMerge"), detail: tr(method.titleKey)) {
+                        actions.close()
+                        actions.pending = .enableAutoMerge(nodeID: detail.nodeID, method: method)
+                    }
+                    .disabled(actions.sending)
                 }
             }
             .disabled(merging)
