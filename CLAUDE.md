@@ -12,6 +12,7 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
 1. **Always use English for Git & Code (even when prompted in Dutch):**
    - **Commit messages** (subject and body) must always be in **English**.
    - **Pull request titles and descriptions** must always be in **English** (using [`.github/pull_request_template.md`](.github/pull_request_template.md)).
+   - **Every pull request description has exactly the template's four sections, in order: `## Summary`, `## Related issues`, `## Why`, `## Testing`** (the full skeleton is under "PR Description Template" in [AGENTS.md](AGENTS.md)). The `PR template` CI check fails otherwise. Under *Related issues* write `Closes #123` / `Part of #123`, or `None`. Under *Testing* tick only what you verified, and when nothing is ticked add a line of its own saying what was or was not run (e.g. "Not run locally: no Swift toolchain; left to CI."). This also applies when you rewrite a description a tool or the "Create PR" button generated: check it and fix it to this shape. Run `PR_BODY="$(cat body.md)" ./scripts/pr-body-check.py` before opening or editing one.
    - **Branch names**, **Swift identifiers**, **code comments**, **docstrings**, and **documentation** must always be in **English**.
    - You may reply to the user in the language they used in chat, but every artifact written to the repository, git history, or GitHub PR must be in **English**.
 2. **Default App Language & `I18n`:**

@@ -23,6 +23,32 @@ Nook is an open-source project. **English is the default language across the ent
 - **Pull Requests & Branches:** Always write branch names, pull request titles, and pull request descriptions in **English** (following [`.github/pull_request_template.md`](.github/pull_request_template.md)).
 - **Linking Issues:** Before opening a pull request, search the open issues for any the change resolves, and list them under *Related issues* in the description as `Closes #123` (`Part of #123` when the issue stays open). Only link an issue the diff actually resolves; write "None" when nothing matches.
 - **PR Description Check:** The `PR template` workflow (`scripts/pr-body-check.py`) fails a pull request whose description leaves a template section out or empty, links no issue and does not say "None", or says nothing under *Testing* beyond the empty checklist (tick a box, or add a line on what was run or not run). Run the script locally before opening one: `PR_BODY="$(cat body.md)" ./scripts/pr-body-check.py`.
+- **PR Description Template:** Every pull request description, including one written by a tool or an app's "Create PR" button, uses exactly these four sections from [`.github/pull_request_template.md`](.github/pull_request_template.md), in this order, none left out or empty:
+
+  ```markdown
+  ## Summary
+
+  What changed, one short paragraph, then a bullet per file or area if that helps.
+
+  ## Related issues
+
+  Closes #123        <!-- or `Part of #123`; write `None` when no issue matches -->
+
+  ## Why
+
+  The problem this solves, for the user.
+
+  ## Testing
+
+  What was run, or why it was not (for example: "Not run locally: no Swift toolchain; left to CI.").
+
+  - [ ] Build succeeds (`xcodegen && xcodebuild ... build` / `./scripts/core-tests.sh`)
+  - [ ] Verified in the macOS app
+  - [ ] Tauri checks pass (`npm run check && npm test` and `cargo clippy` / `cargo test` in `apps/tauri`), if `apps/tauri` changed
+  - [ ] User-facing actions require explicit confirmation via an approval card/plan
+  ```
+
+  Tick (`- [x]`) only what was actually verified. When nothing is ticked, *Testing* needs a line of its own saying what was or was not run; a lowercase note after a box (`- [ ] Build: not run`) does not count. Never write `## Changes` or other headings in place of these four.
 - **Code & Comments:** All Swift types, functions, variables, code comments, docstrings, and test names must be written in **English**.
 - **Documentation:** All root and technical documentation (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/*.md`) should be written and maintained in **English**.
 - **UI Localization (`I18n`):**
