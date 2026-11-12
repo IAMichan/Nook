@@ -390,7 +390,6 @@ struct AgentSessionDetail: View {
                 if canTakeOver { turnControls(kind: AgentKind(agentName: session.name)) }
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
-            .trailing { ComposerUsageAlert(source: SessionUsageSource(profileID: app.profile(for: session)?.id)) }
             .images($composerState.images)
             .dictating()
         }
@@ -682,7 +681,6 @@ struct AgentSessionDetail: View {
                         if app.canContinueInNook(session) { turnControls(kind: session.agent) }
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
-                    .trailing { ComposerUsageAlert(source: SessionUsageSource(profileID: app.profile(for: session)?.id)) }
                     .images($composerState.images)
                     .dictating()
                 }
