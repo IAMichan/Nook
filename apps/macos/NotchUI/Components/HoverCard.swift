@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The card a list row shows on hover, as in the Claude app: a title, then a few lines with an icon each.
-/// Used by the session rows in the Agents tab and the conversation rows in the Chat tab.
+/// Used by the session rows in the Agents tab and the conversation rows in the Chats and Nook lists.
 struct HoverCard<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
@@ -99,6 +99,17 @@ enum HoverCardWarmth {
         return now.timeIntervalSince(lastClosedAt) < window
     }
 
+    /// The pointer entered a row: another row's card still open closes now. A popover does not always say the pointer
+    /// left it, so that card could stay beside its own row while the pointer rested on another one. The list stays warm,
+    /// so this row's card still opens at once.
+    static func rowEntered(id: UUID, update: @escaping () -> Void) {
+        hoveredRow = (id: id, update: update)
+        guard let open, open.id != id else { return }
+        self.open = nil
+        lastClosedAt = Date()
+        open.close()
+    }
+
     /// A `.nookTip` target inside the window was entered: close any open row card and hold back the hovered row's card.
     static func tooltipEntered() {
         open?.close()
@@ -142,7 +153,7 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
                 hovering = inside
                 if warm {
                     if inside {
-                        HoverCardWarmth.hoveredRow = (id: id, update: { update() })
+                        HoverCardWarmth.rowEntered(id: id, update: { update() })
                     } else if HoverCardWarmth.hoveredRow?.id == id {
                         HoverCardWarmth.hoveredRow = nil
                     }
