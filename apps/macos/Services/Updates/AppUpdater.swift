@@ -101,7 +101,19 @@ final class AppUpdater: ObservableObject {
     /// list (304) does not count against the rate limit.
     private var releaseListCache: (etag: String, data: Data)?
 
+    /// The release channel a downloaded build follows. Saved only once you pick one; until then it is the build's own
+    /// (a beta follows betas). Picking one checks right away.
+    @Published var channel: UpdateChannel {
+        didSet {
+            guard channel != oldValue else { return }
+            UserDefaults.standard.set(channel.rawValue, forKey: Self.channelKey)
+            // A check that is under way picks the channel when its answer arrives.
+            if !checking { check() }
+        }
+    }
+
     private static let autoCheckKey = "nook.updates.autoCheck"
+    private static let channelKey = "nook.updates.channel"
     private static let receiptKey = "nook.updates.receipt"
     /// The screen an install or restart was clicked on, with when the restart started (`at`).
     private static let restartScreenKey = "nook.updates.restartScreen"
@@ -118,6 +130,8 @@ final class AppUpdater: ObservableObject {
         self.release = source == nil ? release : nil
         self.fromXcode = fromXcode
         self.autoCheck = UserDefaults.standard.object(forKey: Self.autoCheckKey) as? Bool ?? true
+        self.channel = UserDefaults.standard.string(forKey: Self.channelKey).flatMap(UpdateChannel.init(rawValue:))
+            ?? release?.defaultChannel ?? .stable
         if source == nil, release == nil { phase = .unavailable }
     }
 
@@ -251,7 +265,8 @@ final class AppUpdater: ObservableObject {
                     data = body
                     releaseListCache = (http?.value(forHTTPHeaderField: "ETag")).map { ($0, body) }
                 }
-                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release))
+                // Read after the answer arrives, so a channel picked during the request counts.
+                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release, channel: channel))
             } catch {
                 result = .failure(error)
             }

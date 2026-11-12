@@ -90,9 +90,14 @@ version, `0.3.0-beta.2`) and `NookReleaseRepository` (`owner/name`) into its `In
 releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`):
 
 - **Checking** asks `api.github.com/repos/<repository>/releases` 20 seconds after launch, every 4 minutes, after the Mac wakes and when the footer appears. Each request after the first sends the last
-  `ETag` (`If-None-Match`), so an unchanged list is a `304` that does not count against GitHub's rate limit. A beta build is offered
-  newer betas and releases, a regular release only regular releases; drafts never. Versions compare like SemVer
-  (`0.3.0-beta.2` < `0.3.0-beta.10` < `0.3.0`).
+  `ETag` (`If-None-Match`), so an unchanged list is a `304` that does not count against GitHub's rate limit. Drafts are
+  never offered. Versions compare like SemVer (`0.3.0-beta.2` < `0.3.0-beta.10` < `0.3.0`).
+- **Release channel** (Settings › Maintenance › Updates, `UpdateChannel`): **Stable** takes regular releases only,
+  **Beta** also pre-releases (a tag with a suffix, or a release GitHub marks as pre-release). Until you pick one, a beta
+  build follows Beta and a regular release Stable; the choice is saved as `nook.updates.channel` and checks right away.
+  On every channel only versions above the running one count: an older build may not understand a database this one
+  already migrated, so a beta that moves to Stable keeps running until the first regular release after it, and Settings
+  says so. (The same rule stable/nightly track: a switch never downgrades on its own.)
 - **Installing** shows four steps: **download** `Nook-<version>-macOS.zip` and `Nook-<version>-macOS.zip.sig` from
   GitHub; **verify** the Ed25519 signature of the .zip against the public key in this build (CryptoKit), unpack it with
   `ditto`, and refuse an app that is not `nl.imdigital.nook` or whose `NookReleaseVersion` is not the promised version
