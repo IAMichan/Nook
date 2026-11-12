@@ -161,7 +161,8 @@ struct PullRequestRow: View, Equatable {
                         .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
                         .help(item.title)
-                    HStack(spacing: NookTheme.Spacing.xs) {
+                    // A little air between the marks, so the CI check and the review mark read as two things.
+                    HStack(spacing: NookTheme.Spacing.sm) {
                         if linked?.watching == true, item.state == .open {
                             Image(icon: "eye")
                                 .font(NookTheme.font(10, .medium))
