@@ -198,7 +198,10 @@ final class AutocompleteTests: XCTestCase {
         let policy = CompletionPolicy()
         XCTAssertTrue(policy.shouldComplete(before: "Dear Anna, thanks for", after: "", hasSelection: false))
         XCTAssertTrue(policy.shouldComplete(before: "Dear Anna", after: "  \nnext line", hasSelection: false))
-        XCTAssertFalse(policy.shouldComplete(before: "Hi", after: "", hasSelection: false))
+        // From the first letter of a message, but never in an empty field.
+        XCTAssertTrue(policy.shouldComplete(before: "H", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: "", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: " \n", after: "", hasSelection: false))
         XCTAssertFalse(policy.shouldComplete(before: "Dear Anna", after: " there", hasSelection: false))
         XCTAssertFalse(policy.shouldComplete(before: "Dear Anna", after: "", hasSelection: true))
         XCTAssertTrue(CompletionPolicy(midLine: true).shouldComplete(before: "Dear Anna", after: " there", hasSelection: false))

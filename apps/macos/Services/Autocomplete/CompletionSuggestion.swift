@@ -159,8 +159,9 @@ extension String {
 
 /// Whether to ask the model at all for this cursor position.
 struct CompletionPolicy: Equatable {
-    /// Letters (not spaces) before the cursor.
-    var minimumContext = 3
+    /// Letters (not spaces) before the cursor. One, like Cotypist: a suggestion shows from the first letter of a message, with
+    /// the conversation on screen as its context, instead of only after the third.
+    var minimumContext = 1
     /// Also with text after the cursor on the same line.
     var midLine = false
 
