@@ -61,6 +61,15 @@ struct ReleaseVersion: Comparable, Hashable, Sendable, CustomStringConvertible {
     }
 }
 
+/// Which releases a downloaded build follows: Stable takes regular releases only, Beta also the pre-releases. Switching
+/// never offers a version older than the running one, because that build may already have migrated the database past
+/// what an older one understands; a beta that moves to Stable keeps running until the first regular release after it.
+enum UpdateChannel: String, CaseIterable, Sendable {
+    case stable, beta
+
+    var includesPrereleases: Bool { self == .beta }
+}
+
 /// What a downloaded build knows about itself, as the release workflow wrote it into Info.plist. Nil for a build that
 /// was not made by the release workflow (a build from a checkout has `BuildSource` instead).
 struct ReleaseBuild: Equatable, Sendable {
@@ -88,8 +97,10 @@ struct ReleaseBuild: Equatable, Sendable {
         self.publicKey = publicKey
     }
 
-    /// Betas follow betas: a beta build is offered newer betas and releases, a regular release only regular releases.
-    var includesPrereleases: Bool { version.isPrerelease }
+    /// Betas follow betas: a beta build is offered newer betas and releases, a regular release only regular releases,
+    /// until you pick another channel in Settings.
+    var defaultChannel: UpdateChannel { version.isPrerelease ? .beta : .stable }
+    var includesPrereleases: Bool { defaultChannel.includesPrereleases }
 
     /// GitHub's list of releases, newest first.
     var releasesURL: URL? { URL(string: "https://api.github.com/repos/\(repository)/releases?per_page=20") }
@@ -188,12 +199,14 @@ enum ReleaseSelection {
     static func archiveName(_ version: ReleaseVersion) -> String { "Nook-\(version)-macOS.zip" }
     static func signatureName(_ version: ReleaseVersion) -> String { archiveName(version) + ".sig" }
 
-    /// The newest release after `build` on its channel, with the assets the install needs. A .zip over 1 GB or a
-    /// signature over 1 KB is not what the workflow makes and is skipped.
-    static func check(_ releases: [GitHubRelease], for build: ReleaseBuild) -> ReleaseCheck {
+    /// The newest release after `build` on `channel` (the build's own when nil), with the assets the install needs. Only
+    /// versions above the running one count on any channel. A .zip over 1 GB or a signature over 1 KB is not what the
+    /// workflow makes and is skipped.
+    static func check(_ releases: [GitHubRelease], for build: ReleaseBuild, channel: UpdateChannel? = nil) -> ReleaseCheck {
+        let prereleases = (channel ?? build.defaultChannel).includesPrereleases
         let newer = releases.compactMap { release -> (ReleaseVersion, GitHubRelease)? in
             guard !release.draft, let version = ReleaseVersion(release.tag), version > build.version,
-                  build.includesPrereleases || (!version.isPrerelease && !release.prerelease) else { return nil }
+                  prereleases || (!version.isPrerelease && !release.prerelease) else { return nil }
             return (version, release)
         }
         guard let newest = newer.max(by: { $0.0 < $1.0 }) else { return .upToDate }
