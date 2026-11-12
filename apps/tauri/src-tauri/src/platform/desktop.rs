@@ -30,6 +30,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     if settings.start_local_brain {
         start_local_brain(app, settings.provider);
     }
+    restore_main(app);
     Ok(())
 }
 
@@ -107,6 +108,46 @@ pub fn closed_main(app: &AppHandle) {
         "Nook draait verder",
         "Nook blijft bovenaan je scherm en in het systeemvak. Alt+Ctrl+W opent het venster weer; stoppen doe je via het systeemvak.",
     );
+}
+
+/// Puts the main window back where it was (size, place, maximized), if that place is still on a screen.
+fn restore_main(app: &AppHandle) {
+    let Some(main) = app.get_webview_window("main") else { return };
+    let Some(placement) = app.state::<AppState>().settings().main_window else { return };
+    let screens: Vec<(i32, i32, u32, u32)> = main
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| (m.position().x, m.position().y, m.size().width, m.size().height))
+        .collect();
+    if !placement.visible_on(&screens) {
+        return;
+    }
+    let _ = main.set_size(tauri::PhysicalSize::new(placement.width, placement.height));
+    let _ = main.set_position(tauri::PhysicalPosition::new(placement.x, placement.y));
+    if placement.maximized {
+        let _ = main.maximize();
+    }
+}
+
+/// Remembers where the main window is, before it hides or Nook stops.
+pub fn remember_main(app: &AppHandle) {
+    let Some(main) = app.get_webview_window("main") else { return };
+    if !main.is_visible().unwrap_or(false) || main.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let maximized = main.is_maximized().unwrap_or(false);
+    let state = app.state::<AppState>();
+    // A maximized window keeps the size it had before, so un-maximizing after a restart still gives a normal window.
+    let previous = state.settings().main_window;
+    let (Ok(pos), Ok(size)) = (main.outer_position(), main.inner_size()) else { return };
+    let placement = match (maximized, previous) {
+        (true, Some(before)) => nook_core::settings::WindowPlacement { maximized: true, ..before },
+        _ => nook_core::settings::WindowPlacement { x: pos.x, y: pos.y, width: size.width, height: size.height, maximized },
+    };
+    if previous != Some(placement) {
+        state.update_settings(|s| s.main_window = Some(placement));
+    }
 }
 
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {
@@ -271,7 +312,10 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit("new-nook", ());
             }
             "settings" => show_main(app, "settings"),
-            "quit" => app.exit(0),
+            "quit" => {
+                remember_main(app);
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

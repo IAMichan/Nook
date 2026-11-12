@@ -72,6 +72,7 @@ export interface Settings {
   /// Start an installed local brain (Ollama, LM Studio) that is not running.
   startLocalBrain: boolean;
   trayHintShown: boolean;
+  mainWindow: { x: number; y: number; width: number; height: number; maximized: boolean } | null;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.
