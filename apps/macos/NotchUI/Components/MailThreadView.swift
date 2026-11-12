@@ -211,6 +211,13 @@ struct MailMessageCard: View {
                             .truncationMode(.middle)
                     }
                     Spacer(minLength: NookTheme.Spacing.sm)
+                    if message.isDeleted {
+                        Label(tr("chat.message.deletedTag"), systemImage: "trash")
+                            .labelStyle(.titleAndIcon)
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .help(tr("chats.mail.deletedKept"))
+                    }
                     if isOpen && hovering { actions } else { date }
                 }
                 if isOpen {

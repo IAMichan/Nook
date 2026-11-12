@@ -31,7 +31,7 @@ enum WhatsAppExport {
     }
 
     /// A chat of the link as the shared inbox keeps it: its messages as every app's, each person by the name your
-    /// Contacts and the phone give them, kept in memory only (`ephemeral`).
+    /// Contacts and the phone give them (`ephemeral`: removed from Nook's archive when WhatsApp is turned off).
     static func chat(_ conversation: WAConversation, facts: Facts, names book: WANameBook) -> BridgedChat {
         var names = WAMemberIndex(conversation, book: book)
         let kind = ChatKind(conversation.kind)

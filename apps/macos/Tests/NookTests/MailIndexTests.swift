@@ -135,4 +135,25 @@ final class MailIndexTests: XCTestCase {
         XCTAssertEqual(rows.first?.replied, true)
         XCTAssertEqual(rows.first?.date, Date(timeIntervalSince1970: 1_794_450_335))
     }
+
+    func testTrashBoxesAreFoundWhenAsked() {
+        let raw: [[String: Any]] = [
+            ["id": NSNumber(value: 21), "url": "imap://GMAIL/%5BGmail%5D/Prullenbak"],
+            ["id": NSNumber(value: 43), "url": "ews://WORK/Verwijderde%20items"],
+        ]
+        XCTAssertEqual(MailIndex.boxes(raw, sentNames: MailChatData.sentNames), [])
+        XCTAssertEqual(MailIndex.boxes(raw, sentNames: MailChatData.sentNames, trashNames: MailChatData.trashNames), [
+            .init(id: 21, account: "GMAIL", path: "[Gmail]/Prullenbak", kind: .trash),
+            .init(id: 43, account: "WORK", path: "Verwijderde items", kind: .trash),
+        ])
+    }
+
+    func testHistorySQLMatchesThePersonAsSenderOrRecipientWithinTheStretch() {
+        let sql = MailIndex.historySQL(boxes: [9, 18], address: "O'Brien@Example.com", from: Date(timeIntervalSince1970: 100),
+                                       to: Date(timeIntervalSince1970: 200), limit: 500)
+        XCTAssertTrue(sql.contains("a.address = 'o''brien@example.com' COLLATE NOCASE"), sql)
+        XCTAssertTrue(sql.contains("x.address = 'o''brien@example.com' COLLATE NOCASE"), sql)
+        XCTAssertTrue(sql.contains("mailbox_id = 9") && sql.contains("mailbox_id = 18"), sql)
+        XCTAssertTrue(sql.contains("m.date_received >= 100 AND m.date_received < 200"), sql)
+    }
 }

@@ -90,6 +90,63 @@ struct MessageInfoView: View {
     }
 }
 
+/// What an edited or deleted message said before, over its "Edited" or "Deleted" mark: each earlier text with when it
+/// was replaced, oldest first, and what it says now. Read from Nook's archive when it opens (`ChatStore.versions`).
+struct MessageVersionsView: View {
+    let bubble: ChatBubble
+    let load: () async -> [ChatVersion]
+    @State private var versions: [ChatVersion]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            Text(tr(bubble.keepsDeleted ? "chat.versions.deletedTitle" : "chat.versions.title"))
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .accessibilityAddTraits(.isHeader)
+            if let versions {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                        if versions.isEmpty {
+                            Text(tr("chat.versions.none"))
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        ForEach(versions) { version in
+                            entry(tr("chat.versions.until", MessageInfoView.when(version.replaced)), version.text)
+                        }
+                        if !bubble.keepsDeleted, !bubble.text.isEmpty {
+                            entry(tr("chat.versions.now"), bubble.text)
+                        }
+                    }
+                }
+                .frame(maxHeight: 360)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(width: 300, alignment: .leading)
+        .task { versions = await load() }
+    }
+
+    private func entry(_ label: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            Text(label)
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textTertiary)
+            Text(text)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.paper)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// What a chat's app says about the chat, under its name in the Chats tab, the same for every app: "5 members" for a
 /// group (or "Info" for a person with something to tell), which opens its info: a group's description (who set it),
 /// when and by whom it was made, who may write and edit, and its people with their admins marked; a person's bio, username,

@@ -33,14 +33,27 @@ enum MailLibrary {
         var unread: Int
     }
 
-    /// The inbox and Sent mailboxes of these accounts (by Mail's account id) with their newest `inbox` and `sent`
-    /// messages. Nil when the index cannot be read; an account the index has no mailboxes for is left out.
-    static func recent(accounts: Set<String>, inbox: Int, sent: Int) async -> [String: [Mailbox]]? {
+    /// The inbox, Sent and Trash mailboxes of these accounts (by Mail's account id), each with Mail's names for them.
+    /// Nil when the index cannot be read.
+    static func boxes(accounts: Set<String>) async -> [MailIndex.Box]? {
         guard let raw = await query(MailIndex.mailboxesSQL) else { return nil }
-        let boxes = MailIndex.boxes(raw, sentNames: MailChatData.sentNames).filter { accounts.contains($0.account) }
+        return MailIndex.boxes(raw, sentNames: MailChatData.sentNames, trashNames: MailChatData.trashNames)
+            .filter { accounts.contains($0.account) }
+    }
+
+    /// The inbox, Sent and Trash mailboxes of these accounts (by Mail's account id) with their newest `inbox`, `sent`
+    /// and `trash` messages; a kind with a limit of 0 is left out. Nil when the index cannot be read; an account the
+    /// index has no mailboxes for is left out.
+    static func recent(accounts: Set<String>, inbox: Int, sent: Int, trash: Int = 0) async -> [String: [Mailbox]]? {
+        guard let boxes = await boxes(accounts: accounts) else { return nil }
         var result: [String: [Mailbox]] = [:]
         for box in boxes {
-            let limit = box.kind == .inbox ? inbox : sent
+            let limit = switch box.kind {
+            case .inbox: inbox
+            case .sent: sent
+            case .trash: trash
+            }
+            guard limit > 0 else { continue }
             guard let rows = await query(MailIndex.recentSQL(box: box.id, limit: limit)) else { return nil }
             var unread = 0
             if box.kind == .inbox, let count = await query(MailIndex.unreadSQL(box: box.id))?.first?["unread"] as? NSNumber {
@@ -81,20 +94,73 @@ enum MailLibrary {
             let own = Set(account.addresses)
             // The inbox first: mail you sent yourself, also in Sent, counts once.
             for mailbox in boxes.sorted(by: { $0.box.kind == .inbox && $1.box.kind != .inbox }) {
-                let incoming = mailbox.box.kind == .inbox
                 for (place, message) in mailbox.messages.enumerated() where seen.insert(message.id).inserted {
-                    let person = incoming ? message.sender : message.recipient
-                    guard !MailChatData.address(person).isEmpty else { continue }
-                    rows.append(MailChatData.Row(account: account.name, mailbox: mailbox.box.path, id: Int(message.id),
-                                                 subject: message.subject, person: person, date: message.date,
-                                                 read: !incoming || message.read,
-                                                 fromMe: !incoming || own.contains(MailChatData.address(person)),
-                                                 index: place + 1))
+                    guard let row = row(message, in: mailbox.box, account: account, own: own, place: place + 1) else { continue }
+                    rows.append(row)
                     if !known.contains(Int(message.id)) { texts[Int(message.id)] = await text(of: message, length: bodyLength) }
                 }
             }
         }
         return (rows, texts)
+    }
+
+    /// A message as the Chats tab keeps it: from the inbox with who wrote it; from Sent with whom you wrote; from the
+    /// Trash as either, by whose it is (as `MailChatData.trashRows`). Nil without a person to put it with.
+    private static func row(_ message: MailIndex.Recent, in box: MailIndex.Box, account: MailChatData.Account, own: Set<String>,
+                            place: Int?) -> MailChatData.Row? {
+        let senderIsMe = own.contains(MailChatData.address(message.sender))
+        let fromMe = switch box.kind {
+        case .inbox: senderIsMe
+        case .sent: true
+        case .trash: senderIsMe
+        }
+        let person = box.kind == .inbox || !fromMe ? message.sender : message.recipient
+        guard !MailChatData.address(person).isEmpty else { return nil }
+        return MailChatData.Row(account: account.name, mailbox: box.path, id: Int(message.id), subject: message.subject,
+                                person: person, date: message.date, read: box.kind != .inbox || message.read, fromMe: fromMe,
+                                index: box.kind == .trash ? nil : place)
+    }
+
+    /// The newest `count` mail in the Trash of each of these accounts, as the rows it was in a chat as (`trashScript`
+    /// asked Mail for the same, one message at a time). Nil when the index cannot be read.
+    static func trashRows(accounts: [MailChatData.Account], count: Int = 100) async -> [MailChatData.Row]? {
+        let byID = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        guard let found = await recent(accounts: Set(byID.keys), inbox: 0, sent: 0, trash: count) else { return nil }
+        return found.flatMap { id, boxes -> [MailChatData.Row] in
+            guard let account = byID[id] else { return [] }
+            let own = Set(account.addresses)
+            return boxes.flatMap { mailbox in
+                mailbox.messages.compactMap { row($0, in: mailbox.box, account: account, own: own, place: nil) }
+            }
+        }
+    }
+
+    /// One person's mail in an account received in [`from`, `to`), for Nook's archive (`olderScript` asked Mail for the
+    /// same): theirs from the inbox, yours to them from Sent, and what of either is in the Trash, with the start of each
+    /// text by Mail's id. Nil when the index cannot be read.
+    static func history(account: MailChatData.Account, address: String, from: Date, to: Date, limit: Int = 500,
+                        bodyLength: Int) async -> (rows: [MailChatData.Row], trash: [MailChatData.Row], texts: [Int: String])? {
+        guard let boxes = await boxes(accounts: [account.id]) else { return nil }
+        let own = Set(account.addresses)
+        let who = address.lowercased()
+        var rows: [MailChatData.Row] = []
+        var trash: [MailChatData.Row] = []
+        var texts: [Int: String] = [:]
+        var seen = Set<Int64>()
+        for box in boxes.sorted(by: { $0.kind == .inbox && $1.kind != .inbox }) {
+            let sql = MailIndex.historySQL(boxes: [box.id], address: who, from: from, to: to, limit: limit)
+            guard let raw = await query(sql) else { return nil }
+            for message in MailIndex.recent(raw) where seen.insert(message.id).inserted {
+                guard var row = row(message, in: box, account: account, own: own, place: nil) else { continue }
+                // Their mail is theirs: an inbox mail they were only copied on belongs to its sender's chat.
+                if !row.fromMe, MailChatData.address(row.person) != who { continue }
+                // Yours went to them, also when they were not its first recipient.
+                if row.fromMe, MailChatData.address(row.person) != who { row.person = who }
+                if box.kind == .trash { trash.append(row) } else { rows.append(row) }
+                texts[Int(message.id)] = await text(of: message, length: bodyLength)
+            }
+        }
+        return (rows, trash, texts)
     }
 
     /// The Mail connector's inbox of these accounts from the index: the unread count and the newest rows per account

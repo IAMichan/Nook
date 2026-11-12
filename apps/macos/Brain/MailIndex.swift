@@ -108,10 +108,10 @@ enum MailIndex {
 
     // MARK: Recent mail per account
 
-    /// An inbox or Sent mailbox in the index. `account` is Mail's id of its account (the host of its url), `path` the
+    /// An inbox, Sent or Trash mailbox in the index. `account` is Mail's id of its account (the host of its url), `path` the
     /// name a script reaches it by ("INBOX", "[Gmail]/Sent Mail", "Postvak IN").
     struct Box: Equatable {
-        enum Kind: Equatable { case inbox, sent }
+        enum Kind: Equatable { case inbox, sent, trash }
         var id: Int64
         var account: String
         var path: String
@@ -123,17 +123,26 @@ enum MailIndex {
 
     static let mailboxesSQL = "SELECT ROWID AS id, url FROM mailboxes"
 
-    /// The inbox and Sent mailboxes among Mail's mailboxes, by the last part of their url; `sentNames` are the names of
-    /// Sent across providers and languages (`MailChatData.sentNames`).
-    static func boxes(_ raw: [[String: Any]], sentNames: [String]) -> [Box] {
+    /// The inbox, Sent and Trash mailboxes among Mail's mailboxes, by the last part of their url; `sentNames` and
+    /// `trashNames` are their names across providers and languages (`MailChatData.sentNames`, `trashNames`).
+    static func boxes(_ raw: [[String: Any]], sentNames: [String], trashNames: [String] = []) -> [Box] {
         let sent = Set(sentNames.map { $0.lowercased() })
+        let trash = Set(trashNames.map { $0.lowercased() })
         return raw.compactMap { row -> Box? in
             guard let id = (row["id"] as? NSNumber)?.int64Value, let url = row["url"] as? String,
                   let scheme = url.range(of: "://") else { return nil }
             let parts = url[scheme.upperBound...].split(separator: "/").map { $0.removingPercentEncoding ?? String($0) }
             guard parts.count > 1, let last = parts.last?.lowercased() else { return nil }
             let kind: Box.Kind
-            if parts.count == 2, inboxNames.contains(last) { kind = .inbox } else if sent.contains(last) { kind = .sent } else { return nil }
+            if parts.count == 2, inboxNames.contains(last) {
+                kind = .inbox
+            } else if sent.contains(last) {
+                kind = .sent
+            } else if trash.contains(last) {
+                kind = .trash
+            } else {
+                return nil
+            }
             return Box(id: id, account: parts[0], path: parts.dropFirst().joined(separator: "/"), kind: kind)
         }
     }
@@ -148,6 +157,21 @@ enum MailIndex {
     /// (with its "Re: "), sender, first To recipient, date, read, replied (flag bit 2, Mail's "was replied to"), Mail's
     /// own summary of the text, and the mailbox its file is in.
     static func recentSQL(box: Int64, limit: Int) -> String {
+        select(where: members(box), limit: limit)
+    }
+
+    /// One person's mail in these mailboxes received in [`from`, `to`), newest first: what they sent, and what went to
+    /// them (To or Cc), for Nook's archive of a mail chat (`MailBridge.backfillPage`).
+    static func historySQL(boxes: [Int64], address: String, from: Date, to: Date, limit: Int) -> String {
+        let who = "'" + address.lowercased().replacingOccurrences(of: "'", with: "''") + "'"
+        let inBoxes = boxes.map { "(\(members($0)))" }.joined(separator: " OR ")
+        let person = "(a.address = \(who) COLLATE NOCASE OR EXISTS (SELECT 1 FROM recipients r JOIN addresses x ON x.ROWID = r.address "
+            + "WHERE r.message = m.ROWID AND x.address = \(who) COLLATE NOCASE))"
+        let when = "m.date_received >= \(Int(from.timeIntervalSince1970)) AND m.date_received < \(Int(to.timeIntervalSince1970.rounded(.up)))"
+        return select(where: "(\(inBoxes.isEmpty ? "0" : inBoxes)) AND \(person) AND \(when)", limit: limit)
+    }
+
+    private static func select(where condition: String, limit: Int) -> String {
         """
         SELECT m.ROWID AS id, COALESCE(m.subject_prefix, '') || s.subject AS subject, a.address AS address, a.comment AS name,
                m.date_received AS date, m.read AS read, (m.flags >> 2) & 1 AS replied, su.summary AS summary, b.url AS mailbox,
@@ -157,7 +181,7 @@ enum MailIndex {
                 ORDER BY r.position LIMIT 1) AS to_name
         FROM messages m JOIN subjects s ON s.ROWID = m.subject JOIN mailboxes b ON b.ROWID = m.mailbox
         LEFT JOIN addresses a ON a.ROWID = m.sender LEFT JOIN summaries su ON su.ROWID = m.summary
-        WHERE m.deleted = 0 AND \(members(box))
+        WHERE m.deleted = 0 AND \(condition)
         ORDER BY m.date_received DESC LIMIT \(limit)
         """
     }
