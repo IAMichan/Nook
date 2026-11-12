@@ -81,8 +81,8 @@ private struct DropdownKeyCommand: ViewModifier {
 }
 
 enum DropdownStyle {
-    /// Neutral-900: a menu lifts off the black canvas by a grey step and a line, never by a blue tint.
-    static let panel = Color(hex: 0x171717)
+    /// The palette's `menu` (neutral-900 by default): a menu lifts off the black canvas by a grey step and a line.
+    static let panel = NookTheme.menu
     static let hover = NookTheme.smoke
     static let chosen = NookTheme.paper.opacity(0.08)
 }

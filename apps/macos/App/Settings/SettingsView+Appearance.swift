@@ -61,6 +61,8 @@ extension SettingsView {
 
             themeSection
 
+            ColorTokensSettings()
+
             // The style above sets the face and the finish; changing them one by one is folded away.
             SettingsFold(tr("settings.appearance.fineTune"), summary: tr("settings.appearance.fineTuneSummary"),
                          keys: ["settings.display.eyes", "settings.display.mouth", "settings.display.glow"]) {
@@ -345,5 +347,93 @@ extension SettingsView {
         let custom = NookCustomTheme(id: "custom-" + UUID().uuidString.prefix(8).lowercased(), name: result.name, source: source)
         settings.customThemes.append(custom)
         if result.palette.isDark { settings.darkThemeID = custom.id } else { settings.lightThemeID = custom.id }
+    }
+}
+
+// MARK: Colors
+
+/// Settings › Appearance › Colors: every named color Nook draws with, grouped (surfaces, lines, text, state, changes,
+/// chats, code), each with a picker for dark or for light. A color set here lies over the chosen theme and changes every
+/// place that uses it; "Reset" brings the theme's own color back. Nothing is set by default.
+struct ColorTokensSettings: View {
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var dark = true
+
+    private var themePalette: NookPalette { settings.themeChoice.themePalette(dark: dark, themes: settings.themes) }
+    private var overrides: [String: UInt32] { settings.colorOverrides.values(dark: dark) }
+
+    var body: some View {
+        Group {
+            Section {
+                Picker(selection: $dark) {
+                    Text(tr("theme.mode.dark")).tag(true)
+                    Text(tr("theme.mode.light")).tag(false)
+                } label: {
+                    SettingText("colors.editFor")
+                }
+                .pickerStyle(.segmented)
+                if !overrides.isEmpty {
+                    HStack {
+                        Text(tr("colors.changed", overrides.count))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                        Spacer()
+                        Button(tr("colors.resetAll")) {
+                            var all = settings.colorOverrides
+                            if dark { all.dark = [:] } else { all.light = [:] }
+                            settings.colorOverrides = all
+                        }
+                    }
+                }
+            } header: {
+                Text(tr("colors.header"))
+            } footer: {
+                SettingNote(tr("colors.footer"))
+            }
+            ForEach(NookColorToken.Group.allCases) { group in
+                let tokens = NookColorToken.all.filter { $0.group == group }
+                let changed = tokens.filter { overrides[$0.id] != nil }.count
+                SettingsFold(tr("colors.group.\(group.rawValue)"),
+                             summary: changed > 0 ? tr("colors.changed", changed) : swatchSummary(tokens),
+                             keys: tokens.map { "colors.token.\($0.id)" }) {
+                    ForEach(tokens) { token in row(token) }
+                }
+            }
+        }
+    }
+
+    /// The group's names folded, so a closed group still says what is in it.
+    private func swatchSummary(_ tokens: [NookColorToken]) -> String {
+        tokens.prefix(4).map { tr("colors.token.\($0.id)") }.joined(separator: ", ") + (tokens.count > 4 ? "…" : "")
+    }
+
+    private func row(_ token: NookColorToken) -> some View {
+        let themeValue = themePalette[keyPath: token.keyPath]
+        let value = overrides[token.id] ?? themeValue
+        let changed = overrides[token.id] != nil
+        return HStack(spacing: NookTheme.Spacing.md) {
+            SettingText("colors.token.\(token.id)")
+            Spacer(minLength: NookTheme.Spacing.md)
+            if changed {
+                ToolbarIconButton("arrow.counterclockwise", tr("colors.reset"), height: 22, width: 22) {
+                    set(token, nil, themeValue: themeValue)
+                }
+            }
+            Text(NookColor.string(value))
+                .font(NookTheme.mono(11))
+                .foregroundStyle(changed ? NookTheme.textStrong : NookTheme.textTertiary)
+            ColorPicker(tr("colors.token.\(token.id)"), selection: Binding(
+                get: { Color(hex: value) },
+                set: { set(token, NSColor($0).nookHex, themeValue: themeValue) }
+            ), supportsOpacity: false)
+            .labelsHidden()
+        }
+    }
+
+    private func set(_ token: NookColorToken, _ hex: UInt32?, themeValue: UInt32) {
+        var all = settings.colorOverrides
+        all.set(token.id, to: hex, dark: dark, themeValue: themeValue)
+        guard all != settings.colorOverrides else { return }
+        settings.colorOverrides = all
     }
 }

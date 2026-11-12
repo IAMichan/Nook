@@ -346,7 +346,7 @@ struct ChatReplyField: View {
         .padding(.vertical, NookTheme.Spacing.sm)
         // A soft, round field that stands out a little from the panel, and a little more while you type in it; Nook's
         // draft gives it Nook's color, so it is clear whose words are about to go out.
-        .roundedBackground(focus.wrappedValue ? NookTheme.surface : NookTheme.field, radius: NookTheme.Radius.composer)
+        .roundedBackground(focus.wrappedValue ? NookTheme.composer : NookTheme.field, radius: NookTheme.Radius.composer)
         .roundedStrokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45) : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke),
                              radius: NookTheme.Radius.composer)
         .animation(NookTheme.hover, value: focus.wrappedValue)
@@ -1254,7 +1254,7 @@ private struct ReplyingBar: View {
     let quote: BubbleQuote
     let cancel: () -> Void
 
-    private var tint: Color { quote.mine ? NookTheme.textStrong : NookTheme.textSecondary }
+    private var tint: Color { quote.mine ? NookTheme.mint : NookTheme.blue }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {

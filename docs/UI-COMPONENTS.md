@@ -9,7 +9,8 @@ copying it again.
 | Token / helper | Use |
 | --- | --- |
 | `NookTheme.paper`, `textStrong`, `textSecondary`, `textTertiary`, `textMuted`, `ink` | Text colors, from brightest to most muted |
-| `NookTheme.canvas`, `surface`, `field`, `well`, `smoke`, `graphite` | Surfaces: the window canvas, a lifted sidebar or menu, a text field, a sunken code well, and the two card fills |
+| `NookTheme.canvas`, `surface`, `field`, `well`, `smoke`, `graphite` | Surfaces: the window canvas, a lifted sidebar or panel, a text field, a sunken code well, and the two card fills |
+| `NookTheme.composer`, `menu` | Surfaces with a role of their own: the composer (`surface` by default) and menus, popovers, hover cards and tooltips (`DropdownStyle.panel`, a dark card in every appearance) |
 | `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
@@ -17,7 +18,7 @@ copying it again.
 | `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action: a button filled with Nook's accent (soft white by default) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
 | `NookTheme.outlineFill`, `outlineStroke` | The outline button: a faint fill and an input-colored edge |
 | `Image(icon:)`, `Label(_:icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon, also the one of a `Label` (a menu item, a button): `Label(title, icon: "trash")`, never `Label(_:systemImage:)`. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
-| `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
+| `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each comes from the palette (`syntaxKeyword` …). Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected; a row that lifts under the pointer uses `.hoverRowFill` instead of keeping its own hover state |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
@@ -37,7 +38,10 @@ Appearance and themes (Settings › Appearance): `NookTheme`'s named colors reso
 in effect (`NookPalette.swift`): `NookAppearanceMode` (System / Light / Dark) picks light or dark, `NookColorTheme` is a
 built-in theme (the default "Nook": a true black canvas, 8 % white lines, neutral text and Nook's white accent; Midnight, Paper and High contrast come with it) and
 `VSCodeThemeImport` turns a VS Code color theme JSON into a `NookCustomTheme` (editor, sidebar and accent colors).
-State colors keep their meaning in every theme. A file that must draw its own colors takes them from the palette or
+State colors keep their meaning in every theme. Every palette color is a `NookColorToken` and can be set one by one
+in Settings › Appearance › Colors, per appearance (`NookColorOverrides`, laid over the chosen theme; empty by default, so
+Nook's colors are the defaults). A new color a view needs becomes a palette field and a token, never a literal in the
+view, so it can be set there too. A file that must draw its own colors takes them from the palette or
 stays on the allow-list with a reason. The notch stays dark in every theme. The tests check text contrast (WCAG AA) of
 every theme in both appearances.
 
@@ -66,12 +70,13 @@ and a selected row stands a full step above a hovered one. In practice:
 - **Color means state, nothing else** (rule). A status mark and its word, an error, a diff's `+`/`−`, and
   web links (`NookTheme.blue`, no underline). In dark, the state colors are soft status tones (emerald, amber,
   sky and violet 300 at 90 %), so a list of them stays calm; diff counts take the brighter `added`/`removed` of the
-  palette, as a change is what the eye should find first. Everything else is black, white and grey: headers, composer
-  controls, menus (neutral-900, no blue tint), bubbles (yours one grey step above theirs), tool rows, counts
-  (`NookCountBadge` is white on a faint wash), unread chats (white, not amber), read ticks, people's initials, file
-  glyphs and links to files (a white chip file mentions), the update button and the account badge. An
-  agent's brand color lives in its logo only, and a list row's logo is always grey (`AgentMark(quiet: true)`). The
-  composer keeps Nook's own quiet tint for every agent.
+  palette, as a change is what the eye should find first. What waits on you (an unread chat, a count) is `amber`, a warm honey (`#F0B65A` in dark) rather than a mustard yellow.
+  Chats keep the look of the chat apps they come from: your bubble, read ticks, people's names and initials, quotes and
+  voice notes in their colors, and a file glyph keeps its editor color. Chrome stays black, white and grey: headers, composer controls, menus (neutral-900, no
+  blue tint), the attach tiles of the chat composer, tool rows, links to files (a white chip
+  mentions), the update button and the account badge. An agent's brand color lives in its logo only, and a row's logo
+  is grey until the pointer is on the row or it is selected (`AgentMark(quiet:)`). The composer keeps Nook's own quiet
+  tint for every agent.
 - **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron,
   and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).

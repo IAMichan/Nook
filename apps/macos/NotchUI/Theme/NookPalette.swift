@@ -62,34 +62,56 @@ struct NookPalette: Equatable, Sendable {
     /// Nook's color when the user kept the default accent: soft white on dark, near black on light.
     var accent: UInt32
 
+    // Surfaces with a role of their own, so each can be set apart from the shared ones (Settings › Appearance › Colors).
+    /// The composer under a conversation.
+    var composer: UInt32
+    /// Menus, popovers, hover cards and tooltips. They draw their text for dark, so this stays a dark color.
+    var menu: UInt32
+
+    // Code in a diff and in the file viewer, muted under the diff's own tints. Only for code, never for state.
+    var syntaxKeyword: UInt32
+    var syntaxString: UInt32
+    var syntaxComment: UInt32
+    var syntaxNumber: UInt32
+    var syntaxType: UInt32
+    var syntaxProperty: UInt32
+    var syntaxTag: UInt32
+    var syntaxAttribute: UInt32
+
     /// Nook's own dark look: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
     /// white over it, and separation by 8 % white lines and hover fills rather than grey panels. Text is neutral-100
-    /// with neutral-400 for what is quieter. State colors are status tones (emerald, amber, sky and violet 300
-    /// at 90 % on black; red 400 for errors); a sent message is a neutral grey, not a colored bubble. Nook's accent (the
-    /// main action) is soft white.
+    /// with neutral-400 for what is quieter. State colors are status tones (emerald, sky and violet 300 at
+    /// 90 % on black; red 400 for errors), with a warm honey for what waits on you instead of amber-300's mustard yellow. Chat bubbles keep the colors of the chat apps they come from. Nook's accent
+    /// (the main action) is soft white.
     static let nookDark = NookPalette(
         isDark: true,
         canvas: 0x000000, well: 0x0A0A0A, surface: 0x111111, field: 0x0D0D0D, graphite: 0x191A1D, smoke: 0x242424,
-        rowRest: 0x0A0A0A, rowHover: 0x141415, rowSelected: 0x1C1C1E, bubble: 0x1E1E1E, chatMine: 0x2A2A2A, chatTheirs: 0x171717,
+        rowRest: 0x0A0A0A, rowHover: 0x141415, rowSelected: 0x1C1C1E, bubble: 0x1E1E1E, chatMine: 0x17493A, chatTheirs: 0x1E1E1E,
         line: 0x1A1A1A, line2: 0x262626, hairline: 0x171717, border: 0x1A1A1A, separator: 0x1F1F1F, fieldStroke: 0x262626,
         paper: 0xF5F5F5, textStrong: 0xE5E5E5, textSecondary: 0xA1A1A1, textMuted: 0x8F8F8F, textTertiary: 0x8F8F8F,
-        chatStamp: 0xA3A3A3,
-        blue: 0x5DAACC, mint: 0x55D2A3, mintSoft: 0x5EE9B5, amber: 0xE6BD2B, coral: 0xFF6467, coralSoft: 0xFCA5A5,
+        chatStamp: 0xA3B0AB,
+        blue: 0x5DAACC, mint: 0x55D2A3, mintSoft: 0x5EE9B5, amber: 0xF0B65A, coral: 0xFF6467, coralSoft: 0xFCA5A5,
         violet: 0xB0A2E6, music: 0xE6A660, added: 0x00D492, removed: 0xFF6467,
-        accent: 0xF4F3F7)
+        accent: 0xF4F3F7,
+        composer: 0x111111, menu: 0x171717,
+        syntaxKeyword: 0xC3A6EE, syntaxString: 0xA8CF96, syntaxComment: 0x6F7378, syntaxNumber: 0xE6B98A,
+        syntaxType: 0x8EC7E3, syntaxProperty: 0xA3BCEB, syntaxTag: 0xE79BB8, syntaxAttribute: 0xD9C27E)
 
     /// Nook in light: an off-white canvas (zinc-25), white cards, zinc lines and zinc-900 text, with the
     /// state colors a few shades deeper so they read on white, and a near-black accent. Every text color reads at 4.5:1 or more up to `smoke`.
     static let nookLight = NookPalette(
         isDark: false,
         canvas: 0xFCFCFC, well: 0xFAFAFA, surface: 0xFFFFFF, field: 0xFFFFFF, graphite: 0xF4F4F5, smoke: 0xE4E4E7,
-        rowRest: 0xFAFAFA, rowHover: 0xF4F4F5, rowSelected: 0xEBEBED, bubble: 0xEBEBED, chatMine: 0xE4E4E7, chatTheirs: 0xF4F4F5,
+        rowRest: 0xFAFAFA, rowHover: 0xF4F4F5, rowSelected: 0xEBEBED, bubble: 0xEBEBED, chatMine: 0xD2EFE2, chatTheirs: 0xF0F0F2,
         line: 0xE4E4E7, line2: 0xD4D4D8, hairline: 0xEDEDEF, border: 0xE4E4E7, separator: 0xE4E4E7, fieldStroke: 0xD4D4D8,
         paper: 0x18181B, textStrong: 0x27272A, textSecondary: 0x52525C, textMuted: 0x5C5C66, textTertiary: 0x62626C,
-        chatStamp: 0x52525C,
+        chatStamp: 0x4E5A55,
         blue: 0x1447E6, mint: 0x006E4D, mintSoft: 0x007A55, amber: 0x973C00, coral: 0xC10007, coralSoft: 0xB91C1C,
         violet: 0x7008E7, music: 0xA84A18, added: 0x007A55, removed: 0xC10007,
-        accent: 0x1E1E22)
+        accent: 0x1E1E22,
+        composer: 0xFFFFFF, menu: 0x171717,
+        syntaxKeyword: 0x7A45B5, syntaxString: 0x3D7A2E, syntaxComment: 0x8A8F96, syntaxNumber: 0x9A5A12,
+        syntaxType: 0x1D6E93, syntaxProperty: 0x3B5DA6, syntaxTag: 0xA33A6C, syntaxAttribute: 0x86690F)
 
     /// The text colors and what they must stay readable on, for the contrast check.
     var textTokens: [(name: String, hex: UInt32)] {
@@ -112,6 +134,7 @@ struct NookPalette: Equatable, Sendable {
         palette.canvas = canvas
         palette.well = dark ? step(0.025) : NookColor.mix(canvas, 0x000000, 0.035)
         palette.surface = dark ? step(0.06) : NookColor.mix(canvas, 0xFFFFFF, 0.6)
+        palette.composer = palette.surface
         palette.field = dark ? step(0.05) : NookColor.mix(canvas, 0x000000, 0.02)
         palette.graphite = step(dark ? 0.09 : 0.05)
         palette.smoke = step(dark ? 0.13 : 0.085)
@@ -345,6 +368,8 @@ struct NookThemeChoice: Equatable, Sendable {
     var mode: NookAppearanceMode = .dark
     var darkTheme: String = NookColorTheme.nook.id
     var lightTheme: String = NookColorTheme.nook.id
+    /// The colors set one by one in Settings › Appearance › Colors, over the chosen themes.
+    var overrides = NookColorOverrides()
 
     /// The palette that shows: the chosen theme's for the appearance in effect; Nook's own when that theme is gone or has
     /// no palette for it (a dark-only VS Code theme picked for light).
@@ -354,6 +379,11 @@ struct NookThemeChoice: Equatable, Sendable {
     }
 
     func palette(dark: Bool, themes: [NookColorTheme]) -> NookPalette {
+        themePalette(dark: dark, themes: themes).applying(overrides.values(dark: dark))
+    }
+
+    /// The chosen theme's own palette, without the user's colors: what "Reset" goes back to.
+    func themePalette(dark: Bool, themes: [NookColorTheme]) -> NookPalette {
         let id = dark ? darkTheme : lightTheme
         return themes.first { $0.id == id }?.palette(dark: dark) ?? (dark ? .nookDark : .nookLight)
     }
@@ -392,7 +422,7 @@ enum VSCodeThemeImport {
         let accent = color("button.background", "focusBorder", "activityBarBadge.background", "textLink.foreground") ?? base.accent
         var palette = NookPalette.generated(dark: dark, canvas: canvas, text: text, accent: accent,
                                             link: color("textLink.foreground"))
-        if let value = color("sideBar.background", "panel.background") { palette.surface = value }
+        if let value = color("sideBar.background", "panel.background") { palette.surface = value; palette.composer = value }
         if let value = color("editorWidget.background", "dropdown.background") { palette.graphite = value }
         if let value = color("input.background") { palette.field = value }
         if let value = color("input.border") { palette.fieldStroke = value }
@@ -466,5 +496,100 @@ struct NookCustomTheme: Codable, Equatable, Sendable {
         guard let result = try? VSCodeThemeImport.parse(source, fallbackName: name) else { return nil }
         return NookColorTheme(id: id, name: name, dark: result.palette.isDark ? result.palette : nil,
                               light: result.palette.isDark ? nil : result.palette, custom: true)
+    }
+}
+
+// MARK: Colors you set yourself
+
+/// One named color of the palette that can be set in Settings › Appearance › Colors: its id (the stored key and the
+/// `colors.token.<id>` text), the group it is listed under, and where it lives in `NookPalette`. Every view takes its
+/// colors from these (through `NookTheme`), so a color set here changes everywhere it is used. The accent has its own
+/// control above the themes and is left out.
+struct NookColorToken: Identifiable, @unchecked Sendable {
+    enum Group: String, CaseIterable, Identifiable, Sendable {
+        case surfaces, lines, text, state, changes, chat, code
+        var id: String { rawValue }
+    }
+
+    let id: String
+    let group: Group
+    let keyPath: WritableKeyPath<NookPalette, UInt32>
+
+    static let all: [NookColorToken] = [
+        .init(id: "canvas", group: .surfaces, keyPath: \.canvas),
+        .init(id: "well", group: .surfaces, keyPath: \.well),
+        .init(id: "surface", group: .surfaces, keyPath: \.surface),
+        .init(id: "composer", group: .surfaces, keyPath: \.composer),
+        .init(id: "menu", group: .surfaces, keyPath: \.menu),
+        .init(id: "field", group: .surfaces, keyPath: \.field),
+        .init(id: "graphite", group: .surfaces, keyPath: \.graphite),
+        .init(id: "smoke", group: .surfaces, keyPath: \.smoke),
+        .init(id: "rowRest", group: .surfaces, keyPath: \.rowRest),
+        .init(id: "rowHover", group: .surfaces, keyPath: \.rowHover),
+        .init(id: "rowSelected", group: .surfaces, keyPath: \.rowSelected),
+        .init(id: "bubble", group: .surfaces, keyPath: \.bubble),
+        .init(id: "line", group: .lines, keyPath: \.line),
+        .init(id: "line2", group: .lines, keyPath: \.line2),
+        .init(id: "hairline", group: .lines, keyPath: \.hairline),
+        .init(id: "border", group: .lines, keyPath: \.border),
+        .init(id: "separator", group: .lines, keyPath: \.separator),
+        .init(id: "fieldStroke", group: .lines, keyPath: \.fieldStroke),
+        .init(id: "paper", group: .text, keyPath: \.paper),
+        .init(id: "textStrong", group: .text, keyPath: \.textStrong),
+        .init(id: "textSecondary", group: .text, keyPath: \.textSecondary),
+        .init(id: "textMuted", group: .text, keyPath: \.textMuted),
+        .init(id: "textTertiary", group: .text, keyPath: \.textTertiary),
+        .init(id: "blue", group: .state, keyPath: \.blue),
+        .init(id: "mint", group: .state, keyPath: \.mint),
+        .init(id: "mintSoft", group: .state, keyPath: \.mintSoft),
+        .init(id: "amber", group: .state, keyPath: \.amber),
+        .init(id: "coral", group: .state, keyPath: \.coral),
+        .init(id: "coralSoft", group: .state, keyPath: \.coralSoft),
+        .init(id: "violet", group: .state, keyPath: \.violet),
+        .init(id: "music", group: .state, keyPath: \.music),
+        .init(id: "added", group: .changes, keyPath: \.added),
+        .init(id: "removed", group: .changes, keyPath: \.removed),
+        .init(id: "chatMine", group: .chat, keyPath: \.chatMine),
+        .init(id: "chatTheirs", group: .chat, keyPath: \.chatTheirs),
+        .init(id: "chatStamp", group: .chat, keyPath: \.chatStamp),
+        .init(id: "syntaxKeyword", group: .code, keyPath: \.syntaxKeyword),
+        .init(id: "syntaxString", group: .code, keyPath: \.syntaxString),
+        .init(id: "syntaxComment", group: .code, keyPath: \.syntaxComment),
+        .init(id: "syntaxNumber", group: .code, keyPath: \.syntaxNumber),
+        .init(id: "syntaxType", group: .code, keyPath: \.syntaxType),
+        .init(id: "syntaxProperty", group: .code, keyPath: \.syntaxProperty),
+        .init(id: "syntaxTag", group: .code, keyPath: \.syntaxTag),
+        .init(id: "syntaxAttribute", group: .code, keyPath: \.syntaxAttribute),
+    ]
+
+    static func named(_ id: String) -> NookColorToken? { all.first { $0.id == id } }
+}
+
+/// The colors the user set, per appearance, as token id to 0xRRGGBB. They lie over whichever theme is chosen, so a
+/// theme stays the default and "Reset" brings its color back. Empty by default: Nook's colors as designed.
+struct NookColorOverrides: Codable, Equatable, Sendable {
+    var dark: [String: UInt32] = [:]
+    var light: [String: UInt32] = [:]
+
+    var isEmpty: Bool { dark.isEmpty && light.isEmpty }
+
+    func values(dark isDark: Bool) -> [String: UInt32] { isDark ? dark : light }
+
+    /// Sets one color for one appearance; nil (or the theme's own value) removes the override.
+    mutating func set(_ id: String, to hex: UInt32?, dark isDark: Bool, themeValue: UInt32? = nil) {
+        let value = hex == themeValue ? nil : hex
+        if isDark { dark[id] = value } else { light[id] = value }
+    }
+}
+
+extension NookPalette {
+    /// The palette with the user's colors laid over it; unknown ids (from a newer or older Nook) are skipped.
+    func applying(_ overrides: [String: UInt32]) -> NookPalette {
+        var palette = self
+        for (id, hex) in overrides {
+            guard let token = NookColorToken.named(id) else { continue }
+            palette[keyPath: token.keyPath] = hex & 0xFFFFFF
+        }
+        return palette
     }
 }

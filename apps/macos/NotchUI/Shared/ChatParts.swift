@@ -8,8 +8,8 @@ import SwiftUI
 
 /// A chat in a list, the Mac's `ChatsRow` and the iPhone's `InboxRow`: its face, its name and when on the first line,
 /// the newest message on the second (after your ticks, or who is typing in its place), and where it stands at the end
-/// of that line (`trailing`: the count of what is new, a read mark). Something new sets the name and the time in paper
-/// (white). The caller adds what the platform does with a row: a click and hover on the Mac, a tap and a long press
+/// of that line (`trailing`: the count of what is new, a read mark). Something new sets the name in paper and the time
+/// in amber. The caller adds what the platform does with a row: a click and hover on the Mac, a tap and a long press
 /// on the phone.
 struct ChatListRowContent<Avatar: View, Trailing: View>: View {
     let name: String
@@ -45,11 +45,11 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
                             .lineLimit(1)
                             .opacity(hidesTime ? 0 : 1)
                     }
-                    // Something new: its time in white, as the count under it.
+                    // Something new: its time in the color of what waits on you, as the count under it.
                     Text(when)
                         .font(NookTheme.TextStyle.caption)
                         .monospacedDigit()
-                        .foregroundStyle(unread ? NookTheme.paper : NookTheme.textTertiary)
+                        .foregroundStyle(unread ? NookTheme.amber : NookTheme.textTertiary)
                         .fixedSize()
                         .opacity(hidesTime ? 0 : 1)
                 }
@@ -139,8 +139,8 @@ struct ChatDayDivider: View {
     }
 }
 
-/// The message a bubble answers, at the bubble's top: a bar, who wrote it and the start of its text; a step brighter
-/// when it answers a message of yours.
+/// The message a bubble answers, at the bubble's top: a bar, who wrote it and the start of its text; in mint when it
+/// answers a message of yours.
 struct ChatQuote: View {
     let sender: String
     let text: String
@@ -148,7 +148,7 @@ struct ChatQuote: View {
     /// The widest it gets in a wide chat (the Mac's photo width); nil fills the bubble.
     var maxWidth: CGFloat? = nil
 
-    private var tint: Color { mine ? NookTheme.textStrong : NookTheme.textSecondary }
+    private var tint: Color { mine ? NookTheme.mint : NookTheme.blue }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -242,9 +242,9 @@ struct MessageTicksMark: View {
 
     private var color: Color {
         switch ticks {
-        case .read: return NookTheme.paper
+        case .read: return NookTheme.blue
         case .failed: return NookTheme.coral
-        // Grey that still reads on your bubble; read is white, so it stands out without a hue.
+        // Grey that still reads on your mint bubble; read is blue, as on the phone.
         case .pending, .sent, .delivered: return NookTheme.chatStamp
         }
     }
@@ -306,11 +306,10 @@ struct ChatTypingDots: View {
 
 // MARK: Faces
 
-/// The color of a person in a chat, the same every time and in both apps: their name in a group's bubbles, their
-/// initials in a list. One quiet grey for everyone, as Nook keeps hue for state: a person is told apart by their
-/// name and photo, not by a color that would also read as "done" or "waits on you".
+/// Each person's own color in a chat, the same every time and in both apps: their name in a group's bubbles, their
+/// initials in a list.
 enum ChatPersonTint {
-    static let colors: [Color] = [NookTheme.textSecondary]
+    static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
 
     static func color(for name: String) -> Color {
         var hash: UInt32 = 2_166_136_261

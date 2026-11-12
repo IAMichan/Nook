@@ -282,6 +282,7 @@ enum SettingsRestore {
             AppSettings.shared.appearanceMode = .dark
             AppSettings.shared.darkThemeID = NookColorTheme.nook.id
             AppSettings.shared.lightThemeID = NookColorTheme.nook.id
+            AppSettings.shared.colorOverrides = NookColorOverrides()
         }
     }
 }
