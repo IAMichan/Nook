@@ -71,12 +71,12 @@ struct SelectionAction: Identifiable {
     var confirmTitle: String?
     /// Under the question: what it will touch, and what it leaves out.
     var confirmDetail: String?
-    /// How many of the picked rows it applies to, on its button, when that is not all of them.
+    /// How many of the picked rows it applies to, on its button as "Merge (2 of 3)" when that is not all of them.
     var count: Int?
     /// The bar's main action: filled, and the last button.
     var primary = false
-    /// Why it cannot run now, on its tooltip while it is off.
-    var disabledHelp: String?
+    /// Why it leaves rows out, on its tooltip: all of them while it is off, the ones it skips while it runs on fewer.
+    var leftOutHelp: String?
     let perform: () -> Void
     var id: String { symbol + label }
 }
@@ -127,7 +127,7 @@ struct SelectionBar: View {
                     Text(detail)
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(2)
+                        .lineLimit(3)
                         .truncationMode(.tail)
                 }
             }
@@ -207,7 +207,7 @@ struct SelectionBar: View {
 
     private func title(_ action: SelectionAction) -> String {
         guard let shown = action.count, shown != count else { return action.label }
-        return "\(action.label) (\(shown))"
+        return tr("select.partial", action.label, shown, count)
     }
 
     @ViewBuilder
@@ -238,8 +238,16 @@ struct SelectionBar: View {
             }
         }
         .disabled(!usable)
-        .help(usable ? action.label : (action.disabledHelp ?? action.label))
+        .help(tooltip(action, usable: usable))
         .accessibilityLabel(action.label)
+    }
+
+    /// The name, and why rows are left out when the action skips some or cannot run at all.
+    private func tooltip(_ action: SelectionAction, usable: Bool) -> String {
+        guard let leftOut = action.leftOutHelp, !leftOut.isEmpty else { return action.label }
+        if !usable { return leftOut }
+        guard let shown = action.count, shown != count else { return action.label }
+        return title(action) + "\n" + leftOut
     }
 
     private func destructiveButton(_ title: String, action: @escaping () -> Void) -> some View {
