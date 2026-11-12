@@ -81,7 +81,12 @@ final class KeptTransport: ProviderTransport, @unchecked Sendable {
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        defer {
+            try? output.fileHandleForReading.close()
+            try? output.fileHandleForWriting.close()
+        }
         try process.run()
+        try? output.fileHandleForWriting.close()
         let answer = output.fileHandleForReading.readData(ofLength: 6)
         process.waitUntilExit()
         guard String(decoding: answer, as: UTF8.self).hasPrefix("ready") else { throw NookError("The session's keeper did not start.") }

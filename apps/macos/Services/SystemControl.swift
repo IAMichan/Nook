@@ -184,7 +184,12 @@ enum SystemControl {
         let out = Pipe()
         process.standardOutput = out
         process.standardError = out
+        defer {
+            try? out.fileHandleForReading.close()
+            try? out.fileHandleForWriting.close()
+        }
         try process.run()
+        try? out.fileHandleForWriting.close()
 
         final class OutputBox: @unchecked Sendable {
             var data = Data()
