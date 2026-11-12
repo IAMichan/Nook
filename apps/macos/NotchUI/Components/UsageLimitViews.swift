@@ -60,10 +60,10 @@ struct LimitPaceIcon: View {
 
 // MARK: - One account, one line per window
 
-/// One account's windows, a small card each in the usage modal's layout: the window's name, how much is used with the
-/// pace, and a bar that fills with the even-pace line in a slot and the reset time inside it. The full reset time and
-/// the pace are in the card's tooltip; the card lights up under the pointer. An account that reports no limits shows
-/// one "Unavailable" card with the reason in its tooltip.
+/// One account's windows, a line each: the window's name on the left, how much is used and when it resets on the right,
+/// and under them a thin bar that fills, with a tick where even spending would be by now. The full reset time and the
+/// pace are in the line's tooltip. An account that reports no limits shows one "Unavailable" line with the reason in its
+/// tooltip.
 struct UsageLimitRows: View {
     let limits: [QuotaLimit]
     /// Why there are no limits, shown when `limits` is empty.
@@ -71,12 +71,27 @@ struct UsageLimitRows: View {
     var now: Date = Date()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if limits.isEmpty {
                 UsageLimitRow(label: tr("limits.limits"), limit: nil, now: now, help: unavailable ?? "")
             } else {
-                ForEach(limits) { limit in
-                    UsageLimitRow(label: limit.label, limit: limit, now: now, help: help(limit, used: Self.used(limit)))
+                // An agent with a quota per model ("Gemini 4 Pro · Week") gets the model as a heading over its windows,
+                // so each line names only its window and the lines stay short.
+                ForEach(QuotaLimit.grouped(limits), id: \.name) { group in
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                        if !group.name.isEmpty {
+                            Text(group.name)
+                                .font(NookTheme.TextStyle.caption.weight(.semibold))
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                        ForEach(group.limits) { limit in
+                            UsageLimitRow(label: group.name.isEmpty ? limit.label : limit.window, limit: limit, now: now,
+                                          help: help(limit, used: Self.used(limit)))
+                        }
+                    }
                 }
             }
         }
@@ -105,86 +120,86 @@ struct UsageLimitRows: View {
     }
 }
 
-/// One card of `UsageLimitRows`, a small `LimitWindowCard`: name and percentage used above, the bar under them.
+/// One line of `UsageLimitRows`: "5 hours        46%  ↻ 3h 36m" over a thin bar.
 private struct UsageLimitRow: View {
     let label: String
-    /// The window; nil for the "Unavailable" card, which has no bar.
+    /// The window; nil for the "Unavailable" line, which has no bar.
     let limit: QuotaLimit?
     let now: Date
     let help: String
-    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                 Text(label)
-                    .font(NookTheme.TextStyle.detail.weight(.medium))
-                    .foregroundStyle(NookTheme.paper)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: NookTheme.Spacing.sm)
                 if let limit {
                     let used = UsageLimitRows.used(limit)
-                    if let pace = LimitPool.pace(limit.poolLimit, now: now) { LimitPaceIcon(pace: pace) }
-                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                        Text("\(used)%")
-                            .font(NookTheme.TextStyle.strong.monospacedDigit())
-                            .foregroundStyle(UsageTone.text(used: used))
-                        Text(tr("limits.usedWord"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
+                    Text("\(used)%")
+                        .font(NookTheme.TextStyle.detail.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(UsageTone.text(used: used))
+                    if let reset = resetText(limit) ?? limit.note {
+                        Text(reset)
+                            .font(NookTheme.TextStyle.caption.monospacedDigit())
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 } else {
                     Text(tr("limits.unavailable"))
                         .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
+                        .foregroundStyle(NookTheme.textTertiary)
                 }
             }
-            if let limit { bar(limit) }
+            if let limit { LimitLineBar(limit: limit, now: now) }
         }
-        .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .cardBackground(hovering ? NookTheme.paper.opacity(0.04) : Color.clear, stroke: NookTheme.line2,
-                        radius: NookTheme.Radius.control)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
         .help(help)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(help.isEmpty ? "\(label): \(tr("limits.unavailable"))" : help)
     }
 
-    /// As a segment of the modal's pool bar: what was used fills it, the even-pace line sits in a slot cut from it and
-    /// the time to the reset is inside it on the right.
-    private func bar(_ limit: QuotaLimit) -> some View {
+    /// "↻ 3h 36m", "↻ now", or nil when the window has no reset time (it has not started yet).
+    private func resetText(_ limit: QuotaLimit) -> String? {
+        guard limit.note == nil, let reset = limit.resetsAt else { return nil }
+        return "↻ " + (reset > now ? AgentFormat.compactDuration(reset.timeIntervalSince(now)) : tr("limits.now"))
+    }
+}
+
+/// A limit's thin bar, as thin as the context's: what was used fills it in its tone, and a short tick stands where even
+/// spending would be by now.
+private struct LimitLineBar: View {
+    let limit: QuotaLimit
+    let now: Date
+    private static let height: CGFloat = 4
+    private static let tick: CGFloat = 10
+
+    var body: some View {
         let used = UsageLimitRows.used(limit)
         let elapsed = LimitPool.timeElapsed(limit.poolLimit, now: now)
-        return ZStack(alignment: .trailing) {
-            GeometryReader { proxy in
-                let width = proxy.size.width
-                let at = elapsed.map { LimitSegmentPosition.at($0, width: width) }
-                ZStack(alignment: .leading) {
-                    Rectangle().fill(NookTheme.wash.opacity(0.05))
-                    Rectangle()
-                        .fill(UsageTone.fill(used: used).opacity(0.35))
-                        .frame(width: width * CGFloat(used) / 100)
-                }
-                .mask(PaceSlot(at: at))
-                if let at, width >= 6 {
-                    Capsule()
-                        .fill(NookTheme.paper)
-                        .frame(width: 2)
-                        .padding(.vertical, NookTheme.Spacing.xxs)
-                        .offset(x: at - 1)
-                }
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(NookTheme.line2)
+                Capsule()
+                    .fill(UsageTone.fill(used: used, calm: NookTheme.textSecondary))
+                    .frame(width: max(used > 0 ? Self.height : 0, width * CGFloat(min(used, 100)) / 100))
             }
-            if limit.note == nil, let reset = limit.resetsAt {
-                LimitResetChip(resetsIn: reset > now ? AgentFormat.compactDuration(reset.timeIntervalSince(now)) : tr("limits.now"),
-                               credits: 0)
-                    .padding(.trailing, NookTheme.Spacing.xs)
+            .frame(height: Self.height)
+            .frame(maxHeight: .infinity)
+            if let elapsed, width >= 6 {
+                Capsule()
+                    .fill(NookTheme.paper)
+                    .frame(width: 2, height: Self.tick)
+                    .offset(x: LimitSegmentPosition.at(elapsed, width: width) - 1)
+                    .frame(maxHeight: .infinity)
             }
         }
-        .frame(height: 20)
-        .roundedClip(NookTheme.Radius.chip)
+        .frame(height: Self.tick)
     }
 }
 

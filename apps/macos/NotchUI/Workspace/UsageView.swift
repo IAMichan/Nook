@@ -90,8 +90,8 @@ struct UsageView: View {
                 }
                 ResetCreditRow(profile: profile)
             }
-            // The rows' own inset lines their labels up with the account's name.
-            .padding(.leading, 34 - NookTheme.Spacing.md - NookTheme.Spacing.xxs)
+            // Lines the limits up with the account's name.
+            .padding(.leading, 34)
         }
         .padding(.vertical, NookTheme.Spacing.xs)
     }
