@@ -18,6 +18,27 @@ enum GitHubActions {
         throw lastError
     }
 
+    /// Runs `read` with the first account that can read `repo`: `known` (the one that read it last) first, then the
+    /// others. The read itself shows whether an account may read the repository, so a list costs no extra request for
+    /// that. Only a refused token (401, 403) or a repository the account cannot see (404) moves on to the next account;
+    /// any other failure is the read's own.
+    static func reading<T: Sendable>(_ repo: String, known: String?,
+                                     _ read: @Sendable (String) async throws -> T) async throws -> (value: T, token: String) {
+        guard GitHubPullRequests.isAvailable else { throw CloudHelp.notSetUp("GitHub") }
+        let all = GitHubPullRequests.tokens
+        var lastError: Error = CloudHelp.notSetUp("GitHub")
+        for token in all.filter({ $0 == known }) + all.filter({ $0 != known }) {
+            do {
+                return (try await read(token), token)
+            } catch {
+                lastError = error
+                let kind = (error as? NookError)?.kind
+                guard kind == .auth || kind == .config else { throw error }
+            }
+        }
+        throw lastError
+    }
+
     /// The repositories each account pushed to lately, most recent first, merged.
     static func pushedRepositories() async -> [String] {
         guard GitHubPullRequests.isAvailable else { return [] }
@@ -36,6 +57,23 @@ enum GitHubActions {
     /// The latest runs of the repository, or of one of its workflows.
     static func runs(repo: String, workflowID: Int?, token: String) async throws -> [WorkflowRun] {
         WorkflowRunParser.runs(try await get("/repos/\(repo)" + WorkflowRunParser.runsPath(workflowID: workflowID), token: token))
+    }
+
+    /// The same runs as `runs`, for a list with nothing to show yet: in `WorkflowRunParser.firstReadPages` pages asked
+    /// at once, which GitHub answers about twice as fast as one large page.
+    static func firstRuns(repo: String, workflowID: Int?, token: String) async throws -> [WorkflowRun] {
+        let count = WorkflowRunParser.firstReadPages
+        return try await withThrowingTaskGroup(of: (Int, [WorkflowRun]).self) { group in
+            for page in 1...count {
+                group.addTask {
+                    let path = "/repos/\(repo)" + WorkflowRunParser.runsPath(workflowID: workflowID, page: page)
+                    return (page, WorkflowRunParser.runs(try await get(path, token: token)))
+                }
+            }
+            var pages: [Int: [WorkflowRun]] = [:]
+            for try await (page, runs) in group { pages[page] = runs }
+            return WorkflowRunParser.merged((1...count).map { pages[$0] ?? [] })
+        }
     }
 
     static func run(repo: String, id: Int, token: String) async throws -> WorkflowRun {
@@ -137,7 +175,9 @@ final class ActionsStore: ObservableObject {
     private var reads: [String: Task<Void, Never>] = [:]
     /// Failed reads in a row per repository and workflow.
     private var failures: [String: Int] = [:]
-    private var cache: [String: (workflows: [Workflow], runs: [WorkflowRun])] = [:]
+    private var cache: [String: ActionsSnapshot] = [:]
+    /// The latest write of `cache` to disk; the next one waits for it, so an older list never lands last.
+    private var saving: Task<Void, Never>?
     private var pushedAt = Date.distantPast
     /// When each tab's repository was last read in the background.
     private var peekedAt: [String: Date] = [:]
@@ -154,6 +194,26 @@ final class ActionsStore: ObservableObject {
         // Before there were tabs: the repository you had open and the ones you typed in.
         recent = UserDefaults.standard.stringArray(forKey: Self.recentKey)
             ?? Array(WorkflowRunParser.candidates(selected: picked, pushed: typed, pullRequests: [], watched: []).prefix(8))
+        // The tabs' lists as last read, so the page shows runs at once after a restart while it reads them again.
+        cache = ActionsSnapshot.load(from: Self.fileURL)
+        for (key, kept) in cache where key.hasSuffix("|") {
+            statuses[String(key.dropLast()).lowercased()] = WorkflowRepoStatus(runs: kept.runs)
+        }
+        showCached()
+    }
+
+    private static var fileURL: URL { NookPaths.supportDirectory.appendingPathComponent("actions-runs.json") }
+
+    /// Writes the lists of the tabs' repositories (all workflows) to disk, away from the main thread.
+    private func save() {
+        let tabs = Set(recent.map { $0.lowercased() + "|" })
+        let kept = cache.filter { tabs.contains($0.key.lowercased()) }
+        let previous = saving
+        let url = Self.fileURL
+        saving = Task.detached(priority: .utility) {
+            await previous?.value
+            ActionsSnapshot.save(kept, to: url)
+        }
     }
 
     func status(of repository: String) -> WorkflowRepoStatus? { statuses[repository.lowercased()] }
@@ -210,10 +270,12 @@ final class ActionsStore: ObservableObject {
         if let kept = cache[cacheKey] {
             runs = kept.runs
             if !kept.workflows.isEmpty { workflows = kept.workflows }
+            lastRead = kept.read
             loaded = true
         } else {
             runs = []
             if workflowID == nil { workflows = [] }
+            lastRead = nil
             loaded = false
         }
         error = nil
@@ -239,25 +301,30 @@ final class ActionsStore: ObservableObject {
 
     private func read(repo: String, workflowID: Int?, key: String) async {
         do {
-            let token: String
-            if let known = tokens[repo] {
-                token = known
-            } else {
-                token = try await GitHubActions.token(for: repo)
-                tokens[repo] = token
+            // Nothing on screen yet: the quicker read in pages. Later reads ask once, as they poll.
+            let first = cache[key] == nil
+            let (fetched, token) = try await GitHubActions.reading(repo, known: tokens[repo]) { token in
+                async let workflows = GitHubActions.workflows(repo: repo, token: token)
+                let runs = first ? try await GitHubActions.firstRuns(repo: repo, workflowID: workflowID, token: token)
+                    : try await GitHubActions.runs(repo: repo, workflowID: workflowID, token: token)
+                return (runs: runs, workflows: try? await workflows)
             }
-            async let workflows = GitHubActions.workflows(repo: repo, token: token)
-            let runs = try await GitHubActions.runs(repo: repo, workflowID: workflowID, token: token)
-            let list = (try? await workflows) ?? self.workflows
+            tokens[repo] = token
+            let runs = fetched.runs
+            let list = fetched.workflows ?? cache[key]?.workflows ?? self.workflows
+            let now = Date()
             failures[key] = 0
-            cache[key] = (list, runs)
-            if workflowID == nil { statuses[repo.lowercased()] = WorkflowRepoStatus(runs: runs) }
+            cache[key] = ActionsSnapshot(read: now, workflows: list, runs: runs)
+            if workflowID == nil {
+                statuses[repo.lowercased()] = WorkflowRepoStatus(runs: runs)
+                save()
+            }
             guard repo == self.repo, workflowID == self.workflowID else { return }
             self.runs = runs
             self.workflows = list
             error = nil
             errorKind = nil
-            lastRead = Date()
+            lastRead = now
             loaded = true
         } catch {
             if Self.isCancellation(error) { return }
@@ -305,15 +372,21 @@ final class ActionsStore: ObservableObject {
             let name = repository.lowercased()
             if let last = peekedAt[name], Date().timeIntervalSince(last) < 120 { continue }
             peekedAt[name] = Date()
-            guard let token = try? await token(for: repository) else { continue }
-            async let workflows = GitHubActions.workflows(repo: repository, token: token)
-            guard let runs = try? await GitHubActions.runs(repo: repository, workflowID: nil, token: token) else { continue }
-            let list = (try? await workflows) ?? []
-            statuses[name] = WorkflowRepoStatus(runs: runs)
+            guard let fetched = try? await GitHubActions.reading(repository, known: tokens[repository], { token in
+                async let workflows = GitHubActions.workflows(repo: repository, token: token)
+                let runs = try await GitHubActions.runs(repo: repository, workflowID: nil, token: token)
+                return (runs: runs, workflows: try? await workflows)
+            }) else { continue }
+            tokens[repository] = fetched.token
+            let read = fetched.value
+            statuses[name] = WorkflowRepoStatus(runs: read.runs)
             // The open repository's own read is the fresher one; never overwrite it with this.
             let key = repository + "|"
-            if repository != repo || cache[key] == nil { cache[key] = (list, runs) }
+            if repository != repo || cache[key] == nil {
+                cache[key] = ActionsSnapshot(read: Date(), workflows: read.workflows ?? cache[key]?.workflows ?? [], runs: read.runs)
+            }
         }
+        save()
     }
 
     /// The token for a run's page: the one that read the list.
