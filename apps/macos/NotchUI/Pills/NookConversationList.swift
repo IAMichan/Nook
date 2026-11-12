@@ -326,8 +326,8 @@ private struct NookRow: View, Equatable {
                 .allowsHitTesting(hovering)
         }
         .onHover { hovering = $0 }
-        // Closed over the buttons, so their first click is not spent closing the card.
-        .hoverCard(suppressed: onActions) { NookHoverCard(conversation: conversation) }
+        // Closed over the buttons, so their first click is not spent closing the card. Warm, as in the Agents list.
+        .hoverCard(suppressed: onActions, warm: true) { NookHoverCard(conversation: conversation) }
         .animation(NookTheme.hover, value: hovering)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(conversation.title), \(statusText)")

@@ -1468,7 +1468,7 @@ struct ChatsRow: View, Equatable {
                     .accessibilityHidden(true)
             }
         }
-        .hoverCard(suppressed: onActions) {
+        .hoverCard(suppressed: onActions, warm: true) {
             ChatsHoverCard(entry: entry)
         }
         // A row without a line under its name gets its newest message fetched.
