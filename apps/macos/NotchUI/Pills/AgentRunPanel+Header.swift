@@ -7,9 +7,9 @@ import Combine
 extension AgentRunPanel {
     // MARK: Header
 
-    /// While the agent works, a plan, design, document or image that is new opens the outputs tab on it, and anything
-    /// new while that tab is out of view puts a dot on it. What a session that does not work shows (its timeline loading
-    /// as you open it) is not news.
+    /// While the agent works, a plan, design or image that is new (or a document it handed to you) opens the outputs tab
+    /// on it (`SessionOutputs.opensByItself`), and anything new while that tab is out of view puts a dot on it. What a
+    /// session that does not work shows (its timeline loading as you open it) is not news.
     func noticeOutputs(_ outputs: [SessionOutput], working: Bool, turnStart: Date?) {
         guard working, let seen = seenOutputs else {
             seenOutputs = Set(outputs.map(SessionOutputs.signature))
@@ -17,10 +17,8 @@ extension AgentRunPanel {
         }
         let fresh = outputs.filter { !seen.contains(SessionOutputs.signature($0)) }
         // Only what this turn made opens the tab by itself, not earlier work that comes in as the timeline loads.
-        if let shown = fresh.first(where: { output in
-            if case .tasks = output.kind { return false }
-            return output.date >= (turnStart ?? .distantFuture)
-        }), outputsLink.open(shown.id) {
+        if let shown = fresh.first(where: { SessionOutputs.opensByItself($0, turnStart: turnStart) }),
+           outputsLink.open(shown.id) {
             seenOutputs = Set(outputs.map(SessionOutputs.signature))
         } else if outputsLink.shown {
             seenOutputs = Set(outputs.map(SessionOutputs.signature))

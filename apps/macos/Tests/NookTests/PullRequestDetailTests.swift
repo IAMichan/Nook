@@ -119,6 +119,8 @@ final class PullRequestDetailTests: XCTestCase {
         let admin = try json(#"{"allow_auto_merge": true, "permissions": {"push": true, "admin": true}}"#)
         let bypass = try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: admin))
         XCTAssertFalse(bypass.waitsForAutoMerge, "An admin who may bypass merges at once")
+        XCTAssertTrue(bypass.offersAutoMergeBesideMerge, "An admin may still choose to wait: auto-merge in Merge's dropdown")
+        XCTAssertFalse(blocked.offersAutoMergeBesideMerge, "Without a bypass auto-merge is the main action already")
 
         let noAutoMerge = try json(#"{"allow_auto_merge": false, "permissions": {"push": true}}"#)
         XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: object, repository: noAutoMerge)).waitsForAutoMerge)
@@ -126,6 +128,8 @@ final class PullRequestDetailTests: XCTestCase {
         var clean = try json(pull)
         clean["node_id"] = "PR_1"
         XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: clean, repository: writer)).waitsForAutoMerge)
+        XCTAssertFalse(try XCTUnwrap(PullRequestDetailParser.detail(pull: clean, repository: admin)).offersAutoMergeBesideMerge,
+                       "Nothing holds it back: nothing to wait for")
     }
 
     func testAdminBypassFollowsTheRulesetsOfTheBaseBranch() throws {
