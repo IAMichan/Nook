@@ -78,6 +78,8 @@ fn fullscreen_app_in_front() -> bool {
     use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN};
     unsafe { SHQueryUserNotificationState() }
         .is_ok_and(|state| state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)
+}
+
 /// Shortcuts that could not be registered (another app holds them), by action, for Settings to point out.
 static SHORTCUT_PROBLEMS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
