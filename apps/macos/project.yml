@@ -287,6 +287,7 @@ targets:
       - path: Core/I18n+SettingsFlowsA.swift
       - path: Core/I18n+SettingsFlowsB.swift
       - path: Core/I18n+SettingsFlowsC.swift
+      - path: Core/I18n+Safeguards.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -393,6 +394,10 @@ targets:
       - path: Core/NookPaths.swift
       - path: Core/ProcessRunner.swift
       - path: Core/SafeStorage.swift
+      - path: Core/SQLiteRecovery.swift
+      - path: Core/NookStore.swift
+      - path: Core/QuitHold.swift
+      - path: Services/Workspace/LocalCertificateTrust.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/GitHubRateLimit.swift

@@ -23,6 +23,21 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   quiet notice in the corner shows git's stage and percentage, with Hide and Cancel. When it is done a note offers
   Open, and the box that started it switches to the new project by itself.
 
+- Nook's browser can open a local dev server that uses its own HTTPS certificate (`vite --https`, mkcert, a
+  self-signed one). For `localhost`, `*.localhost`, `*.local`, `127.0.0.1` and private network addresses, a bar above
+  the page asks whether to trust that certificate for this session or always, instead of the page silently failing.
+  Public sites are never offered this, and only you can approve it, not an agent. Settings › Editor & browser lists how many
+  you always trust and can forget them.
+
+- When one of Nook's own databases (`nook.sqlite`, `chats.sqlite`, `runs.sqlite`) cannot be opened, Nook says so
+  instead of quietly running without it: which file, why, and what to do. A damaged file is moved aside under a dated
+  name (never deleted) and a fresh one takes its place; the notice shows the copy in Finder and copies the command
+  that recovers what is still readable. A file that is out of reach for another reason (a full disk, a lock) is left
+  where it is.
+
+- Settings › General › "Hold ⌘Q to quit" (off by default): a quick ⌘Q shows a hint instead of quitting, and holding
+  it for a moment quits. Quit from a menu, logging out and restarting are never held up. Works with the notch off.
+
 - While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
   the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
   holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.

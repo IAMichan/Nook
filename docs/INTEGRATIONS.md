@@ -574,6 +574,12 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 
 ## Open gaps
 
+- **Safeguards on other platforms.** Trusting a local dev server's own certificate in the browser
+  (`LocalCertificateTrust`), saying when one of Nook's own databases cannot be opened (`SQLiteRecovery`, for
+  `NookStore`, `ChatStore` and `RunEventLog`, every SQLite file Nook writes), and "Hold ⌘Q to quit" (`QuitHold`) exist
+  in `apps/macos` only. The iPhone, Linux, Windows, Android and Tauri apps have no in-app browser and keep no SQLite
+  database of their own; the Tauri app does not hold ⌘Q yet. The databases Nook only reads (agents' histories,
+  browsers' cookies, other apps' stores) are not Nook's to move aside and keep failing quietly as before.
 - **1Password references** (`op://…`) are read for secrets agents ask for and for MCP server variables and headers. The
   built-in connectors' own credential fields and an agent account's variables (Settings › Agents) still take the value
   itself: they are read synchronously at launch, where waiting for `op` (and Touch ID) does not fit yet.

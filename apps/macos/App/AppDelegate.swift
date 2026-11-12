@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         UpdateTrialRunner.startWatching()
         if let rollback = UpdateTrialRunner.rollbackToReport { AppUpdater.shared.reportRollback(rollback) }
         installStatusItem()
+        // Hold ⌘Q to quit, when it is on (Settings › General); only the key is held, never a quit from a menu or macOS.
+        QuitHoldMonitor.shared.start()
         // Restarted into an update: the main window opens on the screen the update was started from.
         if let screen = AppUpdater.takeRestartScreen() {
             model.openWindow(on: screen)
@@ -56,7 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Quitting stops the sessions Nook runs (they can be resumed later), and waits for their agents to exit
-    /// (`stopAgentsBeforeQuit`).
+    /// (`stopAgentsBeforeQuit`). With "Hold ⌘Q to quit" on, ⌘Q only gets here once it was held and let go
+    /// (`QuitHoldMonitor`), so the question below never opens under a finger still on the key; a quit from a menu or from
+    /// macOS comes here directly.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Asked again while the agents are being stopped: the answer already comes.
         if quitReply != nil { return .terminateLater }
@@ -78,6 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AgentGovernor.shared.releaseAll()
         let processes = LiveAgentProcesses.shared.beginQuit()
         guard !processes.isEmpty || daemonStop != nil else { return .terminateNow }
+        // ⌘Q pressed again while the agents stop: nothing to hold or hint, the quit is already under way.
+        QuitHoldMonitor.shared.quitting = true
         var replied = false
         quitReply = {
             guard !replied else { return }
