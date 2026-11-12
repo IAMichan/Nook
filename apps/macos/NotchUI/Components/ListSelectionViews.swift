@@ -1,29 +1,9 @@
 import AppKit
 import SwiftUI
 
-// The pieces the Nooks and the Agents list share for acting on several rows at once: the button that starts selecting,
-// the round check in front of each row, and the bar with the count and the actions. The rules are in `ListSelection`.
-
-/// "Select" next to the search field; while selecting it ends it again.
-struct SelectionModeButton: View {
-    let active: Bool
-    let toggle: () -> Void
-
-    var body: some View {
-        Button(action: toggle) {
-            Image(icon: active ? "checkmark.circle.fill" : "checkmark.circle")
-                .font(NookTheme.font(13, .medium))
-                .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
-                .frame(width: 30, height: 30)
-                // The same height, corners and fill as the search field it sits next to.
-                .roundedBackground(active ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.control)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.nookPlain)
-        .help(active ? tr("select.done") : tr("select.help"))
-        .accessibilityLabel(active ? tr("select.done") : tr("select.start"))
-    }
-}
+// The pieces the Nooks and the Agents list share for acting on several rows at once: the round check in front of each
+// row and the bar with the count and the actions. Selecting starts with a ⌘- or ⇧-click on a row; the rules are in
+// `ListSelection`.
 
 /// A row while selecting: a round check in front, and a ring around the row when it is picked.
 struct SelectableRow: ViewModifier {

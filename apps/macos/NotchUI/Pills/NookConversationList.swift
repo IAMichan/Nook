@@ -34,14 +34,8 @@ struct NookList: View {
             header
                 .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
                                confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
-            HStack(spacing: 6) {
-                searchField
-                SelectionModeButton(active: selection.isActive) {
-                    withAnimation(NookTheme.reveal) {
-                        if selection.isActive { selection.clear() } else { selection.begin() }
-                    }
-                }
-            }
+            // Selecting several Nooks starts with a ⌘- or ⇧-click on a row, so it needs no button here.
+            searchField
             TimelineView(.nookTicks(every: 30)) { context in
                 VStack(alignment: .leading, spacing: 2) {
                     // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
