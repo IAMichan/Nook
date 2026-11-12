@@ -261,7 +261,9 @@ enum TimelinePresentation {
                 hidden.insert(approval.id)
             }
         }
-        if hidingRunning, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
+        // A subagent keeps its row (with its time) while it runs: hiding it only while nothing else runs made it come and
+        // go with every command the agent ran next to it, and the timeline jumped each time.
+        if hidingRunning, let running = turn.last(where: { isLive($0) && !Subagents.isLaunch($0) }) {
             hidden.insert(running.id)
         }
         return hidden.isEmpty ? turn : turn.filter { !hidden.contains($0.id) }
@@ -276,6 +278,12 @@ enum TimelinePresentation {
         }
     }
 
+    /// A call the agent waits on right now: what the live line under the timeline shows. A subagent or a command it left
+    /// running in the background is not one: the turn goes on without it, and it keeps its own row while it works.
+    static func isLive(_ event: RunEvent) -> Bool {
+        event.kind == .tool && event.state == .running && !Subagents.isBackground(event) && !BackgroundCommands.isCommand(event)
+    }
+
     /// A tool call and the approval that asked for it share tool and summary; a nested call carries "↳ " in front.
     private static func key(_ tool: String?, _ text: String) -> String {
         (tool ?? "") + "\u{0}" + (text.hasPrefix("↳ ") ? String(text.dropFirst(2)) : text)
@@ -284,7 +292,7 @@ enum TimelinePresentation {
     /// The live line for the running turn: the tool that runs (or ran last) and what the agent last thought about.
     static func live(_ events: [RunEvent]) -> LiveActivity {
         let turn = split(events).last ?? []
-        let tool = turn.last { $0.kind == .tool && $0.state == .running } ?? turn.last { $0.kind == .tool }
+        let tool = turn.last(where: isLive) ?? turn.last { $0.kind == .tool }
         let thought = turn.last { $0.kind == .thinking }.map { headline($0.text) }
         return LiveActivity(tool: tool?.text, thought: thought.flatMap { $0.isEmpty ? nil : $0 })
     }
