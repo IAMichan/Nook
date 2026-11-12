@@ -65,14 +65,7 @@ final class AgentHub: ObservableObject {
 
     /// Account directory from hook environment; empty if standard directory.
     private static func accountHome(_ env: [String: Any], agentID: String) -> String {
-        let kind: AgentKind
-        switch agentID {
-        case "codex": kind = .codex
-        case "gemini": kind = .gemini
-        case let id where id.hasPrefix("claude"): kind = .claude
-        default: return ""
-        }
-        guard let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
+        guard let kind = AgentKind(hookAgentID: agentID), let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
         let home = AgentProfile.normalize(kind.home(fromVariable: raw))
         return home == AgentProfile.normalize(kind.defaultHome.path) ? "" : home
     }
@@ -611,6 +604,8 @@ final class AgentHub: ObservableObject {
             ?? cwd
         let key = "\(agentID):\(sessionID)"
         let name = Self.displayName(agentID)
+        // The agent this event comes from, mapped once: what it supports comes from `AgentKind`, not from its name.
+        let agentKind = AgentKind(hookAgentID: agentID)
 
         if kind == "SessionEnd" {
             records[key] = nil
@@ -667,13 +662,9 @@ final class AgentHub: ObservableObject {
         }
         if let id = event["session_id"] as? String, !id.isEmpty { record.sessionID = id }
         if let path = event["transcript_path"] as? String, !path.isEmpty { record.transcriptPath = path }
-        if record.transcriptPath.isEmpty && name == "Antigravity" {
-            let sessionID = !record.sessionID.isEmpty ? record.sessionID : (env["ANTIGRAVITY_CONVERSATION_ID"] as? String) ?? ""
-            if !sessionID.isEmpty {
-                record.sessionID = sessionID
-                let appData = (env["ANTIGRAVITY_APP_DATA_DIR"] as? String) ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity"
-                record.transcriptPath = "\(appData)/brain/\(sessionID)/.system_generated/logs/transcript.jsonl"
-            }
+        if record.transcriptPath.isEmpty, let found = agentKind?.hookTranscript(sessionID: record.sessionID, env: env) {
+            record.sessionID = found.sessionID
+            record.transcriptPath = found.path
         }
 
         // A compaction shows while it runs, and is over at the agent's next event: its end (PostCompact, Claude Code's
@@ -717,7 +708,7 @@ final class AgentHub: ObservableObject {
                 let suggestions = event["permission_suggestions"]
                 // Claude Code stores the rule it suggests; the OpenCode and Hermes plugins turn it into their own
                 // "always" / "session" answer. Codex and Muse take no rule back.
-                let canAlways = (agentID.hasPrefix("claude") || Self.pluginAlways.contains(agentID))
+                let canAlways = (agentKind?.hookTakesAlwaysRule == true || Self.pluginAlways.contains(agentID))
                     && ((suggestions as? [Any])?.isEmpty == false)
                 requestApproval(key: key, record: &record, tool: tool, input: input,
                                 kind: .permission(suggestions: suggestions, canAlways: canAlways), connection: connection)
