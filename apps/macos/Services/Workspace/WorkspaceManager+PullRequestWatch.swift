@@ -168,7 +168,7 @@ extension WorkspaceManager {
     func settleQueuedNews(_ id: UUID, url: String, with snapshot: PullRequestSnapshot) {
         guard var queue = queued[id] else { return }
         queue.settleNews(url: url, with: snapshot)
-        if queue != queued[id] { store(queue, for: id) }
+        if queue != queued[id] { setQueue(queue, for: id) }
     }
 
     /// At the end of a turn: a pull request link the turn brought that the conversation did not have before is the one
