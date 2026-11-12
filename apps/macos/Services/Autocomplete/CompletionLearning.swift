@@ -384,18 +384,18 @@ struct CompletionStats: Codable, Equatable {
 /// What the user already told Cotypist about themselves, for Nook's own instructions. Someone who switches has often written
 /// their name, languages and tone there; with Nook's instructions empty, suggestions know only the text in the field.
 enum CompletionCotypist {
-    static let domain = "app.cotypist.Cotypist"
-    static let instructionsKey = "CompletionManager_userPrompt"
+    #if canImport(Darwin)
+    static let domain = "app.cotypist.Cotypist" as CFString
+    static let instructionsKey = "CompletionManager_userPrompt" as CFString
 
-    /// Cotypist's instructions on this Mac, nil when it is not installed or they are empty. CFPreferences exists only on
-    /// Apple platforms; the Linux core tests build this file too and test `instructions(from:)` alone.
+    /// Cotypist's instructions on this Mac, nil when it is not installed or they are empty.
     static func instructions() -> String? {
-        #if canImport(Darwin)
-        return instructions(from: CFPreferencesCopyAppValue(instructionsKey as CFString, domain as CFString))
-        #else
-        return nil
-        #endif
+        instructions(from: CFPreferencesCopyAppValue(instructionsKey, domain))
     }
+    #else
+    /// Cotypist is a Mac app; the Linux core tests only build the parsing below.
+    static func instructions() -> String? { nil }
+    #endif
 
     static func instructions(from value: Any?) -> String? {
         guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }

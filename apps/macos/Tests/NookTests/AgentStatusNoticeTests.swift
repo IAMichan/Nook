@@ -62,3 +62,51 @@ final class AgentStatusNoticeTests: XCTestCase {
         XCTAssertTrue(AgentStatusNotice(agent: "Cursor", state: .done, added: 3, session: "a").hasChanges)
     }
 }
+
+/// A macOS notification says the gist: the first sentence in plain words, short links, within two banner lines.
+final class BannerTextTests: XCTestCase {
+    func testALongReplyBecomesItsFirstSentence() {
+        let reply = "The branch is pushed and PR #1394 is now at d3f92455. CI has started again; the run takes about "
+            + "10 minutes because chatd builds first."
+        XCTAssertEqual(BannerText.gist(reply), "The branch is pushed and PR #1394 is now at d3f92455.")
+    }
+
+    func testLinksAndMarkdownAreShortened() {
+        XCTAssertEqual(BannerText.gist("PR 6 is klaar: https://github.com/InfarisHQ/monorepo/pull/3885 (verdwaalde rondingen)."),
+                       "PR 6 is klaar: #3885 (verdwaalde rondingen).")
+        XCTAssertEqual(BannerText.gist("See [the docs](https://example.com/a/b) and https://www.apple.com/mac for more."),
+                       "See the docs and apple.com for more.")
+        XCTAssertEqual(BannerText.gist("## Summary\n\n- **Fixed** the `login` bug"), "Summary")
+        XCTAssertEqual(BannerText.plain("- **Fixed** the `login` bug"), "Fixed the login bug")
+    }
+
+    func testAShortFirstSentenceTakesTheNextAlong() {
+        XCTAssertEqual(BannerText.gist("Done. All 42 tests pass now. Nothing else."), "Done. All 42 tests pass now.")
+    }
+
+    func testTheGistStaysWithinTheLimit() {
+        let gist = BannerText.gist(String(repeating: "word ", count: 60))
+        XCTAssertLessThanOrEqual(gist.count, BannerText.limit)
+        XCTAssertTrue(gist.hasSuffix("…"))
+    }
+
+    func testTheSubtitleNamesFolderAndSession() {
+        XCTAssertEqual(BannerText.subtitle(project: "nook", topic: "Fix the login bug"), "nook · Fix the login bug")
+        XCTAssertEqual(BannerText.subtitle(project: "nook", topic: ""), "nook")
+        XCTAssertLessThanOrEqual(BannerText.subtitle(project: "", topic: String(repeating: "a ", count: 80)).count,
+                                 BannerText.subtitleLimit)
+    }
+
+    func testAnApprovalsContextDropsTheAgentTheTitleNames() {
+        XCTAssertEqual(BannerText.context("Claude Code · Fix guard", title: "Claude Code wants to open a pull request"),
+                       "Fix guard")
+        XCTAssertEqual(BannerText.context("Codex · nook", title: "Run a command"), "Codex · nook")
+    }
+
+    func testAnAgentNoticesBannerIsShort() {
+        let notice = AgentStatusNotice(agent: "Claude Code", project: "Nook", topic: "Push the branch",
+                                       summary: "Pushed. CI runs again and takes about ten minutes.", state: .done, session: "1")
+        XCTAssertEqual(notice.bannerSubtitle, "Nook · Push the branch")
+        XCTAssertEqual(notice.bannerBody, "Pushed. CI runs again and takes about ten minutes.")
+    }
+}

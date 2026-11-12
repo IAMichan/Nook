@@ -1,6 +1,6 @@
 import Foundation
 
-/// The shortcut cheat sheet (`?`): every command with the keys it answers to, grouped, from the same rules the key monitor
+/// The shortcut cheat sheet (`⌘/`): every command with the keys it answers to, grouped, from the same rules the key monitor
 /// uses, so a key remapped in Settings › Shortcuts or in `keybindings.json` shows here the moment it works.
 struct ShortcutCheatSheet: Equatable, Sendable {
     enum Group: String, CaseIterable, Sendable {
