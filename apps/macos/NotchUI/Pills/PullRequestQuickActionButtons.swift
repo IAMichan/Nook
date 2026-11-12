@@ -33,6 +33,7 @@ struct PullRequestQuickActionButtons: View {
     @ObservedObject private var merges = PullRequestQuickMerges.shared
     @State private var armed: PullRequestQuickAction?
     @State private var running: PullRequestQuickAction?
+    @State private var hovered: PullRequestQuickAction?
 
     var body: some View {
         let actions = PullRequestQuickAction.actions(for: item)
@@ -61,7 +62,7 @@ struct PullRequestQuickActionButtons: View {
     private func button(_ action: PullRequestQuickAction) -> some View {
         let confirming = armed == action || (action == .close && sweep.isSwept(item.id))
         let phase = action == .merge ? merges.queue.phase(item.id) : nil
-        let tint = confirming || phase != nil ? (action == .close ? NookTheme.coral : NookTheme.amber) : NookTheme.textSecondary
+        let look = Self.look(action, confirming: confirming, phase: phase, hovering: hovered == action)
         return Button {
             if confirming {
                 armed = nil
@@ -79,23 +80,70 @@ struct PullRequestQuickActionButtons: View {
                     ProgressView().controlSize(.mini)
                 } else if phase == .waiting {
                     NookSymbol("clock", size: 11)
+                } else if phase == .autoMerge {
+                    NookSymbol("bolt", size: 11)
                 } else {
                     NookSymbol(Self.symbol(action), size: 11)
                 }
-                Text(Self.title(action, confirming: confirming, phase: phase))
+                Text(Self.title(action, confirming: confirming, phase: phase)).lineLimit(1).fixedSize()
             }
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(tint)
+            .font(NookTheme.TextStyle.label)
+            .foregroundStyle(look.text)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 22)
-            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(confirming ? tint : NookTheme.line2))
+            .roundedBackground(look.fill, radius: NookTheme.Radius.control)
+            .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(look.stroke))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
+            .animation(NookTheme.hover, value: hovered == action)
         }
         .buttonStyle(.nookPlain)
         .disabled(running != nil || merges.queue.phase(item.id) != nil)
+        .onHover { inside in
+            if inside { hovered = action } else if hovered == action { hovered = nil }
+        }
         .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
         // Close, dragged up or down over other rows, takes those along.
         .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
+    }
+
+    /// How a quick action is drawn, in Nook's own buttons: Merge is the main action (filled with the accent, soft white
+    /// by default), Close is red (a soft red, filled once it asks to confirm), Ready and Reopen are outline buttons that
+    /// fill with the accent when armed. A merge in the queue reads as its state: waiting quietly in outline, busy at
+    /// GitHub as a dimmed main button, merged in the merged violet, handed to auto-merge in amber.
+    struct Look {
+        let text: Color
+        let fill: Color
+        let stroke: Color
+    }
+
+    static func look(_ action: PullRequestQuickAction, confirming: Bool,
+                     phase: PullRequestQuickMergeQueue.Phase?, hovering: Bool) -> Look {
+        switch phase {
+        case .waiting:
+            return Look(text: NookTheme.textSecondary, fill: NookTheme.outlineFill, stroke: NookTheme.outlineStroke)
+        case .merging:
+            return Look(text: NookTheme.onPrimary, fill: NookTheme.primary.opacity(0.7), stroke: .clear)
+        case .merged:
+            return Look(text: NookTheme.violet, fill: NookTheme.violet.opacity(0.14), stroke: NookTheme.violet.opacity(0.35))
+        case .autoMerge:
+            return Look(text: NookTheme.amber, fill: NookTheme.amber.opacity(0.12), stroke: NookTheme.amber.opacity(0.35))
+        case nil:
+            break
+        }
+        switch action {
+        case .close:
+            if confirming { return Look(text: .white, fill: NookTheme.coral.opacity(hovering ? 1 : 0.9), stroke: .clear) }
+            return Look(text: NookTheme.coral, fill: NookTheme.coral.opacity(hovering ? 0.2 : 0.12),
+                        stroke: NookTheme.coral.opacity(0.35))
+        case .merge:
+            return Look(text: NookTheme.onPrimary, fill: hovering ? NookTheme.primaryHover : NookTheme.primary, stroke: .clear)
+        case .ready, .reopen:
+            if confirming {
+                return Look(text: NookTheme.onPrimary, fill: hovering ? NookTheme.primaryHover : NookTheme.primary, stroke: .clear)
+            }
+            return Look(text: hovering ? NookTheme.paper : NookTheme.textSecondary, fill: NookTheme.outlineFill,
+                        stroke: NookTheme.outlineStroke)
+        }
     }
 
     private func run(_ action: PullRequestQuickAction) {
