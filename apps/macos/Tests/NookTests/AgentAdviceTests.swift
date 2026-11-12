@@ -37,6 +37,15 @@ final class AgentAdviceTests: XCTestCase {
         XCTAssertNil(LimitAdvisor.suggest(states: [], current: (.claude, "a"), now: now))
     }
 
+    func testFallbacksOfferFillingAccountsWhenNoneHasRoom() {
+        let states = [st(.claude, "a", 1), st(.claude, "b", 0.8), st(.codex, "c", 0.75), st(.codex, "full", 1),
+                      st(.gemini, "g", nil), st(.claude, "same", 0.75)]
+        let picks = LimitAdvisor.fallbacks(states: states, current: (.claude, "a"), now: now)
+        XCTAssertEqual(picks.map(\.profileID), ["same", "c", "b"])
+        XCTAssertEqual(picks.first?.sameAgent, true)
+        XCTAssertTrue(LimitAdvisor.fallbacks(states: [st(.claude, "a", 0.5), st(.codex, "c", 0.8)], current: (.claude, "a"), now: now).isEmpty)
+    }
+
     private func input(_ status: RunStatus, last: TimeInterval? = nil, pending: TimeInterval? = nil, idle: TimeInterval = 0,
                        limited: TimeInterval? = nil) -> StuckInput {
         StuckInput(status: status, lastActivity: last.map { now.addingTimeInterval(-$0) },
