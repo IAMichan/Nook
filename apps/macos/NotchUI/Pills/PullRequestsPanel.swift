@@ -255,9 +255,12 @@ struct PullRequestsPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.bottom, NookTheme.Spacing.lg)
                     }
+                    // ⇧- or ⌘-clicked rows: merge or close them together. It floats over the list with nothing behind it,
+                    // so the rows stay in sight under and beside it, and the last ones scroll clear of it.
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        PullRequestSelectionBar(shown: Self.requests(in: shown))
                     }
-                    // ⇧- or ⌘-clicked rows: merge or close them together.
-                    PullRequestSelectionBar(shown: Self.requests(in: shown))
+                    }
                 }
             }
         }
