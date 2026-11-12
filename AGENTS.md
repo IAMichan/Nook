@@ -70,7 +70,7 @@ Run the fast Foundation-only core & localization test suite before committing:
 ./scripts/core-tests.sh
 ```
 
-The build is kept in `.build/core-tests` (git-ignored), so a second run compiles only what changed. While you work, `--changed` runs only the tests your change can affect (since origin's default branch, uncommitted files included; `--changed=<rev>` for another base). It picks test files that changed, that use a type from a changed core source, or that read the app's sources, and runs everything when `project.yml` or the test scripts change. Run the full suite once before a commit or pull request.
+The build is kept in `.build/core-tests` (git-ignored), so a second run compiles only what changed. While you work, `--changed` runs only the tests your change can affect (since origin's default branch, uncommitted files included; `--changed=<rev>` for another base). It picks test files that changed, that use a type from a changed core source, or that read the app's sources, and runs everything when `project.yml` or the test scripts change. Run the full suite once before a commit or pull request. The core tests compile only the Foundation core: views and AppKit code are not in it. The script names the changed files it does not compile; check those with `./scripts/xcode.sh build` instead of waiting for a core test run that cannot see them.
 
 ```sh
 ./scripts/core-tests.sh --changed
@@ -105,8 +105,10 @@ this Mac once left more than 400 GB that way.
 
 Both `./scripts/xcode.sh` and `./scripts/core-tests.sh` run their build through `./scripts/build-slot.sh`: one heavy build
 at a time on this Mac, at a lower priority. When another agent is building, yours prints that it is waiting and starts
-when that build ends. Do not work around it: several agents compiling at once once drove the load to 185 on 14 cores,
-filled the swap, and froze the Mac and the running Nook. Run any other heavy build (`xcodebuild`, `swift build`,
+when that build ends. The waiting line names the build that holds the slot, its checkout and how long it has run, and
+yours says how long it waited once it starts, so a slow run shows whether the time went to the queue or the build.
+Do not work around it: several agents compiling at once once drove the load to 185 on 14 cores, filled the swap, and
+froze the Mac and the running Nook. Run any other heavy build (`xcodebuild`, `swift build`,
 `cargo build`) through `./scripts/build-slot.sh` too. `NOOK_BUILD_SLOT=off` skips the wait, only for a quick build the
 user is waiting on.
 
