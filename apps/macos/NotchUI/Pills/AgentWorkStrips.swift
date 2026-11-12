@@ -208,7 +208,7 @@ struct SubagentBar: View {
     /// Stops one subagent at work in the background, for an agent that can (`ProviderCapabilities.stopsOneSubagent`).
     var stop: ((SubagentInfo) -> Void)? = nil
     /// Shows the subagents in the side panel's Subagents tab; false when the panel is busy with something else.
-    var openPanel: (() -> Bool)? = nil
+    var openPanel: (() -> Void)? = nil
     @State private var open = false
     @State private var shown: UUID?
 
@@ -249,7 +249,7 @@ struct SubagentBar: View {
                 .accessibilityLabel(tr("ws.subagents.title") + ", " + tr("ws.subagents.progress", done, agents.count))
                 if let openPanel {
                     ToolbarIconButton("sidebar.right", tr("ws.subagents.openPanel"), height: 20, width: 20) {
-                        if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
+                        openPanel()
                     }
                 }
             }
@@ -808,7 +808,7 @@ struct BackgroundCommandBar: View {
     let commands: [BackgroundCommandInfo]
     var focus: Binding<UUID?> = .constant(nil)
     var reveal: ((UUID) -> Void)? = nil
-    var openPanel: (() -> Bool)? = nil
+    var openPanel: (() -> Void)? = nil
     @State private var open = false
     @State private var shown: UUID?
     @State private var flashed: UUID?
@@ -858,7 +858,7 @@ struct BackgroundCommandBar: View {
                                     + (failed > 0 ? ", " + tr("ws.background.failedCount", failed) : ""))
                 if let openPanel {
                     ToolbarIconButton("sidebar.right", tr("ws.background.openPanel"), height: 20, width: 20) {
-                        if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
+                        openPanel()
                     }
                 }
             }

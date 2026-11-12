@@ -210,7 +210,11 @@ struct SessionOutputsLink: Equatable {
     var shown = false
     var open: (String) -> Bool = { _ in false }
     var subagentsShown = false
+    /// Opens the Subagents tab on its own (a subagent started): not over a terminal, page or diff you have open (false).
     var openSubagents: () -> Bool = { false }
+    /// Shows the Subagents tab because you asked (the bar's panel button): beside the conversation even when another tab
+    /// is open there. Nil where the session has no side panel, so the button is not offered.
+    var showSubagents: (() -> Void)? = nil
 
     /// By what it says, not its actions: the workbench makes new closures on every redraw (which reach the same state), and
     /// an environment value that is never equal redrew every view of the conversation that reads it on each streamed token.
@@ -373,7 +377,8 @@ struct SessionWorkbench<Conversation: View>: View {
                         .environment(\.pullRequestLinksBeside, true)
                         // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
                         .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput,
-                                                                          subagentsShown: subagentsShown, openSubagents: openSubagents))
+                                                                          subagentsShown: subagentsShown, openSubagents: openSubagents,
+                                                                          showSubagents: showSubagents))
                         .environment(\.sessionPanelDocked, docked)
                         // A diff or file the conversation opens is a tab of the side panel.
                         .environment(\.sessionSide, SessionSideLink(shownFile: shownFile, panelOpen: sideOpen, hasPanel: true, showFile: showFile, openDiff: openDiff,
@@ -680,6 +685,13 @@ struct SessionWorkbench<Conversation: View>: View {
         guard side == .conversation || side == .picker else { return false }
         withAnimation(NookTheme.reveal) { viewModel.sessionTool = .subagents }
         return true
+    }
+
+    /// Shows the Subagents tab because you asked for it: where it is open already, otherwise beside the conversation,
+    /// in front of whatever tab is open there (that tab stays open behind it).
+    private func showSubagents() {
+        if viewModel.bottomTool == .subagents || viewModel.sessionTool == .subagents { return }
+        withAnimation(NookTheme.reveal) { viewModel.sessionTool = .subagents }
     }
 
     /// Dragging the line above the bottom panel up makes it taller.
