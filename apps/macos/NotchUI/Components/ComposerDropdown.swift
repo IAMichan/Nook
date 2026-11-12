@@ -129,6 +129,8 @@ struct DropdownRow: View {
     var brand: BrandLogo? = nil
     /// A project's own icon (Settings › Projects), drawn instead of the symbol.
     var projectIcon: ProjectIcon? = nil
+    /// The project's folder: its own favicon shows when it has no icon of yours (`ProjectIconView`).
+    var projectFolder: String? = nil
     /// A service's logo (its website's icon, a connector's), drawn instead of the symbol; the symbol stays while it loads
     /// or when the site has none.
     var site: String? = nil
@@ -171,8 +173,8 @@ struct DropdownRow: View {
                     BrandMark(logo: brand, size: 14)
                         .accountBadge(account, size: 14, ring: DropdownStyle.panel)
                         .padding(.trailing, account == nil ? 0 : 3)
-                } else if let projectIcon {
-                    ProjectIconView(icon: projectIcon, size: 15)
+                } else if projectIcon != nil || projectFolder != nil {
+                    ProjectIconView(icon: projectIcon, size: 15, folder: projectFolder)
                         .padding(.top, detail == nil ? 0 : 1)
                 } else if let site {
                     SiteIcon(domain: site, fallback: symbol ?? "link", tint: tint ?? NookTheme.textSecondary, size: 15)

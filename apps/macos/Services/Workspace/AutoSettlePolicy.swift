@@ -44,6 +44,17 @@ enum AutoSettlePolicy {
     static let newInstallDefaults = Settings(enabled: true, inactivityDays: 7, settleOnMergedPullRequest: true,
                                              settleOnClosedPullRequest: true)
 
+    /// Once, for an install that still has the old default (off, never changed): t3code's rules, as a new install gets
+    /// them. Settings you changed stay as they are; the sessions you kept out of it stay out.
+    static func upgradingOldDefault(_ settings: Settings) -> Settings {
+        var untouched = settings
+        untouched.perThreadOptOut = []
+        guard untouched == Settings() else { return settings }
+        var upgraded = newInstallDefaults
+        upgraded.perThreadOptOut = settings.perThreadOptOut
+        return upgraded
+    }
+
     /// How long after Nook first remembered anything a launch still counts as the first one.
     static let firstLaunchWindow: TimeInterval = 10 * 60
 

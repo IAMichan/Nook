@@ -73,7 +73,7 @@ struct ProjectSourceControlRows: View {
         let current = ws.projectIcon(path)
         return LabeledContent {
             HStack(spacing: NookTheme.Spacing.md) {
-                ProjectIconView(icon: current, size: 22)
+                ProjectIconView(icon: current, size: 22, folder: path)
                     .foregroundStyle(NookTheme.textSecondary)
                 Menu(tr("sc.icon.change")) {
                     Button(tr("sc.icon.monogram")) {
@@ -156,7 +156,7 @@ struct ArchivedProjectsSection: View {
                         Label {
                             Text((path as NSString).lastPathComponent)
                         } icon: {
-                            ProjectIconView(icon: ws.projectIcon(path), size: 15)
+                            ProjectIconView(icon: ws.projectIcon(path), size: 15, folder: path)
                         }
                         .help(AgentPathFormat.tilde(path))
                     }
