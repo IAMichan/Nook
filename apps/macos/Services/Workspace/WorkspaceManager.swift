@@ -452,6 +452,8 @@ final class WorkspaceManager: ObservableObject {
         /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
+        /// Claude Code: Nook asked for the window during the turn (`askContextWindowIfUnknown`).
+        var windowAsked = false
         /// Pi: tokens and cost of the turn so far, and when its older end-of-run event came (see `handlePi`).
         var piUsage = TurnUsage()
         var piEndedAt: Date?

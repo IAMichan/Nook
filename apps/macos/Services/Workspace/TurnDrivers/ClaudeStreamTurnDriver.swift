@@ -130,6 +130,7 @@ extension WorkspaceManager {
             if let ttl = tokens.cacheTTL { turns[id]?.cacheTTL = ttl }
             turns[id]?.messageUsage[messageID] = tokens
             turns[id]?.lastContext = tokens.context + tokens.output
+            askContextWindowIfUnknown(id)
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
         case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
             pauseLive(id)
