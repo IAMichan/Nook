@@ -1,0 +1,52 @@
+{"type":"transcript_start","provider":"pi","protocol":"pi.rpc-jsonl","scenario":"pi_message_steering","source":"hand-written for Nook","model":"openrouter/deepseek/deepseek-v4-flash"}
+{"type":"expect_outbound","frame":{"type":"get_state","id":"nook-state"}}
+{"type":"emit_inbound","frame":{"id":"nook-state","type":"response","command":"get_state","success":true,"data":{"model":{"provider":"openrouter","id":"deepseek/deepseek-v4-flash","name":"DeepSeek V4 Flash","api":"openai-completions","reasoning":true,"input":["text"],"contextWindow":1048576,"maxTokens":131072},"thinkingLevel":"medium","isStreaming":false,"isCompacting":false,"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time","sessionFile":"/home/replay-user/.pi/sessions/2026-11-12_plans.jsonl","sessionId":"62d4490e-085a-4184-805b-66700a7bd3cc","autoCompactionEnabled":true,"messageCount":0,"pendingMessageCount":0}}}
+{"type":"expect_outbound","frame":{"type":"prompt","message":"Say only: plan A stands"}}
+{"type":"emit_inbound","frame":{"type":"response","command":"prompt","success":true}}
+{"type":"emit_inbound","frame":{"type":"agent_start"}}
+{"type":"emit_inbound","frame":{"type":"turn_start"}}
+{"type":"emit_inbound","frame":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Say only: plan A stands"}],"timestamp":1794474000040}}}
+{"type":"emit_inbound","frame":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Say only: plan A stands"}],"timestamp":1794474000040}}}
+{"type":"expect_outbound","frame":{"type":"prompt","message":"Change of plan, say only: plan B it is","streamingBehavior":"steer"}}
+{"type":"emit_inbound","frame":{"type":"queue_update","steering":["Change of plan, say only: plan B it is"],"followUp":[]}}
+{"type":"emit_inbound","frame":{"type":"response","command":"prompt","success":true}}
+{"type":"emit_inbound","frame":{"type":"message_start","message":{"role":"assistant","content":[],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"total":0.0}},"stopReason":"pending","timestamp":1794474000080}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"Only"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" the"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" three"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" words."}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"Only the three words."}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":1}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"plan"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" A"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" stands"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":1,"content":"plan A stands"}}}
+{"type":"emit_inbound","frame":{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Only the three words."},{"type":"text","text":"plan A stands"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":1655,"output":17,"cacheRead":0,"cacheWrite":0,"totalTokens":1672,"cost":{"total":6.756e-05}},"stopReason":"stop","timestamp":1794474000080}}}
+{"type":"emit_inbound","frame":{"type":"turn_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Only the three words."},{"type":"text","text":"plan A stands"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":1655,"output":17,"cacheRead":0,"cacheWrite":0,"totalTokens":1672,"cost":{"total":6.756e-05}},"stopReason":"stop","timestamp":1794474000080},"toolResults":[]}}
+{"type":"emit_inbound","frame":{"type":"turn_start"}}
+{"type":"emit_inbound","frame":{"type":"queue_update","steering":[],"followUp":[]}}
+{"type":"emit_inbound","frame":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Change of plan, say only: plan B it is"}],"timestamp":1794474000120}}}
+{"type":"emit_inbound","frame":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Change of plan, say only: plan B it is"}],"timestamp":1794474000120}}}
+{"type":"emit_inbound","frame":{"type":"message_start","message":{"role":"assistant","content":[],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"total":0.0}},"stopReason":"pending","timestamp":1794474000160}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"The"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" plan"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" changed;"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" the"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" new"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" words"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" then."}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"The plan changed; the new words then."}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":1}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"plan"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" B"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" it"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" is"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":1,"content":"plan B it is"}}}
+{"type":"emit_inbound","frame":{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The plan changed; the new words then."},{"type":"text","text":"plan B it is"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":28,"output":19,"cacheRead":1680,"cacheWrite":0,"totalTokens":1727,"cost":{"total":1.944e-05}},"stopReason":"stop","timestamp":1794474000160}}}
+{"type":"emit_inbound","frame":{"type":"turn_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The plan changed; the new words then."},{"type":"text","text":"plan B it is"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":28,"output":19,"cacheRead":1680,"cacheWrite":0,"totalTokens":1727,"cost":{"total":1.944e-05}},"stopReason":"stop","timestamp":1794474000160},"toolResults":[]}}
+{"type":"emit_inbound","frame":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"Say only: plan A stands"}],"timestamp":1794474000040},{"role":"assistant","content":[{"type":"thinking","thinking":"Only the three words."},{"type":"text","text":"plan A stands"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":1655,"output":17,"cacheRead":0,"cacheWrite":0,"totalTokens":1672,"cost":{"total":6.756e-05}},"stopReason":"stop","timestamp":1794474000080},{"role":"user","content":[{"type":"text","text":"Change of plan, say only: plan B it is"}],"timestamp":1794474000120},{"role":"assistant","content":[{"type":"thinking","thinking":"The plan changed; the new words then."},{"type":"text","text":"plan B it is"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":28,"output":19,"cacheRead":1680,"cacheWrite":0,"totalTokens":1727,"cost":{"total":1.944e-05}},"stopReason":"stop","timestamp":1794474000160}]}}
+{"type":"emit_inbound","frame":{"type":"agent_settled"}}
+{"type":"expect_close"}
+{"type":"exit","status":0}

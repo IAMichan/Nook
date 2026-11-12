@@ -3,8 +3,8 @@ import XCTest
 /// Recorded Codex app-server, ACP (Kiro) and Pi sessions replayed through Nook's real clients (`CodexAppServerClient`,
 /// `AcpClient`, `AgentProcess`) and mappers, with only the agent's process replaced (`ReplayTransport`). Each test drives
 /// the client the way the workspace does (the same requests, built by the same functions, in the same order) and checks
-/// what the session's timeline gets. Fixtures are adapted from recorded transcripts (MIT, see
-/// THIRD-PARTY-NOTICES.md).
+/// what the session's timeline gets. The fixtures are hand-written: only the frames these clients read, in each agent's
+/// protocol.
 final class ProviderReplayAgentsTests: XCTestCase {
     private static let root: URL = {
         if let path = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"] { return URL(fileURLWithPath: path) }
@@ -95,27 +95,28 @@ final class ProviderReplayAgentsTests: XCTestCase {
 
     func testCodexSimpleTurn() throws {
         let (client, transport, events, exited, thread) = try codex("codex_simple")
-        _ = try startTurn(client, thread: thread, text: "Respond with the following text: fixture simple ok")
+        _ = try startTurn(client, thread: thread, text: "Reply with just the words: lanterns are lit")
         events.wait { self.finished(events).count == 1 }
-        XCTAssertEqual(messages(events), ["fixture simple ok"])
+        XCTAssertEqual(messages(events), ["lanterns are lit"])
         XCTAssertEqual(finished(events), ["completed"])
         let deltas = events.all.compactMap { if case .messageDelta(_, let text) = $0 { return text } else { return nil } }
-        XCTAssertEqual(deltas.joined(), "fixture simple ok", "the answer streamed before it completed")
+        XCTAssertEqual(deltas.joined(), "lanterns are lit", "the answer streamed before it completed")
         XCTAssertTrue(events.all.contains(.threadStarted(thread)))
         let usage = events.all.compactMap { if case .tokenUsage(let usage) = $0 { return usage } else { return nil } }.last
-        XCTAssertEqual(usage?.contextWindow, 258_400)
-        XCTAssertEqual(usage?.last.output, 7)
-        XCTAssertEqual(usage?.last.cacheRead, 6_912, "cached input is kept apart from the input")
+        XCTAssertEqual(usage?.contextWindow, 272_000)
+        XCTAssertEqual(usage?.last.output, 9)
+        XCTAssertEqual(usage?.last.cacheRead, 4_608, "cached input is kept apart from the input")
+        XCTAssertEqual(usage?.last.input, 10_752)
         finish(transport, stop: client.stop, exited: exited)
     }
 
     func testCodexMultiTurn() throws {
         let (client, transport, events, exited, thread) = try codex("codex_multi_turn")
-        _ = try startTurn(client, thread: thread, text: "Respond with exactly: first fixture turn complete")
+        _ = try startTurn(client, thread: thread, text: "Say only: the kettle is on")
         events.wait { self.finished(events).count == 1 }
-        _ = try startTurn(client, thread: thread, text: "Respond with exactly: second fixture turn complete")
+        _ = try startTurn(client, thread: thread, text: "Say only: the tea is ready")
         events.wait { self.finished(events).count == 2 }
-        XCTAssertEqual(messages(events), ["first fixture turn complete", "second fixture turn complete"])
+        XCTAssertEqual(messages(events), ["the kettle is on", "the tea is ready"])
         XCTAssertEqual(finished(events), ["completed", "completed"])
         finish(transport, stop: client.stop, exited: exited)
     }
@@ -123,7 +124,7 @@ final class ProviderReplayAgentsTests: XCTestCase {
     func testCodexTurnInterrupt() throws {
         let (client, transport, events, exited, thread) = try codex("codex_turn_interrupt")
         let turn = try startTurn(client, thread: thread,
-                                 text: "Do not answer immediately. First run the local shell command `sleep 30`, then respond with exactly: interrupt fixture should not finish naturally.")
+                                 text: "Run `sleep 45` in the shell and wait for it, then say: the long wait is over")
         _ = try call { client.request("turn/interrupt", CodexRPC.interruptParams(threadID: thread, turnID: turn), completion: $0) }
         events.wait { self.finished(events).count == 1 }
         XCTAssertEqual(finished(events), ["interrupted"], "the workspace marks such a turn stopped")
@@ -133,15 +134,15 @@ final class ProviderReplayAgentsTests: XCTestCase {
 
     func testCodexMessageSteering() throws {
         let (client, transport, events, exited, thread) = try codex("codex_message_steering")
-        let turn = try startTurn(client, thread: thread, text: "Respond with exactly: steering fixture initial response")
-        let steer = "Actually, respond with exactly: steering fixture observed"
+        let turn = try startTurn(client, thread: thread, text: "Say only: plan A stands")
+        let steer = "Change of plan, say only: plan B it is"
         let steered = try call { client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: steer), completion: $0) }
         XCTAssertEqual(steered.dictionary["turnId"] as? String, turn, "the steer went into the running turn")
         events.wait { self.finished(events).count == 1 }
         let mine = events.all.compactMap { if case .userMessage(let text, _) = $0 { return text } else { return nil } }
         // Codex echoes each message it takes in: the prompt, then the steer, in the same turn.
-        XCTAssertEqual(mine, ["Respond with exactly: steering fixture initial response", steer])
-        XCTAssertEqual(messages(events), ["steering fixture initial response", "steering fixture observed"])
+        XCTAssertEqual(mine, ["Say only: plan A stands", steer])
+        XCTAssertEqual(messages(events), ["plan A stands", "plan B it is"])
         XCTAssertEqual(finished(events), ["completed"], "one turn, steered")
         finish(transport, stop: client.stop, exited: exited)
     }
@@ -154,13 +155,13 @@ final class ProviderReplayAgentsTests: XCTestCase {
             client.respond(request.rpcID, CodexRPC.decision(request, allow: true, always: false))
         }
         _ = try startTurn(client, thread: thread,
-                          text: "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP.",
+                          text: "Put the text `hello from the replay` in greeting.txt at the project root, then tell me in one line what changed.",
                           model: "gpt-6-sol", permission: .acceptEdits)
         events.wait { self.finished(events).count == 1 }
         let request = try XCTUnwrap(asked.all.first)
         XCTAssertEqual(asked.all.count, 1)
         XCTAssertEqual(request.kind, .command)
-        XCTAssertTrue(request.command.contains(".codex-probe-write-action.txt"))
+        XCTAssertTrue(request.command.contains("greeting.txt"))
         XCTAssertFalse(request.reason.isEmpty, "the approval card says why")
         let commands = events.all.compactMap { event -> (String, Int?)? in
             if case .commandFinished(let id, _, _, let exit) = event { return (id, exit) } else { return nil }
@@ -223,8 +224,8 @@ final class ProviderReplayAgentsTests: XCTestCase {
 
     func testKiroSimpleTurn() throws {
         let (client, transport, events, exited, session) = try kiro("kiro_simple")
-        XCTAssertEqual(try prompt(client, session, "Respond with the following text: fixture simple ok"), "end_turn")
-        XCTAssertEqual(reply(events), "fixture simple ok")
+        XCTAssertEqual(try prompt(client, session, "Reply with just the words: lanterns are lit"), "end_turn")
+        XCTAssertEqual(reply(events), "lanterns are lit")
         let commands = events.all.compactMap { if case .commands(let list) = $0 { return list } else { return nil } }.last
         XCTAssertFalse(commands?.isEmpty ?? true, "Kiro's own / commands reach the composer")
         finish(transport, stop: client.stop, exited: exited)
@@ -232,11 +233,11 @@ final class ProviderReplayAgentsTests: XCTestCase {
 
     func testKiroMultiTurn() throws {
         let (client, transport, events, exited, session) = try kiro("kiro_multi_turn")
-        XCTAssertEqual(try prompt(client, session, "Respond with exactly: first fixture turn complete"), "end_turn")
+        XCTAssertEqual(try prompt(client, session, "Say only: the kettle is on"), "end_turn")
         let first = reply(events)
-        XCTAssertTrue(first.contains("first fixture turn complete"))
-        XCTAssertEqual(try prompt(client, session, "Respond with exactly: second fixture turn complete"), "end_turn")
-        XCTAssertTrue(reply(events).dropFirst(first.count).contains("second fixture turn complete"))
+        XCTAssertTrue(first.contains("the kettle is on"))
+        XCTAssertEqual(try prompt(client, session, "Say only: the tea is ready"), "end_turn")
+        XCTAssertTrue(reply(events).dropFirst(first.count).contains("the tea is ready"))
         finish(transport, stop: client.stop, exited: exited)
     }
 
@@ -244,11 +245,11 @@ final class ProviderReplayAgentsTests: XCTestCase {
         let (client, transport, events, exited, session) = try kiro("kiro_turn_interrupt")
         // Stop: `session/cancel` follows the prompt, and the prompt then ends as cancelled.
         let reason = try prompt(client, session,
-                                "Do not answer immediately. First run the local shell command `sleep 30`, then respond with exactly: interrupt fixture should not finish naturally.") {
+                                "Run `sleep 45` in the shell and wait for it, then say: the long wait is over") {
             client.notify("session/cancel", ["sessionId": session])
         }
         XCTAssertEqual(reason, "cancelled", "the workspace marks such a turn stopped")
-        XCTAssertFalse(reply(events).contains("should not finish naturally"))
+        XCTAssertFalse(reply(events).contains("the long wait is over"))
         let frames = transport.written.compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
         let cancel = try XCTUnwrap(frames.first { $0["method"] as? String == "session/cancel" })
         XCTAssertNil(cancel["id"], "a notification carries no id")
@@ -264,7 +265,7 @@ final class ProviderReplayAgentsTests: XCTestCase {
             XCTAssertFalse(AcpRPC.autoAllows(call, permission: .ask, mode: .agent))
             client.respond(rpcID, AcpRPC.permissionOutcome(options, allow: true, always: false))
         }
-        XCTAssertEqual(try prompt(client, session, "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP."),
+        XCTAssertEqual(try prompt(client, session, "Put the text `hello from the replay` in greeting.txt at the project root, then tell me in one line what changed."),
                        "end_turn")
         // The write itself, then Kiro's review of the changes.
         XCTAssertEqual(asked.all.map(\.title), ["Write File", "Review changes"])
@@ -277,10 +278,10 @@ final class ProviderReplayAgentsTests: XCTestCase {
         XCTAssertEqual(calls.first?.kind, "edit")
         let done = try XCTUnwrap(calls.last { $0.status == "completed" })
         // Kiro names the diff's file as a file:// URL; the edit row gets the path.
-        XCTAssertEqual(done.paths, ["<workspace>/.codex-probe-write-action.txt"])
-        XCTAssertEqual(done.diffs, [AcpDiff(path: "<workspace>/.codex-probe-write-action.txt", oldText: "", newText: "codex app-server approval fixture")])
-        XCTAssertEqual(done.editInput?.dictionary["file_path"] as? String, "<workspace>/.codex-probe-write-action.txt")
-        XCTAssertTrue(reply(events).contains("codex app-server approval fixture"))
+        XCTAssertEqual(done.paths, ["<workspace>/greeting.txt"])
+        XCTAssertEqual(done.diffs, [AcpDiff(path: "<workspace>/greeting.txt", oldText: "", newText: "hello from the replay")])
+        XCTAssertEqual(done.editInput?.dictionary["file_path"] as? String, "<workspace>/greeting.txt")
+        XCTAssertTrue(reply(events).contains("hello from the replay"))
         finish(transport, stop: client.stop, exited: exited)
     }
 
@@ -324,14 +325,14 @@ final class ProviderReplayAgentsTests: XCTestCase {
     }
 
     func testPiSimpleTurn() throws {
-        let events = try pi("pi_simple", prompt: "Respond with the following text: fixture simple ok")
+        let events = try pi("pi_simple", prompt: "Reply with just the words: lanterns are lit")
         guard case .session(let file, let model, let window)? = events.first(where: { if case .session = $0 { return true } else { return false } })
         else { return XCTFail("get_state tells the session") }
         XCTAssertNotNil(file)
         XCTAssertEqual(model, "openrouter/deepseek/deepseek-v4-flash")
         XCTAssertNotNil(window)
-        XCTAssertEqual(texts(events), ["fixture simple ok"])
-        XCTAssertTrue(events.contains { if case .thinking(let text) = $0 { return text.contains("fixture simple ok") } else { return false } })
+        XCTAssertEqual(texts(events), ["lanterns are lit"])
+        XCTAssertTrue(events.contains { if case .thinking(let text) = $0 { return text.contains("lanterns are lit") } else { return false } })
         let usage = events.compactMap { if case .usage(let usage) = $0 { return usage } else { return nil } }
         XCTAssertFalse(usage.isEmpty, "the turn's tokens are counted")
         XCTAssertEqual(events.last, .settled(aborted: false))
@@ -339,29 +340,29 @@ final class ProviderReplayAgentsTests: XCTestCase {
     }
 
     func testPiMultiTurnIsOneProcessPerTurn() throws {
-        let first = try pi("pi_multi_turn_1", prompt: "Respond with exactly: first fixture turn complete")
-        XCTAssertEqual(texts(first), ["first fixture turn complete"])
+        let first = try pi("pi_multi_turn_1", prompt: "Say only: the kettle is on")
+        XCTAssertEqual(texts(first), ["the kettle is on"])
         let file = try XCTUnwrap(sessionFile(first))
-        let second = try pi("pi_multi_turn_2", prompt: "Respond with exactly: second fixture turn complete", resume: file)
-        XCTAssertEqual(texts(second), ["second fixture turn complete"])
+        let second = try pi("pi_multi_turn_2", prompt: "Say only: the tea is ready", resume: file)
+        XCTAssertEqual(texts(second), ["the tea is ready"])
         XCTAssertEqual(sessionFile(second), file, "the same session goes on")
     }
 
     func testPiMessageSteering() throws {
-        let steer = "Actually, respond with exactly: steering fixture observed"
-        let events = try pi("pi_message_steering", prompt: "Respond with exactly: steering fixture initial response") { event, process in
+        let steer = "Change of plan, say only: plan B it is"
+        let events = try pi("pi_message_steering", prompt: "Say only: plan A stands") { event, process in
             // Your message while Pi works goes into its turn, as the workspace's `steer` sends it.
             if event == .started { process.send(PiRPC.prompt(steer, steer: true)) }
         }
         let mine = events.compactMap { if case .userMessage(let text) = $0 { return text } else { return nil } }
-        XCTAssertEqual(mine, ["Respond with exactly: steering fixture initial response", steer], "Pi took both messages in, in order")
-        XCTAssertEqual(texts(events).last, "steering fixture observed")
+        XCTAssertEqual(mine, ["Say only: plan A stands", steer], "Pi took both messages in, in order")
+        XCTAssertEqual(texts(events).last, "plan B it is")
         XCTAssertEqual(events.filter { $0 == .started }.count, 1, "one run, steered")
     }
 
     func testPiTurnInterrupt() throws {
         let events = try pi("pi_turn_interrupt",
-                            prompt: "Run this exact local command: `node -e \"console.log('interrupt fixture tool started'); setTimeout(() => {}, 30000)\"`. Do not answer until it completes, then respond exactly: interrupt fixture should not finish naturally.") { event, process in
+                            prompt: "Run `sleep 45` in the shell and wait for it, then say: the long wait is over") { event, process in
             // Stop while the command runs, as the workspace's Stop sends it (`PiRPCTurnDriver.interruptRequest`).
             if case .toolStarted = event { process.send(PiRPC.abort()) }
         }

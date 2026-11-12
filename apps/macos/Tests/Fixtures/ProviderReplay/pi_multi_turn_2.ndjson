@@ -1,0 +1,30 @@
+{"type":"transcript_start","provider":"pi","protocol":"pi.rpc-jsonl","scenario":"pi_multi_turn_2","source":"hand-written for Nook","model":"openrouter/deepseek/deepseek-v4-flash"}
+{"type":"expect_outbound","frame":{"type":"get_state","id":"nook-state"}}
+{"type":"emit_inbound","frame":{"id":"nook-state","type":"response","command":"get_state","success":true,"data":{"model":{"provider":"openrouter","id":"deepseek/deepseek-v4-flash","name":"DeepSeek V4 Flash","api":"openai-completions","reasoning":true,"input":["text"],"contextWindow":1048576,"maxTokens":131072},"thinkingLevel":"medium","isStreaming":false,"isCompacting":false,"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time","sessionFile":"/home/replay-user/.pi/sessions/2026-11-12_kettle.jsonl","sessionId":"0418fafc-e6d1-465d-9ef3-2cfe9b7dd138","autoCompactionEnabled":true,"messageCount":2,"pendingMessageCount":0}}}
+{"type":"expect_outbound","frame":{"type":"prompt","message":"Say only: the tea is ready"}}
+{"type":"emit_inbound","frame":{"type":"response","command":"prompt","success":true}}
+{"type":"emit_inbound","frame":{"type":"agent_start"}}
+{"type":"emit_inbound","frame":{"type":"turn_start"}}
+{"type":"emit_inbound","frame":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Say only: the tea is ready"}],"timestamp":1794474060040}}}
+{"type":"emit_inbound","frame":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Say only: the tea is ready"}],"timestamp":1794474060040}}}
+{"type":"emit_inbound","frame":{"type":"message_start","message":{"role":"assistant","content":[],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"total":0.0}},"stopReason":"pending","timestamp":1794474060080}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"Again"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" only"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" the"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" words"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" they"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" gave."}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"Again only the words they gave."}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":1}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"the"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" tea"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" is"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" ready"}}}
+{"type":"emit_inbound","frame":{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":1,"content":"the tea is ready"}}}
+{"type":"emit_inbound","frame":{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Again only the words they gave."},{"type":"text","text":"the tea is ready"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":30,"output":18,"cacheRead":1664,"cacheWrite":0,"totalTokens":1712,"cost":{"total":1.928e-05}},"stopReason":"stop","timestamp":1794474060080}}}
+{"type":"emit_inbound","frame":{"type":"turn_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Again only the words they gave."},{"type":"text","text":"the tea is ready"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":30,"output":18,"cacheRead":1664,"cacheWrite":0,"totalTokens":1712,"cost":{"total":1.928e-05}},"stopReason":"stop","timestamp":1794474060080},"toolResults":[]}}
+{"type":"emit_inbound","frame":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"Say only: the tea is ready"}],"timestamp":1794474060040},{"role":"assistant","content":[{"type":"thinking","thinking":"Again only the words they gave."},{"type":"text","text":"the tea is ready"}],"provider":"openrouter","model":"deepseek/deepseek-v4-flash","usage":{"input":30,"output":18,"cacheRead":1664,"cacheWrite":0,"totalTokens":1712,"cost":{"total":1.928e-05}},"stopReason":"stop","timestamp":1794474060080}]}}
+{"type":"emit_inbound","frame":{"type":"agent_settled"}}
+{"type":"expect_close"}
+{"type":"exit","status":0}
