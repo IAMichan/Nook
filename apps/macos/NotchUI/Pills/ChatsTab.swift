@@ -44,8 +44,10 @@ struct ChatsEntry: Identifiable, Equatable {
     var unread: Int { read.count }
     /// Read in Nook but still unread in the app itself: "Mark as read in <app>" can still pass it on.
     var waitsInApp: Bool { read == .readInNook }
-    /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
-    var showsReadMark: Bool { read.isUnread || (readKnown && !lastIsMine) }
+    /// Whether the row shows where the chat stands: what is new, or read in Nook but not yet in the app. Not while the
+    /// newest message is yours, and not for a chat read everywhere: nothing is left to do, and its two ticks looked like
+    /// the delivery ticks of your own message in front of the preview.
+    var showsReadMark: Bool { read.isUnread || (readKnown && !lastIsMine && waitsInApp) }
     /// The list it shows in: the status updates of an app's contacts (WhatsApp's status@broadcast) under the app's
     /// Status tab, the channels you follow (WhatsApp's newsletters) under its Channels tab, never between its chats. A
     /// mail app's automated mail (`ChatKind.channel` there too) stays with the mail: it is still mail in your inbox.
@@ -1468,7 +1470,7 @@ struct ChatsRow: View, Equatable {
                     .accessibilityHidden(true)
             }
         }
-        .hoverCard(suppressed: onActions) {
+        .hoverCard(suppressed: onActions, warm: true) {
             ChatsHoverCard(entry: entry)
         }
         // A row without a line under its name gets its newest message fetched.

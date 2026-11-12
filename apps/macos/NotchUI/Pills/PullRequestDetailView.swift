@@ -75,8 +75,6 @@ struct PullRequestDetailView: View {
     @State var showBlocker = false
     /// The popover on the base branch of a branch that is behind.
     @State var showBehind = false
-    /// The popover under the Summary's Status line: everything GitHub weighs before a merge, one line each.
-    @State var showReadiness = false
     /// The composer, the ⋯ menu's actions and their confirmation.
     @StateObject var actions: PullRequestActionState
     /// The timeline newest first, when chosen.

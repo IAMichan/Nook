@@ -130,17 +130,6 @@ private final class TooltipAnchorView: NSView {
     private var inside = false
     private weak var presenter: TooltipPresenter?
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        // `.inVisibleRect` follows the view and what of it a scroll view shows, so the area is never added again.
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self))
-    }
-
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func mouseEntered(with event: NSEvent) { setInside(true) }
@@ -153,6 +142,14 @@ private final class TooltipAnchorView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
+        // The area is what shows of this view itself (`shownBounds`), set again whenever the view moves or a scroll view
+        // shows another part of it. Not `.inVisibleRect`: that follows `visibleRect`, which reaches out to the nearest
+        // ancestor that clips, so a button in the sidebar's list heard the pointer anywhere in the list.
+        trackingAreas.forEach(removeTrackingArea)
+        let shown = shownBounds
+        if !shown.isEmpty {
+            addTrackingArea(NSTrackingArea(rect: shown, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+        }
         // The view moved (a list scrolled or changed) under a pointer that did not: see whether the pointer is still on
         // it. Only the one view under the pointer asks, so a scrolling list does no work per row.
         guard inside else { return }
@@ -171,14 +168,15 @@ private final class TooltipAnchorView: NSView {
     /// Where the visible part of this view is on screen, read only when a tip is about to show.
     var screenFrame: NSRect? {
         guard let window else { return nil }
-        let rect = visibleRect.isEmpty ? bounds : visibleRect
+        let shown = shownBounds
+        let rect = shown.isEmpty ? bounds : shown
         return window.convertToScreen(convert(rect, to: nil))
     }
 
     private func recheck() {
         guard inside else { return }
         guard let window else { return setInside(false) }
-        if !visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) { setInside(false) }
+        if !shownBounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) { setInside(false) }
     }
 
     private func setInside(_ value: Bool) {
@@ -193,6 +191,16 @@ private final class TooltipAnchorView: NSView {
             inside = false
             presenter?.exit(self)
         }
+    }
+}
+
+extension NSView {
+    /// What shows of this view itself: its bounds, less what an ancestor clips away. `visibleRect` alone is not that:
+    /// with AppKit's unclipped views (macOS 14 and later) it is the part of the nearest clipping ancestor (a scroll
+    /// view, the window) that this view could draw in, so a 22-point button in a list "showed" as the whole list.
+    var shownBounds: NSRect {
+        let shown = visibleRect.intersection(bounds)
+        return shown.isNull ? .zero : shown
     }
 }
 

@@ -29,7 +29,7 @@ enum ChatsView: String, CaseIterable, Identifiable {
 }
 
 /// Where a chat stands, as a small mark at the end of its row and in its read line: the count of what is new, one grey
-/// tick for read in Nook, two mint ticks for read in the app too. The same marks the sidebar's views and legend use.
+/// tick for read in Nook, two grey ticks for read in the app too. The same marks the sidebar's views and legend use.
 struct ChatReadMark: View {
     let state: ChatReadState
 
@@ -42,7 +42,7 @@ struct ChatReadMark: View {
                 .help(tr("chats.legend.readInNook"))
                 .accessibilityLabel(tr("chats.legend.readInNook"))
         case .read:
-            ChatTicks(count: 2, tint: NookTheme.mint)
+            ChatTicks(count: 2, tint: NookTheme.textSecondary)
                 .help(tr("chats.legend.read"))
                 .accessibilityLabel(tr("chats.legend.read"))
         }
@@ -99,7 +99,7 @@ struct ChatsSidebar: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(ChatsView.allCases) { item in
                         ChatsSidebarRow(title: item.title, count: item.counts ? counts[item] ?? 0 : 0,
-                                        countTint: item == .unread ? NookTheme.amber : NookTheme.textTertiary,
+                                        countTint: item == .unread ? NookTheme.paper : NookTheme.textTertiary,
                                         selected: view == item, compact: compact) {
                             ChatsViewGlyph(view: item)
                         } action: {
@@ -117,7 +117,7 @@ struct ChatsSidebar: View {
                         }
                         ForEach(apps, id: \.self) { id in
                             ChatsSidebarRow(title: MessagingApps.app(id: id)?.name ?? id, count: newByApp[id] ?? 0,
-                                            countTint: NookTheme.amber, selected: app == id, compact: compact) {
+                                            countTint: NookTheme.paper, selected: app == id, compact: compact) {
                                 SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 15,
                                          source: id)
                             } action: {
@@ -150,7 +150,7 @@ struct ChatsSidebar: View {
     @ViewBuilder
     private var accountRows: some View {
         ForEach(accounts, id: \.self) { name in
-            ChatsSidebarRow(title: name, count: newByAccount[name] ?? 0, countTint: NookTheme.amber,
+            ChatsSidebarRow(title: name, count: newByAccount[name] ?? 0, countTint: NookTheme.paper,
                             selected: account == name, compact: compact) {
                 if let path = accountPictures[name], let photo = pictures.image(path, chat: "account|" + name) {
                     Image(nsImage: photo)
@@ -187,9 +187,9 @@ struct ChatsSidebar: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             Group {
                 if state.isUnread {
-                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
+                    Circle().fill(NookTheme.paper).frame(width: 6, height: 6)
                 } else {
-                    ChatTicks(count: state == .read ? 2 : 1, tint: state == .read ? NookTheme.mint : NookTheme.textTertiary)
+                    ChatTicks(count: state == .read ? 2 : 1, tint: state == .read ? NookTheme.textSecondary : NookTheme.textTertiary)
                 }
             }
             .frame(width: 18)
@@ -211,11 +211,11 @@ private struct ChatsViewGlyph: View {
             Image(icon: "tray.full")
                 .font(NookTheme.font(11.5, .medium))
         case .unread:
-            Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
+            Circle().fill(NookTheme.paper).frame(width: 7, height: 7)
         case .readInNook:
             ChatTicks(count: 1, tint: NookTheme.textSecondary)
         case .read:
-            ChatTicks(count: 2, tint: NookTheme.mint)
+            ChatTicks(count: 2, tint: NookTheme.textSecondary)
         }
     }
 }
@@ -358,7 +358,7 @@ struct ChatReadLine: View {
 
 /// In an open chat's header, after the app's name: where a chat that is no longer new stands, kept as quiet as the
 /// rest of that line. Read in Nook it shows one tick and its word, and a click passes it on to the app (the "…" menu
-/// holds the same step); read everywhere it is just the two mint ticks.
+/// holds the same step); read everywhere it is just the two grey ticks.
 struct ChatReadStatus: View {
     let state: ChatReadState
     let appName: String
@@ -387,7 +387,7 @@ struct ChatReadStatus: View {
             .help("\(tr("chats.markReadInApp", appName)): \(explanation)")
             .accessibilityLabel(tr("chats.markReadInApp", appName))
         case .read:
-            ChatTicks(count: 2, tint: NookTheme.mint)
+            ChatTicks(count: 2, tint: NookTheme.textSecondary)
                 .help(tr("chats.status.read", appName))
                 .accessibilityLabel(tr("chats.status.read", appName))
         }
@@ -403,7 +403,7 @@ struct ChatReadStatus: View {
 }
 
 /// A step that moves a chat to another read state ("Read in Nook", "Mark as read in <app>", "Mark as unread"): an
-/// outlined capsule with the mark the chat gets (one tick, two mint ticks, the amber dot of something new) and its word,
+/// outlined capsule with the mark the chat gets (one tick, two grey ticks, the white dot of something new) and its word,
 /// so what a click does is plain before it is made. `compact` is the size a chat's row shows under the pointer.
 struct ChatMarkButton: View {
     /// Where the chat stands after the click.
@@ -447,12 +447,12 @@ struct ChatMarkButton: View {
         switch to {
         case .unread:
             Circle()
-                .fill(NookTheme.amber)
+                .fill(NookTheme.paper)
                 .frame(width: 7, height: 7)
         case .readInNook:
             ChatTicks(count: 1, tint: NookTheme.textSecondary)
         case .read:
-            ChatTicks(count: 2, tint: NookTheme.mint)
+            ChatTicks(count: 2, tint: NookTheme.textSecondary)
         }
     }
 }

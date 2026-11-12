@@ -516,3 +516,48 @@ extension PullRequestSearchBar where Middle == EmptyView {
         self.init(filter: filter, accounts: accounts, prompt: prompt, watching: watching, style: style) { EmptyView() }
     }
 }
+
+/// The chips over a pull request list that count what asks something of you (see `PullRequestAttention`): reviews asked
+/// of you, your own with failing checks, your own ready to merge. A click shows only those, a second click everything
+/// again. The counts follow the search and the other filters. A chip with nothing to count stays away unless it is on,
+/// and with none to show the line is gone, so a quiet day is a quiet list. The Pull requests page and the side panel's
+/// picker both use it, on the same `PullRequestFilterStore`.
+struct PullRequestAttentionBar: View {
+    @Binding var filter: PullRequestFilter
+    let accounts: [AccountPullRequests]
+
+    /// What each chip counts: the list as every other filter leaves it.
+    private var counts: [PullRequestAttention: Int] {
+        var others = filter
+        others.attention = nil
+        return PullRequestAttention.counts(in: others.apply(accounts))
+    }
+
+    var body: some View {
+        let counts = self.counts
+        let shown = PullRequestAttention.allCases.filter { (counts[$0] ?? 0) > 0 || filter.attention == $0 }
+        if !shown.isEmpty {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(shown) { attention in
+                    let on = filter.attention == attention
+                    NookFilterChip(title: tr("agents.pulls.attention." + attention.rawValue), count: counts[attention] ?? 0,
+                                   selected: on, mark: AnyView(Circle().fill(Self.tint(attention)).frame(width: 6, height: 6))) {
+                        withAnimation(NookTheme.hover) { filter.attention = on ? nil : attention }
+                    }
+                    .help(tr(on ? "agents.pulls.attention.showAll" : "agents.pulls.attention.showOnly"))
+                }
+                Spacer(minLength: 0)
+            }
+            .lineLimit(1)
+        }
+    }
+
+    /// The dot before a chip's name: amber for what waits on you, coral for what failed, mint for what can go.
+    static func tint(_ attention: PullRequestAttention) -> Color {
+        switch attention {
+        case .review: NookTheme.amber
+        case .failing: NookTheme.coral
+        case .ready: NookTheme.mint
+        }
+    }
+}

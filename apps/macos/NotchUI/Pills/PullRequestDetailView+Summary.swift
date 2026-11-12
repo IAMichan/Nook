@@ -14,11 +14,12 @@ extension PullRequestDetailView {
             PullRequestConversation.filtered(conversation, bots: showBotComments, finished: showFinishedComments))
         // Lazy for the pinned headings alone: each section's heading stays at the top while its section scrolls under it.
         return LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.lg, pinnedViews: .sectionHeaders) {
-            // A few quiet lines: where it stands, who reviews, which labels. The rest folds below.
+            // Where it stands, first and in full: the one thing to know before anything else on the page.
+            if let readiness = PullRequestReadiness(detail) {
+                readinessCard(readiness, detail: detail)
+            }
+            // A few quiet lines: who reviews, which labels. The rest folds below.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                if let readiness = PullRequestReadiness(detail) {
-                    metaRow(symbol: "checklist", title: tr("agents.pr.status.state")) { readinessLine(readiness, detail: detail) }
-                }
                 // Auto-merge belongs with the Status line: both say when it will merge.
                 if let auto = detail.autoMerge, detail.isOpen {
                     metaRow(symbol: "bolt", title: tr("agents.pr.status.autoMerge")) {
@@ -123,50 +124,52 @@ extension PullRequestDetailView {
 
     // MARK: Readiness
 
-    /// Where the pull request stands, first line of the Summary: the verdict ("Ready to merge", "Not ready yet", "Needs
-    /// changes") in its color and, when it is not ready, the one thing that matters most, in a single quiet line. A
-    /// click opens every line GitHub weighs, each with its mark; a line with something to look at or do takes you there:
-    /// the checks unfold, the reviews open the timeline, a branch behind updates.
-    func readinessLine(_ readiness: PullRequestReadiness, detail: PullRequestDetail) -> some View {
+    /// Where the pull request stands, at the top of the Summary: the verdict ("Ready to merge", "Not ready yet", "Needs
+    /// changes") in its color with what is already fine under it, a bar of the checks (passed, failed, still running),
+    /// and every line that still stands in the way, each saying why in plain words. A line with something to look at
+    /// or do takes you there: the checks unfold, the reviews open the timeline, a branch behind updates, a missing
+    /// review asks for one. The merge itself stays in the page's header, so there is one place to merge from.
+    func readinessCard(_ readiness: PullRequestReadiness, detail: PullRequestDetail) -> some View {
         let verdict = readinessVerdict(readiness)
-        // The most pressing line: something that blocks, else something to wait for.
-        let reason = readiness.items.first { $0.tone == .blocking } ?? readiness.items.first { $0.tone == .waiting }
-        return Button {
-            showReadiness.toggle()
-        } label: {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Image(icon: verdict.symbol).font(NookTheme.font(11, .semibold)).foregroundStyle(verdict.color)
-                Text(verdict.title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong).fixedSize()
-                if let reason {
-                    Text("· " + readinessText(reason))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Image(icon: "chevron.down").font(NookTheme.font(8, .bold)).foregroundStyle(NookTheme.textMuted)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.nookPlain)
-        .help(tr("agents.pr.status.state"))
-        .accessibilityLabel(verdict.title + (reason.map { ", " + readinessText($0) } ?? ""))
-        .popover(isPresented: $showReadiness, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: verdict.symbol).font(NookTheme.font(13, .semibold)).foregroundStyle(verdict.color)
+        let fine = readiness.items.filter { $0.tone == .good }.map(readinessText)
+        // What is left, the lines in the way first, then what waits, then what has nothing to say either way.
+        let rank: (PullRequestReadiness.Tone) -> Int = { [.blocking: 0, .waiting: 1, .neutral: 2][$0] ?? 3 }
+        let open = readiness.items.filter { $0.tone != .good }.sorted { rank($0.tone) < rank($1.tone) }
+        let counts = detail.checkCounts
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+                Image(icon: verdict.symbol)
+                    .font(NookTheme.font(15, .semibold))
+                    .foregroundStyle(verdict.color)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(verdict.title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                    if !fine.isEmpty {
+                        Text(fine.joined(separator: " · "))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .padding(.horizontal, NookTheme.Spacing.lg)
-                .padding(.vertical, NookTheme.Spacing.md)
-                NookDivider()
-                ForEach(Array(readiness.items.enumerated()), id: \.offset) { _, item in
-                    readinessRow(item, detail: detail)
-                }
+                Spacer(minLength: 0)
             }
-            .padding(.bottom, NookTheme.Spacing.xs)
-            .frame(width: 360, alignment: .leading)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(tr("agents.pr.status.state") + ": " + ([verdict.title] + fine).joined(separator: ", "))
+            if !detail.checks.isEmpty {
+                PullRequestChecksBar(passing: counts.passing, failing: counts.failing, pending: counts.pending,
+                                     skipped: counts.skipped)
+            }
+            ForEach(Array(open.enumerated()), id: \.offset) { index, item in
+                if index > 0 || detail.checks.isEmpty { NookDivider() }
+                readinessRow(item, detail: detail)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(NookTheme.field, stroke: NookTheme.border, radius: NookTheme.Radius.card)
+        .roundedClip(NookTheme.Radius.card)
     }
 
     func readinessVerdict(_ readiness: PullRequestReadiness) -> (symbol: String, color: Color, title: String) {
@@ -197,10 +200,7 @@ extension PullRequestDetailView {
             }
         }
         if let action = readinessAction(item, detail: detail) {
-            PullRequestHoverRow(action: {
-                showReadiness = false
-                action()
-            }) { line }
+            PullRequestHoverRow(action: action) { line }
         } else {
             line
                 .padding(.horizontal, NookTheme.Spacing.lg)

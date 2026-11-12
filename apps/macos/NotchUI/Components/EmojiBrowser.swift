@@ -123,7 +123,7 @@ private struct EmojiCell: View {
             Text(emoji.character)
                 .font(NookTheme.font(22))
                 .frame(width: 32, height: 32)
-                .roundedBackground(chosen ? NookTheme.mint.opacity(0.2) : (hovering ? NookTheme.smoke : Color.clear),
+                .roundedBackground(chosen ? NookTheme.wash.opacity(0.16) : (hovering ? NookTheme.smoke : Color.clear),
                                    radius: NookTheme.Radius.control)
                 .contentShape(Rectangle())
         }

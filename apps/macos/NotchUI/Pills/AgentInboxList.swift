@@ -1105,10 +1105,12 @@ private struct ProjectHeaderRow: View {
                     // Shown while the pointer is on the folder, over the count (which steps aside), as in t3code.
                     ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name),
                                       height: Self.newSessionWidth, width: Self.newSessionWidth) { newSession() }
-                    // On the count's slot in `foldButton`, just before the chevron.
+                    // On the count's slot in `foldButton`, just before the chevron. Only under the pointer, as a row's own
+                    // actions: a pencil on every project header made the list read as a toolbar.
                     .padding(.trailing, Self.chevronWidth + 2 * Self.gap)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
+                    .animation(NookTheme.hover, value: hovering)
                 }
             }
             .contextMenu {

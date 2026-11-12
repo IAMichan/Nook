@@ -24,7 +24,7 @@ struct AgentLogo: View {
         let name = agent.lowercased()
         if name.contains("antigravity") { return .antigravity }
         if let brand = BrandLogo.forName(name) { return .brand(brand) }
-        let palette = [NookTheme.iris, NookTheme.mint, NookTheme.amber, NookTheme.coral, NookTheme.blue]
+        let palette = [NookTheme.textStrong]
         let index = abs(agent.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }) % palette.count
         return .letter(String(agent.prefix(1)).uppercased(), palette[index])
     }
@@ -55,7 +55,7 @@ struct AgentLogo: View {
             BrandMark(logo: logo, size: size)
         case .antigravity:
             NookTheme.shape(corner)
-                .fill(Color(hex: 0x17171B))
+                .fill(Color(hex: 0x171717))
                 .roundedStroke(NookTheme.line2, radius: corner, lineWidth: 0.5)
                 .overlay(
                     ArchGlyph()
@@ -174,9 +174,8 @@ struct AccountTag: Hashable {
         if let accent { return Color(hex: accent) }
         if letters != nil { return NookTheme.smoke }
         switch role {
-        case .personal: return Color(hex: 0x3A3A42)
-        case .work: return Color(hex: 0x3D58D6)
-        case .apiKey: return Color(hex: 0x9A6F1C)
+        // One neutral card for every role: the symbol tells them apart, a hue would read as a status.
+        case .personal, .work, .apiKey: return Color(hex: 0x3A3A3A)
         }
     }
 

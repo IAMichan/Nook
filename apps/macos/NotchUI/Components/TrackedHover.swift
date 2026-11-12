@@ -33,8 +33,12 @@ private struct TrackedHoverArea: NSViewRepresentable {
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             trackingAreas.forEach(removeTrackingArea)
-            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                           owner: self))
+            // Only what shows of this view (`shownBounds`); `.inVisibleRect` would reach out to the nearest clipping
+            // ancestor.
+            let shown = shownBounds
+            if !shown.isEmpty {
+                addTrackingArea(NSTrackingArea(rect: shown, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+            }
             // The view moved (a tab scrolled, closed or opened) under a pointer that did not: ask where the pointer is.
             DispatchQueue.main.async { [weak self] in self?.sync() }
         }
@@ -49,7 +53,7 @@ private struct TrackedHoverArea: NSViewRepresentable {
 
         private func sync() {
             guard let window else { return report(false) }
-            report(visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
+            report(shownBounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
         }
 
         private func report(_ value: Bool) {

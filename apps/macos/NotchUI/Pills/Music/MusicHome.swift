@@ -448,9 +448,7 @@ private struct MusicSurpriseCard: View {
         .background {
             shape
                 .fill(NookTheme.surface)
-                .overlay(LinearGradient(colors: [NookTheme.violet.opacity(0.16), NookTheme.music.opacity(0.1), .clear],
-                                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                .clipShape(shape)
+                .overlay(shape.strokeBorder(NookTheme.border))
         }
     }
 

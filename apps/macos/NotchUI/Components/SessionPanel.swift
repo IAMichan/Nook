@@ -158,7 +158,8 @@ struct SessionPanel: View {
     private static let shownPullRequests = 5
 
     /// The rows that can be turned off, in the order they show.
-    private static let optionalRows = ["machine", "openIn", "scripts", "branch", "commit", "changes", "pullRequests"]
+    /// "usage" is the card under the panel (`SessionUsageCard`).
+    private static let optionalRows = ["machine", "openIn", "scripts", "branch", "commit", "changes", "pullRequests", SessionUsageCard.row]
 
     private var hiddenRows: Set<String> { Set(hiddenRaw.split(separator: ",").map(String.init)) }
 
@@ -329,7 +330,8 @@ struct SessionPanel: View {
 
     private var openInRow: some View {
         let target = targets.first { $0.id == openInID } ?? targets.first
-        return PanelRow(icon: target.map { AnyView($0.icon) } ?? symbol("folder"),
+        // A grey symbol like every other row; the app icons stay in the menu, where they help you pick.
+        return PanelRow(icon: symbol(target?.id == "com.apple.finder" || target == nil ? "folder" : "arrow.up.forward.app"),
                         title: tr("agents.panel.openIn", target?.name ?? "Finder"),
                         disabledReason: FileManager.default.fileExists(atPath: directory) ? nil : tr("ws.inspector.worktreeRemoved"),
                         action: { if let target { open(target) } },

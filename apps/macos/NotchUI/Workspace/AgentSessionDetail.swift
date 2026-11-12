@@ -111,7 +111,7 @@ struct AgentSessionDetail: View {
     // MARK: Header
 
     /// "nook / Agents-pagina rustiger maken" (click the folder for a new session in it) with the branch button on the right.
-    private func header(folder: String, title: String, directory: String, agentWorking: Bool) -> some View {
+    private func header(folder: String, title: String, directory: String, agentWorking: Bool, usage: SessionUsageSource) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
             // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
             // pushing the header past the conversation.
@@ -123,8 +123,12 @@ struct AgentSessionDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            if !app.demoMode, directory.isEmpty {
+                // No folder, so no branch button: the ring alone opens the session's usage.
+                SessionUsageButton(source: usage).toolbarGroup()
+            }
             if !app.demoMode, !directory.isEmpty {
-                FolderGitButton(directory: directory, agentWorking: agentWorking) {
+                FolderGitButton(directory: directory, agentWorking: agentWorking, usage: usage) {
                     // Next to the conversation when it has the side panel, otherwise as a task of its own.
                     if headerAccessory != nil {
                         app.viewModel.sessionTool = .changes
@@ -179,7 +183,8 @@ struct AgentSessionDetail: View {
         let shown = withTranscript(session, past)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(folder: session.project, title: title(for: session, known: past), directory: session.cwd,
-                   agentWorking: session.status == .running || session.status == .waiting || session.compactingSince != nil)
+                   agentWorking: session.status == .running || session.status == .waiting || session.compactingSince != nil,
+                   usage: SessionUsageSource(profileID: app.profile(for: session)?.id))
 
             if shown.transcriptPath.isEmpty && !session.steps.isEmpty {
                 steps(session)
@@ -383,9 +388,9 @@ struct AgentSessionDetail: View {
                 agentMenu(name: session.name, kind: AgentKind(agentName: session.name), profile: app.profile(for: session),
                           canSwitch: canTakeOver)
                 if canTakeOver { turnControls(kind: AgentKind(agentName: session.name)) }
-                ComposerUsageRing.forAccount(app.profile(for: session), app: app)
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
+            .trailing { ComposerUsageAlert(source: SessionUsageSource(profileID: app.profile(for: session)?.id)) }
             .images($composerState.images)
             .dictating()
         }
@@ -634,7 +639,8 @@ struct AgentSessionDetail: View {
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(folder: session.project, title: AgentFormat.title(session.title), directory: session.cwd, agentWorking: false)
+            header(folder: session.project, title: AgentFormat.title(session.title), directory: session.cwd, agentWorking: false,
+                   usage: SessionUsageSource(profileID: app.profile(for: session)?.id))
 
             // The whole conversation, with the agent's thinking, read from its transcript.
             TranscriptConversation(
@@ -674,9 +680,9 @@ struct AgentSessionDetail: View {
                         agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
                                   canSwitch: app.canContinueInNook(session))
                         if app.canContinueInNook(session) { turnControls(kind: session.agent) }
-                        ComposerUsageRing.forAccount(app.profile(for: session), app: app)
                     }
                     .rich(composerModel, composerConfig(folder: session.cwd))
+                    .trailing { ComposerUsageAlert(source: SessionUsageSource(profileID: app.profile(for: session)?.id)) }
                     .images($composerState.images)
                     .dictating()
                 }

@@ -16,7 +16,7 @@ runs:
       run: | # zizmor: ignore[github-env]
         set -euo pipefail
         dir="$RUNNER_TEMP/xcodegen-$VERSION"
-        curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" \
+        curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/xcodegen.zip" \
           "https://github.com/yonaskolb/XcodeGen/releases/download/$VERSION/xcodegen.zip"
         echo "$SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
         mkdir -p "$dir"

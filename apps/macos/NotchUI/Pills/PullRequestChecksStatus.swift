@@ -148,3 +148,34 @@ struct PullRequestEditableLine<Content: View>: View {
         .onHover { hovering = $0 }
     }
 }
+
+/// A pull request's checks as one thin bar along the edge of the Summary's readiness card: passed in mint, failed in
+/// coral, still running in amber and skipped in grey, each as wide as its share. Seen at a glance, read in the lines
+/// beside it, so VoiceOver skips it.
+struct PullRequestChecksBar: View {
+    let passing: Int
+    let failing: Int
+    let pending: Int
+    let skipped: Int
+
+    var body: some View {
+        let parts: [(count: Int, color: Color)] = [(passing, NookTheme.mint), (failing, NookTheme.coral),
+                                                   (pending, NookTheme.amber), (skipped, NookTheme.line2)]
+        let total = max(1, parts.reduce(0) { $0 + $1.count })
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    if part.count > 0 {
+                        Rectangle()
+                            .fill(part.color)
+                            .frame(width: geometry.size.width * CGFloat(part.count) / CGFloat(total))
+                    }
+                }
+            }
+        }
+        .frame(height: 3)
+        .background(NookTheme.smoke)
+        .animation(NookTheme.reveal, value: [passing, failing, pending, skipped])
+        .accessibilityHidden(true)
+    }
+}

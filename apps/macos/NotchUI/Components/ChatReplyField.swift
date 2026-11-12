@@ -1254,7 +1254,7 @@ private struct ReplyingBar: View {
     let quote: BubbleQuote
     let cancel: () -> Void
 
-    private var tint: Color { quote.mine ? NookTheme.mint : NookTheme.blue }
+    private var tint: Color { quote.mine ? NookTheme.textStrong : NookTheme.textSecondary }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.md) {

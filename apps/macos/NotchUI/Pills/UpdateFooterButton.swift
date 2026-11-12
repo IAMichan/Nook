@@ -24,27 +24,27 @@ struct UpdateFooterButton<Idle: View>: View {
         switch updater.phase {
         case .available:
             if let release = updater.releaseUpdate {
-                return Look(id: "available", symbol: "arrow.down.circle.fill", label: tr("update.button"), tint: NookTheme.mint,
+                return Look(id: "available", symbol: "arrow.down.circle.fill", label: tr("update.button"), tint: NookTheme.paper,
                             help: tr("update.release.button.help", release.version.description))
             }
             guard let update = updater.available else { return nil }
-            return Look(id: "available", symbol: "arrow.down.circle.fill", label: tr("update.button"), tint: NookTheme.mint,
+            return Look(id: "available", symbol: "arrow.down.circle.fill", label: tr("update.button"), tint: NookTheme.paper,
                         help: tr("update.button.help", update.count), count: update.count)
         case .installing(let step):
             return Look(id: "installing", symbol: nil, label: tr("update.button.installing"), tint: NookTheme.iris,
                         help: UpdateText.step(step), busy: true)
         case .readyToRestart:
             return Look(id: "restart", symbol: "arrow.clockwise.circle.fill", label: tr("update.button.restart"),
-                        tint: NookTheme.mint, help: tr("update.ready.title"))
+                        tint: NookTheme.paper, help: tr("update.ready.title"))
         case .readyToBuildInXcode:
-            return Look(id: "xcode", symbol: "hammer.circle.fill", label: tr("update.button.xcode"), tint: NookTheme.mint,
+            return Look(id: "xcode", symbol: "hammer.circle.fill", label: tr("update.button.xcode"), tint: NookTheme.paper,
                         help: tr("update.xcode.title"))
         case .failed:
             return Look(id: "failed", symbol: "exclamationmark.triangle.fill", label: tr("update.button.failed"),
                         tint: NookTheme.coral, help: tr("update.failed.title"))
         case .unavailable, .idle, .checking, .upToDate:
             guard updater.receipt != nil else { return nil }
-            return Look(id: "updated", symbol: "checkmark.circle.fill", label: tr("update.button.updated"), tint: NookTheme.mint,
+            return Look(id: "updated", symbol: "checkmark.circle.fill", label: tr("update.button.updated"), tint: NookTheme.paper,
                         help: tr("update.updated.title"))
         }
     }
