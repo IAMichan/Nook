@@ -66,8 +66,8 @@ extension IsolationMode {
 extension GitChangeKind {
     var color: Color {
         switch self {
-        case .added, .untracked: return NookTheme.mint
-        case .deleted: return NookTheme.coral
+        case .added, .untracked: return NookTheme.diffAdded
+        case .deleted: return NookTheme.diffRemoved
         case .conflicted: return NookTheme.amber
         case .modified, .typeChanged: return NookTheme.iris
         case .renamed, .copied: return NookTheme.blue
@@ -407,8 +407,8 @@ struct DiffText: View, Equatable {
 
     private func accent(_ kind: UnifiedDiff.Kind) -> Color? {
         switch kind {
-        case .add: return NookTheme.mint
-        case .remove: return NookTheme.coral
+        case .add: return NookTheme.diffAdded
+        case .remove: return NookTheme.diffRemoved
         default: return nil
         }
     }

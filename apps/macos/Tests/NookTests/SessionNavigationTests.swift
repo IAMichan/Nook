@@ -133,6 +133,42 @@ final class SessionNavigationTests: XCTestCase {
         XCTAssertEqual(PaletteRanking.sessions(candidates, query: PaletteQuery("nope"), usage: SessionUsage()), [])
     }
 
+    func testThePickForAQueryComesFirstForThreeWeeks() {
+        let now = Date(timeIntervalSince1970: 5_000_000)
+        var usage = SessionUsage()
+        for _ in 0..<5 { usage.record("busy", at: now.addingTimeInterval(-60)) }
+        let candidates = [
+            PaletteRanking.Candidate(id: "busy", title: "Auth fix", detail: "", updated: now),
+            PaletteRanking.Candidate(id: "quiet", title: "Login flow", detail: "auth", updated: now.addingTimeInterval(-900)),
+        ]
+        var picks = PalettePicks()
+        picks.record("quiet", for: PaletteQuery("Auth"), at: now.addingTimeInterval(-86_400))
+
+        let ranked = PaletteRanking.sessions(candidates, query: PaletteQuery("  áuth "), usage: usage, picks: picks, now: now)
+        XCTAssertEqual(ranked.map(\.id), ["quiet", "busy"], "the same words, without case or accents, put the pick first")
+        XCTAssertEqual(PaletteRanking.sessions(candidates, query: PaletteQuery("au"), usage: usage, picks: picks, now: now).first?.id,
+                       "busy", "other words keep the usual order")
+        let later = now.addingTimeInterval(PalettePicks.lifetime)
+        XCTAssertNil(picks.pick(for: PaletteQuery("auth"), now: later), "a pick counts for three weeks")
+        picks.record("busy", for: PaletteQuery("login"), at: now)
+        XCTAssertEqual(PaletteRanking.sessions(candidates, query: PaletteQuery("login"), usage: usage, picks: picks, now: now).map(\.id),
+                       ["quiet"], "a pick never brings back a session that does not match")
+    }
+
+    func testPicksIgnoreTheEmptyQueryAndStayBounded() {
+        let now = Date(timeIntervalSince1970: 5_000_000)
+        var picks = PalettePicks()
+        picks.record("a", for: PaletteQuery("   "), at: now)
+        XCTAssertTrue(picks.picks.isEmpty)
+        for index in 0..<(PalettePicks.limit + 10) {
+            picks.record("s\(index)", for: PaletteQuery("q\(index)"), at: now.addingTimeInterval(Double(index)))
+        }
+        XCTAssertEqual(picks.picks.count, PalettePicks.limit)
+        XCTAssertNil(picks.pick(for: PaletteQuery("q0"), now: now), "the oldest picks fall away first")
+        picks.record("x", for: PaletteQuery("new"), at: now.addingTimeInterval(PalettePicks.lifetime + 1_000))
+        XCTAssertEqual(picks.picks.count, 1, "expired picks are dropped when a new one is kept")
+    }
+
     // MARK: Small pieces
 
     func testReferenceTextNamesFolderAndBranch() {

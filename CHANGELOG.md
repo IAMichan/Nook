@@ -11,6 +11,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
+  the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
+  holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.
+
 - Double Tap suggests what Nook can do with what is in front of you: under its field, one-click chips such as
   **Improve this**, **Translate this into English** and **Explain the selected text** for a selection, **Write a
   reply** for an empty message box, **Fill in the form** for a form with empty fields, and **Put this in my calendar**
@@ -78,6 +82,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- Merging a GitHub pull request in a repository whose ruleset only allows squash (or rebase) no longer fails with
+  "Merge commits are not allowed on this repository": Nook now reads the merge methods the base branch's rulesets
+  allow and picks one of those, on macOS and in the Windows, Linux and Android app.
 - Chats list rows now follow their chat: a chat that moved to another group no longer keeps its old line and time, and
   shows as selected.
 - Writing in an old chat no longer marks all its messages unread, in every chat app.

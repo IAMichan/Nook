@@ -95,10 +95,11 @@ struct AgentCommandPalette: View {
             PaletteRanking.Candidate(id: item.id, title: item.title, detail: Self.detail(item), updated: item.started ?? .distantPast)
         }
         let ranked = PaletteRanking.sessions(candidates, query: parsed, usage: SessionHistory.shared.usage,
-                                             limit: parsed.isEmpty ? 6 : 12)
+                                             picks: SessionHistory.shared.picks, limit: parsed.isEmpty ? 6 : 12)
         return ranked.map { candidate in
             Entry(id: candidate.id, group: .recent, symbol: "bubble.left.and.text.bubble.right", title: candidate.title,
                   detail: candidate.detail, dragSession: Self.runID(candidate.id)) {
+                SessionHistory.shared.picked(candidate.id, for: parsed)
                 viewModel.selectedAgentID = candidate.id
                 return false
             }

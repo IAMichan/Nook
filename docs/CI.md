@@ -10,12 +10,14 @@ reusable workflow that can also be started on its own with *Run workflow*.
 
 | Workflow | Runs on | When (`scripts/ci-changes.sh`) |
 |---|---|---|
-| `ci.yml` | ubuntu, then the areas below; ends with the `Check` job | every push to `main` and every ready pull request |
+| `ci.yml` | ubuntu, then the areas below; ends with the `Check` job | every push to `main`, every ready pull request, and every area once a week (Monday) on `main` |
 | `build.yml` | ubuntu (UI and performance lint), then macOS (build + `NookTests`) | `apps/macos`, `packages/protocol`, `scripts/ui-lint.sh`, `scripts/perf-lint.sh` |
 | `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol` |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
+| `chatd.yml` | ubuntu | `apps/chatd`: `gofmt`, `go vet` and `go test` of the chat helper; the tests link a libsignal built once per pinned commit and cached |
+| `core-tests.yml` | ubuntu | `apps/macos`: `scripts/core-tests.sh`, the portable part of `NookTests`, so it keeps working for contributors without a Mac |
 | `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`, `.github/dependabot.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments) |
 | `ci.yml` → *Workflow scripts* | ubuntu, seconds | `.github/scripts`: `node --test` for the scripts below |
 | `ci.yml` → *Markdown links* | ubuntu, seconds | any `*.md`: [lychee](https://lychee.cli.rs) checks relative links and `#anchors` offline |
@@ -31,6 +33,9 @@ reusable workflow that can also be started on its own with *Run workflow*.
 | `welcome.yml` | ubuntu, seconds | welcomes someone on their first issue or pull request with what happens next (`.github/scripts/welcome.cjs`) |
 | `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later; locks issues and pull requests closed for 30 days (`keep open` exempts all of it) |
 | `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
+| `scorecard.yml` | ubuntu, weekly, when the branch rules or workflows change | [OpenSSF Scorecard](https://scorecard.dev): rates the supply-chain practices; results in the Security tab and behind the README badge |
+| `release.yml` | macOS, then ubuntu and Windows | by hand or on a `v*` tag: publishes the macOS release, then attaches the Windows and Linux installers built by `tauri.yml` |
+| CodeQL (default setup, in the repository settings) | ubuntu | code scanning of the workflows, JavaScript/TypeScript and Go on pull requests and `main`; Swift is left out because it needs a macOS runner, and Rust because the default setup API does not offer it yet |
 
 An area also runs when its own workflow file changes (and `.github/actions/**` for the ones that use it); a change to
 `ci.yml` or `scripts/ci-changes.sh` runs every area.
@@ -39,8 +44,8 @@ An area also runs when its own workflow file changes (and `.github/actions/**` f
 
 `Check`, the last job of `ci.yml`, passes only when every job in the run passed, or was skipped because `Changes` said
 its area was not needed. It fails when a job failed or was cancelled, and when detection itself failed (detection
-fails open: if the diff cannot be read, every area runs). This is the one status check the `main` ruleset requires, so a
-red pull request cannot be merged by accident, however many come in, and adding or splitting jobs needs no ruleset
+fails open: if the diff cannot be read, every area runs). This is the one status check the *Require Check* ruleset asks for on `main` (see Merging), so a
+red pull request cannot be merged, by accident or by an admin, however many come in, and adding or splitting jobs needs no ruleset
 change: add the new job to `needs` of `Check` (and to `scripts/ci-changes.sh` when it can be skipped).
 
 `ci.yml` also runs *Committed files* on every pull request (`scripts/pr-files-check.sh`): it fails on build logs,
@@ -61,6 +66,11 @@ the issue has an area and a kind. Ideas and questions go to Discussions (`.githu
 
 ## Merging
 
+`main` has two rulesets. *Protect main* asks for a pull request with one approval; repository admins may bypass it, so
+a maintainer can merge their own pull request. *Require Check* asks for the `Check` status and nobody can bypass it, so
+nothing lands on `main` while `Check` is red or still running, not even from an admin. Merge with auto-merge
+(`gh pr merge --auto`) and it lands by itself once `Check` is green.
+
 Auto-merge and the *Update branch* button are on: a pull request with auto-merge enabled merges by itself once `Check`
 is green and it has an approval. `ci.yml` already runs on `merge_group`, so a merge queue can be turned on in the
 `main` ruleset when many pull requests land at the same time; until then it costs nothing.
@@ -78,7 +88,8 @@ is green and it has an approval. `ci.yml` already runs on `merge_group`, so a me
   from. When a run of this repository already passed on exactly that hash, the macOS job is skipped and the summary
   links that run. This catches the push to `main` after merging a pull request that was green on an up-to-date base,
   and a pull request that merged in unrelated changes from `main`. `verified-mark` uploads the small marker artifact
-  (kept 30 days) at the end of a passing job. Markers from forks never count, and *Run workflow* always builds.
+  (kept 30 days) at the end of a passing job. Markers from forks never count, and *Run workflow* and the weekly
+  scheduled run always build: they are there to catch a new runner image, Xcode or toolchain, which no diff shows.
 - **Caches.** `build.yml` caches the Swift packages' checkouts and build products (MLX, FluidAudio, llama.cpp, …) per
   Xcode build and `project.yml`; Nook's own sources always rebuild. The Tauri jobs cache Rust with `rust-cache` and npm
   with `setup-node`. Only `main` saves caches, so pull requests cannot push each other's entries out of the quota.

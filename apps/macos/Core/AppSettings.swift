@@ -345,6 +345,13 @@ final class AppSettings: ObservableObject {
             if NookTheme.apply(density: density) { themeRevision = NookTheme.revision }
         }
     }
+    /// The colors of added and removed lines: green and red, or blue and orange for red-green color blindness.
+    @Published var diffColors: NookDiffColors {
+        didSet {
+            UserDefaults.standard.set(diffColors.rawValue, forKey: "diffColors")
+            if NookTheme.apply(diffColors: diffColors) { themeRevision = NookTheme.revision }
+        }
+    }
     /// VS Code color themes the user imported, kept as their JSON (`NookCustomTheme`).
     @Published var customThemes: [NookCustomTheme] {
         didSet {
@@ -753,6 +760,9 @@ final class AppSettings: ObservableObject {
         let storedDensity = NookDensity(rawValue: defaults.string(forKey: "density") ?? "") ?? .comfortable
         density = storedDensity
         NookTheme.density = storedDensity
+        let storedDiffColors = NookDiffColors(rawValue: defaults.string(forKey: "diffColors") ?? "") ?? .redGreen
+        diffColors = storedDiffColors
+        NookTheme.diffColors = storedDiffColors
         darkThemeID = defaults.string(forKey: "darkThemeID") ?? NookColorTheme.nook.id
         lightThemeID = defaults.string(forKey: "lightThemeID") ?? NookColorTheme.nook.id
         let storedThemes = (defaults.data(forKey: "customThemes")).flatMap { try? JSONDecoder().decode([NookCustomTheme].self, from: $0) } ?? []

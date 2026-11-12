@@ -108,8 +108,8 @@ struct EditLinesLabel: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Text("+\(lines.added)").foregroundStyle(NookTheme.mint.opacity(0.85))
-            Text("−\(lines.removed)").foregroundStyle(NookTheme.coral.opacity(0.85))
+            Text("+\(lines.added)").foregroundStyle(NookTheme.diffAdded.opacity(0.85))
+            Text("−\(lines.removed)").foregroundStyle(NookTheme.diffRemoved.opacity(0.85))
         }
         .font(NookTheme.mono(size))
         .monospacedDigit()

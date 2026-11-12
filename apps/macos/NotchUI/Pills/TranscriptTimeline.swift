@@ -247,11 +247,18 @@ struct TranscriptConversation: View {
                 }
                 // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
                 .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
-                    (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
-                        .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty && !finding) {
-                            scroll.jumpedToEnd()
-                            withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    VStack(spacing: NookTheme.Spacing.lg) {
+                        // The agent's task list, as above a session Nook runs itself: the phase it works on now.
+                        if bottomBar != nil, let tasks = derived.tasks,
+                           working || !RunTasks.isFinished(tasks), TaskChecklist.showsAboveComposer(tasks) {
+                            TasksStrip(steps: tasks, working: working).chatColumn()
                         }
+                        (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
+                    }
+                    .toEndPill(scroll.showsToEndPill(atEnd: atEnd) && !shown.isEmpty && !finding) {
+                        scroll.jumpedToEnd()
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in
@@ -660,6 +667,8 @@ private final class TranscriptDerived {
     private(set) var marks: [PromptMark] = []
     /// The last pull request the conversation links (`gh pr create` printed it, or the agent wrote it).
     private(set) var pullRequest: URL?
+    /// The agent's latest task list (`TranscriptPresentation.tasks`), for the strip above the composer.
+    private(set) var tasks: [RunTaskStep]?
     /// The tests and builds each fold holds, by the fold's row id: reading every command again on each redraw of the
     /// timeline cost more than the rest of the row.
     private(set) var foldChecks: [String: [VerificationCheck]] = [:]
@@ -700,6 +709,7 @@ private final class TranscriptDerived {
             turns = known.turns
             marks = known.marks
             pullRequest = known.pullRequest
+            tasks = known.tasks
             foldChecks = known.foldChecks
             answerable = known.answerable
             rowCards = known.rowCards
@@ -713,6 +723,7 @@ private final class TranscriptDerived {
         turns = TurnDiff.collect(messages)
         marks = TranscriptPresentation.promptMarks(rows)
         pullRequest = RunPullRequestLinks.last(in: messages)
+        tasks = TranscriptPresentation.tasks(messages)
         foldChecks = [:]
         for row in rows {
             switch row {

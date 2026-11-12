@@ -25,6 +25,9 @@ struct EnergySignals: Equatable {
     var hot = false
     /// Every core has more than enough to do (a build, an export).
     var busy = false
+    /// The Mac is short on memory: macOS warns, or it keeps reading memory back from swap (see `isMemoryTight`). Then every
+    /// app waits for the disk, and anything Nook loads on top (a model, a capture) makes it worse.
+    var memoryTight = false
     /// Running on the battery.
     var onBattery = false
     /// Running on the battery and it is nearly empty (see `isLowBattery`). Only this, not the charge itself: the charge
@@ -46,6 +49,17 @@ struct EnergySignals: Equatable {
     /// After this long without input you count as away: nothing on screen is being looked at.
     static let awayAfter: TimeInterval = 300
 
+    /// Pages per second read back from swap above which the Mac counts as short on memory. Some swapping in is normal; this
+    /// many, kept up over a whole reading, is the Mac waiting for its disk: what you feel as a beach ball everywhere. macOS's
+    /// own pressure level can still say "normal" then, with the swap nearly full.
+    static let swapinsPerSecondTight: Double = 256
+
+    /// Whether memory counts as tight: macOS's pressure level (`kern.memorystatus_vm_pressure_level`: 1 normal, 2 warning,
+    /// 4 critical) is at warning or worse, or pages come back from swap at `swapinsPerSecondTight` or faster.
+    static func isMemoryTight(pressureLevel: Int32, swapinsPerSecond: Double?) -> Bool {
+        pressureLevel >= 2 || (swapinsPerSecond ?? 0) >= swapinsPerSecondTight
+    }
+
     /// At or below this charge on battery, the battery counts as low: macOS warns at the same point.
     static let lowBatteryAt = 20
     /// The charge the battery has to climb back above before it no longer counts as low, so a battery that hovers around
@@ -61,7 +75,7 @@ struct EnergySignals: Equatable {
 
 /// Why Nook does less than usual right now, in the order the status line names them.
 enum EnergyReason: String, CaseIterable, Equatable {
-    case displayAsleep, locked, hot, lowBattery, lowPowerMode, busy, away, battery, saver
+    case displayAsleep, locked, hot, memory, lowBattery, lowPowerMode, busy, away, battery, saver
 
     var textKey: String { "settings.energy.reason.\(rawValue)" }
 }
@@ -208,6 +222,10 @@ enum EnergyPolicy {
         if signals.screenLocked { paused.append(.locked) }
         // A hot Mac gets a break whatever you chose; working on would only keep it hot.
         if signals.hot { paused.append(.hot) }
+        // Short on memory: whatever Nook loads now pushes something you use out to the disk. Full power goes on, lighter.
+        if signals.memoryTight {
+            if mode == .full { light.append(.memory) } else { paused.append(.memory) }
+        }
         // A nearly empty battery: every bit of optional work shortens the time you have left. Full power keeps going, lighter.
         if signals.lowBattery {
             if mode == .full { light.append(.lowBattery) } else { paused.append(.lowBattery) }

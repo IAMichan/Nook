@@ -13,6 +13,7 @@ copying it again.
 | `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
+| `NookTheme.diffAdded`, `diffRemoved`, `diffModified` | Added, removed and changed lines, files and counts in diffs and pull requests: green and red, or blue and orange with Settings › Appearance › Diff colors (`NookDiffColors`). Never `mint`/`coral` for a diff |
 | `NookTheme.primary`, `primaryHover`, `onPrimary` | The main action: a button filled with Nook's accent (soft white by default) and dark text, a shade deeper under the pointer. One per card, notice or sheet |
 | `NookTheme.outlineFill`, `outlineStroke` | The outline button: a faint fill and an input-colored edge |
 | `Image(icon:)`, `NookIcon.nsImage(_:)` (`NookIcon.swift`) | Every icon. Name it as an SF Symbol; `NookIcon.table` draws it as Nook's Lucide icon (custom symbols in `Resources/Lucide.xcassets`), following the font and weight around it. A name without a row stays an SF Symbol (brand marks, keycaps, weather, filled state dots). Add a row and run `scripts/lucide-icons.sh` for a new one. Never `Image(systemName:)` |
@@ -250,6 +251,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `PanelNoticeBar` | `PanelBlocks.swift` | A `NookNotice` in a tab, or with `floating` in the toast's bubble in the top-right corner (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one, `countdown` adds the OK for a note that closes by itself |
 | `AdaptiveActionRow` | `Shared/PanelParts.swift` | Text beside its buttons (a confirmation, a recovery card, a banner, a sheet's footer): the buttons on the right while the text keeps a readable width, on a line of their own under it in a narrow tab or split view. Use it for every such row instead of an `HStack` with a `Spacer` and buttons, which squeezes the text to a word per line |
 | `ComposerUsageRing` | `ComposerRich.swift` | Among the choices of a session's composer, right after the effort: a small ring filled to the window with the least room left, with its percentage. Its popover is the account's `UsageLimitRows` and "All limits", which opens `UsageModal`. Shown from the first percent, also while the agent works, in the composers of new, running, outside and earlier sessions (`ComposerUsageRing.forAccount`), for every agent `QuotaService` has limits for |
+| `ComposerContextRing`, `ContextUsageCard` | `ComposerRich.swift` | The context ring at the end of a session's composer, from the first token; amber past 80 % of the auto-compact point (or while the next message goes after a summary), coral past 90 %. Hover or click opens the card: what fills the window as `/context` says it (`ContextUsage`), the choice to summarize before your next message, and Summarize now |
 | `UsageLimitRows`, `UsageTone`, `LimitPaceIcon` | `UsageLimitViews.swift` | One account's limits in the usage modal's layout: a small card per window (name, percentage **used** with the pace icon, a bar with the even-pace line and the reset time inside it), the full reset and the pace in the card's tooltip, amber from 75 % used and coral from 90 %. The composer's popover and Settings › Usage & costs; never draw a limit bar by hand |
 | `UsageLimitsModal`, `UsageModal`, `UsageLimitPools` | `UsageLimitViews.swift` | The usage limits as a modal, never a page: per agent a card per window with what is left of the pool in large type and its pace, beside a bar with a segment per account (the pace line cut into it, what a reset gives back hatched, the account's details on click). One component for every way in: the footer's usage button bottom left, "All limits" under the composer's ring, the command palette and search open it over the panel (`UsageModal`, through `AppModel.usageModalOpen`); Settings › Usage & costs shows it as a sheet. Built on `LimitPool` |
 | `ResetCreditRow` | `ResetCreditRow.swift` | An account's banked reset credits and "Use a reset" (after a confirmation), in the usage limits sheet, Settings › Usage & costs and a limited session's banner. Shows nothing for an account without credits |
@@ -405,9 +407,13 @@ and its buttons on one row, and back and forward beside the traffic lights), and
 the `PanelFooter` at the bottom. Music has no list of its own: `PanelView` draws its column, with `MusicSidebar` (the sections and the playlists) in place of a list. The Music pages
 themselves keep one grid (`MusicLayout` in `MusicTab.swift`): the header band, what scrolls and the player bar share the
 same two edges; the band holds the one title (Home's greeting, a section's name) as a conversation's "folder / title"
-header ("Music / Statistics", body type, no line under it) with back and the section's own controls; tracks are flat rows (`MusicTrackRow`, `MusicTrackTile`) whose hover fill reaches past that edge
-(`.musicRowBleed()`), an open playlist and the full player have no card around them, and the player bar is the
-composer's box. While a tab draws the
+header ("Music / Statistics", body type, no line under it) with back, the section's own controls and the tab's one
+search field (`MusicSearchModel`: typing on any page shows the results); tracks are flat rows (`MusicTrackRow`,
+`MusicTrackTile`) whose hover fill reaches past that edge (`.musicRowBleed()`), with their buttons beside the part that
+plays (queue, Add to playlist, and the "…" of `MusicTrackMenu`, which stays in sight; a labelled `MusicRowAction` such
+as "Add" when the list is for that), an open playlist and the full player have no card around them, and the player bar
+is the composer's box. The bar stays at the bottom of every page while something plays (only Now Playing, the player
+itself, goes without), with where the music plays (`MusicOutputButton`, its list in `MusicOutputList`) and Up next. While a tab draws the
 head (`PanelSidebarShown`), the panel leaves out its floating capsule and the window its left margin and its own Nook;
 when no column shows it (one column at a time, a task over the tab), the capsule comes back. Agents' list goes away
 altogether: `PanelSidebarToggle` floats in one spot right of the traffic lights, with the list out or away, and a

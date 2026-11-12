@@ -204,6 +204,7 @@ targets:
       - path: Core/I18n+Music.swift
       - path: Core/I18n+MusicPage.swift
       - path: Core/I18n+MusicRedesign.swift
+      - path: Core/I18n+MusicControls.swift
       - path: Core/I18n+Permissions.swift
       - path: Core/I18n+Phone.swift
       - path: Core/I18n+ChatCall.swift
@@ -301,6 +302,8 @@ targets:
       - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
+      - path: Brain/ConversationWindow.swift
+      - path: Brain/FollowUps.swift
       - path: Brain/PlanArchive.swift
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ModelDownload.swift
@@ -364,6 +367,7 @@ targets:
       - path: Services/BuddyMoments.swift
       - path: Services/QuietMode.swift
       - path: Core/EnergyPolicy.swift
+      - path: Core/AgentGovernorPolicy.swift
       - path: App/ChatRecovery.swift
       - path: Services/AgentSessionRegistry.swift
       - path: Services/ResumedConversations.swift
@@ -621,8 +625,12 @@ targets:
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/Workspace/TokenSavings.swift
+      - path: Services/Workspace/ContextUsage.swift
       - path: Services/Workspace/AgentTuning.swift
       - path: Services/Workspace/ProcessGroups.swift
+      - path: Services/Workspace/AgentGovernor.swift
+      - path: Core/Log.swift
+      - path: Core/SystemLoad.swift
       - path: Services/Workspace/QuitShutdown.swift
       - path: Services/Workspace/ProviderTransport.swift
       - path: Services/AgentTranscript.swift
@@ -670,6 +678,7 @@ targets:
       - path: Core/Shortcuts.swift
       - path: Services/Music/MusicLibrary.swift
       - path: Services/Music/MusicHistory.swift
+      - path: Services/Music/MusicOutputs.swift
       - path: Brain/Undo.swift
       - path: Brain/NookAccess.swift
       - path: Brain/SettingsCatalog.swift

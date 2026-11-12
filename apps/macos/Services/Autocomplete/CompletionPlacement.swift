@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 
 /// Where suggestions go on screen, from what an app says through Accessibility. Apps answer in many ways and some answers are
 /// wrong: a rect in the screen's corner, a whole paragraph, a field as big as the page, a cursor left behind after scrolling.
@@ -99,6 +101,8 @@ struct CompletionTextColor: Equatable, Sendable {
         self.alpha = alpha
     }
 
+    #if canImport(Darwin)
+    // CGColor and the Accessibility value it comes in are the Mac's; the core tests on Linux leave these out.
     init?(cgColor: CGColor) {
         guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
               let converted = cgColor.converted(to: srgb, intent: .defaultIntent, options: nil),
@@ -112,6 +116,7 @@ struct CompletionTextColor: Equatable, Sendable {
         guard CFGetTypeID(value) == CGColor.typeID else { return nil }
         self.init(cgColor: value as! CGColor)
     }
+    #endif
 
     /// The suggestion's colour: this one, translucent. Nil when the app's colour says little (nearly transparent): the
     /// system's placeholder grey is drawn instead.

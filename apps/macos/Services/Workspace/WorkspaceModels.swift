@@ -412,6 +412,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// Nook quit after this session's turn ended while it waited on work in the background (a subagent): that work
     /// stopped with it and will not report back (see `RestartContinuation`).
     var cutBackgroundWork: CutBackgroundWork? = nil
+    /// Nook's last quit stopped this session (in the middle of a turn, or while it waited on background work): the next
+    /// launch goes on with it however long Nook stayed closed, then clears this (see `RestartContinuation`).
+    var stoppedByQuit: Bool? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil

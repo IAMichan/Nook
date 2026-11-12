@@ -9,11 +9,9 @@ struct MusicHomeView: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject private var spotify = SpotifySignIn.shared
     let onOpen: (MusicSection) -> Void
-    var onPlayingCardVisible: (Bool) -> Void = { _ in }
 
     var body: some View {
-        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen,
-                         onPlayingCardVisible: onPlayingCardVisible)
+        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen)
     }
 }
 
@@ -24,8 +22,6 @@ struct MusicHomeContent: View {
     @EnvironmentObject private var app: AppModel
     let spotifyConnected: Bool
     let onOpen: (MusicSection) -> Void
-    /// Whether the playing card is on screen, so the page's player bar only comes up once it has scrolled away.
-    var onPlayingCardVisible: (Bool) -> Void = { _ in }
     @State private var week: MusicStats?
     @State private var allRecent = false
     @Environment(\.panelSidebar) private var sidebar
@@ -60,7 +56,6 @@ struct MusicHomeContent: View {
                 // First what to play (what plays, where you left off, your playlists), then how you listened.
                 if let info {
                     MusicPlayingCard(info: info, service: service, lyrics: lyrics) { onOpen(.nowPlaying) }
-                        .onScrollVisibilityChange(threshold: 0.25) { onPlayingCardVisible($0) }
                 }
                 if showsConnect { connectCard }
                 if !recent.isEmpty { recentGroup }
@@ -185,13 +180,14 @@ struct MusicHomeContent: View {
 
 // MARK: Playing card
 
-/// Home's first card: the playing track in its cover's colours, the line being sung, its controls, and what comes next.
-/// The cover opens Now Playing.
+/// Home's first card: the playing track in its cover's colours, where it plays, the line being sung, and what comes
+/// next. Its controls are the player bar's under the page, always in the same place. The cover opens Now Playing.
 private struct MusicPlayingCard: View {
     let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
     @ObservedObject var lyrics: LyricsService
     let onOpen: () -> Void
+    @ObservedObject private var outputs = MusicOutputService.shared
     @State private var hoveringCover = false
 
     private static let cover: CGFloat = 148
@@ -247,6 +243,8 @@ private struct MusicPlayingCard: View {
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textStrong)
                     .lineLimit(1)
+                MusicOutputLine(outputs: outputs)
+                    .padding(.leading, NookTheme.Spacing.sm)
             }
             Text(info.title)
                 .font(NookTheme.TextStyle.display)
@@ -261,15 +259,12 @@ private struct MusicPlayingCard: View {
                 .padding(.top, NookTheme.Spacing.xxs)
             MusicCurrentLyric(info: info, lyrics: lyrics)
                 .padding(.top, NookTheme.Spacing.md)
-            MusicScrubBar(info: info, style: .inline) { service.seek(to: $0) }
-                .frame(maxWidth: 420)
-                .padding(.top, NookTheme.Spacing.sm)
-            HStack(spacing: NookTheme.Spacing.xs) {
-                MusicTransport(info: info, service: service)
+            HStack(spacing: NookTheme.Spacing.md) {
+                SmallGhostButton(title: tr("music.openNowPlaying"), action: onOpen)
+                    .padding(.leading, -NookTheme.Spacing.md)
                 MusicAddToPlaylistButton(track: service.currentTrack, service: service)
             }
-            .padding(.top, NookTheme.Spacing.xs)
-            .padding(.leading, -NookTheme.Spacing.xs)
+            .padding(.top, NookTheme.Spacing.md)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

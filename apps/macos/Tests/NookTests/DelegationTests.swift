@@ -365,6 +365,22 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual(DelegatedTask.workingSubThreads(of: a, parents: [a: b, b: a], active: [a, b]), 1)
     }
 
+    /// The table made once for every session gives each the same count as asking for it alone, also with loops and
+    /// self links.
+    func testWorkingSubThreadCountsMatchAskingOneByOne() {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<50 {
+            let ids = (0..<30).map { _ in UUID() }
+            var parents: [UUID: UUID] = [:]
+            for id in ids where Bool.random(using: &generator) { parents[id] = ids.randomElement(using: &generator) }
+            let active = Set(ids.filter { _ in Bool.random(using: &generator) })
+            let counts = DelegatedTask.workingSubThreadCounts(parents: parents, active: active)
+            for id in ids {
+                XCTAssertEqual(counts[id] ?? 0, DelegatedTask.workingSubThreads(of: id, parents: parents, active: active))
+            }
+        }
+    }
+
     func testIdleParentWithAWorkingSubThreadIsBusyAndQuietOnceTheyAreDone() {
         var input = AgentAttention.Input(status: .completed, unseen: true, subThreadsWorking: 2)
         XCTAssertEqual(AgentAttention.resolve(input), .working)

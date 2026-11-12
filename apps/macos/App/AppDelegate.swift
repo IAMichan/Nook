@@ -74,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func stopAgentsBeforeQuit() -> NSApplication.TerminateReply {
         model.workspace.shutdown()
         let daemonStop = DeviceHubService.shared.stopForQuit()
+        // Commands the governor paused come back first, so they hear the quit (`AgentGovernor`).
+        AgentGovernor.shared.releaseAll()
         let processes = LiveAgentProcesses.shared.beginQuit()
         guard !processes.isEmpty || daemonStop != nil else { return .terminateNow }
         var replied = false
@@ -110,7 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               defaults.object(forKey: Self.confirmQuitKey) as? Bool ?? true else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = working == 1 ? tr("quit.working.one") : tr("quit.working.many", working)
-        alert.informativeText = tr("quit.working.detail")
+        // With Continue after restart on (Settings › Agents), they go on by themselves after the next launch.
+        alert.informativeText = tr(model.workspace.settings.continueAfterRelaunch ? "quit.working.detail.continues" : "quit.working.detail")
         // With sessions kept running (Settings › Agents), say which go on and which stop.
         if model.workspace.settings.keepSessionsRunning {
             let summary = KeptRuns.quitSummary(model.workspace.keptCandidates, enabled: true)

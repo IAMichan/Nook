@@ -95,12 +95,18 @@ struct ProjectInfo: Equatable {
 final class WorkspaceManager: ObservableObject {
     /// Settable within the module: the stop and handoff extensions settle open work and add forked sessions.
     @Published var runs: [WorkspaceRun] = [] {
-        didSet { runPositions = nil }
+        didSet {
+            runPositions = nil
+            subThreadCounts = nil
+        }
     }
     /// Where each session is in `runs`, made again on the first lookup after `runs` changed. Rows, panels and the
     /// handlers of every streamed line look a session up by id, many times per redraw: walking a few hundred sessions
     /// (and copying the one found) each time was a visible share of drawing the Agents list.
     private var runPositions: [UUID: Int]?
+    /// How many delegated sub-threads still work under each session (`workingSubThreads(of:)`), made again on the first
+    /// read after `runs` changed. `attention` asks it for every finished row on every redraw.
+    var subThreadCounts: [UUID: Int]?
 
     /// The index of session `id` in `runs`; the first one when an id appears twice.
     func runIndex(_ id: UUID) -> Int? {
@@ -232,6 +238,9 @@ final class WorkspaceManager: ObservableObject {
     @Published var agentEfforts: [String: [AgentModel]] = [:]
     /// The `/` commands each ACP session announced (`available_commands_update`).
     @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
+    /// What fills each session's context window, as its agent last said it (`refreshContextUsage`), with the session's
+    /// context size at that moment: an answer from before a later turn is not shown.
+    @Published var contextUsages: [UUID: (usage: ContextUsage, contextTokens: Int?)] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
@@ -2674,6 +2683,7 @@ final class WorkspaceManager: ObservableObject {
         codexTotals[id] = nil
         codexSubagents[id] = nil
         openPullRequests[id] = nil
+        contextUsages[id] = nil
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
@@ -2742,6 +2752,7 @@ final class WorkspaceManager: ObservableObject {
         capacityWaiting[id] = nil
         capacityOrder.removeAll { $0 == id }
         runPositions = nil
+        subThreadCounts = nil
     }
 
     private func applyAutoArchive() {
@@ -3191,7 +3202,10 @@ final class WorkspaceManager: ObservableObject {
             let id = runs[index].id
             guard backgroundWork.contains(id) || subagentsWorking.contains(id) else { continue }
             let labels = RestartContinuation.waitedOn(events[id] ?? [])
-            if !labels.isEmpty { runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now) }
+            if !labels.isEmpty {
+                runs[index].cutBackgroundWork = CutBackgroundWork(labels: labels, at: now)
+                runs[index].stoppedByQuit = true
+            }
         }
         GuestShares.shared.suspend()
         for id in Array(codexServers.keys) { closeCodexServer(id) }
@@ -3207,6 +3221,7 @@ final class WorkspaceManager: ObservableObject {
             runs[index].status = .stopped
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil
+            runs[index].stoppedByQuit = true
         }
         saveForQuit()
     }

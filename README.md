@@ -1,6 +1,7 @@
 # Nook
 
 [![CI](https://github.com/IAMichan/nook/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/IAMichan/nook/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/IAMichan/nook/badge)](https://scorecard.dev/viewer/?uri=github.com/IAMichan/nook)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
 ![iOS](https://img.shields.io/badge/iOS-Companion-lightgrey)
@@ -218,7 +219,7 @@ The **Chats** tab in the main window (and in the notch, when it is on) shows all
 
 **Download (beta):** grab the latest `.dmg` from [Releases](https://github.com/IAMichan/nook/releases) (Apple Silicon, macOS 15+). The build is not notarized yet; the release notes explain how to open it the first time.
 
-**New release:** in GitHub, open **Actions › Release (macOS) › Run workflow**, choose `beta` (next beta of the current version) or `patch`/`minor`/`major`, and run it. It picks the next tag (for example `v0.1.0-beta.2`), builds Nook, and publishes the release ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+**New release:** in GitHub, open **Actions › Release › Run workflow**, choose `beta` (next beta of the current version) or `patch`/`minor`/`major`, and run it. It picks the next tag (for example `v0.1.0-beta.2`), builds Nook for macOS, Windows and Linux, and publishes the release ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 **Build from source:**
 
