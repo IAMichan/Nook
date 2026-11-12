@@ -279,7 +279,15 @@ struct InboxChatView: View {
                     }
                     // WhatsApp says it in the header instead.
                     if let typing, !whatsApp {
-                        ChatTypingBubble(text: typing).transition(.opacity)
+                        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                            // Their face beside it, as beside each of their messages in a group (`ChatBubbleView`).
+                            if let name = (client.inboxTyping[chatID] ?? []).first(where: { !$0.name.isEmpty })?.name {
+                                ChatInitialsFace(name: name, initials: InboxAvatar.initials(name), size: 28)
+                                    .accessibilityHidden(true)
+                            }
+                            ChatTypingBubble(text: typing)
+                        }
+                        .transition(.opacity)
                     }
                     // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
                     let waiting = client.outbox.chatMessages(to: chatID)
