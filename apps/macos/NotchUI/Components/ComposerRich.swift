@@ -563,13 +563,8 @@ struct ComposerContextRing: View {
         Button { open.toggle() } label: {
             // Like the limits chip beside it (`ComposerUsageRing`): the ring and the percentage, one control high.
             HStack(spacing: NookTheme.Spacing.xs) {
-                ZStack {
-                    Circle().inset(by: 1.25).stroke(NookTheme.line2, lineWidth: 2.5)
-                    Circle().inset(by: 1.25).trim(from: 0, to: fraction)
-                        .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
-                .frame(width: 18, height: 18)
+                ProgressRing(fraction: fraction, tint: tint, lineWidth: 2.5)
+                    .frame(width: 18, height: 18)
                 Text(ContextMeter.percentText(fraction))
                     .font(NookTheme.TextStyle.caption.monospacedDigit())
                     .foregroundStyle(calm && hovering ? NookTheme.paper : tint)
@@ -840,23 +835,18 @@ struct ComposerUsageRing: View, Equatable {
         .popover(isPresented: $open, arrowEdge: .top) { ComposerUsagePanel(limits: shown, account: account, open: $open) }
     }
 
-    /// The short window as the outer ring, the long one inside it, each filled from the top in its own tone.
+    /// The short window as the outer ring, the long one inside it, each filled from the top in its own tone. Both
+    /// rings have the same stroke and the inner one keeps a real hole, so neither reads heavier than the other.
     private func rings(_ lines: [Line]) -> some View {
         ZStack {
             ForEach(lines.indices, id: \.self) { index in
                 let used = lines[index].used
-                let size: CGFloat = index == 0 ? 16 : 9
-                ZStack {
-                    Circle().inset(by: 1).stroke(NookTheme.line2, lineWidth: 2)
-                    Circle().inset(by: 1).trim(from: 0, to: CGFloat(used) / 100)
-                        .stroke(UsageTone.fill(used: used, calm: NookTheme.textSecondary),
-                                style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
-                .frame(width: size, height: size)
+                ProgressRing(fraction: CGFloat(used) / 100,
+                             tint: UsageTone.fill(used: used, calm: NookTheme.textSecondary), lineWidth: 1.75)
+                    .frame(width: index == 0 ? 17 : 10, height: index == 0 ? 17 : 10)
             }
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 17, height: 17)
     }
 
 }
