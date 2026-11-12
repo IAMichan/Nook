@@ -55,7 +55,18 @@ struct AgentInboxList: View {
     @State private var pendingClones: Set<UUID> = []
     /// The height of each docked shelf's rows, so the shelf is as tall as they are (`dockedShelf`).
     @State private var shelfHeights: [InboxSection.Kind: CGFloat] = [:]
+    /// The height of the list with its docked shelves, so the Working shelf can grow with the sessions at work.
+    @State private var listHeight: CGFloat = 0
     private static let shelfMaxHeight: CGFloat = 280
+    /// The share of the list the Working shelf may take when more sessions work than fit in `shelfMaxHeight`.
+    private static let workingShelfShare: CGFloat = 0.6
+
+    /// How tall a docked shelf may grow before it scrolls: the Working shelf grows with the sessions at work, up to
+    /// `workingShelfShare` of the list, so several running threads stay in view; the others stop at `shelfMaxHeight`.
+    static func shelfLimit(_ kind: InboxSection.Kind, listHeight: CGFloat) -> CGFloat {
+        guard kind == .working else { return shelfMaxHeight }
+        return max(shelfMaxHeight, listHeight * workingShelfShare)
+    }
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -252,6 +263,7 @@ struct AgentInboxList: View {
                     dockedShelf(section, sections: sections, byID: byID, shown: shown, projects: projects)
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
             .overlay(alignment: .bottom) { undoNotice }
             .animation(NookTheme.reveal, value: store.canUndo)
             if selection.isActive {
@@ -642,13 +654,13 @@ struct AgentInboxList: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             shelfHeader(section)
             if !rows(of: section).isEmpty {
-                // As tall as its rows, up to 280, then it scrolls. Measured: a flexible scroll view would take all 280 and
-                // leave a gap between the header and a single row.
+                // As tall as its rows, up to its limit (`shelfLimit`), then it scrolls. Measured: a flexible scroll view
+                // would take the whole limit and leave a gap between the header and a single row.
                 ScrollView(showsIndicators: false) {
                     list.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shelfHeights[section.kind] = $0 }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(height: min(shelfHeights[section.kind] ?? 0, Self.shelfMaxHeight))
+                .frame(height: min(shelfHeights[section.kind] ?? 0, Self.shelfLimit(section.kind, listHeight: listHeight)))
             }
         }
     }
