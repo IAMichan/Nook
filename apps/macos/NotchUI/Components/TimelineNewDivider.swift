@@ -32,7 +32,7 @@ struct TimelineEarlierRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 NookDivider()
-                Label(tr("ws.timeline.showEarlier"), systemImage: "arrow.up")
+                Label(tr("ws.timeline.showEarlier"), icon: "arrow.up")
                     .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                     .fixedSize()

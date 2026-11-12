@@ -29,7 +29,7 @@ struct RunInspector: View {
             .sheet(item: $changes) { file in ChangesSheet(runID: runID, initialFile: file) }
             .sheet(isPresented: $showCommit) { CommitSheet(runID: runID) }
             .sheet(isPresented: $showPullRequest) { PullRequestSheet(runID: runID) }
-            .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: $confirmRemove) {
+            .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: $confirmRemove, titleVisibility: .visible) {
                 let dirty = (workspace.git[runID]?.status?.files.count ?? 0) > 0
                 if dirty {
                     Button(tr("ws.worktree.removeForce"), role: .destructive) { remove(force: true) }

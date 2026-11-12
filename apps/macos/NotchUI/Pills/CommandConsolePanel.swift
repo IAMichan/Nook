@@ -108,11 +108,11 @@ struct CommandConsolePanel: View {
             .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
         case .failed:
-            Label(tr("ws.console.failed"), systemImage: "xmark")
+            Label(tr("ws.console.failed"), icon: "xmark")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coralSoft)
         default:
-            Label(tr("ws.console.done"), systemImage: "checkmark")
+            Label(tr("ws.console.done"), icon: "checkmark")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.mint)
         }

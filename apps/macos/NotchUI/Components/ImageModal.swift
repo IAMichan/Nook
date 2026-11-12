@@ -100,10 +100,10 @@ struct ImageModalButton<Label: View>: View {
         .contextMenu {
             if preview != nil {
                 Button(action: show) {
-                    SwiftUI.Label(tr("card.video.enlarge"), systemImage: "arrow.up.left.and.arrow.down.right")
+                    SwiftUI.Label(tr("card.video.enlarge"), icon: "arrow.up.left.and.arrow.down.right")
                 }
                 Button(action: openInQuickLook) {
-                    SwiftUI.Label(tr("card.attachment.open"), systemImage: "arrow.up.forward.app")
+                    SwiftUI.Label(tr("card.attachment.open"), icon: "arrow.up.forward.app")
                 }
             }
         }

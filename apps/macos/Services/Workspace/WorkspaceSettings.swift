@@ -260,11 +260,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published private(set) var recentProjects: [String]
     /// What project folders set for themselves on top of the defaults above (see `ProjectSettings`).
     @Published var projectOverrides: ProjectOverrides {
-        didSet { defaults.set(try? JSONEncoder().encode(projectOverrides), forKey: "ws.projectOverrides") }
+        didSet { defaults.setEncoded(projectOverrides, forKey: "ws.projectOverrides") }
     }
     /// What you last chose in the composer per folder (see `FolderChoicesStore`).
     @Published private(set) var folderChoices: FolderChoicesStore {
-        didSet { defaults.set(try? JSONEncoder().encode(folderChoices), forKey: "ws.folderChoices") }
+        didSet { defaults.setEncoded(folderChoices, forKey: "ws.folderChoices") }
     }
 
     static var standardWorktreeRoot: String {
@@ -336,10 +336,11 @@ final class WorkspaceSettings: ObservableObject {
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         favoriteProjects = defaults.stringArray(forKey: "ws.favoriteProjects") ?? []
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
-        projectOverrides = defaults.data(forKey: "ws.projectOverrides")
-            .flatMap { try? JSONDecoder().decode(ProjectOverrides.self, from: $0) } ?? ProjectOverrides()
-        folderChoices = defaults.data(forKey: "ws.folderChoices")
-            .flatMap { try? JSONDecoder().decode(FolderChoicesStore.self, from: $0) } ?? FolderChoicesStore()
+        // What cannot be read is kept aside first (`SafeStorage`), so the next change never loses it for good.
+        projectOverrides = SafeStorage.decode(ProjectOverrides.Lossy.self, defaults: defaults, key: "ws.projectOverrides",
+                                              skipped: { $0.skipped }).value?.overrides ?? ProjectOverrides()
+        folderChoices = SafeStorage.decode(FolderChoicesStore.self, defaults: defaults, key: "ws.folderChoices").value
+            ?? FolderChoicesStore()
     }
 
     func rememberProject(_ path: String) {

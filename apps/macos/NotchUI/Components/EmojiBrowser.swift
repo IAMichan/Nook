@@ -102,11 +102,10 @@ private struct EmojiGroupTab: View {
                 .font(NookTheme.font(12, .semibold))
                 .foregroundStyle(selected ? NookTheme.paper : (hovering ? NookTheme.textStrong : NookTheme.textTertiary))
                 .frame(width: 30, height: 26)
-                .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
+                .hoverRowFill($hovering, selected: selected, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .help(label)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])

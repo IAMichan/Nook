@@ -141,35 +141,76 @@ struct AdaptiveActionRow<Message: View, Actions: View>: View {
     }
 }
 
-/// A whole panel or screen without content: its symbol, what it means, and at most one clear call to action.
-struct WSEmptyState: View {
+/// A whole panel or screen without content (empty, loading, or unavailable): its symbol (a small spinner in its place
+/// while `loading`), what it means, and a clear call to action: one main `action`, or the buttons of `actions` in a row.
+struct WSEmptyState<Actions: View>: View {
     let symbol: String
     let title: String
-    let message: String
+    var message: String?
+    var loading = false
     var action: (title: String, run: () -> Void)?
+    @ViewBuilder var actions: () -> Actions
+
+    init(symbol: String, title: String, message: String? = nil, loading: Bool = false,
+         action: (title: String, run: () -> Void)? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        self.symbol = symbol
+        self.title = title
+        self.message = message
+        self.loading = loading
+        self.action = action
+        self.actions = actions
+    }
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(icon: symbol)
-                .font(NookTheme.font(26, .light))
-                .foregroundStyle(NookTheme.textTertiary)
+            if loading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(height: 26)
+            } else {
+                symbolView
+                    .font(NookTheme.font(26, .light))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
             Text(title)
                 .font(NookTheme.TextStyle.title)
                 .foregroundStyle(NookTheme.paper)
                 .multilineTextAlignment(.center)
-            Text(message)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-                .fixedSize(horizontal: false, vertical: true)
+            if let message {
+                Text(message)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let action {
                 NookPrimaryButton(title: action.title, action: action.run)
+                    .padding(.top, NookTheme.Spacing.xs)
+            }
+            if Actions.self != EmptyView.self {
+                HStack(spacing: NookTheme.Spacing.sm) { actions() }
                     .padding(.top, NookTheme.Spacing.xs)
             }
         }
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// On the Mac through `NookSymbol`, so a pull request's own mark (`PullRequestIcon.generic`) draws too.
+    @ViewBuilder private var symbolView: some View {
+        #if os(macOS)
+        NookSymbol(symbol, size: 26)
+        #else
+        Image(icon: symbol)
+        #endif
+    }
+}
+
+extension WSEmptyState where Actions == EmptyView {
+    init(symbol: String, title: String, message: String? = nil, loading: Bool = false,
+         action: (title: String, run: () -> Void)? = nil) {
+        self.init(symbol: symbol, title: title, message: message, loading: loading, action: action) { EmptyView() }
     }
 }
 

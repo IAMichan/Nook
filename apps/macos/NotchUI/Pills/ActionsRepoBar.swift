@@ -81,11 +81,10 @@ struct ActionsRepoTab: View {
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, closable ? NookTheme.Spacing.xs : NookTheme.Spacing.md)
         .frame(height: 30)
-        .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+        .hoverRowFill($hovering, selected: selected)
         .roundedHitShape(NookTheme.Radius.control)
         .nookClickable()
         .onTapGesture(perform: onSelect)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(repo)
         .accessibilityElement(children: .combine)

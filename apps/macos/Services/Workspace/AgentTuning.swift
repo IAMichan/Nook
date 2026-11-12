@@ -67,7 +67,7 @@ enum AgentTuning {
         }
 
         func save(_ defaults: UserDefaults = .standard) {
-            defaults.set(try? JSONEncoder().encode(self), forKey: Self.key)
+            defaults.setEncoded(self, forKey: Self.key)
         }
 
         /// What Claude Code's `--settings` gets for it.

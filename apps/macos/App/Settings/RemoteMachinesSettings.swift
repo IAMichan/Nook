@@ -339,23 +339,8 @@ private struct AddMachineSheet: View {
     nonisolated private static func tailnet() -> [RemoteHostDiscovery.Suggestion] {
         let candidates = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"]
         guard let tool = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return [] }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = ["status", "--json"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        let output = Pipe()
-        process.standardOutput = output
-        defer {
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        do { try process.run() } catch { return [] }
-        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 4, execute: stop)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        stop.cancel()
-        return process.terminationStatus == 0 ? RemoteHostDiscovery.tailscale(data) : []
+        guard let result = try? ProcessRunner.run(tool, ["status", "--json"], timeout: 4),
+              result.status == 0, !result.timedOut else { return [] }
+        return RemoteHostDiscovery.tailscale(result.stdoutData)
     }
 }

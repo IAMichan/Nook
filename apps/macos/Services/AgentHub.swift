@@ -6,21 +6,21 @@ import AppKit
 /// If answered in the terminal, the question card in the notch is dismissed immediately.
 @MainActor
 final class AgentHub: ObservableObject {
-    @Published private(set) var sessions: [AgentSession] = []
+    @Published var sessions: [AgentSession] = []
     /// Agents running as OS processes that do not (yet) report via hooks.
     @Published private(set) var detected: [AgentSession] = []
     /// Pending permission requests, oldest first.
-    @Published private(set) var approvals: [ApprovalRequest] = []
+    @Published var approvals: [ApprovalRequest] = []
     /// Multiple-choice questions waiting for an answer, oldest first.
     @Published private(set) var questions: [AgentQuestionRequest] = []
     /// Claude subscription usage when the status line integration is connected.
     /// Persisted so it remains visible even when Claude Code is not currently running.
-    @Published private(set) var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
+    @Published var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
         didSet { Self.savePlanUsage(planUsage) }
     }
 
     /// Same for additional Claude accounts, per directory (CLAUDE_CONFIG_DIR). Primary account is in `planUsage`.
-    @Published private(set) var profilePlanUsage: [String: PlanUsage] = AgentHub.loadProfilePlanUsage() {
+    @Published var profilePlanUsage: [String: PlanUsage] = AgentHub.loadProfilePlanUsage() {
         didSet {
             if let data = try? JSONEncoder().encode(profilePlanUsage) { UserDefaults.standard.set(data, forKey: Self.profilePlanUsageKey) }
         }
@@ -64,15 +64,8 @@ final class AgentHub: ObservableObject {
     }
 
     /// Account directory from hook environment; empty if standard directory.
-    private static func accountHome(_ env: [String: Any], agentID: String) -> String {
-        let kind: AgentKind
-        switch agentID {
-        case "codex": kind = .codex
-        case "gemini": kind = .gemini
-        case let id where id.hasPrefix("claude"): kind = .claude
-        default: return ""
-        }
-        guard let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
+    nonisolated static func accountHome(_ env: [String: Any], agentID: String) -> String {
+        guard let kind = AgentKind(hookAgentID: agentID), let variable = kind.homeVariable, let raw = env[variable] as? String, !raw.isEmpty else { return "" }
         let home = AgentProfile.normalize(kind.home(fromVariable: raw))
         return home == AgentProfile.normalize(kind.defaultHome.path) ? "" : home
     }
@@ -96,7 +89,7 @@ final class AgentHub: ObservableObject {
     var onAttention: ((AgentSession) -> Void)?
     var recap: RecapStore?
 
-    private struct Record {
+    struct Record {
         var agentID: String
         var agent: String
         var project: String
@@ -129,7 +122,7 @@ final class AgentHub: ObservableObject {
         var compactingSince: Date? = nil
     }
 
-    private enum PendingKind {
+    enum PendingKind {
         case permission(suggestions: Any?, canAlways: Bool)
         /// A hook before the tool call (`PreToolGate`, or Claude Code's hooks before PermissionRequest). `grant`: what
         /// "Always" allows for the rest of the session; nil when the request offers no Always.
@@ -138,24 +131,26 @@ final class AgentHub: ObservableObject {
         case appPrompt(bundleIDs: [String])
     }
 
-    private struct PendingApproval {
+    struct PendingApproval {
         let request: ApprovalRequest
         /// The hook waiting for the answer; nil for an app prompt, whose hook has already returned.
         let connection: HookConnection?
         let kind: PendingKind
     }
 
-    private struct PendingQuestion {
+    struct PendingQuestion {
         let request: AgentQuestionRequest
         let connection: HookConnection
         let rawQuestions: Any
     }
 
-    private var records: [String: Record] = [:] {
-        didSet { saveRecords() }
+    /// Every change marks the records to be saved; one snapshot follows once the change is handled (`scheduleSave`), not
+    /// one per write: a hook event writes its record several times.
+    var records: [String: Record] = [:] {
+        didSet { scheduleSave() }
     }
-    private var pendingApprovals: [String: PendingApproval] = [:]
-    private var pendingQuestions: [String: PendingQuestion] = [:] {
+    var pendingApprovals: [String: PendingApproval] = [:]
+    var pendingQuestions: [String: PendingQuestion] = [:] {
         didSet {
             let ids = Set(pendingQuestions.keys)
             questions.removeAll { !ids.contains($0.id) }
@@ -167,25 +162,36 @@ final class AgentHub: ObservableObject {
     private let server = UnixSocketServer(path: NookPaths.socketURL.path)
     private var pruneTimer: Timer?
     /// Every agent process from the latest scan, including those reporting via hooks: to end a session from Nook.
-    private var processes: [DetectedAgent] = []
+    var processes: [DetectedAgent] = []
     private var scanTimer: Timer?
 
     /// After this many seconds without answer, agent prompts user directly (hook timeout is 120s).
-    private static let approvalTimeout: UInt64 = 110
+    static let approvalTimeout: UInt64 = 110
     /// An app prompt waits in the app as long as you take; the card goes after this long, the app keeps asking.
-    private static let appPromptTimeout: UInt64 = 600
+    static let appPromptTimeout: UInt64 = 600
     /// App prompts Nook is pressing the button of right now, so a second click does not press again.
-    private var answering: Set<String> = []
+    var answering: Set<String> = []
     /// What you allowed "always" for a session in a gated agent (`PreToolGate.grant`), by session key.
-    private var sessionGrants: [String: Set<String>] = [:]
-    private static let questionTimeout: UInt64 = 120
+    var sessionGrants: [String: Set<String>] = [:]
+    static let questionTimeout: UInt64 = 120
 
     func start() {
         restoreRecords()
+        // The JSON is read here, on the socket's queue: the status line alone sends several messages a second per Claude
+        // session, and only the parsed message goes to the main thread.
         server.onMessage = { [weak self] data, connection in
+            guard let message = HookMessage.parse(data) else {
+                connection.reply(nil)
+                return
+            }
+            // Sessions run directly by Nook workspace are tracked there (with their own approvals); don't duplicate here.
+            if message.isWorkspaceRun {
+                connection.reply(nil)
+                return
+            }
             Task { @MainActor in
                 if let self {
-                    self.handle(data, connection)
+                    self.handle(message, connection)
                 } else {
                     connection.reply(nil)
                 }
@@ -278,198 +284,20 @@ final class AgentHub: ObservableObject {
         }
     }
 
-    // MARK: Remembered sessions
-
-    /// What survives a restart of Nook: agents keep running in their terminals, so the sessions known from their hooks
-    /// are saved and put back, and listed again straight away instead of waiting for the next hook event.
-    private struct SavedRecord: Codable {
-        var key: String
-        var agentID: String
-        var agent: String
-        var cwd: String
-        var status: String
-        var steps: [[String]]
-        var file: String
-        var lastMessage: String
-        var updated: Date
-        var started: Date
-        var hostBundleID: String
-        var home: String
-        var sessionID: String
-        var transcriptPath: String
-        var lastPrompt: String
-        var firstPrompt: String?
-        var linesAdded: Int
-        var linesRemoved: Int
-        var turnStarted: Date?
-    }
-
-    private nonisolated static var recordsURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-sessions.json") }
+    /// When `sessions` was last published, and whether a later publish is waiting (see `rebuild`).
+    var lastPublished: Date = .distantPast
+    var publishPending = false
+    /// Set while `handle` applies a hook event: `rebuild` then only notes that it is wanted.
+    var deferringRebuild = false
+    var rebuildRequested = false
     /// Keys restored at launch that no process has confirmed yet.
-    private var unconfirmed: Set<String> = []
-    private let launchedAt = Date()
-    private var saveWork: Task<Void, Never>?
-
-    private func saveRecords() {
-        saveWork?.cancel()
-        let snapshot = records.map { key, r in
-            SavedRecord(key: key, agentID: r.agentID, agent: r.agent, cwd: r.cwd, status: "\(r.status)",
-                        steps: r.steps.map { ["\($0.mark)", $0.text] }, file: r.file, lastMessage: r.lastMessage,
-                        updated: r.updated, started: r.started, hostBundleID: r.hostBundleID, home: r.home,
-                        sessionID: r.sessionID, transcriptPath: r.transcriptPath, lastPrompt: r.lastPrompt,
-                        firstPrompt: r.firstPrompt, linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted)
-        }
-        // A burst of hook events becomes one write.
-        saveWork = Task.detached(priority: .utility) {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard !Task.isCancelled else { return }
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            guard let data = try? encoder.encode(snapshot) else { return }
-            try? data.write(to: Self.recordsURL, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.recordsURL.path)
-        }
-    }
-
-    private func restoreRecords() {
-        guard records.isEmpty, let data = try? Data(contentsOf: Self.recordsURL) else { return }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let saved = try? decoder.decode([SavedRecord].self, from: data) else { return }
-        let now = Date()
-        var restored: [String: Record] = [:]
-        for item in saved {
-            let age = now.timeIntervalSince(item.updated)
-            let status: AgentStatus
-            switch item.status {
-            case "waiting": status = .waiting
-            case "failed": status = .failed
-            case "done": status = .done
-            default: status = .running
-            }
-            let settled = Self.isSettled(key: item.key, agent: item.agent, sessionID: item.sessionID, cwd: item.cwd,
-                                         lastActive: item.updated)
-            guard !SessionLiveness.isExpired(done: status == .done || status == .failed, settled: settled, age: age) else { continue }
-            let marks: [String: AgentStep.Mark] = ["done": .done, "running": .running, "blocked": .blocked, "failed": .failed, "todo": .todo]
-            var record = Record(agentID: item.agentID, agent: item.agent, project: Self.projectName(item.cwd), cwd: item.cwd,
-                                status: status, steps: item.steps.compactMap { pair in
-                                    guard pair.count == 2, let mark = marks[pair[0]] else { return nil }
-                                    return AgentStep(mark: mark, text: pair[1])
-                                }, file: item.file, lastMessage: item.lastMessage, updated: item.updated,
-                                hostBundleID: item.hostBundleID, diff: [], linesAdded: item.linesAdded, linesRemoved: item.linesRemoved)
-            record.home = item.home
-            record.sessionID = item.sessionID
-            record.transcriptPath = item.transcriptPath
-            record.lastPrompt = item.lastPrompt
-            // Saved before the first prompt was kept: the prompt known then is the oldest one there is.
-            record.firstPrompt = item.firstPrompt ?? item.lastPrompt
-            record.started = item.started
-            record.turnStarted = status == .done ? nil : item.turnStarted
-            restored[item.key] = record
-        }
-        unconfirmed = Set(restored.keys)
-        records = restored
-        rebuild()
-    }
-
-    /// A restored session that still read as busy while its agent ended with Nook closed is settled as done, the way
-    /// `settleStale` settles one whose agent quits while Nook runs. It stays in the list: a restart never takes away a
-    /// chat you have not handled. Agents the scanner does not know (apps, custom tools) are left to `settleStale`.
-    private func settleEndedRestored(_ found: [DetectedAgent]) {
-        guard !unconfirmed.isEmpty else { return }
-        let scannable = Set(LocalAgentScanner.agentNames)
-        var running: [String: Int] = [:]
-        for agent in found { running["\(agent.name)|\(agent.cwd)", default: 0] += 1 }
-        var changed = false
-        for key in unconfirmed.sorted() {
-            // A hook event since launch already proves the session is alive.
-            guard var record = records[key], record.updated < launchedAt else { continue }
-            guard scannable.contains(record.agent), record.status == .running || record.status == .waiting else { continue }
-            let id = "\(record.agent)|\(record.cwd)"
-            if let count = running[id], count > 0 {
-                running[id] = count - 1
-            } else {
-                record.status = .done
-                record.turnStarted = nil
-                Self.complete(&record, as: .done)
-                Self.push(&record, .done, "session closed")
-                records[key] = record
-                changed = true
-            }
-        }
-        unconfirmed = []
-        if changed { rebuild() }
-    }
-
+    var unconfirmed: Set<String> = []
+    let launchedAt = Date()
+    var saveWork: Task<Void, Never>?
+    /// Whether `records` changed since the last snapshot; a save is then scheduled on the main queue.
+    var recordsDirty = false
     /// Scans in a row each busy session's process was missing from the process list.
-    private var missingScans: [String: Int] = [:]
-
-    private static func scanned(_ found: [DetectedAgent]) -> [(pid: Int32, name: String, cwd: String)] {
-        found.map { (pid: $0.pid, name: $0.name, cwd: $0.cwd) }
-    }
-
-    /// Settles sessions that still read as busy while their turn has ended or their agent has quit, when the hook that
-    /// should have said so never came (see `SessionLiveness`).
-    private func settleStale(_ found: [DetectedAgent]) async {
-        let scannable = Set(LocalAgentScanner.agentNames)
-        let busy = records.filter { $0.value.status == .running || $0.value.status == .waiting }
-        missingScans = missingScans.filter { busy[$0.key] != nil }
-        let running = Self.scanned(found)
-        for (key, record) in records where record.pid == nil && !record.lineage.isEmpty {
-            // Assigning nil again would still trigger `records`' didSet, and with it a rewrite of the whole file.
-            if let pid = SessionLiveness.agentProcess(agent: record.agent, lineage: record.lineage, in: running) {
-                records[key]?.pid = pid
-            }
-        }
-        guard !busy.isEmpty else { return }
-        for key in busy.keys {
-            guard let record = records[key] else { continue }
-            let gone = scannable.contains(record.agent)
-                && !SessionLiveness.isRunning(agent: record.agent, cwd: record.cwd, pid: record.pid, in: running)
-            missingScans[key] = gone ? (missingScans[key] ?? 0) + 1 : 0
-        }
-        let paths = busy.filter { $0.value.status == .running }.mapValues(\.transcriptPath)
-        let turns = await Task.detached(priority: .utility) {
-            paths.compactMapValues { SessionLiveness.readTurn(path: $0) }
-        }.value
-
-        let now = Date()
-        var changed = false
-        for (key, seen) in busy {
-            // A hook event while the transcript was read wins.
-            guard var record = records[key], record.updated == seen.updated, record.status == seen.status else { continue }
-            if pendingApprovals.values.contains(where: { $0.request.sessionKey == key })
-                || pendingQuestions.values.contains(where: { $0.request.sessionKey == key }) { continue }
-            let read = turns[key]
-            guard let verdict = SessionLiveness.verdict(
-                working: record.status == .running, lastEvent: record.updated, turn: read?.turn ?? .unknown,
-                transcriptModified: read?.modified, missingScans: missingScans[key] ?? 0, now: now
-            ) else { continue }
-            record.status = .done
-            Self.complete(&record, as: .done)
-            Self.push(&record, .done, verdict == .processGone ? "session closed" : "done")
-            records[key] = record
-            missingScans[key] = nil
-            changed = true
-            Log.agents.info("Settled stale session \(key, privacy: .public): \(String(describing: verdict), privacy: .public)")
-        }
-        if changed { rebuild() }
-    }
-
-    /// You settled a session that still reads as busy: its turn hangs (a `Stop` that never came, a turn that stays open in
-    /// the transcript), so Nook believes you and shows it as done, in the conversation and the notch alike. A question or
-    /// approval still open in the notch keeps it waiting; the next prompt or tool call makes it work again.
-    func settleByUser(_ key: String) {
-        guard var record = records[key], record.status == .running || record.status == .waiting, !isAsking(key) else { return }
-        record.status = .done
-        record.turnStarted = nil
-        Self.complete(&record, as: .done)
-        Self.push(&record, .done, "settled by you")
-        records[key] = record
-        missingScans[key] = nil
-        rebuild()
-    }
-
+    var missingScans: [String: Int] = [:]
     // MARK: Answers from Nook
 
     func approval(id: String) -> ApprovalRequest? {
@@ -567,648 +395,14 @@ final class AgentHub: ObservableObject {
         rebuild()
     }
 
-    // MARK: Messages
-
-    private func handle(_ data: Data, _ connection: HookConnection) {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            connection.reply(nil)
-            return
-        }
-        let event = (object["event"] as? [String: Any]) ?? [:]
-        let env = (object["env"] as? [String: Any]) ?? [:]
-        var agentID = Self.cleanAgentID((object["agent"] as? String) ?? "agent")
-        if agentID == "claude-code", (env["CLAUDE_CODE_ENTRYPOINT"] as? String) == "claude-desktop" {
-            agentID = "claude-desktop"
-        }
-        let mode = (object["mode"] as? String) ?? (((object["wait"] as? Bool) ?? false) ? "permission" : "event")
-        let kind = Self.normalize((event["hook_event_name"] as? String) ?? (event["type"] as? String) ?? "")
-
-        if mode == "statusline" {
-            if let usage = PlanUsage.parse(event) {
-                let home = Self.accountHome(env, agentID: agentID)
-                // The status line runs on every message update, several times a second: a reading that shows nothing new
-                // is only stored once a minute (to keep `updated` fresh), instead of redrawing every view and rewriting
-                // UserDefaults each time.
-                let known = home.isEmpty ? planUsage : profilePlanUsage[home]
-                if let known, !usage.differs(from: known) { connection.reply(nil); return }
-                if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
-            }
-            connection.reply(nil)
-            return
-        }
-
-        // Sessions run directly by Nook workspace are tracked there (with their own approvals); don't duplicate here.
-        if let run = env["NOOK_RUN_ID"] as? String, !run.isEmpty {
-            connection.reply(nil)
-            return
-        }
-
-        let cwd = (event["cwd"] as? String) ?? (event["workdir"] as? String) ?? ""
-        let sessionID = (event["session_id"] as? String)
-            ?? (event["thread-id"] as? String)
-            ?? (event["thread_id"] as? String)
-            ?? (event["conversation_id"] as? String)
-            ?? cwd
-        let key = "\(agentID):\(sessionID)"
-        let name = Self.displayName(agentID)
-
-        if kind == "SessionEnd" {
-            records[key] = nil
-            sessionGrants[key] = nil
-            for (id, pending) in pendingApprovals where pending.request.sessionKey == key {
-                closeApproval(id, response: nil, status: nil, step: nil)
-            }
-            for (id, pending) in pendingQuestions where pending.request.sessionKey == key {
-                closeQuestion(id, response: nil, status: nil, step: nil)
-            }
-            rebuild()
-            connection.reply(nil)
-            return
-        }
-
-        // The app's prompt was answered in the app (the tool went on), or the turn moved past it: its card goes.
-        let finishedTool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
-        let promptTool = (kind == "PostToolUse" || kind == "PostToolUseFailure") && ScreenAction(tool: finishedTool)?.asksYou == true
-        if promptTool || ["UserPromptSubmit", "Stop", "StopFailure", "Interrupt"].contains(kind) {
-            closeAppPrompts(key: key, step: (.running, "answered in \(name)"))
-        }
-
-        var record = records[key] ?? Record(
-            agentID: agentID,
-            agent: name,
-            project: Self.projectName(cwd),
-            cwd: cwd,
-            status: .running,
-            steps: [],
-            file: "",
-            lastMessage: "",
-            updated: Date(),
-            hostBundleID: "",
-            diff: [],
-            linesAdded: 0,
-            linesRemoved: 0
-        )
-        // The agent `cd`'ing into a subfolder keeps the session in the folder it started in; nor into a scratch folder
-        // outside its project: the branch and changes stay those of the project.
-        if !cwd.isEmpty, record.cwd.isEmpty || !cwd.hasPrefix(record.cwd + "/") {
-            record.cwd = SessionFolder.follow(current: record.cwd, reported: cwd)
-            record.project = Self.projectName(record.cwd)
-        }
-        if let host = env["__CFBundleIdentifier"] as? String, !host.isEmpty {
-            record.hostBundleID = host
-        }
-        record.home = Self.accountHome(env, agentID: agentID)
-        record.updated = Date()
-        // Which process this session runs in; the same session resumed in a new process starts over.
-        let sameProcess = record.pid.map { connection.lineage.contains($0) } ?? false
-        if !connection.lineage.isEmpty, !sameProcess {
-            record.lineage = connection.lineage
-            record.pid = SessionLiveness.agentProcess(agent: name, lineage: connection.lineage, in: Self.scanned(processes))
-        }
-        if let id = event["session_id"] as? String, !id.isEmpty { record.sessionID = id }
-        if let path = event["transcript_path"] as? String, !path.isEmpty { record.transcriptPath = path }
-        if record.transcriptPath.isEmpty && name == "Antigravity" {
-            let sessionID = !record.sessionID.isEmpty ? record.sessionID : (env["ANTIGRAVITY_CONVERSATION_ID"] as? String) ?? ""
-            if !sessionID.isEmpty {
-                record.sessionID = sessionID
-                let appData = (env["ANTIGRAVITY_APP_DATA_DIR"] as? String) ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity"
-                record.transcriptPath = "\(appData)/brain/\(sessionID)/.system_generated/logs/transcript.jsonl"
-            }
-        }
-
-        // A compaction shows while it runs, and is over at the agent's next event: its end (PostCompact, Claude Code's
-        // SessionStart from "compact"), or a prompt, a tool or Stop for an agent that does not say when it is done.
-        switch HookCompaction.change(kind: kind) {
-        case .start:
-            if record.compactingSince == nil {
-                record.compactingSince = Date()
-                Self.push(&record, .running, tr("ws.activity.compacting"))
-            }
-        case .end:
-            if record.compactingSince != nil {
-                record.compactingSince = nil
-                Self.complete(&record, as: .done)
-            }
-        }
-
-        let tool = (event["tool_name"] as? String) ?? (event["toolName"] as? String) ?? ""
-        let input = (event["tool_input"] as? [String: Any]) ?? (event["toolArgs"] as? [String: Any]) ?? [:]
-
-        // Multiple-choice question from agent.
-        if mode == "ask" {
-            guard kind == "PreToolUse", tool == "AskUserQuestion", let items = AgentQuestionRequest.parse(input) else {
-                records[key] = record
-                connection.reply(nil)
-                return
-            }
-            askQuestion(key: key, record: &record, items: items, raw: input["questions"] ?? [], connection: connection)
-            records[key] = record
-            rebuild()
-            return
-        }
-
-        // Permission: agent is waiting for our response.
-        if mode == "permission" {
-            if kind == "PermissionRequest" {
-                guard tool != "AskUserQuestion" else {
-                    connection.reply(nil)
-                    return
-                }
-                let suggestions = event["permission_suggestions"]
-                // Claude Code stores the rule it suggests; the OpenCode and Hermes plugins turn it into their own
-                // "always" / "session" answer. Codex and Muse take no rule back.
-                let canAlways = (agentID.hasPrefix("claude") || Self.pluginAlways.contains(agentID))
-                    && ((suggestions as? [Any])?.isEmpty == false)
-                requestApproval(key: key, record: &record, tool: tool, input: input,
-                                kind: .permission(suggestions: suggestions, canAlways: canAlways), connection: connection)
-                records[key] = record
-                rebuild()
-                return
-            }
-            if kind == "PreToolUse", PreToolGate.agents.contains(agentID) {
-                // The agent's hook runs before every tool call: ask only where the agent would ask (`PreToolGate`).
-                Self.push(&record, .running, Self.describe(tool: tool, input: input))
-                if record.turnStarted == nil { record.turnStarted = Date() }
-                let grant = PreToolGate.grant(tool: tool, input: input)
-                if sessionGrants[key]?.contains(grant) == true {
-                    connection.reply(Self.response(for: .allow, kind: .preToolUse(grant: nil)))
-                } else if PreToolGate.wouldAsk(tool: tool, input: input), !Self.allowsEverything(connection.lineage) {
-                    requestApproval(key: key, record: &record, tool: tool, input: input, kind: .preToolUse(grant: grant),
-                                    connection: connection)
-                    records[key] = record
-                    rebuild()
-                    return
-                } else {
-                    connection.reply(nil)
-                }
-                records[key] = record
-                rebuild()
-                return
-            }
-            if kind == "PreToolUse", tool == "Bash" {
-                // Legacy integration (prior to PermissionRequest): only commands that are not clearly safe.
-                Self.push(&record, .running, Self.describe(tool: tool, input: input))
-                if let command = Self.commandText(input), CommandRisk.assess(command).level != .safe {
-                    requestApproval(key: key, record: &record, tool: tool, input: input, kind: .preToolUse(grant: nil), connection: connection)
-                    records[key] = record
-                    rebuild()
-                    return
-                }
-                records[key] = record
-                rebuild()
-                connection.reply(nil)
-                return
-            }
-            connection.reply(nil)
-        }
-
-        var attention = false
-
-        switch kind {
-        case "SessionStart":
-            // Claude Code starts again after a compaction (`source: "compact"`): the session works no more than before.
-            if (event["source"] as? String) != "compact" { record.status = .running }
-        case "UserPromptSubmit":
-            record.status = .running
-            record.turnStarted = Date()
-            record.diff = []
-            // What the agent injects itself (a finished background task …) is not your last prompt.
-            if let prompt = (event["prompt"] as? String).flatMap(InjectedPrompt.prompt) {
-                record.lastPrompt = prompt
-                if record.firstPrompt.isEmpty { record.firstPrompt = prompt }
-                record.lastMessage = ""
-                Self.push(&record, .done, "prompt: " + Self.shorten(prompt, 60))
-            }
-            recap?.prompt(session: key, project: record.project, agent: name)
-        case "PreToolUse":
-            record.status = .running
-            if let path = Self.filePath(input) { record.file = Self.shortPath(path) }
-            if let edit = Self.editDiff(tool: tool, input: input) { record.diff = edit.lines }
-            Self.push(&record, .running, Self.describe(tool: tool, input: input))
-            // The prompt was missed (Nook started mid-turn): this turn is at least this old.
-            if record.turnStarted == nil { record.turnStarted = Date() }
-            recap?.toolUse(tool)
-            // The agent's app is about to ask you in its own window (Claude's "Allow Claude to use …?"): ask here too.
-            let hosts = AppPrompt.hostBundleIDs(agentID: agentID, hostBundleID: record.hostBundleID, tool: tool)
-            if !hosts.isEmpty {
-                closeAppPrompts(key: key, step: nil)
-                requestApproval(key: key, record: &record, tool: tool, input: input, kind: .appPrompt(bundleIDs: hosts),
-                                connection: nil)
-            }
-        case "PostToolUse":
-            Self.complete(&record, as: .done)
-            Self.resume(&record, asking: isAsking(key))
-            if let edit = Self.editDiff(tool: tool, input: input) {
-                record.linesAdded += edit.added
-                record.linesRemoved += edit.removed
-                recap?.edit(added: edit.added, removed: edit.removed)
-            }
-        case "PostToolUseFailure":
-            Self.complete(&record, as: .failed)
-            Self.resume(&record, asking: isAsking(key))
-        case "Notification":
-            let message = (event["message"] as? String) ?? "waiting for you"
-            record.lastMessage = message
-            // If the question is already presented as a card in the notch, don't show another alert.
-            let asking = isAsking(key)
-            // "Claude is waiting for your input" is Claude Code's idle message after finishing a turn: not a prompt to you.
-            let idle = message.lowercased().contains("waiting for your input")
-            if idle && !asking {
-                if record.status != .done { record.status = .done }
-                record.turnStarted = nil
-                Self.push(&record, .done, "done, waiting for your next prompt")
-            } else if !asking {
-                record.status = .waiting
-                Self.push(&record, .blocked, Self.shorten(message, 70))
-                attention = true
-            }
-        case "Stop":
-            record.status = .done
-            record.turnStarted = nil
-            if let last = (event["last-assistant-message"] as? String) ?? (event["last_assistant_message"] as? String) {
-                record.lastMessage = last
-            }
-            Self.complete(&record, as: .done)
-            Self.push(&record, .done, "done")
-            attention = true
-            recap?.turnEnded(session: key)
-        case "StopFailure":
-            record.status = .failed
-            record.turnStarted = nil
-            let error = (event["error"] as? String) ?? (event["message"] as? String) ?? "stopped with an error"
-            Self.complete(&record, as: .failed)
-            Self.push(&record, .failed, Self.shorten(error, 70))
-            attention = true
-            recap?.turnEnded(session: key)
-        case "SubagentStart":
-            let type = (event["agent_type"] as? String) ?? (event["subagent_type"] as? String) ?? ""
-            Self.push(&record, .running, type.isEmpty ? "subagent started" : "subagent: \(type)")
-        case "SubagentStop":
-            Self.complete(&record, as: .done)
-        case "Interrupt":
-            record.status = .done
-            record.turnStarted = nil
-            Self.complete(&record, as: .failed)
-            Self.push(&record, .failed, "interrupted")
-            recap?.turnEnded(session: key)
-        default:
-            break
-        }
-
-        records[key] = record
-        rebuild()
-        // A new prompt is a new turn: a chat you settled comes back now, whether or not the Agents list is on screen.
-        if kind == "UserPromptSubmit", let session = sessions.first(where: { $0.id == key }) {
-            FinishedSessions.shared.reopen(FinishedSessions.key(session: session))
-        }
-        if attention, let session = sessions.first(where: { $0.id == key }) {
-            onAttention?(session)
-        }
-        if mode != "permission" { connection.reply(nil) }
-    }
-
-    // MARK: Permissions
-
-    private func requestApproval(
-        key: String,
-        record: inout Record,
-        tool: String,
-        input: [String: Any],
-        kind: PendingKind,
-        connection: HookConnection?
-    ) {
-        let id = UUID().uuidString
-        var summary = Self.approvalSummary(tool: tool, input: input)
-        let edit = Self.editDiff(tool: tool, input: input)
-        var assessment = Self.assess(tool: tool, input: input, edit: edit)
-        var canAlways = false
-        var title: String?
-        var timeout = Self.approvalTimeout
-        switch kind {
-        case .permission(_, let always):
-            canAlways = always
-        case .preToolUse(let grant):
-            canAlways = grant != nil
-        case .appPrompt:
-            summary = AppPrompt.summary(input: input)
-            title = AppPrompt.title(tool: tool, agent: record.agent)
-            assessment = CommandAssessment(level: .review, title: "", note: tr("ws.approval.appPromptNote", record.agent))
-            timeout = Self.appPromptTimeout
-        }
-
-        let request = ApprovalRequest(
-            id: id,
-            sessionKey: key,
-            agentName: record.agent,
-            project: record.project,
-            tool: tool,
-            summary: summary,
-            diff: edit?.lines ?? [],
-            assessment: assessment,
-            canAlways: canAlways,
-            created: Date(),
-            customTitle: title
-        )
-        pendingApprovals[id] = PendingApproval(request: request, connection: connection, kind: kind)
-        approvals.append(request)
-
-        record.status = .waiting
-        if let edit { record.diff = edit.lines }
-        Self.replaceLast(&record, .blocked, "waiting for you: " + Self.shorten(summary, 50))
-
-        connection?.onPeerClosed { [weak self] in
-            Task { @MainActor in
-                self?.closeApproval(id, response: nil, status: .running, step: (.running, "answered in the terminal"))
-            }
-        }
-        let wait = timeout
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
-            // No answer received: the agent will prompt directly, as normal.
-            self?.closeApproval(id, response: nil, status: .waiting, step: (.blocked, "waiting for you in the terminal"))
-        }
-        onApproval?(request)
-    }
-
-    /// Answers the app's own prompt by pressing its button. When Nook cannot find the button for sure (the app shows
-    /// another conversation, or Nook has no Accessibility access), it opens the app, so you answer there.
-    private func answerAppPrompt(_ id: String, bundleIDs: [String], allow: Bool) {
-        guard answering.insert(id).inserted else { return }
-        Task { @MainActor [weak self] in
-            let pressed = await AppPromptPresser.press(allow ? .allow : .deny, bundleIDs: bundleIDs)
-            guard let self else { return }
-            self.answering.remove(id)
-            guard self.pendingApprovals[id] != nil else { return }
-            if pressed {
-                self.recap?.decision(allowed: allow)
-                if allow {
-                    self.closeApproval(id, response: nil, status: .running, step: (.running, "allowed via Nook"), message: "Allowed")
-                } else {
-                    self.closeApproval(id, response: nil, status: .running, step: (.failed, "denied via Nook"), message: "Denied")
-                }
-            } else {
-                self.closeApproval(id, response: nil, status: .waiting, step: (.blocked, "waiting for you in the app"))
-                let app = bundleIDs.compactMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }.first
-                app?.activate(options: [.activateAllWindows])
-            }
-        }
-    }
-
-    /// Plugin agents that answer "Always" themselves (see `AgentPlugins`).
-    private static let pluginAlways: Set<String> = ["opencode", "hermes"]
-
-    /// The agent was started allowing every tool (`--allow-all-tools`, `--yolo`): it never asks, so Nook does not either.
-    private static func allowsEverything(_ lineage: [Int32]) -> Bool {
-        lineage.contains { pid in LocalAgentScanner.commandLine(pid).map(PreToolGate.allowsEverything) ?? false }
-    }
-
-    /// Closes the app-prompt cards of a session.
-    private func closeAppPrompts(key: String, step: (AgentStep.Mark, String)?) {
-        for (id, pending) in pendingApprovals where pending.request.sessionKey == key {
-            guard case .appPrompt = pending.kind else { continue }
-            closeApproval(id, response: nil, status: .running, step: step)
-        }
-    }
-
-    private func closeApproval(
-        _ id: String,
-        response: Data?,
-        status: AgentStatus?,
-        step: (AgentStep.Mark, String)?,
-        message: String? = nil
-    ) {
-        guard let pending = pendingApprovals.removeValue(forKey: id) else { return }
-        pending.connection?.reply(response)
-        approvals.removeAll { $0.id == id }
-        let key = pending.request.sessionKey
-        if var record = records[key] {
-            if let status, record.status == .waiting { record.status = status }
-            if let step { Self.replaceLast(&record, step.0, step.1) }
-            records[key] = record
-        }
-        rebuild()
-        onApprovalGone?(id, message)
-    }
-
-    private static func response(for decision: ApprovalDecision, kind: PendingKind, reason: String = "") -> Data? {
-        let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        let denied = reason.isEmpty ? "Denied via Nook" : "Denied via Nook: " + reason
-        let payload: [String: Any]
-        switch kind {
-        case .preToolUse:
-            let value: String
-            switch decision {
-            case .allow, .always: value = "allow"
-            case .deny: value = "deny"
-            case .terminal: return nil
-            }
-            payload = [
-                "hookSpecificOutput": [
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": value,
-                    "permissionDecisionReason": value == "allow" ? "Approved via Nook" : denied
-                ]
-            ]
-        case .appPrompt:
-            return nil
-        case .permission(let suggestions, let canAlways):
-            var result: [String: Any]
-            switch decision {
-            case .allow:
-                result = ["behavior": "allow"]
-            case .always:
-                result = ["behavior": "allow"]
-                // Claude Code persists rule itself, just like "Yes, and don't ask again".
-                if canAlways, let suggestions = suggestions as? [Any], !suggestions.isEmpty {
-                    result["updatedPermissions"] = suggestions
-                }
-            case .deny:
-                result = ["behavior": "deny", "message": denied]
-            case .terminal:
-                return nil
-            }
-            payload = ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": result]]
-        }
-        return try? JSONSerialization.data(withJSONObject: payload)
-    }
-
-    // MARK: Questions
-
-    private func askQuestion(
-        key: String,
-        record: inout Record,
-        items: [AgentQuestionItem],
-        raw: Any,
-        connection: HookConnection
-    ) {
-        let id = UUID().uuidString
-        let request = AgentQuestionRequest(id: id, sessionKey: key, agentName: record.agent, project: record.project, items: items)
-        pendingQuestions[id] = PendingQuestion(request: request, connection: connection, rawQuestions: raw)
-        record.status = .waiting
-        Self.push(&record, .blocked, "question: " + Self.shorten(items[0].question, 60))
-
-        connection.onPeerClosed { [weak self] in
-            Task { @MainActor in
-                self?.closeQuestion(id, response: nil, status: .running, step: (.done, "answered in the terminal"))
-            }
-        }
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.questionTimeout * 1_000_000_000)
-            self?.closeQuestion(id, response: nil, status: .waiting, step: (.blocked, "question is in the terminal"))
-        }
-        onQuestion?(request)
-    }
-
-    private func closeQuestion(
-        _ id: String,
-        response: Data?,
-        status: AgentStatus?,
-        step: (AgentStep.Mark, String)?,
-        message: String? = nil
-    ) {
-        guard let pending = pendingQuestions.removeValue(forKey: id) else { return }
-        pending.connection.reply(response)
-        let key = pending.request.sessionKey
-        if var record = records[key] {
-            if let status, record.status == .waiting { record.status = status }
-            if let step { Self.replaceLast(&record, step.0, step.1) }
-            records[key] = record
-        }
-        rebuild()
-        onQuestionGone?(id, message)
-    }
-
-    // MARK: Session List
-
-    private func prune() {
-        let now = Date()
-        // A compaction no event ended (an agent that only says when it starts) stops showing after `HookCompaction.timeout`.
-        for (key, record) in records where record.compactingSince != nil && !HookCompaction.isLive(since: record.compactingSince, now: now) {
-            records[key]?.compactingSince = nil
-            if let last = records[key]?.steps.last, last.mark == .running, last.text == tr("ws.activity.compacting") {
-                records[key]?.steps.removeLast()
-            }
-            rebuild()
-        }
-        let kept = records.filter { key, record in
-            if pendingApprovals.values.contains(where: { $0.request.sessionKey == key }) { return true }
-            let settled = Self.isSettled(key: key, agent: record.agent, sessionID: record.sessionID, cwd: record.cwd,
-                                         lastActive: record.updated)
-            return !SessionLiveness.isExpired(done: record.status == .done || record.status == .failed, settled: settled, age: now.timeIntervalSince(record.updated))
-        }
-        // Only when something expired: every assignment runs `records`' didSet, which rewrites agent-sessions.json.
-        guard kept.count != records.count else { return }
-        records = kept
-        rebuild()
-    }
-
-    /// Whether you settled this session in the Agents list (`FinishedSessions.key(session:)` for a hooked session).
-    private static func isSettled(key: String, agent: String, sessionID: String, cwd: String, lastActive: Date) -> Bool {
-        let conversation = FinishedSessions.ownConversation(id: key, sessionID: sessionID, cwd: cwd, detected: false)
-        return FinishedSessions.shared.isSettled(FinishedSessions.key(agent: agent, conversation: conversation, fallback: key),
-                                                 lastActive: lastActive)
-    }
-
-    /// When `sessions` was last published, and whether a later publish is waiting (see `rebuild`).
-    private var lastPublished: Date = .distantPast
-    private var publishPending = false
-    /// How often a session's progress alone is published at most. Each tool call of each agent is a hook event, and each
-    /// publish redraws every view of the app: with several agents at work that was several full redraws a second.
-    private static let progressInterval: TimeInterval = 1
-
-    /// Publishes the sessions as the records now have them. What asks something of you or changes the list (a session
-    /// that starts, waits, finishes or ends, an approval, a new prompt) is published at once; progress alone (a step, a
-    /// reply, the time of the last event, the order that follows from it) at most once every `progressInterval`.
-    private func rebuild() {
-        let newSessions = makeSessions()
-        guard sessions != newSessions else { return }
-        let wait = lastPublished.timeIntervalSinceNow + Self.progressInterval
-        if wait <= 0 || Self.shape(newSessions) != Self.shape(sessions) {
-            sessions = newSessions
-            lastPublished = Date()
-        } else if !publishPending {
-            publishPending = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
-                MainActor.assumeIsolated {
-                    self?.publishPending = false
-                    self?.rebuild()
-                }
-            }
-        }
-    }
-
-    /// What of the sessions must show at once, in no particular order.
-    private static func shape(_ sessions: [AgentSession]) -> [String] {
-        sessions.map {
-            "\($0.id)|\($0.status)|\($0.approvalID ?? "")|\($0.turnStarted == nil)|\($0.compactingSince == nil)|\($0.lastPrompt)"
-        }.sorted()
-    }
-
-    private func makeSessions() -> [AgentSession] {
-        let order: [AgentStatus: Int] = [.waiting: 0, .failed: 1, .running: 2, .done: 3]
-        // The context lines of a finished session are made anew on each rebuild, each with a new id: the ones published
-        // already are kept while their text is the same, so an unchanged session stays equal and its rows keep their identity.
-        let published = Dictionary(sessions.map { ($0.id, $0.diff) }, uniquingKeysWith: { first, _ in first })
-        return records
-            .sorted { lhs, rhs in
-                let l = order[lhs.value.status] ?? 9
-                let r = order[rhs.value.status] ?? 9
-                return l != r ? l < r : lhs.value.updated > rhs.value.updated
-            }
-            .map { key, record in
-                var diff: [DiffLine] = []
-                if record.status == .done || record.status == .failed || record.diff.isEmpty {
-                    if !record.cwd.isEmpty { diff.append(DiffLine(kind: .context, text: record.cwd)) }
-                    for line in record.lastMessage.split(separator: "\n").prefix(8) {
-                        diff.append(DiffLine(kind: .context, text: String(line.prefix(110))))
-                    }
-                } else {
-                    diff = record.diff
-                }
-                if let old = published[key], old.elementsEqual(diff, by: { $0.kind == $1.kind && $0.text == $1.text }) {
-                    diff = old
-                }
-                var file = record.file
-                if record.linesAdded + record.linesRemoved > 0 {
-                    file += "  +\(record.linesAdded) −\(record.linesRemoved)"
-                }
-                return AgentSession(
-                    id: key,
-                    name: record.agent,
-                    project: record.project,
-                    status: record.status,
-                    file: file,
-                    placeholder: "Type in the terminal of \(record.agent) to continue",
-                    steps: record.steps,
-                    diff: diff,
-                    cwd: record.cwd,
-                    hostBundleID: record.hostBundleID,
-                    home: record.home,
-                    approvalID: approvals.first { $0.sessionKey == key }?.id,
-                    linesAdded: record.linesAdded,
-                    linesRemoved: record.linesRemoved,
-                    summary: Self.oneLine(record.lastMessage),
-                    sessionID: record.sessionID,
-                    transcriptPath: record.transcriptPath,
-                    lastPrompt: record.lastPrompt,
-                    firstPrompt: record.firstPrompt,
-                    lastReply: record.lastMessage,
-                    started: record.started,
-                    turnStarted: record.turnStarted,
-                    compactingSince: HookCompaction.isLive(since: record.compactingSince) ? record.compactingSince : nil,
-                    updated: record.updated
-                )
-            }
-    }
-
     // MARK: Helper Functions
 
-    private static func push(_ record: inout Record, _ mark: AgentStep.Mark, _ text: String) {
+    static func push(_ record: inout Record, _ mark: AgentStep.Mark, _ text: String) {
         record.steps.append(AgentStep(mark: mark, text: text))
         if record.steps.count > 6 { record.steps.removeFirst(record.steps.count - 6) }
     }
 
-    private static func replaceLast(_ record: inout Record, _ mark: AgentStep.Mark, _ text: String) {
+    static func replaceLast(_ record: inout Record, _ mark: AgentStep.Mark, _ text: String) {
         guard !record.steps.isEmpty else {
             push(&record, mark, text)
             return
@@ -1218,25 +412,25 @@ final class AgentHub: ObservableObject {
 
     /// A tool finished while the session read as waiting: you answered its prompt in the terminal, so it works again.
     /// Without this it stayed amber ("waits for you") until the next tool started or the turn ended.
-    private static func resume(_ record: inout Record, asking: Bool) {
+    static func resume(_ record: inout Record, asking: Bool) {
         guard record.status == .waiting, !asking else { return }
         record.status = .running
     }
 
     /// Is a card in the notch still asking you something for this session (an approval or a question)?
-    private func isAsking(_ key: String) -> Bool {
+    func isAsking(_ key: String) -> Bool {
         pendingApprovals.values.contains { $0.request.sessionKey == key }
             || pendingQuestions.values.contains { $0.request.sessionKey == key }
     }
 
     /// Closes the last step that was running (or waiting for user input).
-    private static func complete(_ record: inout Record, as mark: AgentStep.Mark) {
+    static func complete(_ record: inout Record, as mark: AgentStep.Mark) {
         guard let last = record.steps.last, last.mark == .running || last.mark == .blocked else { return }
         record.steps[record.steps.count - 1] = AgentStep(mark: mark, text: last.text)
     }
 
     /// Normalizes event names from other agents (Gemini CLI, Antigravity, Copilot, Cursor, etc.) to Claude Code convention.
-    static func normalize(_ name: String) -> String {
+    nonisolated static func normalize(_ name: String) -> String {
         let map: [String: String] = [
             "BeforeTool": "PreToolUse", "AfterTool": "PostToolUse",
             "BeforeAgent": "UserPromptSubmit", "AfterAgent": "Stop",
@@ -1254,13 +448,13 @@ final class AgentHub: ObservableObject {
         return map[name] ?? HookCompaction.canonical[name] ?? name
     }
 
-    private static func cleanAgentID(_ raw: String) -> String {
+    nonisolated static func cleanAgentID(_ raw: String) -> String {
         let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
         let clean = String(raw.lowercased().filter { allowed.contains($0) }.prefix(32))
         return clean.isEmpty ? "agent" : clean
     }
 
-    private static func displayName(_ id: String) -> String {
+    static func displayName(_ id: String) -> String {
         switch id {
         case "claude-code": return "Claude Code"
         case "claude-desktop": return "Claude (app)"
@@ -1370,7 +564,7 @@ final class AgentHub: ObservableObject {
         return (LineDiff.display(ops, context: 1, limit: 30), counts.added, counts.removed)
     }
 
-    private static func approvalSummary(tool: String, input: [String: Any]) -> String {
+    static func approvalSummary(tool: String, input: [String: Any]) -> String {
         // An MCP tool shows every argument it gets: the title names the tool and its server.
         if let mcp = McpToolName(tool) {
             let arguments = McpToolName.arguments(input)
@@ -1387,7 +581,7 @@ final class AgentHub: ObservableObject {
         return tool.isEmpty ? "activity on your Mac" : tool
     }
 
-    private static func assess(
+    static func assess(
         tool: String,
         input: [String: Any],
         edit: (lines: [DiffLine], added: Int, removed: Int)?
@@ -1412,7 +606,7 @@ final class AgentHub: ObservableObject {
         return CommandAssessment(level: .review, title: "", note: "Please review")
     }
 
-    private static func describe(tool: String, input: [String: Any]) -> String {
+    static func describe(tool: String, input: [String: Any]) -> String {
         if let command = commandText(input) {
             return "Bash: " + shorten(command, 55)
         }

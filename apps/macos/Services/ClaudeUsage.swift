@@ -142,7 +142,8 @@ enum ClaudeControl {
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
         defer { stop.cancel() }
 
-        input.fileHandleForWriting.write(line + Data("\n".utf8))
+        // From a background queue, so a full pipe cannot block before the read loop and a closed one cannot raise.
+        ProcessRunner.feed(line + Data("\n".utf8), to: input.fileHandleForWriting, until: Date().addingTimeInterval(timeout))
         // Claude Code answers pending control requests and then exits once its input ends.
         try? input.fileHandleForWriting.close()
 

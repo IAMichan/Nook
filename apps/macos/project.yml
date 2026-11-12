@@ -360,6 +360,7 @@ targets:
       - path: Brain/BrainSelection.swift
       - path: Brain/PrivateBrief.swift
       - path: Brain/AIProvider.swift
+      - path: Core/ProviderKeys.swift
       - path: App/ConversationList.swift
       - path: Core/ListSelection.swift
       - path: Core/LineDiff.swift
@@ -389,6 +390,7 @@ targets:
       - path: Core/MemoryPressure.swift
       - path: Core/ByteBudgetCache.swift
       - path: Core/NookPaths.swift
+      - path: Core/ProcessRunner.swift
       - path: Core/SafeStorage.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
@@ -498,6 +500,7 @@ targets:
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/LinkedPullRequests.swift
       - path: Services/Workspace/PullRequestLinks.swift
+      - path: Services/Workspace/RunPullRequestLinks.swift
       - path: Services/Workspace/PullRequestMentions.swift
       - path: Services/Workspace/PullRequestStatus.swift
       - path: Services/Workspace/ScheduledTasks.swift
@@ -625,6 +628,7 @@ targets:
       - path: Services/Workspace/GitService+SourceControl.swift
       - path: Services/Connectors/ZipText.swift
       - path: Services/Workspace/RunStore.swift
+      - path: Services/Workspace/TimelineMemory.swift
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/Workspace/TokenSavings.swift

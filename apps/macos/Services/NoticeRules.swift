@@ -68,7 +68,7 @@ struct NoticeRules: Codable, Equatable, Sendable {
     static func defaultOn(_ source: NoticeSource, app: String) -> Bool {
         switch source {
         case .agents, .nook, .suggestions: return true
-        case .chats: return app == "whatsapp"
+        case .chats: return MessagingApps.known(normalizedApp(app))?.notifiesByDefault ?? false
         }
     }
 

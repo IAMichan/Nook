@@ -97,7 +97,6 @@ struct GitLabSetupSheet: View {
     @State private var check: GitLabTokenCheck?
     @State private var saved = false
     @State private var replacing = false
-    @State private var confirmDisconnect = false
 
     private var normalizedHost: String { GitLabCredentials.normalize(host) ?? host }
 
@@ -118,23 +117,18 @@ struct GitLabSetupSheet: View {
             if managing != nil { manageContent } else { connectContent }
         } footer: {
             if managing != nil {
-                Button(tr("settings2.disconnect"), role: .destructive) { confirmDisconnect = true }
+                ConfirmedButton(tr("settings2.disconnect"), question: tr("connect.disconnectTitle", "GitLab"),
+                                detail: tr("codeHost.removeDetail", managing ?? normalizedHost)) {
+                    guard let managing else { return }
+                    GitLabCredentials.remove(host: managing)
+                    dismiss()
+                }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.nookProminent)
                 .controlSize(.large)
-        }
-        .confirmationDialog(tr("connect.disconnectTitle", "GitLab"), isPresented: $confirmDisconnect) {
-            Button(tr("settings2.disconnect"), role: .destructive) {
-                guard let managing else { return }
-                GitLabCredentials.remove(host: managing)
-                dismiss()
-            }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("codeHost.removeDetail", managing ?? normalizedHost))
         }
         .task {
             guard let managing, let stored = GitLabCredentials.token(host: managing) else { return }
@@ -204,7 +198,7 @@ struct GitLabSetupSheet: View {
                 tokenField
             } else {
                 HStack {
-                    Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
+                    Label(tr("settings2.service.keySafe"), icon: "lock.fill")
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
@@ -222,7 +216,7 @@ struct GitLabSetupSheet: View {
                 .onSubmit(save)
             HStack {
                 Button { pasteFromClipboard() } label: {
-                    Label(tr("button.pasteClipboard"), systemImage: "doc.on.clipboard")
+                    Label(tr("button.pasteClipboard"), icon: "doc.on.clipboard")
                 }
                 .buttonStyle(.nookProminent)
                 Button(tr("button.save"), action: save)

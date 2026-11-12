@@ -71,7 +71,7 @@ struct BeeperImportSheet: View {
                 .buttonStyle(.nookProminent)
                 .controlSize(.large)
         }
-        .confirmationDialog(tr("beeper.import.finish"), isPresented: $confirmFinish) {
+        .confirmationDialog(tr("beeper.import.finish"), isPresented: $confirmFinish, titleVisibility: .visible) {
             Button(tr("beeper.import.finishButton")) {
                 importer.finish()
                 dismiss()

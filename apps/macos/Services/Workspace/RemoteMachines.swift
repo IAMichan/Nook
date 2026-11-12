@@ -24,6 +24,21 @@ struct RemoteMachine: Codable, Equatable, Identifiable, Sendable {
     var usesPassword: Bool { passwordLogin == true }
 }
 
+extension RemoteMachine {
+    private enum CodingKeys: String, CodingKey { case id, name, host, port, identityFile, lastUsedAt, passwordLogin }
+
+    /// A missing id (stored by an older version) gets a new one instead of failing the machine.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try container.decode(String.self, forKey: .name), host: try container.decode(String.self, forKey: .host))
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? id
+        port = try container.decodeIfPresent(Int.self, forKey: .port)
+        identityFile = try container.decodeIfPresent(String.self, forKey: .identityFile)
+        lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        passwordLogin = try container.decodeIfPresent(Bool.self, forKey: .passwordLogin)
+    }
+}
+
 /// SSH passwords you typed: in memory for this run of Nook, and in the Keychain only when you chose "Keep in Keychain"
 /// (then a machine is unlocked again after a restart). Never anywhere else on disk. ssh gets one through SSH_ASKPASS
 /// (see RemoteLaunch.environment), so a password is typed once, not on every git call or turn.
@@ -159,13 +174,15 @@ struct RemoteTarget: Codable, Equatable, Sendable {
 enum RemoteMachines {
     static let defaultsKey = "agents.remoteMachines"
 
+    /// Machine by machine: one that cannot be read is left out, and the stored list is copied aside first (`SafeStorage`),
+    /// so the next save never takes the others with it.
     static func load(defaults: UserDefaults = .standard) -> [RemoteMachine] {
-        guard let data = defaults.data(forKey: defaultsKey) else { return [] }
-        return (try? JSONDecoder().decode([RemoteMachine].self, from: data)) ?? []
+        SafeStorage.decode(LossyArray<RemoteMachine>.self, defaults: defaults, key: defaultsKey, skipped: { $0.skipped })
+            .value?.elements ?? []
     }
 
     static func save(_ machines: [RemoteMachine], defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(machines), forKey: defaultsKey)
+        defaults.setEncoded(machines, forKey: defaultsKey)
     }
 
     static func upsert(_ machine: RemoteMachine, defaults: UserDefaults = .standard) {

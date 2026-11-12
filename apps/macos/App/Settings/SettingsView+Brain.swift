@@ -215,7 +215,8 @@ extension SettingsView {
     }
 
     var brainExplanation: String {
-        if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isSubscription {
+        // Claude's API and the subscriptions (Claude Code's among them) share the recommended explanation.
+        if settings.provider.textWire == .anthropicMessages || settings.provider.isSubscription {
             return tr("settings.brain.claudeExplanation")
         }
         return tr("settings.brain.otherExplanation")
@@ -254,7 +255,7 @@ extension SettingsView {
         let hasKey = settings.hasKey(for: .openrouter)
         HStack {
             if hasKey {
-                Label(tr("brain.openrouter.signedIn"), systemImage: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
+                Label(tr("brain.openrouter.signedIn"), icon: "checkmark.seal.fill").foregroundStyle(NookTheme.mint)
                 Spacer()
             }
             switch openRouter.phase {
@@ -266,7 +267,7 @@ extension SettingsView {
                 Button {
                     openRouter.signIn(settings: settings)
                 } label: {
-                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), systemImage: "person.badge.key.fill")
+                    Label(hasKey ? tr("connect.reauthorize") : tr("hub.signIn.button", "OpenRouter"), icon: "person.badge.key.fill")
                 }
                 .buttonStyle(.nookProminent)
                 .controlSize(hasKey ? .regular : .large)
@@ -290,7 +291,7 @@ extension SettingsView {
                     NSWorkspace.shared.open(url)
                     keyCatcher.watch()
                 } label: {
-                    Label(tr("brain.key.get", settings.provider.title), systemImage: "arrow.up.forward.app")
+                    Label(tr("brain.key.get", settings.provider.title), icon: "arrow.up.forward.app")
                 }
                 .controlSize(.large)
                 SettingNote(tr("brain.key.autoPaste"))
@@ -306,7 +307,7 @@ extension SettingsView {
             }
             HStack {
                 if settings.hasKey(for: settings.provider) {
-                    Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
+                    Label(settings.maskedKey(for: settings.provider).map { "\(tr("settings.brain.keyInKeychain")): \($0)" } ?? tr("settings.brain.keyInKeychain"), icon: "key.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKeyNamed", settings.provider.title), detail: tr("confirm.keychain.detail")) {
@@ -341,8 +342,8 @@ extension SettingsView {
                 if fetchingModels { ProgressView().controlSize(.small) }
                 if !settings.provider.seesImages(model: settings.activeProviderModel) { NoImagesBadge() }
             }
-            if settings.provider == .claude {
-                SettingNote(tr("settings.brain.haikuHint"))
+            if let hint = settings.provider.modelHintKey {
+                SettingNote(tr(hint))
             }
         }
     }
@@ -459,7 +460,7 @@ extension SettingsView {
         fetchingModels = true
         defer { fetchingModels = false }
         do {
-            let key = settings.provider == .claude ? settings.apiKey : settings.providerKey
+            let key = settings.providerKey
             fetchedModels = try await settings.provider.listModels(key: key)
             if fetchedModels.isEmpty {
                 ToastCenter.shared.warning(tr("settings.brain.noModelsFound"))
@@ -545,32 +546,26 @@ extension SettingsView {
     /// Saves `keyDraft` for the chosen service, or removes its key when it is empty.
     func saveKey(_ keyDraft: String) {
         let provider = settings.provider
-        if provider == .claude {
-            if !keyDraft.isEmpty {
-                let saved = settings.saveAPIKey(keyDraft)
-                if !saved.looksValid {
-                    testResult = (false, tr("brain.key.invalid"))
-                }
-                if let keychainError = saved.keychainError {
-                    ToastCenter.shared.warning(tr("settings.brain.keychainRejected"), detail: keychainError)
-                } else {
-                    ToastCenter.shared.success(tr("settings.brain.keySaved"))
-                }
-            } else {
-                settings.saveAPIKey("")
-                testResult = nil
-                ToastCenter.shared.success(tr("settings.brain.keyRemoved"))
-                return
-            }
-        } else {
-            let error = settings.saveProviderKey(keyDraft, for: provider)
-            let removed = keyDraft.isEmpty
-            if let error {
+        // Every provider's key goes the same way (`ProviderKeys`); one that does not start like the provider's own keys
+        // gets a warning, and is still saved and tested.
+        let error = settings.saveProviderKey(keyDraft, for: provider)
+        let removed = ProviderKeys.clean(keyDraft).isEmpty
+        if let error {
+            // A key the Keychain refused still works until Nook quits (`AppSettings.saveProviderKey`).
+            if removed {
                 ToastCenter.shared.error(tr("settings.brain.keyNotSaved"), detail: error)
             } else {
-                ToastCenter.shared.success(removed ? tr("settings.brain.keyRemoved") : tr("settings.brain.keySaved"))
+                ToastCenter.shared.warning(tr("settings.brain.keychainRejected"), detail: error)
             }
-            if removed { return }
+        } else {
+            ToastCenter.shared.success(removed ? tr("settings.brain.keyRemoved") : tr("settings.brain.keySaved"))
+        }
+        if removed {
+            testResult = nil
+            return
+        }
+        if let prefix = provider.keyPrefix, !ProviderKeys.looksValid(keyDraft, prefix: prefix) {
+            testResult = (false, tr("brain.key.invalid", provider.title, prefix))
         }
         Task { await testConnection() }
     }

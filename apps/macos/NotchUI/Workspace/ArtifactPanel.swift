@@ -254,8 +254,7 @@ struct ArtifactMoreMenu: View {
     }
 
     private func copy(_ string: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
+        Pasteboard.copy(string)
         ToastCenter.shared.success(tr("button.copied"), detail: (path as NSString).lastPathComponent)
     }
 

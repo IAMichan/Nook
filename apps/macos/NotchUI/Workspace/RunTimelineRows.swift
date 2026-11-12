@@ -582,14 +582,9 @@ struct CodeBlock: View {
             HStack {
                 Text(title).font(NookTheme.TextStyle.caption).foregroundStyle(WS.tertiary)
                 Spacer()
-                Button {
-                    Pasteboard.copy(AnsiText.hasCodes(text) ? AnsiText.plain(text) : text)
-                } label: {
-                    Image(icon: "doc.on.doc").font(NookTheme.font(10))
+                CopyIconButton(tr("button.copy"), height: 18, width: 18) {
+                    AnsiText.hasCodes(text) ? AnsiText.plain(text) : text
                 }
-                .buttonStyle(.nookPlain)
-                .foregroundStyle(WS.tertiary)
-                .help(tr("button.copy"))
             }
             // Both ways, at a fixed height: a long output (a whole file) scrolls inside the block instead of spilling
             // over the rows around it.

@@ -600,7 +600,7 @@ struct PullRequestWatchStrip: View {
         }
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)
-        .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
+        .hoverRowFill($hovering, radius: NookTheme.Radius.chip)
         // The whole row opens the pull request (in the session's side panel); the checks and the eye keep their own click.
         .contentShape(Rectangle())
         .nookClickable()
@@ -608,7 +608,6 @@ struct PullRequestWatchStrip: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: tr("ws.prwatch.open"), open)
         .opacity(isCurrent ? 1 : 0.72)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
 
@@ -987,11 +986,10 @@ struct BackgroundCommandLink: View {
             .font(NookTheme.TextStyle.caption)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : NookTheme.field))
+            .hoverRowFill($hovering, rest: NookTheme.field)
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .padding(.leading, TranscriptStyle.workIndent)
         .help(tr("ws.background.showInBar"))
         .accessibilityLabel(tr("ws.background.showInBar"))

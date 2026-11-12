@@ -62,7 +62,8 @@ enum AgentCommand {
         var toolSearch: String? = nil
         /// The token suggestions you applied to Nook's sessions (Settings › Sessions › Tokens).
         var tuning = AgentTuning.Applied()
-        /// Claude Code's reasoning effort (`--effort`); nil leaves the agent's own default.
+        /// The reasoning effort, sent the way the agent takes it at launch (`ProviderCapabilities.effort`,
+        /// `effortArguments`); nil leaves the agent's own default.
         var effort: String? = nil
         /// The speed tier (`SpeedTiers`): Claude Code's fast mode in its settings, Codex's `service_tier`; nil is standard.
         var speedTier: String? = nil
@@ -99,7 +100,7 @@ enum AgentCommand {
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
-            if let effort = input.effort, !effort.isEmpty { arguments += ["--effort", effort] }
+            arguments += effortArguments(input.provider, effort: input.effort)
             if let resume = input.resumeSessionID, !resume.isEmpty {
                 arguments += ["--resume", resume]
                 if input.forkSession { arguments.append("--fork-session") }
@@ -120,6 +121,7 @@ enum AgentCommand {
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             // Detailed reasoning summaries: the timeline shows how Codex thinks, not only what it did.
             arguments += ["-c", "model_reasoning_summary=\"detailed\""]
+            arguments += effortArguments(input.provider, effort: input.effort)
             arguments += SpeedTiers.codexExecArguments(tier: input.speedTier)
             if let bridge = input.bridge { arguments += bridge.codexArguments(runID: input.runID) }
             var prompt = input.prompt
@@ -171,7 +173,7 @@ enum AgentCommand {
                 arguments += ["--model", input.model]
             }
         }
-        if let effort = input.effort, PiRPC.thinkingLevels.contains(effort) { arguments += ["--thinking", effort] }
+        if let effort = input.effort, PiRPC.thinkingLevels.contains(effort) { arguments += effortArguments(input.provider, effort: effort) }
         let instructions = AgentCredits.launchInstructions(input.instructions, bridgeNote: input.bridge?.note, omit: input.omitAgentCredits)
         if !instructions.isEmpty { arguments += ["--append-system-prompt", instructions] }
         arguments += ["--extension", PiExtension.fileURL.path]
@@ -183,6 +185,22 @@ enum AgentCommand {
         return LaunchSpec(executable: input.executable, arguments: arguments, extraEnvironment: environment,
                           workingDirectory: input.workingDirectory, initialInput: PiRPC.turnInput(for: input.prompt),
                           keepsInputOpen: true)
+    }
+
+    /// The launch arguments that carry a session's reasoning effort, the way its agent takes it (`EffortDelivery`). Empty
+    /// without a level, for an agent that takes it over its session (ACP), and for a level that is not a plain word: a
+    /// config override is parsed as TOML by Codex, so nothing else may reach it.
+    static func effortArguments(_ provider: RunProvider, effort: String?) -> [String] {
+        guard let effort, !effort.isEmpty else { return [] }
+        switch provider.capabilities.effort {
+        case .launchFlag(let flag):
+            return [flag, effort]
+        case .launchConfig(let key):
+            let plain = effort.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" }
+            return plain && effort.allSatisfy(\.isASCII) ? ["-c", "\(key)=\"\(effort)\""] : []
+        case .sessionOption:
+            return []
+        }
     }
 
     /// The ACP server command of an agent that only runs over ACP (see AcpAgent).

@@ -237,6 +237,36 @@ final class AgentCoverageTests: XCTestCase {
         XCTAssertEqual(value(after: "--effort", in: AgentCommand.spec(withEffort).arguments), "high")
     }
 
+    /// The chosen effort reaches every agent the way it takes it (`ProviderCapabilities.effort`): `codex exec` once
+    /// ignored it.
+    func testEffortReachesEveryAgentAtLaunch() {
+        func args(_ provider: RunProvider, _ effort: String?) -> [String] {
+            AgentCommand.spec(AgentCommand.Input(provider: provider, executable: "/bin/agent", prompt: "hoi", model: "", mode: .agent,
+                                                 permission: .ask, instructions: "", workingDirectory: "/tmp", resumeSessionID: nil,
+                                                 accountEnvironment: [:], runID: UUID(), effort: effort)).arguments
+        }
+        let codex = args(.codex, "high")
+        let config = codex.firstIndex(of: #"model_reasoning_effort="high""#)
+        XCTAssertEqual(config.map { codex[$0 - 1] }, "-c")
+        XCTAssertFalse(args(.codex, nil).contains { $0.hasPrefix("model_reasoning_effort") }, "no effort leaves Codex's default")
+        XCTAssertFalse(args(.codex, "high\"\nx=1").contains { $0.hasPrefix("model_reasoning_effort") },
+                       "only a plain level reaches Codex's TOML")
+        XCTAssertLessThan(codex.firstIndex(of: #"model_reasoning_effort="high""#)!, codex.firstIndex(of: "--")!)
+        XCTAssertEqual(value(after: "--effort", in: args(.claude, "low")), "low")
+        XCTAssertEqual(value(after: "--thinking", in: args(.pi, "medium")), "medium")
+        for provider in RunProvider.allCases {
+            switch provider.capabilities.effort {
+            case .launchFlag(let flag):
+                XCTAssertEqual(value(after: flag, in: args(provider, "high")), "high", provider.rawValue)
+            case .launchConfig(let key):
+                XCTAssertTrue(args(provider, "high").contains("\(key)=\"high\""), provider.rawValue)
+            case .sessionOption:
+                // Over ACP the session's option carries it (`AcpSessionSettings`); the launch has nothing to add.
+                XCTAssertEqual(args(provider, "high"), args(provider, nil), provider.rawValue)
+            }
+        }
+    }
+
     private func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]

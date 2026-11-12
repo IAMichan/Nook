@@ -67,7 +67,7 @@ extension PullRequestDetailView {
                 Spacer(minLength: 6)
                 switch stop.attention {
                 case .close:
-                    Label(tr("agents.pr.guide.close"), systemImage: "eye")
+                    Label(tr("agents.pr.guide.close"), icon: "eye")
                         .font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.amber)
                 case .skim:
                     Text(tr("agents.pr.guide.skim")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)

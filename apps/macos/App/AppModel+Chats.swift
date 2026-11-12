@@ -5,10 +5,17 @@ import SwiftUI
 /// Teams, Messages, Snapchat, the chat helper's networks, and what other apps' notifications bring. A chat Nook writes in
 /// is answered right there, in the Chats tab and on its card; any other chat's answer is copied for its own app.
 extension AppModel {
+    /// Whether an app's own link (`OwnLink`) is connected right now.
+    static func isLinked(_ link: OwnLink) -> Bool {
+        switch link {
+        case .whatsAppGateway: return WhatsAppAccounts.shared.isConnected
+        }
+    }
+
     func startChats() {
         let capture = ChatCaptureService.shared
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
-        capture.skips = { notice in notice.app == "whatsapp" && WhatsAppAccounts.shared.isConnected }
+        capture.skips = { notice in MessagingApps.known(notice.app)?.ownLink.map(Self.isLinked) == true }
         capture.onFresh = { [weak self] ids in ids.forEach { self?.presentChat($0) } }
         // Read in its own app (on the phone, in the app on this Mac): a card still waiting in line goes, and so does its
         // macOS notification; the card on screen stays (you may be typing) and follows its chat.
