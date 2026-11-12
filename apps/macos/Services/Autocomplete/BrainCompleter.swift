@@ -3,8 +3,9 @@ import MLX
 import MLXLMCommon
 
 /// Autocomplete on the model Nook's brain already downloaded (MLX), so nothing else has to be downloaded. It works like
-/// `LlamaCompleter`: the certainty threshold, the surest of several candidates written side by side (after a space), a bonus
-/// for the user's own words, other words to pick, and the suggestion handed over word by word while it is being written.
+/// `LlamaCompleter`: the certainty threshold, the surest of several candidates written side by side (where nothing has to be
+/// spelled first), a bonus for the user's own words, other words to pick, and the suggestion handed over word by word while it
+/// is being written.
 ///
 /// Speed comes from checkpoints: the cache is copied at fixed points of the prompt (every 64 tokens, `KVCache.copy()`), and
 /// each key continues from the newest checkpoint the new prompt still starts with. So a letter typed costs a few dozen
@@ -89,7 +90,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    /// With `options.candidates` above 1 (and not mid-word, nobody waiting for words one by one), writes the candidates as
+    /// With `options.candidates` above 1 (and nothing to spell first, nobody waiting for words one by one), writes the candidates as
     /// rows of one batch, returns the surest and hands the others to `branches` (see `generateRanked`).
     func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
                   branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
@@ -291,7 +292,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                 }
                 if let typed = following.text, !CompletionFollowing.fits(text, typed: typed) { return nil }
                 if text.completionWordCount > options.maxWords {
-                    candidate.end()
+                    candidate.end(atWordLimit: true)
                     break
                 }
                 // Hand over each finished word right away, so the suggestion appears while the rest is still being written.
@@ -386,7 +387,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
                     sequences[index].candidate.end()
                 }
                 sequences[index].text = text
-                if text.completionWordCount > options.maxWords { sequences[index].candidate.end() }
+                if text.completionWordCount > options.maxWords { sequences[index].candidate.end(atWordLimit: true) }
             }
             for (index, start) in starts.enumerated() { take(start.token, start.probability, into: index) }
             for _ in 1..<max(options.maxTokens, 2) {
