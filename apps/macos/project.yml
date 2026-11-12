@@ -261,6 +261,7 @@ targets:
       - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
       - path: Core/I18n+ProviderTraffic.swift
+      - path: Core/I18n+Telemetry.swift
       - path: Core/I18n+TextGen.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
@@ -641,6 +642,10 @@ targets:
       - path: Services/Workspace/TimelineMemory.swift
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
+      - path: Services/Workspace/AgentTelemetry.swift
+      - path: Services/Telemetry/OTLPConfig.swift
+      - path: Services/Telemetry/OTLPPayload.swift
+      - path: Services/Telemetry/TelemetryBuffer.swift
       - path: Services/Workspace/TokenSavings.swift
       - path: Services/Workspace/ContextUsage.swift
       - path: Services/Workspace/AgentTuning.swift

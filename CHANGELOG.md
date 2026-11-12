@@ -44,6 +44,13 @@ user or contributor notices, add a line under **Unreleased**. At release time th
   listens on this Mac and stops when no session needs it. An older OpenCode, or a server that does not start, keeps
   using ACP. Settings › Agents › "OpenCode via its own server" turns it off.
 
+- OpenTelemetry export, in Settings › Maintenance › Diagnostics: give each signal (traces, metrics, logs) an OTLP HTTP
+  endpoint, with optional headers kept in the Keychain and a Test that sends an empty export. Nook then sends its own
+  agent turns (agent, model, outcome, duration, tokens), scheduled task runs and launch time, without prompts, answers
+  or file contents, and tells every coding agent it starts about the same receiver in that agent's own settings
+  (Claude Code, Codex, Gemini CLI, OpenCode and Grok export on their own). Standard `OTEL_EXPORTER_OTLP_*` variables
+  override the fields and show as "Set by environment". Off until you set an endpoint.
+
 - While a coding agent works through a task list, the step it is on now (say, "Phase 2: agent parity") also shows in
   the Tasks strip above the composer, with a soft shimmer, so you see which phase runs without scrolling to it. This
   holds for every coding agent that keeps a task list, also in sessions Nook reads from their transcript.

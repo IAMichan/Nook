@@ -83,7 +83,11 @@ extension WorkspaceManager {
         // The arguments the account adds go on every launch of its agent, here or over ssh.
         var spec = spec
         spec.arguments += accountArguments(run.profileID)
-        guard let remote = run.remote else { return spec }
+        // The OpenTelemetry receiver from Settings › Maintenance, in each agent's own words. Not for another machine:
+        // an endpoint on this Mac is usually not reachable from there.
+        guard let remote = run.remote else {
+            return AgentTelemetry.apply(run.provider, config: NookTelemetry.shared.agentConfig, to: spec)
+        }
         let environment = run.provider == .acp ? (CustomAgents.agent(for: run.profileID)?.environment ?? [:]) : [:]
         let forward = bridge(for: run.id)?.remote.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []
         return RemoteLaunch.wrap(spec, target: remote, environment: environment, forward: forward)

@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // Before any agent starts: the receiver they are told about comes from here (`AgentTelemetry`).
+        NookTelemetry.shared.reload()
         // SSH passwords you chose to keep, before any session on another machine starts again.
         RemotePasswords.shared.keychain = RemotePasswords.Keychain(
             read: { SecretStore.read($0) },
@@ -44,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // The tabs that had a window of their own are back too.
         TabWindowController.shared.restore(app: model)
+        // OpenTelemetry export (Settings › Maintenance › Diagnostics): off unless an endpoint is set.
+        NookTelemetry.shared.appLaunched()
     }
 
     /// Clicking Nook's Dock icon (there while one of its windows is open) brings that window back.

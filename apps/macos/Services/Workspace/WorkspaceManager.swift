@@ -617,6 +617,7 @@ final class WorkspaceManager: ObservableObject {
         let continuing = continuingTurns.remove(id) != nil || continuing
         let start = TurnTimer.start(continuing: continuing, previous: workStartedAt[id])
         workStartedAt[id] = start
+        if NookTelemetry.shared.isExporting, let usage = run(id)?.usage { NookTelemetry.shared.turnStarted(id, usage: usage) }
         return start
     }
 
@@ -749,6 +750,7 @@ final class WorkspaceManager: ObservableObject {
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        NookTelemetry.shared.turnFinished(run)
         // Before open work is settled: what still runs is what keeps the session open.
         if BackgroundWork.pending(after: timeline(id), before: backgroundWork.contains(id)) {
             backgroundWork.insert(id)
