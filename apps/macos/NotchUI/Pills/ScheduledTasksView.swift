@@ -67,14 +67,8 @@ struct ScheduledTasksView: View {
             ScheduledTaskEditor(existing: target.existing) { editing = nil }
                 .environmentObject(app)
         }
-        .confirmationDialog(deleting.map { tr("sched.delete.confirm", $0.title) } ?? "", isPresented: Binding(
-            get: { deleting != nil }, set: { if !$0 { deleting = nil } }
-        )) {
-            Button(tr("sched.delete"), role: .destructive) {
-                if let task = deleting { store.delete(task.id) }
-                deleting = nil
-            }
-            Button(tr("button.cancel"), role: .cancel) { deleting = nil }
+        .confirmDelete($deleting, question: { tr("sched.delete.confirm", $0.title) }, confirmTitle: tr("sched.delete")) { task in
+            store.delete(task.id)
         }
     }
 
@@ -159,15 +153,9 @@ private struct TaskRow: View {
     private var statusChip: some View {
         if let status = effectiveStatus {
             let color = ScheduledTaskText.color(status)
-            HStack(spacing: 5) {
+            StatusBadgeLabel(word: tr("sched.status." + status.rawValue), tint: color) {
                 Circle().fill(color).frame(width: 6, height: 6)
-                Text(tr("sched.status." + status.rawValue))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(color)
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, 3)
-            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.12)))
         } else {
             Text(tr("sched.never"))
                 .font(NookTheme.TextStyle.detail)
@@ -618,9 +606,7 @@ private struct ScheduledTaskEditor: View {
         DisclosureGroup(isExpanded: $showsDeliveries) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 if records.isEmpty {
-                    Text(tr("automation.hook.deliveries.empty"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
+                    ListEmptyNote(tr("automation.hook.deliveries.empty"))
                 }
                 ForEach(records) { record in
                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {

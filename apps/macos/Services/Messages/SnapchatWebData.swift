@@ -364,6 +364,61 @@ enum SnapchatWebData {
         var id: String
         var line: Line
         var date: Date
+        /// Its words changed in place since Nook first saw it (Snapchat lets a message be edited).
+        var edited = false
+        /// Gone from the chat while the messages around it stayed: deleted in Snapchat (or no longer kept there).
+        var deleted = false
+    }
+
+    /// What a read says changed among the messages Nook keeps. The two are laid side by side in their order (the longest
+    /// run they share, `pairs`); between two messages both still have, a kept one the read lacks was deleted, and one
+    /// whose place the read fills with the same person's other words was edited. What lies before the first shared
+    /// message or after the last says nothing: the website shows only so much, and the newest is new.
+    static func changes(_ kept: [Kept], read: [Line]) -> (edited: [String: Line], deleted: Set<String>) {
+        let live = Array(kept.filter { !$0.deleted }.suffix(Self.compared))
+        let matched = pairs(live.map(\.line), read)
+        var edited: [String: Line] = [:]
+        var deleted: Set<String> = []
+        for (a, b) in zip(matched, matched.dropFirst()) {
+            let lost = Array(live[(a.kept + 1)..<b.kept])
+            let came = Array(read[(a.read + 1)..<b.read])
+            guard !lost.isEmpty else { continue }
+            if came.isEmpty {
+                deleted.formUnion(lost.map(\.id))
+            } else if came.count == lost.count,
+                      zip(lost, came).allSatisfy({ $0.line.sender == $1.sender && $0.line.media == $1.media && $0.line.text != $1.text }) {
+                for (item, line) in zip(lost, came) { edited[item.id] = line }
+            }
+        }
+        return (edited, deleted)
+    }
+
+    /// How many of the newest kept messages a read is compared with.
+    private static let compared = 300
+
+    /// The places of the longest run of lines two lists share, in order (a longest common subsequence).
+    static func pairs(_ a: [Line], _ b: [Line]) -> [(kept: Int, read: Int)] {
+        guard !a.isEmpty, !b.isEmpty else { return [] }
+        var length = Array(repeating: Array(repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in stride(from: a.count - 1, through: 0, by: -1) {
+            for j in stride(from: b.count - 1, through: 0, by: -1) {
+                length[i][j] = a[i] == b[j] ? length[i + 1][j + 1] + 1 : max(length[i + 1][j], length[i][j + 1])
+            }
+        }
+        var result: [(kept: Int, read: Int)] = []
+        var i = 0, j = 0
+        while i < a.count, j < b.count {
+            if a[i] == b[j] {
+                result.append((i, j))
+                i += 1
+                j += 1
+            } else if length[i + 1][j] >= length[i][j + 1] {
+                i += 1
+            } else {
+                j += 1
+            }
+        }
+        return result
     }
 
     /// The website shows no ids and no times, and drops what Snapchat deletes after it was seen. So the messages of a
@@ -374,7 +429,24 @@ enum SnapchatWebData {
     /// were sent.
     static func align(_ kept: [Kept], with read: [Line], chat: String, now: Date) -> [Kept] {
         guard !read.isEmpty else { return kept }
-        guard !kept.isEmpty else {
+        // Edits and deletions first, so the run below finds the messages as they are now.
+        var kept = kept
+        let changed = changes(kept, read: read)
+        for index in kept.indices {
+            if let line = changed.edited[kept[index].id] {
+                kept[index].line.text = line.text
+                kept[index].edited = true
+            }
+            if changed.deleted.contains(kept[index].id) { kept[index].deleted = true }
+        }
+        let live = kept.filter { !$0.deleted }
+        guard !live.isEmpty else {
+            if !kept.isEmpty {
+                return kept + read.enumerated().map { index, line in
+                    Kept(id: id(chat: chat, line: line, index: index, now: now), line: line,
+                         date: now.addingTimeInterval(Double(index) * 0.001))
+                }
+            }
             return read.enumerated().map { index, line in
                 Kept(id: id(chat: chat, line: line, index: index, now: now), line: line,
                      date: now.addingTimeInterval(Double(index - read.count)))
@@ -382,8 +454,8 @@ enum SnapchatWebData {
         }
         // The longest tail of the kept messages that appears in the read, and where it ends there.
         var anchor: (length: Int, end: Int)?
-        for length in stride(from: min(kept.count, read.count), through: 1, by: -1) {
-            let tail = kept.suffix(length).map(\.line)
+        for length in stride(from: min(live.count, read.count), through: 1, by: -1) {
+            let tail = live.suffix(length).map(\.line)
             if let start = (0...(read.count - length)).last(where: { Array(read[$0..<($0 + length)]) == tail }) {
                 anchor = (length, start + length - 1)
                 break
@@ -420,7 +492,8 @@ enum SnapchatWebData {
                                        text: item.line.media && item.line.text.isEmpty && picture == nil ? snapLabel : item.line.text,
                                        date: item.date, fromMe: item.line.isMine)
             if let picture { message.media = ChatMedia(kind: .photo, name: "photo.jpg", path: picture) }
-            return message
+            if item.edited { message.edited = true }
+            return item.deleted ? message.withdrawn() : message
         }
         return BridgedChat(app: app, name: row.name, messages: messages, unread: row.isUnread ? 1 : 0,
                            members: group ? others.sorted() : nil, listed: true)

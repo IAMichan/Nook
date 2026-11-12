@@ -96,7 +96,8 @@ extension WorkspaceManager {
     /// Going back to before a message also rolls back this session's conversation: Claude Code, and Codex over app-server.
     func canRollbackConversation(_ id: UUID) -> Bool {
         guard let run = run(id), run.provider.capabilities.canRollbackConversation else { return false }
-        if run.provider == .codex {
+        // Codex rolls back over app-server only, not over `codex exec`.
+        if run.provider.capabilities.rollback == .threadRollback {
             guard settings.codexAppServer, let executable = launchExecutable(run) else { return false }
             return !codexExecOnly.contains(executable)
         }

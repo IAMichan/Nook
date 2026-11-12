@@ -41,32 +41,39 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, nativeFork: true,
-                                        canRollbackConversation: true, canForkFromTurn: true, liveSettings: true,
+                                        rollback: .resumeAt, canForkFromTurn: true, liveSettings: true,
                                         reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
-                                        ultracode: true)
+                                        ultracode: true, effort: .launchFlag("--effort"), processChannel: .claudeStreamJSON,
+                                        idleConnection: .parkedProcess, probesLaunchFlags: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, canRollbackConversation: true,
-                                        speedTiers: true, echoesSteers: true)
+                                        policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, rollback: .threadRollback,
+                                        speedTiers: true, echoesSteers: true,
+                                        // `effort` on app-server's `turn/start`; `codex exec` takes it as a config override.
+                                        effort: .launchConfig("model_reasoning_effort"), idleConnection: .appServer)
         case .gemini:
-            // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
+            // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there). Its effort
+            // is the session's `thought_level` option over ACP; the headless fallback has no flag for it.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true,
+                                        effort: .sessionOption, idleConnection: .acpSession)
         case .antigravity:
             // ACP, with its conversations on disk in ~/.gemini/antigravity. It restarts its agent session to switch models,
-            // which ends a running prompt, so its settings wait for the next message.
+            // which ends a running prompt, so its settings wait for the next message. Its connection is not opened ahead
+            // of time: signing in could open Google's page just because you looked at the session.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass])
+                                        policies: [.ask, .acceptEdits, .bypass], effort: .sessionOption, idleConnection: .none)
         case .cursor:
             // ACP, with its conversations on disk in ~/.cursor (its ACP server has no session/list).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true)
+                                        policies: [.ask, .acceptEdits, .bypass], liveSettings: true,
+                                        effort: .sessionOption, idleConnection: .acpSession)
         case .pi:
             // Pi's RPC mode (`PiRPC`): streamed text and thoughts, `abort`, a prompt sent mid-turn steers it, usage with cost
             // per message. Approvals come from the extension Nook loads into Pi (`PiExtension`), through Pi's blocking
@@ -74,7 +81,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // sessions are files it resumes with `--session`.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: false,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true,
+                                        effort: .launchFlag("--thinking"), processChannel: .piRPC, idleConnection: .none)
         case .opencode, .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
@@ -83,7 +91,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             // earlier sessions come from the agent itself (`session/list`).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true)
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true,
+                                        effort: .sessionOption, idleConnection: .acpSession)
         }
     }
 
@@ -114,9 +123,10 @@ struct ProviderCapabilities: Equatable, Sendable {
     var steering = false
     /// The agent can fork its own conversation (Claude Code's `--fork-session`); otherwise a fork starts from a summary.
     var nativeFork = false
-    /// Going back to before a message also rolls back the agent's own conversation (Codex `thread/rollback` over
-    /// app-server, Claude Code `--resume-session-at`); otherwise only the files go back and the agent keeps remembering.
-    var canRollbackConversation = false
+    /// Going back to before a message also rolls back the agent's own conversation, and how (`ConversationRollbackRoute`);
+    /// otherwise only the files go back and the agent keeps remembering.
+    var rollback: ConversationRollbackRoute = .none
+    var canRollbackConversation: Bool { rollback != .none }
     /// The agent can fork its conversation at an earlier turn, not only at its end.
     var canForkFromTurn = false
     /// An approval or question the agent asked survives a restart of Nook (or of the agent). No agent Nook runs keeps
@@ -153,6 +163,64 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// does not: Nook runs it without `--replay-user-messages`, whose replay only acknowledges receipt. The ACP agents
     /// are steered by interrupting them, so the steer is the next prompt and is read at once.
     var echoesSteers = false
+    /// How the reasoning effort picked for a session reaches the agent (`EffortDelivery`, `AgentCommand.effortArguments`).
+    /// Every agent Nook runs takes one; an ACP agent only when its session offers the option.
+    var effort: EffortDelivery
+    /// What the process Nook launches for a turn listens to on stdin while it runs (`ProcessChannel`): how Stop, an
+    /// approval and a steer reach it.
+    var processChannel: ProcessChannel = .none
+    /// What stays open between turns, and is opened when you open an idle session so your first message goes straight in
+    /// (`IdleConnection`, `WorkspaceManager.prewarm`).
+    var idleConnection: IdleConnection
+    /// Nook asks the agent's CLI once which optional launch flags it knows (Claude Code's `--thinking-display`), so an
+    /// older version is never started with a flag it rejects.
+    var probesLaunchFlags = false
+}
+
+/// See `ProviderCapabilities.rollback`.
+enum ConversationRollbackRoute: String, Sendable {
+    /// The next launch resumes a copy of the conversation at the last message that stays (Claude Code's
+    /// `--resume-session-at` with `--fork-session`).
+    case resumeAt
+    /// The agent drops later turns itself before the next turn (Codex app-server's `thread/rollback`); not over
+    /// `codex exec`, which cannot.
+    case threadRollback
+    case none
+}
+
+/// See `ProviderCapabilities.effort`.
+enum EffortDelivery: Equatable, Sendable {
+    /// A launch flag with the level as its value: Claude Code's `--effort`, Pi's `--thinking`.
+    case launchFlag(String)
+    /// A config override at launch, `-c key="level"`: `codex exec`'s `model_reasoning_effort`. (Codex's app-server takes
+    /// it on `turn/start` instead.)
+    case launchConfig(String)
+    /// The ACP session's effort option (`session/set_config_option`, `AcpSessionSettings`), when the session offers one.
+    /// Gemini CLI's headless fallback has no flag for it, so there the level is not sent.
+    case sessionOption
+}
+
+/// See `ProviderCapabilities.processChannel`.
+enum ProcessChannel: String, Sendable {
+    /// Claude Code's stream-json: control requests (interrupt, permission answers) and priority messages.
+    case claudeStreamJSON
+    /// Pi's RPC mode (`PiRPC`): `abort`, answers to its confirm dialog, and steering prompts.
+    case piRPC
+    /// None: `codex exec` and Gemini CLI's headless mode take the prompt as an argument and stop on a signal; Codex's
+    /// app-server and the ACP agents talk through their own clients.
+    case none
+}
+
+/// See `ProviderCapabilities.idleConnection`.
+enum IdleConnection: String, Sendable {
+    /// Claude Code waits on stdin with the conversation resumed, and the next turn goes into that same process.
+    case parkedProcess
+    /// Codex's app-server, with its thread open.
+    case appServer
+    /// An ACP agent, with its session loaded.
+    case acpSession
+    /// Nothing ahead of time: Pi runs one process per turn; Antigravity could open Google's sign-in page.
+    case none
 }
 
 /// See `ProviderCapabilities.denyReason`.
@@ -412,6 +480,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// Nook quit after this session's turn ended while it waited on work in the background (a subagent): that work
     /// stopped with it and will not report back (see `RestartContinuation`).
     var cutBackgroundWork: CutBackgroundWork? = nil
+    /// Nook's last quit stopped this session (in the middle of a turn, or while it waited on background work): the next
+    /// launch goes on with it however long Nook stayed closed, then clears this (see `RestartContinuation`).
+    var stoppedByQuit: Bool? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil

@@ -248,6 +248,28 @@ enum NookDensity: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// The colors of added and removed lines in every diff and change count (Settings › Appearance): green and red as most
+/// tools draw them, or blue and orange, which people with red-green color blindness (about one man in twelve) tell
+/// apart. The two come from the theme's own palette, so they follow a theme and its light or dark look.
+enum NookDiffColors: String, CaseIterable, Identifiable, Sendable {
+    case redGreen, blueOrange
+    var id: String { rawValue }
+
+    func added(_ palette: NookPalette) -> UInt32 {
+        self == .redGreen ? palette.mint : palette.blue
+    }
+
+    func removed(_ palette: NookPalette) -> UInt32 {
+        // The theme's amber pulled a little toward its coral: an orange, away from the blue in hue.
+        self == .redGreen ? palette.coral : NookColor.mix(palette.amber, palette.coral, 0.45)
+    }
+
+    /// A changed file (neither added nor removed): blue with green and red, a quiet grey where blue means added.
+    func modified(_ palette: NookPalette) -> UInt32 {
+        self == .redGreen ? palette.blue : palette.textSecondary
+    }
+}
+
 /// A theme: a name and a palette for dark, for light, or both. Built-in ones have both; an imported VS Code theme has the
 /// one its `type` says.
 struct NookColorTheme: Identifiable, Equatable, Sendable {

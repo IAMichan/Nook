@@ -175,7 +175,25 @@ struct ChatMedia: Codable, Equatable, Sendable {
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         guard let file = files.first(where: { !$0.lastPathComponent.hasPrefix(".") }) else { return nil }
         markWhole(file.path)
+        touch(dir)
         return file
+    }
+
+    /// Marks a kept file's folder as used now (at most once a day), so the limits let go of the files nobody opened for
+    /// the longest first, not of the ones fetched longest ago.
+    static func touch(_ dir: URL, now: Date = Date()) {
+        let modified = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now
+        guard now.timeIntervalSince(modified) > 86_400 else { return }
+        try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: dir.path)
+    }
+
+    /// All files every bridge fetched together stay under this; the ones unused longest go first. Each bridge may keep
+    /// a lower limit of its own (`trimKept`).
+    static let totalLimit = 2 * 1024 * 1024 * 1024
+
+    /// Keeps the whole folder within `limit` bytes, the folders used longest ago going first (`touch`).
+    static func trimAll(limit: Int = totalLimit, in folder: URL = folder) {
+        trimKept(prefix: "", limit: limit, in: folder)
     }
 
     /// The folders of the keys that start with `prefix`.

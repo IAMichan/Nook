@@ -246,16 +246,21 @@ extension WorkspaceManager {
             + (openTerminalFolders?() ?? [])
         let mainCheckouts = Set(local.compactMap(\.repoRoot).map(WorkspacePathPolicy.normalize))
         Task.detached(priority: .background) { [weak self] in
-            var worktrees = Set(sessionWorktrees.map { URL(fileURLWithPath: $0) })
-            for (container, depth) in containers {
-                var level = [URL(fileURLWithPath: (container as NSString).expandingTildeInPath)]
-                for _ in 0..<depth {
-                    level = level.flatMap { (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+            // One pool for the whole sweep: Foundation's path calls autorelease, and a task's thread may not drain them
+            // for a long time (each sweep left some 100,000 path strings behind).
+            let removed = autoreleasepool { () -> [(leftover: BuildLeftovers.Leftover, bytes: Int64)] in
+                var worktrees = Set(sessionWorktrees.map { URL(fileURLWithPath: $0) })
+                for (container, depth) in containers {
+                    var level = [URL(fileURLWithPath: (container as NSString).expandingTildeInPath)]
+                    for _ in 0..<depth {
+                        level = level.flatMap { (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
+                    }
+                    worktrees.formUnion(level)
                 }
-                worktrees.formUnion(level)
+                let held = BuildLeftovers.heldFolders(busy)
+                let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, held: held, mainCheckouts: mainCheckouts) }
+                return BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle)))
             }
-            let idle = worktrees.filter { BuildLeftovers.isIdle($0.path, busy: busy, mainCheckouts: mainCheckouts) }
-            let removed = BuildLeftovers.sweep(.standard(worktrees: Array(worktrees), idleWorktrees: Array(idle)))
             await MainActor.run { [weak self] in
                 for item in removed {
                     self?.onAudit?("build_cleanup", "\(AgentPathFormat.tilde(item.leftover.url.path)) · \(item.leftover.kind.rawValue)",

@@ -41,7 +41,7 @@ private struct MusicTabContent: View {
 
 /// What the page shows above the player bar.
 enum MusicSection: String, CaseIterable, Identifiable {
-    case home, nowPlaying, search, playlists, stats
+    case home, nowPlaying, search, queue, playlists, stats
     var id: String { rawValue }
 
     /// Where the page and the sidebar keep what shows.
@@ -53,6 +53,7 @@ enum MusicSection: String, CaseIterable, Identifiable {
         case .home: return "house"
         case .nowPlaying: return "play.circle"
         case .search: return "magnifyingglass"
+        case .queue: return "list.bullet"
         case .playlists: return "music.note.list"
         case .stats: return "chart.bar"
         }
@@ -63,6 +64,7 @@ enum MusicSection: String, CaseIterable, Identifiable {
         case .home: return tr("music.section.home")
         case .nowPlaying: return tr("music.section.nowPlaying")
         case .search: return tr("music.section.search")
+        case .queue: return tr("music.section.upNext")
         case .playlists: return tr("music.section.playlists")
         case .stats: return tr("music.section.stats")
         }
@@ -70,7 +72,27 @@ enum MusicSection: String, CaseIterable, Identifiable {
 
     /// Now Playing is about the playing track, so it is there while there is one.
     static func available(playing: Bool) -> [MusicSection] {
-        playing ? allCases : [.home, .search, .playlists, .stats]
+        playing ? allCases : allCases.filter { $0 != .nowPlaying }
+    }
+
+    /// Shows a section from anywhere in the tab (a row's "Go to artist", the bar's queue button): the page and the
+    /// sidebar both follow the stored section.
+    @MainActor static func show(_ section: MusicSection) {
+        withAnimation(fold) { UserDefaults.standard.set(section.rawValue, forKey: storageKey) }
+    }
+}
+
+/// What is typed in the Music tab's search, shared by the field in the page's header and the search page, so a search
+/// starts from every page and a row's "Go to artist" can fill it in.
+@MainActor
+final class MusicSearchModel: ObservableObject {
+    static let shared = MusicSearchModel()
+    @Published var text = ""
+
+    /// Searches for `query` and shows the results.
+    func find(_ query: String) {
+        if text != query { text = query }
+        MusicSection.show(.search)
     }
 }
 
@@ -101,10 +123,14 @@ struct MusicPageView: View {
     let info: NowPlayingInfo?
     @ObservedObject var service: NowPlayingService
     @ObservedObject private var lyrics = LyricsService.shared
+    @ObservedObject private var search = MusicSearchModel.shared
     @AppStorage(MusicSection.storageKey) private var storedSection = MusicSection.home.rawValue
     @AppStorage("musicStatsPeriod") private var storedPeriod = MusicStatsPeriod.week.rawValue
     /// In the main window the sections are in the sidebar (`MusicSidebar`), so the page has no tabs of its own.
     @Environment(\.panelSidebar) private var sidebar
+    @FocusState private var searchFocused: Bool
+    /// Where typing in the header's search came from, to go back to when the field is cleared.
+    @State private var beforeSearch: MusicSection?
 
     private var sections: [MusicSection] { MusicSection.available(playing: info != nil) }
     private var section: MusicSection {
@@ -112,10 +138,9 @@ struct MusicPageView: View {
         return sections.contains(stored) ? stored : .home
     }
     private var period: MusicStatsPeriod { MusicStatsPeriod(rawValue: storedPeriod) ?? .week }
-    /// Home's playing card is on screen: it has the same controls as the bar.
-    @State private var homeCardVisible = true
-    /// Now Playing is the player itself, and Home's card says the same while it shows: the bar would only say it twice.
-    private var showsBar: Bool { info != nil && section != .nowPlaying && !(section == .home && homeCardVisible) }
+    /// The player bar is always at the bottom while something plays, so the controls never move: only Now Playing,
+    /// which is the player itself, does without it.
+    private var showsBar: Bool { info != nil && section != .nowPlaying }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -129,8 +154,9 @@ struct MusicPageView: View {
                     .contentShape(Rectangle())
                     .transition(.opacity)
                 if showsBar, let info {
-                    MusicDock(info: info, service: service) { select(.nowPlaying) }
+                    MusicDock(info: info, service: service, queueShown: section == .queue) { select(.nowPlaying) }
                         .padding(.horizontal, MusicLayout.edge)
+                        .padding(.bottom, NookTheme.Spacing.xs)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
@@ -143,14 +169,38 @@ struct MusicPageView: View {
         .task(id: "\(info?.trackKey ?? "")|\(section.rawValue)") { load() }
         // The playlists back "Add to playlist" everywhere in the tab, so they load with the page, not with their section.
         .task(id: service.playlistSourceApp) { service.refreshPlaylists() }
-        // Back on Home the card is at the top again; until it reports otherwise, the bar stays away.
-        .onChange(of: section) { homeCardVisible = true }
-        .onChange(of: info?.shuffle) { if section == .home || section == .nowPlaying { service.refreshUpNext() } }
+        .onChange(of: info?.shuffle) { if section == .home || section == .queue || section == .nowPlaying { service.refreshUpNext() } }
+        // One search for the whole tab: typed in the header or on the search page, it shows on the search page.
+        .onAppear { if service.searchResult.query != query { service.search(for: search.text) } }
+        .onChange(of: search.text) { followSearch() }
+        // Another player started: what was found in the other one cannot play here.
+        .onChange(of: service.searchApp) {
+            service.search(for: "")
+            service.search(for: search.text)
+        }
+        .onChange(of: section) {
+            if section == .search, sidebar != nil { searchFocused = true }
+            if section != .search { beforeSearch = nil }
+        }
+    }
+
+    private var query: String { search.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Typing anywhere opens the results; clearing the field goes back to the page it was typed on.
+    private func followSearch() {
+        service.search(for: search.text)
+        if !query.isEmpty, section != .search {
+            beforeSearch = section
+            select(.search)
+        } else if query.isEmpty, section == .search, let back = beforeSearch {
+            beforeSearch = nil
+            select(back)
+        }
     }
 
     private func load() {
         switch section {
-        case .home, .nowPlaying:
+        case .home, .nowPlaying, .queue:
             // Home's player card shows the current line and what comes next, as Now Playing does in full.
             if let info {
                 lyrics.load(for: info)
@@ -178,11 +228,11 @@ struct MusicPageView: View {
     private var stage: some View {
         switch section {
         case .home:
-            MusicHomeView(info: info, service: service, lyrics: lyrics, onOpen: { select($0) },
-                          onPlayingCardVisible: { homeCardVisible = $0 })
+            MusicHomeView(info: info, service: service, lyrics: lyrics, onOpen: { select($0) })
         case .nowPlaying:
             if let info { MusicNowPlayingView(info: info, service: service, lyrics: lyrics) }
-        case .search: MusicSearchView(service: service)
+        case .search: MusicSearchView(service: service, showsField: sidebar == nil)
+        case .queue: MusicQueuePage(info: info, service: service)
         case .playlists: MusicPlaylistsView(service: service)
         case .stats: MusicStatsView(service: service)
         }
@@ -191,7 +241,7 @@ struct MusicPageView: View {
     // MARK: Header band
 
     /// In the main window (`sidebar != nil`) the band sits in the title bar's row like the header of every other page:
-    /// where you are ("Music / Statistics") on the left and the page's own controls on the right.
+    /// where you are ("Music / Statistics") on the left, the search field and the page's own controls on the right.
     /// In the notch or split view it holds the section tabs.
     private var band: some View {
         VStack(spacing: 0) {
@@ -242,34 +292,27 @@ struct MusicPageView: View {
 
     @ViewBuilder
     private var trailing: some View {
-        switch section {
-        case .playlists:
-            if sidebar != nil, service.playlistDetail == nil, !service.playlists.isEmpty {
-                SmallGhostButton(title: "+ " + tr("music.playlists.new")) {
-                    service.playlistPrompt = .create(adding: nil)
+        if sidebar != nil {
+            HStack(spacing: NookTheme.Spacing.md) {
+                if section == .playlists, service.playlistDetail == nil, !service.playlists.isEmpty {
+                    SmallGhostButton(title: "+ " + tr("music.playlists.new")) {
+                        service.playlistPrompt = .create(adding: nil)
+                    }
+                    .help(tr("music.playlists.new"))
+                } else if section == .stats {
+                    NookTabBar(items: MusicStatsPeriod.allCases.map { .init(value: $0, title: MusicStatsView.title(of: $0)) },
+                               selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)
                 }
-                .help(tr("music.playlists.new"))
+                if section != .stats { searchField }
             }
-            searchLauncher
-        case .stats:
-            if sidebar != nil {
-                NookTabBar(items: MusicStatsPeriod.allCases.map { .init(value: $0, title: MusicStatsView.title(of: $0)) },
-                           selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)
-            }
-        case .home, .nowPlaying:
-            searchLauncher
-        case .search:
-            EmptyView()
         }
     }
 
-    /// Search is one click from every page: the field in the band opens it.
-    @ViewBuilder
-    private var searchLauncher: some View {
-        if sidebar != nil {
-            NookSearchLauncher(prompt: service.searchApp == "Spotify" ? tr("music.search.promptSpotify") : tr("music.search.promptMusic"),
-                               height: 28) { select(.search) }
-                .frame(maxWidth: 260)
-        }
+    /// One field for every page: typing in it shows the results at once, Return plays the best match.
+    private var searchField: some View {
+        NookSearchField(prompt: service.searchApp == "Spotify" ? tr("music.search.promptSpotify") : tr("music.search.promptMusic"),
+                        text: $search.text, focus: $searchFocused, onSubmit: { MusicSearchView.playBest(service: service, text: search.text) },
+                        onEscape: { searchFocused = false })
+            .frame(width: 280)
     }
 }

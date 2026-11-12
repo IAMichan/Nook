@@ -41,8 +41,8 @@ struct ConfigPreview: View {
 
     private func color(_ kind: DiffLine.Kind) -> Color {
         switch kind {
-        case .add: return NookTheme.mint
-        case .remove: return NookTheme.coral
+        case .add: return NookTheme.diffAdded
+        case .remove: return NookTheme.diffRemoved
         case .context: return NookTheme.textSecondary
         }
     }
@@ -351,7 +351,7 @@ struct InUseLabel: View {
     init(_ title: String) { self.title = title }
 
     var body: some View {
-        Label(title, systemImage: "checkmark.circle.fill")
+        Label(title, icon: "checkmark.circle.fill")
             .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.mint)
             .lineLimit(1)

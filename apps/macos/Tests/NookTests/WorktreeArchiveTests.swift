@@ -39,6 +39,36 @@ final class WorktreeArchiveTests: XCTestCase {
         XCTAssertNil(WorktreeArchive.scratchFile(named: "popover.png", in: worktree.path), "two candidates: none is guessed")
     }
 
+    func testAClonedRepositoryOrBuildInScratchIsNotKept() throws {
+        let clone = worktree.appendingPathComponent(".scratch/t3code")
+        try manager.createDirectory(at: clone.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try Data("swift".utf8).write(to: clone.appendingPathComponent("main.swift"))
+        try manager.createDirectory(at: worktree.appendingPathComponent(".scratch/web/node_modules/x"), withIntermediateDirectories: true)
+        try Data("js".utf8).write(to: worktree.appendingPathComponent(".scratch/web/node_modules/x/index.js"))
+
+        XCTAssertTrue(WorktreeArchive.save(worktree: worktree.path, root: root))
+        XCTAssertNotNil(WorktreeArchive.archived(worktree.appendingPathComponent(".scratch/preview/popover.png").path,
+                                                 worktree: worktree.path, root: root))
+        XCTAssertNil(WorktreeArchive.archived(clone.appendingPathComponent("main.swift").path, worktree: worktree.path, root: root))
+        XCTAssertNil(WorktreeArchive.archived(worktree.appendingPathComponent(".scratch/web/node_modules/x/index.js").path,
+                                              worktree: worktree.path, root: root))
+    }
+
+    func testOldestArchivesGoWhenAllTogetherAreTooLarge() throws {
+        let other = base.appendingPathComponent("repo-other")
+        try manager.createDirectory(at: other.appendingPathComponent(".scratch"), withIntermediateDirectories: true)
+        try Data(count: 64 * 1024).write(to: other.appendingPathComponent(".scratch/big.png"))
+        try Data(count: 64 * 1024).write(to: worktree.appendingPathComponent(".scratch/preview/popover.png"))
+
+        XCTAssertTrue(WorktreeArchive.save(worktree: worktree.path, root: root, now: Date(timeIntervalSinceNow: -60)))
+        XCTAssertTrue(WorktreeArchive.save(worktree: other.path, root: root, maxTotalBytes: 100 * 1024))
+
+        XCTAssertFalse(manager.fileExists(atPath: WorktreeArchive.location(worktree: worktree.path, root: root).path),
+                       "the archive saved longest ago goes")
+        XCTAssertTrue(manager.fileExists(atPath: WorktreeArchive.location(worktree: other.path, root: root).path),
+                      "the one just saved stays")
+    }
+
     func testATooLargeOrEmptyScratchIsNotKept() throws {
         XCTAssertFalse(WorktreeArchive.save(worktree: worktree.path, root: root, maxBytes: 1))
         XCTAssertFalse(WorktreeArchive.save(worktree: base.appendingPathComponent("none").path, root: root))

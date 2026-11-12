@@ -11,7 +11,7 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
    - Describe Nook this way in copy, docs, release notes, and the website.
 1. **Always use English for Git & Code (even when prompted in Dutch):**
    - **Commit messages** (subject and body) must always be in **English**.
-   - **Pull request titles and descriptions** must always be in **English** (using [`.github/pull_request_template.md`](.github/pull_request_template.md)).
+   - **Pull request titles and descriptions** must always be in **English**, with exactly the four template sections (`## Summary`, `## Related issues`, `## Why`, `## Testing`; see "PR Description" in [AGENTS.md](AGENTS.md)), also when fixing a generated one.
    - **Branch names**, **Swift identifiers**, **code comments**, **docstrings**, and **documentation** must always be in **English**.
    - You may reply to the user in the language they used in chat, but every artifact written to the repository, git history, or GitHub PR must be in **English**.
 2. **Default App Language & `I18n`:**

@@ -17,9 +17,9 @@ struct StackedDiffFile: Identifiable, Equatable {
     /// The chevron's color says what happened to the file: added, removed, or changed.
     var tint: Color {
         switch kind {
-        case .added: return NookTheme.mint
-        case .deleted: return NookTheme.coral
-        case .modified, .renamed: return NookTheme.blue
+        case .added: return NookTheme.diffAdded
+        case .deleted: return NookTheme.diffRemoved
+        case .modified, .renamed: return NookTheme.diffModified
         }
     }
 }
@@ -513,8 +513,8 @@ private struct StackedDiffTreeRow: View {
 
     private var tint: Color {
         switch row.kind {
-        case .added?: return NookTheme.mint
-        case .deleted?: return NookTheme.coral
+        case .added?: return NookTheme.diffAdded
+        case .deleted?: return NookTheme.diffRemoved
         default: return hovering ? NookTheme.paper : NookTheme.textSecondary
         }
     }
@@ -541,11 +541,10 @@ private struct StackedDiffTreeRow: View {
             .padding(.leading, NookTheme.Spacing.xs + CGFloat(row.depth) * 12)
             .padding(.trailing, NookTheme.Spacing.xs)
             .frame(height: 24)
-            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .help(row.path)
     }
 }

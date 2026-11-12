@@ -17,24 +17,68 @@ struct MessagingApp: Codable, Equatable, Sendable, Identifiable {
     var domains: [String] = []
     /// The website whose icon stands for it while its Mac app is not on this Mac.
     var site: String? = nil
+
+    // What sets the app apart, said here once instead of by its id across the app (`ChatParityTests` holds this). Not
+    // stored: an app you added has none of it.
+
+    /// How it writes a chat message into its macOS notification (`ChatCapture.notice`).
+    var noticeLayout = NoticeLayout()
+    /// Nook may notify about its chats until you choose (`NoticeRules.defaultOn`). Only WhatsApp: the other chat apps show
+    /// their own macOS notifications already (that is where Nook reads them), so Nook stays quiet about them.
+    var notifiesByDefault = false
+    /// Its own calls are FaceTime (Messages), so FaceTime is not offered as another way to call.
+    var callsAreFaceTime = false
+    /// A connection of its own Nook links it with, beyond its notifications and its bridge (`OwnLink`).
+    var ownLink: OwnLink? = nil
+
+    private enum CodingKeys: String, CodingKey { case id, name, bundleIDs, domains, site }
+}
+
+/// How an app writes a chat message into its macOS notification, where that differs from "the title is the chat, the
+/// subtitle who wrote, the body the text".
+struct NoticeLayout: Equatable, Sendable {
+    /// Where a group's sender sits when the subtitle does not say: in front of the text ("Anna: …").
+    enum SpeakerInText: Equatable, Sendable {
+        case never
+        /// Only in a channel, whose title starts with "#" (Slack).
+        case inChannels
+        case always
+    }
+
+    /// Slack calls a channel's message "New message in #general" and writes its markup into the text (`SlackData.clean`).
+    var slackMarkup = false
+    var speakerInText = SpeakerInText.never
+    /// The app titles a group's message with who wrote it and puts the group in the subtitle, or writes it as
+    /// "Anna @ Family" (the WhatsApp app; its website does not swap).
+    var senderInTitle = false
+}
+
+/// See `MessagingApp.ownLink`.
+enum OwnLink: Equatable, Sendable {
+    /// WhatsApp through a linked phone (`WhatsAppAccounts`, the gateway): it brings the chats in live with your own
+    /// messages, your picture per linked phone, and advanced settings of its own.
+    case whatsAppGateway
 }
 
 enum MessagingApps {
     /// The chat apps Nook knows by itself.
     static let builtIn: [MessagingApp] = [
         MessagingApp(id: "whatsapp", name: "WhatsApp", bundleIDs: ["net.whatsapp.WhatsApp", "desktop.WhatsApp", "net.whatsapp.WhatsAppSMB"],
-                     domains: ["web.whatsapp.com"], site: "whatsapp.com"),
+                     domains: ["web.whatsapp.com"], site: "whatsapp.com", noticeLayout: NoticeLayout(senderInTitle: true),
+                     notifiesByDefault: true, ownLink: .whatsAppGateway),
         MessagingApp(id: "telegram", name: "Telegram", bundleIDs: ["ru.keepcoder.Telegram", "org.telegram.desktop", "com.tdesktop.Telegram"],
                      domains: ["web.telegram.org"], site: "telegram.org"),
         MessagingApp(id: "instagram", name: "Instagram", bundleIDs: ["com.burbn.instagram"], domains: ["instagram.com"], site: "instagram.com"),
         MessagingApp(id: "messenger", name: "Messenger", bundleIDs: ["com.facebook.archon", "com.facebook.archon.developerID"],
                      domains: ["messenger.com"], site: "messenger.com"),
         MessagingApp(id: "signal", name: "Signal", bundleIDs: ["org.whispersystems.signal-desktop"], site: "signal.org"),
-        MessagingApp(id: "messages", name: "Messages", bundleIDs: ["com.apple.MobileSMS", "com.apple.iChat"]),
-        MessagingApp(id: "slack", name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"], domains: ["app.slack.com"], site: "slack.com"),
+        MessagingApp(id: "messages", name: "Messages", bundleIDs: ["com.apple.MobileSMS", "com.apple.iChat"], callsAreFaceTime: true),
+        MessagingApp(id: "slack", name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"], domains: ["app.slack.com"], site: "slack.com",
+                     noticeLayout: NoticeLayout(slackMarkup: true, speakerInText: .inChannels)),
         MessagingApp(id: "discord", name: "Discord", bundleIDs: ["com.hnc.Discord"], domains: ["discord.com"], site: "discord.com"),
         MessagingApp(id: "teams", name: "Teams", bundleIDs: ["com.microsoft.teams2", "com.microsoft.teams"],
-                     domains: ["teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com"], site: "teams.microsoft.com"),
+                     domains: ["teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com"], site: "teams.microsoft.com",
+                     noticeLayout: NoticeLayout(speakerInText: .always)),
         MessagingApp(id: "googlechat", name: "Google Chat", domains: ["chat.google.com"], site: "chat.google.com"),
         MessagingApp(id: "snapchat", name: "Snapchat", domains: ["snapchat.com"], site: "snapchat.com"),
         MessagingApp(id: "viber", name: "Viber", bundleIDs: ["com.viber.osx"], site: "viber.com"),
@@ -91,6 +135,10 @@ enum MessagingApps {
     static func app(id: String) -> MessagingApp? {
         all.first { $0.id == id }
     }
+
+    /// A chat app Nook knows by itself, by its id, without reading your settings: what sets it apart (`MessagingApp`).
+    static func known(_ id: String) -> MessagingApp? { knownByID[id] }
+    private static let knownByID = Dictionary(builtIn.map { ($0.id, $0) }) { first, _ in first }
 
     static func app(bundleID: String, in apps: [MessagingApp] = all) -> MessagingApp? {
         let wanted = bundleID.lowercased()
@@ -378,12 +426,13 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
 
     /// What stays of the message once it was deleted for everyone: who wrote it and when. Someone else's keeps what it
     /// said as far as Nook had it (text, file, poll, quote, emoji), so you can still read it, marked "Deleted" as an
-    /// edited one says "Edited"; your own says only that you deleted it.
+    /// edited one says "Edited"; your own says only that you deleted it. A mail keeps its text either way: deleting it
+    /// put it in the Trash of your own mailbox, and the other person still has it.
     func withdrawn() -> InboxMessage {
         var gone = self
         gone.deleted = true
         gone.mentionsMe = nil
-        guard isMine else { return gone }
+        guard isMine, !MailChatData.isMail(id) else { return gone }
         gone.edited = nil
         gone.text = ""
         gone.media = nil
@@ -460,8 +509,9 @@ struct BridgedChat: Equatable, Sendable {
     /// Whether the chat is still unread in the app itself, when the bridge knows that apart from how many messages are
     /// new in Nook (WhatsApp through the linked phone); nil leaves it to the app's count.
     var waitsInApp: Bool? = nil
-    /// The app keeps this chat's messages and Nook only shows them: they stay in memory and are never written to disk
-    /// (WhatsApp through the linked phone). What Nook knows of the chat itself (read, unread, its kind) is kept.
+    /// The app keeps this chat's messages too (WhatsApp through the linked phone). Nook's archive keeps them like every
+    /// chat's, and removes them when the app is turned off (`ChatCaptureService.forgetMessages`); only without the archive
+    /// they stay in memory and never reach `chat-inbox.json` (`ChatInbox.forDisk`).
     var ephemeral: Bool = false
     /// The app says this chat is no longer yours: you left the group (or were removed), or deleted the chat, there or
     /// from Nook. It leaves Nook as a chat you removed (`ChatInbox.remove`): only a newer message brings it back.
@@ -636,7 +686,7 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var activity: Date? = nil
     /// Still unread in the app itself, as its bridge says apart from the count (`BridgedChat.waitsInApp`).
     var waitsInApp: Bool? = nil
-    /// Its messages are never written to disk (`BridgedChat.ephemeral`).
+    /// Its app keeps its messages too (`BridgedChat.ephemeral`).
     var ephemeral: Bool? = nil
 
     /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
@@ -820,22 +870,29 @@ enum ChatCapture {
         }
         // Slack calls a channel's message "New message in #general" and writes its markup into the text; the chat is the
         // channel and the one who wrote is in front of the text ("GitHub: …"), as in a group.
-        if app.id == "slack" {
+        // How this app writes its notifications (`NoticeLayout`); an app you added has the plain layout.
+        let layout = (MessagingApps.known(app.id) ?? app).noticeLayout
+        if layout.slackMarkup {
             title = slackChat(title)
             text = SlackData.clean(text, users: [:])
         }
-        if (app.id == "slack" && title.hasPrefix("#")) || app.id == "teams", subtitle.isEmpty, let (name, rest) = speaker(text),
-           name.lowercased() != title.lowercased() {
+        let speakerFirst: Bool
+        switch layout.speakerInText {
+        case .never: speakerFirst = false
+        case .inChannels: speakerFirst = title.hasPrefix("#")
+        case .always: speakerFirst = true
+        }
+        if speakerFirst, subtitle.isEmpty, let (name, rest) = speaker(text), name.lowercased() != title.lowercased() {
             subtitle = name
             text = rest
         }
         // The WhatsApp app titles a group's message with who wrote it and puts the group in the subtitle: the chat is
         // the group, not a private chat with that person.
-        if app.id == "whatsapp", !fromBrowser, !subtitle.isEmpty {
+        if layout.senderInTitle, !fromBrowser, !subtitle.isEmpty {
             swap(&title, &subtitle)
         }
         // WhatsApp writes a group's message as "Anna @ Family".
-        if subtitle.isEmpty, app.id == "whatsapp", let range = title.range(of: " @ ") {
+        if subtitle.isEmpty, layout.senderInTitle, let range = title.range(of: " @ ") {
             subtitle = String(title[..<range.lowerBound])
             title = String(title[range.upperBound...])
         }
@@ -1533,8 +1590,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         for thread in quietest { threads[thread.id] = nil }
     }
 
-    /// The inbox as it is written to disk: a chat whose messages its app keeps (`ephemeral`, WhatsApp through the linked
-    /// phone) goes without them and without the emoji note that quotes one, so no message of it ever reaches the disk.
+    /// The inbox as `chat-inbox.json` holds it when the archive cannot be opened: a chat whose messages its app keeps
+    /// (`ephemeral`, WhatsApp through the linked phone) goes without them and without the emoji note that quotes one, so no message of it ever reaches the disk.
     /// What Nook knows of the chat itself stays (read, unread, its kind), with when it last had a message, so it still
     /// sorts in its place before its bridge brings the messages again.
     var forDisk: ChatInbox {

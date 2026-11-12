@@ -361,13 +361,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     }
 
     private func pill(_ text: String, _ color: Color) -> some View {
-        Text(text)
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(color)
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .padding(.vertical, 1)
-            .background(NookTheme.shape(NookTheme.Radius.chip).fill(color.opacity(0.14)))
-            .lineLimit(1)
+        NookTag(text, tint: color)
     }
 
     private func plain(_ text: String) -> some View {
@@ -392,12 +386,7 @@ private struct PullRequestCommentLocation: View {
                 Image(icon: "doc.text").font(NookTheme.font(10))
                 Text(label).font(NookTheme.mono(11)).lineLimit(1).truncationMode(.head).help(label)
                 if event.outdated {
-                    Text(tr("agents.pr.thread.outdated"))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.amber)
-                        .padding(.horizontal, NookTheme.Spacing.sm)
-                        .padding(.vertical, 1)
-                        .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.12)))
+                    NookTag(tr("agents.pr.thread.outdated"), tint: NookTheme.amber)
                 }
                 Spacer(minLength: 0)
             }

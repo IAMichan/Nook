@@ -92,6 +92,15 @@ struct ChatMessageView: View, Equatable {
             PrivateBriefDisclosure(brief: message.privateBrief)
         }
 
+        // The sources the answer cites, right under it as chips that open them, as in the notch's card
+        // (`NookAnswerView`): where a fact comes from is one click away without opening the details.
+        if !message.streaming {
+            let cited = NookAnswer(text: message.text, references: message.references).cited
+            if !cited.isEmpty {
+                AnswerSourceChips(references: cited)
+            }
+        }
+
         // Where Nook looked, folded away after every answer until you want to see it; a failed source shows as a badge.
         SourcesDisclosure(message: message, onRetry: isLast ? { app.retryLast() } : nil)
 
@@ -141,20 +150,8 @@ private struct ChatErrorCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                Image(icon: "exclamationmark.circle.fill")
-                    .font(NookTheme.font(13, .semibold))
-                    .foregroundStyle(NookTheme.coralSoft)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(tr("chat.error.title"))
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                    Text(explanation)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            IconDetailRow(symbol: "exclamationmark.circle.fill", tint: NookTheme.coralSoft, symbolSize: 13,
+                          title: tr("chat.error.title"), detail: explanation)
             // The fix first, try again second, and the raw message tucked behind Details.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 HStack(spacing: NookTheme.Spacing.xs) {

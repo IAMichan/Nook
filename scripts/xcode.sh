@@ -12,13 +12,14 @@
 #   NOOK_XCODE_SCHEME=NookScenarios scripts/xcode.sh test   # the end-to-end scenarios (scripts/scenarios.sh)
 #
 # The Mac is in use while this builds, so the build stays out of the way:
-#   - it runs at a lower priority (nice), so the apps you work in keep the CPU when they need it;
+#   - it waits for the Mac's single build slot and runs at a lower priority (scripts/build-slot.sh), so the apps you
+#     work in keep the CPU when they need it;
 #   - it uses as many parallel jobs as the Mac has performance cores, leaving the efficiency cores and the memory that
 #     extra compiler processes take for everything else;
 #   - it writes no index store (only Xcode's editor reads one, from its own DerivedData) and does not check the
 #     packages' remotes for updates on every build (a missing package is still fetched);
 #   - tests run in one process instead of a clone per core.
-# NOOK_XCODE_NICE (0 = normal priority, default 10) and NOOK_XCODE_JOBS (default: performance cores) change that;
+# NOOK_BUILD_SLOT=off (scripts/build-slot.sh) and NOOK_XCODE_JOBS (default: performance cores) change that;
 # -parallel-testing-enabled YES among the arguments runs tests in parallel again.
 #
 # Extra arguments go to xcodebuild.
@@ -50,9 +51,9 @@ if [ -f "$RESOLVED" ] && [ "$RESOLVED" -nt project.yml ]; then
 fi
 
 JOBS="${NOOK_XCODE_JOBS:-$(sysctl -n hw.perflevel0.physicalcpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)}"
-NICE="${NOOK_XCODE_NICE:-10}"
 
-exec nice -n "$NICE" xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS' \
+# One heavy build at a time on this Mac, at a lower priority (scripts/build-slot.sh says why).
+exec "$REPO/scripts/build-slot.sh" xcodebuild -project Nook.xcodeproj -scheme "$SCHEME" -destination 'platform=macOS' \
   -derivedDataPath "$REPO/.build/xcode" -jobs "$JOBS" \
   -skipMacroValidation -skipPackagePluginValidation \
   CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \

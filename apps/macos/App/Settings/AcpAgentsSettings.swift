@@ -47,8 +47,8 @@ struct AcpAgentsSection: View {
             }
         } header: {
             ConnectionListMenuHeader(title: tr("acp.title"), info: tr("acp.footer"), add: tr("acp.addAgent")) {
-                Button { showRegistry = true } label: { Label(tr("acp.fromRegistry"), systemImage: "square.grid.2x2") }
-                Button { showManual = true } label: { Label(tr("acp.manual"), systemImage: "terminal") }
+                Button { showRegistry = true } label: { Label(tr("acp.fromRegistry"), icon: "square.grid.2x2") }
+                Button { showManual = true } label: { Label(tr("acp.manual"), icon: "terminal") }
             }
         }
         .sheet(isPresented: $showRegistry) {

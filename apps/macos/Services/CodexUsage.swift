@@ -305,7 +305,10 @@ final class CodexUsage: ObservableObject {
             #"{"method":"initialized"}"#,
             String(decoding: body, as: UTF8.self),
         ]
-        input.fileHandleForWriting.write(Data((requests.joined(separator: "\n") + "\n").utf8))
+        // From a background queue, so a full pipe cannot block before the read loop and a closed one cannot raise. The
+        // input stays open: the app server ends when it does.
+        ProcessRunner.feed(Data((requests.joined(separator: "\n") + "\n").utf8), to: input.fileHandleForWriting,
+                           until: Date().addingTimeInterval(seconds))
 
         var buffer = Data()
         while true {

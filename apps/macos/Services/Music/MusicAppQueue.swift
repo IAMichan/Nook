@@ -51,7 +51,9 @@ enum MusicAppQueue {
 
     /// The first enabled item with one of `titles` in the app's menu bar menus.
     private static func menuItem(in app: AXUIElement, titled titles: Set<String>) -> AXUIElement? {
-        guard let bar = value(app, kAXMenuBarAttribute).map({ $0 as! AXUIElement }) else { return nil }
+        // Checked, never force-cast: an app that answers with something other than an element must not crash Nook.
+        guard let raw = value(app, kAXMenuBarAttribute), CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+        let bar = raw as! AXUIElement
         for top in children(bar) {
             for menu in children(top) {
                 for item in children(menu) {

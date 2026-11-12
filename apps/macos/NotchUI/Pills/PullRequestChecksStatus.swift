@@ -120,8 +120,8 @@ struct PullRequestBreakdownCard: View {
     private func row(_ title: String, _ lines: PullRequestChangeBreakdown.Lines) -> some View {
         GridRow {
             Text(title).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-            Text("+" + lines.additions.formatted()).foregroundStyle(NookTheme.mint).gridColumnAlignment(.trailing)
-            Text("−" + lines.deletions.formatted()).foregroundStyle(NookTheme.coral).gridColumnAlignment(.trailing)
+            Text("+" + lines.additions.formatted()).foregroundStyle(NookTheme.diffAdded).gridColumnAlignment(.trailing)
+            Text("−" + lines.deletions.formatted()).foregroundStyle(NookTheme.diffRemoved).gridColumnAlignment(.trailing)
         }
         .font(NookTheme.mono(11, .medium))
         .monospacedDigit()

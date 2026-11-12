@@ -24,6 +24,7 @@ extension GitService {
             let head = try? git(["rev-parse", "--verify", "-q", "HEAD"], in: directory, env: env).trimmed
             let seeded = env["GIT_INDEX_FILE"].map { FileManager.default.fileExists(atPath: $0) } ?? false
             if !seeded, let head, !head.isEmpty { try git(["read-tree", head], in: directory, env: env) }
+            if seeded { try? revealFlaggedEntries(directory, env: env) }
             do {
                 try git(["add", "-A", "--", "."], in: directory, env: env)
             } catch {
@@ -39,6 +40,50 @@ extension GitService {
             let commit = try git(arguments, in: directory, env: env).trimmed
             try git(["update-ref", ref, commit], in: directory, env: env)
             return commit
+        }
+    }
+
+    /// Entries the checkout's index marks assume-unchanged (`update-index --assume-unchanged`, `core.ignorestat`) or
+    /// skip-worktree (a local config file kept out of commits) are skipped by `git add -A`, so a snapshot seeded from that
+    /// index would miss what the agent wrote to them, and going back would put the committed version over the local one.
+    /// They are entered again in the temporary index only, as plain entries without a stat cache (`--cacheinfo`), so
+    /// `add -A` reads them; the checkout's own index keeps its flags. A skip-worktree file that is not on disk (outside a
+    /// sparse checkout's cone) stays as it is, or the snapshot would record it as deleted; so do submodules.
+    func revealFlaggedEntries(_ directory: String, env: [String: String]) throws {
+        let listing = try git(["ls-files", "--stage", "-v", "-z"], in: directory, env: env)
+        let root = URL(fileURLWithPath: directory, isDirectory: true)
+        let entries = Self.flaggedEntries(listing) { path in
+            FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
+        }
+        for start in stride(from: 0, to: entries.count, by: 200) {
+            let batch = entries[start..<min(start + 200, entries.count)]
+            let arguments = batch.flatMap { ["--cacheinfo", "\($0.mode),\($0.object),\($0.path)"] }
+            try git(["-c", "core.ignorestat=false", "update-index"] + arguments, in: directory, env: env)
+        }
+    }
+
+    struct FlaggedEntry: Equatable, Sendable {
+        var mode: String
+        var object: String
+        var path: String
+    }
+
+    /// The entries of `git ls-files --stage -v -z` that `revealFlaggedEntries` enters again: a lowercase tag is
+    /// assume-unchanged, `S` (or `s`) skip-worktree, which counts only for a file that `exists`. Each record reads
+    /// "<tag> <mode> <object> <stage>\t<path>"; unmerged entries (stage other than 0) and submodules (160000) are left out.
+    static func flaggedEntries(_ listing: String, exists: (String) -> Bool) -> [FlaggedEntry] {
+        listing.split(separator: "\0").compactMap { record -> FlaggedEntry? in
+            guard let tab = record.firstIndex(of: "\t"), let tag = record.first else { return nil }
+            let fields = record[..<tab].split(separator: " ")
+            guard fields.count == 4, fields[3] == "0", fields[1] != "160000" else { return nil }
+            let path = String(record[record.index(after: tab)...])
+            guard !path.isEmpty else { return nil }
+            let assumed = tag.isLowercase
+            let skipped = tag == "S" || tag == "s"
+            guard assumed || skipped else { return nil }
+            // A skip-worktree file that is not there is outside the sparse cone (or kept away on purpose): leave it.
+            if skipped && !exists(path) { return nil }
+            return FlaggedEntry(mode: String(fields[1]), object: String(fields[2]), path: path)
         }
     }
 

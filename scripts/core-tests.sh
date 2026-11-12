@@ -48,6 +48,9 @@ write_if_changed() {
 
 # Sources that need Apple-only frameworks (CryptoKit, Combine views, URLSession on Linux …): they are tested on a Mac.
 EXCLUDE_SOURCES=(
+  "Services/Workspace/AgentGovernor.swift"
+  "Core/SystemLoad.swift"
+  "Core/Log.swift"
   "Services/Connectors/MCP/MCPOAuth.swift"
   "Services/Connectors/MCP/MCPClient.swift"
   "Brain/NetworkGuard.swift"
@@ -72,7 +75,9 @@ if [ "$(uname)" != "Darwin" ]; then
     "Brain/ChatChart.swift"
     "Brain/ChartRescue.swift"
     "Brain/MarkdownBlock.swift"
+    "Services/Workspace/RunPullRequestLinks.swift"
     "Services/Updates/Ed25519Verifier.swift"
+    "Services/Autocomplete/CompletionSealing.swift"
     "../../packages/protocol/Sources/CompanionSeal.swift"
     "../../packages/protocol/Sources/RelayPushSeal.swift"
     "../../packages/protocol/Sources/GuestLinkSeal.swift"
@@ -80,6 +85,7 @@ if [ "$(uname)" != "Darwin" ]; then
 fi
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
+  "AgentGovernorTests"
   "SessionKeeperTests"
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "TextGeneratorTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
@@ -89,12 +95,70 @@ EXCLUDE_TESTS=(
 
 
 write_if_changed "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'
+import Foundation
+
 // Combine's names for the few core files that mention them (Linux has no Combine).
 #if !canImport(Combine)
 public protocol ObservableObject: AnyObject {}
 @propertyWrapper public struct Published<Value> {
     public var wrappedValue: Value
     public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }
+}
+#endif
+
+// Linux has no Objective-C runtime and so no autorelease pools: the body just runs.
+#if !canImport(ObjectiveC)
+public func autoreleasepool<Result>(invoking body: () throws -> Result) rethrows -> Result { try body() }
+#endif
+
+// APFS clones are the Mac's: on Linux `clonefile` always fails, so WorktreeCheckoutCache falls back as it does off APFS.
+#if !canImport(Darwin)
+public let CLONE_NOFOLLOW: Int32 = 0x0001
+public func clonefile(_ source: String, _ destination: String, _ flags: UInt32) -> Int32 { -1 }
+#endif
+
+// URLRequest, URLSession and HTTPURLResponse live in FoundationNetworking on Linux.
+#if canImport(FoundationNetworking)
+@_exported import FoundationNetworking
+#endif
+
+// Linux's Foundation has no NSDataDetector. Links and mail addresses are found with a pattern close to what Apple's
+// detector finds (for ChatFormat's "Copy link"); dates are not detected here, so their tests skip or run on a Mac.
+#if !canImport(Darwin)
+extension NSTextCheckingResult.CheckingType {
+    public static let date = NSTextCheckingResult.CheckingType(rawValue: 1 << 3)
+    public static let link = NSTextCheckingResult.CheckingType(rawValue: 1 << 5)
+}
+
+public final class NSDataDetector {
+    public struct Match {
+        public let range: NSRange
+        public let url: URL?
+        public let date: Date? = nil
+    }
+
+    private let types: NSTextCheckingResult.CheckingType
+    private static let links = try! NSRegularExpression(pattern:
+        #"(?:mailto:)?[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}|(?:https?://|www\.)[^\s<>"'`()\[\]]*[^\s<>"'`()\[\].,;:!?]"#)
+
+    public init(types: NSTextCheckingResult.CheckingType.RawValue) throws {
+        self.types = NSTextCheckingResult.CheckingType(rawValue: types)
+    }
+
+    public func matches(in string: String, options: NSRegularExpression.MatchingOptions = [], range: NSRange) -> [Match] {
+        guard types.contains(.link) else { return [] }
+        let text = string as NSString
+        return Self.links.matches(in: string, options: options, range: range).compactMap { match in
+            let written = text.substring(with: match.range)
+            let address: String
+            if written.contains("@") && !written.contains("/") {
+                address = written.hasPrefix("mailto:") ? written : "mailto:" + written
+            } else {
+                address = written.hasPrefix("www.") ? "http://" + written : written
+            }
+            return URL(string: address).map { Match(range: match.range, url: $0) }
+        }
+    }
 }
 #endif
 
@@ -160,12 +224,14 @@ cd "$WORK"
 echo "core tests in $WORK"
 # Tests that read the app's sources (UIConsistencyTests) find them here: the copies in $WORK have another #filePath.
 export NOOK_MACOS_ROOT="$ROOT"
-if [ "$MODE" = some ] && ! swift build --build-tests; then
+# One heavy build at a time on this machine, at a lower priority (scripts/build-slot.sh says why).
+SLOT="$REPO/scripts/build-slot.sh"
+if [ "$MODE" = some ] && ! "$SLOT" swift build --build-tests; then
   # A picked test may use a helper the selection missed: build them all, and still run only the picked ones.
   echo "the selected tests do not build on their own; building all tests and running the selected ones"
   CLASSES="$(sed -n 's/^test classes: //p' <<< "$REPORT")"
   sync >/dev/null
-  swift test --filter "\\.($CLASSES)/" ${ARGS[@]+"${ARGS[@]}"}
+  "$SLOT" swift test --filter "\.($CLASSES)/" ${ARGS[@]+"${ARGS[@]}"}
   exit
 fi
-swift test ${ARGS[@]+"${ARGS[@]}"}
+"$SLOT" swift test ${ARGS[@]+"${ARGS[@]}"}

@@ -45,8 +45,7 @@ struct MusicConnectionSection: View {
 private struct MusicConnectionForm: View {
     @ObservedObject private var spotify = SpotifySignIn.shared
     @AppStorage("spotifyClientID") private var clientID = ""
-    @State private var copiedRedirect = false
-    @State private var confirmSignOut = false
+    @StateObject private var copiedRedirect = CopiedMoment()
 
     @Environment(\.dismiss) private var dismiss
 
@@ -58,7 +57,7 @@ private struct MusicConnectionForm: View {
         } content: {
             if spotify.isSignedIn {
                 SheetPart(tr("chats.manage.accounts")) {
-                    Label(tr("music.connect.spotifyConnected"), systemImage: "checkmark.seal.fill")
+                    Label(tr("music.connect.spotifyConnected"), icon: "checkmark.seal.fill")
                         .foregroundStyle(NookTheme.mint)
                     SettingNote(tr("music.connect.spotifyConnectedDetail"))
                 }
@@ -73,11 +72,10 @@ private struct MusicConnectionForm: View {
                             .font(NookTheme.mono(12))
                             .textSelection(.enabled)
                         Button {
-                            Pasteboard.copy(SpotifyWebAPI.redirectURI)
-                            copiedRedirect = true
+                            copiedRedirect.copy(SpotifyWebAPI.redirectURI)
                         } label: {
-                            Label(copiedRedirect ? tr("button.copied") : tr("button.copy"),
-                                  systemImage: copiedRedirect ? "checkmark" : "doc.on.doc")
+                            Label(copiedRedirect.copied ? tr("button.copied") : tr("button.copy"),
+                                  icon: copiedRedirect.copied ? "checkmark" : "doc.on.doc")
                         }
                     }
                     .help(tr("music.connect.redirectURI"))
@@ -100,7 +98,7 @@ private struct MusicConnectionForm: View {
                         Button {
                             spotify.signIn(clientID: clientID)
                         } label: {
-                            Label(tr("music.connect.spotifyButton"), systemImage: "person.badge.key.fill")
+                            Label(tr("music.connect.spotifyButton"), icon: "person.badge.key.fill")
                         }
                         .buttonStyle(.nookProminent)
                         .disabled(clientID.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -117,19 +115,14 @@ private struct MusicConnectionForm: View {
             }
         } footer: {
             if spotify.isSignedIn {
-                Button(tr("music.connect.signOut"), role: .destructive) { confirmSignOut = true }
+                ConfirmedButton(tr("music.connect.signOut"), question: tr("confirm.logout", "Spotify"),
+                                detail: tr("connection.signOutDetail", "Spotify")) { spotify.signOut() }
             }
             Spacer()
             Button(tr("settings2.done")) { dismiss() }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.nookProminent)
                 .controlSize(.large)
-        }
-        .confirmationDialog(tr("confirm.logout", "Spotify"), isPresented: $confirmSignOut) {
-            Button(tr("music.connect.signOut"), role: .destructive) { spotify.signOut() }
-            Button(tr("button.cancel"), role: .cancel) {}
-        } message: {
-            Text(tr("connection.signOutDetail", "Spotify"))
         }
     }
 }

@@ -33,6 +33,9 @@ protocol WhatsAppProvider: Sendable {
     func recentMessages(since date: Date, me: String?) async throws -> [WAMessage]
     /// The latest `limit` messages of one chat, oldest first.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage]
+    /// Up to `limit` messages of one chat before its newest `offset`, oldest first: a page further back, for filling
+    /// Nook's archive (`ChatBackfill`).
+    func messages(chat: String, offset: Int, limit: Int, me: String?) async throws -> [WAMessage]
     /// Sends a text to an existing chat, as an answer to the message `replyTo` when set, tagging `mentions` (JIDs, each
     /// written in the text as "@" and its digits); returns the new message's id when the gateway gives it.
     func send(text: String, to chat: String, replyTo: String?, mentions: [String]) async throws -> String?
@@ -105,6 +108,12 @@ protocol WhatsAppProvider: Sendable {
 }
 
 extension WhatsAppProvider {
+    /// A gateway that pages only from the newest: the newest `offset + limit`, without the newest `offset`.
+    func messages(chat: String, offset: Int, limit: Int, me: String?) async throws -> [WAMessage] {
+        let all = try await messages(chat: chat, limit: offset + limit, me: me)
+        return Array(all.dropLast(min(offset, all.count)).suffix(limit))
+    }
+
     func avatar(_ chat: String) async -> URL? { nil }
     func groupNames() async -> [String: String] { [:] }
     func joinedGroups() async -> Set<String>? { nil }
@@ -359,9 +368,14 @@ actor GOWAProvider: WhatsAppProvider {
     /// Page by page from the newest back (GOWA refuses more than 100 at once), until `limit` messages are in or the
     /// history runs out. A page that fails after the first keeps what came; a short page is the chat's start.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage] {
+        try await messages(chat: chat, offset: 0, limit: limit, me: me)
+    }
+
+    /// GOWA pages by offset itself, so a page far back costs one request, not every newer one.
+    func messages(chat: String, offset start: Int, limit: Int, me: String?) async throws -> [WAMessage] {
         var out: [WAMessage] = []
         var seen = Set<String>()
-        var offset = 0
+        var offset = start
         while out.count < limit {
             let size = min(WAGOWA.messagePage, max(limit - out.count, 1))
             let data: Data
@@ -371,14 +385,14 @@ actor GOWAProvider: WhatsAppProvider {
                     URLQueryItem(name: "offset", value: String(offset)),
                 ])
             } catch {
-                if offset == 0 { throw error }
+                if offset == start { throw error }
                 break
             }
             let page = WAGOWA.messages(data, me: me).filter { seen.insert($0.id).inserted }
             out += page
             let count = WAGOWA.messageCount(data)
             // A short page is the start; one that brings nothing new means the gateway ignores the offset.
-            if count < size || (page.isEmpty && offset > 0) { break }
+            if count < size || (page.isEmpty && offset > start) { break }
             offset += count
         }
         return Array(out.sorted { $0.date < $1.date }.suffix(limit))

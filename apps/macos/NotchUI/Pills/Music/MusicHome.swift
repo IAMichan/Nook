@@ -9,11 +9,9 @@ struct MusicHomeView: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject private var spotify = SpotifySignIn.shared
     let onOpen: (MusicSection) -> Void
-    var onPlayingCardVisible: (Bool) -> Void = { _ in }
 
     var body: some View {
-        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen,
-                         onPlayingCardVisible: onPlayingCardVisible)
+        MusicHomeContent(info: info, service: service, lyrics: lyrics, spotifyConnected: spotify.isSignedIn, onOpen: onOpen)
     }
 }
 
@@ -24,8 +22,6 @@ struct MusicHomeContent: View {
     @EnvironmentObject private var app: AppModel
     let spotifyConnected: Bool
     let onOpen: (MusicSection) -> Void
-    /// Whether the playing card is on screen, so the page's player bar only comes up once it has scrolled away.
-    var onPlayingCardVisible: (Bool) -> Void = { _ in }
     @State private var week: MusicStats?
     @State private var allRecent = false
     @Environment(\.panelSidebar) private var sidebar
@@ -60,7 +56,6 @@ struct MusicHomeContent: View {
                 // First what to play (what plays, where you left off, your playlists), then how you listened.
                 if let info {
                     MusicPlayingCard(info: info, service: service, lyrics: lyrics) { onOpen(.nowPlaying) }
-                        .onScrollVisibilityChange(threshold: 0.25) { onPlayingCardVisible($0) }
                 }
                 if showsConnect { connectCard }
                 if !recent.isEmpty { recentGroup }
@@ -176,7 +171,7 @@ struct MusicHomeContent: View {
     }
 
     private var emptyHint: some View {
-        MusicPlaceholder(symbol: "music.note", title: tr("music.nothingPlayingTitle"), detail: tr("music.home.emptyDetail")) {
+        WSEmptyState(symbol: "music.note", title: tr("music.nothingPlayingTitle"), message: tr("music.home.emptyDetail")) {
             SmallGhostButton(title: tr("music.section.search")) { onOpen(.search) }
         }
         .frame(minHeight: 180)
@@ -185,13 +180,14 @@ struct MusicHomeContent: View {
 
 // MARK: Playing card
 
-/// Home's first card: the playing track in its cover's colours, the line being sung, its controls, and what comes next.
-/// The cover opens Now Playing.
+/// Home's first card: the playing track in its cover's colours, where it plays, the line being sung, and what comes
+/// next. Its controls are the player bar's under the page, always in the same place. The cover opens Now Playing.
 private struct MusicPlayingCard: View {
     let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
     @ObservedObject var lyrics: LyricsService
     let onOpen: () -> Void
+    @ObservedObject private var outputs = MusicOutputService.shared
     @State private var hoveringCover = false
 
     private static let cover: CGFloat = 148
@@ -247,6 +243,8 @@ private struct MusicPlayingCard: View {
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textStrong)
                     .lineLimit(1)
+                MusicOutputLine(outputs: outputs)
+                    .padding(.leading, NookTheme.Spacing.sm)
             }
             Text(info.title)
                 .font(NookTheme.TextStyle.display)
@@ -261,15 +259,12 @@ private struct MusicPlayingCard: View {
                 .padding(.top, NookTheme.Spacing.xxs)
             MusicCurrentLyric(info: info, lyrics: lyrics)
                 .padding(.top, NookTheme.Spacing.md)
-            MusicScrubBar(info: info, style: .inline) { service.seek(to: $0) }
-                .frame(maxWidth: 420)
-                .padding(.top, NookTheme.Spacing.sm)
-            HStack(spacing: NookTheme.Spacing.xs) {
-                MusicTransport(info: info, service: service)
+            HStack(spacing: NookTheme.Spacing.md) {
+                SmallGhostButton(title: tr("music.openNowPlaying"), action: onOpen)
+                    .padding(.leading, -NookTheme.Spacing.md)
                 MusicAddToPlaylistButton(track: service.currentTrack, service: service)
             }
-            .padding(.top, NookTheme.Spacing.xs)
-            .padding(.leading, -NookTheme.Spacing.xs)
+            .padding(.top, NookTheme.Spacing.md)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -345,7 +340,6 @@ private struct MusicLyricLine: View, Equatable {
 private struct MusicWeekCard: View {
     let stats: MusicStats
     let onOpen: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         let shape = NookTheme.shape(NookTheme.Radius.panel)
@@ -389,12 +383,10 @@ private struct MusicWeekCard: View {
             }
             .padding(NookTheme.Spacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(shape.fill(hovering ? NookTheme.rowHover : NookTheme.surface))
+            .hoverRowFill(radius: NookTheme.Radius.panel, rest: NookTheme.surface)
             .contentShape(shape)
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
         .help(tr("music.section.stats"))
         .accessibilityLabel(tr("music.home.thisWeek", musicListeningTime(stats.seconds)) + ", " + tr("music.stats.days", stats.streak))
     }
@@ -541,12 +533,10 @@ struct MusicTrackTile: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .padding(.vertical, filled ? MusicLayout.rowBleed : NookTheme.Spacing.xs)
-            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: filled ? NookTheme.surface : .clear),
-                               radius: NookTheme.Radius.card)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.card, rest: filled ? NookTheme.surface : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
         .contextMenu {

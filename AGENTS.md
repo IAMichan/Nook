@@ -21,8 +21,7 @@ Nook is an open-source project. **English is the default language across the ent
 
 - **Git Commits:** Always write commit subjects and bodies in **English**, using imperative mood (`<= 72` characters for the subject line), even if the user's prompt or conversation is in Dutch or another language.
 - **Pull Requests & Branches:** Always write branch names, pull request titles, and pull request descriptions in **English** (following [`.github/pull_request_template.md`](.github/pull_request_template.md)).
-- **Linking Issues:** Before opening a pull request, search the open issues for any the change resolves, and list them under *Related issues* in the description as `Closes #123` (`Part of #123` when the issue stays open). Only link an issue the diff actually resolves; write "None" when nothing matches.
-- **PR Description Check:** The `PR template` workflow (`scripts/pr-body-check.py`) fails a pull request whose description leaves a template section out or empty, links no issue and does not say "None", or says nothing under *Testing* beyond the empty checklist (tick a box, or add a line on what was run or not run). Run the script locally before opening one: `PR_BODY="$(cat body.md)" ./scripts/pr-body-check.py`.
+- **PR Description:** Every description, also one a tool or "Create PR" button wrote, has exactly the template's four sections in order: `## Summary`, `## Related issues` (`Closes #123` / `Part of #123` for issues the diff resolves, after searching open issues; else `None`), `## Why`, `## Testing` (tick only what you verified; with nothing ticked, add a line of its own on what was or was not run). No other headings (`## Changes`). The `PR template` check (`scripts/pr-body-check.py`) fails anything else; run it first: `PR_BODY="$(cat body.md)" ./scripts/pr-body-check.py`.
 - **Code & Comments:** All Swift types, functions, variables, code comments, docstrings, and test names must be written in **English**.
 - **Documentation:** All root and technical documentation (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/*.md`) should be written and maintained in **English**.
 - **UI Localization (`I18n`):**
@@ -103,6 +102,23 @@ It keeps the build in `.build/xcode` inside the checkout, so it is removed toget
 `xcodebuild` with a `-derivedDataPath` under `/tmp`, `/private/tmp`, or your scratchpad, and do not leave it on Xcode's
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
+
+Both `./scripts/xcode.sh` and `./scripts/core-tests.sh` run their build through `./scripts/build-slot.sh`: one heavy build
+at a time on this Mac, at a lower priority. When another agent is building, yours prints that it is waiting and starts
+when that build ends. Do not work around it: several agents compiling at once once drove the load to 185 on 14 cores,
+filled the swap, and froze the Mac and the running Nook. Run any other heavy build (`xcodebuild`, `swift build`,
+`cargo build`) through `./scripts/build-slot.sh` too. `NOOK_BUILD_SLOT=off` skips the wait, only for a quick build the
+user is waiting on.
+
+Nook itself starts every coding agent behind your own work (`AgentCommand.behindForeground`, nice 10), so a build an
+agent runs yields to the windows, typing and Nook. On top of that `AgentGovernor` watches the Mac while agents run: when
+memory is tight or the Mac is hot, the commands agents run move to macOS's background band; when the Mac swaps hard, the
+commands of the youngest agents hold still (never the agent itself, never the oldest one, at most two minutes) until
+there is room, with a strip above the composer to let them go on. It finds those commands by the process tree, since
+agents start each command in a process group of its own, and always resumes what it paused: when the agent stops, when
+Nook quits, and after a crash. Terminals you type in are your own work and are left alone. Its optional background work (reading the screen, thinking along,
+local models) pauses while the Mac is hot, busy, or short on memory (`EnergyPolicy`); a Mac that keeps reading memory
+back from swap counts as short even when macOS's own pressure level still says normal.
 
 Test programs must leave the user's screen, focus, and input alone. This Mac is in use while agents work, and a throwaway
 harness that opens a window interrupts whatever the user is doing:

@@ -42,7 +42,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌘F | `chat.find` | `!terminalFocus` | Find in the session (also one read from its transcript), or jump to the pull requests' search |
 | ⌘K | `search.toggle` | `!terminalFocus` | Search everything, from every tab (also ⇧⌘F) |
 | ⇧⌘K | `commandPalette.toggle` | `!terminalFocus` | The agents' command palette |
-| ? (⇧/) | `shortcuts.cheatSheet` | `!editableFocus && !composerFocus && !terminalFocus` | The shortcut cheat sheet: every command with its keys as they are now, grouped, with a filter; "Change keys" opens Settings › Shortcuts. ⌘/ opens it from anywhere (also while typing) |
+| ⌘/ | `shortcuts.cheatSheet` | `!terminalFocus` | The shortcut cheat sheet: every command with its keys as they are now, grouped, with a filter; "Change keys" opens Settings › Shortcuts. `?` (⇧/) is deliberately not bound, so a question mark can always be typed |
 | ⌘N | `session.new` | `!terminalFocus` | A new Nook chat in the Nook list, a new agent session elsewhere in the main window |
 | ⌘Z | `session.undo` | `!terminalFocus && !editableFocus && !composerFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
 | ⇧⌘T | `panel.reopenClosed` | `!terminalFocus` | Reopen the tab closed last: a session's side or bottom panel tab (in the panel it was in, a pull request tab with its pull request), or a tab on the Pull requests page |
@@ -89,7 +89,8 @@ Text generation), Tab puts the suggestion in the box and Escape dismisses it; ty
 
 - After F6 the Agents list has the keyboard: ↑ ↓ move the lit row without opening it, Return opens it, ← folds its
   project (or its Snoozed or Settled shelf) and → unfolds it, F2 renames it.
-- The command palette (⇧⌘K) lists, in groups: recent sessions (the ones you open often and lately first), what you
+- The command palette (⇧⌘K) lists, in groups: recent sessions (the ones you open often and lately first; for three weeks, the session you last picked
+  after typing the same words comes first when you type them again, `PalettePicks`), what you
   can do with the open session (pin, settle, snooze, rename, fork, copy the branch, path or both, open in your editor,
   show the changes, interrupt), navigation (a new session, **New session in…** with your projects, back and forward,
   the pages and panels) and settings. Each command shows its key; `>` first leaves only the actions.

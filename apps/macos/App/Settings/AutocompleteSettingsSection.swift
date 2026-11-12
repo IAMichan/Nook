@@ -14,16 +14,11 @@ struct AutocompleteSettingsSection: View {
     @ObservedObject private var energy = EnergyMonitor.shared
     @State private var instructions = AutocompleteStore.shared.prefs.instructions
     @State private var editingApp: String?
-    @State private var confirmForget = false
-    @State private var confirmReset = false
     @State private var installed: [InstalledApp] = []
     @State private var search = ""
     @State private var filter: AppFilter = .all
     @State private var newSite = ""
     @State private var customLink = ""
-    @State private var pendingDelete: CompletionCatalogModel?
-    /// A model file of another app, about to go to the Trash.
-    @State private var pendingTrash: CompletionModelFile?
 
     enum AppFilter: String, CaseIterable, Identifiable {
         case all, on, off
@@ -159,6 +154,15 @@ struct AutocompleteSettingsSection: View {
     /// What makes suggestions sound like the user, when it is missing: learning from their writing (off in settings stored
     /// before it became the default, which updates do not change) and a few words about them. Cotypist asks for both when it
     /// is set up; without them a suggestion only knows the text in the field. "Not now" puts both away.
+    /// What the user wrote about themselves in Cotypist, offered while Nook's instructions are empty.
+    private var cotypistInstructions: String? { CompletionCotypist.instructions() }
+
+    /// Saved at once: the hint sits on another page than the editor, whose `onChange` would not run there.
+    private func useInstructions(_ text: String) {
+        store.prefs.instructions = text
+        instructions = text
+    }
+
     @ViewBuilder private var personalHints: some View {
         if !store.prefs.personalHintsDismissed {
             if !store.prefs.learn {
@@ -178,6 +182,10 @@ struct AutocompleteSettingsSection: View {
                     HStack {
                         if store.prefs.learn {
                             Button(tr("autocomplete.hint.notNow")) { store.prefs.personalHintsDismissed = true }
+                        }
+                        if let cotypist = cotypistInstructions {
+                            Button(tr("autocomplete.instructionsFromCotypist")) { useInstructions(cotypist) }
+                                .buttonStyle(.nookProminent)
                         }
                         Button(tr("autocomplete.hint.instructionsAdd")) {
                             app.openSettings(section: .autocompleteStyle, highlight: "autocomplete.instructions")
@@ -298,16 +306,16 @@ struct AutocompleteSettingsSection: View {
             } else {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
                 // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
-                Button { pendingTrash = file } label: { Image(icon: "trash") }
-                    .buttonStyle(.nookBorderless)
-                    .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
+                ConfirmedButton(question: trashQuestion(file), confirmTitle: tr("autocomplete.download.trash")) {
+                    trash(file)
+                } label: {
+                    Image(icon: "trash")
+                }
+                .buttonStyle(.nookBorderless)
+                .help(file.source == .nook ? tr("autocomplete.download.delete") : tr("autocomplete.download.trash"))
             }
         }
         .help(file.url.path)
-        .confirmationDialog(trashQuestion(file), isPresented: Binding(
-            get: { pendingTrash == file }, set: { if !$0 { pendingTrash = nil } })) {
-            Button(tr("autocomplete.download.trash"), role: .destructive) { trash(file) }
-        }
     }
 
     private func trashQuestion(_ file: CompletionModelFile) -> String {
@@ -316,7 +324,6 @@ struct AutocompleteSettingsSection: View {
     }
 
     private func trash(_ file: CompletionModelFile) {
-        pendingTrash = nil
         guard autocomplete.activeModel?.identity != file.url.path else { return }
         try? FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
         if store.prefs.modelPath == file.url.path { store.prefs.modelPath = "" }
@@ -344,11 +351,7 @@ struct AutocompleteSettingsSection: View {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Text(model.name)
                     if model == recommended {
-                        Text(tr("autocomplete.recommended"))
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(NookTheme.textStrong)
-                            .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, 1)
-                            .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
+                        NookTag(tr("autocomplete.recommended"), size: .regular)
                     }
                 }
                 if downloads.downloading == model {
@@ -370,9 +373,14 @@ struct AutocompleteSettingsSection: View {
                 }
                 // Only Nook's own copies can be deleted here, and never the model in use.
                 if ownCopy, !inUse {
-                    Button { pendingDelete = model } label: { Image(icon: "trash") }
-                        .buttonStyle(.nookBorderless)
-                        .help(tr("autocomplete.download.delete"))
+                    ConfirmedButton(question: tr("autocomplete.download.deleteConfirm", model.name),
+                                    confirmTitle: tr("autocomplete.download.delete")) {
+                        delete(model)
+                    } label: {
+                        Image(icon: "trash")
+                    }
+                    .buttonStyle(.nookBorderless)
+                    .help(tr("autocomplete.download.delete"))
                 }
             } else {
                 Button(tr("autocomplete.download")) { start(model) }
@@ -380,10 +388,6 @@ struct AutocompleteSettingsSection: View {
                     .controlSize(.small)
                     .disabled(downloads.downloading != nil)
             }
-        }
-        .confirmationDialog(tr("autocomplete.download.deleteConfirm", model.name), isPresented: Binding(
-            get: { pendingDelete == model }, set: { if !$0 { pendingDelete = nil } })) {
-            Button(tr("autocomplete.download.delete"), role: .destructive) { delete(model) }
         }
     }
 
@@ -401,7 +405,6 @@ struct AutocompleteSettingsSection: View {
     private func delete(_ model: CompletionCatalogModel) {
         let file = downloads.file(for: model)
         downloads.delete(model)
-        pendingDelete = nil
         if store.prefs.modelPath == file.path { store.prefs.modelPath = "" }
         autocomplete.forget(file)
     }
@@ -473,6 +476,9 @@ struct AutocompleteSettingsSection: View {
                     .frame(minHeight: 70)
                     .onChange(of: instructions) { _, value in store.prefs.instructions = value }
                 SettingNote(tr("autocomplete.instructionsHint"))
+                if instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let cotypist = cotypistInstructions {
+                    Button(tr("autocomplete.instructionsFromCotypist")) { useInstructions(cotypist) }
+                }
             }
             SettingToggle(tr("autocomplete.learn"), detail: tr("autocomplete.learnDetail"), isOn: $store.prefs.learn)
                 .onChange(of: store.prefs.learn) { _, _ in autocomplete.applyPersonalization() }
@@ -486,10 +492,11 @@ struct AutocompleteSettingsSection: View {
                 }
             }
             LabeledContent(tr("autocomplete.samples", store.samples.count)) {
-                Button(tr("autocomplete.forget")) { confirmForget = true }.disabled(store.samples.count == 0)
-            }
-            .confirmationDialog(tr("autocomplete.forgetConfirm"), isPresented: $confirmForget) {
-                Button(tr("autocomplete.forget"), role: .destructive) { store.forgetSamples(); autocomplete.applyPersonalization() }
+                ConfirmedButton(tr("autocomplete.forget"), question: tr("autocomplete.forgetConfirm")) {
+                    store.forgetSamples()
+                    autocomplete.applyPersonalization()
+                }
+                .disabled(store.samples.count == 0)
             }
             if store.samples.count > 0 {
                 DisclosureGroup(tr("autocomplete.samples.show")) {
@@ -855,10 +862,8 @@ struct AutocompleteSettingsSection: View {
             }
 
             Section {
-                Button(tr("autocomplete.stats.reset"), role: .destructive) { confirmReset = true }.disabled(stats.totalShown == 0 && stats.totalTakes == 0)
-                    .confirmationDialog(tr("autocomplete.stats.resetConfirm"), isPresented: $confirmReset) {
-                        Button(tr("autocomplete.stats.reset"), role: .destructive) { store.resetStats() }
-                    }
+                ConfirmedButton(tr("autocomplete.stats.reset"), question: tr("autocomplete.stats.resetConfirm")) { store.resetStats() }
+                    .disabled(stats.totalShown == 0 && stats.totalTakes == 0)
             }
         }
     }

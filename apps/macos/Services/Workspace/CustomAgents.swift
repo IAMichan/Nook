@@ -29,18 +29,49 @@ struct CustomAgent: Codable, Equatable, Identifiable, Sendable {
     var shellLine: String {
         "exec " + ([command] + arguments).map(CustomAgents.quote).joined(separator: " ")
     }
+
+    init(profileID: String, name: String, registryID: String? = nil, version: String? = nil, command: String,
+         arguments: [String] = [], environment: [String: String] = [:], installedAt: String? = nil) {
+        self.profileID = profileID
+        self.name = name
+        self.registryID = registryID
+        self.version = version
+        self.command = command
+        self.arguments = arguments
+        self.environment = environment
+        self.installedAt = installedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case profileID, name, registryID, version, command, arguments, environment, installedAt
+    }
+
+    /// Fields with a default may be missing (stored by an older version): they get the default instead of failing.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profileID = try container.decode(String.self, forKey: .profileID)
+        name = try container.decode(String.self, forKey: .name)
+        registryID = try container.decodeIfPresent(String.self, forKey: .registryID)
+        version = try container.decodeIfPresent(String.self, forKey: .version)
+        command = try container.decode(String.self, forKey: .command)
+        arguments = try container.decodeIfPresent([String].self, forKey: .arguments) ?? []
+        environment = try container.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        installedAt = try container.decodeIfPresent(String.self, forKey: .installedAt)
+    }
 }
 
 enum CustomAgents {
     static let defaultsKey = "agents.customAcp"
 
+    /// Agent by agent: one that cannot be read is left out, and the stored list is copied aside first (`SafeStorage`), so
+    /// the next save never takes the others with it.
     static func load(defaults: UserDefaults = .standard) -> [CustomAgent] {
-        guard let data = defaults.data(forKey: defaultsKey) else { return [] }
-        return (try? JSONDecoder().decode([CustomAgent].self, from: data)) ?? []
+        SafeStorage.decode(LossyArray<CustomAgent>.self, defaults: defaults, key: defaultsKey, skipped: { $0.skipped })
+            .value?.elements ?? []
     }
 
     static func save(_ agents: [CustomAgent], defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(agents), forKey: defaultsKey)
+        defaults.setEncoded(agents, forKey: defaultsKey)
     }
 
     static func agent(for profileID: String, defaults: UserDefaults = .standard) -> CustomAgent? {

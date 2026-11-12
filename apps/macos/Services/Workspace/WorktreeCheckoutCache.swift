@@ -369,14 +369,15 @@ struct WorktreeCheckoutCache: Sendable {
 
     static func device(_ path: String) -> Int32? {
         var info = stat()
-        return stat(path, &info) == 0 ? info.st_dev : nil
+        return stat(path, &info) == 0 ? Int32(truncatingIfNeeded: info.st_dev) : nil
     }
 
     static func sha256(_ data: Data) -> [UInt8] {
         #if canImport(CryptoKit)
         return Array(SHA256.hash(data: data))
         #else
-        return Array(data.prefix(32))
+        // The core tests on Linux have no CryptoKit: the protocol package's pure SHA-256 (WebhookSecurity.swift).
+        return Array(PureSHA256.hash(data))
         #endif
     }
 

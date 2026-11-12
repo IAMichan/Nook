@@ -33,6 +33,7 @@ struct PullRequestQuickActionButtons: View {
     @ObservedObject private var merges = PullRequestQuickMerges.shared
     @State private var armed: PullRequestQuickAction?
     @State private var running: PullRequestQuickAction?
+    @State private var hovered: PullRequestQuickAction?
 
     var body: some View {
         let actions = PullRequestQuickAction.actions(for: item)
@@ -61,7 +62,7 @@ struct PullRequestQuickActionButtons: View {
     private func button(_ action: PullRequestQuickAction) -> some View {
         let confirming = armed == action || (action == .close && sweep.isSwept(item.id))
         let phase = action == .merge ? merges.queue.phase(item.id) : nil
-        let tint = confirming || phase != nil ? (action == .close ? NookTheme.coral : NookTheme.amber) : NookTheme.textSecondary
+        let look = Self.look(action, confirming: confirming, phase: phase, hovering: hovered == action)
         return Button {
             if confirming {
                 armed = nil
@@ -79,23 +80,70 @@ struct PullRequestQuickActionButtons: View {
                     ProgressView().controlSize(.mini)
                 } else if phase == .waiting {
                     NookSymbol("clock", size: 11)
+                } else if phase == .autoMerge {
+                    NookSymbol("bolt", size: 11)
                 } else {
                     NookSymbol(Self.symbol(action), size: 11)
                 }
-                Text(Self.title(action, confirming: confirming, phase: phase))
+                Text(Self.title(action, confirming: confirming, phase: phase)).lineLimit(1).fixedSize()
             }
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(tint)
+            .font(NookTheme.TextStyle.label)
+            .foregroundStyle(look.text)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 22)
-            .background(NookTheme.shape(NookTheme.Radius.control).strokeBorder(confirming ? tint : NookTheme.line2))
+            .roundedBackground(look.fill, radius: NookTheme.Radius.control)
+            .overlay(NookTheme.shape(NookTheme.Radius.control).strokeBorder(look.stroke))
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
+            .animation(NookTheme.hover, value: hovered == action)
         }
         .buttonStyle(.nookPlain)
         .disabled(running != nil || merges.queue.phase(item.id) != nil)
+        .onHover { inside in
+            if inside { hovered = action } else if hovered == action { hovered = nil }
+        }
         .help(tr(action == .close ? "agents.pulls.quick.sweepHelp" : "agents.pulls.quick.help"))
         // Close, dragged up or down over other rows, takes those along.
         .sweeps(tracker, from: item.id, enabled: action == .close) { ids in sweep.finish(ids) }
+    }
+
+    /// How a quick action is drawn, in Nook's own buttons: Merge is the main action (filled with the accent, soft white
+    /// by default), Close is red (a soft red, filled once it asks to confirm), Ready and Reopen are outline buttons that
+    /// fill with the accent when armed. A merge in the queue reads as its state: waiting quietly in outline, busy at
+    /// GitHub as a dimmed main button, merged in the merged violet, handed to auto-merge in amber.
+    struct Look {
+        let text: Color
+        let fill: Color
+        let stroke: Color
+    }
+
+    static func look(_ action: PullRequestQuickAction, confirming: Bool,
+                     phase: PullRequestQuickMergeQueue.Phase?, hovering: Bool) -> Look {
+        switch phase {
+        case .waiting:
+            return Look(text: NookTheme.textSecondary, fill: NookTheme.outlineFill, stroke: NookTheme.outlineStroke)
+        case .merging:
+            return Look(text: NookTheme.onPrimary, fill: NookTheme.primary.opacity(0.7), stroke: .clear)
+        case .merged:
+            return Look(text: NookTheme.violet, fill: NookTheme.violet.opacity(0.14), stroke: NookTheme.violet.opacity(0.35))
+        case .autoMerge:
+            return Look(text: NookTheme.amber, fill: NookTheme.amber.opacity(0.12), stroke: NookTheme.amber.opacity(0.35))
+        case nil:
+            break
+        }
+        switch action {
+        case .close:
+            if confirming { return Look(text: .white, fill: NookTheme.coral.opacity(hovering ? 1 : 0.9), stroke: .clear) }
+            return Look(text: NookTheme.coral, fill: NookTheme.coral.opacity(hovering ? 0.2 : 0.12),
+                        stroke: NookTheme.coral.opacity(0.35))
+        case .merge:
+            return Look(text: NookTheme.onPrimary, fill: hovering ? NookTheme.primaryHover : NookTheme.primary, stroke: .clear)
+        case .ready, .reopen:
+            if confirming {
+                return Look(text: NookTheme.onPrimary, fill: hovering ? NookTheme.primaryHover : NookTheme.primary, stroke: .clear)
+            }
+            return Look(text: hovering ? NookTheme.paper : NookTheme.textSecondary, fill: NookTheme.outlineFill,
+                        stroke: NookTheme.outlineStroke)
+        }
     }
 
     private func run(_ action: PullRequestQuickAction) {
@@ -116,6 +164,7 @@ struct PullRequestQuickActionButtons: View {
         case .waiting: return tr("agents.pulls.quick.queued")
         case .merging: return tr("agents.pulls.quick.merging")
         case .merged: return tr("agents.pulls.quick.merged")
+        case .autoMerge: return tr("agents.pulls.quick.autoMergeOn")
         case nil: break
         }
         if confirming { return tr("agents.pulls.quick.confirm." + action.rawValue) }
@@ -163,23 +212,32 @@ final class PullRequestQuickMerges: ObservableObject {
                         continue
                     }
                     do {
-                        try await PullRequestQuickRunner.run(.merge, item: request.item, accountID: request.account, app: app)
-                        queue.finish(success: true)
+                        switch try await PullRequestQuickRunner.quickMerge(request.item, accountID: request.account, app: app) {
+                        case .merged: queue.finish(success: true)
+                        case .autoMerge: queue.finishAutoMerge()
+                        }
                     } catch {
                         queue.finish(success: false)
                         ToastCenter.shared.error(error, title: tr("agents.pulls.quick.failed", "#\(request.item.number)"))
                     }
                 }
                 // Read the list again before the rows let go of "Merged", so they do not flash Merge for a moment.
-                if !queue.merged.isEmpty { await PullRequestStore.shared.refresh(force: true) }
+                if queue.changed { await PullRequestStore.shared.refresh(force: true) }
                 // A merge clicked while the list was read goes in this same run.
                 if queue.isIdle { break }
             }
             working = false
-            if let result = queue.drain(), !result.merged.isEmpty {
-                let numbers = result.merged.compactMap { requests[$0].map { "#\($0.item.number)" } }
-                ToastCenter.shared.success(numbers.count == 1 ? tr("agents.pulls.quick.done.merge", numbers[0])
-                                                                : tr("agents.pulls.stack.merged", numbers.count))
+            if let result = queue.drain() {
+                let merged = result.merged.compactMap { requests[$0].map { "#\($0.item.number)" } }
+                if !merged.isEmpty {
+                    ToastCenter.shared.success(merged.count == 1 ? tr("agents.pulls.quick.done.merge", merged[0])
+                                                                 : tr("agents.pulls.stack.merged", merged.count))
+                }
+                let waiting = result.autoMerged.compactMap { requests[$0].map { "#\($0.item.number)" } }
+                if !waiting.isEmpty {
+                    ToastCenter.shared.success(waiting.count == 1 ? tr("agents.pulls.quick.done.autoMerge", waiting[0])
+                                                                  : tr("agents.pulls.quick.done.autoMergeMany", waiting.count))
+                }
             }
             requests = [:]
         }
@@ -192,7 +250,7 @@ enum PullRequestQuickRunner {
     static func run(_ action: PullRequestQuickAction, item: PullRequestItem, accountID: String, app: AppModel) async throws {
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { throw NookError(tr("agents.pr.noToken")) }
         if action == .merge {
-            try await merge(repo: item.repo, number: item.number, token: token, app: app)
+            _ = try await quickMerge(item, accountID: accountID, app: app)
             return
         }
         guard let request = action.action(for: item) else { return }
@@ -212,21 +270,49 @@ enum PullRequestQuickRunner {
         }
     }
 
+    enum MergeOutcome: Equatable {
+        /// Merged into this base branch.
+        case merged(base: String)
+        /// Checks or reviews still hold it back and this account may not go past them: GitHub merges it once they are done.
+        case autoMerge
+    }
+
+    /// A merge from a row or the selection bar: an admin who may bypass the rules merges at once, as on the pull
+    /// request's page; anyone else gets auto-merge while checks run or a review is missing, instead of an error.
+    static func quickMerge(_ item: PullRequestItem, accountID: String, app: AppModel) async throws -> MergeOutcome {
+        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { throw NookError(tr("agents.pr.noToken")) }
+        return try await merge(repo: item.repo, number: item.number, token: token, app: app, autoMerge: true)
+    }
+
     /// Merges one pull request at the head GitHub reports right now, after checking it can go: open, not a draft, no
-    /// conflict, write access and no failing checks. Returns the base branch it went into.
-    @discardableResult
-    static func merge(repo: String, number: Int, token: String, app: AppModel) async throws -> String {
+    /// conflict, write access and no failing checks. With `autoMerge`, one that must wait (`waitsForAutoMerge`) gets
+    /// auto-merge instead; a stack passes false, since the next one needs this one merged before it can be retargeted.
+    static func merge(repo: String, number: Int, token: String, app: AppModel, autoMerge: Bool) async throws -> MergeOutcome {
         let detail = try await GitHubPullRequestDetail.loadForMerge(repo: repo, number: number, token: token)
         if let reason = blocker(detail) { throw NookError(tr(reason, "#\(number)")) }
         let preferred = PullRequestMergeMethod(rawValue: UserDefaults.standard.string(forKey: "agents.pr.mergeMethod") ?? "") ?? .merge
         guard let method = PullRequestQuickAction.mergeMethod(preferred: preferred, allowed: detail.methods) else {
             throw NookError(tr("agents.pulls.quick.noMethod", "#\(number)"))
         }
+        if autoMerge, detail.waitsForAutoMerge {
+            // Already on: nothing to send, it merges by itself.
+            if detail.autoMerge != nil { return .autoMerge }
+            let request = PullRequestAction.enableAutoMerge(nodeID: detail.nodeID, method: method)
+            let args = request.auditArgs(repo: repo, number: number)
+            do {
+                try await GitHubPullRequestDetail.perform(request, repo: repo, number: number, token: token)
+                app.store.audit(tool: request.auditTool, args: args, result: "ok")
+                return .autoMerge
+            } catch {
+                app.store.audit(tool: request.auditTool, args: args, result: "error: " + error.localizedDescription)
+                throw error
+            }
+        }
         let args = "\(detail.id) · \(method.rawValue) · \(detail.headBranch) → \(detail.baseBranch)"
         do {
             let sha = try await GitHubPullRequestDetail.merge(repo: repo, number: number, method: method, sha: detail.headSHA, token: token)
             app.store.audit(tool: "github_merge_pr", args: args, result: "merged" + (sha.isEmpty ? "" : " " + String(sha.prefix(7))))
-            return detail.baseBranch
+            return .merged(base: detail.baseBranch)
         } catch {
             app.store.audit(tool: "github_merge_pr", args: args, result: "error: " + error.localizedDescription)
             throw error
@@ -269,7 +355,9 @@ enum PullRequestQuickRunner {
                     // GitHub works out whether it can merge again after a new base; give it a moment.
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                 }
-                target = try await merge(repo: item.repo, number: item.number, token: token, app: app)
+                if case .merged(let base) = try await merge(repo: item.repo, number: item.number, token: token, app: app, autoMerge: false) {
+                    target = base
+                }
                 merged += 1
             } catch {
                 throw NookError(tr("agents.pulls.stack.stopped", merged, stack.count, error.localizedDescription))

@@ -27,7 +27,7 @@ extension AppModel {
                 onText: silentIfNone ? nil : { [weak self] text in self?.showStreaming(text, sources: sources) }
             )
             // Follow-up actions suggested by Nook appear as interactive buttons below response.
-            let split = FollowUps.split(plan.text)
+            let split = FollowUps.split(plan.text, limit: FollowUps.cardLimit)
             plan.text = Citations.sanitize(split.body, valid: Set(ledger.references.map(\.number)))
             // The same checks as in the chat: inputs are normalized to the tool's schema, and a step that can never run is dropped.
             plan.actions = plan.actions.compactMap { action in

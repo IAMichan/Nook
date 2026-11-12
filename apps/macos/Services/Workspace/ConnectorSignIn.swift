@@ -14,6 +14,9 @@ struct ConnectorSignIn: Equatable, Identifiable, Sendable {
 
     /// The name as you know it: without the `claude.ai ` prefix or a plugin's path.
     var title: String { ConnectorSignIns.title(name) }
+
+    /// The website whose icon is the connector's logo, wherever it is listed; nil shows the connector symbol.
+    var iconDomain: String? { SourceBrand.connectorDomain(name: title) }
 }
 
 /// Which connectors need you, read from what each agent reports.

@@ -630,29 +630,14 @@ extension AppModel {
     }
 
     private nonisolated static func pipeKey(_ key: String, to executable: String, arguments: [String], environment: [String: String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.environment = environment
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = output
-        defer {
-            try? input.fileHandleForReading.close()
-            try? input.fileHandleForWriting.close()
-            try? output.fileHandleForReading.close()
-            try? output.fileHandleForWriting.close()
-        }
-        try process.run()
-        input.fileHandleForWriting.write(Data((key + "\n").utf8))
-        try? input.fileHandleForWriting.close()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        // The key goes in over stdin from a background queue, with a deadline: a login command that hangs or exits
+        // without reading it can neither block nor crash Nook.
+        let result = try ProcessRunner.run(executable, arguments, environment: environment,
+                                           stdin: Data((key + "\n").utf8), timeout: 60)
+        guard result.status == 0, !result.timedOut else {
             // The output cannot contain the key (passed via stdin), but only the last line is displayed.
-            let last = String(decoding: data, as: UTF8.self).split(separator: "\n").last.map(String.init) ?? ""
+            let text = result.stdout + "\n" + result.stderr
+            let last = text.split(separator: "\n").last.map(String.init) ?? ""
             throw NookError(tr("accounts.codexKeyFailed") + (last.isEmpty ? "" : " " + String(last.prefix(200))))
         }
     }

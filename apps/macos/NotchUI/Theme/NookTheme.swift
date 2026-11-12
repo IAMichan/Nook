@@ -68,6 +68,18 @@ enum NookTheme {
 
     static func palette(dark: Bool) -> NookPalette { dark ? darkPalette : lightPalette }
 
+    /// The colors of added and removed lines (`NookDiffColors`, Settings › Appearance).
+    nonisolated(unsafe) static var diffColors = NookDiffColors.redGreen
+
+    /// Sets the diff colors; true when they changed. Bumps `revision`, so every root draws them anew.
+    @discardableResult
+    static func apply(diffColors next: NookDiffColors) -> Bool {
+        guard next != diffColors else { return false }
+        diffColors = next
+        revision += 1
+        return true
+    }
+
     /// Sets the palettes; true when something changed.
     @discardableResult
     static func apply(dark: NookPalette, light: NookPalette) -> Bool {
@@ -164,6 +176,12 @@ enum NookTheme {
     /// A merged pull request, as forges show it.
     static let violet = themed(\.violet)
     static let mintSoft = themed(\.mintSoft)
+    /// Added and removed lines, files and counts in diffs, green and red or blue and orange (`NookDiffColors`). Use these,
+    /// not `mint` and `coral`, wherever a color says "added" or "removed".
+    static let diffAdded = adaptive { diffColors.added(palette(dark: $0)) }
+    static let diffRemoved = adaptive { diffColors.removed(palette(dark: $0)) }
+    /// A changed file beside added and removed ones.
+    static let diffModified = adaptive { diffColors.modified(palette(dark: $0)) }
     static let music = themed(\.music)
 
     /// The canvas behind every window: the Workspace, Settings, and the Today window share it. Pure black in Nook's dark
@@ -436,6 +454,19 @@ extension View {
     }
 }
 
+extension View {
+    /// The pointing hand while `enabled`. macOS only: the iPhone companion compiles this file too and has no pointer
+    /// cursor to set, so there it leaves the view as it is.
+    @ViewBuilder
+    func nookPointingHand(_ enabled: Bool) -> some View {
+        #if os(macOS)
+        pointerStyle(enabled ? .link : nil)
+        #else
+        self
+        #endif
+    }
+}
+
 /// The press state of Nook's own buttons: a hair smaller and dimmer while the button is down, then back with the quick
 /// curve. Reduce Motion keeps the dim and drops the scale.
 struct NookPressStyle: ButtonStyle {
@@ -449,7 +480,7 @@ struct NookPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(NookTheme.Motion.quick, value: configuration.isPressed)
-            .pointerStyle(isEnabled ? .link : nil)
+            .nookPointingHand(isEnabled)
     }
 }
 
@@ -469,7 +500,7 @@ struct NookPointerButtonStyle<Base: PrimitiveButtonStyle>: PrimitiveButtonStyle 
     func makeBody(configuration: Configuration) -> some View {
         Button(configuration)
             .buttonStyle(base)
-            .pointerStyle(isEnabled ? .link : nil)
+            .nookPointingHand(isEnabled)
     }
 }
 
@@ -488,21 +519,37 @@ extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<BorderedProm
     static var nookProminent: Self { NookPointerButtonStyle(base: .borderedProminent) }
 }
 
+#if os(macOS)
+/// `.link` exists on macOS only; the iPhone companion compiles this file too.
 extension PrimitiveButtonStyle where Self == NookPointerButtonStyle<LinkButtonStyle> {
     /// `.link` with the pointing hand.
     static var nookLink: Self { NookPointerButtonStyle(base: .link) }
 }
+#endif
 
 /// A system menu style that also shows the pointing hand over an enabled menu button, like `NookPointerButtonStyle`.
 /// Use `.nookBorderlessButton` / `.nookButton` instead of `.borderlessButton` / `.button`.
+///
+/// `.nookButton` draws its label without chrome. A `.button` menu takes its look from the button style around it, but
+/// it only recognizes the system styles: under a Nook pointer style (`.nookPlain`) it falls back to a bordered,
+/// padded button, so the menu sets the system plain style on itself.
 struct NookPointerMenuStyle<Base: MenuStyle>: MenuStyle {
     var base: Base
+    var plainLabel = false
     @Environment(\.isEnabled) private var isEnabled
 
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        Menu(configuration)
-            .menuStyle(base)
-            .pointerStyle(isEnabled ? .link : nil)
+        if plainLabel {
+            Menu(configuration)
+                .menuStyle(base)
+                .buttonStyle(PlainButtonStyle())
+                .nookPointingHand(isEnabled)
+        } else {
+            Menu(configuration)
+                .menuStyle(base)
+                .nookPointingHand(isEnabled)
+        }
     }
 }
 
@@ -512,15 +559,15 @@ extension MenuStyle where Self == NookPointerMenuStyle<BorderlessButtonMenuStyle
 }
 
 extension MenuStyle where Self == NookPointerMenuStyle<ButtonMenuStyle> {
-    /// `.button` with the pointing hand.
-    static var nookButton: Self { NookPointerMenuStyle(base: .button) }
+    /// `.button` with the pointing hand and a plain label (no button chrome).
+    static var nookButton: Self { NookPointerMenuStyle(base: .button, plainLabel: true) }
 }
 
 extension View {
     /// The pointing hand over a view that acts on a click without being a `Button` (a row or tab with
     /// `.onTapGesture`), so it reads as clickable like every button. `enabled: false` keeps the arrow.
     func nookClickable(_ enabled: Bool = true) -> some View {
-        pointerStyle(enabled ? .link : nil)
+        nookPointingHand(enabled)
     }
 }
 

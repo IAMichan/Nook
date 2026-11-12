@@ -163,11 +163,10 @@ private struct TurnChangesRow: View {
             .padding(.leading, NookTheme.Spacing.sm + CGFloat(row.depth) * 14)
             .padding(.trailing, NookTheme.Spacing.sm)
             .frame(height: 28)
-            .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.chip)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .help(row.isDirectory ? row.path : tr("agents.turn.showFile", row.path))
     }
 }

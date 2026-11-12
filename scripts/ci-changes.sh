@@ -9,7 +9,7 @@
 # builds from a new directory, add it here and to the `paths` of its verified-check step.
 set -euo pipefail
 
-AREAS=(macos ios packages relay tauri workflows github_scripts docs dependencies)
+AREAS=(macos ios packages relay tauri chatd core_tests workflows github_scripts docs dependencies)
 
 # Patterns whose change needs the area: a directory ends in /, a pattern with * is a glob over the whole path
 # (* also matches /), anything else is one file.
@@ -20,6 +20,9 @@ paths_for() {
     packages) echo "packages/core/ .github/workflows/packages.yml .github/actions/" ;;
     relay) echo "apps/relay/ .github/workflows/relay.yml" ;;
     tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;
+    chatd) echo "apps/chatd/ .github/workflows/chatd.yml .github/actions/" ;;
+    # scripts/core-tests.sh on Linux: the portable half of NookTests that contributors without a Mac can run.
+    core_tests) echo "apps/macos/ scripts/core-tests.sh scripts/core-tests-sync.py .github/workflows/core-tests.yml .github/actions/" ;;
     # zizmor: security audit of the workflows, actions and Dependabot settings.
     workflows) echo ".github/workflows/ .github/actions/ .github/zizmor.yml .github/dependabot.yml" ;;
     # node --test for the scripts the community workflows load (PR overview, welcome).
@@ -27,7 +30,7 @@ paths_for() {
     # lychee: relative links and #anchors in Markdown. A renamed heading or moved file breaks links elsewhere too.
     docs) echo "*.md" ;;
     # GitHub's dependency review: new dependencies with known vulnerabilities or a disallowed license.
-    dependencies) echo "*package.json *package-lock.json *Cargo.toml *Cargo.lock *Package.swift *Package.resolved apps/macos/project.yml apps/ios/project.yml" ;;
+    dependencies) echo "*package.json *package-lock.json *Cargo.toml *Cargo.lock *Package.swift *Package.resolved *go.mod *go.sum apps/macos/project.yml apps/ios/project.yml" ;;
   esac
 }
 

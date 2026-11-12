@@ -29,7 +29,7 @@ struct RunInspector: View {
             .sheet(item: $changes) { file in ChangesSheet(runID: runID, initialFile: file) }
             .sheet(isPresented: $showCommit) { CommitSheet(runID: runID) }
             .sheet(isPresented: $showPullRequest) { PullRequestSheet(runID: runID) }
-            .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: $confirmRemove) {
+            .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: $confirmRemove, titleVisibility: .visible) {
                 let dirty = (workspace.git[runID]?.status?.files.count ?? 0) > 0
                 if dirty {
                     Button(tr("ws.worktree.removeForce"), role: .destructive) { remove(force: true) }
@@ -105,8 +105,8 @@ struct RunInspector: View {
                     let added = files.compactMap(\.added).reduce(0, +)
                     let removed = files.compactMap(\.removed).reduce(0, +)
                     HStack(spacing: NookTheme.Spacing.md) {
-                        Text("+\(added)").foregroundStyle(NookTheme.mint)
-                        Text("−\(removed)").foregroundStyle(NookTheme.coral)
+                        Text("+\(added)").foregroundStyle(NookTheme.diffAdded)
+                        Text("−\(removed)").foregroundStyle(NookTheme.diffRemoved)
                         Text(tr("ws.inspector.filesChanged", files.count)).foregroundStyle(WS.tertiary)
                     }
                     .font(NookTheme.mono(11.5))
@@ -283,8 +283,8 @@ struct FileChangeRow: View {
                 .lineLimit(1)
                 .truncationMode(.head)
             Spacer(minLength: 4)
-            if let added = file.added { Text("+\(added)").foregroundStyle(NookTheme.mint.opacity(0.85)) }
-            if let removed = file.removed, removed > 0 { Text("−\(removed)").foregroundStyle(NookTheme.coral.opacity(0.85)) }
+            if let added = file.added { Text("+\(added)").foregroundStyle(NookTheme.diffAdded.opacity(0.85)) }
+            if let removed = file.removed, removed > 0 { Text("−\(removed)").foregroundStyle(NookTheme.diffRemoved.opacity(0.85)) }
         }
         .font(NookTheme.mono(10.5))
         .padding(.vertical, 3)

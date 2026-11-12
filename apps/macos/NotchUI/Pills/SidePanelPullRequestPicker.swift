@@ -206,20 +206,10 @@ struct SidePanelPullRequestPicker: View {
     // MARK: Empty and footer
 
     private var emptyNote: some View {
-        VStack(spacing: NookTheme.Spacing.sm) {
-            NookSymbol(PullRequestIcon.generic, size: 18).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("agents.pr.linked.empty.title"))
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(NookTheme.textStrong)
-            Text(tr("agents.pr.linked.empty.detail"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+        WSEmptyState(symbol: PullRequestIcon.generic, title: tr("agents.pr.linked.empty.title"),
+                     message: tr("agents.pr.linked.empty.detail")) {
             SmallGhostButton(title: tr("agents.pr.linked.add")) { startLinking() }
         }
-        .frame(maxWidth: .infinity)
-        .padding(NookTheme.Spacing.lg)
     }
 
     /// "2 open · 3 linked · read 2 m ago", the button that links another, and its field once you press it.

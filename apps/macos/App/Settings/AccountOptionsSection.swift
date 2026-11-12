@@ -95,7 +95,7 @@ struct AccountOptionsSection: View {
                 .onSubmit(saveVariables)
             }
             HStack {
-                Button { rows.append(VariableRow()) } label: { Label(tr("accounts.variables.add"), systemImage: "plus") }
+                Button { rows.append(VariableRow()) } label: { Label(tr("accounts.variables.add"), icon: "plus") }
                     .controlSize(.small)
                 Spacer()
                 Button(tr("button.save"), action: saveVariables).controlSize(.small)

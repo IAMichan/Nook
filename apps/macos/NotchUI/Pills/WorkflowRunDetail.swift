@@ -350,9 +350,7 @@ private struct WorkflowJobRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: NookTheme.rowRest),
-                           radius: NookTheme.Radius.control)
-        .onHover { hovering = $0 }
+        .hoverRowFill($hovering, rest: NookTheme.rowRest)
         .help(tr("actions.job.open"))
     }
 }

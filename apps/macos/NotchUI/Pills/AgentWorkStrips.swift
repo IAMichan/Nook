@@ -68,8 +68,38 @@ struct FreshConversationStrip: View {
     }
 }
 
+/// The commands this agent runs wait for the Mac to have room again (`AgentGovernor`): what you need to know, and a way to
+/// let them go on anyway. Shown only while they wait.
+struct ResourceWaitStrip: View {
+    let runID: UUID
+    @ObservedObject private var status = AgentGovernorStatus.shared
+
+    var body: some View {
+        if status.throttles[runID] == .paused {
+            HStack(spacing: NookTheme.Spacing.md) {
+                Image(icon: "pause.circle").font(NookTheme.font(11, .semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tr("ws.governor.paused.title")).foregroundStyle(NookTheme.paper.opacity(0.85))
+                    Text(tr("ws.governor.paused.detail")).foregroundStyle(NookTheme.textTertiary)
+                }
+                Spacer(minLength: 6)
+                Button(tr("ws.governor.letGoOn")) { AgentGovernor.shared.letGoOn(runID) }
+                    .buttonStyle(.nookPlain)
+                    .foregroundStyle(NookTheme.iris)
+                    .help(tr("ws.governor.letGoOn.help"))
+            }
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
+        }
+    }
+}
+
+/// "Tasks  Phase 2: agent parity  1/5" above the composer, opening to the whole list. While the agent works the step it
+/// is on shimmers, so the phase that runs stays in sight while you scroll or type.
 struct TasksStrip: View {
     let steps: [RunTaskStep]
+    /// The agent works on the list now.
+    var working = false
     @State private var open = false
 
     var body: some View {
@@ -81,10 +111,15 @@ struct TasksStrip: View {
                 HStack(spacing: NookTheme.Spacing.md) {
                     Image(icon: "checklist").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.tasks.title")).foregroundStyle(NookTheme.textTertiary)
-                    Text(progress.current)
-                        .foregroundStyle(NookTheme.paper.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    Group {
+                        if TaskChecklist.isRunning(steps, active: working) {
+                            ShimmerText(text: progress.current)
+                        } else {
+                            Text(progress.current).foregroundStyle(NookTheme.paper.opacity(0.85))
+                        }
+                    }
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     Spacer(minLength: 6)
                     Text("\(progress.done)/\(progress.total)")
                         .font(NookTheme.mono(11, .medium))
@@ -565,7 +600,7 @@ struct PullRequestWatchStrip: View {
         }
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)
-        .roundedBackground(hovering ? NookTheme.rowHover : Color.clear, radius: NookTheme.Radius.chip)
+        .hoverRowFill($hovering, radius: NookTheme.Radius.chip)
         // The whole row opens the pull request (in the session's side panel); the checks and the eye keep their own click.
         .contentShape(Rectangle())
         .nookClickable()
@@ -573,7 +608,6 @@ struct PullRequestWatchStrip: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: tr("ws.prwatch.open"), open)
         .opacity(isCurrent ? 1 : 0.72)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
     }
 
@@ -952,11 +986,10 @@ struct BackgroundCommandLink: View {
             .font(NookTheme.TextStyle.caption)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(NookTheme.shape(NookTheme.Radius.control).fill(hovering ? NookTheme.rowHover : NookTheme.field))
+            .hoverRowFill($hovering, rest: NookTheme.field)
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .padding(.leading, TranscriptStyle.workIndent)
         .help(tr("ws.background.showInBar"))
         .accessibilityLabel(tr("ws.background.showInBar"))
