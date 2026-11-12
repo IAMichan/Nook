@@ -725,3 +725,13 @@ schemes:
         - NookTests
     run:
       config: Debug
+  # Only the unit tests. NookTests compiles the core sources itself and has no app host, so `scripts/xcode.sh test` uses
+  # this scheme and does not build Nook.app and its packages (MLX, Transformers, FluidAudio, llama) first. CI keeps
+  # testing with the Nook scheme, which also checks that the app builds.
+  NookTests:
+    build:
+      targets:
+        NookTests: all
+    test:
+      targets:
+        - NookTests

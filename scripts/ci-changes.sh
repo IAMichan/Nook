@@ -22,7 +22,7 @@ paths_for() {
     tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;
     chatd) echo "apps/chatd/ .github/workflows/chatd.yml .github/actions/" ;;
     # scripts/core-tests.sh on Linux: the portable half of NookTests that contributors without a Mac can run.
-    core_tests) echo "apps/macos/ scripts/core-tests.sh .github/workflows/core-tests.yml .github/actions/" ;;
+    core_tests) echo "apps/macos/ scripts/core-tests.sh scripts/core-tests-sync.py .github/workflows/core-tests.yml .github/actions/" ;;
     # zizmor: security audit of the workflows, actions and Dependabot settings.
     workflows) echo ".github/workflows/ .github/actions/ .github/zizmor.yml .github/dependabot.yml" ;;
     # node --test for the scripts the community workflows load (PR overview, welcome).

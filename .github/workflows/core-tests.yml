@@ -30,7 +30,7 @@ jobs:
         uses: ./.github/actions/verified-check
         with:
           name: core-tests
-          paths: apps/macos scripts/core-tests.sh .github/workflows/core-tests.yml .github/actions
+          paths: apps/macos scripts/core-tests.sh scripts/core-tests-sync.py .github/workflows/core-tests.yml .github/actions
       - name: Test
         if: steps.verified.outputs.verified != 'true'
         run: |
