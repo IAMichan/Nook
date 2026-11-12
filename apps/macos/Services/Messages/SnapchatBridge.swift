@@ -10,6 +10,8 @@ import Foundation
 @MainActor
 final class SnapchatBridge: ChatHistoryBridge {
     let app = SnapchatWebData.app
+    /// Snapchat's website shows neither edits nor deletions, and dates a message by when Nook first saw it.
+    var historyChanges: Bool { false }
     let interval: TimeInterval = 30
     private(set) var isWorking = false
 

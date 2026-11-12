@@ -143,7 +143,7 @@ final class MailBridge: ChatBridge, ObservableObject {
 
     /// Why Mail gave no answer: no permission under Automation says how to give it; anything else as the Mail connector
     /// says it.
-    private func problem(_ number: Int?, _ message: String?, timeout: TimeInterval) -> NookError {
+    fileprivate func problem(_ number: Int?, _ message: String?, timeout: TimeInterval) -> NookError {
         if number == -1743 { return NookError(tr("chats.mail.noPermission")) }
         return NookError(MailStats.failure(errorNumber: number, message: message, timeout: timeout))
     }
@@ -294,6 +294,38 @@ final class MailBridge: ChatBridge, ObservableObject {
         isWorking = false
         lastMark = nil
         lastFullRead = nil
+    }
+}
+
+// MARK: Nook's archive
+
+/// Mail fills Nook's archive too (`ChatBackfill`): each person's older mail, a stretch of time at a time, back to their
+/// first mail. Mail has no edits, and deleting a mail in Mail moves it (to the Trash, an archive): nothing there says
+/// it was deleted for the other person, so Mail's messages are never marked "Deleted".
+extension MailBridge: ChatBackfillBridge {
+    var historyChanges: Bool { false }
+    var backfillEmptyIsStart: Bool { true }
+
+    /// Not while you work in Mail itself: Mail answers one script at a time, and the mail you open would wait.
+    func canBackfill(chatID: String) -> Bool {
+        isReady && !MailChangeMark.mailIsFront && MailChatData.parts(of: chatID, accounts: accounts) != nil
+    }
+
+    /// The person's mail before `before`: the first stretch back that holds any (`MailChatData.olderStretches`), all of
+    /// it, so the page covers its stretch whole. Empty once there is none left.
+    func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage] {
+        guard let (account, address) = MailChatData.parts(of: chatID, accounts: accounts) else { return [] }
+        for stretch in MailChatData.olderStretches(before: before) {
+            let result = await ScriptText.run(MailChatData.olderScript(account: account.name, address: address,
+                                                                       from: stretch.from, to: stretch.to), timeout: 60)
+            guard let raw = result.text else { throw problem(result.errorNumber, result.errorMessage, timeout: 60) }
+            let rows = MailChatData.rows(raw, account: account).filter { $0.date < before }
+            guard !rows.isEmpty else { continue }
+            let texts = MailStats.bodies(raw)
+            let chats = MailChatData.chats(rows, accounts: accounts, bodies: texts, named: accounts.count > 1)
+            return chats.first { $0.chatID == chatID }?.messages ?? []
+        }
+        return []
     }
 }
 

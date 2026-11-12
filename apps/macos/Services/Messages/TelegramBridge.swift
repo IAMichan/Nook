@@ -11,6 +11,8 @@ import Combine
 @MainActor
 final class TelegramBridge: ObservableObject, ChatHistoryBridge, ChatSearchBridge {
     let app = "telegram"
+    /// `getChatHistory` has no deleted messages: one deleted while Nook was not running is found by its absence.
+    var historyOmitsDeleted: Bool { true }
     let interval: TimeInterval = 3
 
     enum State: Equatable {

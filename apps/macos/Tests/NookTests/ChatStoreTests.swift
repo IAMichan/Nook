@@ -138,14 +138,49 @@ final class ChatStoreTests: XCTestCase {
 
     // MARK: Backfill
 
-    func testABackfillCountsWhatIsNewAndNeverBringsARemovedChatBack() {
-        let chat = thread(messages: [message(5)])
+    func testLayingAPageBesideTheArchiveClosesAHoleAndNeverBringsARemovedChatBack() {
+        let chat = thread(messages: [message(1), message(9)])
         XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
-        XCTAssertEqual(store.saveBackfill([message(3), message(4)], key: chat.id), 2)
-        XCTAssertEqual(store.saveBackfill([message(3), message(4)], key: chat.id), 0, "a batch it already gave is nothing new")
+        let page = ChatReconcile.Page(messages: (1..<9).map { message($0) }, high: message(9).date)
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 7, "what Nook missed in between")
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 0, "a page it already gave is nothing new")
+        XCTAssertEqual(store.older(chat.id, before: message(9).date, excluding: ["m9"], limit: 20).map(\.id), (1..<9).map { "m\($0)" })
         XCTAssertTrue(store.deleteChat(chat.id))
-        XCTAssertNil(store.saveBackfill([message(1)], key: chat.id))
+        XCTAssertNil(store.reconcile(page, key: chat.id))
         XCTAssertNil(store.thread(chat.id, window: 10), "the chat is not made again")
+    }
+
+    func testAPageBringsOldEditsAndWhatTheAppLeftOutIsDeletedKeepingItsText() throws {
+        var mine = message(3, "van mij")
+        mine.fromMe = true
+        let chat = thread(messages: [message(1), message(2, "oud"), mine, message(4, "weg"), InboxMessage(id: "n77", text: "melding", date: message(5).date), message(6)])
+        XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
+        var edited = message(2, "nieuw")
+        edited.edited = true
+        // Slack and Telegram leave a deleted message out; your own and a notification's copy are never taken for one.
+        let page = ChatReconcile.Page(messages: [message(1), edited], high: message(6).date, omitsDeleted: true)
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 0)
+
+        let all = store.between(chat.id, after: .distantPast, before: .distantFuture)
+        XCTAssertEqual(all.first { $0.id == "m2" }?.text, "nieuw")
+        XCTAssertEqual(store.versions("m2", inChat: chat.id).map(\.text), ["oud"])
+        let gone = try XCTUnwrap(all.first { $0.id == "m4" })
+        XCTAssertTrue(gone.isDeleted)
+        XCTAssertEqual(gone.text, "weg", "someone else's deleted message keeps what it said")
+        XCTAssertFalse(all.first { $0.id == "m3" }?.isDeleted ?? true)
+        XCTAssertFalse(all.first { $0.id == "n77" }?.isDeleted ?? true)
+        XCTAssertFalse(all.first { $0.id == "m6" }?.isDeleted ?? true, "the page's end is not in the stretch it covers")
+    }
+
+    func testAnAppThatSaysWhatItDeletedIsBelievedAndANotificationsCopyGoes() {
+        let notice = InboxMessage(id: "n5", sender: "Anna", text: "hallo daar", date: message(2).date.addingTimeInterval(3))
+        let chat = thread(messages: [message(1), notice, message(3)])
+        XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
+        let page = ChatReconcile.Page(messages: [message(1), message(2, "hallo daar")], deleted: ["m3"], high: message(4).date)
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 1)
+        let all = store.between(chat.id, after: .distantPast, before: .distantFuture)
+        XCTAssertEqual(all.map(\.id), ["m1", "m2", "m3"], "the notification's copy made way for the app's own")
+        XCTAssertTrue(all.last?.isDeleted == true)
     }
 
     func testAPageByCountMovesOnWhenTheArchiveCountIsOff() async throws {

@@ -335,14 +335,15 @@ final class ChatStore {
     }
 
     /// The texts a message had before it was edited (or deleted), oldest first, with when each was replaced.
-    func versions(_ id: String, inChat key: String) -> [(replaced: Date, text: String)] {
+    func versions(_ id: String, inChat key: String) -> [ChatVersion] {
         guard let chat = chatID(key), let row = stored(id, chat: chat)?.row,
               let stmt = prepared("SELECT at, text FROM message_version WHERE message = ? ORDER BY rowid") else { return [] }
         defer { sqlite3_reset(stmt) }
         sqlite3_bind_int64(stmt, 1, row)
-        var versions: [(Date, String)] = []
+        var versions: [ChatVersion] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            versions.append((Date(timeIntervalSinceReferenceDate: sqlite3_column_double(stmt, 0)), text(stmt, 1) ?? ""))
+            versions.append(ChatVersion(replaced: Date(timeIntervalSinceReferenceDate: sqlite3_column_double(stmt, 0)),
+                                        text: text(stmt, 1) ?? ""))
         }
         return versions
     }
@@ -382,19 +383,53 @@ final class ChatStore {
         return saveMessage(merged, chat: chat, reindex: Self.searchBody(merged) != Self.searchBody(known.message))
     }
 
-    /// A batch of a chat's history from its app, merged into what is stored: how many of its messages were not here
-    /// before, or nil when the chat is not stored (removed meanwhile) and nothing was written. A chat is never made here.
-    func saveBackfill(_ messages: [InboxMessage], key: String) -> Int? {
+    /// A page of a chat's history as its app has it now, laid beside what is stored of the same stretch (`ChatReconcile`):
+    /// what Nook missed is added (a hole closes), an edit brings the new text and keeps the old, and what the app no
+    /// longer has (`absent`) or says it deleted is marked deleted, keeping someone else's text. A copy a notification
+    /// left of a message the page has goes. How many of the page's messages were new here, or nil when the chat is not
+    /// stored (removed meanwhile): a chat is never made here.
+    func reconcile(_ page: ChatReconcile.Page, key: String) -> Int? {
         var fresh = 0
         let saved = transaction {
             guard let chat = chatID(key) else { return false }
-            for message in messages {
+            for message in page.messages {
                 if stored(message.id, chat: chat) == nil { fresh += 1 }
                 guard saveMerged(message, chat: chat) else { return false }
             }
-            return true
+            var gone = page.deleted
+            var copies: [String] = []
+            if let low = page.messages.map(\.date).min() {
+                let stretch = between(chat: chat, after: low, before: page.high)
+                copies = ChatReconcile.copies(stretch, of: page.messages)
+                if page.omitsDeleted { gone += ChatReconcile.absent(stretch, from: page.messages).filter { !copies.contains($0) } }
+            }
+            return withdraw(gone, chat: chat) && deleteMessages(copies, chat: chat)
         }
         return saved ? fresh : nil
+    }
+
+    /// A chat's stored messages after `after` and before `before` (both left out), oldest first.
+    func between(_ key: String, after: Date, before: Date) -> [InboxMessage] {
+        guard let chat = chatID(key) else { return [] }
+        return between(chat: chat, after: after, before: before)
+    }
+
+    private func between(chat: Int64, after: Date, before: Date) -> [InboxMessage] {
+        let sql = "SELECT \(Self.messageColumns) FROM message m WHERE m.chat = ? AND m.at > ? AND m.at < ? ORDER BY m.at, m.id"
+        guard let stmt = prepared(sql) else { return [] }
+        defer { sqlite3_reset(stmt) }
+        sqlite3_bind_int64(stmt, 1, chat)
+        sqlite3_bind_double(stmt, 2, after.timeIntervalSinceReferenceDate)
+        sqlite3_bind_double(stmt, 3, before.timeIntervalSinceReferenceDate)
+        var messages: [InboxMessage] = []
+        while sqlite3_step(stmt) == SQLITE_ROW { if let message = message(stmt) { messages.append(message) } }
+        return messages
+    }
+
+    /// How many messages of a chat are stored from `date` on: how far back from the newest a page by count starts.
+    func count(_ key: String, since date: Date) -> Int {
+        Int((try? scalar("SELECT COUNT(*) FROM message WHERE chat = (SELECT id FROM chat WHERE key = ?) AND at >= ?",
+                         [key, date.timeIntervalSinceReferenceDate])) ?? 0)
     }
 
     /// A message its app says was edited, as far as the archive holds it: the new text (nil when the app does not say
@@ -833,6 +868,7 @@ final class ChatStore {
         for (index, argument) in arguments.enumerated() {
             switch argument {
             case let value as Int64: sqlite3_bind_int64(stmt, Int32(index + 1), value)
+            case let value as Double: sqlite3_bind_double(stmt, Int32(index + 1), value)
             case let value as String: sqlite3_bind_text(stmt, Int32(index + 1), value, -1, transient)
             default: sqlite3_bind_null(stmt, Int32(index + 1))
             }
@@ -856,4 +892,11 @@ final class ChatStore {
         guard length > 0, let bytes = sqlite3_column_blob(stmt, column) else { return nil }
         return Data(bytes: bytes, count: length)
     }
+}
+
+/// A text a message had before it was edited or deleted, and when it was replaced: what "Edited" and "Deleted" open.
+struct ChatVersion: Equatable, Sendable, Identifiable {
+    var replaced: Date
+    var text: String
+    var id: String { "\(replaced.timeIntervalSinceReferenceDate)|\(text.hashValue)" }
 }

@@ -1,8 +1,9 @@
 import Foundation
 
-/// Filling the archive with each chat's whole history, in the background, a batch at a time: what the apps keep (and
-/// Nook only asked for when you scrolled back) is then on this Mac, so scrolling back and searching never wait for an
-/// app. Only while the Mac runs at full pace on power with room on its disk; files never come along, only messages.
+/// Keeping the archive in step with each chat's app, in the background, a page at a time: each chat is walked from the
+/// oldest message it shows down to its start, every page laid beside the archive (`ChatReconcile`), so holes close, the
+/// whole history comes to this Mac, and edits and deletions of old messages reach it. Scrolling back and searching then
+/// never wait for an app. Only while the Mac runs at full pace on power with room on its disk; files never come along.
 enum ChatBackfill {
     /// How often the backfill looks for a chat to fill.
     static let tick: TimeInterval = 2
@@ -18,9 +19,20 @@ enum ChatBackfill {
     /// never notices.
     static func pause(local: Bool) -> TimeInterval { local ? 2 : 20 }
 
-    struct Cursor: Sendable {
-        var complete: Bool
-        var oldest: InboxMessage?
+    /// How long after a chat's walk ended it is walked again: edits and deletions of old messages reach the archive
+    /// within this. Each launch walks every chat once, so what came in while Nook was not running closes first.
+    static let rewalk: TimeInterval = 6 * 60 * 60
+    /// Less than any two messages apart: a stretch from a message on includes it.
+    static let instant: TimeInterval = 0.000_5
+
+    /// A walk back through one chat's history: the message the next page is asked before, and how many pages in a row
+    /// brought nothing before it.
+    struct Walk: Sendable {
+        var cursor: Date
+        var cursorID: String?
+        var empty = 0
+        /// An earlier walk reached the chat's start (`ChatStore.markComplete`).
+        var reachedStartBefore = false
     }
 
     /// Runs only at full pace, not on a battery that is spared, and with at least the room `DiskSpace` warns at.
@@ -55,8 +67,10 @@ enum ChatBackfill {
         return page
     }
 
-    /// What a batch brought that is older than the archive's oldest message of the chat, without it.
-    static func older(_ messages: [InboxMessage], than oldest: InboxMessage) -> [InboxMessage] {
-        messages.filter { $0.id != oldest.id && $0.date <= oldest.date }
+    /// What a page brought from before a walk's message, without it, and nothing from before you cleared the chat.
+    static func messages(_ messages: [InboxMessage], below walk: Walk, removed: Date?) -> [InboxMessage] {
+        messages.filter { message in
+            message.id != walk.cursorID && message.date <= walk.cursor && removed.map { message.date > $0 } ?? true
+        }
     }
 }

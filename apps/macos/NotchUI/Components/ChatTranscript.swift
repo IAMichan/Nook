@@ -35,6 +35,9 @@ struct ChatTranscript: View, Equatable {
     /// Fetching the messages before the oldest shown; true when some came. Nil where the chat cannot load older ones:
     /// no button at its top.
     var onLoadOlder: (() async -> Bool)? = nil
+    /// The texts an edited or deleted message had before, as Nook's archive kept them: "Edited" and "Deleted" open
+    /// them. Nil where none are kept: the marks only say it.
+    var onVersions: ((ChatBubble) async -> [ChatVersion])? = nil
     /// Who is typing in the chat now ("Jan is typing…"), shown under its last message; nil while no one does.
     var typing: String? = nil
     /// The first message that was new when the chat opened: a line above it says so, and it stays put while you read.
@@ -382,7 +385,8 @@ struct ChatTranscript: View, Equatable {
                                        onEdit: editAction(bubble), onDelete: deleteAction(bubble),
                                        onForward: forwardAction(bubble),
                                        onCopyChat: { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) },
-                                       onVote: voteAction(bubble))
+                                       onVote: voteAction(bubble),
+                                       onVersions: versionsAction(bubble))
                             .equatable()
                             .background(TranscriptPickMark(selection: selection, id: bubble.id))
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TranscriptSelection.space)) } action: {
@@ -422,6 +426,12 @@ struct ChatTranscript: View, Equatable {
     private func voteAction(_ bubble: ChatBubble) -> (([String]) -> Void)? {
         guard let onVote, bubble.poll != nil, !bubble.local, !bubble.deleted else { return nil }
         return { onVote(bubble, $0) }
+    }
+
+    /// What an edited message, or someone else's deleted one, said before.
+    private func versionsAction(_ bubble: ChatBubble) -> (() async -> [ChatVersion])? {
+        guard let onVersions, !bubble.local, bubble.edited || bubble.keepsDeleted else { return nil }
+        return { await onVersions(bubble) }
     }
 
     /// Deleting a message: the host asks how (for you, or for everyone where it is yours and its app takes that).
@@ -474,12 +484,15 @@ private struct ChatBubbleView: View, Equatable {
     let onForward: (() -> Void)?
     let onCopyChat: () -> Void
     let onVote: (([String]) -> Void)?
+    var onVersions: (() async -> [ChatVersion])? = nil
     @State private var expanded = false
     @State private var hovering = false
     /// The emoji to react with are open beside the bubble.
     @State private var picking = false
     /// Your message's info (who read it, who has it) is open over its ticks.
     @State private var showingInfo = false
+    /// What an edited or deleted message said before is open over its mark.
+    @State private var showingVersions = false
     /// The bubble is in view or close to it: only then does its media load, play or move (`chatMediaLive`).
     @State private var near = false
     /// The pointer came onto the bubble since it came near view: only then are its menu button and its react and reply
@@ -508,6 +521,7 @@ private struct ChatBubbleView: View, Equatable {
             && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil) && (a.onForward == nil) == (b.onForward == nil)
+            && (a.onVersions == nil) == (b.onVersions == nil)
     }
 
     /// What the chevron's menu and a right-click on the bubble offer: one menu, so both always show the same.
@@ -581,12 +595,16 @@ private struct ChatBubbleView: View, Equatable {
     /// When it was sent, and for your own how far it got.
     private var stamp: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            if bubble.keepsDeleted {
-                DeletedMark(color: NookTheme.chatStamp)
-            } else if bubble.edited {
-                Text(tr("chat.message.edited"))
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.chatStamp)
+            if bubble.keepsDeleted || bubble.edited {
+                if onVersions != nil {
+                    Button { showingVersions = true } label: { changeMark }
+                        .buttonStyle(.nookPlain)
+                        .pointerStyle(.link)
+                        .help(tr("chat.versions.show"))
+                        .accessibilityLabel(tr("chat.versions.show"))
+                } else {
+                    changeMark
+                }
             }
             Text(bubble.time)
                 .font(NookTheme.TextStyle.caption)
@@ -606,6 +624,18 @@ private struct ChatBubbleView: View, Equatable {
             }
         }
         .fixedSize()
+    }
+
+    /// "Deleted" or "Edited" beside the time.
+    @ViewBuilder
+    private var changeMark: some View {
+        if bubble.keepsDeleted {
+            DeletedMark(color: NookTheme.chatStamp)
+        } else {
+            Text(tr("chat.message.edited"))
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.chatStamp)
+        }
     }
 
     /// Room for the time where it falls in the bubble's flow: the stamp itself is drawn over it at the bubble's right
@@ -686,6 +716,9 @@ private struct ChatBubbleView: View, Equatable {
                         .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
                             if let ticks = bubble.ticks { MessageInfoView(ticks: ticks, readers: bubble.readers) }
                         }
+                        .popover(isPresented: $showingVersions, arrowEdge: .bottom) {
+                            if let onVersions { MessageVersionsView(bubble: bubble, load: onVersions) }
+                        }
                     if !bubble.reactions.isEmpty {
                         // Under the bubble at its leading side, in its own room, so it never covers the message's
                         // text or time and the next message does not run into it.
@@ -724,7 +757,7 @@ private struct ChatBubbleView: View, Equatable {
         // Far from view again: its buttons go, until the pointer comes back onto it. Not while its menu, its emoji or
         // its info is open: that would take the open menu's button away under it.
         .onChange(of: near) { _, near in
-            if !near, armed, !picking, !showingInfo, !OpenMenus.tracking { armed = false }
+            if !near, armed, !picking, !showingInfo, !showingVersions, !OpenMenus.tracking { armed = false }
         }
         // A file the chat names but Nook does not have yet (it came in while the chat was open, or fetching it failed)
         // is asked of its app as the bubble comes into view, and again a few times while it stays there.

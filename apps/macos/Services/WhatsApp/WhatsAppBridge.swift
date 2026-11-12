@@ -204,13 +204,13 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
         WhatsAppAccounts.shared.route(chatID).0.isConnected
     }
 
-    /// The gateway pages from the newest back: the archive's count of the chat is where the next page starts, a little
+    /// The gateway pages from the newest back: the archive's count of the chat from `before` on is where the page starts, a little
     /// overlap included (`ChatBackfill.page`, which moves on when the archive misses messages or holds ones the phone
     /// does not have).
     func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage] {
         let (link, jid) = WhatsAppAccounts.shared.route(chatID)
         let key = ChatInbox.key(app: app, id: chatID)
-        let stored = await ChatArchive.shared?.read { $0.messageCount(key) } ?? 0
+        let stored = await ChatArchive.shared?.read { $0.count(key, since: before) } ?? 0
         return try await ChatBackfill.page(before: before, guess: stored, limit: limit) { offset in
             try await link.backfill(jid, offset: offset, limit: limit)
         }

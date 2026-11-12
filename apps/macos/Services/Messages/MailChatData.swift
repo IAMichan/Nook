@@ -154,6 +154,101 @@ enum MailChatData {
         """
     }
 
+    /// One person's mail in one account between two times (`from` included, `to` left out), with the start of each
+    /// text, for Nook's archive (`MailBridge.backfill`): theirs from the inbox (Mail finds those by sender itself), yours
+    /// to them from the Sent mailboxes (each mail of the stretch looked at for them among its recipients). Rows as
+    /// `readScript` writes them, then "<<<BODY>>>id" + text per message (`MailStats.bodies`). The times go as seconds
+    /// before now, as AppleScript has no other way to write a date that reads the same in every language.
+    static func olderScript(account: String, address: String, from: Date, to: Date, now: Date = Date(),
+                            length: Int = bodyLength) -> String {
+        let names = sentNames.map(MailStats.quote).joined(separator: ", ")
+        let who = MailStats.quote(address)
+        let body = """
+                                set body to content of m
+                                if (length of body) > \(length) then set body to text 1 thru \(length) of body
+                                set texts to texts & "<<<BODY>>>" & (id of m) & linefeed & body & linefeed
+        """
+        return """
+        tell application "Mail"
+            set acc to account \(MailStats.quote(account))
+            set out to ""
+            set texts to ""
+            set sentNames to {\(names)}
+            set hiDate to (current date) - \(max(0, Int(now.timeIntervalSince(to).rounded(.down))))
+            set loDate to (current date) - \(max(0, Int(now.timeIntervalSince(from).rounded(.up))))
+            repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
+                try
+                    set boxName to name of box
+                    set found to (messages of box whose date received < hiDate and date received ≥ loDate and sender contains \(who))
+                    repeat with m in found
+                        try
+                            set stamp to ((date received of m) as «class isot» as string)
+                            set out to out & "IN|||" & boxName & "|||" & (id of m) & "|||" & (subject of m) & "|||" & (sender of m) & "|||" & stamp & "|||" & (read status of m) & linefeed
+        \(body)
+                        end try
+                    end repeat
+                end try
+            end repeat
+            repeat with box in mailboxes of acc
+                try
+                    if sentNames contains (name of box) then
+                        set boxName to name of box
+                        set found to (messages of box whose date received < hiDate and date received ≥ loDate)
+                        repeat with m in found
+                            try
+                                set person to ""
+                                repeat with r in to recipients of m
+                                    if (address of r) is \(who) then
+                                        set person to (address of r)
+                                        try
+                                            set person to (name of r) & " <" & (address of r) & ">"
+                                        end try
+                                    end if
+                                end repeat
+                                if person is not "" then
+                                    set stamp to ((date received of m) as «class isot» as string)
+                                    set out to out & "OUT|||" & boxName & "|||" & (id of m) & "|||" & (subject of m) & "|||" & person & "|||" & stamp & linefeed
+        \(body)
+                                end if
+                            end try
+                        end repeat
+                    end if
+                end try
+            end repeat
+            return out & texts
+        end tell
+        """
+    }
+
+    /// The stretches a backfill asks Mail for, going back from `before`: three months first, each next one twice as long (31 years in all), as
+    /// far back as `MailChatData.oldest`. A person you rarely write with is reached in a few questions, a busy one is
+    /// asked a month at a time.
+    static func olderStretches(before: Date, first: TimeInterval = 90 * 86_400, tries: Int = 7) -> [(from: Date, to: Date)] {
+        var stretches: [(from: Date, to: Date)] = []
+        var to = before
+        var length = first
+        for _ in 0..<tries {
+            let from = max(oldest, to.addingTimeInterval(-length))
+            guard from < to else { break }
+            stretches.append((from, to))
+            to = from
+            length *= 2
+        }
+        return stretches
+    }
+
+    /// No mail is older than this (1990): where asking stops.
+    static let oldest = Date(timeIntervalSince1970: 631_152_000)
+
+    /// The account and the address of a chat's id (`chatID`), when it is one of these accounts.
+    static func parts(of chatID: String, accounts: [Account]) -> (account: Account, address: String)? {
+        guard let split = chatID.range(of: "~", options: .backwards) else { return nil }
+        let name = String(chatID[..<split.lowerBound])
+        let address = String(chatID[split.upperBound...])
+        guard !address.isEmpty, let account = accounts.first(where: { $0.name == name }) else { return nil }
+        return (account, address)
+    }
+
     /// The start of the text of a few messages by their place, in one script. Output: "<<<BODY>>>id" + text per message
     /// (`MailStats.bodies` reads it).
     static func bodiesScript(_ rows: [Row], length: Int = bodyLength) -> String {

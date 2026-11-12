@@ -29,10 +29,19 @@ protocol ChatBridge: AnyObject {
     /// fetches files in its own queue (Telegram), or one that reads a chat again only when it moved (Teams); every other
     /// bridge fetches them with the read a chat's opening asks for.
     func hurryFiles(name: String)
+    /// Its app leaves a message deleted for everyone out of the history it gives (Slack, Telegram), instead of saying
+    /// so: laying a page beside the archive (`ChatReconcile`) finds those deletions by what the page lacks.
+    var historyOmitsDeleted: Bool { get }
+    /// Its app's older messages can change (an edit, a deletion): walking a chat's history again goes all the way down.
+    /// One whose old messages never change (Mail, Snapchat's website) is walked again only until a page brings nothing
+    /// new, which closes what came in while Nook was not running.
+    var historyChanges: Bool { get }
 }
 
 extension ChatBridge {
     func hurryFiles(name: String) {}
+    var historyOmitsDeleted: Bool { false }
+    var historyChanges: Bool { true }
     var bridgeID: String { app }
     var alwaysOn: Bool { false }
     var readsLocally: Bool { false }
@@ -1751,6 +1760,8 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 @MainActor
 final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     let app = "slack"
+    /// `conversations.history` leaves a deleted message out (one with answers stays as a tombstone, read as deleted).
+    var historyOmitsDeleted: Bool { true }
     let interval: TimeInterval = 60
     private(set) var isWorking = false
 

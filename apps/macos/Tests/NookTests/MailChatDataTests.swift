@@ -320,11 +320,51 @@ final class MailChatDataTests: XCTestCase {
                        "tell application \"Mail\"\nset m to make new outgoing message with properties {subject:\"x\"}"
                            + MailChatData.attachLines(["/tmp/a \"b\".jpg"], send: true) + "\nend tell",
                        MailChatData.bodiesScript([row, placeless]), MailChatData.markReadScript([row, placeless]),
-                       "tell application \"Mail\"\nset m to \(MailChatData.reference(row))\nend tell"]
+                       "tell application \"Mail\"\nset m to \(MailChatData.reference(row))\nend tell",
+                       MailChatData.olderScript(account: "Google", address: "a@b.c", from: Date(timeIntervalSinceNow: -86_400),
+                                                to: Date())]
         for source in scripts {
             var error: NSDictionary?
             XCTAssertTrue(NSAppleScript(source: source)?.compileAndReturnError(&error) ?? false, "\(error ?? [:])\n\(source)")
         }
     }
     #endif
+
+    // MARK: Nook's archive
+
+    func testOlderMailIsAskedForInStretchesThatGrowUntilTheOldestMail() {
+        let before = Date(timeIntervalSince1970: 1_800_000_000)
+        let stretches = MailChatData.olderStretches(before: before)
+        XCTAssertEqual(stretches.first?.to, before)
+        XCTAssertEqual(stretches.first.map { before.timeIntervalSince($0.from) }, 90 * 86_400)
+        for (newer, older) in zip(stretches, stretches.dropFirst()) {
+            XCTAssertEqual(older.to, newer.from, "no time is left out between two stretches")
+            XCTAssertGreaterThan(older.to.timeIntervalSince(older.from), newer.to.timeIntervalSince(newer.from) * 1.5)
+        }
+        XCTAssertTrue(MailChatData.olderStretches(before: MailChatData.oldest).isEmpty)
+    }
+
+    func testAChatIDIsTakenApartIntoItsAccountAndAddress() {
+        let accounts = [MailChatData.Account(name: "Werk ~ Kantoor", addresses: ["ik@werk.nl"]),
+                        MailChatData.Account(name: "iCloud", addresses: ["ik@icloud.com"])]
+        let parts = MailChatData.parts(of: MailChatData.chatID(account: "Werk ~ Kantoor", address: "lisa@example.com"), accounts: accounts)
+        XCTAssertEqual(parts?.account.name, "Werk ~ Kantoor")
+        XCTAssertEqual(parts?.address, "lisa@example.com")
+        XCTAssertNil(MailChatData.parts(of: "Onbekend~lisa@example.com", accounts: accounts))
+    }
+
+    func testTheOlderMailScriptAsksForOnePersonInOneStretch() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let script = MailChatData.olderScript(account: "iCloud", address: "lisa@example.com",
+                                              from: now.addingTimeInterval(-3_600), to: now.addingTimeInterval(-60), now: now)
+        XCTAssertTrue(script.contains("set hiDate to (current date) - 60"))
+        XCTAssertTrue(script.contains("set loDate to (current date) - 3600"))
+        XCTAssertTrue(script.contains("sender contains \"lisa@example.com\""))
+        XCTAssertTrue(script.contains("if (address of r) is \"lisa@example.com\" then"))
+        // Rows and texts come back in the shapes the inbox's own read uses.
+        let raw = "IN|||INBOX|||12|||Hoi|||Lisa <lisa@example.com>|||2026-01-02T10:00:00|||true\n<<<BODY>>>12\nTot morgen\n"
+        let account = MailChatData.Account(name: "iCloud", addresses: ["ik@icloud.com"])
+        XCTAssertEqual(MailChatData.rows(raw, account: account).map(\.id), [12])
+        XCTAssertEqual(MailStats.bodies(raw)[12], "Tot morgen")
+    }
 }

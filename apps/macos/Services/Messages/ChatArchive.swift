@@ -102,4 +102,10 @@ final class ChatArchiveSearch: ChatSearchBridge {
 protocol ChatBackfillBridge: ChatBridge {
     func canBackfill(chatID: String) -> Bool
     func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage]
+    /// An empty answer is the chat's start, never a busy moment (Mail, which looks all the way back in one answer).
+    var backfillEmptyIsStart: Bool { get }
+}
+
+extension ChatBackfillBridge {
+    var backfillEmptyIsStart: Bool { false }
 }
