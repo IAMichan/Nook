@@ -56,7 +56,6 @@ final class AgentParityTests: XCTestCase {
         "Services/QuotaService.swift": (1, "Codex's quota endpoint"),
         "Services/Workspace/AgentModelCatalog.swift": (1, "Claude's model catalog names"),
         "Services/Workspace/AgentProcess.swift": (1, "an ACP agent you added runs its own command line"),
-        "Services/Workspace/TextGeneration.swift": (1, "text generation engines are Claude Code and Codex only"),
         "Services/Workspace/UsageLimits.swift": (1, "Codex's own rate-limit payload"),
         "Services/Workspace/WorkspaceBridgeProtocol.swift": (1, "parses an agent name the bridge was given"),
         "Services/Workspace/WorkspaceManager+Acp.swift": (9, "Antigravity's ACP quirks, Gemini CLI's headless fallback, an added agent's environment"),

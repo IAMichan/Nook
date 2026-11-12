@@ -35,6 +35,10 @@ final class TextGenerationTests: XCTestCase {
     func testCommands() {
         let claude = TextGeneration.claudeArguments(schema: TextGeneration.titleSchema)
         XCTAssertEqual(value(after: "--model", in: claude), "haiku")
+        XCTAssertEqual(value(after: "--system-prompt", in: claude), TextGeneration.system,
+                       "replaces the coding agent's 24k-token system prompt")
+        XCTAssertEqual(value(after: "--setting-sources", in: claude), "local",
+                       "does not load the user's CLAUDE.md or plugins")
         XCTAssertEqual(value(after: "--tools", in: claude), "", "no tools: it only answers")
         XCTAssertEqual(value(after: "--settings", in: claude), #"{"disableAllHooks":true}"#, "never shows up in the notch")
         XCTAssertTrue(value(after: "--json-schema", in: claude)?.contains("needsRefinement") == true)
@@ -44,6 +48,10 @@ final class TextGenerationTests: XCTestCase {
         XCTAssertTrue(TextGenerationRunner.isScratchFolder("/private/var/folders/x/T/nook-text-937351B9-A5B9/"), "a trailing slash")
         let codex = TextGeneration.codexArguments(schemaPath: "/t/s.json", outputPath: "/t/a.txt")
         XCTAssertEqual(codex.first, "exec")
+        XCTAssertTrue(codex.contains("--ignore-user-config"))
+        XCTAssertTrue(codex.contains("--ignore-rules"))
+        XCTAssertTrue(codex.contains("features.shell_tool=false"))
+        XCTAssertTrue(codex.contains(#"web_search="disabled""#))
         XCTAssertEqual(value(after: "-s", in: codex), "read-only")
         XCTAssertTrue(codex.contains("--ephemeral"))
         XCTAssertEqual(codex.last, "-", "the prompt goes on stdin")

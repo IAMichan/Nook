@@ -123,19 +123,29 @@ enum TextGeneration {
 
     // MARK: Commands
 
-    /// `claude -p` that only answers: a small model, the schema, no tools, no slash commands, no MCP servers and no
-    /// hooks (so this call never shows up in the notch as a session), and no saved transcript (so it never shows up in the
-    /// session list either). The prompt goes on stdin.
+    static let system = "You write short texts for a developer tool. Follow the requested format exactly and add nothing else."
+
+    /// `claude -p` that only answers: a small model, a one-line system prompt (instead of the coding agent's 24k-token
+    /// prompt), the schema, no user settings or CLAUDE.md (`--setting-sources local`), no tools, no slash commands, no MCP
+    /// servers, no hooks and no saved transcript. The prompt goes on stdin.
     static func claudeArguments(schema: [String: Any], model: String = "haiku") -> [String] {
         ["-p", "--output-format", "json", "--json-schema", json(schema), "--model", model,
+         "--system-prompt", system, "--setting-sources", "local",
          "--settings", #"{"disableAllHooks":true}"#, "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
          "--permission-mode", "dontAsk", "--no-session-persistence"]
     }
 
-    /// `codex exec` that only answers: read-only, ephemeral, low effort, the schema and answer in files, prompt on stdin.
+    /// `codex exec` that only answers: none of your config, rules, plugins, apps, MCP servers or built-in tools; read-only,
+    /// ephemeral, low effort, the schema and answer in files, prompt on stdin.
     static func codexArguments(schemaPath: String, outputPath: String) -> [String] {
-        ["exec", "--config", "features.plugins=false", "--config", "features.apps=false", "--ephemeral", "--skip-git-repo-check",
-         "-s", "read-only", "--config", #"model_reasoning_effort="low""#, "--output-schema", schemaPath,
+        ["exec", "--ignore-user-config", "--ignore-rules", "--ephemeral", "--skip-git-repo-check",
+         "-s", "read-only",
+         "--config", "features.plugins=false", "--config", "features.apps=false",
+         "--config", "features.shell_tool=false", "--config", "features.unified_exec=false",
+         "--config", "features.view_image=false", "--config", "features.multi_agent=false",
+         "--config", #"web_search="disabled""#,
+         "--config", "developer_instructions=" + SubscriptionBrain.tomlString(system),
+         "--config", #"model_reasoning_effort="low""#, "--output-schema", schemaPath,
          "--output-last-message", outputPath, "-"]
     }
 
@@ -256,10 +266,9 @@ enum TextGenerationRunner {
             guard (try? Data(TextGeneration.json(schema).utf8).write(to: schemaFile)) != nil else { return nil }
             arguments = TextGeneration.codexArguments(schemaPath: schemaFile.path, outputPath: answerFile.path)
         }
-        // Claude Code works in an empty folder, so the call leaves no trace in the project.
-        let folder = engine == .claude || !FileManager.default.fileExists(atPath: cwd) ? temp.path : cwd
+        // An empty folder of its own, so neither agent reads project instruction files or leaves a trace in the project.
         let process = AgentProcess(spec: LaunchSpec(executable: executable, arguments: arguments, extraEnvironment: environment,
-                                                    workingDirectory: folder, initialInput: [prompt], keepsInputOpen: true))
+                                                    workingDirectory: temp.path, initialInput: [prompt], keepsInputOpen: true))
         let output = Output()
         process.onLines = { output.add($0) }
         let once = Once()
