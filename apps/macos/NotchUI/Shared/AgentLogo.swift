@@ -247,7 +247,7 @@ struct AgentMark: View {
             .opacity(dimmed ? 0.5 : (quiet ? 0.6 : 1))
             .animation(NookTheme.hover, value: quiet)
             .accountBadge(account, size: size, ring: ring)
-            .help(account.map { "\(agent) · \($0.label)" } ?? agent)
+            .sharedTip(account.map { "\(agent) · \($0.label)" } ?? agent)
     }
 }
 

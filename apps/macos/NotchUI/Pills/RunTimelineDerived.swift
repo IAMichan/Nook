@@ -55,6 +55,22 @@ final class RunTimelineDerived {
     /// The last search in the find bar, for the events it searched.
     private var found: (query: String, events: [RunEvent], result: TimelineSearchResult)?
 
+    /// The last one per session: opening a session again takes its blocks, turns and caches as they were, so unchanged
+    /// events cost nothing before the first frame and new ones only lay out the turn that changed (as
+    /// `TranscriptDerived` keeps them per transcript).
+    private static var byRun: [UUID: RunTimelineDerived] = [:]
+    private static var order: [UUID] = []
+    private static let limit = 16
+
+    /// The derived timeline of this session from its last visit, or a new one.
+    static func forRun(_ id: UUID) -> RunTimelineDerived {
+        byRun[id] ?? RunTimelineDerived()
+    }
+
+    /// Whether it was made from any events yet: a session whose timeline is still being read from disk keeps what it
+    /// showed last time instead of being laid out again from nothing.
+    var hasContent: Bool { key.map { !$0.all.isEmpty } ?? false }
+
     /// The find bar's matches, searched again only when the query or the events changed.
     func search(_ query: String) -> TimelineSearchResult {
         if let found, found.query == query, found.events == events { return found.result }
@@ -81,6 +97,7 @@ final class RunTimelineDerived {
             $0.active == active && $0.directory == run.workingDirectory && $0.tasks == run.tasks && $0.detail == detail
         } ?? false
         if sameRun, let key, key.all == all { return self }
+        defer { remember(run.id) }
         // While the agent writes, only the text of its last answer grows, many times a second. The blocks show that text;
         // the turns, outputs, running command and earlier links do not read it, and each walks the whole session (an edit's
         // diff, every tool's input as JSON), so they stay as they are.
@@ -129,6 +146,17 @@ final class RunTimelineDerived {
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
         return self
+    }
+
+    private func remember(_ id: UUID) {
+        guard hasContent else { return }
+        if Self.byRun[id] !== self { Self.byRun[id] = self }
+        // While a session streams it stays the newest, so its tokens leave the order alone.
+        if Self.order.last != id {
+            Self.order.removeAll { $0 == id }
+            Self.order.append(id)
+            while Self.order.count > Self.limit { Self.byRun[Self.order.removeFirst()] = nil }
+        }
     }
 
     /// Whether `new` is `old` with only more (or other) text in its last answer or thinking: the same events, the last one

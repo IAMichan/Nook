@@ -173,11 +173,15 @@ struct AgentsTab: View {
         .onChange(of: openLive) { _, session in
             if let session { viewModel.lastOpenLiveSession = session }
         }
-        .onChange(of: selectedID(selection)) { old, new in
-            visits.visit(old)
-            visits.visit(new)
-            prefetchNeighbours(of: new, in: entries)
+        .onChange(of: selectedID(selection)) { _, new in
             if Self.isSession(new) { SessionHistory.shared.opened(new) }
+            // The session you left is marked seen by `NotchViewModel.selectedAgentID`. The one you open, and the reads
+            // of its neighbours, wait until its first frame is drawn: each visit redraws the whole tab.
+            Task { @MainActor in
+                await Task.yield()
+                visits.visit(new)
+                prefetchNeighbours(of: new, in: entries)
+            }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
         // would hand the panels more room than there is and push everything off both sides.
@@ -344,7 +348,22 @@ struct AgentsTab: View {
         if id == AgentsPage.simulator && !app.demoMode { return .simulator }
         if id.hasPrefix("past:") {
             let key = String(id.dropFirst(5))
-            if let session = app.history.sessions.first(where: { $0.id == key }) { return .past(session) }
+            if let session = app.history.sessions.first(where: { $0.id == key }) {
+                // Nook already took this conversation over: its session opens in this very frame, with no takeover
+                // (spinner, transcript read, second rebuild) in between. The key follows after this redraw, never inside
+                // it; its own panels come back, as they do for any session you return to.
+                if let taken = app.adoptedRun(for: session) {
+                    let target = "run:" + taken.uuidString
+                    DispatchQueue.main.async { [viewModel, app] in
+                        guard viewModel.selectedAgentID == id else { return }
+                        if app.workspace.run(taken)?.archived == true { app.workspace.setArchived(taken, false) }
+                        app.workspace.selectedRunID = taken
+                        viewModel.selectedAgentID = target
+                    }
+                    return .run(taken)
+                }
+                return .past(session)
+            }
         }
         if id.hasPrefix("run:"), let uuid = UUID(uuidString: String(id.dropFirst(4))), app.workspace.run(uuid) != nil {
             return .run(uuid)
@@ -393,6 +412,17 @@ struct AgentsTab: View {
             let next = ids[neighbour]
             if next.hasPrefix("run:"), let run = UUID(uuidString: String(next.dropFirst(4))) {
                 app.workspace.prefetchTimeline(run)
+            } else if next.hasPrefix("past:") {
+                let key = String(next.dropFirst(5))
+                guard let session = app.history.sessions.first(where: { $0.id == key }) else { continue }
+                // One Nook took over opens as its session (see `resolve`): that timeline is what it shows.
+                if let taken = app.adoptedRun(for: session) {
+                    app.workspace.prefetchTimeline(taken)
+                } else {
+                    TranscriptPrefetch.warm(path: session.path)
+                }
+            } else if let session = app.agentSessions.first(where: { $0.id == next }) {
+                TranscriptPrefetch.warm(path: session.transcriptPath.isEmpty ? (transcript(of: session)?.path ?? "") : session.transcriptPath)
             }
         }
     }
@@ -773,6 +803,8 @@ struct AgentListRow: View, Equatable {
     }
 
     @State private var hovering = false
+    /// The hover buttons were built: on the row's first hover, and kept from then on (see `body`).
+    @State private var actionsBuilt = false
     /// The pointer is on the hover buttons.
     @State private var onActions = false
     /// The pointer is on the changes or the pull request, which show their own card instead of the row's.
@@ -792,14 +824,17 @@ struct AgentListRow: View, Equatable {
     private var compact: Bool { slim || grouped }
     private var dimmed: Bool { item.status == .finished || slim }
     private var restOpacity: Double { receded && item.status == .working && !hovering && !selected ? 0.7 : 1 }
+    /// The hover buttons show: under the pointer, or while a sweep that started on this row runs.
+    private var actionsShown: Bool { hovering || sweepOrigin }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: action) { content }
                 .buttonStyle(.nookPlain)
-            // Built only under the pointer: a menu and two or three buttons in every row of a long list were AppKit views,
-            // hover regions and accessibility nodes that each redraw and hit test walked, for buttons nobody saw.
-            if let actions, hovering || sweepOrigin {
+            // Built on the row's first hover, then kept and only faded: a menu and two or three buttons in every row of a
+            // long list were AppKit views, hover regions and accessibility nodes for buttons nobody saw, so a row nobody
+            // pointed at still has none; but building them again on every hover cost each hover a frame.
+            if let actions, actionsBuilt || sweepOrigin {
                 hoverActions(actions)
                     // Only the buttons themselves hold the card back: with the backdrop's fade and the padding counted, a
                     // one-line row in a narrow list was "on the buttons" nearly everywhere and never showed its card.
@@ -808,15 +843,21 @@ struct AgentListRow: View, Equatable {
                     // Level with the first line, where the status they replace sits.
                     .padding(.top, compact ? (Self.lineHeight - 22) / 2 : NookTheme.Spacing.md)
                     .padding(.trailing, NookTheme.Spacing.md)
-                    .transition(.opacity)
+                    // Only their fade is animated; the row's fill behind them follows the pointer at once.
+                    .animation(NookTheme.hover) { $0.opacity(actionsShown ? 1 : 0) }
+                    .allowsHitTesting(actionsShown)
+                    .accessibilityHidden(!actionsShown)
             }
         }
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside, !actionsBuilt { actionsBuilt = true }
+        }
         // The buttons go with the pointer, and may not get to say it left them.
         .onChange(of: hovering) { _, now in if !now { onActions = false } }
-        .animation(NookTheme.hover, value: hovering)
-        // Closed over the buttons, so their first click is not spent closing the card.
-        .hoverCard(suppressed: onActions || onDetail) { AgentHoverCard(item: item) }
+        // Closed over the buttons, so their first click is not spent closing the card. Warm: moving down the list with a
+        // card open opens the next row's at once (`HoverCardWarmth`).
+        .hoverCard(suppressed: onActions || onDetail, warm: true) { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
         // The hover buttons are merged away above, so VoiceOver gets them as the row's actions.
         .accessibilityActions {
@@ -842,11 +883,20 @@ struct AgentListRow: View, Equatable {
         .padding(.trailing, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .padding(.vertical, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, minHeight: compact ? Self.lineHeight : nil, alignment: .leading)
-        .roundedBackground(background, radius: NookTheme.Radius.chip)
+        // The fill is never animated: it lifts in the frame the pointer arrives, as a list should.
+        .background {
+            NookTheme.shape(NookTheme.Radius.chip).fill(background)
+                .transaction { $0.animation = nil }
+        }
         // Only whether it is narrow is kept, so resizing the list redraws a row only when that flips.
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .contentShape(Rectangle())
-        .opacity(restOpacity)
+        .animation(NookTheme.hover) { $0.opacity(restOpacity) }
+    }
+
+    /// The right slot, faded out under the hover buttons that take its place.
+    private var fadingSlot: some View {
+        slot.animation(NookTheme.hover) { $0.opacity(hovering && actions != nil ? 0 : 1) }
     }
 
     /// Three lines: the folder with the status or how long ago on the right; the session's
@@ -854,7 +904,7 @@ struct AgentListRow: View, Equatable {
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
         AgentRowLayout(folder: item.folder, folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
-            slot.opacity(hovering && actions != nil ? 0 : 1)
+            fadingSlot
         } title: {
             marks
             title
@@ -936,7 +986,7 @@ struct AgentListRow: View, Equatable {
                 Text("\(files)").monospacedDigit()
             }
             .fixedSize()
-            .help(showsChangesCard ? "" : tr("agents.git.changes", files))
+            .nookTip(tr("agents.git.changes", files), enabled: !showsChangesCard)
             .accessibilityLabel(tr("agents.git.changes", files))
         }
     }
@@ -951,7 +1001,7 @@ struct AgentListRow: View, Equatable {
                 title
                 Spacer(minLength: NookTheme.Spacing.xs)
                 if !hasMeta { logo(size: 13) }
-                slot.opacity(hovering && actions != nil ? 0 : 1)
+                fadingSlot
             }
             .frame(minHeight: Self.lineHeight - NookTheme.Spacing.lg)
             if hasMeta {
@@ -974,14 +1024,14 @@ struct AgentListRow: View, Equatable {
             Image(icon: "arrow.triangle.branch")
                 .font(NookTheme.font(10))
                 .foregroundStyle(NookTheme.textTertiary)
-                .help(tr("lineage.forked"))
+                .nookTip(tr("lineage.forked"))
                 .accessibilityLabel(tr("lineage.forked"))
         }
         if item.comparison > 0 {
             Image(icon: "square.stack.3d.up")
                 .font(NookTheme.font(10))
                 .foregroundStyle(NookTheme.textTertiary)
-                .help(tr("compare.group", item.comparison + 1))
+                .nookTip(tr("compare.group", item.comparison + 1))
                 .accessibilityLabel(tr("compare.group", item.comparison + 1))
         }
     }
@@ -996,7 +1046,7 @@ struct AgentListRow: View, Equatable {
                 .layoutPriority(1)
             Spacer(minLength: NookTheme.Spacing.xs)
             pullRequestPill
-            slot.opacity(hovering && actions != nil ? 0 : 1)
+            fadingSlot
         }
     }
 
@@ -1030,20 +1080,25 @@ struct AgentListRow: View, Equatable {
                     rowIcon("clock", tr("agents.snooze.menu"))
                 }
                 .composerMenu()
+                .nookTip(tr("agents.snooze.menu"))
             }
             if let onWake = actions.onWake {
-                // Dragged up or down, Wake takes the snoozed rows in between along.
-                rowButton("alarm", tr("agents.snooze.cancel"), onWake)
-                    .help(tr("inbox.sweep.help.wake"))
+                // Dragged up or down, Wake takes the snoozed rows in between along; its one tip says so.
+                RowActionButton(symbol: "alarm", label: tr("agents.snooze.cancel"),
+                                tip: actions.onWakeSweep != nil ? tr("inbox.sweep.help.wake") : tr("agents.snooze.cancel"),
+                                action: onWake)
                     .sweeps(SessionSweep.rows, from: item.id, enabled: actions.onWakeSweep != nil) { actions.onWakeSweep?($0) }
             }
             if !compactStatus {
-                rowButton(actions.pinned ? "pin.slash" : "pin", actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), actions.onPin)
+                let label = actions.pinned ? tr("inbox.unpin") : tr("inbox.pin")
+                RowActionButton(symbol: actions.pinned ? "pin.slash" : "pin", label: label, tip: label, action: actions.onPin)
             }
-            // Dragged up or down, Settle (or Un-settle) takes the rows of the section in between along.
-            rowButton(actions.settled ? "arrow.uturn.backward" : "checkmark",
-                      actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), actions.onSettle)
-                .help(tr(actions.settled ? "inbox.sweep.help.unsettle" : "inbox.sweep.help.settle"))
+            // Dragged up or down, Settle (or Un-settle) takes the rows of the section in between along; its one tip says so.
+            let settleLabel = actions.settled ? tr("inbox.reopen") : tr("inbox.settle")
+            RowActionButton(symbol: actions.settled ? "arrow.uturn.backward" : "checkmark", label: settleLabel,
+                            tip: actions.onSettleSweep != nil
+                                ? tr(actions.settled ? "inbox.sweep.help.unsettle" : "inbox.sweep.help.settle") : settleLabel,
+                            action: actions.onSettle)
                 .sweeps(SessionSweep.rows, from: item.id, enabled: actions.onSettleSweep != nil) { actions.onSettleSweep?($0) }
         }
     }
@@ -1055,13 +1110,33 @@ struct AgentListRow: View, Equatable {
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
             .pointerStyle(.link)
-            .help(label)
             .accessibilityLabel(label)
     }
 
-    private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+    /// A hover button of the row: `ToolbarIconButton`'s look, with one tip of its own (`nookTip`). A button that also
+    /// sweeps says so in that one tip, instead of the button's label and the sweep's text both claiming the pointer.
+    private struct RowActionButton: View {
+        let symbol: String
+        let label: String
+        let tip: String
+        let action: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            Button(action: action) {
+                Image(icon: symbol)
+                    .font(NookTheme.font(11, .medium))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .frame(width: 22, height: 22)
+                    .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.chip)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.nookPlain)
+            .onHover { hovering = $0 }
             .pointerStyle(.link)
+            .nookTip(tip)
+            .accessibilityLabel(label)
+        }
     }
 
     /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.
@@ -1073,7 +1148,8 @@ struct AgentListRow: View, Equatable {
             let count = item.subThreadsWorking
             AgentStatusBadge(state: .working, detail: count == 1 ? tr("inbox.thread.one") : tr("inbox.thread.many", count),
                              markOnly: compactStatus)
-                .help(count == 1 ? tr("inbox.thread.busyOne") : tr("inbox.thread.busyMany", count))
+                // A mark-only badge has its own tip (the status and the count); one tip per view.
+                .nookTip(count == 1 ? tr("inbox.thread.busyOne") : tr("inbox.thread.busyMany", count), enabled: !compactStatus)
         case .working:
             AgentStatusBadge(state: .working, detail: item.started.map { AgentFormat.short(now.timeIntervalSince($0)) }, markOnly: compactStatus)
         case .waiting:
@@ -1219,10 +1295,18 @@ struct ImportedSession<Fallback: View>: View {
     var body: some View {
         if failed || !app.canContinueInNook(session) {
             fallback()
+        } else if let taken = app.adoptedRun(for: session) {
+            // Already taken over: straight on to its session, without reading anything.
+            Color.clear
+                .onAppear {
+                    app.viewModel.continueSession(as: "run:" + taken.uuidString, from: app.viewModel.selectedAgentID)
+                }
         } else {
-            // Nothing for the first moment: a quick takeover never flashes a spinner.
-            PatientSpinner()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The conversation as last read (kept in `TranscriptCache`) while the takeover runs, so the switch to the
+            // session is from one conversation to the same one, not from a spinner. Not to be used meanwhile: what
+            // you typed or sent there would go to the read-only session.
+            fallback()
+                .allowsHitTesting(false)
                 .task(id: session.id) {
                     do { _ = try await app.continueInNook(session) } catch { failed = true }
                 }

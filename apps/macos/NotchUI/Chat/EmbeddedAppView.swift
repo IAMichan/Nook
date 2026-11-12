@@ -360,13 +360,10 @@ struct EmbeddedAppPane: View {
                     modeMenu(current)
                     Spacer(minLength: 8)
                     NookIconButton(systemName: "sparkles", label: tr("embedded.ask"), size: 28) { askAboutApp() }
-                        .help(tr("embedded.ask"))
                         .disabled(asking)
                     NookIconButton(systemName: "arrow.clockwise", label: tr("embedded.reload"), size: 28) { store.reload() }
-                        .help(tr("embedded.reload"))
                     let external = current.isMacApp ? tr("embedded.mac.bringToFront") : tr("browser.openExternal")
                     NookIconButton(systemName: "arrow.up.forward.app", label: external, size: 28) { store.openInDefaultBrowser() }
-                        .help(external)
                     // A Mac app keeps its own sign-in; there is nothing of it in Nook to forget.
                     if !current.isMacApp {
                         Menu {
@@ -389,7 +386,6 @@ struct EmbeddedAppPane: View {
                         }
                     }
                     NookIconButton(systemName: "xmark", label: tr("embedded.close"), size: 28) { Task { await app.closeEmbeddedApp() } }
-                        .help(tr("embedded.close"))
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 38)
@@ -508,7 +504,6 @@ struct SessionArtifactPanel: View {
 
     private func cornerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         NookIconButton(systemName: symbol, label: help, size: 26, action: action)
-            .help(help)
             .padding(NookTheme.Spacing.xs)
     }
 }

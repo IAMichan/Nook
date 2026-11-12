@@ -177,7 +177,8 @@ struct ToolbarIconButton: View {
     var selected: Bool = false
     /// The symbol's size: larger in a diff's toolbar, whose buttons are 28 pt.
     var symbolSize: CGFloat = 11
-    /// Shows its label as the composer's own tip (`composerTip`) instead of a system tooltip: a button under a composer.
+    /// Shows its label as the composer's own tip (`composerTip`) instead of the window tip (`nookTip`): a button under a
+    /// composer.
     var inComposer = false
     let action: () -> Void
     @State private var hovering = false
@@ -210,9 +211,18 @@ struct ToolbarIconButton: View {
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .composerTip(label, inComposer: inComposer)
+        .buttonTip(label, inComposer: inComposer)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private extension View {
+    /// The button's label on hover: the composer's own tip under a composer (`composerTip`), the fast window tip
+    /// (`nookTip`) everywhere else.
+    @ViewBuilder
+    func buttonTip(_ label: String, inComposer: Bool) -> some View {
+        if inComposer { composerTip(label) } else { nookTip(label) }
     }
 }
 
