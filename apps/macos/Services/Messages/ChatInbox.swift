@@ -378,12 +378,13 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
 
     /// What stays of the message once it was deleted for everyone: who wrote it and when. Someone else's keeps what it
     /// said as far as Nook had it (text, file, poll, quote, emoji), so you can still read it, marked "Deleted" as an
-    /// edited one says "Edited"; your own says only that you deleted it.
+    /// edited one says "Edited"; your own says only that you deleted it. A mail keeps its text either way: deleting it
+    /// put it in the Trash of your own mailbox, and the other person still has it.
     func withdrawn() -> InboxMessage {
         var gone = self
         gone.deleted = true
         gone.mentionsMe = nil
-        guard isMine else { return gone }
+        guard isMine, !MailChatData.isMail(id) else { return gone }
         gone.edited = nil
         gone.text = ""
         gone.media = nil
@@ -460,8 +461,9 @@ struct BridgedChat: Equatable, Sendable {
     /// Whether the chat is still unread in the app itself, when the bridge knows that apart from how many messages are
     /// new in Nook (WhatsApp through the linked phone); nil leaves it to the app's count.
     var waitsInApp: Bool? = nil
-    /// The app keeps this chat's messages and Nook only shows them: they stay in memory and are never written to disk
-    /// (WhatsApp through the linked phone). What Nook knows of the chat itself (read, unread, its kind) is kept.
+    /// The app keeps this chat's messages too (WhatsApp through the linked phone). Nook's archive keeps them like every
+    /// chat's, and removes them when the app is turned off (`ChatCaptureService.forgetMessages`); only without the archive
+    /// they stay in memory and never reach `chat-inbox.json` (`ChatInbox.forDisk`).
     var ephemeral: Bool = false
     /// The app says this chat is no longer yours: you left the group (or were removed), or deleted the chat, there or
     /// from Nook. It leaves Nook as a chat you removed (`ChatInbox.remove`): only a newer message brings it back.
@@ -636,7 +638,7 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var activity: Date? = nil
     /// Still unread in the app itself, as its bridge says apart from the count (`BridgedChat.waitsInApp`).
     var waitsInApp: Bool? = nil
-    /// Its messages are never written to disk (`BridgedChat.ephemeral`).
+    /// Its app keeps its messages too (`BridgedChat.ephemeral`).
     var ephemeral: Bool? = nil
 
     /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
@@ -1533,8 +1535,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         for thread in quietest { threads[thread.id] = nil }
     }
 
-    /// The inbox as it is written to disk: a chat whose messages its app keeps (`ephemeral`, WhatsApp through the linked
-    /// phone) goes without them and without the emoji note that quotes one, so no message of it ever reaches the disk.
+    /// The inbox as `chat-inbox.json` holds it when the archive cannot be opened: a chat whose messages its app keeps
+    /// (`ephemeral`, WhatsApp through the linked phone) goes without them and without the emoji note that quotes one, so no message of it ever reaches the disk.
     /// What Nook knows of the chat itself stays (read, unread, its kind), with when it last had a message, so it still
     /// sorts in its place before its bridge brings the messages again.
     var forDisk: ChatInbox {
