@@ -14,6 +14,8 @@ struct AgentsTab: View {
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
     @State private var palette = false
+    /// The palette opened by the new-session button, on the projects to start in.
+    @State private var paletteOnProjects = false
     /// How wide the session list is: drag the line beside it, double-click it to reset. Remembered.
     @AppStorage("nook.agents.listWidth") private var listWidth = PanelLayout.agentsList
     /// The list is put away beside a session, for more room for the conversation. Remembered.
@@ -200,12 +202,24 @@ struct AgentsTab: View {
         .overlay(alignment: .top) {
             if palette {
                 AgentCommandPalette(viewModel: viewModel, sessions: entries.running + entries.earlier,
-                                    current: currentItem(entries, selection)) { palette = false }
+                                    current: currentItem(entries, selection), startsInProjects: paletteOnProjects) {
+                    palette = false
+                    paletteOnProjects = false
+                }
+                    .id(paletteOnProjects)
                     .padding(.top, 40)
                     .transition(.opacity)
             }
         }
-        .keyCommands(["commandPalette.toggle": { palette.toggle(); return true }], context: ["paletteOpen": palette])
+        // A new session asked for anywhere (⌘N, a button, search) opens on the projects to start in.
+        .onChange(of: viewModel.picksProjectForNewSession, initial: true) { _, asked in
+            guard asked else { return }
+            viewModel.picksProjectForNewSession = false
+            paletteOnProjects = true
+            palette = true
+        }
+        .keyCommands(["commandPalette.toggle": { paletteOnProjects = false; palette.toggle(); return true }],
+                     context: ["paletteOpen": palette])
         // ⌘⇧[ and ⌘⇧] go to the session above or below in the list, as they go through chats on Chats.
         .keyCommands(["session.previous": { step(-1, in: entries, current: selectedID(selection)) },
                       "session.next": { step(1, in: entries, current: selectedID(selection)) }],
@@ -246,7 +260,8 @@ struct AgentsTab: View {
     @ViewBuilder
     private func listActions(_ selection: Selection, isNew: Bool) -> some View {
         if !app.demoMode {
-            PanelNewButton(label: tr("agents.newSession"), active: isNew) { open("new") }
+            //: first the project the session starts in, in the palette's list of projects.
+            PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.requestNewSession() }
         }
     }
 
