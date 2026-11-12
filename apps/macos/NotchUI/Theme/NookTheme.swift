@@ -189,8 +189,12 @@ enum NookTheme {
     static let canvas = themed(\.canvas)
     /// A sunken well inside a card: code, logs, and the composer tray.
     static let well = themed(\.well)
-    /// A lifted surface: sidebars, menus, the composer.
+    /// A lifted surface: sidebars, cards and panels.
     static let surface = themed(\.surface)
+    /// The composer under a conversation; `surface` by default, a color of its own in Settings › Appearance › Colors.
+    static let composer = themed(\.composer)
+    /// Menus, popovers, hover cards and tooltips: a dark card in every appearance, as their text is drawn for dark.
+    static let menu = themed(\.menu)
     /// The faintest divider between regions of a panel.
     static let hairline = themed(\.hairline)
     /// The line between a window's columns and panels (the sidebar, the side panel, a pane's header): a hairline that
@@ -220,20 +224,16 @@ enum NookTheme {
 
     /// Syntax colors for code in diffs (`SyntaxToken.Kind`). Muted on purpose: the diff's own + and − tints stay the
     /// loudest thing, and plain code keeps `textStrong`. Each has a dark and a light value, picked by the appearance of the
-    /// window they are drawn in (Settings › Appearance).
+    /// window they are drawn in, and come from the palette, so a theme and Settings › Appearance › Colors set them.
     enum Syntax {
-        static let keyword = adaptive(dark: 0xC3A6EE, light: 0x7A45B5)
-        static let string = adaptive(dark: 0xA8CF96, light: 0x3D7A2E)
-        static let comment = adaptive(dark: 0x6F7378, light: 0x8A8F96)
-        static let number = adaptive(dark: 0xE6B98A, light: 0x9A5A12)
-        static let type = adaptive(dark: 0x8EC7E3, light: 0x1D6E93)
-        static let property = adaptive(dark: 0xA3BCEB, light: 0x3B5DA6)
-        static let tag = adaptive(dark: 0xE79BB8, light: 0xA33A6C)
-        static let attribute = adaptive(dark: 0xD9C27E, light: 0x86690F)
-
-        private static func adaptive(dark: UInt32, light: UInt32) -> Color {
-            NookTheme.adaptive { $0 ? dark : light }
-        }
+        static let keyword = themed(\.syntaxKeyword)
+        static let string = themed(\.syntaxString)
+        static let comment = themed(\.syntaxComment)
+        static let number = themed(\.syntaxNumber)
+        static let type = themed(\.syntaxType)
+        static let property = themed(\.syntaxProperty)
+        static let tag = themed(\.syntaxTag)
+        static let attribute = themed(\.syntaxAttribute)
     }
 
     // List rows and cards: at rest, under the pointer, and selected.

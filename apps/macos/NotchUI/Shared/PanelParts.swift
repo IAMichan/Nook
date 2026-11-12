@@ -4,20 +4,19 @@ import SwiftUI
 // group's name, a filter chip, the lines between rows, the quiet card that groups rows, an empty panel, and a status
 // as a mark and a word. Never rebuild one of these inline.
 
-/// How many things wait for you: a small white count (a tab, a list's title). Zero shows nothing.
+/// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.
 struct NookCountBadge: View {
     let count: Int
 
     var body: some View {
         if count > 0 {
-            // White numerals on a faint wash, as t3code counts: a count is not a status, so it carries no hue and
-            // the colors stay free for what is working, waits on you, is done or failed.
+            // Amber numerals on a faint wash, not a solid amber pill: it tells without shouting.
             Text("\(count)")
                 .font(NookTheme.textFont(10, .semibold, design: .rounded))
-                .foregroundStyle(NookTheme.paper)
+                .foregroundStyle(NookTheme.amber)
                 .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(minWidth: 16, minHeight: 16)
-                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.wash.opacity(0.12)))
+                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.14)))
         }
     }
 }

@@ -197,7 +197,7 @@ struct SessionComposer<Controls: View>: View {
         self.controls = controls
     }
 
-    static var surface: Color { NookTheme.surface }
+    static var surface: Color { NookTheme.composer }
 
     private var hasImages: Bool { !(imagesBinding?.wrappedValue.isEmpty ?? true) }
     private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasImages }

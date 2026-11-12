@@ -922,9 +922,10 @@ struct AgentListRow: View, Equatable {
     }
 
     private func logo(size: CGFloat) -> some View {
-        // Always grey, as every icon in a list: the brand color says nothing about the session. The 3 pt for the account
-        // badge is kept on every row, so logos with and without a badge stand in one column.
-        AgentMark(agent: item.agent, account: item.account, size: size, dimmed: dimmed, ring: background, quiet: true)
+        // Grey at rest, its brand color under the pointer or when selected. The 3 pt for the account badge is kept on
+        // every row, so logos with and without a badge stand in one column.
+        AgentMark(agent: item.agent, account: item.account, size: size, dimmed: dimmed, ring: background,
+                  quiet: !hovering && !selected)
             .padding(.trailing, 3)
     }
 

@@ -289,6 +289,57 @@ final class LookThemesTests: XCTestCase {
         XCTAssertEqual(quotes.items.first?.source, c)
     }
 
+    // MARK: Colors set one by one
+
+    func testColorTokensAreUniqueAndCoverEveryGroup() {
+        let ids = NookColorToken.all.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count)
+        for group in NookColorToken.Group.allCases {
+            XCTAssertTrue(NookColorToken.all.contains { $0.group == group }, group.rawValue)
+        }
+        XCTAssertNil(NookColorToken.named("accent"), "the accent has its own control")
+    }
+
+    func testNoOverridesKeepNooksColors() {
+        let choice = NookThemeChoice()
+        XCTAssertEqual(choice.palette(dark: true, themes: NookColorTheme.builtIn), .nookDark)
+        XCTAssertEqual(choice.palette(dark: false, themes: NookColorTheme.builtIn), .nookLight)
+    }
+
+    func testAnOverrideChangesOnlyItsColorAndAppearance() {
+        var choice = NookThemeChoice()
+        choice.overrides.set("composer", to: 0x202020, dark: true)
+        choice.overrides.set("nope", to: 0x123456, dark: true)
+        let dark = choice.palette(dark: true, themes: NookColorTheme.builtIn)
+        XCTAssertEqual(dark.composer, 0x202020)
+        XCTAssertEqual(dark.surface, NookPalette.nookDark.surface)
+        XCTAssertEqual(choice.palette(dark: false, themes: NookColorTheme.builtIn), .nookLight)
+        XCTAssertEqual(choice.themePalette(dark: true, themes: NookColorTheme.builtIn), .nookDark)
+    }
+
+    func testSettingTheThemesOwnColorRemovesTheOverride() {
+        var overrides = NookColorOverrides()
+        overrides.set("amber", to: 0x111111, dark: true, themeValue: NookPalette.nookDark.amber)
+        XCTAssertFalse(overrides.isEmpty)
+        overrides.set("amber", to: NookPalette.nookDark.amber, dark: true, themeValue: NookPalette.nookDark.amber)
+        XCTAssertTrue(overrides.isEmpty)
+    }
+
+    func testOverridesRoundTrip() throws {
+        var overrides = NookColorOverrides()
+        overrides.set("added", to: 0x00FF00, dark: false)
+        let data = try JSONEncoder().encode(overrides)
+        XCTAssertEqual(try JSONDecoder().decode(NookColorOverrides.self, from: data), overrides)
+    }
+
+    func testComposerFollowsAGeneratedThemesSurface() {
+        for theme in NookColorTheme.builtIn where theme.id != "nook" {
+            for palette in [theme.dark, theme.light].compactMap({ $0 }) {
+                XCTAssertEqual(palette.composer, palette.surface, theme.id)
+            }
+        }
+    }
+
     // MARK: Diff colors
 
     func testDiffColorsComeFromTheThemesPalette() {
