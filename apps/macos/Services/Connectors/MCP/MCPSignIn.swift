@@ -5,37 +5,8 @@ import SwiftUI
 // One click to connect a service: Nook adds its official MCP server, opens the service's own sign-in page in a system
 // sign-in window, and comes back to Settings by itself. See MCPOAuth.swift for the protocol.
 
-/// Services whose official MCP server lets an app sign in without a client id or secret of its own.
-struct MCPRemoteService: Identifiable, Equatable {
-    enum Category: String, CaseIterable {
-        case development, work, business, automation
-    }
-
-    let id: String
-    let name: String
-    let url: String
-    let domain: String
-    let category: Category
-
+extension MCPRemoteService {
     var tagline: String { tr("connect.service.\(id)") }
-
-    static let all: [MCPRemoteService] = [
-        MCPRemoteService(id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", domain: "notion.so", category: .work),
-        MCPRemoteService(id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", domain: "linear.app", category: .work),
-        MCPRemoteService(id: "stripe", name: "Stripe", url: "https://mcp.stripe.com", domain: "stripe.com", category: .business),
-        MCPRemoteService(id: "vercel", name: "Vercel", url: "https://mcp.vercel.com", domain: "vercel.com", category: .development),
-        MCPRemoteService(id: "sentry", name: "Sentry", url: "https://mcp.sentry.dev/mcp", domain: "sentry.io", category: .development),
-        MCPRemoteService(id: "atlassian", name: "Jira & Confluence", url: "https://mcp.atlassian.com/v1/mcp", domain: "atlassian.com", category: .work),
-        MCPRemoteService(id: "canva", name: "Canva", url: "https://mcp.canva.com/mcp", domain: "canva.com", category: .work),
-        MCPRemoteService(id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", domain: "supabase.com", category: .development),
-        MCPRemoteService(id: "neon", name: "Neon", url: "https://mcp.neon.tech/mcp", domain: "neon.tech", category: .development),
-        MCPRemoteService(id: "huggingface", name: "Hugging Face", url: "https://huggingface.co/mcp", domain: "huggingface.co", category: .development),
-        // Sign in instead of a key: Cal.com and Resend host their own MCP server with OAuth, as does GitLab.com (the
-        // token stays the way for a self-hosted GitLab and for merge requests in the notch).
-        MCPRemoteService(id: "calcom", name: "Cal.com", url: "https://mcp.cal.com/mcp", domain: "cal.com", category: .work),
-        MCPRemoteService(id: "resend", name: "Resend", url: "https://mcp.resend.com/mcp", domain: "resend.com", category: .business),
-        MCPRemoteService(id: "gitlab", name: "GitLab", url: "https://gitlab.com/api/v4/mcp", domain: "gitlab.com", category: .development)
-    ]
 }
 
 /// The OAuth tokens of signed-in MCP servers, one Keychain item per server, never on disk or in a log.
