@@ -11,6 +11,7 @@ copying it again.
 | `NookTheme.paper`, `textStrong`, `textSecondary`, `textTertiary`, `textMuted`, `ink` | Text colors, from brightest to most muted |
 | `NookTheme.canvas`, `surface`, `field`, `well`, `smoke`, `graphite` | Surfaces: the window canvas, a lifted sidebar or panel, a text field, a sunken code well, and the two card fills |
 | `NookTheme.composer`, `menu` | Surfaces with a role of their own: the composer (`surface` by default) and menus, popovers, hover cards and tooltips (`DropdownStyle.panel`, a dark card in every appearance) |
+| `NookTheme.composerTray` | Everything attached to the composer: `ComposerTray` (the pull request above, the worktree and branch below), the bars above it (background commands, tasks, subagents, side chats, sub-threads) and a chat field at rest. A new composer color carries it along, the theme's step apart, unless it is set itself. A new strip by the composer uses it, not `field` |
 | `NookTheme.line`, `line2`, `hairline`, `border`, `fieldStroke`, `separator` | Hairlines and strokes; `border` is the line between a window's columns and panels (`NookDivider`), `separator` the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |

@@ -317,6 +317,18 @@ final class LookThemesTests: XCTestCase {
         }
     }
 
+    /// The trays above and below the composer belong to it: a new composer color carries them, the theme's step apart,
+    /// and a tray color set itself wins.
+    func testComposerTraysFollowTheComposer() {
+        let dark = NookPalette.nookDark
+        XCTAssertEqual(dark.composerTray, dark.field, "Nook's look is unchanged")
+        let moved = dark.applying(["composer": 0x303040])
+        XCTAssertEqual(moved.composerTray, 0x2C2C3C)
+        XCTAssertEqual(dark.applying(["composer": 0x303040, "composerTray": 0x123456]).composerTray, 0x123456)
+        XCTAssertEqual(dark.applying(["composer": 0x020202]).composerTray, 0x000000, "kept within range")
+        XCTAssertEqual(NookPalette.nookLight.applying(["composer": 0xF0F0F0]).composerTray, 0xF0F0F0)
+    }
+
     func testNoOverridesKeepNooksColors() {
         let choice = NookThemeChoice()
         XCTAssertEqual(choice.palette(dark: true, themes: NookColorTheme.builtIn), .nookDark)

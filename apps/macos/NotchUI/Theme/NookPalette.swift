@@ -65,6 +65,11 @@ struct NookPalette: Equatable, Sendable {
     // Surfaces with a role of their own, so each can be set apart from the shared ones (Settings › Appearance › Colors).
     /// The composer under a conversation.
     var composer: UInt32
+    /// The trays that come out above and below the composer (the pull request a session watches, the worktree and
+    /// branch a new one starts from), the bars above it (background commands, tasks, subagents, side chats) and a
+    /// chat's field while you are not typing in it. Follows `composer` when only
+    /// that is set (`applying`).
+    var composerTray: UInt32
     /// Menus, popovers, hover cards and tooltips. They draw their text for dark, so this stays a dark color.
     var menu: UInt32
 
@@ -93,7 +98,7 @@ struct NookPalette: Equatable, Sendable {
         blue: 0x5DAACC, mint: 0x55D2A3, mintSoft: 0x5EE9B5, amber: 0xF0B65A, coral: 0xFF6467, coralSoft: 0xFCA5A5,
         violet: 0xB0A2E6, music: 0xE6A660, added: 0x00D492, removed: 0xFF6467,
         accent: 0xF4F3F7,
-        composer: 0x111111, menu: 0x171717,
+        composer: 0x111111, composerTray: 0x0D0D0D, menu: 0x171717,
         syntaxKeyword: 0xC3A6EE, syntaxString: 0xA8CF96, syntaxComment: 0x6F7378, syntaxNumber: 0xE6B98A,
         syntaxType: 0x8EC7E3, syntaxProperty: 0xA3BCEB, syntaxTag: 0xE79BB8, syntaxAttribute: 0xD9C27E)
 
@@ -109,7 +114,7 @@ struct NookPalette: Equatable, Sendable {
         blue: 0x1447E6, mint: 0x006E4D, mintSoft: 0x007A55, amber: 0x973C00, coral: 0xC10007, coralSoft: 0xB91C1C,
         violet: 0x7008E7, music: 0xA84A18, added: 0x007A55, removed: 0xC10007,
         accent: 0x1E1E22,
-        composer: 0xFFFFFF, menu: 0x171717,
+        composer: 0xFFFFFF, composerTray: 0xFFFFFF, menu: 0x171717,
         syntaxKeyword: 0x7A45B5, syntaxString: 0x3D7A2E, syntaxComment: 0x8A8F96, syntaxNumber: 0x9A5A12,
         syntaxType: 0x1D6E93, syntaxProperty: 0x3B5DA6, syntaxTag: 0xA33A6C, syntaxAttribute: 0x86690F)
 
@@ -136,6 +141,7 @@ struct NookPalette: Equatable, Sendable {
         palette.surface = dark ? step(0.06) : NookColor.mix(canvas, 0xFFFFFF, 0.6)
         palette.composer = palette.surface
         palette.field = dark ? step(0.05) : NookColor.mix(canvas, 0x000000, 0.02)
+        palette.composerTray = palette.field
         palette.graphite = step(dark ? 0.09 : 0.05)
         palette.smoke = step(dark ? 0.13 : 0.085)
         palette.rowRest = step(dark ? 0.03 : 0.025)
@@ -208,6 +214,18 @@ enum NookColor {
     }
 
     /// `from` moved `amount` (0…1) of the way to `to`.
+    /// Per channel, how far `color` lies from `base` (-255…255).
+    static func difference(_ color: UInt32, from base: UInt32) -> (r: Int, g: Int, b: Int) {
+        func channel(_ value: UInt32, _ shift: UInt32) -> Int { Int((value >> shift) & 0xFF) }
+        return (channel(color, 16) - channel(base, 16), channel(color, 8) - channel(base, 8), channel(color, 0) - channel(base, 0))
+    }
+
+    /// `color` moved by a per-channel step, each channel kept within 0…255.
+    static func shifted(_ color: UInt32, by step: (r: Int, g: Int, b: Int)) -> UInt32 {
+        func channel(_ shift: UInt32, _ delta: Int) -> UInt32 { UInt32(min(255, max(0, Int((color >> shift) & 0xFF) + delta))) }
+        return channel(16, step.r) << 16 | channel(8, step.g) << 8 | channel(0, step.b)
+    }
+
     static func mix(_ from: UInt32, _ to: UInt32, _ amount: Double) -> UInt32 {
         let a = components(from), b = components(to)
         return hex(r: a.r + (b.r - a.r) * amount, g: a.g + (b.g - a.g) * amount, b: a.b + (b.b - a.b) * amount)
@@ -424,7 +442,7 @@ enum VSCodeThemeImport {
                                             link: color("textLink.foreground"))
         if let value = color("sideBar.background", "panel.background") { palette.surface = value; palette.composer = value }
         if let value = color("editorWidget.background", "dropdown.background") { palette.graphite = value }
-        if let value = color("input.background") { palette.field = value }
+        if let value = color("input.background") { palette.field = value; palette.composerTray = value }
         if let value = color("input.border") { palette.fieldStroke = value }
         if let value = color("sideBar.border", "panel.border", "editorGroup.border") { palette.border = value }
         if let value = color("list.hoverBackground") { palette.rowHover = value }
@@ -520,6 +538,7 @@ struct NookColorToken: Identifiable, @unchecked Sendable {
         .init(id: "well", group: .surfaces, keyPath: \.well),
         .init(id: "surface", group: .surfaces, keyPath: \.surface),
         .init(id: "composer", group: .surfaces, keyPath: \.composer),
+        .init(id: "composerTray", group: .surfaces, keyPath: \.composerTray),
         .init(id: "menu", group: .surfaces, keyPath: \.menu),
         .init(id: "field", group: .surfaces, keyPath: \.field),
         .init(id: "graphite", group: .surfaces, keyPath: \.graphite),
@@ -589,6 +608,11 @@ extension NookPalette {
         for (id, hex) in overrides {
             guard let token = NookColorToken.named(id) else { continue }
             palette[keyPath: token.keyPath] = hex & 0xFFFFFF
+        }
+        // The composer's trays belong to it: a new composer color carries them along, the same step lighter or darker
+        // as in the theme, unless they were set themselves.
+        if overrides["composer"] != nil, overrides["composerTray"] == nil {
+            palette.composerTray = NookColor.shifted(palette.composer, by: NookColor.difference(composerTray, from: composer))
         }
         return palette
     }

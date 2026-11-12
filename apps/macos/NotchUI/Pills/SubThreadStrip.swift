@@ -21,7 +21,7 @@ struct SubThreadStrip: View {
         // Each row has its own small inset, for the mark of the one open beside: together they line up as before.
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, 5)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+        .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
         .onLayoutWidthChange { width = $0 }
     }
 
