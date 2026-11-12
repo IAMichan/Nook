@@ -249,6 +249,8 @@ extension ChatMedia {
     static func fetchingFiles(_ messages: [InboxMessage], limit: Int = parallelFetches,
                               fetch: @escaping @MainActor (InboxMessage) async -> String?) async -> [InboxMessage] {
         var result = messages
+        // A page for the background backfill: old messages go to the archive without their files (`ChatBackfill.filling`).
+        guard !ChatBackfill.filling else { return result }
         let wanted = messages.indices.filter { messages[$0].media != nil && messages[$0].media?.path == nil }.reversed()
         guard !wanted.isEmpty else { return result }
         await withTaskGroup(of: (Int, String?).self) { group in
