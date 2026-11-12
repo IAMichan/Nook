@@ -70,28 +70,41 @@ final class MailBridge: ChatBridge, ObservableObject {
 
     func read() async throws -> [BridgedChat] {
         let mark = await MailChangeMark.current()
+        // Read from Mail's index, a changed mark costs Mail nothing: no need to wait while you work in it.
+        let indexed = MailChangeMark.isIndexed(mark)
         guard MailStats.needsFullRead(mark: mark, lastMark: lastMark, lastRead: lastFullRead, now: Date(),
-                                      maxAge: Self.fullReadMaxAge, minGap: MailChangeMark.mailIsFront ? Self.frontGap : 0)
+                                      maxAge: Self.fullReadMaxAge,
+                                      minGap: MailChangeMark.mailIsFront && !indexed ? Self.frontGap : 0)
         else { return [] }
         do {
+            // One quick question to Mail (a tenth of a second): the enabled accounts, their addresses and ids.
             let list = await ScriptText.run(MailChatData.accountsScript, timeout: 10)
             guard let text = list.text else { throw problem(list.errorNumber, list.errorMessage, timeout: 10) }
             let found = MailChatData.accounts(text)
             if found != accounts { accounts = found }
             var rows: [MailChatData.Row] = []
             var failure: NookError?
-            // Each account on its own: one that syncs a big mailbox never keeps the others from showing.
-            for account in found {
-                let result = await ScriptText.run(MailChatData.readScript(account: account.name), timeout: 20)
-                guard let raw = result.text else {
-                    failure = failure ?? problem(result.errorNumber, result.errorMessage, timeout: 20)
-                    continue
+            if let index = await MailLibrary.chatRows(accounts: found, inbox: MailChatData.perInbox, sent: MailChatData.perSent,
+                                                      bodyLength: MailChatData.bodyLength, known: Set(bodies.keys)) {
+                // Mail's index: every account in milliseconds, without keeping Mail busy.
+                rows = index.rows
+                for (id, text) in index.texts { bodies[id] = text }
+                trimBodies(keeping: rows)
+            } else {
+                // No Full Disk Access: ask Mail, each account on its own, so one that syncs a big mailbox never keeps the
+                // others from showing.
+                for account in found {
+                    let result = await ScriptText.run(MailChatData.readScript(account: account.name), timeout: 20)
+                    guard let raw = result.text else {
+                        failure = failure ?? problem(result.errorNumber, result.errorMessage, timeout: 20)
+                        continue
+                    }
+                    rows += MailChatData.rows(raw, account: account)
                 }
-                rows += MailChatData.rows(raw, account: account)
+                // Not one account could be read: say why, instead of an empty list that looks like there is no mail.
+                if rows.isEmpty, let failure { throw failure }
+                await readBodies(of: rows)
             }
-            // Not one account could be read: say why, instead of an empty list that looks like there is no mail.
-            if rows.isEmpty, let failure { throw failure }
-            await readBodies(of: rows)
             var chats = MailChatData.chats(rows, accounts: found, bodies: bodies, named: found.count > 1)
             let trashed = await trashed(rows: rows, accounts: found)
             remember(chats, rows: rows, accounts: found)
@@ -110,9 +123,13 @@ final class MailBridge: ChatBridge, ObservableObject {
     }
 
     /// Mail read before (this round or the last) that is in the Trash now, as the rows it was read as: you deleted it in
-    /// Mail. One quick script per account, the newest of its Trash only.
+    /// Mail. The newest of each account's Trash only, from Mail's index; without access to it, one script per account,
+    /// which asks Mail for each message on its own.
     private func trashed(rows: [MailChatData.Row], accounts: [MailChatData.Account]) async -> [MailChatData.Row] {
         let known = rows + places.values
+        if let trash = await MailLibrary.trashRows(accounts: accounts) {
+            return known.filter { row in trash.contains { $0.isSameMail(as: row) } }
+        }
         var found: [MailChatData.Row] = []
         for account in accounts {
             let mine = known.filter { $0.account == account.name }
@@ -133,10 +150,13 @@ final class MailBridge: ChatBridge, ObservableObject {
         for (id, body) in MailStats.bodies(raw) { bodies[id] = body }
         // A message Mail gave no text for still gets an entry, so it is not asked for again each round.
         for row in missing where bodies[row.id] == nil { bodies[row.id] = "" }
-        if bodies.count > Self.bodiesKept {
-            let keep = Set(rows.map(\.id))
-            bodies = bodies.filter { keep.contains($0.key) }
-        }
+        trimBodies(keeping: rows)
+    }
+
+    private func trimBodies(keeping rows: [MailChatData.Row]) {
+        guard bodies.count > Self.bodiesKept else { return }
+        let keep = Set(rows.map(\.id))
+        bodies = bodies.filter { keep.contains($0.key) }
     }
 
     private func remember(_ chats: [BridgedChat], rows: [MailChatData.Row], accounts: [MailChatData.Account]) {
@@ -323,9 +343,11 @@ extension MailBridge: ChatBackfillBridge {
     var historyChanges: Bool { false }
     var backfillEmptyIsStart: Bool { true }
 
-    /// Not while you work in Mail itself: Mail answers one script at a time, and the mail you open would wait.
+    /// Not while you work in Mail itself when the archive has to come from scripts: Mail answers one at a time, and the
+    /// mail you open would wait. From Mail's index it costs Mail nothing.
     func canBackfill(chatID: String) -> Bool {
-        isReady && !MailChangeMark.mailIsFront && MailChatData.parts(of: chatID, accounts: accounts) != nil
+        isReady && (!MailChangeMark.mailIsFront || MailChangeMark.isIndexed(lastMark))
+            && MailChatData.parts(of: chatID, accounts: accounts) != nil
     }
 
     func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage] {
@@ -338,20 +360,32 @@ extension MailBridge: ChatBackfillBridge {
     func backfillPage(chatID: String, before: Date, limit: Int) async throws -> (messages: [InboxMessage], gone: [InboxMessage]) {
         guard let (account, address) = MailChatData.parts(of: chatID, accounts: accounts) else { return ([], []) }
         for stretch in MailChatData.olderStretches(before: before) {
+            // Mail's index: milliseconds, and Mail does not notice. Asking Mail searched a whole inbox per stretch.
+            if let found = await MailLibrary.history(account: account, address: address, from: stretch.from, to: stretch.to,
+                                                     bodyLength: MailChatData.bodyLength) {
+                let rows = found.rows.filter { $0.date < before }
+                let trash = found.trash.filter { $0.date < before }
+                guard !rows.isEmpty || !trash.isEmpty else { continue }
+                return page(rows: rows, trash: trash, texts: found.texts, chatID: chatID)
+            }
             let result = await ScriptText.run(MailChatData.olderScript(account: account.name, address: address,
                                                                        from: stretch.from, to: stretch.to), timeout: 60)
             guard let raw = result.text else { throw problem(result.errorNumber, result.errorMessage, timeout: 60) }
             let rows = MailChatData.rows(raw, account: account).filter { $0.date < before }
             let trash = MailChatData.trashRows(raw, account: account).filter { $0.date < before }
             guard !rows.isEmpty || !trash.isEmpty else { continue }
-            let texts = MailStats.bodies(raw)
-            let chats = MailChatData.chats(rows, accounts: accounts, bodies: texts, named: accounts.count > 1)
-            let gone = trash.map { row in
-                InboxMessage(id: row.nookID, text: MailChatData.text(subject: row.subject, body: ""), date: row.date, fromMe: row.fromMe)
-            }
-            return (chats.first { $0.chatID == chatID }?.messages ?? [], gone)
+            return page(rows: rows, trash: trash, texts: MailStats.bodies(raw), chatID: chatID)
         }
         return ([], [])
+    }
+
+    private func page(rows: [MailChatData.Row], trash: [MailChatData.Row], texts: [Int: String], chatID: String)
+        -> (messages: [InboxMessage], gone: [InboxMessage]) {
+        let chats = MailChatData.chats(rows, accounts: accounts, bodies: texts, named: accounts.count > 1)
+        let gone = trash.map { row in
+            InboxMessage(id: row.nookID, text: MailChatData.text(subject: row.subject, body: ""), date: row.date, fromMe: row.fromMe)
+        }
+        return (chats.first { $0.chatID == chatID }?.messages ?? [], gone)
     }
 }
 
@@ -365,10 +399,15 @@ enum MailChangeMark {
     /// The mark, or nil when Mail did not answer in time.
     static func current() async -> String? {
         if let last, Date().timeIntervalSince(last.at) < reuse { return last.mark }
-        let mark = await ScriptText.run(MailStats.changeScript, timeout: 5).text
+        // Mail's index when Nook may read it, which Mail does not notice; else a quick script.
+        var mark = await MailLibrary.changeMark()
+        if mark == nil { mark = await ScriptText.run(MailStats.changeScript, timeout: 5).text }
         last = mark.map { ($0, Date()) }
         return mark
     }
+
+    /// Whether the mark came from Mail's index: then a full read comes from there too, and costs Mail nothing.
+    static func isIndexed(_ mark: String?) -> Bool { mark?.hasPrefix("index|") ?? false }
 
     /// Nook changed something in Mail itself: the next question goes to Mail.
     static func invalidate() { last = nil }

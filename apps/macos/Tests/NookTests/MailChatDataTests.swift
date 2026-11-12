@@ -15,6 +15,12 @@ final class MailChatDataTests: XCTestCase {
         XCTAssertEqual(MailChatData.accounts(raw), [work, home], "addresses lower case, a nameless account left out")
     }
 
+    func testAccountsCarryMailsIdForItsIndex() {
+        let raw = "ACC|||Google|||me@gmail.com|||6A99-GMAIL\n"
+        XCTAssertEqual(MailChatData.accounts(raw).first?.id, "6A99-GMAIL")
+        XCTAssertTrue(MailChatData.accountsScript.contains("(id of acc)"))
+    }
+
     func testRowsFromTheInboxAndFromSent() {
         let raw = """
         IN|||INBOX|||101|||Offerte|||Lisa de Vries <Lisa@Example.com>|||2026-10-28T09:15:00|||false
