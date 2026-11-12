@@ -1,5 +1,6 @@
 <script lang="ts">
   // Het hoofdvenster (en de hele app op Android): Chat met al je Nooks, Agents, Werkruimte en Instellingen.
+  import { tick } from "svelte";
   import { api, events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import Chat from "../components/Chat.svelte";
@@ -82,10 +83,19 @@
     return false;
   }));
 
+  // "nook:<id>" (from the bar's Open in window) opens that same conversation, so you continue where you were.
+  function applyRoute(r: string) {
+    if (r.startsWith("nook:")) {
+      route = "chat";
+      if (mobile) showList = false;
+      nook.select(r.slice(5)).catch(() => {});
+    } else route = parseRoute(r);
+  }
+
   $effect(() => {
-    api.takeRoute().then((r) => r && (route = parseRoute(r)));
+    api.takeRoute().then((r) => r && applyRoute(r));
     const un = events.onNavigate((r) => {
-      route = parseRoute(r);
+      applyRoute(r);
       api.takeRoute();
     });
     return () => {
@@ -121,6 +131,10 @@
       editing: !!target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .xterm'),
     });
     if (!shortcut) return;
+    // Ctrl+F belongs to the shell inside a terminal.
+    if (shortcut === "search" && target?.closest(".xterm")) return;
+    const page = shortcut.startsWith("go-") ? tabs[Number(shortcut.slice(3)) - 1] : undefined;
+    if (shortcut.startsWith("go-") && !page) return;
     e.preventDefault();
     switch (shortcut) {
       case "palette": paletteOpen = !paletteOpen; break;
@@ -132,6 +146,13 @@
         break;
       case "settings": route = "settings"; break;
       case "stop": nook.stop(); break;
+      case "search":
+        route = "chat";
+        showList = true;
+        tick().then(() => document.querySelector<HTMLInputElement>('.list input[aria-label="Search conversations"]')?.select());
+        break;
+      default:
+        if (page) navigate(page.route);
     }
   }
 
@@ -159,9 +180,9 @@
       <button class="ghost icon-button" onclick={() => (paletteOpen = true)} title="Search everything (Ctrl+K)" aria-label="Search everything"><Icon name="search" /></button>
     </div>
     <div class="tabbar" role="tablist">
-      {#each tabs as tab (tab.route)}
+      {#each tabs as tab, i (tab.route)}
         <button role="tab" class="tab" class:on={route === tab.route} aria-selected={route === tab.route} aria-current={route === tab.route ? "page" : undefined}
-          onclick={() => { if (tab.route === "chat" && mobile && route === "chat") showList = !showList; navigate(tab.route); }} title={tab.title}>
+          onclick={() => { if (tab.route === "chat" && mobile && route === "chat") showList = !showList; navigate(tab.route); }} title={i < 9 ? `${tab.title} (Ctrl+${i + 1})` : tab.title}>
           <Icon name={tab.icon} /><span>{tab.title}</span>
         </button>
       {/each}
