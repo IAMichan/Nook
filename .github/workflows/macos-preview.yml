@@ -54,7 +54,7 @@ jobs:
           key: macos-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
           restore-keys: macos-dd-${{ steps.xcode.outputs.build }}-
       - name: Install XcodeGen
-        run: brew install xcodegen
+        uses: ./.github/actions/setup-xcodegen
       - name: Generate project
         run: xcodegen
       - name: Build

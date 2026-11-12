@@ -1,0 +1,168 @@
+name: TestFlight
+
+# Builds Nook Companion (apps/ios) for the App Store and uploads it to TestFlight, so testers get each iPhone build
+# from the TestFlight app instead of from a Mac with Xcode. Start it with Actions › TestFlight › Run workflow (on main);
+# with the repository variable NOOK_TESTFLIGHT_ON_MAIN set to `true`, every push to main that changes what the
+# companion is built from uploads one too.
+#
+# Needs an App Store Connect API key with the Admin role (Users and Access › Integrations), because Xcode signs with
+# cloud-managed certificates and creates the provisioning profiles itself, and the team:
+#   secret ASC_KEY        the .p8 file's text
+#   secret ASC_KEY_ID     its key ID
+#   secret ASC_ISSUER_ID  the issuer ID above the list of keys
+#   secret APPLE_TEAM_ID  the team (also used by release.yml)
+# Without them the job says so and stops, as relay-deploy.yml does.
+#
+# Build numbers: github.run_number plus the repository variable NOOK_TESTFLIGHT_BUILD_OFFSET (default 0), so they
+# only go up; raise the offset once if builds were uploaded by hand with higher numbers. The marketing version is
+# MARKETING_VERSION in apps/ios/project.yml. A commit whose companion inputs were already uploaded is not uploaded
+# again (verified-check, as in ios.yml), so a re-run or a burst of merges costs one build.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/ios/**'
+      - 'packages/protocol/**'
+      - 'apps/macos/Brain/ChartRescue.swift'
+      - 'apps/macos/Brain/ChatChart.swift'
+      - 'apps/macos/Brain/MarkdownBlock.swift'
+      - 'apps/macos/NotchUI/Components/BrandLogo.swift'
+      - 'apps/macos/NotchUI/Shared/**'
+      - 'apps/macos/NotchUI/Theme/NookIcon.swift'
+      - 'apps/macos/NotchUI/Theme/NookPalette.swift'
+      - 'apps/macos/NotchUI/Theme/NookTheme.swift'
+      - 'apps/macos/Resources/Lucide.xcassets/**'
+      - 'apps/macos/Resources/katex/**'
+      - 'apps/macos/Resources/mermaid/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # verified-check looks up the markers of earlier runs
+
+# One upload at a time; a newer push waits behind the running one instead of cancelling it halfway through an upload.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.NOOK_TESTFLIGHT_ON_MAIN == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      fingerprint: ${{ steps.verified.outputs.fingerprint }}
+      verified: ${{ steps.verified.outputs.verified }}
+      configured: ${{ steps.secrets.outputs.configured }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Signing secrets set?
+        id: secrets
+        env:
+          ASC_KEY: ${{ secrets.ASC_KEY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$ASC_KEY" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$TEAM_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::ASC_KEY, ASC_KEY_ID, ASC_ISSUER_ID and APPLE_TEAM_ID are not all set; nothing was uploaded to TestFlight."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+      # The same inputs as ios.yml (scripts/ci-changes.sh), under its own name: uploaded, not only built.
+      - name: Already uploaded from these inputs?
+        id: verified
+        uses: ./.github/actions/verified-check
+        with:
+          name: testflight
+          paths: >-
+            apps/ios packages/protocol apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/NotchUI/Components/BrandLogo.swift apps/macos/NotchUI/Shared apps/macos/NotchUI/Theme/NookIcon.swift apps/macos/NotchUI/Theme/NookPalette.swift apps/macos/NotchUI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets apps/macos/Resources/katex apps/macos/Resources/mermaid
+            .github/workflows/testflight.yml .github/actions
+
+  upload:
+    needs: gate
+    if: needs.gate.outputs.configured == 'true' && needs.gate.outputs.verified != 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select newest Xcode
+        run: |
+          XCODE="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -1)"
+          if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
+          xcodebuild -version
+      - name: Install XcodeGen
+        uses: ./.github/actions/setup-xcodegen
+      - name: Generate project
+        run: xcodegen
+      - name: App Store Connect key
+        env:
+          ASC_KEY: ${{ secrets.ASC_KEY }}
+        run: |
+          printf '%s\n' "$ASC_KEY" > "$RUNNER_TEMP/asc.p8"
+          chmod 600 "$RUNNER_TEMP/asc.p8"
+      - name: Archive
+        timeout-minutes: 40
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_OFFSET: ${{ vars.NOOK_TESTFLIGHT_BUILD_OFFSET || '0' }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -o pipefail
+          BUILD=$((RUN_NUMBER + BUILD_OFFSET))
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          xcodebuild archive -project NookCompanion.xcodeproj -scheme NookCompanion -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/NookCompanion.xcarchive" \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/asc.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="$BUILD" COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee archive.log
+      - name: Upload to TestFlight
+        timeout-minutes: 20
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          # destination=upload sends the signed build straight to App Store Connect; it shows up in TestFlight once
+          # Apple has processed it (minutes).
+          /usr/libexec/PlistBuddy -c "Add :method string app-store-connect" -c "Add :destination string upload" \
+            -c "Add :teamID string $TEAM_ID" -c "Add :signingStyle string automatic" \
+            -c "Add :manageAppVersionAndBuildNumber bool false" "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/NookCompanion.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/asc.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tee upload.log
+          MARKETING="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$RUNNER_TEMP/NookCompanion.xcarchive/Info.plist")"
+          echo "Uploaded Nook Companion $MARKETING ($BUILD) from \`$GITHUB_SHA\` to TestFlight." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/asc.p8"
+      - name: Errors
+        if: failure()
+        run: grep -hE "error:|ERROR" archive.log upload.log 2>/dev/null | sort -u | head -100 || true
+      - name: Keep the logs of a failed upload
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: testflight-logs-${{ github.run_attempt }}
+          path: |
+            apps/ios/archive.log
+            apps/ios/upload.log
+          retention-days: 7
+          if-no-files-found: ignore
+      - uses: ./.github/actions/verified-mark
+        with:
+          name: testflight
+          fingerprint: ${{ needs.gate.outputs.fingerprint }}

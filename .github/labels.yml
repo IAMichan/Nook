@@ -46,6 +46,9 @@
 - name: skip changelog
   color: "ededed"
   description: Leave this pull request out of the release notes
+- name: via agent
+  color: "c5def5"
+  description: Issue filed by a coding agent through the agent report form
 - name: needs triage
   color: "fbca04"
   description: New issue a maintainer has not looked at yet; remove the label once it has an area and a kind
@@ -60,7 +63,10 @@
   description: No activity for a while; closed by workflows/stale.yml unless something happens
 - name: keep open
   color: "0e8a16"
-  description: Never marked stale or closed by workflows/stale.yml
+  description: Never marked stale or closed by workflows/stale.yml or workflows/pr-limits.yml
+- name: needs rebase
+  color: "e99695"
+  description: Conflicts with main; closed by workflows/pr-limits.yml after 7 days without activity
 - name: agent-context-increase
   color: "fef2c0"
   description: A maintainer accepts that AGENTS.md or CLAUDE.md grows (workflows/agent-context-budget.yml)

@@ -8,9 +8,21 @@ name: Release
 # New release: Actions › Release › Run workflow, pick what to bump (on the GitHub app too), and run it.
 #   beta   next beta of the current version: v0.1.0-beta.1 → v0.1.0-beta.2 (the default)
 #   patch / minor / major   first beta of the next version: v0.1.1-beta.1, v0.2.0-beta.1, v1.0.0-beta.1
+#   stable the current version without the suffix (v0.1.0), built from its newest beta, so a regular release only
+#          ships code that beta users already ran. Run it on that beta's tag (Run workflow › Use workflow from › Tags ›
+#          v0.1.0-beta.4); the beta must be on main.
 # The tag is computed by scripts/next-release-tag.sh. Pushing a tag yourself (`git push origin v0.3.0-beta.1`) works
 # too. A tag with a suffix (-beta.N) becomes a pre-release; one without (v1.0.0) a regular release.
 # The version without the suffix becomes the app's CFBundleShortVersionString.
+#
+# Fresh beta: with the repository variable NOOK_FRESH_BETA set to `true`, the schedule below releases the next beta
+# of main once a day, but only when main has commits the newest release does not have and that release is at least
+# 20 hours old. Without the variable the schedule does nothing (the `plan` job skips in seconds on ubuntu).
+#
+# The release stays a draft until the macOS, Windows and Linux files are all attached and checked; only then does the
+# `publish` job make it public (and create the tag). A run that fails halfway leaves a draft nobody can download or
+# update to: fix the cause and re-run the failed jobs, or delete the draft. Every download carries a build provenance
+# attestation (`gh attestation verify <file> --repo IAMichan/Nook` shows it was built by this workflow from this repo).
 #
 # Signing, best first, by the repository secrets that are set:
 #   MACOS_DEVELOPER_ID_P12 (+ _PASSWORD), with APPLE_NOTARY_APPLE_ID, APPLE_NOTARY_PASSWORD (an app-specific password)
@@ -31,6 +43,8 @@ name: Release
 on:
   push:
     tags: ['v*']
+  schedule:
+    - cron: '17 3 * * *' # fresh beta, only with NOOK_FRESH_BETA=true (see above)
   workflow_dispatch:
     inputs:
       bump:
@@ -42,6 +56,7 @@ on:
           - patch
           - minor
           - major
+          - stable
 
 permissions:
   contents: read
@@ -52,38 +67,102 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: macos-15
-    timeout-minutes: 120
+  # Seconds on ubuntu: which tag, from which commit, and whether to release at all. The macOS runner starts only after.
+  plan:
+    if: github.event_name != 'schedule' || vars.NOOK_FRESH_BETA == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
-      contents: write # creates the tag and the release
+      contents: read
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      marketing: ${{ steps.version.outputs.marketing }}
-    env:
-      DERIVED_DATA: ${{ github.workspace }}/.derived-data
-    defaults:
-      run:
-        working-directory: apps/macos
+      release: ${{ steps.plan.outputs.release }}
+      tag: ${{ steps.plan.outputs.tag }}
+      commit: ${{ steps.plan.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-tags: true # scripts/next-release-tag.sh reads the earlier release tags
+          fetch-depth: 0 # the release tags and the history between them
           persist-credentials: false
-      - name: Choose the version
-        id: version
+      - name: Plan the release
+        id: plan
         env:
           BUMP: ${{ github.event.inputs.bump }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            TAG="$(../../scripts/next-release-tag.sh "$BUMP")"
-          else
-            TAG="$GITHUB_REF_NAME"
-          fi
+          set -euo pipefail
+          COMMIT="$GITHUB_SHA"
+          case "$GITHUB_EVENT_NAME" in
+            push) TAG="$GITHUB_REF_NAME" ;;
+            schedule)
+              # The newest release (drafts included, so a release that is still being finished counts too).
+              LAST="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=1" --jq '.[0] | "\(.tag_name) \(.created_at)"' || true)"
+              LAST_TAG="${LAST%% *}"
+              if [ -n "$LAST" ]; then
+                AGE=$(( $(date +%s) - $(date -d "${LAST#* }" +%s) ))
+                if [ "$AGE" -lt $((20 * 3600)) ]; then
+                  echo "No fresh beta: $LAST_TAG is only $((AGE / 3600)) hours old." | tee -a "$GITHUB_STEP_SUMMARY"
+                  echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+                fi
+                if git rev-parse -q --verify "refs/tags/$LAST_TAG" >/dev/null && \
+                  [ -z "$(git rev-list "refs/tags/$LAST_TAG..$COMMIT" -- . ':!*.md' ':!docs')" ]; then
+                  echo "No fresh beta: main has nothing new for users since $LAST_TAG." | tee -a "$GITHUB_STEP_SUMMARY"
+                  echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+                fi
+              fi
+              TAG="$(scripts/next-release-tag.sh beta)" ;;
+            workflow_dispatch)
+              TAG="$(scripts/next-release-tag.sh "$BUMP")"
+              if [ "$BUMP" = stable ]; then
+                # Built from the newest beta of this version, which is what beta users have been running. The run
+                # itself starts on that tag, so every job checks out exactly that commit (no checkout of a computed ref).
+                SOURCE="$(git tag -l "$TAG-beta.*" | sort -V | tail -n 1)"
+                if [ "$GITHUB_REF" != "refs/tags/$SOURCE" ]; then
+                  echo "::error::Run a stable release on the tag of its newest beta: Run workflow › Use workflow from › Tags › $SOURCE (this run is on $GITHUB_REF)."; exit 1
+                fi
+                if ! git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/main; then
+                  echo "::error::$SOURCE is not on main; a stable release is made from a beta that landed on main."; exit 1
+                fi
+                echo "Promoting $SOURCE ($COMMIT) to $TAG." | tee -a "$GITHUB_STEP_SUMMARY"
+              fi ;;
+            *) echo "::error::Unexpected event $GITHUB_EVENT_NAME."; exit 1 ;;
+          esac
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
             echo "::error::'$TAG' is not a version tag like v0.1.0-beta.1 or v1.0.0."
             exit 1
           fi
+          { echo "release=true"; echo "tag=$TAG"; echo "commit=$COMMIT"; } >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG from $COMMIT" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: macos-15
+    timeout-minutes: 120
+    permissions:
+      contents: write # creates the draft release
+      id-token: write # build provenance attestation
+      attestations: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      marketing: ${{ steps.version.outputs.marketing }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    env:
+      DERIVED_DATA: ${{ github.workspace }}/.derived-data
+      RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      # The commit the run started on: main, the pushed tag, or the beta tag of a stable release (see `plan`).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Choose the version
+        id: version
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
           VERSION="${TAG#v}"
           MARKETING="${VERSION%%-*}"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
@@ -117,7 +196,7 @@ jobs:
           key: macos-release-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
           restore-keys: macos-release-dd-${{ steps.xcode.outputs.build }}-
       - name: Install XcodeGen
-        run: brew install xcodegen
+        uses: ./.github/actions/setup-xcodegen
       - name: Generate project
         run: xcodegen
       - name: Resolve Swift packages
@@ -250,18 +329,29 @@ jobs:
         if: env.SIGN_KIND == 'developer-id'
         working-directory: ${{ runner.temp }}/dist
         env:
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
           NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
           NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
           NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
         run: |
           VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
-          if [ -z "$NOTARY_APPLE_ID" ] || [ -z "$NOTARY_PASSWORD" ] || [ -z "$NOTARY_TEAM_ID" ]; then
-            echo "::warning::Developer ID signed but not notarized: set APPLE_NOTARY_APPLE_ID, APPLE_NOTARY_PASSWORD and APPLE_TEAM_ID."
+          # An App Store Connect API key (the .p8 file's text in APPLE_NOTARY_KEY, with its key ID and issuer ID) is
+          # preferred: unlike an app-specific password it does not depend on an Apple ID session or expire with a
+          # password change. The Apple ID secrets remain as the fallback.
+          if [ -n "$NOTARY_KEY" ] && [ -n "$NOTARY_KEY_ID" ] && [ -n "$NOTARY_ISSUER" ]; then
+            printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+            AUTH=(--key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+          elif [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_PASSWORD" ] && [ -n "$NOTARY_TEAM_ID" ]; then
+            AUTH=(--apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "$NOTARY_TEAM_ID")
+          else
+            echo "::warning::Developer ID signed but not notarized: set APPLE_NOTARY_KEY, APPLE_NOTARY_KEY_ID and APPLE_NOTARY_ISSUER (or APPLE_NOTARY_APPLE_ID, APPLE_NOTARY_PASSWORD and APPLE_TEAM_ID)."
             exit 0
           fi
-          xcrun notarytool submit "Nook-$VERSION-macOS.dmg" --apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" \
-            --team-id "$NOTARY_TEAM_ID" --wait --timeout 30m
+          xcrun notarytool submit "Nook-$VERSION-macOS.dmg" "${AUTH[@]}" --wait --timeout 30m
+          rm -f "$RUNNER_TEMP/notary.p8"
           xcrun stapler staple "Nook-$VERSION-macOS.dmg"
           xcrun stapler staple Nook.app
           # The .zip was made before the ticket existed: make it again with the stapled app.
@@ -287,6 +377,43 @@ jobs:
           # Refuses a private key that does not belong to the public key the app carries.
           swift "$GITHUB_WORKSPACE/scripts/sign-update.swift" sign "Nook-$VERSION-macOS.zip" > "Nook-$VERSION-macOS.zip.sig"
           test -s "Nook-$VERSION-macOS.zip.sig"
+      # codesign --verify says the signature is sound, not that the app starts: a framework the hardened runtime
+      # refuses, a missing resource or a crash in launch code all pass it. Start the app exactly as users get it, from
+      # the final .dmg, with an empty home folder, and fail the release when it does not stay up.
+      - name: Launch check
+        working-directory: ${{ runner.temp }}/dist
+        env:
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
+          MOUNT="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "Nook-$VERSION-macOS.dmg" >/dev/null
+          HOME_DIR="$RUNNER_TEMP/launch-home"
+          mkdir -p "$HOME_DIR"
+          HOME="$HOME_DIR" "$MOUNT/Nook.app/Contents/MacOS/Nook" > "$RUNNER_TEMP/launch.log" 2>&1 &
+          PID=$!
+          ALIVE=true
+          for _ in $(seq 1 30); do
+            sleep 1
+            kill -0 "$PID" 2>/dev/null || { ALIVE=false; break; }
+          done
+          if [ "$ALIVE" = true ]; then
+            kill "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
+          else
+            STATUS=0; wait "$PID" || STATUS=$?
+          fi
+          hdiutil detach "$MOUNT" -force >/dev/null || true
+          if [ "$ALIVE" != true ]; then
+            echo "::error::Nook.app from the .dmg exited within 30 seconds (status $STATUS)."
+            tail -n 100 "$RUNNER_TEMP/launch.log" || true
+            # The crash report says which library or symbol was missing.
+            find "$HOME/Library/Logs/DiagnosticReports" "$HOME_DIR/Library/Logs/DiagnosticReports" -name 'Nook*' -newer "Nook-$VERSION-macOS.dmg" \
+              -exec head -n 60 {} \; 2>/dev/null || true
+            exit 1
+          fi
+          echo "Nook.app from the .dmg started and stayed up for 30 seconds."
       - name: Checksums
         working-directory: ${{ runner.temp }}/dist
         run: |
@@ -295,7 +422,14 @@ jobs:
           cat SHA256SUMS.txt
         env:
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
-      - name: Publish the release
+      # Signed statement, kept by GitHub, that these files were built by this workflow from this commit.
+      - name: Build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/dist/Nook-*-macOS.dmg
+            ${{ runner.temp }}/dist/Nook-*-macOS.zip
+      - name: Create the draft release
         working-directory: ${{ runner.temp }}/dist
         env:
           GH_TOKEN: ${{ github.token }}
@@ -305,7 +439,7 @@ jobs:
         run: |
           VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
           # GitHub's own list of what changed since the last release; it goes folded away at the bottom of the page.
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$RELEASE_COMMIT" \
             --jq .body > changes.md || : > changes.md
           # The page: banner, download button and the downloads on top, then the install steps (scripts/release-notes.sh).
           TAG="$TAG" VERSION="$VERSION" REPO="$GITHUB_REPOSITORY" PRERELEASE="${STEPS_VERSION_OUTPUTS_PRERELEASE}" \
@@ -316,8 +450,13 @@ jobs:
           test -s "Nook-$VERSION-macOS.zip.sig"
           FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt)
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${STEPS_VERSION_OUTPUTS_TITLE}" \
-            --notes-file notes.md $FLAGS "${FILES[@]}"
+          # A draft: not visible to users or the in-app updater, and the tag is created only when `publish` makes it
+          # public. A draft left behind by an earlier failed run of this tag is replaced.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --title "${STEPS_VERSION_OUTPUTS_TITLE}" \
+            --notes-file notes.md --draft $FLAGS "${FILES[@]}"
       - name: Keep the build log
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -343,6 +482,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # uploads to the release and edits its page
+      id-token: write # build provenance attestation
+      attestations: write
     timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -387,3 +528,41 @@ jobs:
             echo "- [SHA-256 checksums]($base/SHA256SUMS-Windows-Linux.txt)"
           } >> notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+      - name: Build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/desktop/out/Nook-*
+
+  # Only now, with every file attached, does the release become public: the tag is created, the release page appears,
+  # and the in-app updater of a downloaded Nook sees it.
+  publish:
+    name: Publish
+    needs: [release, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publishes the draft and creates the tag
+    timeout-minutes: 5
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION: ${{ needs.release.outputs.version }}
+          PRERELEASE: ${{ needs.release.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # Everything a user or the updater downloads must be there before anyone can see the release.
+          ASSETS="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for NAME in "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt \
+            "Nook-$VERSION-Windows-setup.exe" "Nook-$VERSION-Windows.msi" "Nook-$VERSION-Linux.deb" \
+            "Nook-$VERSION-Linux.AppImage" SHA256SUMS-Windows-Linux.txt; do
+            grep -qxF "$NAME" <<<"$ASSETS" || { echo "::error::$NAME is missing from the draft of $TAG."; exit 1; }
+          done
+          # Only a regular release becomes "Latest"; a beta stays a pre-release.
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" | tee -a "$GITHUB_STEP_SUMMARY"

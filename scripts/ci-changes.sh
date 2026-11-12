@@ -5,6 +5,8 @@
 #   Reads one changed path per line on stdin and prints `area=true|false` lines for $GITHUB_OUTPUT.
 #   --all (or a change to the CI entry point itself) turns every area on: detection fails open.
 #
+# scripts/ci-changes.test.sh checks the mapping (ci.yml runs it first); add a case there when you change a list.
+#
 # The path lists here are the single source of truth for which change starts which job. When a reusable workflow
 # builds from a new directory, add it here and to the `paths` of its verified-check step.
 set -euo pipefail
@@ -16,7 +18,9 @@ AREAS=(macos ios packages relay tauri chatd core_tests workflows github_scripts 
 paths_for() {
   case "$1" in
     macos) echo "apps/macos/ packages/protocol/ scripts/ui-lint.sh scripts/perf-lint.sh .github/workflows/build.yml .github/actions/" ;;
-    ios) echo "apps/ios/ packages/protocol/ .github/workflows/ios.yml .github/actions/" ;;
+    # The companion also compiles a few of the Mac app's files (`path: ../macos/…` in apps/ios/project.yml); the test
+    # fails when that list gains one that is missing here.
+    ios) echo "apps/ios/ packages/protocol/ apps/macos/Brain/ChartRescue.swift apps/macos/Brain/ChatChart.swift apps/macos/Brain/MarkdownBlock.swift apps/macos/NotchUI/Components/BrandLogo.swift apps/macos/NotchUI/Shared/ apps/macos/NotchUI/Theme/NookIcon.swift apps/macos/NotchUI/Theme/NookPalette.swift apps/macos/NotchUI/Theme/NookTheme.swift apps/macos/Resources/Lucide.xcassets/ apps/macos/Resources/katex/ apps/macos/Resources/mermaid/ .github/workflows/ios.yml .github/actions/" ;;
     packages) echo "packages/core/ .github/workflows/packages.yml .github/actions/" ;;
     relay) echo "apps/relay/ .github/workflows/relay.yml" ;;
     tauri) echo "apps/tauri/ .github/workflows/tauri.yml" ;;

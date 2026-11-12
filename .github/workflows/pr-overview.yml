@@ -1,7 +1,7 @@
 name: PR overview
 
-# Keeps one comment at the top of every open pull request up to date: size, author, areas, CI, description, review,
-# and the next steps before it can merge (.github/scripts/pr-overview.cjs). Contributors see what to do without reading
+# Keeps one comment at the top of every open pull request up to date: size, author, areas, CI, test cases added and
+# removed, the macOS preview download, description, review, and the next steps before it can merge (.github/scripts/pr-overview.cjs). Contributors see what to do without reading
 # every check, and a maintainer sees at a glance whether a pull request is ready.
 #
 # It wakes up on pull request changes and whenever one of the pull request workflows finishes. The script is loaded
@@ -15,7 +15,7 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
   workflow_run: # zizmor: ignore[dangerous-triggers] same: reads check results through the API only
-    workflows: [CI, PR template, PR size, PR vouch, Labeler, Agent context budget]
+    workflows: [CI, PR template, PR size, PR vouch, Labeler, Agent context budget, macOS preview]
     types: [requested, completed]
 
 permissions: {}

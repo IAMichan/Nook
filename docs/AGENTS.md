@@ -154,5 +154,8 @@ You will immediately see **Demo** in the notch with the prompt `"hello"`.
 ## Investigating Nook itself
 
 **Investigate a problem with Nook** in the command palette fills a new session's composer with a draft (`NookTriage`): the
-agent reads Nook's recent log lines, the source and the issues, and reports a likely cause. It stays away from Nook's
-databases, chats, mail and keys, and asks before it changes or posts anything. Nothing runs until you send the draft.
+agent reads Nook's recent log lines, the source of exactly the running build (its release tag, or the commit it was
+built from) and the issues, and reports a likely cause. It stays away from Nook's databases, chats, mail and keys, and
+asks before it changes or posts anything; an issue it files uses the agent report form
+(`.github/ISSUE_TEMPLATE/agent_report.yml`), so every agent's report has the same shape and says who made it. Nothing
+runs until you send the draft.

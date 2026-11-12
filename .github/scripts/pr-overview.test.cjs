@@ -160,3 +160,40 @@ test("run: keeps the oldest overview and deletes duplicates from parallel runs",
   assert.deepEqual(updated, [10]);
   assert.deepEqual(deleted, [30]);
 });
+
+test("countTestDelta: counts declarations per language, ignores other files", () => {
+  const { countTestDelta } = require("./pr-overview.cjs");
+  const files = [
+    {
+      filename: "apps/macos/Tests/NookTests/RunStoreTests.swift",
+      patch: "@@ -1,3 +1,6 @@\n+    func testSavesOnce() {\n+    @MainActor func testMainActor() async {\n-    func testOld() {\n+    @Test func modern() {\n     func helper() {",
+    },
+    { filename: "apps/tauri/src/app.test.ts", patch: "@@ -0,0 +1,2 @@\n+it(\"works\", () => {});\n+test.each([1])(\"x\", () => {});" },
+    { filename: "apps/chatd/store_test.go", patch: "@@ -1 +1 @@\n-func TestOpen(t *testing.T) {" },
+    { filename: "apps/tauri/src-tauri/src/lib.rs", patch: "@@ -1 +1,2 @@\n+    #[test]\n+    #[tokio::test]" },
+    // Not a test file: a function named like a test does not count.
+    { filename: "apps/macos/Core/Thing.swift", patch: "@@ -1 +1 @@\n+    func testable() {" },
+  ];
+  assert.deepEqual(countTestDelta(files), { added: 7, removed: 2, incomplete: false });
+  assert.deepEqual(countTestDelta([{ filename: "Tests/Big.swift", changes: 9000 }]), { added: 0, removed: 0, incomplete: true });
+});
+
+test("render: tests and preview rows", () => {
+  const pr = { number: 20, draft: false, mergeable_state: "clean", labels: [], user: { login: "a" } };
+  const checkRuns = [
+    {
+      name: "Build preview app",
+      status: "completed",
+      conclusion: "success",
+      html_url: "https://github.com/o/r/actions/runs/5/job/9",
+    },
+  ];
+  const files = [{ filename: "x.test.js", patch: "@@\n-it(\"a\", f);\n-it(\"b\", f);\n+it(\"c\", f);" }];
+  const summary = summarize({ pr, checkRuns, reviews: [], files });
+  // The preview job is not a CI job.
+  assert.equal(summary.failedJobs.length, 0);
+  assert.equal(summary.ciRunning, false);
+  const rendered = render(summary);
+  assert.ok(rendered.includes("| Tests | +1 / −2 test cases: removes more tests than it adds. |"));
+  assert.ok(rendered.includes("[Download the app](https://github.com/o/r/actions/runs/5)"));
+});
