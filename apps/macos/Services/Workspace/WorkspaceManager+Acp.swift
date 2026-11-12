@@ -63,8 +63,10 @@ extension WorkspaceManager {
             Task { @MainActor in self?.openAntigravitySignIn(id, url) }
         }
         client.onMessage = { [weak self] message, events in
+            let start = client.process.batchStart
             let end = client.process.consumed
             Task { @MainActor in
+                client.process.beginHandling(from: start)
                 self?.handleAcp(id, client, message, events)
                 client.process.markHandled(end)
             }

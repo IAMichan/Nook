@@ -675,3 +675,80 @@ struct UsageReport: Equatable, Sendable {
         return run.model.isEmpty ? "default" : run.model
     }
 }
+
+/// What waits on you in a session survives a restart of Nook. The process that asked is gone after one, so:
+/// - A question the agent asked (Claude Code's AskUserQuestion, Codex's `requestUserInput`, an ACP agent's form, Pi's
+///   dialogs, OpenCode's `question` tool) shows again where it was, and your answer goes to the agent as a message of
+///   yours, which resumes its conversation the way every message does.
+/// - An approval cannot be given any more: the timeline says it expired because Nook restarted.
+/// - Messages you queued stay queued, held as after a stop: they go out once you send or resume (also after "Continue
+///   where you left off"), never by themselves at launch.
+/// They are written into `runs.json` with the session (`merged`) and taken out again when it is read (`take`), so the
+/// sessions in memory never carry them.
+enum RestartRequests {
+    /// What was saved with one session.
+    struct Saved: Equatable, Sendable {
+        var questions: [SavedQuestion] = []
+        /// The summaries of the approvals it waited for.
+        var approvals: [String] = []
+        var queue: MessageQueue?
+
+        var isEmpty: Bool { questions.isEmpty && approvals.isEmpty && (queue?.isEmpty ?? true) }
+    }
+
+    /// The list as it is written: each session with what waits on it now. Only the sessions in `runs` are written, so what
+    /// waited on a deleted session is gone with it.
+    static func merged(_ runs: [WorkspaceRun], questions: [UUID: [SavedQuestion]], approvals: [UUID: [String]],
+                       queues: [UUID: MessageQueue]) -> [WorkspaceRun] {
+        guard !questions.isEmpty || !approvals.isEmpty || !queues.isEmpty
+                || runs.contains(where: { $0.waitingQuestions != nil || $0.waitingApprovals != nil || $0.queue != nil })
+        else { return runs }
+        return runs.map { run in
+            var run = run
+            let asked = questions[run.id] ?? []
+            run.waitingQuestions = asked.isEmpty ? nil : asked
+            let waiting = approvals[run.id] ?? []
+            run.waitingApprovals = waiting.isEmpty ? nil : waiting
+            if let queue = queues[run.id], !queue.isEmpty { run.queue = queue } else { run.queue = nil }
+            return run
+        }
+    }
+
+    /// Takes what was saved out of the loaded sessions, by session.
+    static func take(_ runs: inout [WorkspaceRun]) -> [UUID: Saved] {
+        var saved: [UUID: Saved] = [:]
+        for index in runs.indices
+            where runs[index].waitingQuestions != nil || runs[index].waitingApprovals != nil || runs[index].queue != nil {
+            let entry = Saved(questions: runs[index].waitingQuestions ?? [], approvals: runs[index].waitingApprovals ?? [],
+                              queue: restoredQueue(runs[index].queue))
+            runs[index].waitingQuestions = nil
+            runs[index].waitingApprovals = nil
+            runs[index].queue = nil
+            if !entry.isEmpty { saved[runs[index].id] = entry }
+        }
+        return saved
+    }
+
+    /// A saved queue as it comes back: held, so nothing goes out by itself at launch; nil when it is empty.
+    static func restoredQueue(_ queue: MessageQueue?) -> MessageQueue? {
+        guard var queue, !queue.isEmpty else { return nil }
+        queue.hold()
+        return queue
+    }
+
+    /// The question as it is saved; one without anything to ask is not.
+    static func saved(id: String, questions: [RunQuestion], created: Date) -> SavedQuestion? {
+        let asked = questions.filter { !$0.question.isEmpty || !$0.options.isEmpty }
+        return asked.isEmpty ? nil : SavedQuestion(id: id, questions: asked, created: created)
+    }
+
+    /// Your answers as the message the agent gets: each question with what you chose or wrote. After a restart the agent
+    /// no longer waits for them, so the message says what they answer.
+    static func message(_ questions: [RunQuestion], answers: [String: [String]], restored: Bool) -> String {
+        let lines = questions.map { item in
+            "\(item.question) → \((answers[item.id] ?? []).joined(separator: ", "))"
+        }.joined(separator: "\n")
+        guard restored else { return lines }
+        return "My answers to the questions you asked before Nook restarted:\n" + lines
+    }
+}

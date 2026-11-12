@@ -41,8 +41,10 @@ extension WorkspaceManager {
                                      workingDirectory: run.workingDirectory, initialInput: [], keepsInputOpen: true), for: run)
         let client = CodexAppServerClient(spec: spec)
         client.onMessage = { [weak self] message, events in
+            let start = client.process.batchStart
             let end = client.process.consumed
             Task { @MainActor in
+                client.process.beginHandling(from: start)
                 self?.handleCodexServer(id, client, message, events)
                 client.process.markHandled(end)
             }
@@ -289,26 +291,20 @@ extension WorkspaceManager {
     /// Answers a question: per question id the chosen labels, or your own text.
     func answer(_ runID: UUID, questionID: String, answers: [String: [String]]) {
         guard let question = questions[runID]?.first(where: { $0.id == questionID }) else { return }
-        // Nobody left to answer (the process ended): drop the question instead of pretending the agent works on.
+        // Nobody left to answer (the process ended): the answer goes as a message, as after a restart.
+        let gone: Bool
         switch question.origin {
-        case .claude, .pi:
-            guard processes[runID] != nil else {
-                questions[runID] = nil
-                return
-            }
-        case .openCode:
-            guard openCodeLinks[runID] != nil else {
-                questions[runID] = nil
-                return
-            }
-        case .codex, .message:
-            break
+        case .claude, .pi: gone = processes[runID] == nil
+        case .openCode: gone = openCodeLinks[runID] == nil
+        case .codex, .message, .restored: gone = false
         }
         questions[runID]?.removeAll { $0.id == questionID }
         if questions[runID]?.isEmpty == true { questions[runID] = nil }
-        let shown = question.questions.map { item in
-            "\(item.question) → \((answers[item.id] ?? []).joined(separator: ", "))"
-        }.joined(separator: "\n")
+        let shown = RestartRequests.message(question.questions, answers: answers, restored: question.isRestored || gone)
+        if gone {
+            _ = deliver(runID, text: shown, mode: .auto)
+            return
+        }
         switch question.origin {
         case .codex(let rpcID):
             codexServers[runID]?.respond(rpcID, CodexRPC.answers(answers))
@@ -320,8 +316,9 @@ extension WorkspaceManager {
                                                         value: question.questions.first.flatMap { answers[$0.id]?.first }))
         case .openCode(let form):
             answerOpenCode(runID, form: form, answers: answers)
-        case .message:
+        case .message, .restored:
             // Into the turn when the agent takes it there, else as the next message: your bubble shows it either way.
+            // A restored one resumes the conversation the way any message of yours does.
             _ = deliver(runID, text: shown, mode: .auto)
             return
         }

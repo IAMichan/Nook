@@ -317,11 +317,69 @@ final class AgentProcess: @unchecked Sendable {
 
     /// Stdout bytes taken as complete lines so far; on the output queue. Inside `onLines` it says where that batch ends.
     private(set) var consumed: UInt64 = 0
+    /// Where the batch of lines handed to `onLines` (or `onLine`) starts; on the output queue, as `consumed`.
+    private(set) var batchStart: UInt64 = 0
     private var handled: UInt64 = 0
+    /// Where the output being handled now starts (`beginHandling`): a request it raises is read again from here.
+    private var handlingFrom: UInt64 = 0
+    /// Set while a request raised by the output waits for you (`holdForRequest`): progress is not written past it.
+    private var hold: UInt64?
+    private var progressWritten: Date?
+    private var progressSoon = false
     /// The output Nook has really handled: where another Nook goes on.
     var handledOffset: UInt64 { lock.withLock { handled } }
-    func markHandled(_ offset: UInt64) { lock.withLock { handled = max(handled, offset) } }
+    /// How far a Nook that crashed now could say the output was handled (`KeptRuns.durableOffset`).
+    var durableOffset: UInt64 { lock.withLock { KeptRuns.durableOffset(handled: handled, hold: hold) } }
     var isKept: Bool { process is KeptTransport }
+
+    /// Says where the output about to be handled starts; call on the main thread right before handling it.
+    func beginHandling(from start: UInt64) { lock.withLock { handlingFrom = start } }
+
+    /// The output up to `offset` is handled. A kept agent's progress is written into its keeper's folder now and then
+    /// (`KeptRuns.Progress`), so a crash of Nook loses none of it.
+    func markHandled(_ offset: UInt64) {
+        let progress: KeptRuns.Progress? = lock.withLock {
+            handled = max(handled, offset)
+            return dueProgress(force: false)
+        }
+        if let progress { writeProgress(progress) }
+    }
+
+    /// The output being handled raised a request (an approval, a question) that now waits for you.
+    func holdForRequest() {
+        lock.withLock { if hold == nil { hold = min(handlingFrom, handled) } }
+    }
+
+    /// No request waits any more: the progress moves on at once.
+    func releaseHold() {
+        let progress: KeptRuns.Progress? = lock.withLock {
+            guard hold != nil else { return nil }
+            hold = nil
+            return dueProgress(force: true)
+        }
+        if let progress { writeProgress(progress) }
+    }
+
+    /// The progress is written with the next handled output, whenever the last write was (the end of a turn).
+    func writeProgressSoon() { lock.withLock { progressSoon = true } }
+
+    /// Call with the lock held.
+    private func dueProgress(force: Bool) -> KeptRuns.Progress? {
+        guard spec.keeper != nil, isKept else { return nil }
+        let now = Date()
+        guard KeptRuns.shouldWriteProgress(now: now, lastWritten: progressWritten, force: force || progressSoon) else { return nil }
+        progressWritten = now
+        progressSoon = false
+        return KeptRuns.Progress(offset: KeptRuns.durableOffset(handled: handled, hold: hold), savedAt: now)
+    }
+
+    /// One queue for every kept agent: the writes are tiny, and in order.
+    private static let progressQueue = DispatchQueue(label: "nook.kept-progress", qos: .utility)
+
+    private func writeProgress(_ progress: KeptRuns.Progress) {
+        guard let folder = spec.keeper?.folder else { return }
+        Self.progressQueue.async { KeptRuns.writeProgress(progress, folder: URL(fileURLWithPath: folder)) }
+    }
 
     /// Nook goes and the agent stays: only for an agent with a keeper. It reports no exit after this.
     func detach() {
@@ -485,6 +543,7 @@ final class AgentProcess: @unchecked Sendable {
             start = newline + 1
             from = start
         }
+        batchStart = consumed
         consumed += UInt64(buffer.distance(from: buffer.startIndex, to: start))
         if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         guard !batch.isEmpty else { return }
