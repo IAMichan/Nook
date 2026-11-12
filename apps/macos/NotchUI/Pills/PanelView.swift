@@ -435,22 +435,21 @@ struct PanelApprovalBar: View {
     private var bar: some View {
         let waiting = app.approvals.pending
         if let approval = waiting.first(where: { !onScreen($0) }) {
-            PanelNoticeBar(title: approval.title, detail: subtitle(approval, more: waiting.count - 1),
-                           symbol: approval.danger ? "exclamationmark.triangle.fill" : "hand.raised.fill",
-                           tone: approval.danger ? NookTheme.coral : NookTheme.amber, help: approval.command,
-                           floating: true) {
-                NookNoticeActions(
-                    primary: NookNoticeAction(tr("button.allow")) { decide(approval, .allow) },
-                    secondary: NookNoticeAction(tr("button.deny")) { decide(approval, .deny) },
-                    extra: sessionKey(approval).map { key in
-                        [NookNoticeAction(tr("button.view")) {
-                            viewModel.selectedAgentID = key
-                            viewModel.show(.panel(.agents))
-                        }]
-                    } ?? []
-                )
-                .fixedSize()
-            }
+            PanelRequestNotice(
+                agent: approval.agentName, project: approval.project, title: approval.title,
+                command: approval.diff.isEmpty ? approval.command : nil, prose: approval.prose,
+                symbol: approval.danger ? "exclamationmark.triangle.fill" : "hand.raised.fill",
+                tone: approval.danger ? NookTheme.coral : NookTheme.amber, more: waiting.count - 1,
+                help: approval.command,
+                primary: NookNoticeAction(tr("button.allow")) { decide(approval, .allow) },
+                secondary: NookNoticeAction(tr("button.deny")) { decide(approval, .deny) },
+                extra: sessionKey(approval).map { key in
+                    NookNoticeAction(tr("button.view")) {
+                        viewModel.selectedAgentID = key
+                        viewModel.show(.panel(.agents))
+                    }
+                }
+            )
             .transition(.nookToast(reduceMotion: reduceMotion))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
             questionBar(question, more: hub.questions.count - 1)
@@ -496,23 +495,16 @@ struct PanelApprovalBar: View {
 
     /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).
     private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
-        PanelNoticeBar(title: request.items.first?.question ?? "", detail: subtitle(request, more: more),
-                       symbol: "questionmark.bubble.fill", tone: NookTheme.amber, floating: true) {
-            NookNoticeActions(
-                primary: NookNoticeAction(tr("button.view")) {
-                    viewModel.selectedAgentID = request.sessionKey
-                    viewModel.show(.panel(.agents))
-                },
-                secondary: NookNoticeAction(tr("approval.inTerminal")) { answerInTerminal(request) }
-            )
-            .fixedSize()
-        }
+        PanelRequestNotice(
+            agent: request.agentName, project: request.project, title: request.items.first?.question ?? "",
+            symbol: "questionmark", tone: NookTheme.amber, more: more,
+            primary: NookNoticeAction(tr("button.view")) {
+                viewModel.selectedAgentID = request.sessionKey
+                viewModel.show(.panel(.agents))
+            },
+            secondary: NookNoticeAction(tr("approval.inTerminal")) { answerInTerminal(request) }
+        )
         .transition(.nookToast(reduceMotion: reduceMotion))
-    }
-
-    private func subtitle(_ request: AgentQuestionRequest, more: Int) -> String {
-        let line = tr("agents.question.asks", request.agentName) + " · " + request.project
-        return more > 0 ? line + " · " + tr("ws.approval.more", more) : line
     }
 
     private func answerInTerminal(_ request: AgentQuestionRequest) {
@@ -524,11 +516,6 @@ struct PanelApprovalBar: View {
     /// The session's own view shows the whole question, with its options.
     private func onScreen(_ request: AgentQuestionRequest) -> Bool {
         tab == .agents && sheet == nil && viewModel.selectedAgentID == request.sessionKey
-    }
-
-    private func subtitle(_ approval: AgentApproval, more: Int) -> String {
-        let line = approval.agentName + " · " + approval.project
-        return more > 0 ? line + " · " + tr("ws.approval.more", more) : line
     }
 
     private func decide(_ approval: AgentApproval, _ decision: ApprovalDecision) {

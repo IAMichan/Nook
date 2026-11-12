@@ -283,6 +283,93 @@ struct PanelNoticeBar<Trailing: View>: View {
     }
 }
 
+/// What a coding agent waits for you on (a permission request, a question), floating in the panel's top-right corner in
+/// the toast's bubble: who asks (the agent's logo with the state as a badge, its name and project), what it asks, the
+/// command itself in mono, and compact buttons on the right, the main one last. Calm and dense like a system dialog,
+/// so a request reads as something to decide rather than a cheerful note.
+struct PanelRequestNotice: View {
+    let agent: String
+    let project: String
+    let title: String
+    /// The command or text the decision is about; nil for none.
+    var command: String? = nil
+    /// `command` is text for people, not a command: no mono well.
+    var prose: Bool = false
+    /// The badge on the agent's logo.
+    var symbol: String
+    var tone: Color
+    /// Other requests waiting behind this one.
+    var more: Int = 0
+    var help: String? = nil
+    let primary: NookNoticeAction
+    var secondary: NookNoticeAction? = nil
+    /// A quiet action on the left of the buttons (View).
+    var extra: NookNoticeAction? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                NoticeMark(symbol: symbol, tone: tone, agent: agent)
+                Text([agent, project].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if more > 0 {
+                    Text(tr("ws.approval.more", more))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            Text(title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if let command, !command.isEmpty {
+                if prose {
+                    Text(command)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(command)
+                        .font(NookTheme.mono(12))
+                        .foregroundStyle(NookTheme.paper.opacity(0.85))
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, NookTheme.Spacing.md)
+                        .padding(.vertical, NookTheme.Spacing.sm)
+                        .cardBackground(NookTheme.canvas.opacity(0.6), stroke: NookTheme.line, radius: NookTheme.Radius.control)
+                }
+            }
+            HStack(spacing: NookTheme.Spacing.xs) {
+                if let extra {
+                    SmallGhostButton(title: extra.label, action: extra.perform)
+                        .padding(.leading, -10)
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if let secondary {
+                    SmallGhostButton(title: secondary.label, action: secondary.perform)
+                }
+                SmallPrimaryButton(title: primary.label, action: primary.perform)
+            }
+            .padding(.top, NookTheme.Spacing.xxs)
+        }
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .help(help ?? title)
+        .accessibilityElement(children: .contain)
+        .toastBubble(tone: tone, maxWidth: NookToastView.maxWidth)
+    }
+}
+
 extension NookFilterChip {
     /// A chip whose mark is the state of a workflow's newest run, shown only while it runs or when it failed.
     init(title: String, count: Int? = nil, selected: Bool, mark: (outcome: PullRequestCheck.Outcome, running: Bool)?,
