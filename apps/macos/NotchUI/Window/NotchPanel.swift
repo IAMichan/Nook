@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// A borderless panel overlaying the notch that never steals focus
 /// and stays visible across all Spaces and above full-screen apps.
@@ -236,4 +237,28 @@ final class CharacterPaletteWatch {
 
     /// Smaller than the picker can be: anything below this is a helper window, not Emoji & Symbols.
     private static let minPickerSide: CGFloat = 120
+}
+
+extension NSWindow {
+    /// The app is in front and only lent the keyboard to one of this window's own popovers or child windows (a row's hover
+    /// card, a menu-like card). A click here then belongs to what it lands on: without this, AppKit spent it on taking
+    /// key status back, so opening a session from a row whose hover card was open took two clicks.
+    var keyIsOwnPopover: Bool {
+        guard NSApp.isActive, let key = NSApp.keyWindow, key !== self else { return false }
+        var parent = key.parent
+        while let window = parent {
+            if window === self { return true }
+            parent = window.parent
+        }
+        // A popover's window is not always a child of the window it points into.
+        return String(describing: type(of: key)).contains("Popover")
+    }
+}
+
+/// The notch's content: a click lands on the first try while one of the notch's own popovers holds the keyboard
+/// (`NSWindow.keyIsOwnPopover`), as in the main window (`WorkspaceHostingView`).
+final class NotchHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        window?.keyIsOwnPopover == true || super.acceptsFirstMouse(for: event)
+    }
 }
