@@ -175,6 +175,35 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(live.thought, "Kijken")
     }
 
+    /// A subagent in the background keeps its row while the agent runs commands next to it: hiding it whenever nothing
+    /// else ran made the row come and go with every command, and the timeline jump up and down.
+    func testBackgroundWorkKeepsItsRowAndStaysOutOfTheLiveLine() {
+        let launch = event(.tool, "Agent · Audit", tool: "Agent",
+                           detail: #"{"description":"Audit","prompt":"Look","run_in_background":true}"#, state: .running, at: 140)
+        let server = event(.tool, "Bash · npm run dev", tool: "Bash",
+                           detail: #"{"command":"npm run dev","run_in_background":true}"#, state: .running, at: 141)
+        var events = Array(finishedTurn().dropLast(2)) + [launch, server]
+        func rows() -> [String] { TimelinePresentation.visible(events, active: true).map(\.text) }
+        XCTAssertTrue(rows().contains(launch.text), "nothing else runs")
+        XCTAssertTrue(rows().contains(server.text))
+        XCTAssertNotEqual(TimelinePresentation.live(events).tool, launch.text)
+        XCTAssertNotEqual(AgentActivity.current(events), AgentActivity.of(launch))
+
+        events.append(event(.tool, "Bash · ls", tool: "Bash", state: .running, at: 150))
+        XCTAssertTrue(rows().contains(launch.text), "a command runs")
+        XCTAssertFalse(rows().contains("Bash · ls"), "the command that runs is the live line")
+        XCTAssertEqual(TimelinePresentation.live(events).tool, "Bash · ls")
+        events[events.count - 1].state = .done
+        XCTAssertTrue(rows().contains(launch.text), "the command is done")
+
+        // A subagent the turn waits on keeps its row too: its own steps run next to it.
+        var foreground = launch
+        foreground.detail = #"{"description":"Audit","prompt":"Look"}"#
+        let waiting = Array(finishedTurn().dropLast(2)) + [foreground]
+        XCTAssertTrue(TimelinePresentation.visible(waiting, active: true).contains { $0.id == foreground.id })
+        XCTAssertEqual(TimelinePresentation.live(waiting).tool, foreground.text)
+    }
+
     func testOneLinePerCommand() {
         let command = "Bash · cd apps/macos && xcodegen generate"
         let running = finishedTurn().dropLast(2) + [
