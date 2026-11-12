@@ -329,8 +329,10 @@ final class MailConnector: ContextSource {
         // One load at a time: a question that arrives during a background refresh waits for that one.
         if let loading { await loading.value; return }
         let mark = await MailChangeMark.current()
+        // Read from Mail's index, a changed mark costs Mail nothing: no need to wait while you work in it.
+        let minGap = MailChangeMark.mailIsFront && !MailChangeMark.isIndexed(mark) ? Self.frontGap : 0
         guard MailStats.needsFullRead(mark: mark, lastMark: changeMark, lastRead: loadedAt, now: Date(), maxAge: 15 * 60,
-                                      minGap: MailChangeMark.mailIsFront ? Self.frontGap : 0) else { return }
+                                      minGap: minGap) else { return }
         changeMark = mark
         let task = Task { await self.load() }
         loading = task
@@ -339,7 +341,8 @@ final class MailConnector: ContextSource {
     }
 
     private func load() async {
-        let list = await ScriptText.run(MailStats.accountsScript, timeout: Self.loadTimeout)
+        // One quick question to Mail (a tenth of a second): the enabled accounts and their ids.
+        let list = await ScriptText.run(MailChatData.accountsScript, timeout: Self.loadTimeout)
         if list.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation."))
             return
@@ -348,15 +351,27 @@ final class MailConnector: ContextSource {
         // the inbox it had until it answers again.
         var failure: (number: Int?, message: String?)?
         var answered = 0
-        if let names = list.text.map(MailStats.accounts) {
-            for name in names {
-                let result = await ScriptText.run(MailStats.recentScript(account: name), timeout: Self.loadTimeout)
-                if let text = result.text {
-                    let parsed = MailStats.recent(text)
-                    inboxes[name] = (parsed.unread, parsed.rows)
-                    answered += 1
-                } else {
-                    failure = (result.errorNumber, result.errorMessage)
+        if let accounts = list.text.map(MailChatData.accounts) {
+            let names = accounts.map(\.name)
+            // Mail's index answers for every account in milliseconds; asking Mail kept it from responding for many
+            // seconds per big mailbox. The script stays for when Nook may not read the index (no Full Disk Access).
+            if let indexed = await MailLibrary.inboxRows(accounts: accounts, perMailbox: 40, bodyLength: 300) {
+                for (name, inbox) in indexed {
+                    inboxes[name] = inbox
+                    // The index's text, or none: either way Mail is not asked for it again each refresh.
+                    for row in inbox.rows { bodies[row.key] = row.body }
+                }
+                answered = indexed.count
+            } else {
+                for name in names {
+                    let result = await ScriptText.run(MailStats.recentScript(account: name), timeout: Self.loadTimeout)
+                    if let text = result.text {
+                        let parsed = MailStats.recent(text)
+                        inboxes[name] = (parsed.unread, parsed.rows)
+                        answered += 1
+                    } else {
+                        failure = (result.errorNumber, result.errorMessage)
+                    }
                 }
             }
             // A removed or disabled account goes at once, also when no other account answers this time.
