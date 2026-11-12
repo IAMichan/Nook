@@ -179,7 +179,9 @@ final class WindowPresence: ObservableObject {
 ///
 /// The buttons in that row (the panel toggles, a side panel's tabs and cross, the sidebar's head) work on the first
 /// click, as a toolbar's do, also while the window is in the background: otherwise that click only brought the window
-/// forward and the button seemed not to respond. Below the row a first click still only activates the window.
+/// forward and the button seemed not to respond. Below the row a first click still only activates the window, unless
+/// Nook is in front and only one of this window's own popovers holds the keyboard (`NSWindow.keyIsOwnPopover`): a row's
+/// hover card is a popover, and the click that opens the row under it would otherwise only take key status back.
 ///
 /// The view reports no safe area. With the title bar's safe area, a scroll view that starts inside that row grows up to
 /// the window's top, whatever `.ignoresSafeArea` and `.clipped()` around it say, and lies over what sits above it: the
@@ -200,7 +202,8 @@ final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
         guard let event else { return super.acceptsFirstMouse(for: event) }
         let point = convert(event.locationInWindow, from: nil)
         let fromTop = isFlipped ? point.y : bounds.height - point.y
-        return fromTop <= PanelSidebarMetrics.titleBand || super.acceptsFirstMouse(for: event)
+        return fromTop <= PanelSidebarMetrics.titleBand || window?.keyIsOwnPopover == true
+            || super.acceptsFirstMouse(for: event)
     }
 }
 
