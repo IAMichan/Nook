@@ -150,6 +150,21 @@ pub fn remember_main(app: &AppHandle) {
     }
 }
 
+/// The tray tooltip says what waits on you, so a glance at the taskbar is enough.
+pub fn tray_status(app: &AppHandle, waiting: usize, working: usize) {
+    let Some(tray) = app.tray_by_id("nook") else { return };
+    let _ = tray.set_tooltip(Some(tray_tooltip(waiting, working)));
+}
+
+pub fn tray_tooltip(waiting: usize, working: usize) -> String {
+    match (waiting, working) {
+        (0, 0) => "Nook".into(),
+        (0, n) => format!("Nook · bezig met {n}"),
+        (1, _) => "Nook · 1 Nook wacht op je".into(),
+        (n, _) => format!("Nook · {n} Nooks wachten op je"),
+    }
+}
+
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, BAR, WebviewUrl::App("index.html#bar".into()))
         .title("Nook")
@@ -353,4 +368,17 @@ pub fn register_shortcuts(app: &AppHandle) {
         }
     }
     crate::services::register_shortcuts(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tray_says_what_waits() {
+        assert_eq!(tray_tooltip(0, 0), "Nook");
+        assert_eq!(tray_tooltip(0, 2), "Nook · bezig met 2");
+        assert_eq!(tray_tooltip(1, 3), "Nook · 1 Nook wacht op je");
+        assert_eq!(tray_tooltip(4, 0), "Nook · 4 Nooks wachten op je");
+    }
 }
