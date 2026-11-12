@@ -27,19 +27,24 @@ enum ProcessRunner {
     /// How long a program gets after `terminate()` before it is killed.
     static let killGrace: TimeInterval = 3
 
+    /// `onStderr` gets what the program writes to stderr as it comes (git's `--progress`), on a background queue; the
+    /// whole of it is in `Output.stderr` too. Setting `cancel` stops the program as a timeout would, and `timedOut` says so.
     static func run(_ executable: String, _ arguments: [String], in directory: String? = nil,
-                    environment: [String: String]? = nil, stdin: Data? = nil, timeout: TimeInterval = 60) throws -> Output {
+                    environment: [String: String]? = nil, stdin: Data? = nil, timeout: TimeInterval = 60,
+                    onStderr: (@Sendable (Data) -> Void)? = nil, cancel: StopFlag? = nil) throws -> Output {
         // Foundation autoreleases the pipes and their file handles. A caller that runs many commands in one long loop
         // (the Worktrees list runs several per worktree) never reaches a drained pool, so without this pool every pipe
         // stays open until the loop ends; on 2026-11-10 that piled up 4700 pipes and Nook ran out of file descriptors.
         try autoreleasepool {
-            try runInPool(executable, arguments, in: directory, environment: environment, stdin: stdin, timeout: timeout)
+            try runInPool(executable, arguments, in: directory, environment: environment, stdin: stdin, timeout: timeout,
+                          onStderr: onStderr, cancel: cancel)
         }
     }
 
     /// Body of `run`, called inside its autorelease pool: starts the process, feeds stdin, drains stdout and stderr, waits.
     private static func runInPool(_ executable: String, _ arguments: [String], in directory: String?,
-                                  environment: [String: String]?, stdin: Data?, timeout: TimeInterval) throws -> Output {
+                                  environment: [String: String]?, stdin: Data?, timeout: TimeInterval,
+                                  onStderr: (@Sendable (Data) -> Void)?, cancel: StopFlag?) throws -> Output {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -80,16 +85,27 @@ enum ProcessRunner {
         let outData = DataBox()
         let errData = DataBox()
         let group = DispatchGroup()
-        for (pipe, box) in [(out, outData), (err, errData)] {
+        let readers: [(Pipe, DataBox, (@Sendable (Data) -> Void)?)] = [(out, outData, nil), (err, errData, onStderr)]
+        for (pipe, box, chunk) in readers {
             group.enter()
             let fd = pipe.fileHandleForReading.fileDescriptor
             DispatchQueue.global(qos: .userInitiated).async {
-                box.data = drain(fd, stop: stop)
+                box.data = drain(fd, stop: stop, onChunk: chunk)
                 group.leave()
             }
         }
         var timedOut = false
-        if group.wait(timeout: .now() + max(0, timeout)) == .timedOut {
+        if let cancel {
+            // Looks for a cancel between short waits; otherwise the same deadline.
+            while group.wait(timeout: .now() + 0.2) == .timedOut {
+                guard cancel.isSet || Date() >= deadline else { continue }
+                timedOut = true
+                terminate(process)
+                stop.set()
+                group.wait()
+                break
+            }
+        } else if group.wait(timeout: .now() + max(0, timeout)) == .timedOut {
             timedOut = true
             terminate(process)
             // Whatever still holds the pipes open (a grandchild, a program ignoring SIGTERM) no longer keeps us waiting.
@@ -165,7 +181,7 @@ enum ProcessRunner {
     // MARK: Output
 
     /// Reads `fd` to its end, or until `stop` is set. Polls, so a pipe that a grandchild keeps open cannot block forever.
-    private static func drain(_ fd: Int32, stop: StopFlag) -> Data {
+    private static func drain(_ fd: Int32, stop: StopFlag, onChunk: (@Sendable (Data) -> Void)? = nil) -> Data {
         var data = Data()
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while !stop.isSet {
@@ -179,6 +195,7 @@ enum ProcessRunner {
             let count = chunk.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
             if count > 0 {
                 data.append(contentsOf: chunk[0..<count])
+                onChunk?(Data(chunk[0..<count]))
             } else if count < 0, errno == EINTR || errno == EAGAIN {
                 continue
             } else {

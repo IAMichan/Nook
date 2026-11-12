@@ -1,0 +1,100 @@
+data: {"id":"evt_fixture6700000000000000000","type":"server.connected","data":{}}
+
+: heartbeat
+
+data: {"id":"evt_fixture6800000000000000000","created":1794480641892,"type":"session.created","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","slug":"glowing-forest","version":"2.2.7","projectID":"0000000000000000000000000000000000000000","location":{"directory":"/Users/me/project"},"subpath":"project","permissions":[{"action":"shell","resource":"*","effect":"ask"},{"action":"edit","resource":"*","effect":"ask"}],"model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":0,"version":1}}
+
+data: {"id":"evt_fixture6900000000000000000","created":1794480645424,"type":"session.inbox.enqueued","location":{"directory":"/Users/me/project"},"data":{"inboxID":"msg_fixture0600000000000000000","sessionID":"ses_fixture0300000000000000000","item":{"type":"user","payload":{"text":"Use your question tool to ask me which color I prefer (red or blue). After I answer, run the shell command `echo <color>` with my answer."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":1,"version":1}}
+
+data: {"id":"evt_fixture7000000000000000000","created":1794480645425,"type":"session.execution.started","data":{"sessionID":"ses_fixture0300000000000000000"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":2,"version":1}}
+
+data: {"id":"evt_fixture7100000000000000000","created":1794480645428,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","delta":{"core/codemode":"b9321aa27fe3f9eb6662ad886008492dd401333a0049c044c54ac2323b9ead1e","core/skill-guidance":"e44b73342ed337be92c3dc62bbe26b70edb85d6389d2321dddaf4b07868de659","core/instructions":"498cd9ee5effbffa18d91558ffa2476c71c248a6b51757c6c0672c5af3c7c571","core/date":"a7e13a150687c80c4d0443d32fcf7d9efe5c87e5523d17f39302e1f532dde9d8","core/environment":"a1ba6342fe1c03bad0616d1718eb55e7baba282253650789cd8d42442b5a126e"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":3,"version":2}}
+
+data: {"id":"evt_fixture7200000000000000000","created":1794480645429,"type":"session.inbox.delivered","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","inboxID":"msg_fixture0600000000000000000"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":4,"version":1}}
+
+data: {"id":"evt_fixture7300000000000000000","created":1794480646964,"type":"session.step.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fixture0700000000000000000","snapshot":"0000000000000000000000000000000000000000","started":1794480645437},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":5,"version":1}}
+
+data: {"id":"evt_fixture7400000000000000000","created":1794480646966,"type":"session.reasoning.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":6,"version":1}}
+
+data: {"id":"evt_fixture7500000000000000000","created":1794480647009,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0300000000000000000","cost":0,"tokens":{"input":114,"output":6,"reasoning":69,"cache":{"read":384,"write":0}}}}
+
+data: {"id":"evt_fixture7600000000000000000","created":1794480647009,"type":"session.renamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","title":"Color preference echo command"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":8,"version":1}}
+
+data: {"id":"evt_fixture7700000000000000000","created":1794480647051,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","ordinal":0,"delta":"The user wants me to ask a question with the question tool, then run echo with the answer. Let me ask."}}
+
+data: {"id":"evt_fixture7800000000000000000","created":1794480647051,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","id":"chatcmpl-tool-b7570e70ad160e4c","name":"question"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":9,"version":1}}
+
+data: {"id":"evt_fixture7900000000000000000","created":1794480647853,"type":"session.reasoning.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","ordinal":0,"text":"The user wants me to ask a question with the question tool, then run echo with the answer. Let me ask.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":10,"version":1}}
+
+data: {"id":"evt_fixture8000000000000000000","created":1794480647855,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","id":"chatcmpl-tool-b7570e70ad160e4c","text":"{\"questions\": [{\"question\": \"Which color do you prefer?\", \"header\": \"Color preference\", \"options\": [{\"label\": \"Red\", \"description\": \"Choose red\"}, {\"label\": \"Blue\", \"description\": \"Choose blue\"}]}]}"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":11,"version":1}}
+
+data: {"id":"evt_fixture8100000000000000000","created":1794480647856,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","id":"chatcmpl-tool-b7570e70ad160e4c","input":{"questions":[{"question":"Which color do you prefer?","header":"Color preference","options":[{"label":"Red","description":"Choose red"},{"label":"Blue","description":"Choose blue"}]}]},"executed":false},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":12,"version":1}}
+
+data: {"id":"evt_fixture8200000000000000000","created":1794480647858,"type":"session.step.streamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":13,"version":1}}
+
+data: {"id":"evt_fixture8300000000000000000","created":1794480647860,"type":"form.created","location":{"directory":"/Users/me/project"},"data":{"form":{"id":"frm_fixture0100000000000000000","sessionID":"ses_fixture0300000000000000000","title":"Questions","metadata":{"kind":"question","tool":{"messageID":"msg_fixture0700000000000000000","id":"chatcmpl-tool-b7570e70ad160e4c"}},"fields":[{"key":"q0","title":"Color preference","description":"Which color do you prefer?","type":"string","options":[{"value":"Red","label":"Red","description":"Choose red"},{"value":"Blue","label":"Blue","description":"Choose blue"}],"custom":true}]}}}
+
+: heartbeat
+
+: heartbeat
+
+data: {"id":"evt_fixture8400000000000000000","created":1794480676091,"type":"form.replied","location":{"directory":"/Users/me/project"},"data":{"id":"frm_fixture0100000000000000000","sessionID":"ses_fixture0300000000000000000","answer":{"q0":"Blue"}}}
+
+data: {"id":"evt_fixture8500000000000000000","created":1794480676091,"type":"session.tool.success","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","id":"chatcmpl-tool-b7570e70ad160e4c","content":[{"type":"text","text":"User has answered your questions: \"Which color do you prefer?\"=\"Blue\". You can now continue with the user's answers in mind."}],"metadata":{"answers":[["Blue"]],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":14,"version":2}}
+
+data: {"id":"evt_fixture8600000000000000000","created":1794480676093,"type":"project.updated","location":{"directory":"/Users/me/project"},"data":{"id":"0000000000000000000000000000000000000000","canonical":"/Users/me/repo","vcs":"git","time":{"created":1794480396599,"updated":1794480396599,"active":1794480676092},"sandboxes":[]}}
+
+data: {"id":"evt_fixture8700000000000000000","created":1794480676103,"type":"session.step.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0700000000000000000","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":14389,"output":87,"reasoning":24,"cache":{"read":2432,"write":0}},"cost":0,"snapshot":"0000000000000000000000000000000000000000","files":[]},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":15,"version":1}}
+
+data: {"id":"evt_fixture8800000000000000000","created":1794480676104,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0300000000000000000","cost":0,"tokens":{"input":14503,"output":93,"reasoning":93,"cache":{"read":2816,"write":0}}}}
+
+data: {"id":"evt_fixture8900000000000000000","created":1794480676905,"type":"session.step.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fixture0800000000000000000","snapshot":"0000000000000000000000000000000000000000","started":1794480676108},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":16,"version":1}}
+
+data: {"id":"evt_fixture9000000000000000000","created":1794480676906,"type":"session.tool.input.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0800000000000000000","id":"chatcmpl-tool-8b78e3782d253c79","name":"shell"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":17,"version":1}}
+
+data: {"id":"evt_fixture9100000000000000000","created":1794480677147,"type":"session.tool.input.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0800000000000000000","id":"chatcmpl-tool-8b78e3782d253c79","text":"{\"command\": \"echo blue\"}"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":18,"version":1}}
+
+data: {"id":"evt_fixture9200000000000000000","created":1794480677148,"type":"session.tool.called","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0800000000000000000","id":"chatcmpl-tool-8b78e3782d253c79","input":{"command":"echo blue"},"executed":false},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":19,"version":1}}
+
+data: {"id":"evt_fixture9300000000000000000","created":1794480677148,"type":"session.step.streamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0800000000000000000"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":20,"version":1}}
+
+data: {"id":"evt_fixture9400000000000000000","created":1794480677149,"type":"permission.asked","location":{"directory":"/Users/me/project"},"data":{"id":"per_fixture0100000000000000000","sessionID":"ses_fixture0300000000000000000","action":"shell","resources":["echo blue"],"save":["echo *"],"source":{"type":"tool","messageID":"msg_fixture0800000000000000000","id":"chatcmpl-tool-8b78e3782d253c79"}}}
+
+: heartbeat
+
+data: {"id":"evt_fixture9500000000000000000","created":1794480694455,"type":"permission.replied","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","requestID":"per_fixture0100000000000000000","reply":"reject"}}
+
+data: {"id":"evt_fixture9600000000000000000","created":1794480694456,"type":"session.tool.failed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0800000000000000000","id":"chatcmpl-tool-8b78e3782d253c79","error":{"type":"permission.rejected","message":"Do not run shell commands; just tell me the color."},"executed":false},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":21,"version":2}}
+
+data: {"id":"evt_fixture9700000000000000000","created":1794480694470,"type":"session.step.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0800000000000000000","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":74,"output":39,"reasoning":0,"cache":{"read":16896,"write":0}},"cost":0,"snapshot":"0000000000000000000000000000000000000000","files":[]},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":22,"version":1}}
+
+data: {"id":"evt_fixture9800000000000000000","created":1794480694471,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0300000000000000000","cost":0,"tokens":{"input":14577,"output":132,"reasoning":93,"cache":{"read":19712,"write":0}}}}
+
+data: {"id":"evt_fixture9900000000000000000","created":1794480695343,"type":"session.step.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fixture0900000000000000000","snapshot":"0000000000000000000000000000000000000000","started":1794480694475},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":23,"version":1}}
+
+data: {"id":"evt_fixture1000000000000000000","created":1794480695345,"type":"session.reasoning.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":24,"version":1}}
+
+data: {"id":"evt_fixture1010000000000000000","created":1794480695446,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"delta":"The shell command was rejected. The user says don't run shell commands, just tell me the color. So"}}
+
+data: {"id":"evt_fixture1020000000000000000","created":1794480695541,"type":"session.reasoning.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"delta":" I should just say blue."}}
+
+data: {"id":"evt_fixture1030000000000000000","created":1794480695541,"type":"session.text.started","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":25,"version":1}}
+
+data: {"id":"evt_fixture1040000000000000000","created":1794480695643,"type":"session.text.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"delta":"You chose **blue**. (The shell command was rejected, so I'm just telling"}}
+
+data: {"id":"evt_fixture1050000000000000000","created":1794480695744,"type":"session.reasoning.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"text":"The shell command was rejected. The user says don't run shell commands, just tell me the color. So I should just say blue.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":26,"version":1}}
+
+data: {"id":"evt_fixture1060000000000000000","created":1794480695745,"type":"session.text.delta","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"delta":" you the color instead.)"}}
+
+data: {"id":"evt_fixture1070000000000000000","created":1794480695745,"type":"session.text.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","ordinal":0,"text":"You chose **blue**. (The shell command was rejected, so I'm just telling you the color instead.)"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":27,"version":1}}
+
+data: {"id":"evt_fixture1080000000000000000","created":1794480695746,"type":"session.step.streamed","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":28,"version":1}}
+
+data: {"id":"evt_fixture1090000000000000000","created":1794480695761,"type":"session.step.ended","location":{"directory":"/Users/me/project"},"data":{"sessionID":"ses_fixture0300000000000000000","assistantMessageID":"msg_fixture0900000000000000000","finish":"stop","rawFinish":"stop","tokens":{"input":153,"output":24,"reasoning":28,"cache":{"read":16896,"write":0}},"cost":0,"snapshot":"0000000000000000000000000000000000000000","files":[]},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":29,"version":1}}
+
+data: {"id":"evt_fixture1100000000000000000","created":1794480695763,"type":"session.usage.updated","data":{"sessionID":"ses_fixture0300000000000000000","cost":0,"tokens":{"input":14730,"output":156,"reasoning":121,"cache":{"read":36608,"write":0}}}}
+
+data: {"id":"evt_fixture1110000000000000000","created":1794480695763,"type":"session.execution.succeeded","data":{"sessionID":"ses_fixture0300000000000000000"},"durable":{"aggregateID":"ses_fixture0300000000000000000","seq":30,"version":1}}
+
+: heartbeat
+

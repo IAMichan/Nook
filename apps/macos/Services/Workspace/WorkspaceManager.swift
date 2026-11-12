@@ -25,6 +25,8 @@ struct PendingQuestion: Identifiable, Equatable {
         case claude(requestID: String, input: JSONBox)
         /// A Pi extension's dialog (select, input, editor): answered with `extension_ui_response`.
         case pi(requestID: String)
+        /// A form OpenCode's server asked (its `question` tool): answered with the form's reply.
+        case openCode(OpenCodeForm)
         /// A question the agent asked without waiting for it (Codex's async message): the answer goes as a message.
         case message
     }
@@ -187,6 +189,15 @@ final class WorkspaceManager: ObservableObject {
     var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption], call: AcpToolCall)] = [:]
     var acpFallback: Set<String> = []
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
+    /// OpenCode over its own server (`WorkspaceManager+OpenCodeServer`): the servers by account, each session's place on
+    /// one, its idle close, the permission requests waiting for you, servers stopping for lack of sessions, and OpenCode
+    /// executables that run over ACP (no server Nook speaks, or it did not start).
+    var openCodeHosts: [String: OpenCodeServerHost] = [:]
+    var openCodeLinks: [UUID: OpenCodeLink] = [:]
+    var openCodeIdleClose: [UUID: Task<Void, Never>] = [:]
+    var openCodeRequests: [String: (runID: UUID, permission: OpenCodePermission)] = [:]
+    var openCodeHostStops: [String: Task<Void, Never>] = [:]
+    var openCodeFallback: Set<String> = []
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
     /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
@@ -606,6 +617,7 @@ final class WorkspaceManager: ObservableObject {
         let continuing = continuingTurns.remove(id) != nil || continuing
         let start = TurnTimer.start(continuing: continuing, previous: workStartedAt[id])
         workStartedAt[id] = start
+        if NookTelemetry.shared.isExporting, let usage = run(id)?.usage { NookTelemetry.shared.turnStarted(id, usage: usage) }
         return start
     }
 
@@ -738,6 +750,7 @@ final class WorkspaceManager: ObservableObject {
     func turnDidFinish(_ id: UUID) {
         checkUsageLimit(id)
         guard let run = run(id) else { return }
+        NookTelemetry.shared.turnFinished(run)
         // Before open work is settled: what still runs is what keeps the session open.
         if BackgroundWork.pending(after: timeline(id), before: backgroundWork.contains(id)) {
             backgroundWork.insert(id)
@@ -1306,6 +1319,7 @@ final class WorkspaceManager: ObservableObject {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         limitResumes.removeValue(forKey: id)?.cancel()
         warmPrompts[id] = nil
         awaitingCheckpoint[id] = nil
@@ -1400,6 +1414,7 @@ final class WorkspaceManager: ObservableObject {
         for id in Array(codexServers.keys) { closeCodexServer(id) }
         for id in Array(claudeIdle.keys) { closeClaudeProcess(id) }
         for id in Array(acpClients.keys) { closeAcpClient(id) }
+        closeOpenCodeServers()
         for (id, process) in processes {
             turns[id]?.stopping = true
             process.closeInput()

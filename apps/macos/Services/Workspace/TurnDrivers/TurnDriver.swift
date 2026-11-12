@@ -17,17 +17,20 @@ protocol TurnDriver {
 }
 
 /// The ways Nook runs a turn: a process per turn that speaks a channel on stdin (Claude Code's stream-json, Pi's RPC) or
-/// none (`codex exec`, Gemini CLI's headless mode), or a client that stays connected (Codex's app-server, ACP).
+/// none (`codex exec`, Gemini CLI's headless mode), or a client that stays connected (Codex's app-server, OpenCode's own
+/// server, ACP).
 enum TurnFamily: CaseIterable, Sendable {
-    case claudeStreamJSON, piRPC, exec, codexAppServer, acp
+    case claudeStreamJSON, piRPC, exec, codexAppServer, openCodeServer, acp
 }
 
 extension WorkspaceManager {
-    /// The family a turn of this session goes through with this executable. Codex speaks app-server when it can; an ACP
-    /// agent falls back to its headless mode when its ACP server failed (`acpFallback`); every other turn is a process,
-    /// told apart by the channel it listens on.
+    /// The family a turn of this session goes through with this executable. Codex speaks app-server when it can, OpenCode
+    /// its own server when the installed one has it (else ACP, `openCodeFallback`); an ACP agent falls back to its
+    /// headless mode when its ACP server failed (`acpFallback`); every other turn is a process, told apart by the channel
+    /// it listens on.
     func turnFamily(for run: WorkspaceRun, executable: String) -> TurnFamily {
         if usesCodexServer(run, executable) { return .codexAppServer }
+        if usesOpenCodeServer(run, executable) { return .openCodeServer }
         if run.provider.usesACP, !acpFallback.contains(executable) { return .acp }
         return processTurnFamily(run.provider.capabilities.processChannel)
     }
@@ -46,6 +49,7 @@ extension WorkspaceManager {
         case .piRPC: return PiRPCTurnDriver(workspace: self)
         case .exec: return ExecTurnDriver(workspace: self)
         case .codexAppServer: return CodexServerTurnDriver(workspace: self)
+        case .openCodeServer: return OpenCodeServerTurnDriver(workspace: self)
         case .acp: return AcpTurnDriver(workspace: self)
         }
     }
@@ -59,13 +63,13 @@ extension WorkspaceManager {
         switch processTurnFamily(run(id)?.provider.capabilities.processChannel ?? ProcessChannel.none) {
         case .claudeStreamJSON: return ClaudeStreamTurnDriver(workspace: self)
         case .piRPC: return PiRPCTurnDriver(workspace: self)
-        case .exec, .codexAppServer, .acp: return ExecTurnDriver(workspace: self)
+        case .exec, .codexAppServer, .openCodeServer, .acp: return ExecTurnDriver(workspace: self)
         }
     }
 
     /// The drivers that keep a client connected between turns, in the order a stop or an answer tries them: each one
     /// only acts on what it has open for the session (or on a request it asked).
     var connectedTurnDrivers: [TurnDriver] {
-        [CodexServerTurnDriver(workspace: self), AcpTurnDriver(workspace: self)]
+        [CodexServerTurnDriver(workspace: self), OpenCodeServerTurnDriver(workspace: self), AcpTurnDriver(workspace: self)]
     }
 }

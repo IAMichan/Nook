@@ -15,7 +15,11 @@ extension GitService {
     /// connection is refused (no key, unknown host key) is tried once more over HTTPS. A repository page URL clones its
     /// repository (`CloneLayout.repositoryURL(fromPage:)`). The folder must not exist yet, or be empty (left by a failed
     /// clone).
-    func clone(url: String, into parent: String, hostLayout: Bool) throws -> CloneResult {
+    ///
+    /// With `progress`, git reports how far it is (`--progress`, read by `GitCloneProgress`), each change once, on a
+    /// background queue. Setting `cancel` stops git; the folder it started is removed and `CloneCancelled` is thrown.
+    func clone(url: String, into parent: String, hostLayout: Bool, progress: (@Sendable (GitCloneProgress) -> Void)? = nil,
+               cancel: ProcessRunner.StopFlag? = nil) throws -> CloneResult {
         let clean = CloneLayout.repositoryURL(fromPage: url)
         guard Self.isCloneURL(clean) else { throw GitError("Not a recognized Git URL (https://… or git@host:path).") }
         guard let target = CloneLayout.target(url: clean, parent: parent, hostLayout: hostLayout,
@@ -26,26 +30,46 @@ extension GitService {
         let folder = URL(fileURLWithPath: target).deletingLastPathComponent().path
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         // SSH asks nothing: without a usable key it fails at once instead of waiting for a passphrase nobody can type.
-        let first = try cloneOnce(clean, to: target, in: folder, batchSSH: CloneLayout.isSSH(clean))
+        let first = try cloneOnce(clean, to: target, in: folder, batchSSH: CloneLayout.isSSH(clean), progress: progress, cancel: cancel)
+        try stopIfCancelled(cancel, target: target)
         if first.status == 0 { return CloneResult(path: target, usedHTTPS: false) }
         if let https = CloneLayout.httpsFallback(clean), CloneLayout.sshRefused(first.stderr) {
             try? FileManager.default.removeItem(atPath: target)
-            let second = try cloneOnce(https, to: target, in: folder, batchSSH: false)
+            let second = try cloneOnce(https, to: target, in: folder, batchSSH: false, progress: progress, cancel: cancel)
+            try stopIfCancelled(cancel, target: target)
             if second.status == 0 { return CloneResult(path: target, usedHTTPS: true) }
             throw GitError(Self.message(second, fallback: "Clone failed."))
         }
         throw GitError(Self.message(first, fallback: "Clone failed."))
     }
 
-    private func cloneOnce(_ url: String, to target: String, in folder: String, batchSSH: Bool) throws -> ProcessRunner.Output {
-        var env = environment
-        if batchSSH, env["GIT_SSH_COMMAND"] == nil { env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o ConnectTimeout=15" }
-        return try ProcessRunner.run(executable, ["clone", "--", url, target], in: folder, environment: env, timeout: 900)
+    /// Git stopped because you cancelled the clone.
+    struct CloneCancelled: LocalizedError {
+        var errorDescription: String? { "The clone was cancelled." }
     }
 
+    private func stopIfCancelled(_ cancel: ProcessRunner.StopFlag?, target: String) throws {
+        guard cancel?.isSet == true else { return }
+        try? FileManager.default.removeItem(atPath: target)
+        throw CloneCancelled()
+    }
+
+    private func cloneOnce(_ url: String, to target: String, in folder: String, batchSSH: Bool,
+                           progress: (@Sendable (GitCloneProgress) -> Void)?, cancel: ProcessRunner.StopFlag?) throws -> ProcessRunner.Output {
+        var env = environment
+        if batchSSH, env["GIT_SSH_COMMAND"] == nil { env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o ConnectTimeout=15" }
+        guard let progress else {
+            return try ProcessRunner.run(executable, ["clone", "--", url, target], in: folder, environment: env, timeout: 900, cancel: cancel)
+        }
+        let reader = CloneProgressReader(report: progress)
+        // A clone that reports how it goes runs in the background and can be cancelled, so it may take longer.
+        return try ProcessRunner.run(executable, ["clone", "--progress", "--", url, target], in: folder, environment: env,
+                                     timeout: 3600, onStderr: { reader.feed($0) }, cancel: cancel)
+    }
+
+    /// Why git refused, without its progress lines; `fallback` when it said nothing else.
     private static func message(_ output: ProcessRunner.Output, fallback: String) -> String {
-        let text = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? fallback : text
+        GitCloneProgress.failure(output.stderr) ?? fallback
     }
 
     // MARK: Auto-pull
@@ -130,5 +154,31 @@ extension GitService {
             _ = try? run(["remote", "remove", "origin"], in: folder)
             throw GitError(Self.message(output, fallback: "git push failed."))
         }
+    }
+}
+
+/// Turns the chunks of a clone's stderr into progress, each change of stage or percentage once (git redraws the same
+/// line many times a second).
+private final class CloneProgressReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines = GitCloneProgress.Lines()
+    private var last: GitCloneProgress?
+    private let report: @Sendable (GitCloneProgress) -> Void
+
+    init(report: @escaping @Sendable (GitCloneProgress) -> Void) {
+        self.report = report
+    }
+
+    func feed(_ data: Data) {
+        lock.lock()
+        var changed: GitCloneProgress?
+        for line in lines.feed(String(decoding: data, as: UTF8.self)) {
+            guard let progress = GitCloneProgress.parse(line),
+                  progress.stage != last?.stage || progress.percent != last?.percent else { continue }
+            last = progress
+            changed = progress
+        }
+        lock.unlock()
+        if let changed { report(changed) }
     }
 }

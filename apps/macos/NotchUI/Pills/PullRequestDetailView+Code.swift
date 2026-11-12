@@ -195,8 +195,8 @@ struct PullRequestCodeTab: View {
             }
             ToolbarIconButton(seen ? "checkmark.circle.fill" : "circle", tr(seen ? "agents.pr.files.unmarkViewed" : "agents.pr.files.markViewed"),
                               height: 20, width: 20) {
-                viewed.setViewed(!seen, file: found, in: key)
-                viewed.save()
+                let marks = $viewed
+                PullRequestViewedSync.toggle(!seen, file: found, detail: detail, accountID: accountID, marks: &viewed) { marks.wrappedValue = $0 }
                 if !seen { expanded.remove(file.id) }
             }
         })

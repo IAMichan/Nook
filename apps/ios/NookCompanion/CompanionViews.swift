@@ -4,10 +4,16 @@ import VisionKit
 struct RootView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.scenePhase) private var scenePhase
+    /// Regular on an iPad with room (`CompanionSplitView`); compact on the phone and in a narrow iPad window.
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @StateObject private var router = TabRouter()
+    // Where each tab is, shared by both layouts: the first entry is what the iPad shows beside the list.
     @State private var sessionPath: [String] = []
     @State private var chatPath: [ChatRoute] = []
     @State private var inboxPath: [String] = []
+    @State private var pullPath: [PullRoute] = []
+    /// Counts ⌘F and ⌘K: the list on screen shows its search field and takes the keys (`searchFocusRequest`).
+    @State private var searchRequest = SearchRequest()
     /// A quick action asked for a new session: the Agents tab opens its New session sheet.
     @State private var newSessionRequested = false
     /// The launch screen (`LaunchView`) over everything while the app opens, until the Mac answers or a moment passes.
@@ -19,6 +25,13 @@ struct RootView: View {
             switch client.addingMac ? CompanionClient.Phase.unpaired : client.phase {
             case .unpaired, .pairing:
                 PairingView()
+            case .connected where sizeClass == .regular, .offline where sizeClass == .regular:
+                // An iPad with room: the list and what you opened side by side, on the same places as the tabs.
+                CompanionSplitView(sessionPath: $sessionPath, chatPath: $chatPath, inboxPath: $inboxPath, pullPath: $pullPath,
+                                   newSessionRequested: $newSessionRequested)
+                    .environmentObject(router)
+                    .environment(\.searchFocusRequest, searchRequest)
+                    .modifier(TabFallback(router: router, available: router.available(client)))
             case .connected, .offline:
                 // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
                 // each with what waits there as a badge. Each tab keeps where it was.
@@ -43,7 +56,7 @@ struct RootView: View {
                             .badge(router.count(.chats, client))
                     }
                     if available.contains(.pulls) {
-                        NavigationStack { PullRequestListView() }
+                        NavigationStack(path: $pullPath) { PullRequestListView() }
                             .tabItem { tabLabel(.pulls) }
                             .tag(CompanionTab.pulls)
                     }
@@ -52,13 +65,13 @@ struct RootView: View {
                         .tag(CompanionTab.settings)
                 }
                 .environmentObject(router)
-                // A tab the Mac no longer allows falls back to Agents.
-                .onChange(of: available) { _, tabs in
-                    if !tabs.contains(router.tab) { router.tab = .agents }
-                }
+                .environment(\.searchFocusRequest, searchRequest)
+                .modifier(TabFallback(router: router, available: available))
                 .onChange(of: router.tab) { _, _ in Haptics.tap() }
             }
         }
+        // The hardware keyboard's shortcuts, in both layouts (`CompanionMenuCommands`).
+        .focusedSceneValue(\.companionCommands, commands)
         .tint(Theme.paper)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
@@ -75,7 +88,8 @@ struct RootView: View {
         .task {
             switch UserDefaults.standard.string(forKey: "NookDemoShow") {
             case "agents": router.tab = .agents
-            case "session": router.tab = .agents; sessionPath = ["s2"]
+            case "session", "files": router.tab = .agents; sessionPath = ["s2"]
+            case "pulls": router.tab = .pulls
             case "chats": router.tab = .chats
             case "chat": router.tab = .chats; inboxPath = ["w1"]
             default: break
@@ -136,6 +150,35 @@ struct RootView: View {
         } message: { Text(client.notice ?? "") }
     }
 
+    /// What the keyboard shortcuts do here; nil before a Mac is paired.
+    private var commands: CompanionCommands? {
+        guard client.phase != .unpaired, client.phase != .pairing, !client.addingMac else { return nil }
+        return CompanionCommands(
+            newSession: {
+                router.tab = .agents
+                newSessionRequested = true
+            },
+            previousSession: { stepSession(by: -1) },
+            nextSession: { stepSession(by: 1) },
+            search: { searchRequest.ask() },
+            findSession: {
+                router.tab = .agents
+                // In the phone's layout an open session covers the list: back to it, where the search is.
+                if sizeClass != .regular { sessionPath = [] }
+                searchRequest.ask()
+            },
+            section: { router.tab = $0 },
+            sections: router.available(client).filter { $0 != .settings })
+    }
+
+    /// The session above or below the open one in the Agents list (what needs you, what works, the rest): ⌘[ and ⌘].
+    private func stepSession(by step: Int) {
+        let order = SessionListView.order(client.sessions).map(\.id)
+        guard let next = SessionStepping.target(order: order, current: sessionPath.first, step: step) else { return }
+        router.tab = .agents
+        sessionPath = [next]
+    }
+
     /// Holds the launch screen for at least a short moment, so it does not flash, and, with a paired Mac, until it
     /// answers or `LaunchView.maxWait` passes: then the tabs show what was kept, marked as not live.
     private func finishLaunch() async {
@@ -154,6 +197,18 @@ struct RootView: View {
             Text(tab.title)
         } icon: {
             Image(icon: tab.symbol(selected: router.tab == tab))
+        }
+    }
+}
+
+/// A tab the Mac no longer allows falls back to Agents, in the tabs and in the split view alike.
+private struct TabFallback: ViewModifier {
+    @ObservedObject var router: TabRouter
+    let available: [CompanionTab]
+
+    func body(content: Content) -> some View {
+        content.onChange(of: available) { _, tabs in
+            if !tabs.contains(router.tab) { router.tab = .agents }
         }
     }
 }
@@ -394,6 +449,8 @@ struct SessionListView: View {
     @State private var query = ""
     /// Recent sessions beyond the first few, shown on request so the list stays short.
     @State private var showsAllRecent = false
+    /// ⌘F or ⌘K asked for search: the field shows also while the list is short.
+    @Environment(\.searchFocusRequest) private var searchRequest
     /// The Working and Recent shelves, open or folded; remembered.
     @AppStorage("nook.companion.shelf.working") private var workingOpen = true
     @AppStorage("nook.companion.shelf.recent") private var recentOpen = true
@@ -431,6 +488,14 @@ struct SessionListView: View {
         !session.items.isEmpty || ["approval", "input", "failed", "limited"].contains(session.attention)
     }
 
+    /// The sessions in the order the list shows them: what needs you, what works, then the rest, each newest first.
+    static func order(_ sessions: [SessionDigest]) -> [SessionDigest] {
+        let newest = sessions.sorted { $0.updated > $1.updated }
+        let waiting = newest.filter(needsYou)
+        let working = newest.filter { !needsYou($0) && $0.attention == "working" }
+        return waiting + working + newest.filter { !needsYou($0) && $0.attention != "working" }
+    }
+
     var body: some View {
         // A list, not a stack, so a row swipes to its actions as in Mail.
         List {
@@ -449,7 +514,7 @@ struct SessionListView: View {
                     }
                     // Finding one among many: words that match its title, folder, branch or agent.
                     // With a Mac that searches its older sessions too, also while the list is short.
-                    if client.sessions.count > 8 || hasOlder {
+                    if client.sessions.count > 8 || hasOlder || searchRequest.asked {
                         NookSearchField(prompt: "Search sessions", text: $query)
                     }
                     if ordered.isEmpty, foundOlder.isEmpty, !client.sessions.isEmpty {
@@ -583,7 +648,7 @@ struct SessionListView: View {
                 .padding(.horizontal, Theme.Spacing.md)
             if open.wrappedValue {
                 ForEach(sessions) { session in
-                    Button { path.append(session.id) } label: { AgentRow(session: session) }
+                    Button { path.append(session.id) } label: { AgentRow(session: session).detailSelected(session.id) }
                         .buttonStyle(RowPress())
                         .padding(.horizontal, Theme.Spacing.md)
                         .contextMenu { SessionQuickActions(session: session) }
@@ -958,7 +1023,8 @@ struct SessionNotice: View {
         if let open {
             Button(action: open, label: label).buttonStyle(PressFade())
         } else {
-            NavigationLink(value: session.id, label: label).buttonStyle(PressFade())
+            let content = label()
+            OpenLink(value: session.id) { content }.buttonStyle(PressFade())
         }
     }
 

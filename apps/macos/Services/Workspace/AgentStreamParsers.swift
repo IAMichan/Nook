@@ -389,6 +389,12 @@ enum ClaudeStreamParser {
         var filled: [String: String] = [:]
         for question in questions { filled[question.question] = (answers[question.id] ?? []).joined(separator: ", ") }
         updated["answers"] = filled
+        // Which preview you picked, as Claude Code's own question dialog tells it.
+        let annotations = QuestionPreview.annotations(questions.map { question in
+            (question: question.question, options: question.options.map { (label: $0.label, preview: $0.preview) },
+             chosen: answers[question.id] ?? [])
+        })
+        if !annotations.isEmpty { updated["annotations"] = annotations }
         return line(["type": "control_response",
                      "response": ["subtype": "success", "request_id": requestID,
                                   "response": ["behavior": "allow", "updatedInput": updated]]])
@@ -400,7 +406,8 @@ enum ClaudeStreamParser {
             guard let text = raw["question"] as? String else { return nil }
             let options = ((raw["options"] as? [[String: Any]]) ?? []).compactMap { option -> RunQuestionOption? in
                 guard let label = option["label"] as? String else { return nil }
-                return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "")
+                return RunQuestionOption(label: label, description: (option["description"] as? String) ?? "",
+                                         preview: QuestionPreview.read(option))
             }
             return RunQuestion(id: "q\(index)", header: (raw["header"] as? String) ?? "", question: text, options: options,
                                multiSelect: (raw["multiSelect"] as? Bool) ?? false, allowsOther: true)

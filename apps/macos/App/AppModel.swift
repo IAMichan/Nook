@@ -350,6 +350,8 @@ final class AppModel: ObservableObject {
         notch.start(app: self)
 
         reloadLoops()
+        // A database that could not be opened as it was: said once, where you see it (`SQLiteRecovery`).
+        watchStorageIncidents()
 
         // Always install newest hook script version so existing integrations stay up to date.
         _ = try? HookScript.install()

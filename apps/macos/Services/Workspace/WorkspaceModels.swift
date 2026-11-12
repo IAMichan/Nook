@@ -83,7 +83,17 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass], steering: true, echoesSteers: true,
                                         effort: .launchFlag("--thinking"), processChannel: .piRPC, idleConnection: .none)
-        case .opencode, .grok, .acp:
+        case .opencode:
+            // OpenCode 2.0.18 and newer over its own server (`opencode serve`, `OpenCodeServe`): a denial carries your
+            // reason in its answer, questions come as forms, and the model's variants are its effort levels. An older
+            // OpenCode, a session on another machine, or a server that does not start runs over ACP like Grok below
+            // (there the reason goes as a message of its own: `AcpTurnDriver`). No "auto": OpenCode has no reviewer.
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent, liveSettings: true,
+                                        denyReason: .inResponse, effort: .sessionOption, idleConnection: .acpSession,
+                                        serverTransport: .openCodeServe)
+        case .grok, .acp:
             // No "auto" for any ACP agent (Gemini CLI, Antigravity and Cursor above too): none offers a reviewer that approves
             // routine actions itself. Gemini CLI's modes are default/auto_edit/yolo/plan, Antigravity's the same, Cursor's
             // agent/plan/ask, OpenCode's build/plan, and Grok only has --always-approve; Nook does not guess what is risky.
@@ -175,6 +185,16 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Nook asks the agent's CLI once which optional launch flags it knows (Claude Code's `--thinking-display`), so an
     /// older version is never started with a flag it rejects.
     var probesLaunchFlags = false
+    /// A server of the agent's own that Nook drives instead of its ACP server when the installed version has it
+    /// (`ServerTransport`, `WorkspaceManager.usesOpenCodeServer`).
+    var serverTransport: ServerTransport = .none
+}
+
+/// See `ProviderCapabilities.serverTransport`.
+enum ServerTransport: String, Sendable {
+    /// OpenCode 2's `opencode serve` (HTTP and an event stream, `OpenCodeServe`), from 2.0.18 on.
+    case openCodeServe
+    case none
 }
 
 /// See `ProviderCapabilities.rollback`.

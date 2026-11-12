@@ -237,6 +237,7 @@ targets:
       - path: Core/I18n+AccountOptions.swift
       - path: Core/I18n+Goals.swift
       - path: Core/I18n+SourceControl.swift
+      - path: Core/I18n+ForgeWork.swift
       - path: Core/I18n+Remote.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
@@ -260,6 +261,7 @@ targets:
       - path: Core/I18n+SelectionAsk.swift
       - path: Core/I18n+WorkspaceFeatures.swift
       - path: Core/I18n+ProviderTraffic.swift
+      - path: Core/I18n+Telemetry.swift
       - path: Core/I18n+TextGen.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
@@ -286,6 +288,7 @@ targets:
       - path: Core/I18n+SettingsFlowsA.swift
       - path: Core/I18n+SettingsFlowsB.swift
       - path: Core/I18n+SettingsFlowsC.swift
+      - path: Core/I18n+Safeguards.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -392,6 +395,10 @@ targets:
       - path: Core/NookPaths.swift
       - path: Core/ProcessRunner.swift
       - path: Core/SafeStorage.swift
+      - path: Core/SQLiteRecovery.swift
+      - path: Core/NookStore.swift
+      - path: Core/QuitHold.swift
+      - path: Services/Workspace/LocalCertificateTrust.swift
       - path: Core/Accounts.swift
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/GitHubRateLimit.swift
@@ -409,6 +416,7 @@ targets:
       - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/WorkflowRuns.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
+      - path: Services/Connectors/PullRequestBatchClose.swift
       - path: Services/Connectors/GitHubMarkdown.swift
       - path: Services/Connectors/PullRequestForge.swift
       - path: Services/Connectors/PullRequestForgeGitLab.swift
@@ -481,7 +489,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionHistory.swift
       - path: ../../packages/protocol/Sources/CompanionAgentWidget.swift
       - path: ../../packages/protocol/Sources/CompanionUsageWidget.swift
-      # The phone's Foundation-only logic: dictation languages, diagrams and math, comment positions in a diff.
+      # The phone's Foundation-only logic: dictation languages, diagrams and math, comment positions in a diff, the iPad layout.
       - path: ../ios/Core/DictationText.swift
         group: Shared from the iPhone
         createIntermediateGroups: false
@@ -489,6 +497,9 @@ targets:
         group: Shared from the iPhone
         createIntermediateGroups: false
       - path: ../ios/Core/PatchPositions.swift
+        group: Shared from the iPhone
+        createIntermediateGroups: false
+      - path: ../ios/Core/SplitLayout.swift
         group: Shared from the iPhone
         createIntermediateGroups: false
       # CryptoKit: on the Mac only (scripts/core-tests.sh leaves it out); CompanionFixturesTests checks the sealed vectors.
@@ -603,6 +614,7 @@ targets:
       - path: Services/Workspace/ResourceUsage.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
+      - path: Services/Workspace/OpenCodeServerProtocol.swift
       - path: Services/Workspace/AgentModelCatalog.swift
       - path: Services/Workspace/SpeedTiers.swift
       - path: Services/AccountVariable.swift
@@ -627,11 +639,16 @@ targets:
       - path: Services/Workspace/WorktreeCheckoutCache.swift
       - path: Services/Workspace/SourceControl.swift
       - path: Services/Workspace/GitService+SourceControl.swift
+      - path: Services/Workspace/GitCloneProgress.swift
       - path: Services/Connectors/ZipText.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/TimelineMemory.swift
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
+      - path: Services/Workspace/AgentTelemetry.swift
+      - path: Services/Telemetry/OTLPConfig.swift
+      - path: Services/Telemetry/OTLPPayload.swift
+      - path: Services/Telemetry/TelemetryBuffer.swift
       - path: Services/Workspace/TokenSavings.swift
       - path: Services/Workspace/ContextUsage.swift
       - path: Services/Workspace/AgentTuning.swift

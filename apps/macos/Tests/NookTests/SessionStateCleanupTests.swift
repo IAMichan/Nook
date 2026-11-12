@@ -83,5 +83,6 @@ final class SessionStateCleanupTests: XCTestCase {
         "closeClaudeProcess(id)": ["claudeIdle", "claudeIdleClose"],
         "dropNextPrompt(id)": ["nextPrompts", "nextPromptTasks"],
         "closeAcpClient(id)": ["acpClients", "acpIdleClose", "acpWakeBuffer", "acpReplays", "acpWakeFinish"],
+        "closeOpenCodeSession(id)": ["openCodeLinks", "openCodeIdleClose"],
     ]
 }

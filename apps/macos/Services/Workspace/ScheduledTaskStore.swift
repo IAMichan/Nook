@@ -540,6 +540,7 @@ final class ScheduledTaskStore: ObservableObject {
         if trigger == .webhook { webhookQueue.release(id) }
         if let index = tasks.firstIndex(where: { $0.id == id }) {
             let started = tasks[index].lastRun
+            NookTelemetry.shared.scheduledRunFinished(status: status, trigger: trigger, started: started, now: now)
             var row = tasks[index].finishing(status: status, error: error, at: now)
             if row.rule.isWebhook { row.nextRun = nil }
             // `finishing` stamps the end time; the list shows when the run started.

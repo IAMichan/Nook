@@ -134,6 +134,8 @@ struct AgentRunPanel: View {
             // message, or Ask about this, which also puts the keyboard in the box; the same with ⇧⌘L and ⌘L).
             .environment(\.quoteSelection, selectionActions.bind { addQuote($0, ask: $1) }.quote)
             .environment(\.askAboutSelection, selectionActions.ask)
+            // "Reply" under an answer: it goes as a quote to the top of the composer, with the keyboard there.
+            .environment(\.replyToAnswer, { answer in replyToAnswer(answer) })
             .keyCommands(["selection.quote": { quoteSelected(ask: false) }, "selection.ask": { quoteSelected(ask: true) }])
             // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
             .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(

@@ -60,6 +60,13 @@ struct AgentSessionDetail: View {
             case .past(let session): pastDetail(session)
             }
         }
+        // "Reply" under an answer: it goes as a quote to the top of this session's composer, with the keyboard there.
+        .environment(\.replyToAnswer, { answer in
+            var text = draft
+            ComposerFieldStyle.reply(to: answer, in: &text)
+            draft = text
+            composerFocused = true
+        })
         .confirmDelete($endRequest, question: { tr("confirm.endSession", $0.name) },
                        detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.end")) { session in
             perform { try app.endSession(session) }
@@ -534,11 +541,16 @@ struct AgentSessionDetail: View {
                                 answer(request, index: index, labels: [option.label])
                             }
                         }
+                        // What the option would look like, under it (Claude Code's `preview`).
+                        QuestionOptionPreview(text: QuestionPreview.display(option.preview),
+                                              indent: SessionQuestionOptionButton.labelIndent)
+                            .padding(.bottom, option.preview.isEmpty ? 0 : NookTheme.Spacing.xs)
                     }
                 }
             }
             .scrollIndicators(.never)
-            .frame(maxHeight: 220)
+            // Previews make the options taller: more room before they scroll.
+            .frame(maxHeight: item.options.contains { !$0.preview.isEmpty } ? 380 : 220)
             .fixedSize(horizontal: false, vertical: true)
             if item.multiSelect {
                 HStack {
@@ -738,6 +750,9 @@ struct AgentSessionDetail: View {
 
 /// An interactive option row for session questions with clear hover state, keycap badge, and intuitive indicator
 private struct SessionQuestionOptionButton: View {
+    /// Where the option's words start: the row's padding, the keycap and the room after it.
+    static let labelIndent = NookTheme.Spacing.md + 20 + NookTheme.Spacing.md
+
     let option: AgentQuestionOption
     let number: Int
     let chosen: Bool

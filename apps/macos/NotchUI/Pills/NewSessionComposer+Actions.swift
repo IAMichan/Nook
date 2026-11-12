@@ -432,25 +432,29 @@ extension NewSessionComposer {
         }
     }
 
+    /// Hands the address to `CloneCenter`, which clones in the background with a notice of its own: the box is free again
+    /// at once. Once the clone is done this box opens on it (`adoptClone`).
     func clone() {
         cloneURL = CloneLayout.repositoryURL(fromPage: cloneURL)
-        guard !cloning, GitService.isCloneURL(cloneURL) else { return }
-        cloning = true
+        guard GitService.isCloneURL(cloneURL) else { return }
         error = nil
         let parent = WorkspaceManager.cloneParent(project: project.map { $0.repoRoot ?? $0.path },
                                                   hostLayout: settings.cloneHostLayout)
-        Task {
-            do {
-                let cloned = try await workspace.clone(url: cloneURL, into: parent)
-                showClone = false
-                cloneURL = ""
-                if cloned.usedHTTPS { ToastCenter.shared.success(tr("sc.clone.usedHTTPS")) }
-                pick(cloned.path)
-            } catch let failure {
-                error = failure.localizedDescription
-            }
-            cloning = false
+        if let id = CloneCenter.shared.start(url: cloneURL, parent: parent, workspace: workspace) {
+            pendingClone = id
+            pendingCloneFrom = config.projectPath
         }
+        showClone = false
+        cloneURL = ""
+    }
+
+    /// The clone this box started is done: it opens on the new project, unless you picked another one meanwhile (the
+    /// toast's Open is still there for it).
+    func adoptClone(_ finished: CloneCenter.Finished?) {
+        guard let finished, finished.id == pendingClone else { return }
+        pendingClone = nil
+        guard config.projectPath == pendingCloneFrom, remoteMachine == nil else { return }
+        pick(finished.path)
     }
 
     /// `background` (⌥⌘↩): the session starts without opening, and the box stays for the next one with the same folder,

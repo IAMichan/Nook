@@ -608,6 +608,8 @@ private struct ChoicesDetail: View {
                         onChoose([option.label])
                     }
                 }
+                // What the option would look like, under it; shorter than in the session, the card is a glance.
+                QuestionOptionPreview(text: option.preview, indent: NookTheme.Spacing.lg, lineLimit: ChoiceOption.cardPreviewLines)
             }
             if set.multiSelect {
                 HStack {

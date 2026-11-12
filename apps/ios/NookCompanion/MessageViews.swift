@@ -38,12 +38,20 @@ struct TranscriptUserMessage: View {
             }
             TranscriptUserBubble {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text(verbatim: text)
-                        .font(Theme.TextStyle.body)
-                        .foregroundStyle(Theme.paper)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transcriptFolded(long && !expanded)
+                    // A message that starts with a quote (a reply to an answer) shows it as a card above your words.
+                    let lead = AnswerReply.leadingQuote(text)
+                    let words = lead?.rest ?? text
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        if let lead { TranscriptQuoteCard(text: lead.quote) }
+                        if !words.isEmpty {
+                            Text(verbatim: words)
+                                .font(Theme.TextStyle.body)
+                                .foregroundStyle(Theme.paper)
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .transcriptFolded(long && !expanded)
                     if long {
                         Button(expanded ? String(localized: "Show less") : String(localized: "Show all")) {
                             withAnimation(Theme.reveal) { expanded.toggle() }
@@ -77,13 +85,20 @@ struct TranscriptReply<Extras: View>: View {
     /// The time under the answer; only the final answer of a turn has it.
     var footer = true
     @ViewBuilder var extras: () -> Extras
+    @Environment(\.replyToAnswer) private var replyToAnswer
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if !text.isEmpty {
                 // Headings, lists, code and tables as blocks, with diagrams and math drawn as on the Mac.
                 MarkdownBlocksView(text: text, color: failed ? Theme.coral : Theme.textStrong)
-                    .contextMenu { MessageCopyButton(text: text) }
+                    .contextMenu {
+                        MessageCopyButton(text: text)
+                        // As "Reply" under an answer on the Mac: a quote of it at the top of the session's composer.
+                        if let replyToAnswer {
+                            Button { replyToAnswer(text) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                        }
+                    }
             }
             extras()
             if footer, !text.isEmpty, let date {
@@ -113,6 +128,38 @@ struct TranscriptReply<Extras: View>: View {
 extension TranscriptReply where Extras == EmptyView {
     init(text: String, date: Date? = nil, failed: Bool = false, footer: Bool = true) {
         self.init(text: text, date: date, failed: failed, footer: footer) { EmptyView() }
+    }
+}
+
+extension EnvironmentValues {
+    /// "Reply" in an answer's long-press menu: puts the answer as a quote at the top of the session's composer. Set by
+    /// the session's screen where you can write to it; nil (no Reply) elsewhere.
+    @Entry var replyToAnswer: ((String) -> Void)? = nil
+}
+
+/// The quote a message of yours starts with (`AnswerReply.leadingQuote`), as an inset card at the top of your bubble,
+/// as on the Mac: a bar and the quoted words, quieter than yours, at most a few lines.
+struct TranscriptQuoteCard: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Markdown.text(text)
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Theme.Spacing.sm)
+        .padding(.leading, Theme.Spacing.lg)
+        .padding(.trailing, Theme.Spacing.md)
+        .overlay(alignment: .leading) {
+            Capsule().fill(Theme.textTertiary).frame(width: 3)
+                .padding(.vertical, Theme.Spacing.sm).padding(.leading, Theme.Spacing.xs)
+        }
+        .roundedBackground(Theme.wash.opacity(0.05), radius: Theme.Radius.control)
+        .accessibilityElement(children: .combine)
     }
 }
 

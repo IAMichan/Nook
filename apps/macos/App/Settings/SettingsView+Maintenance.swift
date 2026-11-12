@@ -28,6 +28,7 @@ extension SettingsView {
             } header: {
                 SettingText("settings.maintenance.diagnostics")
             }
+            TelemetrySettingsSection()
         }
     }
 

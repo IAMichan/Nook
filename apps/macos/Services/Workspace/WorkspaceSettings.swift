@@ -149,6 +149,11 @@ final class WorkspaceSettings: ObservableObject {
     @Published var codexAppServer: Bool {
         didSet { defaults.set(codexAppServer, forKey: "ws.codexAppServer") }
     }
+    /// OpenCode 2.0.18 and newer runs over its own server (`opencode serve`: questions, deny with a reason, effort as the
+    /// model's variant); off, or for an older OpenCode: over ACP.
+    @Published var openCodeServer: Bool {
+        didSet { defaults.set(openCodeServer, forKey: "ws.openCodeServer") }
+    }
     /// Keeps what agents and Nook say to each other over stdio, per session (`ProviderTrafficLog`). Off by default.
     @Published var providerTrafficLog: Bool {
         didSet { defaults.set(providerTrafficLog, forKey: ProviderTrafficLog.enabledKey) }
@@ -313,6 +318,7 @@ final class WorkspaceSettings: ObservableObject {
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         bridgeAccess = BridgeAccess(stored: defaults.dictionary(forKey: "ws.bridgeDisabled") as? [String: [String]] ?? [:])
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
+        openCodeServer = defaults.object(forKey: "ws.openCodeServer") as? Bool ?? true
         providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""

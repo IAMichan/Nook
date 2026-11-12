@@ -77,6 +77,10 @@ struct SelectionAction: Identifiable {
     var primary = false
     /// Why it leaves rows out, on its tooltip: all of them while it is off, the ones it skips while it runs on fewer.
     var leftOutHelp: String?
+    /// A line to write in under the question before it runs (a comment that goes with a close), with its placeholder.
+    /// Nil for none.
+    var note: Binding<String>? = nil
+    var notePlaceholder: String? = nil
     let perform: () -> Void
     var id: String { symbol + label }
 }
@@ -168,6 +172,16 @@ struct SelectionBar: View {
                         .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let note = action.note {
+                    TextField(action.notePlaceholder ?? "", text: note, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1...4)
+                        .padding(.horizontal, NookTheme.Spacing.md)
+                        .padding(.vertical, NookTheme.Spacing.sm)
+                        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.control)
+                        .padding(.top, NookTheme.Spacing.xs)
                 }
             }
         } actions: {

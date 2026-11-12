@@ -55,6 +55,10 @@ targets:
       - path: ../macos/Brain/MarkdownBlock.swift
         group: Shared from the Mac
         createIntermediateGroups: false
+      # Replying to an answer and the quote a message of yours starts with (`AnswerReply`), as on the Mac.
+      - path: ../macos/Services/Workspace/ComposerQuotes.swift
+        group: Shared from the Mac
+        createIntermediateGroups: false
       - path: ../macos/Brain/ChatChart.swift
         group: Shared from the Mac
         createIntermediateGroups: false
@@ -91,6 +95,10 @@ targets:
         UILaunchScreen:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # The iPad turns every way and shares the screen (Split View, Slide Over, Stage Manager): a regular width gets the
+        # split layout (`CompanionSplitView`), a compact one the phone's tabs.
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown,
+                                                UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
         NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
         # Dictation in the composers (`Dictation`): recognized on the iPhone itself where it can be; never sent to the Mac.
@@ -114,7 +122,8 @@ targets:
         # The same icon as the Mac app, drawn by scripts/generate_app_icon.swift.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        # iPhone and iPad (docs/COMPANION.md › iPad).
+        TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
       path: NookCompanion/NookCompanion.entitlements
       properties:
@@ -163,7 +172,7 @@ targets:
         PRODUCT_NAME: NookActivity
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.activity
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     # The usage widget reads the limits the app keeps in the app group (`UsageSnapshot`). Needs the App Group
     # group.nl.imdigital.nook.companion on the app id nl.imdigital.nook.companion.activity too.
@@ -199,7 +208,7 @@ targets:
         PRODUCT_NAME: NookNotifications
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.notifications
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     entitlements:
       path: NookNotifications/NookNotifications.entitlements
@@ -247,7 +256,7 @@ targets:
         PRODUCT_NAME: NookShare
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.share
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     entitlements:
       path: NookShare/NookShare.entitlements

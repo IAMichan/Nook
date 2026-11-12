@@ -205,6 +205,7 @@ struct SettingsPageBar: View {
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var settings = AppSettings.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+    @AppStorage(QuitHoldMonitor.enabledKey) private var holdToQuit = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {

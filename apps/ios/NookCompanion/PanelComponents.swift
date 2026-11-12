@@ -261,23 +261,39 @@ struct SheetTitle: View {
 
 // MARK: Buttons
 
-/// A press that dims what was tapped a little: the phone's stand-in for the Mac's hover.
+/// A press that dims what was tapped a little: the phone's stand-in for the Mac's hover. Under an iPad's pointer the
+/// system's highlight shows what a click hits.
 struct PressFade: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.6 : 1)
             .animation(Theme.hover, value: configuration.isPressed)
+            .hoverEffect(.highlight)
     }
 }
 
-/// A list row: lit with `rowHover` while your finger is on it, as the Mac lights the row under the pointer.
+/// A list row: lit with `rowHover` while your finger is on it, or an iPad's pointer is over it, as the Mac lights the
+/// row under the pointer.
 struct RowPress: ButtonStyle {
     var radius = Theme.Radius.card
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .roundedBackground(configuration.isPressed ? Theme.rowHover : Color.clear, radius: radius)
-            .animation(Theme.hover, value: configuration.isPressed)
+        RowPressBody(label: configuration.label, pressed: configuration.isPressed, radius: radius)
+    }
+}
+
+private struct RowPressBody<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    let radius: CGFloat
+    @State private var hovered = false
+
+    var body: some View {
+        label
+            .roundedBackground(pressed || hovered ? Theme.rowHover : Color.clear, radius: radius)
+            .contentShape(.hoverEffect, Theme.shape(radius))
+            .onHover { hovered = $0 }
+            .animation(Theme.hover, value: pressed || hovered)
     }
 }
 
@@ -289,6 +305,8 @@ struct NookSearchField: View {
     let prompt: LocalizedStringKey
     @Binding var text: String
     @FocusState private var isFocused: Bool
+    /// ⌘F or ⌘K on a hardware keyboard: the field on screen takes the keys.
+    @Environment(\.searchFocusRequest) private var searchRequest
 
     var body: some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -320,6 +338,10 @@ struct NookSearchField: View {
         .padding(.trailing, Theme.Spacing.xxs)
         .frame(minHeight: 38)
         .roundedBackground(Theme.field, radius: Theme.Radius.control)
+        // Also when the field only appeared because of the request: it gets the keys once it is on screen.
+        .onChange(of: searchRequest, initial: true) { _, request in
+            if request.isFresh { isFocused = true }
+        }
     }
 }
 
@@ -404,6 +426,9 @@ struct SessionComposer<Controls: View>: View {
         } else {
             round("arrow.up", label: "Send", active: enabled) { onSend() }
                 .disabled(!enabled)
+                // ⌘↩ on a hardware keyboard sends, as on the Mac; only from the composer you type in, so a second one
+                // on screen (the iPad's list beside a session) never takes it.
+                .keyboardShortcut((focus ?? $ownFocus).wrappedValue ? KeyboardShortcut(.return, modifiers: .command) : nil)
         }
     }
 

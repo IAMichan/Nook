@@ -81,6 +81,8 @@ struct PullRequestDetail: Equatable, Sendable {
     var commitCount: Int? = nil
     var commentCount: Int? = nil
     var lineCommentCount: Int? = nil
+    /// The forge's own viewed state of the files, with the activity (`PullRequestActivity.viewedOnForge`).
+    var viewedOnForge: [String: PullRequestFileViewedState]? = nil
     /// False until the timeline, commits and files have arrived: the summary shows first, the rest follows.
     var activityLoaded = true
     /// GitHub is working out mergeability again (`mergeable` is nil, as after another pull request merged into the
@@ -104,6 +106,7 @@ struct PullRequestDetail: Equatable, Sendable {
         files = activity.files
         linkedIssues = activity.issues
         reactions = activity.reactions
+        viewedOnForge = activity.viewedOnForge
         activityLoaded = true
     }
 
@@ -121,7 +124,8 @@ struct PullRequestDetail: Equatable, Sendable {
     func keepingActivity(of old: PullRequestDetail?) -> PullRequestDetail {
         guard !activityLoaded, let old, old.activityLoaded else { return self }
         var result = self
-        result.apply(PullRequestActivity(reactions: old.reactions, events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues))
+        result.apply(PullRequestActivity(reactions: old.reactions, events: old.events, commits: old.commits, files: old.files, issues: old.linkedIssues,
+                                         viewedOnForge: old.viewedOnForge))
         return result
     }
 
@@ -223,6 +227,9 @@ struct PullRequestActivity: Equatable, Sendable {
     var commits: [PullRequestCommit] = []
     var files: [PullRequestFile] = []
     var issues: [PullRequestLinkedIssue] = []
+    /// The forge's own viewed state of each file for the signed-in user (GitHub's "Viewed" checkbox); nil when the forge
+    /// keeps none or could not be asked.
+    var viewedOnForge: [String: PullRequestFileViewedState]? = nil
 }
 
 /// An issue a pull request closes when it merges.

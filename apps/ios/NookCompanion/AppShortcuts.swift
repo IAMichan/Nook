@@ -54,6 +54,16 @@ enum AppShortcut: Equatable {
 /// Receives a quick action: at launch (the scene connects with it) and while the app runs.
 final class ShortcutSceneDelegate: NSObject, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        // Stage Manager may make the window as small as the phone's layout still fits, never smaller.
+        if let windowScene = scene as? UIWindowScene, UIDevice.current.userInterfaceIdiom == .pad {
+            windowScene.sizeRestrictions?.minimumSize = CompanionLayout.minimumWindow
+            #if DEBUG
+            // `-NookDemoLandscape YES`: turns the Simulator's iPad to landscape for a look at that layout.
+            if UserDefaults.standard.bool(forKey: "NookDemoLandscape") {
+                windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+            }
+            #endif
+        }
         guard let item = connectionOptions.shortcutItem, let shortcut = AppShortcut(item) else { return }
         Task { @MainActor in CompanionClient.shared.pendingShortcut = shortcut }
     }

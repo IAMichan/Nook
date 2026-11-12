@@ -55,6 +55,7 @@ extension WorkspaceManager {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         let previous = run.provider
         let accountOnly = previous == provider
         // No model given (the usage limit banner's "Switch to"): another account keeps the model in use, another agent
@@ -156,6 +157,7 @@ extension WorkspaceManager {
         closeCodexServer(id)
         closeClaudeProcess(id)
         closeAcpClient(id)
+        closeOpenCodeSession(id)
         forkNext.remove(id)
         append(id, RunEvent(kind: .system, text: tr("ws.event.cleared"), tool: "clear"))
         // What came before the divider is no agent's to pick up: a switch to another agent later hands over only what

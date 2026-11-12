@@ -797,9 +797,11 @@ final class CompanionServer: ObservableObject {
         for question in workspace.questions[run.id] ?? [] {
             let first = question.questions.first
             let single = question.questions.count == 1
+            let options = single ? (first?.options ?? []) : []
             items.append(.init(id: question.id, kind: .question, title: CompanionPolicy.excerpt(first?.question ?? ""),
                                detail: CompanionPolicy.excerpt(first?.header ?? ""), canAllow: single,
-                               options: single ? (first?.options.map(\.label) ?? []) : []))
+                               options: options.map(\.label),
+                               optionPreviews: SessionDigest.Item.previews(options.map { QuestionPreview.display($0.preview) })))
         }
         // From memory only: the phone asks every few seconds, and reading released timelines back from disk would
         // also keep them all in memory.

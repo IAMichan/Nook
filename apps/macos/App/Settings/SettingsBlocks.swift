@@ -715,6 +715,7 @@ struct WorkspaceSettingsSection: View {
             }
             .help(tr("settings.browser.signIns.detail"))
             BrowserImportRow()
+            TrustedCertificatesRow()
         }
         DefaultBrowserSection()
     }
@@ -1217,6 +1218,25 @@ private struct AgentLinkTargetPicker: View {
             ForEach(AgentLinkTarget.allCases) { Text($0.name).tag($0.rawValue) }
         } label: {
             SettingText("settings.ws.linkTarget")
+        }
+    }
+}
+
+/// The local servers whose own HTTPS certificate you chose to always trust in Nook's browser (`CertificateTrustStore`),
+/// with a way to forget them. Only shown once there is one.
+private struct TrustedCertificatesRow: View {
+    @State private var count = CertificateTrustStore.shared.remembered.count
+
+    var body: some View {
+        if count > 0 {
+            HStack {
+                SettingLabel(tr("settings.browser.trustedCerts"), detail: tr("settings.browser.trustedCerts.detail", count))
+                Spacer()
+                Button(tr("settings.browser.trustedCerts.forget")) {
+                    CertificateTrustStore.shared.forgetAll()
+                    count = 0
+                }
+            }
         }
     }
 }

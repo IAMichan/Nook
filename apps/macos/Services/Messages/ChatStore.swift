@@ -66,31 +66,43 @@ final class ChatStore {
         """,
     ]
 
-    init?(url: URL, readOnly: Bool = false) {
+    /// The first failure while the store sets itself up, for `SQLiteRecovery` to tell damage from other trouble.
+    private var setupFailure: Int32 = SQLITE_OK
+
+    /// Opens (or creates) the archive. A damaged file is moved aside and a fresh one made (`SQLiteRecovery`); nil when
+    /// there is no file to use this session.
+    init?(url: URL, readOnly: Bool = false, incidents: DatabaseIncidents = .shared) {
         let flags = (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) | SQLITE_OPEN_NOMUTEX
-        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
-            sqlite3_close(db)
-            return nil
-        }
-        sqlite3_busy_timeout(db, 5_000)
-        exec("PRAGMA temp_store = MEMORY;")
-        exec("PRAGMA cache_size = -4000;")
         if readOnly {
+            // A second connection to the file the writer already opened (and set aside if it had to): never moves it.
+            guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else {
+                sqlite3_close(db)
+                return nil
+            }
+            sqlite3_busy_timeout(db, 5_000)
+            exec("PRAGMA temp_store = MEMORY;")
+            exec("PRAGMA cache_size = -4000;")
             searchAvailable = (try? scalar("SELECT 1 FROM sqlite_master WHERE name = 'message_search'")) != nil
             return
         }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        // Before the first table, or it has no effect: freed pages can be given back to the disk a few at a time.
-        exec("PRAGMA auto_vacuum = INCREMENTAL;")
-        exec("PRAGMA journal_mode = WAL;")
-        exec("PRAGMA synchronous = NORMAL;")
-        // The write-ahead log shrinks back to this after a checkpoint instead of keeping its largest size.
-        exec("PRAGMA journal_size_limit = 8388608;")
-        guard migrate() else {
-            sqlite3_close(db)
-            db = nil
-            return nil
+        db = SQLiteRecovery.open(url, flags: flags, incidents: incidents) { handle in
+            db = handle
+            setupFailure = SQLITE_OK
+            sqlite3_busy_timeout(handle, 5_000)
+            exec("PRAGMA temp_store = MEMORY;")
+            exec("PRAGMA cache_size = -4000;")
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            // Before the first table, or it has no effect: freed pages can be given back to the disk a few at a time.
+            exec("PRAGMA auto_vacuum = INCREMENTAL;")
+            exec("PRAGMA journal_mode = WAL;")
+            exec("PRAGMA synchronous = NORMAL;")
+            // The write-ahead log shrinks back to this after a checkpoint instead of keeping its largest size.
+            exec("PRAGMA journal_size_limit = 8388608;")
+            setupFailure = SQLITE_OK
+            guard migrate() else { return setupFailure == SQLITE_OK ? SQLITE_ERROR : setupFailure }
+            return SQLITE_OK
         }
+        guard db != nil else { return nil }
         searchAvailable = exec(Self.searchSchema(contentless: true)) || exec(Self.searchSchema(contentless: false))
     }
 
@@ -830,7 +842,11 @@ final class ChatStore {
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
-        sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+            if setupFailure == SQLITE_OK { setupFailure = sqlite3_extended_errcode(db) }
+            return false
+        }
+        return true
     }
 
     @discardableResult

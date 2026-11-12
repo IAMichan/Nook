@@ -61,6 +61,8 @@ struct PullRequestSelectionBar: View {
     /// Room around the bar, only while it shows.
     var inset: CGFloat = 0
     @ObservedObject private var selection = PullRequestSelection.shared
+    /// Why they are closed, posted on each before it closes; optional.
+    @State private var closeComment = ""
 
     var body: some View {
         if !selection.isEmpty {
@@ -79,7 +81,8 @@ struct PullRequestSelectionBar: View {
                                              confirm: Self.question(closable, one: "agents.pulls.select.closeConfirmOne", many: "agents.pulls.sweep.confirm"),
                                              confirmTitle: tr("agents.pulls.select.closeYes"),
                                              confirmDetail: Self.numbers(closable),
-                                             count: closable.count) {
+                                             count: closable.count,
+                                             note: $closeComment, notePlaceholder: tr("agents.pulls.close.commentPlaceholder")) {
                                  close(closable)
                              },
                              SelectionAction(symbol: PullRequestIcon.symbol(.merged), label: tr("agents.pulls.quick.merge"),
@@ -132,7 +135,9 @@ struct PullRequestSelectionBar: View {
     }
 
     private func close(_ requests: [PullRequestOpenRequest]) {
+        let comment = closeComment
+        closeComment = ""
         withAnimation(NookTheme.reveal) { selection.clear() }
-        Task { await PullRequestCloseSweep.close(requests, app: AppModel.shared) }
+        Task { await PullRequestCloseSweep.close(requests, comment: comment, app: AppModel.shared) }
     }
 }

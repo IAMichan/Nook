@@ -333,11 +333,15 @@ final class AgentHub: ObservableObject {
     func answerQuestion(_ id: String, selections: [[String]]) {
         guard let pending = pendingQuestions[id] else { return }
         let answers = AgentQuestionRequest.answers(items: pending.request.items, selections: selections)
+        var updated: [String: Any] = ["questions": pending.rawQuestions, "answers": answers]
+        // Which preview you picked, as Claude Code's own question dialog tells it.
+        let annotations = AgentQuestionRequest.annotations(items: pending.request.items, selections: selections)
+        if !annotations.isEmpty { updated["annotations"] = annotations }
         let payload: [String: Any] = [
             "hookSpecificOutput": [
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
-                "updatedInput": ["questions": pending.rawQuestions, "answers": answers]
+                "updatedInput": updated
             ]
         ]
         recap?.questionAnswered()

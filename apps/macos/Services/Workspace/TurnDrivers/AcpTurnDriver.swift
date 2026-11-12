@@ -22,7 +22,8 @@ struct AcpTurnDriver: TurnDriver {
 
     func decide(_ runID: UUID, requestID: String, _ decision: WorkspaceManager.Decision, reason: String) -> Bool {
         guard workspace.decideAcp(runID, requestID: requestID, decision) else { return false }
-        workspace.deliverDenyReason(runID, reason)
+        // ACP's reject outcome has no text, whatever the agent's own server could carry (OpenCode's).
+        workspace.deliverDenyReason(runID, reason, delivery: .followUpMessage)
         return true
     }
 }

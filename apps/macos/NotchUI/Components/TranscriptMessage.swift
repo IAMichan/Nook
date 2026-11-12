@@ -102,13 +102,28 @@ struct TranscriptUserMessage<Attachments: View>: View {
     }
 
     /// Your words in Markdown, as the agent reads them: a quote, list or code block as such, `code` and **bold** inline.
-    /// Only a message with blocks takes the whole width of the bubble; one of plain lines keeps hugging its words.
+    /// Only a message with blocks takes the whole width of the bubble; one of plain lines keeps hugging its words. A
+    /// message that starts with a quote (a reply to an answer, a quoted passage) shows that quote as a card above the
+    /// words about it.
     @ViewBuilder
     private func words(_ string: String, folded: Bool) -> some View {
+        if let lead = AnswerReply.leadingQuote(string) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                TranscriptQuoteCard(text: lead.quote)
+                if !lead.rest.isEmpty { plainWords(lead.rest) }
+            }
+            .transcriptFolded(folded)
+        } else {
+            plainWords(string)
+                .transcriptFolded(folded)
+        }
+    }
+
+    @ViewBuilder
+    private func plainWords(_ string: String) -> some View {
         if TranscriptStyle.hasMarkdownBlocks(string) {
             MarkdownView(text: string, size: TranscriptStyle.textSize)
                 .equatable()
-                .transcriptFolded(folded)
         } else {
             Text(MarkdownBlock.inline(string, size: TranscriptStyle.textSize, files: fileLinkBase != nil))
                 .font(NookTheme.font(TranscriptStyle.textSize))
@@ -116,8 +131,37 @@ struct TranscriptUserMessage<Attachments: View>: View {
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-                .transcriptFolded(folded)
         }
+    }
+}
+
+/// The quote a message of yours starts with (`AnswerReply.leadingQuote`), as an inset card at the top of your bubble:
+/// a bar and the quoted words, quieter than yours, at most a few lines; all of it on hover.
+struct TranscriptQuoteCard: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(MarkdownBlock.inline(text, size: 12, files: false))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineSpacing(2)
+                .lineLimit(4)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, NookTheme.Spacing.sm)
+        .padding(.leading, NookTheme.Spacing.lg)
+        .padding(.trailing, NookTheme.Spacing.md)
+        .overlay(alignment: .leading) {
+            Capsule().fill(NookTheme.textTertiary).frame(width: 3)
+                .padding(.vertical, NookTheme.Spacing.sm).padding(.leading, NookTheme.Spacing.xs)
+        }
+        .roundedBackground(NookTheme.wash.opacity(0.05), radius: NookTheme.Radius.control)
+        .help(text)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tr("agents.message.quoteLabel", text))
     }
 }
 
@@ -147,6 +191,7 @@ struct TranscriptReply<Extras: View, Actions: View>: View {
     @State private var files: [String] = []
     @Environment(\.fileLinkBase) private var fileLinkBase
     @Environment(\.sessionSide) private var side
+    @Environment(\.replyToAnswer) private var replyToAnswer
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -170,7 +215,15 @@ struct TranscriptReply<Extras: View, Actions: View>: View {
                 extras()
             }
             if footer && !text.isEmpty {
-                TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: false, actions: actions)
+                TranscriptMessageFooter(text: text, date: date, visible: hovering, trailing: false) {
+                    // "Reply": this answer, or the part of it you selected, as a quote at the top of the composer.
+                    if let replyToAnswer {
+                        ToolbarIconButton("arrowshape.turn.up.left", tr("agents.message.reply"), height: 22, width: 22) {
+                            replyToAnswer(AnswerReply.source(answer: text, selection: SelectableProse.selection(in: NSApp.keyWindow)))
+                        }
+                    }
+                    actions()
+                }
             }
         }
         .padding(.horizontal, NookTheme.Spacing.xxs)
@@ -200,6 +253,13 @@ extension TranscriptReply where Actions == EmptyView {
         self.init(text: text, date: date, author: author, accent: accent, footer: footer, onChoose: onChoose,
                   extras: extras, actions: { EmptyView() })
     }
+}
+
+extension EnvironmentValues {
+    /// "Reply" under an agent's final answer: puts the words it is given (the answer, or what you selected of it) as a
+    /// quote at the top of the session's composer. Set by each session view for its own composer; nil (no Reply button)
+    /// where nothing can be answered.
+    @Entry var replyToAnswer: ((String) -> Void)? = nil
 }
 
 /// Under a message, on hover: copy, the message's own actions, and when it was written. It keeps its place while

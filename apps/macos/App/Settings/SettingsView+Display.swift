@@ -128,6 +128,7 @@ extension NSColor {
 struct GeneralListAndConfirmations: View {
     @ObservedObject private var inbox = InboxStore.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
+    @AppStorage(QuitHoldMonitor.enabledKey) private var holdToQuit = false
 
     var body: some View {
         Section {
@@ -139,6 +140,7 @@ struct GeneralListAndConfirmations: View {
         }
         Section {
             Toggle(isOn: $confirmQuit) { SettingText("settings.ws.confirmQuit") }
+            SettingToggle(tr("settings.general.holdToQuit"), detail: tr("settings.general.holdToQuit.detail"), isOn: $holdToQuit)
         } header: {
             SettingText("settings.general.confirmations")
         }
@@ -149,6 +151,7 @@ struct GeneralListAndConfirmations: View {
         let inbox = InboxStore.shared
         return !inbox.groupByProject || !inbox.showWorking
             || UserDefaults.standard.object(forKey: AppDelegate.confirmQuitKey) as? Bool == false
+            || UserDefaults.standard.bool(forKey: QuitHoldMonitor.enabledKey)
     }
 
     /// Puts General's own settings back to how Nook ships. The languages stay: they are yours, not a default.
@@ -156,5 +159,6 @@ struct GeneralListAndConfirmations: View {
         InboxStore.shared.groupByProject = true
         InboxStore.shared.showWorking = true
         UserDefaults.standard.removeObject(forKey: AppDelegate.confirmQuitKey)
+        UserDefaults.standard.removeObject(forKey: QuitHoldMonitor.enabledKey)
     }
 }

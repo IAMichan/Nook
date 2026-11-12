@@ -14,6 +14,8 @@ struct BitbucketPullRequestForge: PullRequestForgeClient {
         features.updateBranch = false
         // Bitbucket Cloud has no revert API.
         features.revert = false
+        // Bitbucket Cloud's REST API 2.0 has no per-file viewed state.
+        features.viewedFiles = false
         return features
     }()
 
