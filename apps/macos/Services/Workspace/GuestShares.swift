@@ -187,6 +187,10 @@ final class GuestShares: ObservableObject {
         case .failure(let refusal):
             send(.ack(messageID, refusal), link, to: [connection])
         case .success(let message):
+            if link.hold.hasSeen(messageID) {
+                send(.ack(messageID, nil), link, to: [connection])
+                return
+            }
             if let refusal = link.hold.refusal(forBytes: message.bytes) {
                 send(.ack(messageID, refusal), link, to: [connection])
                 return
@@ -196,7 +200,7 @@ final class GuestShares: ObservableObject {
                 return
             }
             link.hold.add(GuestHold.Held(id: UUID().uuidString, text: message.text, files: files, bytes: message.bytes,
-                                         received: Date()))
+                                         received: Date()), wireID: messageID)
             held[id] = link.hold.messages
             send(.ack(messageID, nil), link, to: [connection])
             schedulePush(id)

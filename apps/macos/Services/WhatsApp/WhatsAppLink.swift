@@ -787,14 +787,18 @@ final class WhatsAppLink: ObservableObject {
             return
         }
         guard gen == generation else { return }
-        knownChats = chats.map {
-            WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
-        }
+        knownChats = WAChatInfo.keepingNames(chats.map {
+            WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned,
+                       muted: $0.muted)
+        }, from: knownChats)
         // A group you left stays on the phone's list (until you delete it there), but is no chat of yours any more.
         if let joined = await provider.joinedGroups(), gen == generation {
             let next = WhatsAppLeftGroups.left(known: knownChats.map(\.jid) + Array(inbox.conversations.keys), joined: joined)
             if let next, next != leftGroups { leftGroups = next }
         }
+        guard gen == generation else { return }
+        // Named before the slow catch-up below: a group new on the list shows its name, not "Group 1203…", meanwhile.
+        await nameUnnamedGroups(provider, gen: gen)
         guard gen == generation else { return }
         // OpenWA sends no word when you read a chat on the phone: its count going to nothing says it.
         if gatewayCountsUnread {
@@ -857,8 +861,13 @@ final class WhatsAppLink: ObservableObject {
                 inbox.rename(chat.jid, to: chat.name)
             }
         }
-        // Groups the gateway only knows by their id ("Group 3162…"): named from the list of your groups (one call),
-        // and any left over asked one by one; one still unnamed is asked again a while later.
+        await nameUnnamedGroups(provider, gen: gen)
+    }
+
+    /// Groups the gateway only knows by their id ("Group 3162…"): named from the list of your groups (one call), and any
+    /// left over asked one by one; one still unnamed is asked again a while later.
+    private func nameUnnamedGroups(_ provider: WhatsAppProvider, gen: Int) async {
+        guard gen == generation else { return }
         let unnamed = knownChats.filter { WAJID.isGroup($0.jid) && WAJID.isPlaceholderName($0.name, for: $0.jid) }.map(\.jid)
             + inbox.conversations.values.filter { WAJID.isGroup($0.id) && WAJID.isPlaceholderName($0.name, for: $0.id) }.map(\.id)
         guard !unnamed.isEmpty else { return }

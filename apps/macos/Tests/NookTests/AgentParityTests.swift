@@ -62,7 +62,6 @@ final class AgentParityTests: XCTestCase {
         "Services/Workspace/WorkspaceManager+Acp.swift": (9, "Antigravity's ACP quirks, Gemini CLI's headless fallback, an added agent's environment"),
         "Services/Workspace/WorkspaceManager+Models.swift": (3, "an added ACP agent keeps its models per account"),
         "Services/Workspace/WorkspaceManager+Remote.swift": (1, "an added ACP agent's environment"),
-        "Services/Workspace/WorkspaceManager+TextGeneration.swift": (1, "text generation engines are Claude Code and Codex only"),
         "Services/Workspace/WorkspaceModels.swift": (1, "Antigravity cannot run on another machine"),
     ]
 

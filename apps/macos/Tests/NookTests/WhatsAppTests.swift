@@ -326,6 +326,37 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertFalse(WAJID.isPlaceholderName("🎉", for: old))
     }
 
+    func testAReloadedChatListKeepsTheGroupNamesItLearned() {
+        let group = "120363413281278207@g.us"
+        let other = "31683192007-1552852894@g.us"
+        let person = "31612345678@s.whatsapp.net"
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let previous = [WAChatInfo(jid: group, name: "Hongarije 2027", last: at),
+                        WAChatInfo(jid: other, name: "Group 31683192007-1552852894", last: at),
+                        WAChatInfo(jid: person, name: "Anna", last: at)]
+        // GOWA lists every group as "Group <id>" again on each reload.
+        let reloaded = [WAChatInfo(jid: group, name: "Group 120363413281278207", last: at.addingTimeInterval(60), muted: true),
+                        WAChatInfo(jid: other, name: "Group 31683192007-1552852894", last: at),
+                        WAChatInfo(jid: person, name: "Anna B.", last: at),
+                        WAChatInfo(jid: "120363000000000009@g.us", name: "Nieuw", last: at)]
+        let kept = WAChatInfo.keepingNames(reloaded, from: previous)
+        XCTAssertEqual(kept.map(\.name), ["Hongarije 2027", "Group 31683192007-1552852894", "Anna B.", "Nieuw"],
+                       "a learned name stays, a new real name wins, an unnamed group stays unnamed")
+        XCTAssertEqual(kept[0].last, at.addingTimeInterval(60), "only the name is carried over")
+        XCTAssertEqual(kept[0].muted, true)
+    }
+
+    func testAnUnnamedGroupKeepsTheNameTheInboxShows() {
+        let group = "120363402647779979@g.us"
+        XCTAssertEqual(WAJID.keepingGroupName("Group 120363402647779979", for: group, shown: "JV reis"), "JV reis")
+        XCTAssertEqual(WAJID.keepingGroupName("JV reis 2026", for: group, shown: "JV reis"), "JV reis 2026", "a renamed group")
+        XCTAssertEqual(WAJID.keepingGroupName("Group 120363402647779979", for: group, shown: "Group 120363402647779979"),
+                       "Group 120363402647779979")
+        XCTAssertEqual(WAJID.keepingGroupName("Group 120363402647779979", for: group, shown: nil), "Group 120363402647779979")
+        XCTAssertEqual(WAJID.keepingGroupName("+31612345678", for: "31612345678@s.whatsapp.net", shown: "Anna"), "+31612345678",
+                       "only groups: a person's number is the gateway's own word")
+    }
+
     func testOpeningAGroupKeepsItsRealName() {
         let group = "31622360496-1542111077@g.us"
         var inbox = WAInbox()

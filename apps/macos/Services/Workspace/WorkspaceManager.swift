@@ -29,6 +29,9 @@ struct PendingQuestion: Identifiable, Equatable {
         case openCode(OpenCodeForm)
         /// A question the agent asked without waiting for it (Codex's async message): the answer goes as a message.
         case message
+        /// Asked before Nook restarted (`RestartRequests`): the process that waited for it is gone, so the answer goes as
+        /// a message of yours and resumes the conversation.
+        case restored
     }
 
     let id: String
@@ -38,7 +41,24 @@ struct PendingQuestion: Identifiable, Equatable {
     let created: Date
 
     /// Nothing waits for this answer: the agent goes on, and the answer reaches it as a message of yours.
-    var answersAsMessage: Bool { origin == .message }
+    var answersAsMessage: Bool { origin == .message || origin == .restored }
+    var isRestored: Bool { origin == .restored }
+
+    /// As it is saved with its session, to show again after a restart.
+    var saved: SavedQuestion? { RestartRequests.saved(id: id, questions: questions, created: created) }
+
+    /// A question saved before a restart, back in the session it was asked in.
+    init(restoring saved: SavedQuestion, runID: UUID) {
+        self.init(id: saved.id, runID: runID, questions: saved.questions, origin: .restored, created: saved.created)
+    }
+
+    init(id: String, runID: UUID, questions: [RunQuestion], origin: Origin, created: Date) {
+        self.id = id
+        self.runID = runID
+        self.questions = questions
+        self.origin = origin
+        self.created = created
+    }
 }
 
 /// Latest Git snapshot observed by Nook for a session.
@@ -149,14 +169,21 @@ final class WorkspaceManager: ObservableObject {
         return made
     }
     /// Settable within the module: the Codex app-server extension adds and answers requests too.
-    @Published var approvals: [UUID: [PendingPermission]] = [:]
+    @Published var approvals: [UUID: [PendingPermission]] = [:] {
+        didSet { waitingChanged(approvals.keys, oldValue.keys) }
+    }
     /// Follow-up messages typed while the agent was working; the first goes out as soon as the turn has ended.
-    @Published private(set) var queued: [UUID: MessageQueue] = [:]
+    @Published private(set) var queued: [UUID: MessageQueue] = [:] {
+        // Saved with the session list, so a restart keeps it (`RestartRequests`).
+        didSet { if runsLoaded { scheduleSave() } }
+    }
     /// Sessions whose next message of yours starts a new conversation (`/clear`, see `FreshConversation`). In memory only,
     /// as a draft is: "Keep this conversation" takes it back.
     @Published var freshArmed: Set<UUID> = []
     /// Questions an agent asked in a session and that wait for your answer.
-    @Published var questions: [UUID: [PendingQuestion]] = [:]
+    @Published var questions: [UUID: [PendingQuestion]] = [:] {
+        didSet { waitingChanged(questions.keys, oldValue.keys) }
+    }
     /// Connectors (MCP servers) each session's agent has but cannot use until you sign in (see ConnectorSignIn).
     @Published var connectorSignIns: [UUID: [ConnectorSignIn]] = [:]
     /// Sessions whose title is being written again on request (`regenerateTitle`): a second request waits for the first.
@@ -206,6 +233,9 @@ final class WorkspaceManager: ObservableObject {
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
     var backgroundWork: Set<UUID> = []
+    /// Kept agents whose output is read again after a crash of Nook (`KeptRuns.Replay`): events already in the timeline
+    /// are not shown twice.
+    var keptReplays: [UUID: KeptRuns.Replay] = [:]
     /// Sessions whose latest wake turn ended while a monitor still runs: its completion waits for the monitor
     /// (`WakeCompletion`), so you are told once instead of for every line the monitor printed.
     var heldWakeCompletions: Set<UUID> = []
@@ -341,6 +371,11 @@ final class WorkspaceManager: ObservableObject {
     var remoteHomes: [String: String] = [:]
     var remoteBridgeInstalling: Set<String> = []
     var bridgeTokens: [UUID: String] = [:]
+    /// Where each local session's token file goes (`BridgeTokenFiles`); tests point it at a folder of their own.
+    var bridgeTokenDirectory: URL = NookPaths.bridgeTokenDirectory
+    /// Receipts of session commands that may come more than once (`SessionCommandReceipts`), kept across a restart.
+    lazy var commandReceipts = SessionCommandReceipts.load(from: commandReceiptsURL)
+    var commandReceiptsURL: URL = NookPaths.supportDirectory.appendingPathComponent("command-receipts.json")
     var codexGoalStarting: [UUID: SessionGoalCommand] = [:]
     var codexGoalWaiting: [UUID: SessionGoalCommand] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
@@ -460,6 +495,9 @@ final class WorkspaceManager: ObservableObject {
         var stopping = false
         var lastError: String?
         var started = Date()
+        /// Which turn this is, as the phone sees it (`SessionDigest.turn`): a command meant for this turn leaves a later
+        /// one alone (`SessionTurnCheck`).
+        var identity = UUID().uuidString.lowercased()
         /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
@@ -544,12 +582,15 @@ final class WorkspaceManager: ObservableObject {
         let started = runs
         let known = Set(started.map(\.id))
         loaded.removeAll { known.contains($0.id) }
+        // What waited on you (questions, approvals, queued messages) comes back once the sessions are in place.
+        let waiting = RestartRequests.take(&loaded)
         runs = started + loaded
         runsLoaded = true
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
         reattachKeptRuns()
+        restoreWaiting(waiting)
         // Guest links that still work connect again (within their 24 hours).
         GuestShares.shared.start(workspace: self)
         if !started.isEmpty { scheduleSave() }
@@ -748,6 +789,7 @@ final class WorkspaceManager: ObservableObject {
 
     /// A turn ended: tell the app, and snapshot the worktree so you can go back to before a later message.
     func turnDidFinish(_ id: UUID) {
+        keptTurnEnded(id)
         checkUsageLimit(id)
         guard let run = run(id) else { return }
         NookTelemetry.shared.turnFinished(run)
@@ -923,6 +965,11 @@ final class WorkspaceManager: ObservableObject {
             stop(id)
             return .restarted
         }
+    }
+
+    /// Puts back a session's queue as it was saved (`restoreWaiting`).
+    func setQueue(_ id: UUID, _ queue: MessageQueue) {
+        queued[id] = queue.isEmpty ? nil : queue
     }
 
     /// Keeps a message for when the current turn is done: you keep typing while the agent works.
@@ -1366,6 +1413,7 @@ final class WorkspaceManager: ObservableObject {
         idleCompacting.remove(id)
         sizeCompacting.remove(id)
         bridgeTokens[id] = nil
+        BridgeTokenFiles.remove(id, in: bridgeTokenDirectory)
         codexGoalStarting[id] = nil
         codexGoalWaiting[id] = nil
         antigravitySignIns.remove(id)
@@ -1373,6 +1421,7 @@ final class WorkspaceManager: ObservableObject {
         forkLaunched.remove(id)
         displayPrompt[id] = nil
         reopeningWorktrees.remove(id)
+        keptReplays[id] = nil
         capacity.forget(id)
         runPositions = nil
         subThreadCounts = nil
@@ -1433,7 +1482,7 @@ final class WorkspaceManager: ObservableObject {
     private func saveForQuit() {
         // Saves still queued go first: one that ran after these would write an older timeline over the newer one.
         store.flush()
-        if runsLoaded { try? store.saveRuns(runs) }
+        if runsLoaded { try? store.saveRuns(durableRuns(runs)) }
         for (id, list) in events { try? store.saveEvents(id, list) }
     }
 

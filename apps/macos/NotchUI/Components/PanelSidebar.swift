@@ -151,7 +151,6 @@ struct PanelSidebarTop: View {
             Spacer(minLength: 0)
             if !compact {
                 NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 28, action: context.search)
-                    .help(tr("search.button"))
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 28, action: context.talk)
                 PanelSplitButton(current: context.current)
             }
@@ -202,7 +201,6 @@ struct SessionHistoryButtons: View {
         ToolbarIconButton(symbol, label, height: 28, width: 28, enabled: enabled, symbolSize: 13) {
             if enabled { action() }
         }
-        .help(label)
     }
 }
 
@@ -255,8 +253,8 @@ private struct PanelSidebarTabButton: View {
                 Button(tr("split.toWindow")) { TabWindowController.shared.open(tab, app: AppModel.shared) }
             }
         }
-        .animation(NookTheme.hover, value: hovering)
-        .help("\(title) (\(shortcut))")
+        // Below the tab: the bar sits right under the title bar's row, so above would cover its buttons.
+        .nookTip("\(title) (\(shortcut))", edge: .bottom)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityValue(beside ? tr("split.beside") : "")

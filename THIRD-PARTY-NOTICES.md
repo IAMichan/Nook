@@ -165,6 +165,15 @@ from the replay fixtures of [t3code](https://github.com/pingdotgg/t3code)
 protocol of Claude Code's command line. The replay transport and the append-only timeline log follow the design of its
 testing strategy and orchestration event table.
 
+The recorded Codex app-server, Kiro (ACP) and Pi transcripts in the same folder (`codex_*.ndjson`, `kiro_*.ndjson`,
+`pi_*.ndjson`) are adapted from the same fixtures (`simple`, `multi_turn`, `turn_interrupt`, `turn_interrupt_mid_tool`,
+`message_steering` and `tool_call_read_only_on_request`): what the agents wrote is kept as recorded, in a JSON-RPC 2.0
+envelope where the testkit stored an abstract one and with the ids of Nook's own requests; what Nook writes is reduced
+to the part Nook sends, and requests Nook does not send are left out with their answers. A recorded Pi session with two
+turns is split into one transcript per turn, since Nook runs Pi once per turn. Some of Nook's ACP client behavior
+(reading the protocol generation from the shape of `initialize`, settling a `session/load` whose replay went quiet,
+ignoring a config answer older than an update) follows t3code's ACP client and session runtime.
+
 ```text
 MIT License
 

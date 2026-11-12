@@ -925,9 +925,10 @@ final class ChatCaptureService: ObservableObject {
                 oldestStored[item.key] = first
             }
         }
+        let pending = work
         archive.write { store in
             store.transaction {
-                work.allSatisfy { item in
+                pending.allSatisfy { item in
                     guard let chat = store.chatID(item.key) ?? store.saveChat(item.thread) else { return false }
                     return item.messages.allSatisfy { store.saveMerged($0, chat: chat) } && store.withdraw(item.deleted, chat: chat)
                 }

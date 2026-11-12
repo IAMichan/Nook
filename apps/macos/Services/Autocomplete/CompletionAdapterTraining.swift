@@ -72,7 +72,7 @@ final class CompletionAdapterTraining: ObservableObject {
                 Log.autocomplete.error("personal adapter training failed: \(error.localizedDescription, privacy: .public)")
                 self?.phase = .failed(error.localizedDescription)
             }
-            MLX.GPU.clearCache()
+            MLX.Memory.clearCache()
         }
     }
 

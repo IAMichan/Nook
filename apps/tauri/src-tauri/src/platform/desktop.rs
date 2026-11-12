@@ -15,6 +15,8 @@ pub const BAR: &str = "bar";
 pub const COLLAPSED: (f64, f64) = (44.0, 44.0);
 /// A compact agent notice: the bar keeps its height and grows wider, with the message and its buttons in the row.
 pub const NOTICE: (f64, f64) = (560.0, 38.0);
+/// The closed bar with a chat chip under the round Nook ("Bericht van Peter"): the round Nook on top, the chip below it.
+pub const CHIP: (f64, f64) = (232.0, 82.0);
 /// The open panel's default size is this share of the screen's work area, in both directions.
 pub const EXPANDED_SCREEN_FRACTION: f64 = 0.75;
 /// The smallest the open panel can be dragged to.
@@ -30,6 +32,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     if settings.start_local_brain {
         start_local_brain(app, settings.provider);
     }
+    restore_main(app);
     Ok(())
 }
 
@@ -79,6 +82,13 @@ fn fullscreen_app_in_front() -> bool {
         .is_ok_and(|state| state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)
 }
 
+/// Shortcuts that could not be registered (another app holds them), by action, for Settings to point out.
+static SHORTCUT_PROBLEMS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn shortcut_problems() -> Vec<String> {
+    SHORTCUT_PROBLEMS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 /// A local brain that is installed but not running is started in the background, so the first question just works.
 pub fn start_local_brain(_app: &AppHandle, provider: nook_core::provider::AIProvider) {
     use super::local_brain::{ensure_running, Server};
@@ -109,6 +119,61 @@ pub fn closed_main(app: &AppHandle) {
     );
 }
 
+/// Puts the main window back where it was (size, place, maximized), if that place is still on a screen.
+fn restore_main(app: &AppHandle) {
+    let Some(main) = app.get_webview_window("main") else { return };
+    let Some(placement) = app.state::<AppState>().settings().main_window else { return };
+    let screens: Vec<(i32, i32, u32, u32)> = main
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| (m.position().x, m.position().y, m.size().width, m.size().height))
+        .collect();
+    if !placement.visible_on(&screens) {
+        return;
+    }
+    let _ = main.set_size(tauri::PhysicalSize::new(placement.width, placement.height));
+    let _ = main.set_position(tauri::PhysicalPosition::new(placement.x, placement.y));
+    if placement.maximized {
+        let _ = main.maximize();
+    }
+}
+
+/// Remembers where the main window is, before it hides or Nook stops.
+pub fn remember_main(app: &AppHandle) {
+    let Some(main) = app.get_webview_window("main") else { return };
+    if !main.is_visible().unwrap_or(false) || main.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let maximized = main.is_maximized().unwrap_or(false);
+    let state = app.state::<AppState>();
+    // A maximized window keeps the size it had before, so un-maximizing after a restart still gives a normal window.
+    let previous = state.settings().main_window;
+    let (Ok(pos), Ok(size)) = (main.outer_position(), main.inner_size()) else { return };
+    let placement = match (maximized, previous) {
+        (true, Some(before)) => nook_core::settings::WindowPlacement { maximized: true, ..before },
+        _ => nook_core::settings::WindowPlacement { x: pos.x, y: pos.y, width: size.width, height: size.height, maximized },
+    };
+    if previous != Some(placement) {
+        state.update_settings(|s| s.main_window = Some(placement));
+    }
+}
+
+/// The tray tooltip says what waits on you, so a glance at the taskbar is enough.
+pub fn tray_status(app: &AppHandle, waiting: usize, working: usize) {
+    let Some(tray) = app.tray_by_id("nook") else { return };
+    let _ = tray.set_tooltip(Some(tray_tooltip(waiting, working)));
+}
+
+pub fn tray_tooltip(waiting: usize, working: usize) -> String {
+    match (waiting, working) {
+        (0, 0) => "Nook".into(),
+        (0, n) => format!("Nook · bezig met {n}"),
+        (1, _) => "Nook · 1 Nook wacht op je".into(),
+        (n, _) => format!("Nook · {n} Nooks wachten op je"),
+    }
+}
+
 fn create_bar(app: &AppHandle) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, BAR, WebviewUrl::App("index.html#bar".into()))
         .title("Nook")
@@ -132,15 +197,16 @@ fn create_bar(app: &AppHandle) -> tauri::Result<()> {
 
 /// Bovenaan in het midden van het gekozen scherm, of op de plek waar de gebruiker hem neerzette (zwevend).
 pub fn place_bar(app: &AppHandle, expanded: bool) {
-    place_bar_sized(app, expanded, false);
+    place_bar_sized(app, expanded, false, false);
 }
 
 /// The size you dragged the open panel to, and the "large" setting it was made under. Kept so closing the panel and
 /// opening it again brings it back at that size instead of the default; a changed "large" setting starts over.
 static DRAGGED_SIZE: Mutex<Option<(f64, f64, bool)>> = Mutex::new(None);
 
-/// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice.
-pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
+/// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice, `chip` makes room under the round
+/// Nook for the chip of a new chat message.
+pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool, chip: bool) {
     let was_open = PANEL_OPEN.swap(expanded, Ordering::Relaxed);
     let Some(window) = app.get_webview_window(BAR) else { return };
     let settings = app.state::<AppState>().settings();
@@ -176,6 +242,8 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
         .map(|(w, h, _)| (w, h));
     let (w, h) = if !expanded && notice {
         NOTICE
+    } else if !expanded && chip {
+        CHIP
     } else if !expanded {
         COLLAPSED
     } else if let Some((w, h)) = dragged {
@@ -271,7 +339,10 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit("new-nook", ());
             }
             "settings" => show_main(app, "settings"),
-            "quit" => app.exit(0),
+            "quit" => {
+                remember_main(app);
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -290,7 +361,12 @@ pub fn register_shortcuts(app: &AppHandle) {
     let shortcuts = app.state::<AppState>().settings().shortcuts;
     let manager = app.global_shortcut();
     let _ = manager.unregister_all();
+    let mut problems = vec![];
     for (action, accelerator) in shortcuts {
+        if accelerator.trim().is_empty() {
+            continue;
+        }
+        let name = action.clone();
         let action = action.clone();
         let result = manager.on_shortcut(accelerator.as_str(), move |app, _shortcut, event| {
             if event.state() != ShortcutState::Pressed {
@@ -306,7 +382,22 @@ pub fn register_shortcuts(app: &AppHandle) {
         });
         if let Err(e) = result {
             log::warn!("Sneltoets {accelerator} kon niet worden vastgelegd: {e}");
+            problems.push(name);
         }
     }
+    *SHORTCUT_PROBLEMS.lock().unwrap_or_else(|e| e.into_inner()) = problems;
     crate::services::register_shortcuts(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tray_says_what_waits() {
+        assert_eq!(tray_tooltip(0, 0), "Nook");
+        assert_eq!(tray_tooltip(0, 2), "Nook · bezig met 2");
+        assert_eq!(tray_tooltip(1, 3), "Nook · 1 Nook wacht op je");
+        assert_eq!(tray_tooltip(4, 0), "Nook · 4 Nooks wachten op je");
+    }
 }

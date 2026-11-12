@@ -15,7 +15,7 @@ extension WorkspaceManager {
     func bridge(for id: UUID) -> BridgeLaunch? {
         guard var launch = bridgeLaunch(), let run = run(id) else { return nil }
         guard let remote = run.remote else {
-            launch.token = bridgeToken(id)
+            launch.tokenFile = bridgeTokenFile(id)
             return launch
         }
         guard let home = remoteHomes[remote.machineID] else {
@@ -33,6 +33,17 @@ extension WorkspaceManager {
         let token = UUID().uuidString + UUID().uuidString
         bridgeTokens[id] = token
         return token
+    }
+
+    /// The file that holds the session's token (`BridgeTokenFiles`), written now; nil when it cannot be written, and then
+    /// the session runs without its rights rather than with its token on the command line.
+    func bridgeTokenFile(_ id: UUID) -> String? {
+        do {
+            return try BridgeTokenFiles.write(bridgeToken(id), for: id, in: bridgeTokenDirectory).path
+        } catch {
+            Log.agents.error("Bridge token file: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     /// Whether `token` is the one made for the remote session `id`.

@@ -70,7 +70,44 @@ struct HoverCardRow: View {
         }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textSecondary)
-        .help(help ?? "")
+        .nookTip(help ?? "", enabled: help != nil)
+    }
+}
+
+/// The timing a list row's card shares with the cards of the other rows (`hoverCard(warm:)`): a row's card opens after a
+/// shorter rest than other cards, and at once while another row's card is open or closed a moment ago, so moving down a
+/// list with the cards open swaps them like tips instead of waiting at every row.
+@MainActor
+enum HoverCardWarmth {
+    /// How long the pointer rests on a row before its card opens, when no other row's card was open just now. Longer
+    /// than a tip's rest (`TooltipTiming`), so a tip on a part of the row shows first.
+    nonisolated static let rowOpenDelay: Duration = .milliseconds(400)
+    /// How long after a row's card closed the next row's card still opens at once.
+    nonisolated static let window: TimeInterval = 0.4
+
+    /// When the last row's card closed.
+    static var lastClosedAt: Date?
+    /// The row's card on screen, and how to close it when another row's card takes its place.
+    static var open: (id: UUID, close: () -> Void)?
+    /// The warm row currently under the pointer, so a tooltip inside it can hold the row's card back while hovered.
+    static var hoveredRow: (id: UUID, update: () -> Void)?
+
+    /// Another row's card is open, or closed less than `window` ago.
+    static func isWarm(now: Date = Date()) -> Bool {
+        if open != nil { return true }
+        guard let lastClosedAt else { return false }
+        return now.timeIntervalSince(lastClosedAt) < window
+    }
+
+    /// A `.nookTip` target inside the window was entered: close any open row card and hold back the hovered row's card.
+    static func tooltipEntered() {
+        open?.close()
+        hoveredRow?.update()
+    }
+
+    /// The pointer left the `.nookTip` target: if still on a warm row, its card can now start its rest timer.
+    static func tooltipExited() {
+        hoveredRow?.update()
     }
 }
 
@@ -88,7 +125,12 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
     var closeDelay: Duration = .milliseconds(300)
     /// Told whether the card is open.
     var presented: Binding<Bool>? = nil
+    /// A list row's card (`HoverCardWarmth`): it opens at once while another row's card is open or just closed, and
+    /// closes that one when it opens.
+    var warm = false
     let card: () -> Card
+    /// Tells this card apart from the other rows' in `HoverCardWarmth.open`.
+    @State private var id = UUID()
     @State private var hovering = false
     @State private var onCard = false
     @State private var showCard = false
@@ -98,6 +140,13 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
         content
             .onHover { inside in
                 hovering = inside
+                if warm {
+                    if inside {
+                        HoverCardWarmth.hoveredRow = (id: id, update: { update() })
+                    } else if HoverCardWarmth.hoveredRow?.id == id {
+                        HoverCardWarmth.hoveredRow = nil
+                    }
+                }
                 update()
             }
             .simultaneousGesture(TapGesture().onEnded {
@@ -109,8 +158,13 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
                 // A popover closed by a click elsewhere never reports the pointer leaving it.
                 if !shown { onCard = false }
                 presented?.wrappedValue = shown
+                if warm { noteWarm(shown: shown) }
             }
-            .onDisappear { delay?.cancel() }
+            .onDisappear {
+                delay?.cancel()
+                if warm, HoverCardWarmth.open?.id == id { HoverCardWarmth.open = nil }
+                if warm, HoverCardWarmth.hoveredRow?.id == id { HoverCardWarmth.hoveredRow = nil }
+            }
             // Only on the row under the pointer: a popover on every row of a long list was carried along while it
             // scrolled. Behind the view, at its size, so the card points at the same place.
             .background {
@@ -127,7 +181,8 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
 
     private func update() {
         delay?.cancel()
-        if suppressed, !onCard {
+        let heldBack = suppressed || (warm && TooltipActivity.isPointerOnTip)
+        if heldBack, !onCard {
             showCard = false
         } else if showCard {
             guard !hovering, !onCard else { return }
@@ -137,11 +192,24 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
                 if !Task.isCancelled { showCard = false }
             }
         } else if hovering {
-            guard openDelay > .zero else { showCard = true; return }
+            guard openDelay > .zero, !(warm && HoverCardWarmth.isWarm()) else { showCard = true; return }
             delay = Task { @MainActor in
                 try? await Task.sleep(for: openDelay)
-                if !Task.isCancelled, hovering { showCard = true }
+                if !Task.isCancelled, hovering, !(warm && TooltipActivity.isPointerOnTip) { showCard = true }
             }
+        }
+    }
+
+    /// Keeps `HoverCardWarmth` up to date: one row's card at a time, and when the last one closed.
+    private func noteWarm(shown: Bool) {
+        if shown {
+            // The previous row's card would otherwise wait out its close delay beside this one.
+            if let previous = HoverCardWarmth.open, previous.id != id { previous.close() }
+            let showCard = $showCard
+            HoverCardWarmth.open = (id: id, close: { showCard.wrappedValue = false })
+        } else {
+            HoverCardWarmth.lastClosedAt = Date()
+            if HoverCardWarmth.open?.id == id { HoverCardWarmth.open = nil }
         }
     }
 }
@@ -188,11 +256,12 @@ extension View {
 
     /// Shows `card` in a popover after the pointer rests on this view for a moment, unless `suppressed`. `instant`
     /// opens it as soon as the pointer is on the view and closes it as soon as it left, for a card that holds nothing
-    /// to click (the prompt behind a mark on the conversation's rail).
+    /// to click (the prompt behind a mark on the conversation's rail). `warm` is for a list row's card: a shorter rest,
+    /// and at once while another row's card is open or just closed (`HoverCardWarmth`).
     func hoverCard<Card: View>(arrowEdge: Edge = .trailing, suppressed: Bool = false, instant: Bool = false,
-                               @ViewBuilder _ card: @escaping () -> Card) -> some View {
+                               warm: Bool = false, @ViewBuilder _ card: @escaping () -> Card) -> some View {
         modifier(HoverCardModifier(arrowEdge: arrowEdge, suppressed: suppressed,
-                                   openDelay: instant ? .zero : .milliseconds(650),
-                                   closeDelay: instant ? .zero : .milliseconds(300), card: card))
+                                   openDelay: instant ? .zero : (warm ? HoverCardWarmth.rowOpenDelay : .milliseconds(650)),
+                                   closeDelay: instant ? .zero : .milliseconds(300), warm: warm && !instant, card: card))
     }
 }

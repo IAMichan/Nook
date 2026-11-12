@@ -231,3 +231,100 @@ final class UsageReportTests: XCTestCase {
         XCTAssertEqual(read?.source, "transcript-1")
     }
 }
+
+/// What waits on you survives a restart (`RestartRequests`): questions to answer as a message, a note for each approval
+/// that expired, and the queue, held.
+final class RestartRequestsTests: XCTestCase {
+    private var folder: URL!
+
+    override func setUpWithError() throws {
+        folder = URL(fileURLWithPath: try TestData.tempFolder(), isDirectory: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    private let question = RunQuestion(id: "q1", header: "Plan", question: "Which database?",
+                                       options: [RunQuestionOption(label: "Postgres", description: "", preview: "```sql\nselect 1\n```"),
+                                                 RunQuestionOption(label: "SQLite", description: "local")],
+                                       multiSelect: true, allowsOther: false)
+
+    private func queue(_ texts: [String], fresh: Bool = false) -> MessageQueue {
+        var queue = MessageQueue()
+        for text in texts { queue.enqueue(text, fresh: fresh, origin: .notice) }
+        return queue
+    }
+
+    func testAQuestionAnApprovalAndTheQueueSurviveARestart() throws {
+        let store = RunStore(directory: folder)
+        let asking = TestData.run(status: .waitingApproval)
+        var queued = TestData.run(status: .running)
+        queued.id = UUID()
+        let saved = try XCTUnwrap(RestartRequests.saved(id: "toolu_1", questions: [question], created: Date(timeIntervalSince1970: 100)))
+        let list = RestartRequests.merged([asking, queued], questions: [asking.id: [saved]], approvals: [asking.id: ["Bash: rm -rf build"]],
+                                          queues: [queued.id: queue(["one", "two"], fresh: true)])
+        try store.saveRuns(list)
+
+        var loaded = RunStore(directory: folder).loadRuns()
+        XCTAssertEqual(loaded.first { $0.id == asking.id }?.status, .stopped, "the process that asked is gone")
+        XCTAssertEqual(loaded.first { $0.id == asking.id }?.interruptedWhileWaiting, true, "so Nook does not go on by itself")
+        let waiting = RestartRequests.take(&loaded)
+        XCTAssertTrue(loaded.allSatisfy { $0.waitingQuestions == nil && $0.waitingApprovals == nil && $0.queue == nil },
+                      "the sessions in memory never carry them")
+        XCTAssertEqual(waiting[asking.id]?.questions, [saved], "options, previews and multi-select come back")
+        XCTAssertEqual(waiting[asking.id]?.questions.first?.questions.first?.options.first?.preview, "```sql\nselect 1\n```")
+        XCTAssertEqual(waiting[asking.id]?.approvals, ["Bash: rm -rf build"])
+        let restored = try XCTUnwrap(waiting[queued.id]?.queue)
+        XCTAssertEqual(restored.messages.map(\.text), ["one", "two"])
+        XCTAssertTrue(restored.messages.allSatisfy { $0.fresh && $0.origin == .notice }, "its flags come back")
+        XCTAssertTrue(restored.isHeld, "nothing goes out by itself at launch")
+    }
+
+    func testOnlyListedSessionsAreWrittenAndClearedOnesLoseTheirState() {
+        let kept = TestData.run(status: .completed)
+        var gone = TestData.run(status: .completed)
+        gone.id = UUID()
+        let merged = RestartRequests.merged([kept], questions: [gone.id: [SavedQuestion(id: "x", questions: [question], created: Date())]],
+                                            approvals: [:], queues: [gone.id: queue(["lost"])])
+        XCTAssertEqual(merged.count, 1, "a deleted session's state goes with it")
+        XCTAssertNil(merged[0].queue)
+        var stale = kept
+        stale.queue = queue(["sent meanwhile"])
+        XCTAssertNil(RestartRequests.merged([stale], questions: [:], approvals: [:], queues: [:])[0].queue)
+        XCTAssertNil(RestartRequests.merged([kept], questions: [:], approvals: [:], queues: [kept.id: MessageQueue()])[0].queue,
+                     "an empty queue is not written")
+        XCTAssertEqual(RestartRequests.merged([kept], questions: [:], approvals: [:], queues: [:]), [kept], "nothing waits: unchanged")
+    }
+
+    func testAnEmptyQuestionIsNotSaved() {
+        let empty = RunQuestion(id: "e", header: "", question: "", options: [], multiSelect: false, allowsOther: true)
+        XCTAssertNil(RestartRequests.saved(id: "e", questions: [empty], created: Date()))
+        XCTAssertNil(RestartRequests.restoredQueue(MessageQueue()))
+    }
+
+    func testTheAnswerGoesAsAMessage() {
+        let answers = ["q1": ["Postgres", "SQLite"]]
+        XCTAssertEqual(RestartRequests.message([question], answers: answers, restored: false), "Which database? → Postgres, SQLite")
+        let restored = RestartRequests.message([question], answers: answers, restored: true)
+        XCTAssertTrue(restored.hasSuffix("Which database? → Postgres, SQLite"))
+        XCTAssertTrue(restored.contains("before Nook restarted"), "the agent learns what the answer is to")
+    }
+
+    func testOlderAndNewerFilesDecode() throws {
+        // A question saved without a preview or flags still loads.
+        let json = #"{"id":"q","question":"Go?","options":[{"label":"Yes"}]}"#
+        let decoded = try JSONDecoder().decode(RunQuestion.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.options.first?.preview, "")
+        XCTAssertEqual(decoded.options.first?.description, "")
+        XCTAssertFalse(decoded.multiSelect)
+        XCTAssertEqual(try JSONDecoder().decode(RunQuestion.self, from: JSONEncoder().encode(question)), question)
+        // A session saved before any of this has none of it.
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(TestData.run(status: .stopped))) as? [String: Any])
+        object["waitingQuestions"] = nil
+        object["queue"] = nil
+        let run = try JSONDecoder().decode(WorkspaceRun.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(run.waitingQuestions)
+        XCTAssertNil(run.queue)
+    }
+}
