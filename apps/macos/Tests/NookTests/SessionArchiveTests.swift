@@ -86,8 +86,11 @@ final class SessionArchiveTests: XCTestCase {
         let passages = (0..<200).map { passage("Ran the tests again, step \($0) of the migration", author: "Claude Code", day: $0, anchor: UUID().uuidString) }
         let packed = SessionArchive.pack(passages)
         XCTAssertEqual(SessionArchive.unpack(packed), passages)
+        // LZFSE is Apple's: elsewhere (the Linux core tests) the JSON is stored as it is, and only the round trip counts.
+        #if canImport(Darwin)
         let plain = passages.map { $0.text + $0.author + ($0.anchor ?? "") }.joined().utf8.count
         XCTAssertLessThan(packed.count, plain, "compressed below the bare text")
+        #endif
     }
 
     func testASyncWritesWhatChangedNewestFirstAndForgetsWhatIsGone() {
