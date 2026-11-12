@@ -100,9 +100,28 @@ enum BuildLeftovers {
     /// Whether `worktree` is idle: no busy folder (a session in use within `idleAge`, an open terminal) is it, lies in
     /// it (a terminal in your home folder holds every worktree, and says nothing about one), and it is not a main checkout.
     static func isIdle(_ worktree: String, busy: [String], mainCheckouts: Set<String>) -> Bool {
+        isIdle(worktree, held: heldFolders(busy), mainCheckouts: mainCheckouts)
+    }
+
+    /// `isIdle` with the busy folders already worked out (`heldFolders`): a sweep asks it for every worktree on disk
+    /// (well over a thousand here), and resolving every busy folder again for each of them (an `lstat` per path
+    /// component) kept a core busy for minutes after each launch.
+    static func isIdle(_ worktree: String, held: Set<String>, mainCheckouts: Set<String>) -> Bool {
         let root = WorkspacePathPolicy.normalize(worktree)
-        guard !mainCheckouts.contains(root) else { return false }
-        return !busy.map(WorkspacePathPolicy.normalize).contains { $0 == root || $0.hasPrefix(root + "/") }
+        return !mainCheckouts.contains(root) && !held.contains(root)
+    }
+
+    /// Every folder a busy folder is, or lies in, resolved once: a worktree is busy when it is one of them.
+    static func heldFolders(_ busy: [String]) -> Set<String> {
+        var held: Set<String> = []
+        for path in Set(busy) {
+            var folder = WorkspacePathPolicy.normalize(path)
+            while !folder.isEmpty, held.insert(folder).inserted {
+                guard let slash = folder.lastIndex(of: "/"), slash > folder.startIndex else { break }
+                folder = String(folder[..<slash])
+            }
+        }
+        return held
     }
 
     /// Removes what `find` reports. Returns each removed leftover with the bytes it took.

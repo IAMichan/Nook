@@ -312,6 +312,34 @@ enum DelegatedTask {
         return working
     }
 
+    /// `workingSubThreads(of:parents:active:)` for every session at once: each working one counts once for every
+    /// ancestor above it. One pass over the links instead of one per session that asks (the Agents list and the notch
+    /// ask for every row on every redraw, which made that quadratic in the number of sessions).
+    static func workingSubThreadCounts(parents: [UUID: UUID], active: Set<UUID>) -> [UUID: Int] {
+        var counts: [UUID: Int] = [:]
+        for child in active where parents[child] != nil {
+            var seen: Set<UUID> = [child]
+            var current = child
+            while let parent = parents[current], parent != current, seen.insert(parent).inserted {
+                counts[parent, default: 0] += 1
+                current = parent
+            }
+        }
+        return counts
+    }
+
+    /// The same for every session, read from the sessions themselves.
+    static func workingSubThreadCounts(in runs: [WorkspaceRun]) -> [UUID: Int] {
+        var parents: [UUID: UUID] = [:]
+        var active: Set<UUID> = []
+        for run in runs where !run.archived {
+            guard let link = run.delegation else { continue }
+            parents[run.id] = link.parentID
+            if run.status.isActive { active.insert(run.id) }
+        }
+        return active.isEmpty ? [:] : workingSubThreadCounts(parents: parents, active: active)
+    }
+
     /// The same, read from the sessions themselves: the delegation link of each and whether its turn runs.
     static func workingSubThreads(of parent: UUID, in runs: [WorkspaceRun]) -> Int {
         var parents: [UUID: UUID] = [:]

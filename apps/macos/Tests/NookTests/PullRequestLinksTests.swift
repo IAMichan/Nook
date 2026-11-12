@@ -79,6 +79,7 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(focus("https://dev.azure.com/org/proj/_git/repo/pullrequest/6?_a=commits"), .commits(sha: nil))
     }
 
+    #if canImport(CryptoKit)  // the hashes need CryptoKit (MD5, SHA-1); the core tests on Linux have none
     func testAFileAnchorFindsItsFileByHash() {
         let paths = ["README.md", "src/app.swift"]
         let sha256 = PullRequestFileAnchor.hashes(of: "src/app.swift")[0]
@@ -93,6 +94,7 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertNil(PullRequestFileAnchor(hash: String(repeating: "0", count: 64)).file(in: paths))
         XCTAssertNil(PullRequestFileAnchor().file(in: paths))
     }
+    #endif
 
     // MARK: PullRequestRef
 

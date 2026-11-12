@@ -1907,6 +1907,9 @@ private struct ChatsDetail: View, Equatable {
                                        onDelete: { deleting = $0 },
                                        onForward: startForward,
                                        onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
+                                       onVersions: { [entry] bubble in
+                                           await ChatCaptureService.shared.versions(chat: entry.id, message: bubble.id)
+                                       },
                                        typing: typing.line(entry.id), newFrom: newFrom)
                             .equatable()
                             .environment(\.chatFetchFile, ChatFileFetch(chat: entry.id) { [entry] in await app.fetchChatFile($0, in: entry) })

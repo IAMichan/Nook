@@ -92,8 +92,10 @@ final class MailBridge: ChatBridge, ObservableObject {
             // Not one account could be read: say why, instead of an empty list that looks like there is no mail.
             if rows.isEmpty, let failure { throw failure }
             await readBodies(of: rows)
-            let chats = MailChatData.chats(rows, accounts: found, bodies: bodies, named: found.count > 1)
+            var chats = MailChatData.chats(rows, accounts: found, bodies: bodies, named: found.count > 1)
+            let trashed = await trashed(rows: rows, accounts: found)
             remember(chats, rows: rows, accounts: found)
+            chats = MailChatData.marking(trashed, in: chats, named: found.count > 1)
             // An account that could not be read is tried again next round, not only once the mark changes.
             if failure == nil {
                 lastMark = mark
@@ -105,6 +107,21 @@ final class MailBridge: ChatBridge, ObservableObject {
             isWorking = false
             throw error
         }
+    }
+
+    /// Mail read before (this round or the last) that is in the Trash now, as the rows it was read as: you deleted it in
+    /// Mail. One quick script per account, the newest of its Trash only.
+    private func trashed(rows: [MailChatData.Row], accounts: [MailChatData.Account]) async -> [MailChatData.Row] {
+        let known = rows + places.values
+        var found: [MailChatData.Row] = []
+        for account in accounts {
+            let mine = known.filter { $0.account == account.name }
+            guard !mine.isEmpty, let raw = await ScriptText.run(MailChatData.trashScript(account: account.name), timeout: 15).text
+            else { continue }
+            let trash = MailChatData.trashRows(raw, account: account)
+            found += mine.filter { row in trash.contains { $0.isSameMail(as: row) } }
+        }
+        return found
     }
 
     /// Reads the start of the text of the newest messages not read before, a batch per round.
@@ -143,7 +160,7 @@ final class MailBridge: ChatBridge, ObservableObject {
 
     /// Why Mail gave no answer: no permission under Automation says how to give it; anything else as the Mail connector
     /// says it.
-    private func problem(_ number: Int?, _ message: String?, timeout: TimeInterval) -> NookError {
+    fileprivate func problem(_ number: Int?, _ message: String?, timeout: TimeInterval) -> NookError {
         if number == -1743 { return NookError(tr("chats.mail.noPermission")) }
         return NookError(MailStats.failure(errorNumber: number, message: message, timeout: timeout))
     }
@@ -294,6 +311,47 @@ final class MailBridge: ChatBridge, ObservableObject {
         isWorking = false
         lastMark = nil
         lastFullRead = nil
+    }
+}
+
+// MARK: Nook's archive
+
+/// Mail fills Nook's archive too (`ChatBackfill`): each person's older mail, a stretch of time at a time, back to their
+/// first mail. Mail has no edits, and deleting a mail in Mail moves it (to the Trash, an archive): nothing there says
+/// it was deleted for the other person, so Mail's messages are never marked "Deleted".
+extension MailBridge: ChatBackfillBridge {
+    var historyChanges: Bool { false }
+    var backfillEmptyIsStart: Bool { true }
+
+    /// Not while you work in Mail itself: Mail answers one script at a time, and the mail you open would wait.
+    func canBackfill(chatID: String) -> Bool {
+        isReady && !MailChangeMark.mailIsFront && MailChatData.parts(of: chatID, accounts: accounts) != nil
+    }
+
+    func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage] {
+        try await backfillPage(chatID: chatID, before: before, limit: limit).messages
+    }
+
+    /// The person's mail before `before`: the first stretch back that holds any (`MailChatData.olderStretches`), all of
+    /// it, so the page covers its stretch whole, with what of theirs and yours is in the Trash in that stretch. Empty
+    /// once there is none left.
+    func backfillPage(chatID: String, before: Date, limit: Int) async throws -> (messages: [InboxMessage], gone: [InboxMessage]) {
+        guard let (account, address) = MailChatData.parts(of: chatID, accounts: accounts) else { return ([], []) }
+        for stretch in MailChatData.olderStretches(before: before) {
+            let result = await ScriptText.run(MailChatData.olderScript(account: account.name, address: address,
+                                                                       from: stretch.from, to: stretch.to), timeout: 60)
+            guard let raw = result.text else { throw problem(result.errorNumber, result.errorMessage, timeout: 60) }
+            let rows = MailChatData.rows(raw, account: account).filter { $0.date < before }
+            let trash = MailChatData.trashRows(raw, account: account).filter { $0.date < before }
+            guard !rows.isEmpty || !trash.isEmpty else { continue }
+            let texts = MailStats.bodies(raw)
+            let chats = MailChatData.chats(rows, accounts: accounts, bodies: texts, named: accounts.count > 1)
+            let gone = trash.map { row in
+                InboxMessage(id: row.nookID, text: MailChatData.text(subject: row.subject, body: ""), date: row.date, fromMe: row.fromMe)
+            }
+            return (chats.first { $0.chatID == chatID }?.messages ?? [], gone)
+        }
+        return ([], [])
     }
 }
 

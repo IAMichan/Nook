@@ -23,6 +23,23 @@ final class PullRequestQuickMergeQueueTests: XCTestCase {
         XCTAssertNil(queue.drain())
     }
 
+    func testAHeldBackPullRequestGetsAutoMerge() {
+        var queue = PullRequestQuickMergeQueue()
+        queue.add("a#1")
+        queue.add("b#2")
+        _ = queue.next()
+        queue.finishAutoMerge()
+        XCTAssertEqual(queue.phase("a#1"), .autoMerge)
+        XCTAssertTrue(queue.changed, "the list is read again")
+        _ = queue.next()
+        queue.finish(success: true)
+        let result = queue.drain()
+        XCTAssertEqual(result?.merged, ["b#2"])
+        XCTAssertEqual(result?.autoMerged, ["a#1"])
+        XCTAssertEqual(result?.failed, 0)
+        XCTAssertNil(queue.phase("a#1"))
+    }
+
     func testAPullRequestIsQueuedOnce() {
         var queue = PullRequestQuickMergeQueue()
         queue.add("a#1")

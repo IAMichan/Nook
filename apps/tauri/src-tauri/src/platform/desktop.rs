@@ -5,6 +5,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use crate::state::AppState;
 
@@ -100,15 +101,29 @@ pub fn place_bar(app: &AppHandle, expanded: bool) {
     place_bar_sized(app, expanded, false);
 }
 
+/// The size you dragged the open panel to, and the "large" setting it was made under. Kept so closing the panel and
+/// opening it again brings it back at that size instead of the default; a changed "large" setting starts over.
+static DRAGGED_SIZE: Mutex<Option<(f64, f64, bool)>> = Mutex::new(None);
+
 /// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice.
 pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
-    PANEL_OPEN.store(expanded, Ordering::Relaxed);
+    let was_open = PANEL_OPEN.swap(expanded, Ordering::Relaxed);
     let Some(window) = app.get_webview_window(BAR) else { return };
+    let settings = app.state::<AppState>().settings();
+    if was_open {
+        // The panel is about to close or be placed again: what you dragged it to is kept first.
+        if let Ok(inner) = window.inner_size() {
+            let window_scale = window.scale_factor().unwrap_or(1.0);
+            let (w, h) = (inner.width as f64 / window_scale, inner.height as f64 / window_scale);
+            if w >= EXPANDED_MIN.0 && h >= EXPANDED_MIN.1 {
+                *DRAGGED_SIZE.lock().unwrap_or_else(|e| e.into_inner()) = Some((w, h, settings.panel_large));
+            }
+        }
+    }
     if expanded {
         // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
         set_clicks_pass(&window, false);
     }
-    let settings = app.state::<AppState>().settings();
     let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else { return };
     let scale = monitor.scale_factor();
@@ -122,10 +137,16 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
         (width * EXPANDED_SCREEN_FRACTION).max(EXPANDED_MIN.0).min(width),
         (height * EXPANDED_SCREEN_FRACTION).max(EXPANDED_MIN.1).min(height),
     );
+    let dragged = (*DRAGGED_SIZE.lock().unwrap_or_else(|e| e.into_inner()))
+        .filter(|&(_, _, large)| large == settings.panel_large)
+        .map(|(w, h, _)| (w, h));
     let (w, h) = if !expanded && notice {
         NOTICE
     } else if !expanded {
         COLLAPSED
+    } else if let Some((w, h)) = dragged {
+        // A size dragged on a larger screen still fits this one.
+        (w.min(width).max(EXPANDED_MIN.0.min(width)), h.min(height).max(EXPANDED_MIN.1.min(height)))
     } else if settings.panel_large {
         (EXPANDED_LARGE.0.max(default_open.0).min(width), EXPANDED_LARGE.1.max(default_open.1).min(height))
     } else {

@@ -92,6 +92,15 @@ struct ChatMessageView: View, Equatable {
             PrivateBriefDisclosure(brief: message.privateBrief)
         }
 
+        // The sources the answer cites, right under it as chips that open them, as in the notch's card
+        // (`NookAnswerView`): where a fact comes from is one click away without opening the details.
+        if !message.streaming {
+            let cited = NookAnswer(text: message.text, references: message.references).cited
+            if !cited.isEmpty {
+                AnswerSourceChips(references: cited)
+            }
+        }
+
         // Where Nook looked, folded away after every answer until you want to see it; a failed source shows as a badge.
         SourcesDisclosure(message: message, onRetry: isLast ? { app.retryLast() } : nil)
 

@@ -96,7 +96,8 @@ enum Research {
     static func terms(in text: String, history: [ChatTurn] = []) -> Terms {
         var terms = extract(text)
         // A short follow-up ("en het budget?", "what else does it say?") is about the same thing as the question before.
-        if let previous = history.last(where: \.fromUser)?.text, terms.words.count < 2, terms.phrases.isEmpty, isFollowUp(text) {
+        // The recap of a long conversation (`ConversationWindow`) is not the question before.
+        if let previous = ConversationWindow.withoutRecap(history).last(where: \.fromUser)?.text, terms.words.count < 2, terms.phrases.isEmpty, isFollowUp(text) {
             let before = extract(previous)
             if !before.isEmpty {
                 terms.words += before.words.filter { !terms.words.contains($0) }

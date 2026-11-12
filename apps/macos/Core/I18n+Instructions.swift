@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for the shortcut cheat sheet (`?`), Settings › Instructions (answer styles, saved prompts, spaces, the context
+// Texts for the shortcut cheat sheet (`⌘/`), Settings › Instructions (answer styles, saved prompts, spaces, the context
 // inspector) and the palette actions that change the answer style of a conversation. Numbers use %ld, text uses %@.
 
 let instructionsTranslations: [AppLanguage: [String: String]] = [

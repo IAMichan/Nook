@@ -41,8 +41,8 @@ struct ConfigPreview: View {
 
     private func color(_ kind: DiffLine.Kind) -> Color {
         switch kind {
-        case .add: return NookTheme.mint
-        case .remove: return NookTheme.coral
+        case .add: return NookTheme.diffAdded
+        case .remove: return NookTheme.diffRemoved
         case .context: return NookTheme.textSecondary
         }
     }

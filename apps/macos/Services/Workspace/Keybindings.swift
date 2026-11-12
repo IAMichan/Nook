@@ -398,8 +398,7 @@ enum Keybindings {
         KeybindingRule(key: "mod+f", command: "chat.find", when: "!terminalFocus"),
         KeybindingRule(key: "mod+k", command: "search.toggle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+k", command: "commandPalette.toggle", when: "!terminalFocus"),
-        // `?` (⇧/) lists every key; it steps aside whenever text is being typed. ⌘/ works there too.
-        KeybindingRule(key: "shift+/", command: "shortcuts.cheatSheet", when: "!editableFocus && !composerFocus && !terminalFocus"),
+        // ⌘/ lists every key. Not `?` (⇧/): that has to stay free for typing a question mark.
         KeybindingRule(key: "mod+/", command: "shortcuts.cheatSheet", when: "!terminalFocus"),
         KeybindingRule(key: "mod+n", command: "session.new", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+[", command: "session.previous", when: nil),

@@ -529,40 +529,42 @@ enum ComposerFilePicker {
     }
 }
 
-/// How full the agent's context window is: a small ring that starts at the top, amber above 80 % and coral above 90 %.
-/// Hover says how much, and once it fills up suggests `/compact`; a button asks the agent to summarize when it can.
+/// How full the agent's context window is: a small ring that starts at the top. It turns amber above 80 % and coral above
+/// 90 % of the auto-compact point (or of the window when there is none), and amber too while your next message would go
+/// after a summary. Hover (or click) opens `ContextUsageCard`: what fills the window, the choice to summarize before your
+/// next message, and the button that summarizes now.
 struct ComposerContextRing: View {
-    let used: Int
-    let window: Int
+    let usage: ContextUsage
     var onCompact: (() -> Void)? = nil
-    /// Where the agent summarizes by itself (`AutoCompactMark`): a tick on the ring, and a line in its help.
+    /// Where the agent summarizes by itself (`AutoCompactMark`): a tick on the ring, and a line in the card.
     var autoCompactAt: Int? = nil
+    /// Back at a long session whose prompt cache expired (`ReturnCompaction`): whether your next message goes after a
+    /// summary, and how to switch it. Nil when that is not on offer.
+    var compactFirst: Bool? = nil
+    var toggleCompactFirst: () -> Void = {}
+    /// Asks the agent for its breakdown, as the card opens.
+    var onOpen: () -> Void = {}
     @State private var open = false
 
-    private var fraction: Double { window > 0 ? min(1, Double(used) / Double(window)) : 0 }
+    private var fraction: Double { usage.fraction }
+    /// Measured against the auto-compact point: when it is time to summarize (`ContextMeter.pressure`).
+    private var pressure: Double { ContextMeter.pressure(used: usage.usedTokens, window: usage.window, autoCompactAt: autoCompactAt) }
 
     /// The tick's place on the ring, when it falls inside the window.
     private var markFraction: Double? {
-        guard let autoCompactAt, window > 0, autoCompactAt < window else { return nil }
-        return Double(autoCompactAt) / Double(window)
+        guard let autoCompactAt, usage.window > 0, autoCompactAt < usage.window else { return nil }
+        return Double(autoCompactAt) / Double(usage.window)
     }
 
-    /// "Compacts automatically at about 280k tokens."
-    private var autoCompactLine: String? {
-        autoCompactAt.map { tr("compose.context.autoCompact", ContextMeter.tokensText($0)) }
-    }
-
-    /// "Context window 84% · 168k/200k", and past the warning line the suggestion to summarize.
+    /// "Context window 84% · 168k/200k".
     private var help: String {
-        var base = tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window))
-        if let autoCompactLine { base += "\n" + autoCompactLine }
-        guard ContextMeter.suggestsCompact(fraction), onCompact != nil else { return base }
-        return base + "\n" + tr("compose.context.nearlyFull")
+        tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: usage.usedTokens, window: usage.window))
     }
 
     var body: some View {
-        let level = ContextMeter.level(fraction)
-        let tint: Color = level == .critical ? NookTheme.coral : (level == .warning ? NookTheme.amber : NookTheme.textSecondary)
+        let level = ContextMeter.level(pressure)
+        let tint: Color = level == .critical ? NookTheme.coral
+            : (level == .warning || compactFirst == true ? NookTheme.amber : NookTheme.textSecondary)
         Button { open.toggle() } label: {
             ZStack {
                 Circle().stroke(NookTheme.line2, lineWidth: 2)
@@ -581,52 +583,174 @@ struct ComposerContextRing: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .composerTip(help)
         .accessibilityLabel(help)
-        .popover(isPresented: $open, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(tr("compose.context.title")).font(NookTheme.TextStyle.strong)
-                ProgressView(value: fraction).tint(tint)
-                Text(tr("compose.context.detail", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                if let autoCompactLine {
-                    Text(autoCompactLine)
-                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if ContextMeter.suggestsCompact(fraction), onCompact != nil {
-                    Text(tr("compose.context.nearlyFull"))
-                        .font(NookTheme.TextStyle.detail).foregroundStyle(tint)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let onCompact {
-                    Button(tr("compose.context.compact")) { open = false; onCompact() }
-                } else {
-                    Text(tr("compose.context.noCompact")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-                }
-            }
-            .padding(12)
-            .frame(width: 240)
-        }
+        .hoverCard(arrowEdge: .top) { card }
+        .popover(isPresented: $open, arrowEdge: .top) { card }
+    }
+
+    private var card: some View {
+        ContextUsageCard(usage: usage, pressure: pressure, autoCompactAt: autoCompactAt, onCompact: onCompact,
+                         compactFirst: compactFirst, toggleCompactFirst: toggleCompactFirst)
+            .onAppear(perform: onOpen)
     }
 }
 
-/// Back at a long session whose prompt cache expired (`ReturnCompaction`): "Compact · 312k" by the send button means your
-/// message goes after a summary; one click makes it "Keep", and the whole history goes with it.
-struct CompactFirstChip: View {
-    let tokens: Int
-    let compacts: Bool
-    let toggle: () -> Void
+/// What fills the context window, as Claude Code's `/context` says it: how much is used, a bar in the colors of its
+/// parts, a line per part with its size and share, the parts loaded only when needed, and how many tools, memory files,
+/// agents and skills there are. For an agent that only reports the conversation's size: that, the room kept for
+/// summarizing and what is left. Below: the choice to summarize before your next message, and Summarize now.
+struct ContextUsageCard: View {
+    let usage: ContextUsage
+    let pressure: Double
+    var autoCompactAt: Int?
+    var onCompact: (() -> Void)?
+    var compactFirst: Bool?
+    var toggleCompactFirst: () -> Void = {}
 
     var body: some View {
-        let size = ContextMeter.tokensText(tokens)
-        Button(action: toggle) {
-            ComposerPill(symbol: compacts ? "arrow.down.right.and.arrow.up.left" : "text.alignleft",
-                         text: tr(compacts ? "compose.compactFirst.compact" : "compose.compactFirst.keep", size),
-                         tint: compacts ? NookTheme.amber : nil, showsChevron: false)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Text(tr("compose.context.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+            HStack {
+                Text(tr("compose.context.used", ContextMeter.percentText(usage.fraction)))
+                    .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
+                Spacer(minLength: NookTheme.Spacing.md)
+                Text("\(TokenTally.format(usage.usedTokens)) / \(TokenTally.format(usage.window))")
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).monospacedDigit()
+            }
+            bar
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                ForEach(usage.inWindow) { row($0) }
+            }
+            if !usage.deferred.isEmpty {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    ForEach(usage.deferred) { row($0) }
+                }
+            }
+            if !counts.isEmpty {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    ForEach(counts, id: \.0) { name, count in
+                        HStack {
+                            Text(name)
+                            Spacer(minLength: NookTheme.Spacing.md)
+                            Text("\(count)").monospacedDigit()
+                        }
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    }
+                }
+            }
+            if !usage.detailed {
+                Text(tr("compose.context.estimate"))
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let autoCompactAt {
+                Text(tr("compose.context.autoCompact", ContextMeter.tokensText(autoCompactAt)))
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            NookDivider()
+            actions
         }
-        .buttonStyle(.nookPlain)
-        .composerTip(tr(compacts ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp", size))
+        .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
+        .frame(width: 300, alignment: .leading)
+        .background(DropdownStyle.panel)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if ContextMeter.suggestsCompact(pressure), onCompact != nil {
+            Text(tr("compose.context.nearlyFull"))
+                .font(NookTheme.TextStyle.detail).foregroundStyle(ContextMeter.level(pressure) == .critical ? NookTheme.coral : NookTheme.amber)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let compactFirst {
+            // Was the chip by the send button: back at a session whose prompt cache expired.
+            Toggle(isOn: Binding(get: { compactFirst }, set: { _ in toggleCompactFirst() })) {
+                Text(tr("compose.context.compactFirst")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .help(tr(compactFirst ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp",
+                     ContextMeter.tokensText(usage.usedTokens)))
+        }
+        if let onCompact {
+            HoverCardButton(help: tr("compose.context.compact"), action: onCompact) {
+                Label(tr("compose.context.compact"), icon: "arrow.down.right.and.arrow.up.left")
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
+            }
+        } else {
+            Text(tr("compose.context.noCompact")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+        }
+    }
+
+    /// One bar across the card: each part in the window in its color, the buffer dim, the free space empty.
+    private var bar: some View {
+        GeometryReader { geometry in
+            HStack(spacing: 1) {
+                ForEach(usage.inWindow.filter { $0.kind != .free }) { category in
+                    Rectangle().fill(Self.color(category))
+                        .frame(width: max(1, geometry.size.width * usage.share(category)))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(height: 4)
+        .background(NookTheme.line2)
+        .mask { Capsule() }
+    }
+
+    private func row(_ category: ContextUsage.Category) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Circle()
+                .fill(Self.color(category))
+                .frame(width: 8, height: 8)
+            Text(Self.name(category)).foregroundStyle(category.kind == .used ? NookTheme.paper : NookTheme.textSecondary)
+            Spacer(minLength: NookTheme.Spacing.md)
+            Text(TokenTally.format(category.tokens)).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
+            Text(category.kind == .deferred ? "—" : ContextMeter.percentText(usage.share(category)))
+                .monospacedDigit().foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 44, alignment: .trailing)
+        }
+        .font(NookTheme.TextStyle.detail)
+        .lineLimit(1)
+    }
+
+    /// "MCP tools 147", "Memory files 1", …: only what the agent counted.
+    private var counts: [(String, Int)] {
+        [("mcp_tools", usage.mcpTools), ("memory_files", usage.memoryFiles), ("custom_agents", usage.agents), ("skills", usage.skills)]
+            .compactMap { id, count in count.flatMap { $0 > 0 ? (Self.name(id: id, fallback: id), $0) : nil } }
+    }
+
+    /// The categories Nook knows by name; another keeps the agent's own label.
+    static let knownIDs: Set<String> = [
+        "messages", "system_prompt", "system_tools", "system_tools_deferred", "mcp_tools", "mcp_tools_deferred",
+        "mcp_instructions", "custom_agents", "memory_files", "skills", "autocompact_buffer", "free_space",
+        ContextUsage.conversation,
+    ]
+
+    static func name(_ category: ContextUsage.Category) -> String { name(id: category.id, fallback: category.name) }
+
+    static func name(id: String, fallback: String) -> String {
+        knownIDs.contains(id) ? tr("compose.context.part." + id) : fallback
+    }
+
+    static func color(_ category: ContextUsage.Category) -> Color {
+        switch category.kind {
+        case .buffer: return NookTheme.textTertiary.opacity(0.5)
+        case .free: return NookTheme.line2
+        case .deferred: return NookTheme.textTertiary.opacity(0.35)
+        case .used:
+            switch category.id {
+            case "messages", ContextUsage.conversation: return NookTheme.blue
+            case "mcp_tools": return NookTheme.coral
+            case "system_tools": return NookTheme.mint
+            case "skills": return NookTheme.amber
+            case "custom_agents": return NookTheme.violet
+            case "memory_files": return NookTheme.music
+            default: return NookTheme.textTertiary
+            }
+        }
     }
 }
 
@@ -737,7 +861,7 @@ struct ComposerUsageRing: View, Equatable {
 
 }
 
-/// The title with the account, a line per window, and the way to every account's limits.
+/// The title with the account, a line per window, the way to every account's limits, and a refresh button.
 private struct ComposerUsagePanel: View {
     @EnvironmentObject private var app: AppModel
     let limits: [QuotaLimit]
@@ -754,9 +878,14 @@ private struct ComposerUsagePanel: View {
             TimelineView(.nookTicks(every: 60)) { context in
                 UsageLimitRows(limits: limits, now: context.date)
             }
-            SmallGhostButton(title: tr("limits.all")) {
-                open = false
-                app.openUsageModal(.limits)
+            // "All limits" on the left, and on its far right a way to read the limits again right now.
+            HStack(spacing: NookTheme.Spacing.sm) {
+                SmallGhostButton(title: tr("limits.all")) {
+                    open = false
+                    app.openUsageModal(.limits)
+                }
+                Spacer(minLength: 0)
+                UsageRefreshButton()
             }
         }
         .padding(NookTheme.Spacing.md)

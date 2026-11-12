@@ -372,6 +372,61 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(CompletionPrompt(context: "Header", text: "Hoi,").healed().pending, "")
     }
 
+    func testTypedSpaceIsSpelledFirst() {
+        // The builder takes the typed space off the text and remembers it.
+        let prompt = PromptBuilder().build(CompletionContext(before: "Ik stuur hem donderdag "))
+        XCTAssertEqual(prompt.text, "Ik stuur hem donderdag")
+        XCTAssertTrue(prompt.typedSpace)
+        XCTAssertFalse(PromptBuilder().build(CompletionContext(before: "Ik stuur hem donderdag")).typedSpace)
+        // The finished word is read as it is; only the space has to be spelled, so "middag" cannot stick to it.
+        let healed = prompt.healed()
+        XCTAssertEqual(healed.prompt, CompletionPrompt(context: prompt.context, text: "Ik stuur hem donderdag"))
+        XCTAssertEqual(healed.pending, " ")
+    }
+
+    func testCotypistInstructionsAreTakenAsWritten() {
+        XCTAssertEqual(CompletionCotypist.instructions(from: "  My name is Sam.\nI write in Dutch.\n"), "My name is Sam.\nI write in Dutch.")
+        XCTAssertNil(CompletionCotypist.instructions(from: "   "))
+        XCTAssertNil(CompletionCotypist.instructions(from: nil))
+        XCTAssertNil(CompletionCotypist.instructions(from: 42))
+        XCTAssertEqual(CompletionCotypist.instructions(from: String(repeating: "a", count: 3_000))?.count, 2_000)
+    }
+
+    func testWordLimitIsToldApartFromDoubt() {
+        let options = CompletionOptions(maxWords: 2, eagerness: 0.5)
+        var capped = CompletionCandidate()
+        XCTAssertTrue(capped.keep(probability: 0.9, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false))
+        capped.end(atWordLimit: true)
+        let result = capped.result(text: " tot morgen")
+        XCTAssertEqual(result?.reachedWordLimit, true)
+        XCTAssertEqual(result?.sequenceProbability ?? 0, 0.9, accuracy: 0.0001)
+        var unsure = CompletionCandidate()
+        _ = unsure.keep(probability: 0.9, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false)
+        _ = unsure.keep(probability: 0.001, isEnd: false, firstBar: options.minFirstProbability, options: options, continuesWord: false)
+        XCTAssertEqual(unsure.result(text: " tot")?.reachedWordLimit, false)
+    }
+
+    func testExtendingKeepsTheWholeSuggestionsBars() {
+        let options = CompletionOptions(maxWords: 8, eagerness: 0.5)
+        let rest = options.extending(after: 0.5, maxWords: 6)
+        XCTAssertEqual(rest.maxWords, 6)
+        XCTAssertEqual(rest.candidates, 1)
+        // Its first token is in the middle of the suggestion: the per-token bar.
+        XCTAssertEqual(rest.minFirstProbability, options.minProbability)
+        // Half the certainty is spent already: the rest may lose only what is left.
+        XCTAssertEqual(rest.minSequenceProbability, options.minSequenceProbability / 0.5, accuracy: 0.0001)
+        XCTAssertEqual(options.extending(after: 0.00001, maxWords: 6).minSequenceProbability, 1)
+    }
+
+    func testNoMarkAfterATypedSpaceAndNoPlaceholders() {
+        XCTAssertNil(CompletionSuggestion.make(raw: "?", before: "Zal ik iets meenemen ", maxWords: 8))
+        XCTAssertNil(CompletionSuggestion.make(raw: ", graag", before: "Ja ", maxWords: 8))
+        XCTAssertEqual(CompletionSuggestion.make(raw: "?", before: "Zal ik iets meenemen", maxWords: 8)?.remaining, "?")
+        XCTAssertNil(CompletionSuggestion.make(raw: " [Naam],", before: "Hoi", maxWords: 8))
+        XCTAssertEqual(CompletionSuggestion.make(raw: " team, hier is <name> zijn", before: "Hoi", maxWords: 8)?.remaining, " team, hier is")
+        XCTAssertEqual(CompletionSuggestion.make(raw: " array[0] waarde", before: "De", maxWords: 8)?.remaining, " array[0] waarde")
+    }
+
     func testWindowMovesInSteps() {
         let builder = PromptBuilder(windowLength: 10, windowStep: 5)
         XCTAssertEqual(builder.window(of: "short"), "short")
@@ -1135,6 +1190,7 @@ final class CompletionCandidateTests: XCTestCase {
 }
 
 final class CompletionTextColorTests: XCTestCase {
+    #if canImport(Darwin)
     func testGhostIsATranslucentShadeOfTheText() throws {
         let blue = try XCTUnwrap(CompletionTextColor(cgColor: CGColor(srgbRed: 0, green: 0.4, blue: 1, alpha: 1)))
         let ghost = try XCTUnwrap(blue.ghost)
@@ -1142,10 +1198,13 @@ final class CompletionTextColorTests: XCTestCase {
         XCTAssertEqual(ghost.green, 0.4, accuracy: 0.001)
         XCTAssertEqual(ghost.alpha, CompletionTextColor.ghostAlpha, accuracy: 0.001)
     }
+    #endif
 
     func testReadsAccessibilityColorsOnly() throws {
+        #if canImport(Darwin)
         XCTAssertNotNil(CompletionTextColor(axValue: CGColor(gray: 0.2, alpha: 1)))
         XCTAssertNil(CompletionTextColor(axValue: "black"))
+        #endif
         // A nearly transparent colour says nothing about what is on screen.
         XCTAssertNil(CompletionTextColor(red: 0, green: 0, blue: 0, alpha: 0.1).ghost)
     }

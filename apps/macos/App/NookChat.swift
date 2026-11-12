@@ -571,16 +571,19 @@ final class NookChat: ObservableObject {
         conversations[index].queue.hold()
     }
 
-    /// Chat history turns formatted for model context, excluding current turn.
+    /// Chat history turns formatted for model context, excluding current turn: the newest turns in full, older ones
+    /// shortened, and what the user asked before that as a short recap, all within one budget (`ConversationWindow`).
     /// `hiding`: sources an external brain may not see; answers built from them are left out, with the question that led to them.
-    func history(before id: UUID, limit: Int = 16, hiding hidden: Set<String> = []) -> [ChatTurn] {
+    func history(before id: UUID, limits: ConversationWindow.Limits = .standard, hiding hidden: Set<String> = []) -> [ChatTurn] {
         guard let conversation = conversations.first(where: { $0.messages.contains { $0.id == id } }) else { return [] }
         let earlier = Self.withoutPrivate(Array(conversation.messages.prefix { $0.id != id }), hiding: hidden)
-        return earlier.suffix(limit).compactMap { message in
+        // The recap only needs the questions of a very long conversation, so its oldest answers are not even formatted.
+        let turns: [ChatTurn] = earlier.suffix(200).compactMap { message in
             let text = message.isError ? "" : message.historyText
             guard !text.isEmpty else { return nil }
-            return ChatTurn(fromUser: message.role == .user, text: String(text.prefix(4000)))
+            return ChatTurn(fromUser: message.role == .user, text: text)
         }
+        return ConversationWindow.fit(turns, limits: limits)
     }
 
     /// Drops the answers that were built from a hidden source and the question right before each of them.

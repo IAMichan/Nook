@@ -118,6 +118,8 @@ private struct MusicPlaylistDetailView: View {
     @ObservedObject var service: NowPlayingService
     let onDelete: (MusicPlaylist) -> Void
     @State private var filter = ""
+    /// "Add songs" is open: a search above the tracks whose results go into this playlist with one click.
+    @State private var adding = false
 
     private var playlist: MusicPlaylist { detail.playlist }
 
@@ -127,12 +129,22 @@ private struct MusicPlaylistDetailView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 header
                     .padding(.bottom, NookTheme.Spacing.xxl)
+                if adding, playlist.editable {
+                    MusicPlaylistAdder(playlist: playlist, app: detail.app, existing: Set(detail.tracks.map(\.id)),
+                                       service: service) { withAnimation(NookTheme.reveal) { adding = false } }
+                        .padding(.bottom, NookTheme.Spacing.xxl)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 content
             }
             .padding(.horizontal, MusicLayout.edge)
             .padding(.bottom, NookTheme.Spacing.xl)
         }
-        .onChange(of: playlist.id) { filter = "" }
+        .animation(NookTheme.reveal, value: adding)
+        .onChange(of: playlist.id) {
+            filter = ""
+            adding = false
+        }
     }
 
     /// The cover, the name large with what it holds under it, and its buttons in one row: no card around it, as the
@@ -159,10 +171,11 @@ private struct MusicPlaylistDetailView: View {
                     NookIconButton(systemName: "shuffle", label: tr("music.playlists.shuffle"), size: 32) {
                         service.play(playlist, shuffled: true)
                     }
-                    if playlist.editable, let track = service.currentTrack, service.playlistsAccepting(track).contains(where: { $0.id == playlist.id }) {
-                        NookIconButton(systemName: "plus", label: tr("music.playlists.addCurrent", track.title), size: 32) {
-                            service.add(track, to: playlist)
+                    if playlist.editable {
+                        SmallGhostButton(title: "+ " + tr("music.playlists.addSongs")) {
+                            withAnimation(NookTheme.reveal) { adding.toggle() }
                         }
+                        .help(tr("music.playlists.addSongsHelp", playlist.name))
                     }
                     if playlist.editable { moreMenu }
                     Spacer(minLength: NookTheme.Spacing.md)
@@ -179,6 +192,10 @@ private struct MusicPlaylistDetailView: View {
 
     private var moreMenu: some View {
         Menu {
+            if let track = service.currentTrack, service.playlistsAccepting(track).contains(where: { $0.id == playlist.id }) {
+                Button(tr("music.playlists.addCurrent", track.title)) { service.add(track, to: playlist) }
+                Divider()
+            }
             Button(tr("music.playlists.rename")) { service.playlistPrompt = .rename(playlist) }
             Button(tr("music.playlists.reload")) { service.reloadPlaylistDetail() }
             Divider()
@@ -220,9 +237,17 @@ private struct MusicPlaylistDetailView: View {
             .frame(minHeight: 240)
         default:
             if detail.tracks.isEmpty {
-                WSEmptyState(symbol: "music.note", title: tr("music.playlists.emptyPlaylist"),
-                             message: playlist.editable ? tr("music.playlists.emptyPlaylistDetail") : nil)
+                if !adding {
+                    WSEmptyState(symbol: "music.note", title: tr("music.playlists.emptyPlaylist"),
+                                 message: playlist.editable ? tr("music.playlists.emptyPlaylistDetail") : nil) {
+                        if playlist.editable {
+                            SmallPrimaryButton(title: tr("music.playlists.addSongs"), systemName: "plus") {
+                                withAnimation(NookTheme.reveal) { adding = true }
+                            }
+                        }
+                    }
                     .frame(minHeight: 240)
+                }
             } else {
                 let rows = detail.tracks(matching: filter)
                 if rows.isEmpty {
@@ -248,6 +273,127 @@ private struct MusicPlaylistDetailView: View {
     }
 }
 
+/// "Add songs" in an open playlist: search the playlist's player, and each result goes in with one click. Before
+/// typing it offers what played last. It searches on its own, so the tab's search keeps what was typed there.
+private struct MusicPlaylistAdder: View {
+    let playlist: MusicPlaylist
+    /// The player the playlist belongs to: the search goes there, so every result can go in.
+    let app: String
+    /// What the playlist already holds, so it shows as added.
+    let existing: Set<String>
+    @ObservedObject var service: NowPlayingService
+    let onClose: () -> Void
+    @State private var text = ""
+    @State private var result = MusicSearchResult()
+    @State private var added: Set<String> = []
+    @FocusState private var focused: Bool
+
+    private static let shown = 12
+    private var query: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("music.playlists.addSongsTitle", playlist.name))
+                        .font(NookTheme.TextStyle.title)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                    Text(tr("music.playlists.addSongsDetail"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: NookTheme.Spacing.md)
+                SmallGhostButton(title: tr("music.playlists.addDone"), action: onClose)
+                    .padding(.trailing, -NookTheme.Spacing.md)
+            }
+            NookSearchField(prompt: app == "Spotify" ? tr("music.search.promptSpotify") : tr("music.search.promptMusic"),
+                            text: $text, focus: $focused, onEscape: onClose)
+                .focusOnAppear($focused)
+            rows
+        }
+        .padding(NookTheme.Spacing.xl)
+        .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
+        // A moment after the last keystroke, as the tab's own search.
+        .task(id: query) {
+            guard !query.isEmpty else {
+                result = MusicSearchResult()
+                return
+            }
+            result = MusicSearchResult(query: query, state: .loading, tracks: result.tracks)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            let found = await NowPlayingService.results(for: query, app: app)
+            guard !Task.isCancelled else { return }
+            result = found
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        if query.isEmpty {
+            let recent = service.recent.tracks.filter { NowPlayingService.canPlay($0, in: app) }
+            if recent.isEmpty {
+                hint(tr("music.playlists.addSongsIdle"))
+            } else {
+                list(title: tr("music.recent.title"), tracks: Array(recent.prefix(6)))
+            }
+        } else {
+            switch result.state {
+            case .connectSpotify, .reconnectSpotify:
+                hint(tr("music.search.connectSpotifyDetail", tr("settings.section.connections")))
+            case .failed(let message):
+                hint(message)
+            case .loading where result.tracks.isEmpty, .idle:
+                HStack(spacing: NookTheme.Spacing.md) {
+                    ProgressView().controlSize(.small)
+                    hint(tr("music.search.loading"))
+                }
+            case .loading, .done:
+                let tracks = result.tracks.filter { NowPlayingService.canPlay($0, in: app) }
+                if tracks.isEmpty {
+                    hint(tr("music.search.empty", result.query))
+                } else {
+                    list(title: nil, tracks: Array(tracks.prefix(Self.shown)))
+                        .opacity(result.state == .loading ? 0.6 : 1)
+                }
+            }
+        }
+    }
+
+    private func list(title: String?, tracks: [MusicTrack]) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            if let title {
+                Text(title)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            LazyVStack(spacing: 0) {
+                ForEach(Array(tracks.enumerated()), id: \.offset) { _, track in
+                    MusicTrackRow(track: track, playing: service.current?.trackID == track.id, service: service, queues: false,
+                                  primary: MusicRowAction(title: tr("music.playlists.add"), done: isIn(track)) {
+                                      service.add(track, to: playlist)
+                                      added.insert(track.id)
+                                  }) {
+                        service.play(track, fromQueue: false)
+                    }
+                }
+            }
+            .musicRowBleed()
+        }
+    }
+
+    private func isIn(_ track: MusicTrack) -> Bool { added.contains(track.id) || existing.contains(track.id) }
+
+    private func hint(_ text: String) -> some View {
+        Text(text)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// One track in a list (an open playlist, a search, Recent, a top list): its number when the list has an order, or the
 /// equalizer while it plays, cover, title and artist, album, length or a `note`, and under the pointer: add to queue and
 /// take out of the playlist. Click to play it.
@@ -263,71 +409,71 @@ struct MusicTrackRow: View {
     var queues = true
     /// Instead of the length: how often it played.
     var note: String? = nil
+    /// A labelled button that stays on screen, for what the list is for (adding a found track to the open playlist).
+    var primary: MusicRowAction? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                if let number {
-                    marker(number: number).frame(width: 22)
-                }
-                MusicArtwork(url: track.artworkURL, seed: track.album.isEmpty ? track.title : track.album, cornerRadius: NookTheme.Radius.chip)
-                    .frame(width: MusicLayout.rowArtwork, height: MusicLayout.rowArtwork)
-                    .overlay {
-                        if number == nil {
-                            MusicArtworkState(hovering: hovering, playing: playing, isPlaying: service.current?.isPlaying ?? false)
+        // The row plays on a click; its buttons sit beside that, not inside it, so a click on one never starts the track.
+        HStack(spacing: NookTheme.Spacing.md) {
+            Button(action: action) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    if let number {
+                        marker(number: number).frame(width: 22)
+                    }
+                    MusicArtwork(url: track.artworkURL, seed: track.album.isEmpty ? track.title : track.album, cornerRadius: NookTheme.Radius.chip)
+                        .frame(width: MusicLayout.rowArtwork, height: MusicLayout.rowArtwork)
+                        .overlay {
+                            if number == nil {
+                                MusicArtworkState(hovering: hovering, playing: playing, isPlaying: service.current?.isPlaying ?? false)
+                            }
+                        }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        Text(track.title)
+                            .font(NookTheme.TextStyle.strong)
+                            .foregroundStyle(playing ? NookTheme.music : NookTheme.paper)
+                            .lineLimit(1)
+                        if !track.artist.isEmpty {
+                            Text(track.artist)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .lineLimit(1)
                         }
                     }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(track.title)
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(playing ? NookTheme.music : NookTheme.paper)
-                        .lineLimit(1)
-                    if !track.artist.isEmpty {
-                        Text(track.artist)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    ViewThatFits(in: .horizontal) {
+                        Text(track.album)
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
+                            .foregroundStyle(NookTheme.textTertiary)
                             .lineLimit(1)
+                            .frame(width: 200, alignment: .leading)
+                        Color.clear.frame(width: 0)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                ViewThatFits(in: .horizontal) {
-                    Text(track.album)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                        .frame(width: 200, alignment: .leading)
-                    Color.clear.frame(width: 0)
-                }
-                actions
-                Text(note ?? (track.duration > 0 ? musicClock(Double(track.duration)) : ""))
-                    .font(NookTheme.font(11, .medium).monospacedDigit())
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                    .frame(minWidth: 40, alignment: .trailing)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, MusicLayout.rowBleed)
-            .frame(height: MusicLayout.rowHeight)
-            .hoverRowFill($hovering, radius: NookTheme.Radius.card)
-            .contentShape(Rectangle())
+            .buttonStyle(.nookPlain)
+            .help(tr("music.play"))
+            .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
+            .accessibilityHint(tr("music.play"))
+            actions
+            Text(note ?? (track.duration > 0 ? musicClock(Double(track.duration)) : ""))
+                .font(NookTheme.font(11, .medium).monospacedDigit())
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .frame(minWidth: 40, alignment: .trailing)
+                .accessibilityHidden(note == nil)
         }
-        .buttonStyle(.nookPlain)
+        .padding(.horizontal, MusicLayout.rowBleed)
+        .frame(height: MusicLayout.rowHeight)
+        .hoverRowFill($hovering, radius: NookTheme.Radius.card)
+        .contentShape(Rectangle())
         .animation(NookTheme.hover, value: hovering)
-        .help(tr("music.play"))
         .contextMenu {
-            Button(tr("music.play"), action: action)
-            if queues {
-                Button(tr("music.queue.add")) { service.enqueue(track) }
-            }
-            MusicAddToPlaylistMenu(track: track, service: service)
-            if let onRemove {
-                Divider()
-                Button(removeLabel ?? tr("music.playlists.removeTrack"), role: .destructive, action: onRemove)
-            }
+            MusicTrackMenuItems(track: track, service: service, play: action, queues: queues, onRemove: onRemove, removeLabel: removeLabel)
         }
-        .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
-        .accessibilityHint(tr("music.play"))
     }
 
     /// The play symbol under the pointer, the bars while it plays, otherwise the number.
@@ -347,16 +493,125 @@ struct MusicTrackRow: View {
         }
     }
 
+    /// Under the pointer: add to the queue, add to a playlist, take out. The "…" with all of it stays in sight, so
+    /// what a row can do is never hidden behind a right click.
     private var actions: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            if queues {
-                ToolbarIconButton("text.line.last.and.arrowtriangle.forward", tr("music.queue.add")) { service.enqueue(track) }
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                if queues {
+                    ToolbarIconButton("text.line.last.and.arrowtriangle.forward", tr("music.queue.add"), height: 28, width: 28, symbolSize: 12) {
+                        service.enqueue(track)
+                    }
+                }
+                MusicAddToPlaylistButton(track: track, service: service, size: 28)
+                if let onRemove {
+                    ToolbarIconButton("minus.circle", removeLabel ?? tr("music.playlists.removeTrack"), height: 28, width: 28, symbolSize: 12, onRemove)
+                }
             }
-            if let onRemove {
-                ToolbarIconButton("minus.circle", removeLabel ?? tr("music.playlists.removeTrack"), onRemove)
+            .opacity(hovering ? 1 : 0)
+            MusicTrackMenu(track: track, service: service, play: action, queues: queues, onRemove: onRemove, removeLabel: removeLabel)
+                .opacity(hovering ? 1 : 0.5)
+            if let primary {
+                MusicRowActionButton(item: primary)
+                    .padding(.leading, NookTheme.Spacing.xs)
             }
         }
-        .opacity(hovering ? 1 : 0)
+    }
+}
+
+/// A row's own labelled action ("Add"), turning into a check once done.
+struct MusicRowAction {
+    let title: String
+    var symbol = "plus"
+    /// Done already (the track is in the playlist): shown as a check, and a click does nothing.
+    var done = false
+    let action: () -> Void
+}
+
+private struct MusicRowActionButton: View {
+    let item: MusicRowAction
+    @State private var hovering = false
+
+    var body: some View {
+        Button { if !item.done { item.action() } } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(icon: item.done ? "checkmark" : item.symbol).font(NookTheme.font(10.5, .bold))
+                Text(item.done ? tr("music.track.added") : item.title).font(NookTheme.TextStyle.label)
+            }
+            .foregroundStyle(item.done ? NookTheme.mint : (hovering ? NookTheme.paper : NookTheme.textStrong))
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(height: 26)
+            .roundedBackground(item.done ? Color.clear : (hovering ? NookTheme.graphite : NookTheme.smoke), radius: NookTheme.Radius.control)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .fixedSize()
+        .accessibilityLabel(item.done ? tr("music.track.added") : item.title)
+    }
+}
+
+/// "…" on a track: everything it can do, in words.
+struct MusicTrackMenu: View {
+    let track: MusicTrack
+    @ObservedObject var service: NowPlayingService
+    let play: () -> Void
+    var queues = true
+    var onRemove: (() -> Void)? = nil
+    var removeLabel: String? = nil
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            MusicTrackMenuItems(track: track, service: service, play: play, queues: queues, onRemove: onRemove, removeLabel: removeLabel)
+        } label: {
+            Image(icon: "ellipsis")
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 28, height: 28)
+                .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.chip)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.nookBorderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(tr("music.track.more"))
+        .accessibilityLabel(tr("music.track.more"))
+    }
+}
+
+/// What a track can do, for its "…" and its context menu alike.
+struct MusicTrackMenuItems: View {
+    let track: MusicTrack
+    @ObservedObject var service: NowPlayingService
+    let play: () -> Void
+    var queues = true
+    var onRemove: (() -> Void)? = nil
+    var removeLabel: String? = nil
+
+    var body: some View {
+        Button(tr("music.play"), action: play)
+        if queues {
+            Button(tr("music.queue.add")) { service.enqueue(track) }
+        }
+        MusicAddToPlaylistMenu(track: track, service: service)
+        if let artist = Self.artist(of: track) {
+            Divider()
+            Button(tr("music.track.goToArtist", artist)) { MusicSearchModel.shared.find(artist) }
+        }
+        if let onRemove {
+            Divider()
+            Button(removeLabel ?? tr("music.playlists.removeTrack"), role: .destructive, action: onRemove)
+        }
+    }
+
+    /// The first of the artists a track is by ("A, B" or "A & B").
+    static func artist(of track: MusicTrack) -> String? {
+        let name = track.artist.components(separatedBy: CharacterSet(charactersIn: ",&")).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : name
     }
 }
 

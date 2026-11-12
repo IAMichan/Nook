@@ -101,6 +101,8 @@ struct CompletionTextColor: Equatable, Sendable {
         self.alpha = alpha
     }
 
+    #if canImport(Darwin)
+    // CGColor and the Accessibility value it comes in are the Mac's; the core tests on Linux leave these out.
     init?(cgColor: CGColor) {
         guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
               let converted = cgColor.converted(to: srgb, intent: .defaultIntent, options: nil),
@@ -114,6 +116,7 @@ struct CompletionTextColor: Equatable, Sendable {
         guard CFGetTypeID(value) == CGColor.typeID else { return nil }
         self.init(cgColor: value as! CGColor)
     }
+    #endif
 
     /// The suggestion's colour: this one, translucent. Nil when the app's colour says little (nearly transparent): the
     /// system's placeholder grey is drawn instead.

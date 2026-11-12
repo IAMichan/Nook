@@ -331,8 +331,8 @@ struct PullRequestLineCounts: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Text("+" + additions.formatted()).foregroundStyle(NookTheme.mint)
-            Text("−" + deletions.formatted()).foregroundStyle(NookTheme.coral)
+            Text("+" + additions.formatted()).foregroundStyle(NookTheme.diffAdded)
+            Text("−" + deletions.formatted()).foregroundStyle(NookTheme.diffRemoved)
         }
         .font(font)
         .monospacedDigit()

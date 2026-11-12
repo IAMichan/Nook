@@ -196,7 +196,8 @@ struct ChatIntent: Equatable {
         let raw = fixingSendTypo(raw)
         var intent = detect(raw)
         guard !history.isEmpty, intent.primaryAction == nil else { return intent }
-        let recent = Array(history.suffix(6).reversed())
+        // The recap of a long conversation (`ConversationWindow`) lists old questions, not the request this continues.
+        let recent = Array(ConversationWindow.withoutRecap(history).suffix(6).reversed())
         // "Ja" or "ok" only goes ahead with what Nook just asked ("Wil je het bericht nu verzenden?"), never after a
         // message that was already handled.
         // So does "doe dat" after Nook said what it would do ("Ik zet het in de agenda").

@@ -164,22 +164,20 @@ extension AgentRunPanel {
         return true
     }
 
-    /// The context ring once the window starts to fill (the microphone is the composer's own, `dictating()`).
+    /// The context ring from the first token (the microphone is the composer's own, `dictating()`). Its card holds what
+    /// fills the window, the choice to summarize before your next message (back at a session whose prompt cache
+    /// expired) and Summarize now.
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
-        HStack(spacing: NookTheme.Spacing.xxs) {
-            // Back at a long session whose prompt cache ran out: summarize before your message, or keep it all.
-            if workspace.offersCompactFirst(run), let tokens = run.usage.contextTokens {
-                CompactFirstChip(tokens: tokens, compacts: workspace.compactsFirst(run)) { workspace.toggleCompactFirst(runID) }
-            }
-            if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0,
-               ContextMeter.worthShowing(Double(used) / Double(window)) {
-                // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
-                let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
-                ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") },
-                                    autoCompactAt: workspace.autoCompactAt(run))
-            }
+        if let usage = workspace.contextUsage(run), ContextMeter.worthShowing(used: usage.usedTokens, window: usage.window) {
+            // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
+            let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
+            ComposerContextRing(usage: usage,
+                                onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") },
+                                autoCompactAt: workspace.autoCompactAt(run),
+                                compactFirst: workspace.offersCompactFirst(run) ? workspace.compactsFirst(run) : nil,
+                                toggleCompactFirst: { workspace.toggleCompactFirst(runID) },
+                                onOpen: { workspace.refreshContextUsage(runID) })
         }
     }
 
@@ -286,9 +284,9 @@ extension AgentRunPanel {
                 BackgroundCommandBar(commands: commands, focus: $barFocus,
                                      reveal: { conversationFocus = $0 }) { outputsLink.openSubagents() }
             }
-            // While the agent works its list shows in the timeline; one it left unfinished waits here.
-            if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
-                TasksStrip(steps: tasks)
+            // The agent's task list: the step it works on now while it works, the list it left once it stops.
+            if let tasks = run.tasks, TaskChecklist.showsAboveComposer(tasks) {
+                TasksStrip(steps: tasks, working: run.status.isActive)
             }
             // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
             // same tray a new session shows its folder and branch in under the box.

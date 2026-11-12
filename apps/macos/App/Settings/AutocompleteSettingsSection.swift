@@ -154,6 +154,15 @@ struct AutocompleteSettingsSection: View {
     /// What makes suggestions sound like the user, when it is missing: learning from their writing (off in settings stored
     /// before it became the default, which updates do not change) and a few words about them. Cotypist asks for both when it
     /// is set up; without them a suggestion only knows the text in the field. "Not now" puts both away.
+    /// What the user wrote about themselves in Cotypist, offered while Nook's instructions are empty.
+    private var cotypistInstructions: String? { CompletionCotypist.instructions() }
+
+    /// Saved at once: the hint sits on another page than the editor, whose `onChange` would not run there.
+    private func useInstructions(_ text: String) {
+        store.prefs.instructions = text
+        instructions = text
+    }
+
     @ViewBuilder private var personalHints: some View {
         if !store.prefs.personalHintsDismissed {
             if !store.prefs.learn {
@@ -173,6 +182,10 @@ struct AutocompleteSettingsSection: View {
                     HStack {
                         if store.prefs.learn {
                             Button(tr("autocomplete.hint.notNow")) { store.prefs.personalHintsDismissed = true }
+                        }
+                        if let cotypist = cotypistInstructions {
+                            Button(tr("autocomplete.instructionsFromCotypist")) { useInstructions(cotypist) }
+                                .buttonStyle(.nookProminent)
                         }
                         Button(tr("autocomplete.hint.instructionsAdd")) {
                             app.openSettings(section: .autocompleteStyle, highlight: "autocomplete.instructions")
@@ -463,6 +476,9 @@ struct AutocompleteSettingsSection: View {
                     .frame(minHeight: 70)
                     .onChange(of: instructions) { _, value in store.prefs.instructions = value }
                 SettingNote(tr("autocomplete.instructionsHint"))
+                if instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let cotypist = cotypistInstructions {
+                    Button(tr("autocomplete.instructionsFromCotypist")) { useInstructions(cotypist) }
+                }
             }
             SettingToggle(tr("autocomplete.learn"), detail: tr("autocomplete.learnDetail"), isOn: $store.prefs.learn)
                 .onChange(of: store.prefs.learn) { _, _ in autocomplete.applyPersonalization() }

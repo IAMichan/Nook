@@ -372,8 +372,8 @@ private struct CardLineChanges: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            Text("+\(changes.added)").foregroundStyle(NookTheme.mint)
-            Text("−\(changes.removed)").foregroundStyle(NookTheme.coral)
+            Text("+\(changes.added)").foregroundStyle(NookTheme.diffAdded)
+            Text("−\(changes.removed)").foregroundStyle(NookTheme.diffRemoved)
         }
         .font(NookTheme.mono(11, .medium))
         .fixedSize()

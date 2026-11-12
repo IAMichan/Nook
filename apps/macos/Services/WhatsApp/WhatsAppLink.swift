@@ -729,10 +729,18 @@ final class WhatsAppLink: ObservableObject {
             }
         case .edited(let chat, let message, let text)?:
             // Changed on a phone: the chat shows the new text, marked as edited, without bringing a card up.
-            if let changed = inbox.applyEdit(text, message: message, chat: chat) { onReceipt?(chatKey(changed)) }
+            if let changed = inbox.applyEdit(text, message: message, chat: chat) {
+                onReceipt?(chatKey(changed))
+            } else {
+                archiveChange(chat, message: message, edited: text)
+            }
         case .revoked(let chat, let message)?:
             // Deleted for everyone on a phone: the chat shows it as deleted.
-            if let changed = inbox.applyDelete(message: message, chat: chat) { onReceipt?(chatKey(changed)) }
+            if let changed = inbox.applyDelete(message: message, chat: chat) {
+                onReceipt?(chatKey(changed))
+            } else {
+                archiveChange(chat, message: message, deleted: true)
+            }
         default:
             break
         }
@@ -1106,6 +1114,26 @@ final class WhatsAppLink: ObservableObject {
         guard let fetched = try? await fetchHistory(key, limit: limit) else { return false }
         if fetched.gateway < limit { inbox.markOldestReached(key) }
         return (inbox.conversations[key]?.messages.count ?? 0) > before
+    }
+
+    /// An edit or deletion of a message older than what this link keeps: Nook's archive takes it (`ChatCaptureService
+    /// .archiveChange`), under the key the shared inbox knows the chat by.
+    private func archiveChange(_ chat: String, message: String, edited text: String? = nil, deleted: Bool = false) {
+        let key = ChatInbox.key(app: "whatsapp", id: chatKey(WAJID.normalized(chat)))
+        ChatCaptureService.shared.archiveChange(chat: key, message: message, edited: text, deleted: deleted)
+    }
+
+    /// A page of a chat's history before its newest `offset` messages, as every app's messages, for Nook's archive
+    /// (`ChatBackfill`): the chat here stays as it is, and no file is fetched.
+    func backfill(_ chat: String, offset: Int, limit: Int) async throws -> [InboxMessage] {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        let key = WAJID.normalized(chat)
+        let fetched = try await provider.messages(chat: key, offset: offset, limit: limit, me: me)
+        let conversation = inbox.conversations[key]
+            ?? WAConversation(id: key, name: known(key)?.name ?? key, isGroup: WAJID.kind(key) == .group, lastActivity: .distantPast)
+        var names = memberIndex(conversation)
+        let kind = ChatKind(conversation.kind)
+        return fetched.map { WhatsAppExport.message($0, in: conversation, kind: kind, names: &names, files: [:]) }
     }
 
     /// A chat's messages from the gateway, so its card can scroll back and shows what the live feed missed (the Mac
@@ -1785,7 +1813,7 @@ final class WhatsAppLink: ObservableObject {
             throw Self.actionSentence(error)
         }
         guard gen == generation else { return }
-        inbox.applyEdit(body, message: message, chat: key)
+        if inbox.applyEdit(body, message: message, chat: key) == nil { archiveChange(key, message: message, edited: body) }
         Log.connectors.info("WhatsApp: message edited")
     }
 
@@ -1802,7 +1830,7 @@ final class WhatsAppLink: ObservableObject {
             throw Self.actionSentence(error)
         }
         guard gen == generation else { return }
-        inbox.applyDelete(message: message, chat: key)
+        if inbox.applyDelete(message: message, chat: key) == nil { archiveChange(key, message: message, deleted: true) }
         Log.connectors.info("WhatsApp: message deleted")
     }
 
