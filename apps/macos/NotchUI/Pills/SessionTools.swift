@@ -258,6 +258,9 @@ struct SessionWorkbench<Conversation: View>: View {
     /// The account of a session Nook only sees, for the limits under the docked session panel (a session Nook runs has
     /// `runID`).
     var usageProfileID: String? = nil
+    /// A session still to start: the docked column holds only the chosen account's limits (`SessionUsageCard`), as there
+    /// is no branch or session yet. It docks without a folder too, and only while the account reports limits.
+    var usageOnlyPanel = false
     @ViewBuilder var conversation: (AnyView) -> Conversation
     @EnvironmentObject var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
@@ -270,6 +273,8 @@ struct SessionWorkbench<Conversation: View>: View {
     @AppStorage("nook.agents.bottomHeight") private var bottomHeight = BottomPanelLayout.standard
     /// You closed the session panel: it stays closed, in every session, until you open it again.
     @AppStorage("nook.agents.sessionPanelClosed") private var sessionPanelClosed = false
+    /// The session panel's hidden rows, the usage card among them (`SessionUsageCard.row`).
+    @AppStorage("agents.panel.hidden") private var hiddenPanelRows = ""
     /// Starts at the size the last session measured: each session gets its own workbench, and starting from zero docked
     /// the session panel only after the first layout, sliding it in on every switch.
     @State private var totalWidth: Double = SessionWorkbenchSize.width
@@ -358,7 +363,7 @@ struct SessionWorkbench<Conversation: View>: View {
         // The room of the conversation's own panels, so a window that gets narrower gives up the docked column first;
         // under that room it is the branch button's popover again.
         let needed = PanelLayout.sessionPanelRoom + (wasDocked || sessionPanelClosed ? 0 : PanelLayout.dockHysteresis)
-        let canDock = dockSessionPanel && !directory.isEmpty && totalWidth - rightRoom >= needed
+        let canDock = dockSessionPanel && (usageOnlyPanel ? usageCardShows : !directory.isEmpty) && totalWidth - rightRoom >= needed
         let docked = canDock && !sessionPanelClosed
         let tools = SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: toolsFresh,
                                       sessionPanelOpen: canDock ? docked : nil, toggleSessionPanel: toggleSessionPanel)
@@ -402,12 +407,16 @@ struct SessionWorkbench<Conversation: View>: View {
                     // or file panel to its right. It starts level with the conversation, under the header's line.
                     VStack(alignment: .trailing, spacing: 0) {
                         tools.frame(height: 30)
-                        DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking,
-                                           usage: SessionUsageSource(runID: runID, profileID: usageProfileID)) {
-                            if let runID { workspace.markReviewed(runID) }
-                            viewModel.sessionTool = .changes
+                        if usageOnlyPanel {
+                            DockedUsagePanel(source: SessionUsageSource(profileID: usageProfileID))
+                        } else {
+                            DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking,
+                                               usage: SessionUsageSource(runID: runID, profileID: usageProfileID)) {
+                                if let runID { workspace.markReviewed(runID) }
+                                viewModel.sessionTool = .changes
+                            }
+                            .id(directory)
                         }
-                        .id(directory)
                     }
                     .fixedSidePanel(width: PanelLayout.sessionPanel)
                 }
@@ -533,6 +542,12 @@ struct SessionWorkbench<Conversation: View>: View {
         let side: Bool
         let covering: Bool
         let docked: Bool
+    }
+
+    /// The usage card has something to show and was not hidden: what a session still to start docks.
+    private var usageCardShows: Bool {
+        !hiddenPanelRows.split(separator: ",").contains { $0 == SessionUsageCard.row }
+            && !SessionUsageSnapshot.read(SessionUsageSource(profileID: usageProfileID), app: app, workspace: workspace).isEmpty
     }
 
     /// Opens or closes the session panel. It opens with the room it needs to stay, not the extra room to dock again:

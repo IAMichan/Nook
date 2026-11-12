@@ -21,6 +21,8 @@ struct AgentsTab: View {
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
+    /// The account the new session will use, for the limits beside it.
+    @State private var newProfileID: String?
     /// What was open before the footer's pages (pull requests, Actions); empty picks what waits for you, as on a fresh start.
     @State private var beforeFooterPage = ""
 
@@ -127,8 +129,10 @@ struct AgentsTab: View {
                             if app.demoMode {
                                 nothingRunning
                             } else {
-                                SessionWorkbench(viewModel: viewModel, directory: newDirectory) { tools in
-                                    NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 }) { id in
+                                SessionWorkbench(viewModel: viewModel, directory: newDirectory, dockSessionPanel: true,
+                                                 usageProfileID: newProfileID, usageOnlyPanel: true) { tools in
+                                    NewSessionComposer(headerAccessory: tools, onDirectory: { newDirectory = $0 },
+                                                       onProfile: { newProfileID = $0 }) { id in
                                         // A browser or terminal opened beside the new session stays open.
                                         viewModel.continueSession(as: "run:" + id.uuidString, from: "new")
                                     }

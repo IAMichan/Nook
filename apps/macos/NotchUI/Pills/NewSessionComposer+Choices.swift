@@ -89,10 +89,14 @@ extension NewSessionComposer {
         return effort.family != nil || !levels.isEmpty ? effort : nil
     }
 
-    /// The subscription limits of the chosen account, beside the effort as in a running session, for every agent that
-    /// reports them: you see how much room is left before you start.
+    /// The subscription limits of the chosen account, for every agent that reports them: you see how much room is left
+    /// before you start. In the docked column beside the box when the window has room for it (`DockedUsagePanel`); in
+    /// the box itself only without it (the notch, a narrow window, the panel closed).
+    @ViewBuilder
     var usageLimits: some View {
-        ComposerUsageRing.forAccount(app.profiles.profile(id: config.profileID), app: app)
+        if !panelDocked {
+            ComposerUsageRing.forAccount(app.profiles.profile(id: config.profileID), app: app)
+        }
     }
 
     /// The faster tiers the chosen agent offers for the chosen model (`SpeedTiers`).
