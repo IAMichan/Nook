@@ -147,11 +147,13 @@ extension WorkspaceManager {
     /// A turn's process tells this session what it writes and when it ends.
     func bindTurn(_ process: AgentProcess, _ id: UUID, provider: RunProvider) {
         process.onLines = { [weak self, weak process] lines in
+            let start = process?.batchStart ?? 0
             let end = process?.consumed ?? 0
             // Parsed here, on the process's own queue: the main thread only applies the events.
             let parsed = ParsedStreamLine.parse(lines, provider: provider)
             Task { @MainActor in
                 guard let self else { return }
+                process?.beginHandling(from: start)
                 for line in parsed { self.handle(parsed: line, for: id) }
                 process?.markHandled(end)
             }

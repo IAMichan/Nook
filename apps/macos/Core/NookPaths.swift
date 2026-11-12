@@ -41,6 +41,8 @@ enum NookPaths {
     /// What ssh forwards a session on another machine to (`RemoteBridge`): never `bridge.sock`.
     static var remoteBridgeSocketURL: URL { supportDirectory.appendingPathComponent("bridge-remote.sock") }
     static var bridgeScriptURL: URL { supportDirectory.appendingPathComponent("nook-mcp") }
+    /// One file per session with its bridge token (`BridgeTokenFiles`), so the token stays off the agent's command line.
+    static var bridgeTokenDirectory: URL { supportDirectory.appendingPathComponent("bridge-tokens", isDirectory: true) }
     /// The `sudo -A` helper every session Nook starts gets as `SUDO_ASKPASS` (see SudoAskpass).
     static var askpassScriptURL: URL { supportDirectory.appendingPathComponent("nook-askpass") }
     /// Symlink to the bridge script without spaces (~/.nook/nook-mcp), for commands typed in a shell.

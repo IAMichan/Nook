@@ -5,11 +5,11 @@ import Foundation
 /// back to the agent. When Nook is not running it stays a valid, empty MCP server, so the agent starts and works as usual.
 enum WorkspaceBridgeScript {
     /// Incremented when the script changes; Nook rewrites it on launch when needed.
-    static let version = 2
+    static let version = 3
 
     static let contents = #"""
     #!/usr/bin/perl
-    # Nook workspace bridge (version 2): an MCP server (stdio) that gives a coding agent Nook's terminal, browser and
+    # Nook workspace bridge (version 3): an MCP server (stdio) that gives a coding agent Nook's terminal, browser and
     # pull requests. Every request goes to Nook over a local Unix socket that only your user can open; Nook decides what
     # may run directly and asks you in the notch for the rest. Without Nook the tools are simply not there.
     #   --agent <name>   who is asking (claude-code, codex, …)
@@ -37,6 +37,9 @@ enum WorkspaceBridgeScript {
     $cwd = (defined $ENV{PWD} ? $ENV{PWD} : '') unless defined $cwd;
     my %env = map { ($_ => (defined $ENV{$_} ? $ENV{$_} : '')) }
         qw(NOOK_RUN_ID NOOK_BRIDGE_TOKEN CLAUDE_CONFIG_DIR CODEX_HOME CLAUDE_CODE_ENTRYPOINT);
+    # The session's token comes from a file of your own (NOOK_BRIDGE_TOKEN_FILE), never from the command line, where
+    # every process on the Mac could read it. NOOK_BRIDGE_TOKEN still works, for sessions started before.
+    $env{NOOK_BRIDGE_TOKEN} = token_from_file() if $env{NOOK_BRIDGE_TOKEN} eq '';
 
     while (my $line = <STDIN>) {
         chomp $line;
@@ -46,12 +49,24 @@ enum WorkspaceBridgeScript {
         my $method = (defined $message->{method} && !ref($message->{method})) ? $message->{method} : '';
         # A tool call may wait for your approval in the notch; everything else is quick.
         my $timeout = $method eq 'tools/call' ? 900 : 15;
+        $env{NOOK_BRIDGE_TOKEN} = token_from_file() if $env{NOOK_BRIDGE_TOKEN} eq '';
         my $reply = ask_nook($json->encode({ agent => $agent, cwd => $cwd, env => \%env, message => $message }) . "\n", $timeout);
         next unless exists $message->{id};
         if ($reply ne '') { print $reply, "\n"; }
         else { print $json->encode(offline($message)), "\n"; }
     }
     exit 0;
+
+    sub token_from_file {
+        my $path = $ENV{NOOK_BRIDGE_TOKEN_FILE};
+        return '' unless defined $path && $path ne '' && open(my $fh, '<', $path);
+        local $/;
+        my $token = <$fh>;
+        close $fh;
+        $token = '' unless defined $token;
+        $token =~ s/\s+\z//;
+        return $token;
+    }
 
     sub ask_nook {
         my ($payload, $timeout) = @_;

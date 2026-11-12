@@ -920,15 +920,21 @@ final class CompanionClient: ObservableObject {
     /// rather than after it (a Mac without `CompanionFeature.steer` puts it in line either way). `files`: dropped on the
     /// session (`composerDrop`), for a Mac that takes them (`CompanionFeature.attachments`).
     func send(sessionID: String, text: String, steer: Bool = false, images: [CompanionImage] = [], files: [CompanionFile] = []) async {
-        let request = CompanionRequest(op: .send, session: sessionID, text: text,
+        var request = CompanionRequest(op: .send, session: sessionID, text: text,
                                        steer: steer && can(CompanionFeature.steer) ? true : nil,
                                        images: images.isEmpty || !can(CompanionFeature.images) ? nil : images,
                                        attachments: files.isEmpty || !can(CompanionFeature.attachments) ? nil : files)
+        // A steer is for the turn you saw: when it has ended by the time the message arrives (from the outbox, say), the
+        // Mac puts it in line instead of steering the next turn.
+        if request.steer == true { request.turn = sessions.first { $0.id == sessionID }?.turn }
         _ = await deliver(request)
     }
 
     func stop(_ session: SessionDigest) async {
-        await perform(CompanionRequest(op: .stop, session: session.id))
+        // The turn you saw: a Stop that arrives late, or again over another route, never stops a turn that started after it.
+        var request = CompanionRequest(op: .stop, session: session.id)
+        request.turn = session.turn
+        await perform(request)
     }
 
     /// Manages a session from afar (rename, archive, snooze, end), as the Mac's Agents list does.

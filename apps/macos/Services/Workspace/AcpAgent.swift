@@ -197,7 +197,57 @@ enum AcpRPC {
         line(["jsonrpc": "2.0", "id": id.json, "error": ["code": code, "message": message]])
     }
 
-    /// Nook neither reads files nor runs terminals for the agent: it does that itself.
+    /// Which generation of ACP an `initialize` answer is in, read from its shape and not from its `protocolVersion`: some
+    /// agents report version 2 in the v1 shape (`agentCapabilities`, `agentInfo`; Kiro 2.32, Antigravity), and only a
+    /// v2 answer has `info`. Nook speaks v1.
+    static func generation(_ initialize: [String: Any]) -> Int {
+        initialize["info"] != nil ? 2 : 1
+    }
+
+    /// An `initialize` answer in the v1 shape Nook reads: a v1-shaped answer as it is, whatever version it reports; a v2
+    /// answer with its capabilities moved to where v1 has them (`capabilities.session` becomes `agentCapabilities`).
+    static func v1Initialize(_ initialize: [String: Any]) -> [String: Any] {
+        guard generation(initialize) == 2 else { return initialize }
+        let session = ((initialize["capabilities"] as? [String: Any])?["session"]).flatMap { $0 is NSNull ? nil : $0 as? [String: Any] }
+        let prompt = (session?["prompt"] as? [String: Any]) ?? [:]
+        var agent: [String: Any] = ["loadSession": session != nil,
+                                    "promptCapabilities": ["image": prompt["image"].map { !($0 is NSNull) } ?? false]]
+        if let session {
+            var sessions: [String: Any] = ["list": [String: Any](), "resume": [String: Any](), "close": [String: Any]()]
+            if let delete = session["delete"], !(delete is NSNull) { sessions["delete"] = [String: Any]() }
+            agent["sessionCapabilities"] = sessions
+        }
+        var shaped = initialize
+        shaped["agentCapabilities"] = agent
+        shaped["agentInfo"] = initialize["info"]
+        return shaped
+    }
+
+    /// The id after `id` for Nook's next request, kept inside a signed 32-bit integer: the Kotlin ACP SDK (and other
+    /// JSON-RPC libraries) reject a larger one.
+    static func nextRequestID(after id: Int) -> Int {
+        id < 1 || id >= Int(Int32.max) ? 1 : id + 1
+    }
+
+    /// The first request id of a client that attaches to a kept agent (`SessionKeeper`): far from the ids an earlier
+    /// Nook used, so an answer to one of those never matches a new request, and well inside a signed 32-bit integer.
+    static func reattachedFirstID() -> Int {
+        1 + Int.random(in: 1_000_000...2_000_000)
+    }
+
+    /// Whether a stdout line that is not JSON-RPC was meant as a protocol frame (a JSON object that did not parse, or
+    /// one Nook cannot read), rather than text an agent prints between its frames (Antigravity's "Open the following
+    /// link to authenticate the ACP server: …", a log line). Text is skipped; a broken frame is reported.
+    static func isBrokenFrame(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).hasPrefix("{")
+    }
+
+    /// How long `session/load` may stay silent after its replay before it counts as done: some agents replay the
+    /// conversation and never answer the request.
+    static let loadReplayQuiet: TimeInterval = 2
+
+    /// Nook neither reads files nor runs terminals for the agent: it does that itself. No `session.notices` either: Nook
+    /// has nothing to show from them.
     static func initializeParams() -> [String: Any] {
         [
             "protocolVersion": protocolVersion,
@@ -372,7 +422,7 @@ enum AcpMapper {
             case "content":
                 if let text = text(item["content"]) ?? (item["content"] as? [String: Any]).flatMap(McpUI.encode) { output.append(text) }
             case "diff":
-                guard let path = item["path"] as? String else { break }
+                guard let path = (item["path"] as? String).map(filePath) else { break }
                 if !paths.contains(path) { paths.append(path) }
                 if let newText = item["newText"] as? String {
                     diffs.append(AcpDiff(path: path, oldText: item["oldText"] as? String, newText: newText))
@@ -381,7 +431,9 @@ enum AcpMapper {
             }
         }
         for location in (raw["locations"] as? [[String: Any]]) ?? [] {
-            if let path = location["path"] as? String, !paths.contains(path), (raw["kind"] as? String) == "edit" { paths.append(path) }
+            if let path = (location["path"] as? String).map(filePath), !paths.contains(path), (raw["kind"] as? String) == "edit" {
+                paths.append(path)
+            }
         }
         // Some agents (Antigravity) put a failed call's reason only in rawOutput: without it the call fails without a word.
         if output.isEmpty, let rawOutput = raw["rawOutput"].flatMap(Self.rawOutput) { output.append(rawOutput) }
@@ -389,6 +441,15 @@ enum AcpMapper {
                            kind: (raw["kind"] as? String) ?? "", status: raw["status"] as? String,
                            input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths,
                            diffs: diffs)
+    }
+
+    /// A file as a path. The schema asks for an absolute path, but some agents (Kiro 2.32) name a diff's file as a
+    /// `file://` URL: the edit row and the diff panel would then look for a file of that name.
+    static func filePath(_ value: String) -> String {
+        guard value.hasPrefix("file://") else { return value }
+        if let url = URL(string: value), url.isFileURL, !url.path.isEmpty { return url.path }
+        let rest = String(value.dropFirst("file://".count))
+        return rest.removingPercentEncoding ?? rest
     }
 
     /// rawOutput as text: a string as is, an object's error or output field, otherwise the object as JSON.
@@ -436,7 +497,7 @@ struct AcpSessionCapabilities: Equatable, Sendable {
     }
 
     init(initialize: [String: Any]) {
-        let agent = (initialize["agentCapabilities"] as? [String: Any]) ?? [:]
+        let agent = (AcpRPC.v1Initialize(initialize)["agentCapabilities"] as? [String: Any]) ?? [:]
         let session = (agent["sessionCapabilities"] as? [String: Any]) ?? [:]
         // A capability is offered by an object ({}), and not by null or its absence.
         load = (agent["loadSession"] as? Bool) ?? false
@@ -788,10 +849,32 @@ final class AcpClient: @unchecked Sendable {
     var applyingSettings = false
     var afterSettings: [() -> Void] = []
 
-    init(spec: LaunchSpec) {
-        process = AgentProcess(spec: spec)
-        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
+    /// `transport` and `scheduler` replace the agent's process and the clock in tests (a recorded agent, `ReplayTransport`).
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
+        process = AgentProcess(spec: spec, transport: transport, scheduler: scheduler)
+        self.scheduler = scheduler
+        if spec.keeper?.offset != nil { nextID = AcpRPC.reattachedFirstID() }
     }
+
+    private let scheduler: ProcessScheduler
+    /// Held while a line is written, with the id it takes: requests, answers and notifications reach the agent in the
+    /// order Nook sent them, so a `session/cancel` never overtakes the prompt it cancels.
+    private let writeLock = NSLock()
+    /// Requests that were settled without their answer (a `session/load` whose replay went quiet): a late answer is dropped.
+    private var settled: Set<Int> = []
+    /// Bumped by every `config_option_update`, on the process's queue: a `session/set_config_option` answer that comes
+    /// after one is older than it (see `request(_:_:tracksConfig:completion:)`).
+    private var configUpdates = 0
+    /// Replayed updates seen while a `session/load` waits for its answer, and whether a quiet check is scheduled.
+    private var replayActivity = 0
+    private var loadWaiting: Int?
+    private var quietCheckScheduled = false
+    /// Lines that looked like a frame but were not one Nook could read.
+    private(set) var brokenFrames: Int {
+        get { lock.withLock { _brokenFrames } }
+        set { lock.withLock { _brokenFrames = newValue } }
+    }
+    private var _brokenFrames = 0
 
     /// An answer to a request of an earlier Nook (see `SessionKeeper`): how a kept turn ends, since its request went with it.
     var onOrphanAnswer: (@Sendable (JSONBox) -> Void)?
@@ -807,6 +890,7 @@ final class AcpClient: @unchecked Sendable {
             let waiting = self.lock.withLock { () -> [(Result<JSONBox, CodexAppServerError>) -> Void] in
                 let list = Array(self.pending.values)
                 self.pending.removeAll()
+                self.loadWaiting = nil
                 return list
             }
             for completion in waiting { completion(.failure(.exited(stderr))) }
@@ -816,25 +900,63 @@ final class AcpClient: @unchecked Sendable {
     }
 
     func request(_ method: String, _ params: [String: Any], completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        let id = lock.withLock { () -> Int in
-            let id = nextID
-            nextID += 1
-            pending[id] = completion
-            return id
-        }
-        process.send(AcpRPC.request(id: id, method: method, params: params))
+        send(method, params, completion: completion)
     }
 
+    /// A request whose answer may bring the session's config options (`session/set_config_option`, `set_model`,
+    /// `set_mode`): `superseded` is true when the agent pushed a `config_option_update` while it was on its way, which is
+    /// then newer than the options in the answer (Kiro answers a model change without the model, then announces it).
+    func request(_ method: String, _ params: [String: Any], tracksConfig: Bool,
+                 completion: @escaping (Result<JSONBox, CodexAppServerError>, _ superseded: Bool) -> Void) {
+        let before = lock.withLock { configUpdates }
+        send(method, params) { [weak self] result in
+            let now = self?.lock.withLock { self?.configUpdates } ?? before
+            completion(result, tracksConfig && now != before)
+        }
+    }
+
+    /// `session/load`, which also counts as answered once the conversation it replays has gone quiet for `quiet` seconds:
+    /// some agents replay it and never answer. Such a load answers with no fields (the session keeps its id); the agent's
+    /// late answer is dropped.
+    func load(_ method: String, _ params: [String: Any], quiet: TimeInterval = AcpRPC.loadReplayQuiet,
+              completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
+        send(method, params, completion: completion) { id in
+            self.loadWaiting = id
+            self.replayActivity = 0
+            self.quiet = quiet
+        }
+    }
+
+    private var quiet: TimeInterval = AcpRPC.loadReplayQuiet
+
+    /// Writes a request; `before` runs under the lock with its id, before the line goes out.
+    @discardableResult
+    private func send(_ method: String, _ params: [String: Any], completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void,
+                      before: ((Int) -> Void)? = nil) -> Int {
+        writeLock.withLock {
+            let id = lock.withLock { () -> Int in
+                let id = nextID
+                nextID = AcpRPC.nextRequestID(after: id)
+                pending[id] = completion
+                before?(id)
+                return id
+            }
+            process.send(AcpRPC.request(id: id, method: method, params: params))
+            return id
+        }
+    }
+
+    /// A notification: no `id` (an agent drops a notification that has one), in order with everything else Nook writes.
     func notify(_ method: String, _ params: [String: Any]) {
-        process.send(AcpRPC.notification(method: method, params: params))
+        writeLock.withLock { process.send(AcpRPC.notification(method: method, params: params)) }
     }
 
     func respond(_ id: RPCID, _ result: [String: Any]) {
-        process.send(AcpRPC.response(id: id, result: result))
+        writeLock.withLock { process.send(AcpRPC.response(id: id, result: result)) }
     }
 
     func respondError(_ id: RPCID, code: Int = -32601, message: String) {
-        process.send(AcpRPC.errorResponse(id: id, code: code, message: message))
+        writeLock.withLock { process.send(AcpRPC.errorResponse(id: id, code: code, message: message)) }
     }
 
     func stop() {
@@ -842,24 +964,74 @@ final class AcpClient: @unchecked Sendable {
         process.stop(grace: 2)
     }
 
-    /// A line that is not JSON-RPC (Antigravity prints its sign-in link this way).
+    /// A line that is not JSON-RPC (Antigravity prints its sign-in link this way): skipped, after this has seen it.
     var onText: (@Sendable (String) -> Void)?
+    /// A line that looked like a frame but was not one Nook can read: reported (logged), and the session goes on.
+    var onBrokenFrame: (@Sendable (String) -> Void)?
 
     private func handle(_ line: String) {
         guard let message = AcpRPC.parse(line) else {
+            if AcpRPC.isBrokenFrame(line) {
+                brokenFrames += 1
+                onBrokenFrame?(line)
+            }
             onText?(line)
             return
         }
         if case .response(let id, let result, let error) = message {
-            let completion = lock.withLock { pending.removeValue(forKey: id) }
+            let (completion, late) = lock.withLock { () -> (((Result<JSONBox, CodexAppServerError>) -> Void)?, Bool) in
+                if loadWaiting == id { loadWaiting = nil }
+                return (pending.removeValue(forKey: id), settled.remove(id) != nil)
+            }
+            if late { return }
             if completion == nil, error == nil, let result { onOrphanAnswer?(result) }
             if let error { completion?(.failure(.server(error))) } else { completion?(.success(result ?? JSONBox([String: Any]()))) }
             return
         }
-        // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
         let events = AcpMapper.events(message)
+        if events.contains(where: { if case .configOptions = $0 { return true } else { return false } }) {
+            lock.withLock { configUpdates += 1 }
+        }
+        if case .notification = message { noteReplayActivity() }
+        // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
         if replaying, !keepsReplay, case .notification = message, !events.allSatisfy(\.isSessionState) { return }
         onMessage?(message, events)
+    }
+
+    /// A replayed update while a load waits: the load is done once they stop for `quiet` seconds.
+    private func noteReplayActivity() {
+        let schedule = lock.withLock { () -> Bool in
+            guard loadWaiting != nil else { return false }
+            replayActivity += 1
+            guard !quietCheckScheduled else { return false }
+            quietCheckScheduled = true
+            return true
+        }
+        if schedule { scheduleQuietCheck(seen: lock.withLock { replayActivity }) }
+    }
+
+    private func scheduleQuietCheck(seen: Int) {
+        scheduler.schedule(after: lock.withLock { quiet }) { [weak self] in
+            guard let self else { return }
+            enum Next { case done, again(Int), settle(Int, (Result<JSONBox, CodexAppServerError>) -> Void) }
+            let next = self.lock.withLock { () -> Next in
+                guard let id = self.loadWaiting else {
+                    self.quietCheckScheduled = false
+                    return .done
+                }
+                if self.replayActivity != seen { return .again(self.replayActivity) }
+                self.quietCheckScheduled = false
+                self.loadWaiting = nil
+                guard let completion = self.pending.removeValue(forKey: id) else { return .done }
+                self.settled.insert(id)
+                return .settle(id, completion)
+            }
+            switch next {
+            case .done: break
+            case .again(let count): self.scheduleQuietCheck(seen: count)
+            case .settle(_, let completion): completion(.success(JSONBox([String: Any]())))
+            }
+        }
     }
 }
 

@@ -605,6 +605,9 @@ final class CompanionServer: ObservableObject {
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)
             }
+            // Decided before (a retry after a restart of Nook): answered as the first time.
+            let command = SessionCommand.phone(request.id)
+            if workspace.commandReceipt(command) != nil { return CompanionResponse(id: request.id, ok: true, sessions: digests(app)) }
             guard let pending = workspace.approvals[runID]?.first(where: { $0.id == request.item }) else {
                 return .failure(request.id, .unknownItem)
             }
@@ -612,11 +615,14 @@ final class CompanionServer: ObservableObject {
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
             app.approvals.decide(run: runID, requestID: pending.id, allow ? .allow : .deny, source: .phone,
                                  reason: allow ? "" : request.text ?? "")
+            workspace.recordCommand(command, .decided)
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)
             }
+            let command = SessionCommand.phone(request.id)
+            if workspace.commandReceipt(command) != nil { return CompanionResponse(id: request.id, ok: true, sessions: digests(app)) }
             guard let question = workspace.questions[runID]?.first(where: { $0.id == request.item }) else {
                 return .failure(request.id, .unknownItem)
             }
@@ -627,6 +633,7 @@ final class CompanionServer: ObservableObject {
             // A free answer only where the agent accepts one; otherwise it has to be one of the options.
             if !first.allowsOther, !first.options.contains(where: { $0.label == text }) { return .failure(request.id, .badRequest) }
             workspace.answer(runID, questionID: question.id, answers: [first.id: [text]])
+            workspace.recordCommand(command, .answered)
             audit("answer", workspace.run(runID)?.title ?? "")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .send:
@@ -640,28 +647,27 @@ final class CompanionServer: ObservableObject {
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
-            guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
-            // While it works: into the running turn when the phone asks to steer and the turn can take it (as the Mac's
-            // composer steers), else in line for after the turn.
-            // `/clear`, and the message after it, start a new conversation as on the Mac (`FreshConversation`).
-            let outcome: String
-            if !run.status.isActive || workspace.startsFreshConversation(runID, text: text) {
-                outcome = workspace.submit(runID, text: text, fromYou: true) ? "sent" : "queued"
-            } else if request.steer == true, workspace.canSteer(runID), workspace.steer(runID, text: text) {
-                outcome = "steered"
-            } else {
-                workspace.enqueue(runID, text: text)
-                outcome = "queued"
+            let command = SessionCommand.phone(request.id, turn: request.turn)
+            // Sent before (from the phone's outbox, after a restart of Nook): the first outcome, nothing sent twice.
+            if let earlier = workspace.commandReceipt(command) {
+                return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: earlier.outcome.rawValue)
             }
-            audit(outcome == "steered" ? "steer" : "send", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: outcome)
+            guard let text = Self.message(request) else { return .failure(request.id, .badRequest) }
+            // While it works: into the running turn when the phone asks to steer, that turn is still the one the phone saw
+            // and it can take it (as the Mac's composer steers), else in line for after the turn.
+            // `/clear`, and the message after it, start a new conversation as on the Mac (`FreshConversation`).
+            let outcome = workspace.message(runID, text: text, steer: request.steer == true, command: command)
+            audit(outcome == .steered ? "steer" : "send", run.title)
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: outcome.rawValue)
         case .stop:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
-            workspace.stop(runID)
-            audit("stop", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
+            // Only the turn the phone saw: a Stop that comes late or again never stops work that started after it.
+            let outcome = workspace.stop(runID, command: SessionCommand.phone(request.id, turn: request.turn))
+            if outcome == .stopped { audit("stop", run.title) }
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app),
+                                     message: outcome == .stale ? outcome.rawValue : nil)
         case .options:
             return await launchOptions(request, app: app)
         case .start:
@@ -814,7 +820,8 @@ final class CompanionServer: ObservableObject {
                              actions: Self.actions(run, now: now, access: workspace.settings.bridgeAccess).map(\.rawValue),
                              canSteer: workspace.canSteer(run.id),
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
-                                                                       now: now)?.timeIntervalSince1970)
+                                                                       now: now)?.timeIntervalSince1970,
+                             turn: workspace.turnIdentity(run.id))
     }
 }
 
