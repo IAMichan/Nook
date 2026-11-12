@@ -105,6 +105,8 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
         }
         let accounts = WhatsAppAccounts.shared
         var changed: [BridgedChat] = []
+        // What the shared inbox already calls each chat: a group the gateway only knows by its id keeps that name.
+        let shown = ChatCaptureService.shared.loadedInbox.threads
         for link in accounts.connected {
             let account = accounts.showsAccounts ? accounts.name(of: link) : nil
             let book = link.names
@@ -128,14 +130,17 @@ final class WhatsAppGatewayBridge: ChatKeyedHistoryBridge, ChatNewsBridge, ChatS
                 guard renamed || sources[facts.key] != source else { continue }
                 sources[facts.key] = source
                 var chat = WhatsAppExport.chat(conversation, facts: facts, names: book)
+                chat.name = WAJID.keepingGroupName(chat.name, for: conversation.id,
+                                                   shown: shown[ChatInbox.key(app: app, id: facts.key)]?.name)
                 chat.deleted = WhatsAppExport.deleted(before: exported[facts.key], now: chat)
                 hand(chat, key: facts.key, to: &changed)
             }
             // Every other chat on the phone, also the ones that wrote nothing since: their messages load when one opens.
             for info in link.knownChats where !made.contains(info.jid) && WAJID.kind(info.jid) != .status
                 && !link.filters.ignored.contains(info.jid) && !left.contains(info.jid) {
-                let name = link.chatName(info.jid, fallback: info.name.isEmpty ? WAJID.displayNumber(info.jid) : info.name)
                 let facts = link.exportFacts(info.jid, account: account, messages: [])
+                let listed = link.chatName(info.jid, fallback: info.name.isEmpty ? WAJID.displayNumber(info.jid) : info.name)
+                let name = WAJID.keepingGroupName(listed, for: info.jid, shown: shown[ChatInbox.key(app: app, id: facts.key)]?.name)
                 let source = Source(info: info, name: name, facts: facts)
                 guard renamed || sources[facts.key] != source else { continue }
                 sources[facts.key] = source
