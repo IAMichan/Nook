@@ -67,8 +67,10 @@ extension WorkspaceManager {
             Log.agents.warning("ACP agent wrote a line Nook cannot read: \(String(line.prefix(200)), privacy: .private)")
         }
         client.onMessage = { [weak self] message, events in
+            let start = client.process.batchStart
             let end = client.process.consumed
             Task { @MainActor in
+                client.process.beginHandling(from: start)
                 self?.handleAcp(id, client, message, events)
                 client.process.markHandled(end)
             }

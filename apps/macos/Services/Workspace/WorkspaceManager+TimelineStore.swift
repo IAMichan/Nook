@@ -162,6 +162,8 @@ extension WorkspaceManager {
     // MARK: Tracking and Persistence
 
     func append(_ id: UUID, _ event: RunEvent) {
+        // A kept agent's output read again after a crash: what is already there is not shown twice.
+        if keptReplays[id] != nil, replaceReplayed(id, event) { return }
         timelineStore.changing = id
         defer { timelineStore.changing = nil }
         timelineStore.use[id] = Date()
@@ -196,6 +198,8 @@ extension WorkspaceManager {
     }
 
     func mutateEvent(_ id: UUID, _ eventID: UUID, _ change: (inout RunEvent) -> Void) {
+        // An event read again after a crash changes the one it took the place of.
+        let eventID = keptReplays[id]?.resolve(eventID) ?? eventID
         // In place: this runs for every streamed token, and a copy of the list would copy the whole timeline each time.
         guard let index = events[id]?.lastIndex(where: { $0.id == eventID }) else {
             // Appended while its timeline is read back: changed where it waits (`installTimeline` saves it).
@@ -291,7 +295,7 @@ extension WorkspaceManager {
     func writeRuns(_ snapshot: [WorkspaceRun]) {
         timelineStore.savedRuns = snapshot
         // A write that failed tries again: without a change to the list nothing else would.
-        store.saveRunsAsync(snapshot) { [weak self] in
+        store.saveRunsAsync(durableRuns(snapshot)) { [weak self] in
             Task { @MainActor in
                 self?.timelineStore.savedRuns = nil
                 self?.scheduleRunsCatchUp()
