@@ -1,25 +1,50 @@
 #!/bin/bash
 # Runs the macOS app's Foundation-only core and its tests without Xcode, with a Swift toolchain (Linux or macOS).
 #
-# It builds a throwaway Swift package from the sources the NookTests target lists in apps/macos/project.yml (minus the few that need
-# Apple-only frameworks), copies the tests next to them, and runs `swift test`. Everything it needs is generated under a
-# temporary folder that is removed afterwards (set NOOK_CORE_TESTS_DIR to keep it); nothing in the repository changes.
+# It builds a Swift package from the sources the NookTests target lists in apps/macos/project.yml (minus the few that need
+# Apple-only frameworks), copies the tests next to them, and runs `swift test`. The package lives in .build/core-tests in
+# this checkout (git-ignored, like scripts/xcode.sh's build): the next run is incremental and compiles only what changed.
+# Set NOOK_CORE_TESTS_DIR to put it elsewhere, or NOOK_CORE_TESTS_FRESH=1 for a throwaway build in a temporary folder.
 #
 #   scripts/core-tests.sh                      all portable tests
+#   scripts/core-tests.sh --changed            only the tests the change since origin's default branch can affect
+#   scripts/core-tests.sh --changed=HEAD~3     ... since another revision (uncommitted and untracked files included)
 #   scripts/core-tests.sh --filter ComposerCoreTests
 #
-# Extra arguments go to `swift test`.
+# --changed is for while you work; before a commit or pull request, run them all (scripts/core-tests-sync.py says how
+# it picks). Extra arguments go to `swift test`.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../apps/macos" && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$REPO/apps/macos"
+CHANGED=""
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --changed) CHANGED=auto ;;
+    --changed=*) CHANGED="${arg#--changed=}" ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+
 if [ -n "${NOOK_CORE_TESTS_DIR:-}" ]; then
   WORK="$NOOK_CORE_TESTS_DIR"
-else
+elif [ "${NOOK_CORE_TESTS_FRESH:-0}" = 1 ]; then
   # A run builds ~370 MB here; remove it afterwards, or every run leaves that behind.
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/nook-core-tests.XXXXXX")"
   trap 'rm -rf "$WORK"' EXIT
+else
+  WORK="$REPO/.build/core-tests"
 fi
 mkdir -p "$WORK/Sources/Core" "$WORK/Tests/CoreTests"
+
+# Writes stdin to $1 only when it differs: an unchanged file keeps its date, so the build does not compile it again.
+write_if_changed() {
+  local tmp
+  tmp="$(mktemp "$1.XXXXXX")"
+  cat > "$tmp"
+  if cmp -s "$tmp" "$1"; then rm -f "$tmp"; else mv "$tmp" "$1"; fi
+}
 
 # Sources that need Apple-only frameworks (CryptoKit, Combine views, URLSession on Linux …): they are tested on a Mac.
 EXCLUDE_SOURCES=(
@@ -68,25 +93,8 @@ EXCLUDE_TESTS=(
   "ChatImageRenderTests" "DayBucketsTests"
 )
 
-python3 - "$ROOT" "$WORK" "${EXCLUDE_SOURCES[@]}" <<'PY'
-import os, re, sys
-root, work, *excluded = sys.argv[1:]
-text = open(os.path.join(root, "project.yml")).read()
-block = text[text.index("  NookTests:"):]
-block = re.split(r"\n  # iPhone companion|\n  NookCompanion:|\nschemes:", block)[0]
-# The I18n tables need SwiftUI; `tr` is shimmed below instead.
-sources = [p for p in re.findall(r"- path: (\S+)", block)
-           if p.endswith(".swift") and p not in excluded and not p.startswith("Core/I18n")]
-sdir = os.path.join(work, "Sources", "Core")
-for folder in (sdir, os.path.join(work, "Tests", "CoreTests")):
-    for name in os.listdir(folder):
-        os.remove(os.path.join(folder, name))
-for path in sources:
-    # Paths are relative to apps/macos; shared ones start with ../../packages. Drop the ../ so no name starts with a dot.
-    os.symlink(os.path.normpath(os.path.join(root, path)), os.path.join(sdir, path.replace("../", "").replace("/", "__")))
-PY
 
-cat > "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'
+write_if_changed "$WORK/Sources/Core/PortabilityShims.swift" <<'SWIFT'
 import Foundation
 
 // Combine's names for the few core files that mention them (Linux has no Combine).
@@ -174,7 +182,7 @@ public final class I18n: @unchecked Sendable {
 }
 SWIFT
 
-cat > "$WORK/Package.swift" <<'SWIFT'
+write_if_changed "$WORK/Package.swift" <<'SWIFT'
 // swift-tools-version:5.9
 import PackageDescription
 let package = Package(name: "NookCore", platforms: [.macOS(.v14)], targets: [
@@ -186,31 +194,44 @@ let package = Package(name: "NookCore", platforms: [.macOS(.v14)], targets: [
 SWIFT
 
 mkdir -p "$WORK/Sources/SQLite3"
-cat > "$WORK/Sources/SQLite3/module.modulemap" <<'MAP'
+write_if_changed "$WORK/Sources/SQLite3/module.modulemap" <<'MAP'
 module SQLite3 [system] {
     header "shim.h"
     link "sqlite3"
     export *
 }
 MAP
-echo '#include <sqlite3.h>' > "$WORK/Sources/SQLite3/shim.h"
+echo '#include <sqlite3.h>' | write_if_changed "$WORK/Sources/SQLite3/shim.h"
 
-# The tests see the sources as a module here, but are part of the same target in Xcode: add the import.
-for file in "$ROOT"/Tests/NookTests/*.swift; do
-  name="$(basename "$file" .swift)"
-  skip=0
-  for excluded in "${EXCLUDE_TESTS[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
-  [ "$skip" = 1 ] && continue
-  { echo "@testable import Core"; cat "$file"; } > "$WORK/Tests/CoreTests/$name.swift"
-  # Linux's test discovery cannot call a synchronous test on the main actor (it aborts the whole run): there they are async.
-  if [ "$(uname)" != "Darwin" ] && grep -qE '^\s*@MainActor\s*$' "$file"; then
-    perl -pi -e 's/^(\s*(?:\@MainActor\s+)?func test\w*\(\))(\s+throws)?\s*\{/$1 async$2 {/' "$WORK/Tests/CoreTests/$name.swift"
-  fi
-done
+# Links the sources and copies the tests (with `@testable import Core`, as they are part of the same target in Xcode).
+sync() {
+  EXCLUDE_SOURCES="$(printf '%s\n' "${EXCLUDE_SOURCES[@]}")" EXCLUDE_TESTS="$(printf '%s\n' "${EXCLUDE_TESTS[@]}")" python3 "$REPO/scripts/core-tests-sync.py" "$ROOT" "$WORK" "$@"
+}
+if [ -n "$CHANGED" ]; then
+  REPORT="$(sync --changed "$CHANGED")"
+else
+  REPORT="$(sync)"
+fi
+MODE="$(tail -n 1 <<< "$REPORT")"
+if [ "$MODE" != all ]; then
+  sed -n '1p' <<< "$REPORT"
+fi
+if [ "$MODE" = none ]; then
+  exit 0
+fi
 
 cd "$WORK"
 echo "core tests in $WORK"
 # Tests that read the app's sources (UIConsistencyTests) find them here: the copies in $WORK have another #filePath.
 export NOOK_MACOS_ROOT="$ROOT"
 # One heavy build at a time on this machine, at a lower priority (scripts/build-slot.sh says why).
-"$ROOT/../../scripts/build-slot.sh" swift test "$@"
+SLOT="$REPO/scripts/build-slot.sh"
+if [ "$MODE" = some ] && ! "$SLOT" swift build --build-tests; then
+  # A picked test may use a helper the selection missed: build them all, and still run only the picked ones.
+  echo "the selected tests do not build on their own; building all tests and running the selected ones"
+  CLASSES="$(sed -n 's/^test classes: //p' <<< "$REPORT")"
+  sync >/dev/null
+  "$SLOT" swift test --filter "\.($CLASSES)/" ${ARGS[@]+"${ARGS[@]}"}
+  exit
+fi
+"$SLOT" swift test ${ARGS[@]+"${ARGS[@]}"}

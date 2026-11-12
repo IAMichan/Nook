@@ -9,6 +9,10 @@ if [ ! -f "$HELPER" ]; then
   rm -f "$DEST/nook-chatd"
   exit 0
 fi
+# Already copied (and signed) since the helper was last built: touching the app again would make Xcode sign it on every build.
+if [ "$DEST/nook-chatd" -nt "$HELPER" ] && { [ "$CODE_SIGNING_ALLOWED" = "NO" ] || codesign --verify "$DEST/nook-chatd" 2>/dev/null; }; then
+  exit 0
+fi
 mkdir -p "$DEST"
 cp -f "$HELPER" "$DEST/nook-chatd"
 if [ "$CODE_SIGNING_ALLOWED" != "NO" ] && [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then

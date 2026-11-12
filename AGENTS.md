@@ -70,6 +70,12 @@ Run the fast Foundation-only core & localization test suite before committing:
 ./scripts/core-tests.sh
 ```
 
+The build is kept in `.build/core-tests` (git-ignored), so a second run compiles only what changed. While you work, `--changed` runs only the tests your change can affect (since origin's default branch, uncommitted files included; `--changed=<rev>` for another base). It picks test files that changed, that use a type from a changed core source, or that read the app's sources, and runs everything when `project.yml` or the test scripts change. Run the full suite once before a commit or pull request.
+
+```sh
+./scripts/core-tests.sh --changed
+```
+
 After touching anything under `apps/macos/NotchUI` or `apps/macos/App`, also run the UI consistency check (no Swift toolchain needed; CI runs it on every pull request):
 
 ```sh
@@ -92,7 +98,7 @@ To build and test the full macOS app with Xcode, use the wrapper (it runs `xcode
 ./scripts/xcode.sh test
 ```
 
-It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. Do not call
+It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. `test` uses the `NookTests` scheme, which builds only the unit tests and not Nook.app with its packages (`NOOK_XCODE_SCHEME=Nook` builds the app too, as CI does). The wrapper keeps the Mac usable while it builds: lower priority (`nice`), one job per performance core, no index store, no package update check when nothing changed, and tests in one process (see the script's header for the switches). Do not call
 `xcodebuild` with a `-derivedDataPath` under `/tmp`, `/private/tmp`, or your scratchpad, and do not leave it on Xcode's
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
