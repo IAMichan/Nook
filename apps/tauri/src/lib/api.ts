@@ -43,6 +43,7 @@ export const api = {
   /// Starts Ollama or LM Studio when it is installed but not running.
   startLocalBrain: (name: string) => invoke<"alreadyRunning" | "started" | "notInstalled" | "noAnswer">("start_local_brain", { name }),
   trayStatus: (waiting: number, working: number) => invoke<void>("tray_status", { waiting, working }),
+  shortcutProblems: () => invoke<string[]>("shortcut_problems"),
 };
 
 export const events = {

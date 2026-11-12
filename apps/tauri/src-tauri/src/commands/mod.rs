@@ -289,6 +289,15 @@ pub fn tray_status(app: AppHandle, waiting: usize, working: usize) {
     let _ = (app, waiting, working);
 }
 
+/// The global shortcuts (by action) that another app already holds.
+#[tauri::command]
+pub fn shortcut_problems() -> Vec<String> {
+    #[cfg(desktop)]
+    return crate::platform::desktop::shortcut_problems();
+    #[cfg(not(desktop))]
+    vec![]
+}
+
 /// De route die het hoofdvenster moet tonen, één keer.
 #[tauri::command]
 pub fn take_route(state: State<'_, AppState>) -> Option<String> {

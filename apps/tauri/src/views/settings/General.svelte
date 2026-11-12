@@ -5,6 +5,16 @@
   import { services, serviceEvents, type EnergyView } from "../../lib/services";
   import type { EnergyMode } from "../../lib/types";
   import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+  import ShortcutField from "../../components/ShortcutField.svelte";
+
+  // Shortcuts another app already holds: Rust says which after every change, Settings shows it at the row.
+  let taken = $state<string[]>([]);
+  $effect(() => {
+    void s.shortcuts;
+    // Registering happens on save; ask a moment later.
+    const timer = setTimeout(() => api.shortcutProblems().then((p) => (taken = p)).catch(() => {}), 150);
+    return () => clearTimeout(timer);
+  });
 
   const s = $derived(nook.settings!);
   const accents = [0xf4f3f7, 0x8b7bff, 0x46e0a6, 0xffb84d, 0xff8a5b, 0x5ab8ff, 0xff6bb5];
@@ -102,12 +112,12 @@
   <h3>Sneltoetsen</h3>
   <div class="group">
     {#each Object.entries(s.shortcuts) as [action, accel] (action)}
-      <label class="row">
+      <div class="row">
         <span>{shortcutNames[action] ?? action}</span>
-        <input value={accel} onchange={(e) => nook.saveSettings({ shortcuts: { ...s.shortcuts, [action]: e.currentTarget.value } })} />
-      </label>
+        <ShortcutField value={accel} taken={taken.includes(action)} onchange={(next) => nook.saveSettings({ shortcuts: { ...s.shortcuts, [action]: next } })} />
+      </div>
     {/each}
-    <p class="faint note">Schrijf als Alt+Space of CommandOrControl+Shift+K. Een toets die een andere app al gebruikt, wordt overgeslagen.</p>
+    <p class="faint note">Klik op een sneltoets en druk de nieuwe toetsen in. Is hij al bezet door een andere app, dan zie je dat hier meteen.</p>
   </div>
 {/if}
       
