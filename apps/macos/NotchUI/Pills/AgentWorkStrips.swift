@@ -809,9 +809,12 @@ struct BackgroundCommandBar: View {
     var focus: Binding<UUID?> = .constant(nil)
     var reveal: ((UUID) -> Void)? = nil
     var openPanel: (() -> Void)? = nil
+    /// The session's agent processes: with them each running command says whether it still works.
+    var agentPIDs: (() -> [Int32])? = nil
     @State private var open = false
     @State private var shown: UUID?
     @State private var flashed: UUID?
+    @State private var activity: [UUID: BackgroundCommandActivity] = [:]
 
     var body: some View {
         let running = commands.filter(\.isRunning).count
@@ -833,6 +836,10 @@ struct BackgroundCommandBar: View {
                             .foregroundStyle(NookTheme.paper.opacity(0.85))
                             .lineLimit(1)
                             .truncationMode(.tail)
+                        if let latest = commands.last(where: \.isRunning), let now = activity[latest.id] {
+                            BackgroundCommandActivityLabel(activity: now, detailed: false)
+                                .fixedSize()
+                        }
                         Spacer(minLength: 6)
                         if failed > 0 {
                             Text(tr("ws.background.failedCount", failed))
@@ -871,6 +878,7 @@ struct BackgroundCommandBar: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
         .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+        .task(id: commands.filter(\.isRunning).map(\.id.uuidString).joined(separator: ",")) { await watch() }
         .onChange(of: focus.wrappedValue) { _, id in
             guard let id else { return }
             focus.wrappedValue = nil
@@ -885,6 +893,36 @@ struct BackgroundCommandBar: View {
         }
     }
 
+    /// Every three seconds: whether each running command still works, from the processes below the agent's.
+    private func watch() async {
+        activity = [:]
+        let running = commands.filter(\.isRunning)
+        guard let agentPIDs, !running.isEmpty else { return }
+        var probes: [UUID: BackgroundCommandProbe] = [:]
+        while !Task.isCancelled {
+            let roots = agentPIDs()
+            let before = probes
+            let (read, after) = await Task.detached(priority: .utility) { () -> ([UUID: BackgroundCommandActivity], [UUID: BackgroundCommandProbe]) in
+                var probes = before
+                var read: [UUID: BackgroundCommandActivity] = [:]
+                let table = ProcessTable.read()
+                let now = Date().timeIntervalSinceReferenceDate
+                for command in running {
+                    var probe = probes[command.id] ?? BackgroundCommandProbe()
+                    read[command.id] = probe.read(command: command.command, output: command.output, roots: roots, table: table, at: now,
+                                                  commandLine: BackgroundCommandActivityLabel.commandLine,
+                                                  modified: BackgroundCommandActivityLabel.modified)
+                    probes[command.id] = probe
+                }
+                return (read, probes)
+            }.value
+            guard !Task.isCancelled else { return }
+            probes = after
+            if read != activity { activity = read }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+    }
+
     private func row(_ command: BackgroundCommandInfo) -> some View {
         let expanded = shown == command.id
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -894,12 +932,19 @@ struct BackgroundCommandBar: View {
                 HStack(spacing: NookTheme.Spacing.md) {
                     SubagentStatusMark(command: command)
                         .frame(width: 12)
-                    Text(command.title)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(command.isRunning ? NookTheme.paper.opacity(0.85)
-                                         : (command.failed ? NookTheme.textSecondary : NookTheme.textTertiary))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(command.title)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(command.isRunning ? NookTheme.paper.opacity(0.85)
+                                             : (command.failed ? NookTheme.textSecondary : NookTheme.textTertiary))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        if command.isRunning, let now = activity[command.id] {
+                            BackgroundCommandActivityLabel(activity: now)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if command.printed != nil && !expanded {
                         Image(icon: "text.alignleft")
@@ -961,6 +1006,64 @@ struct BackgroundCommandBar: View {
         .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
         .padding(.leading, 20)
         .padding(.bottom, NookTheme.Spacing.xs)
+    }
+}
+
+/// Whether a running background command still works, so one that runs long does not look stuck: "● Working · 140 % CPU
+/// · xcodebuild · last output at 21:30", "● Waiting · no CPU use", or "● Its process is gone". `detailed: false` keeps
+/// only the state, for the bar's header.
+struct BackgroundCommandActivityLabel: View {
+    let activity: BackgroundCommandActivity
+    var detailed = true
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(text)
+        }
+        .font(NookTheme.TextStyle.caption)
+        .foregroundStyle(activity.state == .gone ? NookTheme.coralSoft : NookTheme.textTertiary)
+        .help(tr("ws.background.activity.help"))
+    }
+
+    private var color: Color {
+        switch activity.state {
+        case .working: return NookTheme.mint
+        case .waiting: return NookTheme.amber
+        case .gone: return NookTheme.coralSoft
+        }
+    }
+
+    private var text: String {
+        var parts: [String]
+        switch activity.state {
+        case .working:
+            parts = [activity.cpuLabel.map { tr("ws.background.activity.working", $0) } ?? tr("ws.background.activity.active")]
+        case .waiting:
+            parts = [tr("ws.background.activity.waiting")]
+        case .gone:
+            parts = [tr("ws.background.activity.gone")]
+        }
+        guard detailed else { return parts[0] }
+        if activity.state != .gone, let process = activity.process { parts.append(process) }
+        if let last = activity.lastOutput {
+            parts.append(tr("ws.background.activity.lastOutput", last.formatted(date: .omitted, time: .shortened)))
+        } else if activity.hasOutputFile {
+            parts.append(tr("ws.background.activity.noOutput"))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// A process's command line, its arguments joined by spaces. Nil when it cannot be read.
+    nonisolated static func commandLine(_ pid: Int32) -> String? {
+        LocalAgentScanner.commandLine(pid)?.joined(separator: " ")
+    }
+
+    /// When the file at `path` last changed; nil while it is empty or missing.
+    nonisolated static func modified(_ path: String) -> Date? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? 0) > 0 else { return nil }
+        return attributes[.modificationDate] as? Date
     }
 }
 

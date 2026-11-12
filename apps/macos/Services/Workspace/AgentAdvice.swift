@@ -46,6 +46,27 @@ enum LimitAdvisor {
                             usedFraction: $0.usedFraction, resumeIn: resumeIn)
         }
     }
+
+    /// The accounts to offer when `options` has none: the others that are filling up but not full yet, least used first
+    /// (same agent first when equally used), so the usage limit card can still propose one to go on with.
+    static func fallbacks(states: [LimitState], current: (provider: RunProvider, profileID: String), now: Date) -> [LimitSuggestion] {
+        guard let me = states.first(where: { $0.provider == current.provider && $0.profileID == current.profileID }),
+              let used = me.usedFraction, used >= limitedAt else { return [] }
+        let resumeIn = me.resetAt.map { max(0, $0.timeIntervalSince(now)) }
+        let others = states.filter { !($0.provider == current.provider && $0.profileID == current.profileID) }
+        let roomy = others.compactMap { state -> (LimitState, Double)? in
+            guard let fraction = state.usedFraction, fraction < 1 else { return nil }
+            return (state, fraction)
+        }
+        return roomy
+            .sorted { lhs, rhs in
+                lhs.1 != rhs.1 ? lhs.1 < rhs.1 : (lhs.0.provider == current.provider && rhs.0.provider != current.provider)
+            }
+            .map { state, fraction in
+                LimitSuggestion(provider: state.provider, profileID: state.profileID,
+                                sameAgent: state.provider == current.provider, usedFraction: fraction, resumeIn: resumeIn)
+            }
+    }
 }
 
 struct StuckInput: Sendable {

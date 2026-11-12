@@ -1912,7 +1912,10 @@ private struct ChatsDetail: View, Equatable {
                                        onVersions: { [entry] bubble in
                                            await ChatCaptureService.shared.versions(chat: entry.id, message: bubble.id)
                                        },
-                                       typing: typing.line(entry.id), newFrom: newFrom)
+                                       typing: typing.line(entry.id),
+                                       typingFace: ChatTypingFace.first(typing.typists(entry.id),
+                                                                        in: capture.inbox.threads[entry.id]),
+                                       newFrom: newFrom)
                             .equatable()
                             .environment(\.chatFetchFile, ChatFileFetch(chat: entry.id) { [entry] in await app.fetchChatFile($0, in: entry) })
                             .padding(.horizontal, NookTheme.Spacing.xs)

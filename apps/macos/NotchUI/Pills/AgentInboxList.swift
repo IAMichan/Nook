@@ -55,7 +55,18 @@ struct AgentInboxList: View {
     @State private var pendingClones: Set<UUID> = []
     /// The height of each docked shelf's rows, so the shelf is as tall as they are (`dockedShelf`).
     @State private var shelfHeights: [InboxSection.Kind: CGFloat] = [:]
+    /// The height of the list with its docked shelves, so the Working shelf can grow with the sessions at work.
+    @State private var listHeight: CGFloat = 0
     private static let shelfMaxHeight: CGFloat = 280
+    /// The share of the list the Working shelf may take when more sessions work than fit in `shelfMaxHeight`.
+    private static let workingShelfShare: CGFloat = 0.6
+
+    /// How tall a docked shelf may grow before it scrolls: the Working shelf grows with the sessions at work, up to
+    /// `workingShelfShare` of the list, so several running threads stay in view; the others stop at `shelfMaxHeight`.
+    static func shelfLimit(_ kind: InboxSection.Kind, listHeight: CGFloat) -> CGFloat {
+        guard kind == .working else { return shelfMaxHeight }
+        return max(shelfMaxHeight, listHeight * workingShelfShare)
+    }
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -65,37 +76,8 @@ struct AgentInboxList: View {
 
     // MARK: Rows
 
-    private func attention(_ item: AgentListItem) -> AgentAttention {
-        switch item.status {
-        case .waiting: return .approval
-        case .input: return .input
-        case .failed: return .failed
-        case .limited: return .limited
-        case .working: return .working
-        case .idle: return item.unseen ? .ready : .idle
-        case .finished: return .finished
-        }
-    }
-
     private func row(_ item: AgentListItem) -> InboxRow {
-        let isPast = item.id.hasPrefix("past:")
-        // A busy session settles only when you settled it during this busy spell (a turn that hangs).
-        let settledBusy = item.isBusy && finishedMarks.isMarkedWhileBusy(item.finishKey)
-        // Only you settle a chat (or the auto-settle rules you switched on): one that went quiet stays until you handled it,
-        // across a restart of Nook too.
-        let settled = isPast || settledBusy || (!item.isBusy && finishedMarks.contains(item.finishKey))
-        return InboxRow(
-            id: item.id, title: item.title, project: InboxProject.key(folder: item.folder, path: item.path),
-            attention: attention(item),
-            pinned: store.state.pinned.contains(item.id), settled: settled,
-            snoozedUntil: item.snoozedUntil, snoozedAt: item.snoozedAt, limitedAt: item.limitedAt,
-            lastActivity: item.started ?? .distantPast,
-            hasOpenRequest: item.status == .waiting || item.status == .input,
-            isActive: item.isBusy || item.status == .working,
-            unread: item.unseen,
-            parentID: item.parentID,
-            unsettledAt: finishedMarks.kept[item.finishKey]
-        )
+        InboxRow(item, store: store, finished: finishedMarks, workspace: app.workspace)
     }
 
     private func runID(_ item: AgentListItem?) -> UUID? {
@@ -151,16 +133,6 @@ struct AgentInboxList: View {
         return RunPullRequestLinks.shared.url(id, events: events)
     }
 
-    /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier
-    /// ones of the last three days (older ones keep the state they had).
-    private var pullRequestFolders: [PullRequestSync.Folder] {
-        let recent = past.filter { ($0.started ?? .distantPast) > now.addingTimeInterval(-3 * 24 * 3600) }
-        return (items + recent).compactMap { item in
-            guard runID(item) == nil, let branch = item.branch else { return nil }
-            return PullRequestSync.Folder(path: item.path, branch: branch, busy: item.isBusy, quietSince: item.started)
-        }
-    }
-
     // MARK: Body
 
     var body: some View {
@@ -178,11 +150,8 @@ struct AgentInboxList: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 searchField
-                SelectionModeButton(active: selection.isActive) {
-                    withAnimation(NookTheme.reveal) {
-                        if selection.isActive { selection.clear() } else { selection.begin() }
-                    }
-                }
+                // Selecting several sessions starts with a ⌘- or ⇧-click on a row, so it needs no button here.
+                InboxViewMenu(store: store)
                 //: a project is added from the list itself: made new, a folder on disk, or cloned.
                 if !app.demoMode {
                     AddProjectButton(added: addProject, cloning: { pendingClones.insert($0) })
@@ -192,18 +161,13 @@ struct AgentInboxList: View {
             // The list and its docked shelves, with the undo notice floating over their foot: it covers the last rows for
             // a few seconds instead of pushing the whole list up and back down.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                // What you typed for a new session and did not start yet, one per project (`UnsentDraftRows`), drawn as
-                // session rows at the top of the list so they read as part of it.
-                if !app.demoMode, store.query.isEmpty {
-                    UnsentDraftRows(composerOpen: current == "new") { select("new") }
-                }
                 if showsEmptyState(sections, groups: groups) {
                     // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
                     // session at all it sets up an agent, otherwise it starts a new session.
                     WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
                                  action: sections.isEmpty
                                     ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
-                                    : (title: tr("agents.newSession"), run: { select("new") }))
+                                    : (title: tr("agents.newSession"), run: { app.viewModel.requestNewSession() }))
                 } else {
                     ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
@@ -252,6 +216,7 @@ struct AgentInboxList: View {
                     dockedShelf(section, sections: sections, byID: byID, shown: shown, projects: projects)
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
             .overlay(alignment: .bottom) { undoNotice }
             .animation(NookTheme.reveal, value: store.canUndo)
             if selection.isActive {
@@ -293,25 +258,7 @@ struct AgentInboxList: View {
         // Only while the list is on screen: holding ⌘ shows the ⌘-numbers.
         .onAppear { commandHold.start() }
         .onDisappear { commandHold.stop() }
-        .onAppear {
-            shownOrder = shown
-            pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: now)
-            store.undoSnooze = { ids in
-                for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.unsnooze(uuid) } }
-            }
-            store.undoArchive = { ids in
-                for id in ids { if let uuid = UUID(uuidString: String(id.dropFirst(4))) { app.workspace.setArchived(uuid, false) } }
-            }
-            // Only sessions Nook sees through hooks; the ones it runs itself ("run:…") end their own turns.
-            store.settleBusy = { ids in
-                for id in ids where !id.hasPrefix("run:") { app.hub.settleByUser(id) }
-            }
-            store.settled = { items in app.applySettleActions(items) }
-        }
-        .onChange(of: now) { _, current in
-            autoSettle(rows: rows, byID: byID, now: current)
-            pullRequests.follow(workspace: app.workspace, folders: pullRequestFolders, now: current)
-        }
+        .onAppear { shownOrder = shown }
     }
 
     /// Nothing here yet and nothing being searched or read: the coding agents step of the first-run flow installs or
@@ -465,7 +412,9 @@ struct AgentInboxList: View {
         let name = group.archived ? tr("sc.archive.archivedName", named) : named
         return ProjectHeaderRow(
             project: folder.map(AgentPathFormat.tilde) ?? group.project, name: name, open: open, dot: group.dot,
-            count: group.rows.count, icon: folderIcon(group, folder: folder), pinned: group.pinned,
+            count: group.rows.count, icon: folderIcon(group, folder: folder),
+            favicon: folder.flatMap { path in settings.projectIcon(path) == nil ? path : nil },
+            pinned: group.pinned,
             toggle: {
                 withAnimation(NookTheme.reveal) {
                     if store.collapsedProjects.contains(group.project) {
@@ -574,8 +523,9 @@ struct AgentInboxList: View {
         let settings = app.workspace.settings
         let path = projects[key] ?? (item.machine == MachineName.local && (item.path as NSString).lastPathComponent == key ? item.path : nil)
         let name = path.map(settings.projectDisplayName) ?? key
-        let icon = path.flatMap(settings.projectIcon) ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
-        return RowProject(name: name, icon: icon, path: path)
+        let own = path.flatMap(settings.projectIcon)
+        let icon = own ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
+        return RowProject(name: name, icon: icon, path: path, custom: own != nil)
     }
 
     /// The row's Project menu: what a project folder's menu does, from any of its sessions, so the list does not have to
@@ -642,13 +592,13 @@ struct AgentInboxList: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             shelfHeader(section)
             if !rows(of: section).isEmpty {
-                // As tall as its rows, up to 280, then it scrolls. Measured: a flexible scroll view would take all 280 and
-                // leave a gap between the header and a single row.
+                // As tall as its rows, up to its limit (`shelfLimit`), then it scrolls. Measured: a flexible scroll view
+                // would take the whole limit and leave a gap between the header and a single row.
                 ScrollView(showsIndicators: false) {
                     list.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shelfHeights[section.kind] = $0 }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(height: min(shelfHeights[section.kind] ?? 0, Self.shelfMaxHeight))
+                .frame(height: min(shelfHeights[section.kind] ?? 0, Self.shelfLimit(section.kind, listHeight: listHeight)))
             }
         }
     }
@@ -932,7 +882,7 @@ struct AgentInboxList: View {
             .disabled(down == nil)
         }
         // With auto-settle on, one session can stay out of it (`AutoSettlePolicy.Settings.perThreadOptOut`).
-        if store.autoSettle.enabled, !entry.row.settled {
+        if store.autoSettleRules(machine: entry.row.machine).enabled, !entry.row.settled {
             let optedOut = store.autoSettle.perThreadOptOut.contains(item.id)
             Button(tr(optedOut ? "inbox.autoSettle.allow" : "inbox.autoSettle.keep")) {
                 if optedOut { store.autoSettle.perThreadOptOut.remove(item.id) } else { store.autoSettle.perThreadOptOut.insert(item.id) }
@@ -1042,21 +992,6 @@ struct AgentInboxList: View {
                             actions: actions,
                             toggleAll: { selection.toggleAll(shown) },
                             done: { withAnimation(NookTheme.reveal) { selection.clear() } })
-    }
-
-    // MARK: Auto-settle
-
-    private func autoSettle(rows: [InboxRow], byID: [String: AgentListItem], now: Date) {
-        let workspace = app.workspace
-        let ids = store.autoSettleCandidates(rows: rows, pullRequest: { id in
-            runID(byID[id]).map { run in pullRequests.autoSettleState(run, since: workspace.lastWrittenAt(run)) } ?? .none
-        }, now: now)
-        let settle = ids.compactMap { byID[$0] }
-        guard !settle.isEmpty else { return }
-        store.settle(settle, now: now, record: false)
-        // As a settle of yours: a few seconds to take it back (⌘Z); after that Reopen on the Settled shelf brings it back,
-        // and it then stays until it has new activity.
-        store.note(.autoSettled, ids: settle.map(\.finishKey), now: now)
     }
 
     // MARK: Undo
@@ -1194,6 +1129,8 @@ private struct ProjectHeaderRow: View {
     let dot: InboxProjectGroup.Dot?
     let count: Int
     let icon: ProjectIcon?
+    /// The folder whose own favicon replaces `icon` once it is found (no icon of yours set); nil for none.
+    let favicon: String?
     let pinned: Bool
     let toggle: () -> Void
     /// Nil for a project without a folder on this Mac: no "+".
@@ -1253,7 +1190,7 @@ private struct ProjectHeaderRow: View {
             // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
             HStack(spacing: Self.gap) {
                 if let icon {
-                    ProjectIconView(icon: icon, size: 15)
+                    ProjectIconView(icon: favicon == nil ? icon : nil, size: 16, folder: favicon, fallback: icon)
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: NookTheme.Spacing.xl)
                 } else {
@@ -1437,5 +1374,30 @@ final class PastSessionIndex {
             }
         }
         return byKey["\(agent):\(id)"]
+    }
+}
+
+/// The filter icon next to the session search: how the list is laid out (folders per project, the Working shelf), the
+/// same switches as Settings › Display, at hand where you look at the list. It stays unlit, like the icons next to it;
+/// the menu shows which switches are on.
+private struct InboxViewMenu: View {
+    @ObservedObject var store: InboxStore
+
+    var body: some View {
+        ComposerDropdown(width: 240) {
+            PanelHeaderIcon(symbol: "line.3.horizontal.decrease")
+        } content: {
+            DropdownHeader(title: tr("inbox.view"))
+            toggle("folder", tr("inbox.view.groupByProject"), on: store.groupByProject) { store.groupByProject.toggle() }
+            toggle("bolt", tr("inbox.view.showWorking"), on: store.showWorking) { store.showWorking.toggle() }
+        }
+        .help(tr("inbox.view"))
+        .accessibilityLabel(tr("inbox.view"))
+    }
+
+    private func toggle(_ symbol: String, _ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        DropdownRow(symbol: symbol, title: title, trailing: on ? "✓" : nil, chosen: on, staysOpen: true) {
+            withAnimation(NookTheme.reveal) { action() }
+        }
     }
 }

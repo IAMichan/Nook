@@ -36,6 +36,8 @@ struct ProcessSample: Equatable, Sendable {
     /// User and system time used so far, in nanoseconds.
     var cpuNanoseconds: UInt64
     var memoryBytes: UInt64
+    /// The process's short name ("xcodebuild").
+    var name: String = ""
 
     var identity: String { "\(pid)@\(started)" }
 }
@@ -106,8 +108,20 @@ enum ProcessTable {
             let cpu = Double(usage.ri_user_time + usage.ri_system_time) * scale
             return ProcessSample(pid: pid, parent: Int32(info.pbi_ppid),
                                  started: UInt64(info.pbi_start_tvsec) * 1_000_000 + UInt64(info.pbi_start_tvusec),
-                                 cpuNanoseconds: UInt64(cpu), memoryBytes: usage.ri_phys_footprint)
+                                 cpuNanoseconds: UInt64(cpu), memoryBytes: usage.ri_phys_footprint,
+                                 name: name(info))
         }
+    }
+
+    /// `pbi_name` (up to 32 characters), else the shorter `pbi_comm`.
+    private static func name(_ info: proc_bsdinfo) -> String {
+        func text<T>(_ tuple: T) -> String {
+            withUnsafeBytes(of: tuple) { bytes in
+                String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+            }
+        }
+        let long = text(info.pbi_name)
+        return long.isEmpty ? text(info.pbi_comm) : long
     }
 }
 #endif

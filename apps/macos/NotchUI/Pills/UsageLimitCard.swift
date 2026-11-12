@@ -130,7 +130,7 @@ struct UsageLimitCard: View {
         return provider.displayName + " · " + AccountLabel.name(profile, app: app)
     }
 
-    /// The other accounts with room left (`LimitAdvisor.options`), each with the model the session would go on with:
+    /// The other accounts with room left (`LimitAdvisor.options`, else the least used ones not full yet), each with the model the session would go on with:
     /// the model in use on another account of this agent, the one set for that agent in Settings on another agent.
     private func suggestions() -> [LimitOption] {
         var states: [LimitState] = []
@@ -151,7 +151,11 @@ struct UsageLimitCard: View {
             states[index].usedFraction = max(states[index].usedFraction ?? 0, 1)
         }
         guard workspace.canTransfer(run.id) else { return [] }
-        return LimitAdvisor.options(states: states, current: (run.provider, run.profileID), now: Date()).compactMap { pick in
+        // With no account that has room left, still propose the least used one that is not full yet.
+        let current = (provider: run.provider, profileID: run.profileID)
+        let roomy = LimitAdvisor.options(states: states, current: current, now: Date())
+        let picks = roomy.isEmpty ? LimitAdvisor.fallbacks(states: states, current: current, now: Date()) : roomy
+        return picks.compactMap { pick in
             guard let profile = profiles[pick.profileID] else { return nil }
             let model = picked[profile.id] ?? (pick.sameAgent ? run.model
                 : workspace.settings.sessionDefaults(for: run.projectPath).model(for: pick.provider))

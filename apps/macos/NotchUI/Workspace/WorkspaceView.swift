@@ -82,8 +82,8 @@ struct WorkspaceView: View {
 
     private func newSession() {
         viewModel.windowSheet = nil
-        viewModel.selectedAgentID = "new"
         viewModel.windowTab = .agents
+        viewModel.requestNewSession()
     }
 }
 

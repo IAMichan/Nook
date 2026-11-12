@@ -615,6 +615,7 @@ targets:
       - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/RemoteHostDiscovery.swift
       - path: Services/Workspace/ResourceUsage.swift
+      - path: Services/Workspace/BackgroundCommandActivity.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/OpenCodeServerProtocol.swift
@@ -643,6 +644,7 @@ targets:
       - path: Services/Workspace/WorktreeCheckoutCache.swift
       - path: Services/Workspace/SourceControl.swift
       - path: Services/Workspace/AddProjectSource.swift
+      - path: Services/Workspace/ProjectFavicon.swift
       - path: Services/Workspace/GitService+SourceControl.swift
       - path: Services/Workspace/GitCloneProgress.swift
       - path: Services/Connectors/ZipText.swift

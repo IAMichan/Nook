@@ -283,7 +283,9 @@ extension AgentRunPanel {
             let commands = derived.commands
             if !commands.isEmpty {
                 BackgroundCommandBar(commands: commands, focus: $barFocus,
-                                     reveal: { conversationFocus = $0 }, openPanel: outputsLink.showSubagents)
+                                     reveal: { conversationFocus = $0 },
+                                     openPanel: outputsLink.showSubagents,
+                                     agentPIDs: { workspace.agentPIDs(runID) })
             }
             // The agent's task list: the step it works on now while it works, the list it left once it stops.
             if let tasks = run.tasks, TaskChecklist.showsAboveComposer(tasks) {

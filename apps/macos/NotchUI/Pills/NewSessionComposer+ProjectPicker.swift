@@ -127,7 +127,7 @@ extension NewSessionComposer {
 
     private func projectRow(_ path: String) -> some View {
         let chosen = project.map { WorkspacePathPolicy.normalize($0.path) == path } ?? false
-        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), title: settings.projectDisplayName(path),
+        return DropdownRow(symbol: "folder", projectIcon: settings.projectIcon(path), projectFolder: path, title: settings.projectDisplayName(path),
                            detail: AgentPathFormat.tilde(path), chosen: chosen, favorite: favoriteBinding(path)) { pick(path) }
     }
 

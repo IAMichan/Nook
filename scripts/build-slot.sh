@@ -5,6 +5,10 @@
 # agents building at once once drove the load to 185 on 14 cores and pushed 9 GB into swap, so the whole Mac and the
 # running Nook froze. So at most NOOK_BUILD_SLOTS builds (default 2) run at once; the others wait, and say so.
 #
+# The builds that wait take the slots in the order they asked (a ticket each in $LOCK.queue): racing for a free slot
+# every two seconds let newer builds win again and again, and one agent's build waited over a quarter of an hour while
+# builds that asked minutes later went first, so its session looked stuck.
+#
 # Hold a slot only while compiling: a test run uses a core or two, and keeping the slot through it made other agents
 # wait up to 19 minutes on an idle Mac. scripts/core-tests.sh and scripts/xcode.sh build inside the slot and run the
 # tests outside it.
@@ -48,7 +52,9 @@ duration() {
 if [ "${NOOK_BUILD_SLOT_HELD:-}" = 1 ]; then
   asked="${NOOK_BUILD_SLOT_ASKED:-}"
   holder="${NOOK_BUILD_SLOT_HOLDER:-$LOCK.holder}"
-  unset NOOK_BUILD_SLOT_HELD NOOK_BUILD_SLOT_ASKED NOOK_BUILD_SLOT_HOLDER
+  # Out of the queue: the next build in line may take the other slot now.
+  [ -n "${NOOK_BUILD_SLOT_TICKET:-}" ] && rm -f "$NOOK_BUILD_SLOT_TICKET" 2>/dev/null
+  unset NOOK_BUILD_SLOT_HELD NOOK_BUILD_SLOT_ASKED NOOK_BUILD_SLOT_HOLDER NOOK_BUILD_SLOT_TICKET
   now="$(date +%s)"
   if [ -n "$asked" ] && [ $((now - asked)) -ge 5 ]; then
     echo "Got a build slot after waiting $(duration $((now - asked)))." >&2
@@ -96,16 +102,53 @@ waiting() {
 
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 ASKED="$(date +%s)"
+
+# The queue: one ticket per waiting build, named so that they sort in the order they asked. A ticket whose build is gone
+# (killed while it waited) is removed by whoever finds it.
+QUEUE="$LOCK.queue"
+TICKET=""
+if mkdir -p "$QUEUE" 2>/dev/null; then
+  TICKET="$QUEUE/$(printf '%012d.%010d' "$ASKED" "$$")"
+  if : > "$TICKET" 2>/dev/null; then
+    trap 'rm -f "$TICKET" 2>/dev/null' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+  else
+    TICKET=""
+  fi
+fi
+
+# Whether this build is next in line: fewer than SLOTS live builds asked before it. Without a queue, every build may try.
+my_turn() {
+  [ -n "$TICKET" ] && [ -e "$TICKET" ] || return 0
+  local ahead=0 ticket name pid
+  for ticket in "$QUEUE"/*; do
+    [ -e "$ticket" ] || continue
+    [ "$ticket" = "$TICKET" ] && break
+    [[ "$ticket" < "$TICKET" ]] || continue
+    name="$(basename "$ticket")"
+    pid="$((10#${name##*.}))"
+    if kill -0 "$pid" 2>/dev/null; then
+      ahead=$((ahead + 1))
+    else
+      rm -f "$ticket" 2>/dev/null
+    fi
+  done
+  [ "$ahead" -lt "$SLOTS" ]
+}
+
 said=0
 while true; do
-  for ((i = 1; i <= SLOTS; i++)); do
-    lock="$(slot_lock "$i")"
-    touch "$lock" 2>/dev/null || continue
-    status=0
-    try_slot "$lock" env NOOK_BUILD_SLOT_HELD=1 "NOOK_BUILD_SLOT_ASKED=$ASKED" "NOOK_BUILD_SLOT_HOLDER=$lock.holder" \
-      "$SELF" "$@" || status=$?
-    [ "$status" = "$BUSY" ] || exit "$status"
-  done
+  if my_turn; then
+    for ((i = 1; i <= SLOTS; i++)); do
+      lock="$(slot_lock "$i")"
+      touch "$lock" 2>/dev/null || continue
+      status=0
+      try_slot "$lock" env NOOK_BUILD_SLOT_HELD=1 "NOOK_BUILD_SLOT_ASKED=$ASKED" "NOOK_BUILD_SLOT_HOLDER=$lock.holder" \
+        "NOOK_BUILD_SLOT_TICKET=$TICKET" "$SELF" "$@" || status=$?
+      [ "$status" = "$BUSY" ] || exit "$status"
+    done
+  fi
   if [ "$said" = 0 ]; then
     waiting
     said=1

@@ -40,6 +40,9 @@ struct ChatTranscript: View, Equatable {
     var onVersions: ((ChatBubble) async -> [ChatVersion])? = nil
     /// Who is typing in the chat now ("Jan is typing…"), shown under its last message; nil while no one does.
     var typing: String? = nil
+    /// Whose face stands beside the typing bubble, as beside their messages: in a group, the first who types; nil in a
+    /// private chat, whose bubbles carry no face either.
+    var typingFace: ChatTypingFace? = nil
     /// The first message that was new when the chat opened: a line above it says so, and it stays put while you read.
     var newFrom: String? = nil
     @State private var loadingOlder = false
@@ -88,6 +91,7 @@ struct ChatTranscript: View, Equatable {
     /// The actions only count by whether they are there: they do the same for the same messages.
     static func == (a: ChatTranscript, b: ChatTranscript) -> Bool {
         a.bubbles == b.bubbles && a.contact == b.contact && a.fills == b.fills && a.typing == b.typing
+            && a.typingFace == b.typingFace
             && a.newFrom == b.newFrom && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil) && (a.onLoadOlder == nil) == (b.onLoadOlder == nil)
@@ -403,7 +407,13 @@ struct ChatTranscript: View, Equatable {
             // The typing line animates on its own: on the whole chat it animated every bubble that came in with it.
             VStack(spacing: 0) {
                 if let typing {
-                    ChatTypingBubble(text: typing)
+                    HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+                        // Their face beside it, as beside each of their messages (`ChatBubbleView`).
+                        if let typingFace {
+                            ChatSenderFace(name: typingFace.name, picture: typingFace.picture, size: ChatBubbleView.faceSize)
+                        }
+                        ChatTypingBubble(text: typing)
+                    }
                         .padding(.top, rows.isEmpty ? 0 : NookTheme.Spacing.md)
                         .id(ChatTypingBubble.id)
                         .transition(.opacity)
@@ -463,6 +473,21 @@ struct ChatTranscript: View, Equatable {
     }
 }
 
+
+/// Who types in a group, for their face beside the typing bubble: their name and their picture as the chat's app shows
+/// it (`InboxThread.faces`), the same as `ChatBubble.sender` and `ChatBubble.senderFace` for their messages.
+struct ChatTypingFace: Equatable {
+    let name: String
+    var picture: String? = nil
+
+    /// The first typist with a name (one in a group); nil when none has one, as in a private chat.
+    @MainActor
+    static func first(_ typists: [ChatTypist], in thread: InboxThread?) -> ChatTypingFace? {
+        guard let typist = typists.first(where: { !$0.name.isEmpty }) else { return nil }
+        let faces = thread?.faces ?? [:]
+        return ChatTypingFace(name: typist.name, picture: faces[typist.id] ?? faces[typist.name])
+    }
+}
 
 /// Drawn again only when what it shows changed: the chat around it redraws on every change anywhere in Nook's chats
 /// (a message in another chat, a picture that came in), and fifty bubbles each parsing their text again makes scrolling

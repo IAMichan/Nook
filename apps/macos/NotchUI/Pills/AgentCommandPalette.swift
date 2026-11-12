@@ -15,6 +15,8 @@ struct AgentCommandPalette: View {
     /// The session that is open, if one is.
     let current: AgentListItem?
     let close: () -> Void
+    /// Opened by the new-session button: it shows the projects to start in right away, and Esc closes it.
+    let startsInProjects: Bool
 
     @State private var query = ""
     @State private var index = 0
@@ -22,6 +24,16 @@ struct AgentCommandPalette: View {
     /// Light and Dark, "Change theme…" the themes.
     @State private var sublist: Sublist?
     @FocusState private var focused: Bool
+
+    init(viewModel: NotchViewModel, sessions: [AgentListItem], current: AgentListItem?, startsInProjects: Bool = false,
+         close: @escaping () -> Void) {
+        self.viewModel = viewModel
+        self.sessions = sessions
+        self.current = current
+        self.startsInProjects = startsInProjects
+        self.close = close
+        _sublist = State(initialValue: startsInProjects ? .projects : nil)
+    }
 
     private enum Sublist {
         case projects, appearance, theme
@@ -58,6 +70,8 @@ struct AgentCommandPalette: View {
         var command: String? = nil
         /// A session Nook runs, by its run id: the row drags onto a composer as that session's chip (`SessionLinkDrag`).
         var dragSession: String? = nil
+        /// A key of its own in this list (⌘1…⌘9 on the projects), shown where a command's key would be.
+        var keyHint: String? = nil
         /// Runs it; true keeps the palette open (a step into a list).
         let run: () -> Bool
     }
@@ -67,7 +81,7 @@ struct AgentCommandPalette: View {
     private var entries: [Entry] {
         let parsed = PaletteQuery(query)
         switch sublist {
-        case .projects: return filtered(projectEntries, parsed)
+        case .projects: return numbered(filtered(projectEntries, parsed))
         case .appearance: return filtered(appearanceEntries, parsed)
         case .theme: return filtered(themeEntries, parsed)
         case nil: break
@@ -196,11 +210,9 @@ struct AgentCommandPalette: View {
 
     private var navigationEntries: [Entry] {
         var out: [Entry] = [
+            // As the new-session button: the project first.
             Entry(id: "n:new", group: .navigation, symbol: "square.and.pencil", title: tr("agents.newSession"),
-                  command: "session.new") { viewModel.selectedAgentID = "new"; return false },
-            Entry(id: "n:newIn", group: .navigation, symbol: "folder.badge.plus", title: tr("palette.newSessionIn")) {
-                open(.projects)
-            },
+                  command: "session.new") { open(.projects) },
         ]
         if SessionHistory.shared.trail.canGoBack {
             out.append(Entry(id: "n:back", group: .navigation, symbol: "chevron.left", title: tr("palette.back"),
@@ -320,19 +332,39 @@ struct AgentCommandPalette: View {
         }
     }
 
-    /// "New session in…": your favorite projects, then the recent ones.
+    /// "New session in…" (and the new-session button): your favorite projects, then the recent ones, then a session
+    /// without a project, in a folder of its own under ~/.nook/scratch.
     private var projectEntries: [Entry] {
         let settings = app.workspace.settings
         var seen = Set<String>()
         let paths = (settings.favoriteProjects + settings.recentProjects)
-            .filter { seen.insert($0).inserted && !settings.isArchivedProject($0) }
-        return paths.map { path in
-            Entry(id: "p:" + path, group: .projects, symbol: "folder", title: (path as NSString).lastPathComponent,
+            .filter { seen.insert($0).inserted && !settings.isArchivedProject($0) && !ScratchProjects.isScratch($0) }
+        var out = paths.map { path in
+            Entry(id: "p:" + path, group: .projects, symbol: "folder", title: settings.projectDisplayName(path),
                   detail: AgentPathFormat.tilde(path)) {
                 PromptLinkInbox.shared.requestProject(path)
                 viewModel.selectedAgentID = "new"
                 return false
             }
+        }
+        out.append(Entry(id: "p:none", group: .projects, symbol: "tray", title: tr("ws.new.noProject"),
+                         detail: tr("ws.new.noProjectDetail")) {
+            // A scratch path that is not there yet: the composer makes the folder as it opens on it, and removes it
+            // again when you leave it without starting anything.
+            let folder = NookPaths.scratchDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true).path
+            PromptLinkInbox.shared.requestProject(folder)
+            viewModel.selectedAgentID = "new"
+            return false
+        })
+        return out
+    }
+
+    /// The first nine rows of a list get ⌘1…⌘9.
+    private func numbered(_ list: [Entry]) -> [Entry] {
+        list.enumerated().map { offset, entry in
+            var entry = entry
+            if offset < 9 { entry.keyHint = "⌘\(offset + 1)" }
+            return entry
         }
     }
 
@@ -409,7 +441,15 @@ struct AgentCommandPalette: View {
         .onChange(of: query) { _, _ in index = 0 }
         .onChange(of: sublist) { _, _ in index = 0 }
         .onWindowKeyDown { event in
-            guard event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return false }
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            // ⌘1…⌘9 pick the row with that number.
+            if modifiers == .command, let digit = event.charactersIgnoringModifiers.flatMap(Int.init), (1...9).contains(digit),
+               list.indices.contains(digit - 1), list[digit - 1].keyHint != nil {
+                index = digit - 1
+                perform(list)
+                return true
+            }
+            guard modifiers.isEmpty else { return false }
             switch Int(event.keyCode) {
             case kVK_DownArrow: index = min(index + 1, max(0, list.count - 1))
             case kVK_UpArrow: index = max(index - 1, 0)
@@ -429,8 +469,8 @@ struct AgentCommandPalette: View {
                 Text(entry.detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            if let keys = shortcut(entry.command) { NookKeyHint(text: keys) }
-            if ["n:newIn", "x:appearance", "x:theme"].contains(entry.id) {
+            if let keys = entry.keyHint ?? shortcut(entry.command) { NookKeyHint(text: keys) }
+            if ["n:new", "x:appearance", "x:theme"].contains(entry.id) {
                 Image(icon: "chevron.right").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             }
         }
@@ -440,9 +480,9 @@ struct AgentCommandPalette: View {
         .contentShape(Rectangle())
     }
 
-    /// Escape: back from the list of projects, else closes.
+    /// Escape: back from a list it stepped into, else closes (also from the projects the new-session button opened on).
     private func escape() {
-        if sublist != nil {
+        if sublist != nil, !(startsInProjects && sublist == .projects) {
             sublist = nil
             query = ""
         } else {
