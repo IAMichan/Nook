@@ -139,6 +139,38 @@ final class GitQuickActionTests: XCTestCase {
         XCTAssertEqual(GitService.pullRequestTemplate(root.path), "## Wat\n")
     }
 
+    func testPullRequestGuidelinesComeFromTheRepositoryInstructions() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nook-rules-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertNil(GitService.pullRequestGuidelines(root.path))
+        let agents = """
+        # Agents
+
+        ## Language
+        - Write code comments in English.
+        - Pull request titles must be in English.
+
+        ## PR Description
+        Exactly four sections.
+
+        ### Testing
+        Tick only what you ran.
+
+        ## Building
+        Run the tests. Prefer small diffs.
+        """
+        try agents.write(to: root.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        try "- Pull request titles must be in English.\n".write(to: root.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+        let rules = try XCTUnwrap(GitService.pullRequestGuidelines(root.path))
+        XCTAssertTrue(rules.contains("Pull request titles must be in English."), "a line elsewhere that names pull requests")
+        XCTAssertTrue(rules.contains("Exactly four sections."), "the whole section under a heading that names one")
+        XCTAssertTrue(rules.contains("Tick only what you ran."), "with its subsections")
+        XCTAssertFalse(rules.contains("code comments"))
+        XCTAssertFalse(rules.contains("Run the tests"), "the section ends at the next heading of its level")
+        XCTAssertFalse(rules.contains("From CLAUDE.md"), "a rule already read from AGENTS.md is not repeated")
+    }
+
     func testPullRequestBodyFallsBackToTemplateWhenGenerationReturnsEmpty() {
         let template = "## Summary\n- Template content"
         func resolveBody(_ answerBody: String?, template: String?) -> String {

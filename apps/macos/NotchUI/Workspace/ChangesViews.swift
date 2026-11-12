@@ -359,6 +359,10 @@ struct PullRequestSheet: View {
     @State private var working = false
     @State private var error: String?
     @State private var created: URL?
+    /// The agent writing the title and description from the branch's commits, the template and the repository's rules.
+    @State private var writing = false
+    /// The repository's pull request template, to point out its sections the description leaves out.
+    @State private var template: String?
     /// `@` in the description: the files of the repository and people from your chats, as plain words.
     @StateObject private var mentionModel = ComposerModel()
     private var mentionConfig: ComposerConfig { .mentions(folder: runID.flatMap { workspace.run($0)?.workingDirectory } ?? folder) }
@@ -398,6 +402,17 @@ struct PullRequestSheet: View {
                     .font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if writing {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small)
+                    Text(tr("ws.quick.generatingPR")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
+                }
+            }
+            if !writing, !missingSections.isEmpty {
+                Text(tr("ws.pr.missingSections", missingSections.joined(separator: ", ")))
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
             if let created {
                 Button(tr("ws.pr.created")) { PullRequestViewer.show(created) }
@@ -421,8 +436,8 @@ struct PullRequestSheet: View {
                 title = run?.title ?? ""
                 base = run?.baseBranch ?? ""
                 let root = run?.repoRoot ?? run?.workingDirectory
-                let template = root.flatMap { GitService.pullRequestTemplate($0) }
-                bodyText = template ?? (run.map { tr("ws.pr.bodyDefault", $0.task) } ?? "")
+                template = root.flatMap { GitService.pullRequestTemplate($0) }
+                bodyText = template.map(TextGeneration.pullRequestTemplateBody) ?? (run.map { tr("ws.pr.bodyDefault", $0.task) } ?? "")
                 repo = await workspace.remoteRepository(runID)
                 branch = await workspace.currentBranch(runID)
                 if base.isEmpty { base = await workspace.pullRequestBaseBranch(runID) ?? "" }
@@ -430,12 +445,40 @@ struct PullRequestSheet: View {
                 repo = await workspace.remoteRepository(folder: folder)
                 branch = await workspace.currentBranch(folder: folder)
                 base = await workspace.pullRequestBaseBranch(folder: folder) ?? ""
-                if let template = GitService.pullRequestTemplate(folder) {
-                    bodyText = template
-                }
+                template = GitService.pullRequestTemplate(folder)
+                if let template { bodyText = TextGeneration.pullRequestTemplateBody(template) }
             }
             loading = false
+            await writeDraft()
         }
+    }
+
+    /// The agent writes the title and description as the git button does: in English, filled in along the repository's
+    /// template and its rules for pull requests. What you typed in the meantime stays.
+    private func writeDraft() async {
+        guard repo != nil, branch != nil else { return }
+        let startTitle = title, startBody = bodyText
+        writing = true
+        defer { writing = false }
+        let written: WorkspaceManager.PullRequestDraft?
+        if let runID {
+            written = await workspace.draftPullRequest(runID)
+        } else if let folder {
+            written = await workspace.draftPullRequest(folder: folder)
+        } else {
+            written = nil
+        }
+        // Already sent (you did not wait for it): the text of the pull request stays as it went out.
+        guard let written, created == nil, !working else { return }
+        if title == startTitle, !written.title.isEmpty { title = written.title }
+        if bodyText == startBody, !written.body.isEmpty { bodyText = written.body }
+        if base.isEmpty { base = written.base }
+    }
+
+    /// The template's headings the description leaves out.
+    private var missingSections: [String] {
+        TextGeneration.missingTemplateHeadings(body: bodyText, template: template)
+            .map { $0.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces) }
     }
 
     private var canCreate: Bool { repo.map(SourceForge.canCreate) ?? false }
