@@ -125,4 +125,51 @@ final class AutoSettlePolicyTests: XCTestCase {
         let on = AutoSettlePolicy.Settings(enabled: true, inactivityDays: 3)
         XCTAssertEqual(AutoSettlePolicy.upgradingOldDefault(on), on)
     }
+
+    // MARK: Rules per machine
+
+    func testMachineFollowsAllUnlessItHasItsOwnRules() {
+        var all = on
+        all.perThreadOptOut = ["kept"]
+        let own = AutoSettlePolicy.Settings(enabled: true, inactivityDays: 30)
+        let perMachine = ["buildbox": own]
+        // No rules of its own: the ones for all machines, also for this Mac.
+        XCTAssertEqual(AutoSettlePolicy.settings(for: "other", all: all, perMachine: perMachine), all)
+        XCTAssertEqual(AutoSettlePolicy.settings(for: nil, all: all, perMachine: perMachine), all)
+        // Its own rules, with the sessions you kept out still kept out.
+        let resolved = AutoSettlePolicy.settings(for: "buildbox", all: all, perMachine: perMachine)
+        XCTAssertEqual(resolved.inactivityDays, 30)
+        XCTAssertEqual(resolved.perThreadOptOut, ["kept"])
+        // This Mac goes by its own key.
+        let mac = AutoSettlePolicy.settings(for: nil, all: all, perMachine: [AutoSettlePolicy.thisMac: own])
+        XCTAssertEqual(mac.inactivityDays, 30)
+    }
+
+    func testChangeForAllMachinesReachesMachinesWithOwnRules() {
+        var all = on
+        var perMachine = ["buildbox": AutoSettlePolicy.Settings(enabled: true, inactivityDays: 30)]
+        AutoSettlePolicy.settingAll(\.settleOnClosedPullRequest, to: true, all: &all, perMachine: &perMachine)
+        XCTAssertTrue(all.settleOnClosedPullRequest)
+        XCTAssertEqual(perMachine["buildbox"]?.settleOnClosedPullRequest, true)
+        // The rule that was not touched keeps the machine's own value.
+        XCTAssertEqual(perMachine["buildbox"]?.inactivityDays, 30)
+    }
+
+    func testInactivityRuleOfTheSessionsMachine() {
+        // Quiet for five days: settles under three-day rules, stays under thirty-day rules on its machine.
+        let local = row(ageDays: 5)
+        let remote = row(ageDays: 5) { $0.machine = "buildbox" }
+        let perMachine = ["buildbox": AutoSettlePolicy.Settings(enabled: true, inactivityDays: 30)]
+        let localRules = AutoSettlePolicy.settings(for: local.machine, all: on, perMachine: perMachine)
+        let remoteRules = AutoSettlePolicy.settings(for: remote.machine, all: on, perMachine: perMachine)
+        XCTAssertEqual(decide(local, localRules), .settle(.inactivity))
+        XCTAssertEqual(decide(remote, remoteRules), .keep(.recentActivity))
+        // Switched off for all machines, still on for the one with its own rules.
+        let off = AutoSettlePolicy.Settings(enabled: false)
+        XCTAssertEqual(decide(local, AutoSettlePolicy.settings(for: nil, all: off, perMachine: perMachine)), .keep(.disabled))
+    }
+
+    func testQueuedMessagesKeepASessionOut() {
+        XCTAssertEqual(decide(row { $0.hasQueued = true }), .keep(.queuedMessages))
+    }
 }

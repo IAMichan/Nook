@@ -14,6 +14,9 @@ final class InboxStore: ObservableObject {
     /// Sessions that work and need nothing from you fold into their own shelf; one that needs you jumps back up.
     @Published var showWorking: Bool { didSet { save() } }
     @Published var autoSettle: AutoSettlePolicy.Settings { didSet { save() } }
+    /// Machines with auto-settle rules of their own, by `RemoteMachine.id` (`AutoSettlePolicy.thisMac` for this Mac);
+    /// the others follow `autoSettle`.
+    @Published var autoSettleByMachine: [String: AutoSettlePolicy.Settings] { didSet { save() } }
     /// The sessions that work or wait sit in a dropdown per project instead of one list. Off by default:,
     /// the list is one inbox with the newest on top and every row names its project (folders are its "boring mode").
     @Published var groupByProject: Bool { didSet { save() } }
@@ -50,6 +53,7 @@ final class InboxStore: ObservableObject {
         var state: InboxState?
         var showWorking: Bool?
         var autoSettle: AutoSettlePolicy.Settings?
+        var autoSettleByMachine: [String: AutoSettlePolicy.Settings]?
         var groupByProject: Bool?
         var collapsedProjects: Set<String>?
         var collapsedShelves: Set<InboxSection.Kind>?
@@ -61,16 +65,18 @@ final class InboxStore: ObservableObject {
         /// `groupByProject` is stored as "projectFolders": the old key held a default of on, from before the list became one
         /// inbox, and is not read again.
         private enum CodingKeys: String, CodingKey {
-            case state, showWorking, autoSettle, collapsedProjects, collapsedShelves, foldedThreads, openedThreads
+            case state, showWorking, autoSettle, autoSettleByMachine, collapsedProjects, collapsedShelves, foldedThreads, openedThreads
             case groupByProject = "projectFolders"
         }
 
-        init(state: InboxState?, showWorking: Bool?, autoSettle: AutoSettlePolicy.Settings?, groupByProject: Bool?,
+        init(state: InboxState?, showWorking: Bool?, autoSettle: AutoSettlePolicy.Settings?,
+             autoSettleByMachine: [String: AutoSettlePolicy.Settings]? = nil, groupByProject: Bool?,
              collapsedProjects: Set<String>?, collapsedShelves: Set<InboxSection.Kind>?, foldedThreads: [String]?,
              openedThreads: [String]?) {
             self.state = state
             self.showWorking = showWorking
             self.autoSettle = autoSettle
+            self.autoSettleByMachine = autoSettleByMachine
             self.groupByProject = groupByProject
             self.collapsedProjects = collapsedProjects
             self.collapsedShelves = collapsedShelves
@@ -89,6 +95,7 @@ final class InboxStore: ObservableObject {
             state = field(InboxState.self, .state)
             showWorking = field(Bool.self, .showWorking)
             autoSettle = field(AutoSettlePolicy.Settings.self, .autoSettle)
+            autoSettleByMachine = field([String: AutoSettlePolicy.Settings].self, .autoSettleByMachine)
             groupByProject = field(Bool.self, .groupByProject)
             collapsedProjects = field(Set<String>.self, .collapsedProjects)
             collapsedShelves = field(Set<InboxSection.Kind>.self, .collapsedShelves)
@@ -112,6 +119,7 @@ final class InboxStore: ObservableObject {
         // Auto-settle: an install that never touched the old default (off) gets it on, once.
         let upgrade = !defaults.bool(forKey: Self.autoSettleUpgradedKey)
         autoSettle = upgrade ? AutoSettlePolicy.upgradingOldDefault(initial) : initial
+        autoSettleByMachine = stored?.autoSettleByMachine ?? [:]
         groupByProject = stored?.groupByProject ?? false
         collapsedProjects = stored?.collapsedProjects ?? []
         collapsedShelves = stored?.collapsedShelves ?? [.snoozed, .settled]
@@ -138,6 +146,7 @@ final class InboxStore: ObservableObject {
 
     private func save() {
         let stored = Stored(state: state, showWorking: showWorking, autoSettle: autoSettle,
+                            autoSettleByMachine: autoSettleByMachine.isEmpty ? nil : autoSettleByMachine,
                             groupByProject: groupByProject, collapsedProjects: collapsedProjects,
                             collapsedShelves: collapsedShelves,
                             foldedThreads: Array(foldedThreads), openedThreads: Array(openedThreads))
@@ -255,15 +264,43 @@ final class InboxStore: ObservableObject {
 
     // MARK: Auto-settle
 
-    /// The sessions that settle by themselves right now (never one that runs, waits for you, is pinned or snoozed).
+    /// The sessions that settle by themselves right now (never one that runs, waits for you, is pinned or snoozed), each by
+    /// the rules of the machine it runs on.
     func autoSettleCandidates(rows: [InboxRow], pullRequest: (String) -> AutoSettlePolicy.PullRequestState,
                               now: Date = Date()) -> [String] {
-        guard autoSettle.enabled else { return [] }
+        guard autoSettle.enabled || autoSettleByMachine.values.contains(where: \.enabled) else { return [] }
         return rows.compactMap { row in
-            if case .settle = AutoSettlePolicy.decide(row: row, pullRequest: pullRequest(row.id), settings: autoSettle, now: now) {
+            let rules = autoSettleRules(machine: row.machine)
+            if case .settle = AutoSettlePolicy.decide(row: row, pullRequest: pullRequest(row.id), settings: rules, now: now) {
                 return row.id
             }
             return nil
         }
+    }
+
+    /// The rules for sessions on `machine` (nil: this Mac).
+    func autoSettleRules(machine: String?) -> AutoSettlePolicy.Settings {
+        AutoSettlePolicy.settings(for: machine, all: autoSettle, perMachine: autoSettleByMachine)
+    }
+
+    /// Changes one rule: for every machine (`machine` nil), or for one machine, which then has rules of its own.
+    func setAutoSettle<Value>(_ field: WritableKeyPath<AutoSettlePolicy.Settings, Value>, to value: Value, machine: String?) {
+        guard let machine else {
+            var all = autoSettle
+            var perMachine = autoSettleByMachine
+            AutoSettlePolicy.settingAll(field, to: value, all: &all, perMachine: &perMachine)
+            autoSettleByMachine = perMachine
+            autoSettle = all
+            return
+        }
+        var own = autoSettleByMachine[machine] ?? autoSettle
+        own.perThreadOptOut = []
+        own[keyPath: field] = value
+        autoSettleByMachine[machine] = own
+    }
+
+    /// The machine follows the rules for all machines again.
+    func followAllMachines(_ machine: String) {
+        autoSettleByMachine[machine] = nil
     }
 }
