@@ -393,15 +393,23 @@ final class ChatStore {
         let saved = transaction {
             guard let chat = chatID(key) else { return false }
             for message in page.messages {
-                if stored(message.id, chat: chat) == nil { fresh += 1 }
-                guard saveMerged(message, chat: chat) else { return false }
+                let known = stored(message.id, chat: chat)?.message
+                if known == nil { fresh += 1 }
+                guard saveMerged(ChatReconcile.marked(message, over: known, textChangeIsEdit: page.textChangeIsEdit), chat: chat)
+                else { return false }
             }
             var gone = page.deleted
             var copies: [String] = []
-            if let low = page.messages.map(\.date).min() {
-                let stretch = between(chat: chat, after: low, before: page.high)
-                copies = ChatReconcile.copies(stretch, of: page.messages)
-                if page.omitsDeleted { gone += ChatReconcile.absent(stretch, from: page.messages).filter { !copies.contains($0) } }
+            if let low = page.low {
+                // A little before the page for what the app keeps as deleted (its copy may be dated a moment later); only
+                // what lies past the page's oldest message for absence.
+                let stretch = between(chat: chat, after: low.addingTimeInterval(-ChatReconcile.sameMoment - ChatBackfill.instant),
+                                      before: page.high)
+                let inside = stretch.filter { $0.date > low }
+                copies = ChatReconcile.copies(inside, of: page.messages)
+                if page.omitsDeleted { gone += ChatReconcile.absent(inside, from: page.messages).filter { !copies.contains($0) } }
+                let ids = Set(page.messages.map(\.id))
+                gone += ChatReconcile.gone(stretch.filter { !ids.contains($0.id) }, like: page.gone)
             }
             return withdraw(gone, chat: chat) && deleteMessages(copies, chat: chat)
         }

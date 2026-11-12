@@ -102,10 +102,17 @@ final class ChatArchiveSearch: ChatSearchBridge {
 protocol ChatBackfillBridge: ChatBridge {
     func canBackfill(chatID: String) -> Bool
     func backfill(chatID: String, before: Date, limit: Int) async throws -> [InboxMessage]
+    /// The same page, with the messages of its stretch the app now has as deleted under another id (Mail, which may
+    /// give a mail it moved to the Trash a new one): the archive finds them by time and first line (`ChatReconcile.gone`).
+    func backfillPage(chatID: String, before: Date, limit: Int) async throws -> (messages: [InboxMessage], gone: [InboxMessage])
     /// An empty answer is the chat's start, never a busy moment (Mail, which looks all the way back in one answer).
     var backfillEmptyIsStart: Bool { get }
 }
 
 extension ChatBackfillBridge {
     var backfillEmptyIsStart: Bool { false }
+
+    func backfillPage(chatID: String, before: Date, limit: Int) async throws -> (messages: [InboxMessage], gone: [InboxMessage]) {
+        (try await backfill(chatID: chatID, before: before, limit: limit), [])
+    }
 }

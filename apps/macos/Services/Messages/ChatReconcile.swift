@@ -16,6 +16,41 @@ enum ChatReconcile {
         /// The app leaves a message deleted for everyone out of its history (Slack, Telegram): one stored in the stretch
         /// the page covers that the page lacks was deleted.
         var omitsDeleted = false
+        /// The app changes a message's words only by an edit but does not mark it (`ChatBridge.historyTextChangeIsEdit`).
+        var textChangeIsEdit = false
+        /// Messages of the stretch the app now keeps as deleted under an id of their own (Mail's Trash): the stored one
+        /// with the same time and first line is marked deleted (`gone(_:like:)`).
+        var gone: [InboxMessage] = []
+
+        /// Where the stretch the page covers starts: its oldest message, or the oldest the app keeps as deleted.
+        var low: Date? { (messages.map(\.date) + gone.map(\.date)).min() }
+    }
+
+    /// The stored messages that are the ones the app keeps as deleted under another id: from the same side, within two
+    /// seconds, with the same first line (a mail's subject).
+    static func gone(_ stored: [InboxMessage], like gone: [InboxMessage]) -> [String] {
+        stored.filter { message in
+            !message.isDeleted && gone.contains { other in
+                other.isMine == message.isMine && abs(other.date.timeIntervalSince(message.date)) <= sameMoment
+                    && firstLine(other.text) == firstLine(message.text)
+            }
+        }.map(\.id)
+    }
+
+    /// How far apart two copies of one message may be dated.
+    static let sameMoment: TimeInterval = 2
+
+    private static func firstLine(_ text: String) -> Substring {
+        text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+    }
+
+    /// A page's message over what is stored of it, marked edited when its app's words changed and the app does not say.
+    static func marked(_ message: InboxMessage, over stored: InboxMessage?, textChangeIsEdit: Bool) -> InboxMessage {
+        guard textChangeIsEdit, let stored, !stored.isDeleted, !message.isDeleted, !stored.text.isEmpty,
+              !message.text.isEmpty, stored.text != message.text else { return message }
+        var message = message
+        message.edited = true
+        return message
     }
 
     /// The stored messages of the stretch a page covers (strictly between its oldest message and its end) that the page

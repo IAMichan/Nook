@@ -44,6 +44,14 @@ enum MailChatData {
 
         /// Its id in Nook.
         var nookID: String { "mail-\(id)" }
+
+        /// The same mail in another mailbox (Mail may give a moved mail a new id): the same account, person and subject,
+        /// received within two seconds.
+        func isSameMail(as other: Row) -> Bool {
+            account == other.account && subject == other.subject && fromMe == other.fromMe
+                && MailChatData.address(person) == MailChatData.address(other.person)
+                && abs(date.timeIntervalSince(other.date)) <= 2
+        }
     }
 
     // MARK: Scripts
@@ -66,6 +74,118 @@ enum MailChatData {
         return out
     end tell
     """
+
+    /// A message Nook read from Mail itself (`Row.nookID`).
+    static func isMail(_ nookID: String) -> Bool { nookID.hasPrefix("mail-") }
+
+    /// The names Mail's Trash mailboxes go by, across providers and languages.
+    static let trashNames = ["Trash", "Deleted Messages", "Deleted Items", "Bin", "Prullenmand", "Verwijderde items",
+                             "Verwijderde berichten", "Papierkorb", "Gelöschte Objekte", "Gelöschte Elemente", "Corbeille",
+                             "Éléments supprimés", "Papelera", "Elementos eliminados", "Elementos borrados"]
+
+    /// The lines a mail in the Trash is written as: "DEL|||mailbox|||id|||subject|||sender|||date|||first recipient",
+    /// for the AppleScript of `trashScript` and `olderScript` (`m` the message, `boxName` its mailbox).
+    private static let trashLine = """
+    set stamp to ((date received of m) as «class isot» as string)
+    set firstTo to ""
+    try
+        set r to first to recipient of m
+        set firstTo to (address of r)
+        try
+            set firstTo to (name of r) & " <" & (address of r) & ">"
+        end try
+    end try
+    set out to out & "DEL|||" & boxName & "|||" & (id of m) & "|||" & (subject of m) & "|||" & (sender of m) & "|||" & stamp & "|||" & firstTo & linefeed
+    """
+
+    /// The newest mail in an account's Trash mailboxes, as `trashLine` writes it: a mail you deleted in Mail shows as
+    /// deleted in Nook, its text kept.
+    static func trashScript(account: String, count: Int = 100) -> String {
+        let names = trashNames.map(MailStats.quote).joined(separator: ", ")
+        return """
+        tell application "Mail"
+            set acc to account \(MailStats.quote(account))
+            set out to ""
+            set trashNames to {\(names)}
+            repeat with box in mailboxes of acc
+                try
+                    if trashNames contains (name of box) then
+                        set boxName to name of box
+                        set total to count of messages of box
+                        if total > 0 then
+                            set lo to 1
+                            set hi to total
+                            if total > \(count) then
+                                set hi to \(count)
+                                if (date received of message 1 of box) < (date received of message total of box) then
+                                    set lo to total - \(count - 1)
+                                    set hi to total
+                                end if
+                            end if
+                            repeat with i from lo to hi
+                                try
+                                    set m to message i of box
+        \(trashLine)
+                                end try
+                            end repeat
+                        end if
+                    end if
+                end try
+            end repeat
+            return out
+        end tell
+        """
+    }
+
+    /// The mail in the Trash `trashScript` or `olderScript` listed, each as the conversation it was in: with the person
+    /// who wrote it, or for your own the person you wrote to.
+    static func trashRows(_ raw: String, account: Account, calendar: Calendar = .current) -> [Row] {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = calendar.timeZone
+        parser.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        let own = Set(account.addresses)
+        return raw.components(separatedBy: .newlines).compactMap { line in
+            let parts = line.components(separatedBy: "|||")
+            guard parts.count >= 6, parts[0] == "DEL", let id = Int(parts[2].trimmingCharacters(in: .whitespaces)),
+                  let date = parser.date(from: String(parts[5].trimmingCharacters(in: .whitespaces).prefix(19))) else { return nil }
+            let sender = parts[4].trimmingCharacters(in: .whitespaces)
+            let mine = own.contains(address(sender))
+            let person = mine ? (parts.count > 6 ? parts[6].trimmingCharacters(in: .whitespaces) : "") : sender
+            guard !address(person).isEmpty else { return nil }
+            return Row(account: account.name, mailbox: parts[1], id: id, subject: parts[3], person: person, date: date,
+                       read: true, fromMe: mine)
+        }
+    }
+
+    /// The mail read before that is now in the Trash, by its id in Nook: Mail may give a mail it moved a new id, so it
+    /// is found by its account, person, subject and time.
+    static func trashed(_ trash: [Row], among known: [Row]) -> [String] {
+        known.filter { row in
+            trash.contains { $0.isSameMail(as: row) }
+        }.map(\.nookID)
+    }
+
+    /// The chats of a read with the mail now in the Trash marked deleted (`BridgedChat.deleted`); a chat this read did
+    /// not bring comes along with only that.
+    static func marking(_ trashed: [Row], in chats: [BridgedChat], named: Bool) -> [BridgedChat] {
+        guard !trashed.isEmpty else { return chats }
+        var chats = chats
+        var byChat: [String: [Row]] = [:]
+        for row in trashed { byChat[chatID(account: row.account, address: address(row.person)), default: []].append(row) }
+        for (id, rows) in byChat {
+            let ids = Array(Set(rows.map(\.nookID))).sorted()
+            if let index = chats.firstIndex(where: { $0.chatID == id }) {
+                chats[index].deleted += ids
+            } else {
+                var chat = BridgedChat(app: app, name: name(rows[0].person), messages: [], unread: nil, chatID: id,
+                                       account: named ? rows[0].account : nil)
+                chat.deleted = ids
+                chats.append(chat)
+            }
+        }
+        return chats
+    }
 
     /// The names Mail's Sent mailboxes go by, across providers and languages (Gmail's "Sent Mail", Outlook's "Sent
     /// Items", "Verzonden items"…).
@@ -187,6 +307,28 @@ enum MailChatData {
         \(body)
                         end try
                     end repeat
+                end try
+            end repeat
+            set trashNames to {\(trashNames.map(MailStats.quote).joined(separator: ", "))}
+            repeat with box in mailboxes of acc
+                try
+                    if trashNames contains (name of box) then
+                        set boxName to name of box
+                        set found to (messages of box whose date received < hiDate and date received ≥ loDate)
+                        repeat with m in found
+                            try
+                                set hit to ((sender of m) contains \(who))
+                                if not hit then
+                                    repeat with r in to recipients of m
+                                        if (address of r) is \(who) then set hit to true
+                                    end repeat
+                                end if
+                                if hit then
+        \(trashLine)
+                                end if
+                            end try
+                        end repeat
+                    end if
                 end try
             end repeat
             repeat with box in mailboxes of acc

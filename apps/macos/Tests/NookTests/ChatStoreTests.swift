@@ -183,6 +183,34 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertTrue(all.last?.isDeleted == true)
     }
 
+    func testAnAppThatOnlyChangesWordsByEditingKeepsTheOldWordsToo() {
+        let chat = thread(messages: [message(1, "eerst"), message(2)])
+        XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
+        // WhatsApp on this Mac keeps the new words only, with nothing that says the message was edited.
+        let page = ChatReconcile.Page(messages: [message(1, "daarna")], high: message(2).date, textChangeIsEdit: true)
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 0)
+        XCTAssertEqual(store.versions("m1", inChat: chat.id).map(\.text), ["eerst"])
+        XCTAssertEqual(store.between(chat.id, after: .distantPast, before: message(2).date).first?.isEdited, true)
+    }
+
+    func testAMailInTheTrashUnderANewIDMarksTheStoredOneDeletedKeepingItsText() throws {
+        var sent = InboxMessage(id: "mail-10", text: "*Offerte*\nHierbij de offerte", date: message(1).date, fromMe: true)
+        sent.receipt = .sent
+        let other = InboxMessage(id: "mail-11", text: "*Vraag*\nHoe gaat het?", date: message(2).date, fromMe: false)
+        let chat = thread("mail|werk~lisa@example.com", messages: [sent, other, message(3)])
+        XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
+        // Mail moved it to the Trash and gave it a new id there: found by its side, time and subject.
+        let trashed = InboxMessage(id: "mail-99", text: "*Offerte*", date: sent.date.addingTimeInterval(1), fromMe: true)
+        let page = ChatReconcile.Page(messages: [], high: message(3).date, gone: [trashed])
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 0)
+        let all = store.between(chat.id, after: .distantPast, before: .distantFuture)
+        let gone = try XCTUnwrap(all.first { $0.id == "mail-10" })
+        XCTAssertTrue(gone.isDeleted)
+        XCTAssertEqual(gone.text, sent.text, "a mail you deleted keeps what it said")
+        XCTAssertFalse(all.first { $0.id == "mail-11" }?.isDeleted ?? true)
+        XCTAssertNil(all.first { $0.id == "mail-99" }, "the Trash's copy is not stored as a mail of its own")
+    }
+
     func testAPageByCountMovesOnWhenTheArchiveCountIsOff() async throws {
         // The app holds 300 messages, a minute apart, oldest first; a page by offset counts from the newest.
         let all = (0..<300).map { message($0) }

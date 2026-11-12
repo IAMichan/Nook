@@ -953,11 +953,21 @@ final class ChatCaptureService: ObservableObject {
         var local: Bool
         var omitsDeleted: Bool
         var changes = true
+        var textChangeIsEdit = false
         /// An empty page is the chat's start (`ChatBackfillBridge.backfillEmptyIsStart`).
         var emptyIsFinal = false
         /// The page before a message (its date, and its id when the app pages by id): the messages, the ones the app
         /// says were deleted, and whether it has more before them (nil when it does not say).
-        var fetch: (Date, String?) async throws -> (messages: [InboxMessage], deleted: [String], more: Bool?)
+        var fetch: (Date, String?) async throws -> Fetched
+    }
+
+    /// One page from a history source: its messages, those the app says were deleted (by id, or as copies under ids
+    /// of their own: `ChatReconcile.Page.gone`), and whether it has more before them (nil when it does not say).
+    private struct Fetched {
+        var messages: [InboxMessage]
+        var deleted: [String] = []
+        var gone: [InboxMessage] = []
+        var more: Bool?
     }
 
     private func historySource(_ thread: InboxThread) -> HistorySource? {
@@ -967,23 +977,24 @@ final class ChatCaptureService: ObservableObject {
             let final = bridge.backfillEmptyIsStart
             return HistorySource(local: bridge.readsLocally, omitsDeleted: bridge.historyOmitsDeleted,
                                  changes: bridge.historyChanges, emptyIsFinal: final) { before, _ in
-                let messages = try await bridge.backfill(chatID: chatID, before: before, limit: ChatBackfill.step)
-                return (messages, [], final && messages.isEmpty ? false : nil)
+                let page = try await bridge.backfillPage(chatID: chatID, before: before, limit: ChatBackfill.step)
+                return Fetched(messages: page.messages, gone: page.gone,
+                               more: final && page.messages.isEmpty && page.gone.isEmpty ? false : nil)
             }
         }
         if serviceBridge.chatID(app: thread.app, name: thread.name) != nil {
             return HistorySource(local: false, omitsDeleted: serviceBridge.historyOmitsDeleted) { [serviceBridge] before, _ in
                 let (chat, more) = try await serviceBridge.older(app: thread.app, name: thread.name, before: before)
-                return (chat?.messages ?? [], chat?.deleted ?? [], more)
+                return Fetched(messages: chat?.messages ?? [], deleted: chat?.deleted ?? [], more: more)
             }
         }
         guard let bridge = bridge(for: thread.app) as? ChatHistoryBridge, bridge.isReady, bridge.canLoadOlder(name: thread.name) else {
             return nil
         }
         return HistorySource(local: bridge.readsLocally, omitsDeleted: bridge.historyOmitsDeleted,
-                             changes: bridge.historyChanges) { before, oldest in
+                             changes: bridge.historyChanges, textChangeIsEdit: bridge.historyTextChangeIsEdit) { before, oldest in
             let (chat, more) = try await bridge.older(name: thread.name, before: before, oldestID: oldest)
-            return (chat?.messages ?? [], chat?.deleted ?? [], more)
+            return Fetched(messages: chat?.messages ?? [], deleted: chat?.deleted ?? [], more: more)
         }
     }
 
@@ -1030,7 +1041,7 @@ final class ChatCaptureService: ObservableObject {
         }
         walks[key] = walk
         backfillDue[thread.app] = now.addingTimeInterval(ChatBackfill.pause(local: source.local))
-        let fetched: (messages: [InboxMessage], deleted: [String], more: Bool?)
+        let fetched: Fetched
         do {
             fetched = try await source.fetch(walk.cursor, walk.cursorID)
         } catch {
@@ -1046,10 +1057,11 @@ final class ChatCaptureService: ObservableObject {
         }
         let page = ChatBackfill.messages(fetched.messages, below: walk, removed: inbox.removed?[key])
         let fresh: Int?
-        if page.isEmpty && fetched.deleted.isEmpty {
+        if page.isEmpty && fetched.deleted.isEmpty && fetched.gone.isEmpty {
             fresh = 0
         } else {
-            let laid = ChatReconcile.Page(messages: page, deleted: fetched.deleted, high: walk.cursor, omitsDeleted: source.omitsDeleted)
+            let laid = ChatReconcile.Page(messages: page, deleted: fetched.deleted, high: walk.cursor, omitsDeleted: source.omitsDeleted,
+                                           textChangeIsEdit: source.textChangeIsEdit, gone: fetched.gone)
             fresh = await archive.written { $0.reconcile(laid, key: key) }
         }
         guard let fresh else {
@@ -1100,8 +1112,9 @@ final class ChatCaptureService: ObservableObject {
             guard let fetched = try? await source.fetch(high, cursorID), inbox.threads[id] != nil else { return }
             let page = ChatBackfill.messages(fetched.messages, below: ChatBackfill.Walk(cursor: high, cursorID: cursorID),
                                          removed: inbox.removed?[id])
-            guard let low = page.map(\.date).min() else { return }
-            let laid = ChatReconcile.Page(messages: page, deleted: fetched.deleted, high: high, omitsDeleted: source.omitsDeleted)
+            guard let low = (page.map(\.date) + fetched.gone.map(\.date)).min() else { return }
+            let laid = ChatReconcile.Page(messages: page, deleted: fetched.deleted, high: high, omitsDeleted: source.omitsDeleted,
+                                           textChangeIsEdit: source.textChangeIsEdit, gone: fetched.gone)
             guard await archive.written({ $0.reconcile(laid, key: id) }) != nil else { return }
             let after = low.addingTimeInterval(-ChatBackfill.instant)
             let now = await archive.read { $0.between(id, after: after, before: high) }

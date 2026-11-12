@@ -322,7 +322,8 @@ final class MailChatDataTests: XCTestCase {
                        MailChatData.bodiesScript([row, placeless]), MailChatData.markReadScript([row, placeless]),
                        "tell application \"Mail\"\nset m to \(MailChatData.reference(row))\nend tell",
                        MailChatData.olderScript(account: "Google", address: "a@b.c", from: Date(timeIntervalSinceNow: -86_400),
-                                                to: Date())]
+                                                to: Date()),
+                       MailChatData.trashScript(account: "Google")]
         for source in scripts {
             var error: NSDictionary?
             XCTAssertTrue(NSAppleScript(source: source)?.compileAndReturnError(&error) ?? false, "\(error ?? [:])\n\(source)")
@@ -351,6 +352,32 @@ final class MailChatDataTests: XCTestCase {
         XCTAssertEqual(parts?.account.name, "Werk ~ Kantoor")
         XCTAssertEqual(parts?.address, "lisa@example.com")
         XCTAssertNil(MailChatData.parts(of: "Onbekend~lisa@example.com", accounts: accounts))
+    }
+
+    func testMailInTheTrashIsFoundUnderItsNewIDAndMarksItsChat() {
+        let account = MailChatData.Account(name: "iCloud", addresses: ["ik@icloud.com"])
+        let raw = """
+        DEL|||Prullenmand|||501|||Offerte|||Ik <ik@icloud.com>|||2026-01-02T10:00:01|||Lisa <lisa@example.com>
+        DEL|||Prullenmand|||502|||Nieuwsbrief|||news@shop.nl|||2026-01-03T09:00:00|||ik@icloud.com
+        """
+        let trash = MailChatData.trashRows(raw, account: account)
+        XCTAssertEqual(trash.map(\.fromMe), [true, false])
+        XCTAssertEqual(trash.first.map { MailChatData.address($0.person) }, "lisa@example.com", "your own mail is with whom you wrote")
+        let calendar = Calendar.current
+        let sent = MailChatData.Row(account: "iCloud", mailbox: "Sent", id: 40, subject: "Offerte", person: "Lisa <lisa@example.com>",
+                                    date: calendar.date(from: DateComponents(year: 2026, month: 1, day: 2, hour: 10))!,
+                                    read: true, fromMe: true)
+        XCTAssertEqual(MailChatData.trashed(trash, among: [sent]), ["mail-40"])
+        let chats = MailChatData.marking([sent], in: [], named: false)
+        XCTAssertEqual(chats.first?.chatID, MailChatData.chatID(account: "iCloud", address: "lisa@example.com"))
+        XCTAssertEqual(chats.first?.deleted, ["mail-40"])
+    }
+
+    func testADeletedMailKeepsItsTextEvenWhenItIsYours() {
+        let mail = InboxMessage(id: "mail-40", text: "*Offerte*\nHierbij", date: Date(), fromMe: true).withdrawn()
+        XCTAssertTrue(mail.isDeleted)
+        XCTAssertEqual(mail.text, "*Offerte*\nHierbij")
+        XCTAssertEqual(InboxMessage(id: "wa-1", text: "hoi", date: Date(), fromMe: true).withdrawn().text, "")
     }
 
     func testTheOlderMailScriptAsksForOnePersonInOneStretch() {

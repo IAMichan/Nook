@@ -378,12 +378,13 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
 
     /// What stays of the message once it was deleted for everyone: who wrote it and when. Someone else's keeps what it
     /// said as far as Nook had it (text, file, poll, quote, emoji), so you can still read it, marked "Deleted" as an
-    /// edited one says "Edited"; your own says only that you deleted it.
+    /// edited one says "Edited"; your own says only that you deleted it. A mail keeps its text either way: deleting it
+    /// put it in the Trash of your own mailbox, and the other person still has it.
     func withdrawn() -> InboxMessage {
         var gone = self
         gone.deleted = true
         gone.mentionsMe = nil
-        guard isMine else { return gone }
+        guard isMine, !MailChatData.isMail(id) else { return gone }
         gone.edited = nil
         gone.text = ""
         gone.media = nil

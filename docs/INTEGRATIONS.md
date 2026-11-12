@@ -224,13 +224,13 @@ beside the app right after (`checkStored`), so a hole there or a change the walk
 | Source | Walk and backfill | Old edits | Old deletions |
 |---|---|---|---|
 | Messages | ✓ (its database on this Mac, quickly) | ✓ (`date_edited`) | ✓ (unsent) |
-| WhatsApp on this Mac | ✓ (its database on this Mac, quickly) | – (the new text arrives, but Nook does not read the database's edit mark, so the old text is not kept) | ✓ (deleted for everyone) |
+| WhatsApp on this Mac | ✓ (its database on this Mac, quickly) | ✓ (the database keeps only the new words and no edit mark: a row saved again (`Z_OPT`) with other words is an edit, and on a page a known message with other words is one: `historyTextChangeIsEdit`) | ✓ (deleted for everyone) |
 | WhatsApp through the linked phone (GOWA, OpenWA) | ✓ (`ChatBackfillBridge`: GOWA pages by offset; OpenWA by fetching more of the newest; `ChatBackfill.page` moves the offset on when the archive's count is off) | ✓ | ✓ (revoked) |
 | Telegram, Slack | ✓ (scrolling back by name, one page every 20 seconds per app) | ✓ | ✓ (by absence: `historyOmitsDeleted`) |
 | Teams | ✓ (same) | ✓ | ✓ (Teams lists them) |
-| Snapchat | ✓ (same) | – (the website shows none) | – (the website shows none) |
+| Snapchat | – (the website keeps no history beyond what it shows) | ✓ (each read laid beside what Nook keeps, `SnapchatWebData.changes`: other words from the same person in a message's place) | ✓ (same: a message gone while the ones around it stayed; the oldest dropping off the top is Snapchat letting go of seen messages and says nothing) |
 | Chat helper networks (Instagram, Signal, Messenger, X, LinkedIn) | ✓ (the helper's own history call, slowly) | ✓ | ✓ (the helper lists them) |
-| Mail | ✓ (`MailBridge.backfill`: each person's mail through Mail, stretches of time growing from three months; not while Mail is in front) | n/a (mail is not edited) | – (deleting a mail moves it; nothing says it was deleted) |
+| Mail | ✓ (`MailBridge.backfill`: each person's mail through Mail, stretches of time growing from three months; not while Mail is in front) | n/a (mail is not edited) | ✓ (a mail in a Trash mailbox, found by person, subject and time since Mail may give it a new id: `trashScript` on each read, the Trash of each stretch on a walk; its text stays, yours too) |
 | Chats only notifications bring | – (nothing older exists than what came in; every one of those is kept) | – | – |
 
 "Edited" and "Deleted" beside a message's time open what it said before (`MessageVersionsView`), with when each text was

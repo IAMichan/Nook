@@ -36,12 +36,16 @@ protocol ChatBridge: AnyObject {
     /// One whose old messages never change (Mail, Snapchat's website) is walked again only until a page brings nothing
     /// new, which closes what came in while Nook was not running.
     var historyChanges: Bool { get }
+    /// Its app changes a message's text only by an edit but does not say it was edited (WhatsApp on this Mac keeps only
+    /// the new text): a page that brings a known message with other words is an edit, and the old words are kept.
+    var historyTextChangeIsEdit: Bool { get }
 }
 
 extension ChatBridge {
     func hurryFiles(name: String) {}
     var historyOmitsDeleted: Bool { false }
     var historyChanges: Bool { true }
+    var historyTextChangeIsEdit: Bool { false }
     var bridgeID: String { app }
     var alwaysOn: Bool { false }
     var readsLocally: Bool { false }
@@ -860,6 +864,8 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
     let interval: TimeInterval = 2
     let readsLocally = true
     private(set) var isWorking = false
+    /// The database keeps only an edited message's new text, nothing that says it was edited.
+    var historyTextChangeIsEdit: Bool { true }
 
     private static let chats = 30
     private static let perChat = 30
@@ -891,6 +897,17 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
     /// Your own newest messages by row, with their chat: their ticks are read again each time, as they move.
     private var mine: [Int64: (chat: String, message: InboxMessage)] = [:]
     private static let tracked = 200
+    /// The newest messages read, by row, with their chat, as the chat shows them, their type and how often WhatsApp
+    /// saved their row (`Z_OPT`, nil until looked at). A row saved again with other words was edited (the database
+    /// keeps nothing else that says so), or deleted for everyone: the chat shows it so, the old words kept.
+    private var recent: [Int64: Recent] = [:]
+    private struct Recent {
+        var chat: String
+        var message: InboxMessage
+        var type: Int
+        var saves: Int64?
+    }
+    private static let watched = 500
     /// Where the app keeps the files of its chats; a media item's path is relative to it.
     private static var mediaRoot: String {
         AppDatabase.home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/"
@@ -943,7 +960,11 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
             }
             waiting[id] = nil
             if message.isMine { self.mine[id] = (chat, message) }
+            recent[id] = Recent(chat: chat, message: message, type: Int(AppData.number(row["type"]) ?? 0), saves: recent[id]?.saves)
             messages[chat, default: []].append(message)
+        }
+        if recent.count > Self.watched {
+            for id in recent.keys.sorted().dropLast(Self.watched) { recent[id] = nil }
         }
         if self.mine.count > Self.tracked {
             for id in self.mine.keys.sorted().dropLast(Self.tracked) { self.mine[id] = nil }
@@ -963,6 +984,12 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
                 self.mine[id] = known
                 messages[known.chat, default: []].append(known.message)
             }
+        }
+        // Messages edited or deleted since they were read: as they are now, in place of what this read had of them.
+        for (chat, changed) in try await changedRecent(contacts: contacts) {
+            messages[chat, default: []].removeAll { $0.id == changed.id }
+            messages[chat, default: []].append(changed)
+            if let row = self.mine.first(where: { $0.value.message.id == changed.id })?.key { self.mine[row]?.message = changed }
         }
         await loadPeople(contacts: contacts)
         await loadPersons()
@@ -984,6 +1011,39 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge, ChatSearchBridge {
             bridged.profile = profiles[chat]
             return bridged
         }
+    }
+
+    /// The newest messages whose row WhatsApp saved again since the last look, as they are now, when their words
+    /// changed (an edit: marked so) or they were deleted for everyone.
+    private func changedRecent(contacts: [String: String]) async throws -> [(chat: String, message: InboxMessage)] {
+        guard !recent.isEmpty else { return [] }
+        let ids = recent.keys.sorted().map(String.init).joined(separator: ",")
+        var again: [Int64] = []
+        for row in try await query("SELECT Z_PK AS id, Z_OPT AS saves FROM ZWAMESSAGE WHERE Z_PK IN (\(ids))") {
+            guard let id = NotificationRecord.integer(row["id"]), let saves = NotificationRecord.integer(row["saves"]) else { continue }
+            if let before = recent[id]?.saves, before != saves { again.append(id) }
+            recent[id]?.saves = saves
+        }
+        guard !again.isEmpty else { return [] }
+        var changed: [(chat: String, message: InboxMessage)] = []
+        for row in try await select("WHERE m.Z_PK IN (\(again.map(String.init).joined(separator: ","))) ORDER BY m.Z_PK") {
+            guard let id = NotificationRecord.integer(row["id"]), let known = recent[id],
+                  var message = Self.message(row, contacts: contacts) else { continue }
+            let type = Int(AppData.number(row["type"]) ?? 0)
+            if Self.isEdit(from: known.message, type: known.type, to: message, type: type) || known.message.isEdited {
+                message.edited = true
+            }
+            recent[id] = Recent(chat: known.chat, message: message, type: type, saves: known.saves)
+            guard message.text != known.message.text || message.isDeleted != known.message.isDeleted else { continue }
+            changed.append((known.chat, message))
+        }
+        return changed
+    }
+
+    /// A text message (type 0) whose words changed: an edit. Not a row WhatsApp filled in after it showed its type's
+    /// word, nor one deleted since.
+    static func isEdit(from old: InboxMessage, type oldType: Int, to new: InboxMessage, type newType: Int) -> Bool {
+        oldType == 0 && newType == 0 && !old.text.isEmpty && !new.text.isEmpty && old.text != new.text && !new.isDeleted
     }
 
     /// A row as the chat shows it; nil for one with nothing to show.

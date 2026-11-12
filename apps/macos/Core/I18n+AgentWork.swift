@@ -9,6 +9,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Jij",
         "chat.message.edited": "Bewerkt",
+        "chats.mail.deletedKept": "In de prullenmand van Mail. Nook laat nog zien wat erin stond.",
         "chat.versions.show": "Wat er eerder stond",
         "chat.versions.title": "Eerdere versies",
         "chat.versions.deletedTitle": "Voordat het werd verwijderd",
@@ -439,6 +440,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "You",
         "chat.message.edited": "Edited",
+        "chats.mail.deletedKept": "In Mail’s Trash. Nook still shows what it said.",
         "chat.versions.show": "What it said before",
         "chat.versions.title": "Earlier versions",
         "chat.versions.deletedTitle": "Before it was deleted",
@@ -869,6 +871,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Du",
         "chat.message.edited": "Bearbeitet",
+        "chats.mail.deletedKept": "Im Papierkorb von Mail. Nook zeigt weiter, was darin stand.",
         "chat.versions.show": "Was vorher dastand",
         "chat.versions.title": "Frühere Versionen",
         "chat.versions.deletedTitle": "Bevor sie gelöscht wurde",
@@ -1299,6 +1302,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Vous",
         "chat.message.edited": "Modifié",
+        "chats.mail.deletedKept": "Dans la corbeille de Mail. Nook montre encore ce qu’il disait.",
         "chat.versions.show": "Ce qu’il disait avant",
         "chat.versions.title": "Versions précédentes",
         "chat.versions.deletedTitle": "Avant sa suppression",
@@ -1729,6 +1733,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         // The Nook chat, laid out like the Agents tab.
         "chat.you": "Tú",
         "chat.message.edited": "Editado",
+        "chats.mail.deletedKept": "En la papelera de Mail. Nook sigue mostrando lo que decía.",
         "chat.versions.show": "Lo que decía antes",
         "chat.versions.title": "Versiones anteriores",
         "chat.versions.deletedTitle": "Antes de que se eliminara",
