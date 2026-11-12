@@ -142,14 +142,16 @@ extension WorkspaceManager {
                 return
             }
             guard event.state == .running || event.state == nil || event.background != true else { return }
+            let failed = BackgroundCommands.failed(status, update: update, in: timeline(id))
             mutateEvent(id, event.id) { event in
                 event.background = true
-                event.state = status == .failed ? .failed : .done
+                event.state = failed ? .failed : .done
                 if let summary = update.summary, !summary.isEmpty {
                     event.output = RunEvent.clip([event.output, summary].compactMap { $0 }.joined(separator: "\n\n"))
                 }
             }
-            line = tr("ws.wake.command", BackgroundCommands.list([event]).first.map { ToolSummary.oneLine($0.title, 80) } ?? event.text)
+            let title = BackgroundCommands.list([event]).first.map { ToolSummary.oneLine($0.title, 80) } ?? event.text
+            line = tr(status == .killed && failed ? "ws.wake.commandStopped" : "ws.wake.command", title)
         } else {
             return
         }

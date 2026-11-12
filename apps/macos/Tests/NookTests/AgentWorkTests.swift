@@ -855,6 +855,24 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.title), ["run", "failed", "new done", "old done"])
     }
 
+    /// Claude Code kills a command that hangs past its time limit (`<status>killed</status>`): that is no success. One
+    /// the agent stopped itself (TaskStop) ended as it wanted.
+    func testKilledBackgroundCommandFailsUnlessTheAgentStoppedIt() {
+        let note = "<task-notification>\n<task-id>bmu0</task-id>\n<tool-use-id>toolu_7</tool-use-id>\n<status>killed</status>\n"
+            + "<summary>Background command \"find ~\" was stopped after reaching its background time limit</summary>\n</task-notification>"
+        let update = BackgroundTaskUpdate.notification(note)
+        XCTAssertEqual(update?.status, .killed)
+        let command = RunEvent(kind: .tool, text: "Bash · find ~", tool: "Bash", callID: "toolu_7",
+                               detail: #"{"command":"find ~"}"#, state: .running)
+        XCTAssertTrue(BackgroundCommands.failed(.killed, update: update!, in: [command]))
+        let stop = RunEvent(kind: .tool, text: "TaskStop", tool: "TaskStop", callID: "toolu_8",
+                            detail: #"{"task_id":"bmu0"}"#, state: .done)
+        XCTAssertFalse(BackgroundCommands.failed(.killed, update: update!, in: [command, stop]))
+        XCTAssertFalse(BackgroundCommands.failed(.completed, update: update!, in: [command]))
+        XCTAssertFalse(BackgroundCommands.failed(.stopped, update: update!, in: [command]))
+        XCTAssertTrue(BackgroundCommands.failed(.failed, update: update!, in: [command]))
+    }
+
     func testBackgroundCommandOutlivesItsTurnAndShows() {
         let user = RunEvent(kind: .user, text: "start the site")
         let command = RunEvent(kind: .tool, text: "Bash · npm run dev", tool: "Bash", callID: "toolu_9",
