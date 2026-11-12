@@ -144,50 +144,69 @@ struct SessionUsageSection: View {
     @ViewBuilder
     private func contextPart(_ usage: ContextUsage, _ snapshot: SessionUsageSnapshot) -> some View {
         let pressure = snapshot.pressure
-        let level = snapshot.contextLevel
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            title(tr("usage.session.context"), trailing: "\(TokenTally.format(usage.usedTokens)) / \(TokenTally.format(usage.window))")
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-                    Text(ContextMeter.percentText(usage.fraction))
-                        .font(NookTheme.TextStyle.title.monospacedDigit())
-                        .foregroundStyle(level == .normal ? NookTheme.paper : snapshot.contextTint)
-                    Text(tr("usage.session.windowUsed")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("usage.session.context")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
+                        .accessibilityAddTraits(.isHeader)
+                    // What the window means now (getting long, or when it summarizes by itself) behind an ⓘ, in the
+                    // context's tone once it suggests summarizing, instead of a sentence under the bar. It sits outside
+                    // the hover card's area, so its tooltip and the card never open together.
+                    if let note = contextNote(snapshot) {
+                        SettingsInfoButton(text: note,
+                                           tint: ContextMeter.suggestsCompact(pressure) ? snapshot.contextTint : NookTheme.textTertiary)
+                    }
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    contextNumbers(usage, snapshot)
                 }
                 ContextUsageBar(usage: usage)
-            }
-            .contentShape(Rectangle())
-            // What fills the window, part by part, as the agent reports it.
-            .hoverCard(arrowEdge: .leading) {
-                ContextUsageCard(usage: usage, pressure: pressure, autoCompactAt: snapshot.autoCompactAt,
-                                 onCompact: compact(snapshot), compactFirst: snapshot.compactFirst,
-                                 toggleCompactFirst: toggleCompactFirst)
-                    .onAppear { if let runID = source.runID { workspace.refreshContextUsage(runID) } }
-            }
-            .accessibilityElement(children: .combine)
-            if ContextMeter.suggestsCompact(pressure) {
-                Text(tr("compose.context.nearlyFull"))
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(level == .critical ? NookTheme.coral : NookTheme.amber)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let at = snapshot.autoCompactAt {
-                Text(tr("compose.context.autoCompact", ContextMeter.tokensText(at)))
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(height: 10)
+                    .contentShape(Rectangle())
+                    .accessibilityHidden(true)
+                    // What fills the window, part by part, as the agent reports it.
+                    .hoverCard(arrowEdge: .leading) {
+                        ContextUsageCard(usage: usage, pressure: pressure, autoCompactAt: snapshot.autoCompactAt,
+                                         onCompact: compact(snapshot), compactFirst: snapshot.compactFirst,
+                                         toggleCompactFirst: toggleCompactFirst)
+                            .onAppear { if let runID = source.runID { workspace.refreshContextUsage(runID) } }
+                    }
             }
             if let compactFirst = snapshot.compactFirst {
-                Toggle(isOn: Binding(get: { compactFirst }, set: { _ in toggleCompactFirst() })) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Text(tr("compose.context.compactFirst")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    Toggle(tr("compose.context.compactFirst"), isOn: Binding(get: { compactFirst }, set: { _ in toggleCompactFirst() }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
                 .help(tr(compactFirst ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp",
                          ContextMeter.tokensText(usage.usedTokens)))
             }
             if let onCompact = compact(snapshot) {
-                SmallGhostButton(title: tr("compose.context.compact"), action: onCompact)
-                    .padding(.leading, -10)
+                CompactNowButton(action: onCompact)
             }
         }
+    }
+
+    /// "62%  124k / 200k".
+    private func contextNumbers(_ usage: ContextUsage, _ snapshot: SessionUsageSnapshot) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            Text(ContextMeter.percentText(usage.fraction))
+                .font(NookTheme.TextStyle.detail.weight(.semibold).monospacedDigit())
+                .foregroundStyle(snapshot.contextLevel == .normal ? NookTheme.textStrong : snapshot.contextTint)
+            Text("\(TokenTally.format(usage.usedTokens)) / \(TokenTally.format(usage.window))")
+                .font(NookTheme.TextStyle.caption.monospacedDigit()).foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1).fixedSize()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "This conversation is getting long…" once it suggests summarizing, otherwise when it summarizes by itself.
+    private func contextNote(_ snapshot: SessionUsageSnapshot) -> String? {
+        if ContextMeter.suggestsCompact(snapshot.pressure) { return tr("compose.context.nearlyFull") }
+        return snapshot.autoCompactAt.map { tr("compose.context.autoCompact", ContextMeter.tokensText($0)) }
     }
 
     private func limitsPart(_ snapshot: SessionUsageSnapshot) -> some View {
@@ -195,6 +214,10 @@ struct SessionUsageSection: View {
             title(tr("limits.title"), trailing: snapshot.account.isEmpty ? nil : snapshot.account)
             TimelineView(.nookTicks(every: 60)) { context in
                 UsageLimitRows(limits: shown(snapshot.limits), now: context.date)
+            }
+            if snapshot.limits.count > Self.shownLimits {
+                Text(tr("usage.session.moreLimits", snapshot.limits.count - Self.shownLimits))
+                    .font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
             }
             HStack(spacing: NookTheme.Spacing.sm) {
                 SmallGhostButton(title: tr("limits.all")) {
@@ -222,6 +245,34 @@ struct SessionUsageSection: View {
 
     private func toggleCompactFirst() {
         if let runID = source.runID { workspace.toggleCompactFirst(runID) }
+    }
+}
+
+/// Summarize now, across the section: the words, and the command it sends on the right.
+private struct CompactNowButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("usage.session.compactNow"))
+                    .font(NookTheme.TextStyle.detail.weight(.medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                Text("/compact")
+                    .font(NookTheme.mono(10))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(height: 28)
+            .cardBackground(hovering ? NookTheme.smoke : Color.clear, stroke: NookTheme.line2, radius: NookTheme.Radius.control)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .onHover { hovering = $0 }
+        .help(tr("compose.context.compact"))
     }
 }
 
@@ -306,23 +357,30 @@ struct SessionUsageCard: View {
     }
 }
 
-/// "62% · 5h 38% · W 12%": the folded card's line, each number in its tone.
+/// "Context 62% · 5h 38% · W 12%": the folded card's line, each number in its tone.
 struct SessionUsageSummary: View {
     let snapshot: SessionUsageSnapshot
 
+    private var items: [(label: String, value: String, tint: Color)] {
+        var items: [(label: String, value: String, tint: Color)] = []
+        if let context = snapshot.context {
+            items.append((tr("usage.session.context"), ContextMeter.percentText(context.fraction),
+                          snapshot.contextLevel == .normal ? NookTheme.textSecondary : snapshot.contextTint))
+        }
+        for line in snapshot.limitLines {
+            items.append((line.short, "\(line.used)%", UsageTone.level(used: line.used) == .calm ? NookTheme.textSecondary
+                                                         : UsageTone.text(used: line.used)))
+        }
+        return items
+    }
+
     var body: some View {
+        let parts = items
         HStack(spacing: NookTheme.Spacing.sm) {
-            if let context = snapshot.context {
-                ProgressRing(fraction: context.fraction, tint: snapshot.contextTint, lineWidth: 2)
-                    .frame(width: 12, height: 12)
-                Text(ContextMeter.percentText(context.fraction))
-                    .foregroundStyle(snapshot.contextLevel == .normal ? NookTheme.textSecondary : snapshot.contextTint)
-            }
-            ForEach(snapshot.limitLines.indices, id: \.self) { index in
-                let line = snapshot.limitLines[index]
-                Text(line.short).foregroundStyle(NookTheme.textTertiary)
-                    + Text(" \(line.used)%").foregroundStyle(UsageTone.level(used: line.used) == .calm ? NookTheme.textSecondary
-                                                             : UsageTone.text(used: line.used))
+            ForEach(parts.indices, id: \.self) { index in
+                if index > 0 { Text("·").foregroundStyle(NookTheme.textTertiary) }
+                Text(parts[index].label).foregroundStyle(NookTheme.textTertiary)
+                    + Text(" \(parts[index].value)").foregroundStyle(parts[index].tint)
             }
         }
         .font(NookTheme.TextStyle.caption.monospacedDigit())
