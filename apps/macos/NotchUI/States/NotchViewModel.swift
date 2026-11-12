@@ -82,6 +82,14 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var panelNotice: PanelNotice?
     /// The page open just before the new-session composer, read once by the composer when it appears.
     var newSessionOrigin: String?
+    /// A new session was asked for without a project (⌘N, the new-session buttons, search): the Agents tab shows the
+    /// projects to start in and clears this, also when it comes on screen only after the ask.
+    @Published var picksProjectForNewSession = false
+
+    /// Starts a new session the way the new-session button does: the project first, then the composer.
+    func requestNewSession() {
+        picksProjectForNewSession = true
+    }
     @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
         didSet {
             guard selectedAgentID != oldValue else { return }

@@ -192,18 +192,13 @@ struct AgentInboxList: View {
             // The list and its docked shelves, with the undo notice floating over their foot: it covers the last rows for
             // a few seconds instead of pushing the whole list up and back down.
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                // What you typed for a new session and did not start yet, one per project (`UnsentDraftRows`), drawn as
-                // session rows at the top of the list so they read as part of it.
-                if !app.demoMode, store.query.isEmpty {
-                    UnsentDraftRows(composerOpen: current == "new") { select("new") }
-                }
                 if showsEmptyState(sections, groups: groups) {
                     // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
                     // session at all it sets up an agent, otherwise it starts a new session.
                     WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
                                  action: sections.isEmpty
                                     ? (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) })
-                                    : (title: tr("agents.newSession"), run: { select("new") }))
+                                    : (title: tr("agents.newSession"), run: { app.viewModel.requestNewSession() }))
                 } else {
                     ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {

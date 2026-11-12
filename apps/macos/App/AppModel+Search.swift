@@ -386,7 +386,7 @@ extension AppModel {
             chat.startNew()
             return .chat
         case "newSession":
-            viewModel.selectedAgentID = "new"
+            viewModel.requestNewSession()
             return .agents
         case "pullRequests":
             viewModel.selectedAgentID = AgentsPage.pullRequests
