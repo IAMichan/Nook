@@ -346,6 +346,10 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// This phone opens compressed answers (`CompanionWire`): the Mac may compress a large one. Nil from a phone that
     /// cannot, which always gets plain JSON; a Mac without `CompanionFeature.compression` ignores it.
     var compression: Bool? = nil
+    /// With `stop`, and `send` that steers: the turn the phone saw running when you tapped (`SessionDigest.turn`). The Mac
+    /// stops or steers only that turn, so a Stop that arrives late, or again after a dropped connection, never stops work
+    /// that started after it. Nil from an older phone (or when it saw no turn), which acts on what runs now.
+    var turn: String? = nil
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
@@ -492,6 +496,9 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// When the usage limit that stopped this session resets (seconds since 1970), while it holds and the Mac knows;
     /// "until the limit resets" snoozes until then (`SessionAction.snoozeLimitReset`).
     var limitResetsAt: Double? = nil
+    /// The turn that runs now, as an opaque id that changes with every turn; nil while none runs, and from an older Mac.
+    /// The phone sends it back with a Stop or a steer (`CompanionRequest.turn`), so either reaches only this turn.
+    var turn: String? = nil
 }
 
 extension LiveActivitySnapshot {

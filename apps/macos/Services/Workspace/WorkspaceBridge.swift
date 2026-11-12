@@ -85,6 +85,8 @@ final class WorkspaceBridge: ObservableObject {
         askpassInstalled = (try? SudoAskpass.install()) != nil
         // Secrets delivered before the last quit (or crash) never outlive it.
         SecretFiles.standard.removeAll()
+        // So do the token files of sessions from that run: their tokens open nothing any more.
+        BridgeTokenFiles.removeAll(in: NookPaths.bridgeTokenDirectory)
         server.onMessage = { [weak self] data, connection in
             Task { @MainActor in
                 if let self { self.handle(data, connection, remote: false) } else { connection.reply(nil) }

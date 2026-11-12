@@ -258,9 +258,23 @@ enum AgentCommand {
         env["PATH"] = (paths + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
         // Nook's internal thinking via Claude Code sets this; a workspace session is a real agent session.
         env["NOOK_INTERNAL"] = nil
+        for key in inheritedSessionVariables { env[key] = nil }
         for (key, value) in extra { env[key] = value }
         return env
     }
+
+    /// What a Nook started from inside an agent session (a terminal in Claude Code, a build an agent ran) inherits from
+    /// that session, and must not hand to its own agents: with them a Claude Code that Nook starts acts as part of the
+    /// other session (its id, messaging socket and token, effort), an Electron app an agent starts (VS Code) runs as Node
+    /// and exits, and Nook's MCP server would speak for the other session or reach another Nook's socket. For every agent
+    /// and helper Nook starts; what Nook sets itself (`NOOK_RUN_ID`, the bridge's variables) goes back in after this.
+    static let inheritedSessionVariables = [
+        "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_CODE_DESKTOP_APP_VERSION", "CLAUDE_EFFORT", "CLAUDE_PID", "CLAUDE_AGENT_SDK_VERSION",
+        "ELECTRON_RUN_AS_NODE",
+        "NOOK_RUN_ID", "NOOK_BRIDGE_TOKEN", BridgeTokenFiles.variable, "NOOK_BRIDGE_SOCK"
+    ]
 
     /// How far behind your own work an agent runs (a Unix nice value). An agent and everything it starts (compilers, test
     /// runs, dev servers) inherit it, so a few agents that build at once take the cores that are left over instead of the
