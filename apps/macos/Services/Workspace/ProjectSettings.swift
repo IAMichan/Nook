@@ -31,6 +31,8 @@ enum ProjectSettingKey: Hashable, Sendable {
     case archived
     /// The icon the project's lists show (`ProjectIcon.stored`; project only).
     case icon
+    /// The name the project's lists show instead of its folder's (project only).
+    case name
 
     var raw: String {
         switch self {
@@ -48,6 +50,7 @@ enum ProjectSettingKey: Hashable, Sendable {
         case .agentsOff: return "agentsOff"
         case .archived: return "archived"
         case .icon: return "icon"
+        case .name: return "name"
         }
     }
 }
@@ -368,6 +371,15 @@ enum ProjectSettings {
     /// `paths` without the archived projects, in their order.
     static func withoutArchived(_ paths: [String], overrides: ProjectOverrides) -> [String] {
         paths.filter { !isArchived($0, overrides: overrides) }
+    }
+
+    /// The name a project shows: the one you gave it, else its folder's.
+    static func displayName(_ path: String, overrides: ProjectOverrides) -> String {
+        if case .string(let text)? = overrides.values(for: path)[ProjectSettingKey.name.raw] {
+            let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { return name }
+        }
+        return (path as NSString).lastPathComponent
     }
 
     /// The icon a project folder set for itself.

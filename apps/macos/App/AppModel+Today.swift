@@ -137,6 +137,12 @@ extension AppModel {
     }
 
 
+    /// Settings › Projects on one project, as a project folder's menu in the Agents list opens it.
+    func openProjectSettings(_ path: String) {
+        settingsProjectScope = path
+        openSettings(section: .projects)
+    }
+
     /// Custom window: standard Settings scene does not open reliably in an accessory app.
     func openSettings(section: SettingsSection? = nil, highlight key: String? = nil) {
         if let section { settingsSection = section }

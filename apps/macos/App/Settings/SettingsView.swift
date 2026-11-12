@@ -153,7 +153,9 @@ struct SettingsView: View {
             refreshTick += 1
             refreshAgentStates()
             app.history.refresh()
+            takeProjectScope()
         }
+        .onChange(of: app.settingsProjectScope) { _, _ in takeProjectScope() }
         .onChange(of: app.settingsSection) { _, _ in
             refreshTick += 1
             if app.settingsSection == .agents || app.settingsSection == .usage {
@@ -169,6 +171,13 @@ struct SettingsView: View {
                 write(change)
             }
         }
+    }
+
+    /// The project a folder's menu in the Agents list asked Settings › Projects to show.
+    private func takeProjectScope() {
+        guard let path = app.settingsProjectScope else { return }
+        sessionScope = ProjectOverrides.normalize(path)
+        app.settingsProjectScope = nil
     }
 
     /// One page: its groups, in one column of readable width. A setting found with the search is scrolled to and lit.

@@ -46,6 +46,11 @@ struct AgentInboxList: View {
     @State private var customSnooze: AgentListItem?
     /// The row files are dragged over, lit while they are.
     @State private var dropTarget: String?
+    /// The project folder being renamed from its menu, and the name being typed.
+    @State private var renamingProject: String?
+    @State private var projectName = ""
+    /// The favorite (pinned) and archived projects shape the folders.
+    @ObservedObject private var projectSettings = WorkspaceSettings.shared
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -75,14 +80,16 @@ struct AgentInboxList: View {
         // across a restart of Nook too.
         let settled = isPast || settledBusy || (!item.isBusy && finishedMarks.contains(item.finishKey))
         return InboxRow(
-            id: item.id, title: item.title, project: item.folder, attention: attention(item),
+            id: item.id, title: item.title, project: InboxProject.key(folder: item.folder, path: item.path),
+            attention: attention(item),
             pinned: store.state.pinned.contains(item.id), settled: settled,
             snoozedUntil: item.snoozedUntil, snoozedAt: item.snoozedAt, limitedAt: item.limitedAt,
             lastActivity: item.started ?? .distantPast,
             hasOpenRequest: item.status == .waiting || item.status == .input,
             isActive: item.isBusy || item.status == .working,
             unread: item.unseen,
-            parentID: item.parentID
+            parentID: item.parentID,
+            unsettledAt: finishedMarks.kept[item.finishKey]
         )
     }
 
@@ -158,7 +165,8 @@ struct AgentInboxList: View {
         let visible = InboxSearch.filter(rows: rows, query: store.query)
         let sections = InboxLayout.sections(rows: visible, state: store.state, showWorking: store.showWorking, now: now,
                                             settledLimit: settledLimit, selectedID: current)
-        let groups = store.groupByProject ? InboxLayout.projectGroups(sections) : []
+        let groups = store.groupByProject
+            ? InboxLayout.projectGroups(sections, pinned: pinnedProjects, archived: archivedProjects) : []
         // The rows as shown, top to bottom (a folded shelf only with the open session): what select all and a ⇧-click range go by.
         let shown = shownIDs(sections, groups: groups)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -168,6 +176,10 @@ struct AgentInboxList: View {
                     withAnimation(NookTheme.reveal) {
                         if selection.isActive { selection.clear() } else { selection.begin() }
                     }
+                }
+                // As in t3code: a project is added from the list itself, from a folder you pick or make.
+                if !app.demoMode {
+                    ToolbarIconButton("folder.badge.plus", tr("inbox.project.add")) { addProject() }
                 }
                 headerActions
             }
@@ -196,6 +208,10 @@ struct AgentInboxList: View {
                                     sectionView(section, sections: sections, byID: byID, shown: shown)
                                 }
                                 ForEach(groups) { group in projectView(group, sections: sections, byID: byID, shown: shown) }
+                                // What works and needs nothing from you sits under the projects, as one shelf.
+                                ForEach(sections.filter { $0.kind == .working }, id: \.kind) { section in
+                                    sectionView(section, sections: sections, byID: byID, shown: shown)
+                                }
                             } else {
                                 ForEach(sections.filter { !Self.isDocked($0.kind) }, id: \.kind) { section in
                                     sectionView(section, sections: sections, byID: byID, shown: shown)
@@ -238,6 +254,15 @@ struct AgentInboxList: View {
         .onChange(of: shown) { _, current in
             shownOrder = current
             selection.keep(only: current)
+        }
+        .alert(tr("inbox.project.renameTitle"), isPresented: Binding(get: { renamingProject != nil },
+                                                                      set: { if !$0 { renamingProject = nil } })) {
+            TextField(tr("settings.projects.name"), text: $projectName)
+            Button(tr("inbox.project.renameSave")) {
+                if let path = renamingProject { app.workspace.settings.setProjectName(projectName, project: path) }
+                renamingProject = nil
+            }
+            Button(tr("inbox.project.renameCancel"), role: .cancel) { renamingProject = nil }
         }
         .sheet(item: $customSnooze) { item in
             CustomSnoozeSheet(title: item.title, onSnooze: { end in
@@ -338,12 +363,14 @@ struct AgentInboxList: View {
         }
     }
 
-    /// The ids top to bottom; grouped by project, the Working and Active rows sit in their project's dropdown.
+    /// The ids top to bottom; grouped by project, the Active rows sit in their project's dropdown, with the Working shelf
+    /// under the projects.
     private func shownIDs(_ sections: [InboxSection], groups: [InboxProjectGroup]) -> [String] {
         guard store.groupByProject else { return sections.flatMap { rows(of: $0).map(\.id) } }
-        let before = sections.filter { $0.kind == .pinned }.flatMap { rows(of: $0).map(\.id) }
-        let after = sections.filter { $0.kind == .snoozed || $0.kind == .settled }.flatMap { rows(of: $0).map(\.id) }
-        return before + groups.flatMap { rows(of: $0).map(\.entry.id) } + after
+        func ids(_ kinds: Set<InboxSection.Kind>) -> [String] {
+            sections.filter { kinds.contains($0.kind) }.flatMap { rows(of: $0).map(\.id) }
+        }
+        return ids([.pinned]) + groups.flatMap { rows(of: $0).map(\.entry.id) } + ids([.working]) + ids([.snoozed, .settled])
     }
 
     // MARK: Projects
@@ -377,7 +404,7 @@ struct AgentInboxList: View {
     /// still there, also when the first session's worktree was removed. Nil for a project of sessions on other machines
     /// or without a folder.
     private func folder(of group: InboxProjectGroup, byID: [String: AgentListItem]) -> String? {
-        guard !group.project.isEmpty, group.project != "no folder" else { return nil }
+        guard group.project != InboxProject.none else { return nil }
         let local = group.rows.compactMap { byID[$0.entry.id] }.filter { $0.machine == MachineName.local }
         let paths = local.flatMap { item -> [String] in
             let started = item.id.hasPrefix("run:")
@@ -385,7 +412,7 @@ struct AgentInboxList: View {
             return [started, item.path].compactMap { $0 }
         }
         let settings = app.workspace.settings
-        let known = settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
+        let known = settings.favoriteProjects + settings.recentProjects + [settings.lastProject] + settings.projectOverrides.projects
         return WorktreeOrigin.newSessionFolder(project: group.project, paths: paths, known: known)
     }
 
@@ -404,10 +431,13 @@ struct AgentInboxList: View {
 
     private func projectHeader(_ group: InboxProjectGroup, folder: String?, byID: [String: AgentListItem]) -> some View {
         let open = !store.collapsedProjects.contains(group.project) || !store.query.isEmpty
-        let name = group.project.isEmpty || group.project == "no folder" ? tr("inbox.project.none") : group.project
+        let settings = app.workspace.settings
+        let named = group.project == InboxProject.none ? tr("inbox.project.none")
+            : folder.map(settings.projectDisplayName) ?? group.project
+        let name = group.archived ? tr("sc.archive.archivedName", named) : named
         return ProjectHeaderRow(
-            project: group.project, name: name, open: open, needsYou: group.needsYou, count: group.rows.count,
-            icon: folderIcon(group),
+            project: folder.map(AgentPathFormat.tilde) ?? group.project, name: name, open: open, dot: group.dot,
+            count: group.rows.count, icon: folderIcon(group, folder: folder), pinned: group.pinned,
             toggle: {
                 withAnimation(NookTheme.reveal) {
                     if store.collapsedProjects.contains(group.project) {
@@ -418,12 +448,68 @@ struct AgentInboxList: View {
                 }
             },
             newSession: folder.map { path -> () -> Void in { newSession(in: path) } },
-            remove: { removeProject(group, byID: byID) })
+            actions: folder.map { path in projectActions(group, path: path) },
+            remove: group.rows.isEmpty ? nil : { removeProject(group, byID: byID) })
     }
 
-    /// The icon the group's project set for itself (Settings › Projects), found by the project's folder name.
-    private func folderIcon(_ group: InboxProjectGroup) -> ProjectIcon? {
+    /// What a project's folder menu does with its folder on this Mac, as t3code's: pin, rename, settings, archive.
+    private func projectActions(_ group: InboxProjectGroup, path: String) -> ProjectFolderActions {
         let settings = app.workspace.settings
+        let archived = settings.isArchivedProject(path)
+        return ProjectFolderActions(
+            pinned: group.pinned,
+            archived: archived,
+            togglePin: { withAnimation(NookTheme.reveal) { settings.toggleFavoriteProject(path) } },
+            copyPath: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(path, forType: .string)
+            },
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) },
+            rename: {
+                projectName = settings.projectDisplayName(path)
+                renamingProject = path
+            },
+            settings: { app.openProjectSettings(path) },
+            toggleArchive: {
+                withAnimation(NookTheme.reveal) {
+                    // An archived project is no longer pinned: it leaves the pickers and the top of the list.
+                    if !archived, settings.isFavoriteProject(path) { settings.toggleFavoriteProject(path) }
+                    settings.setArchived(!archived, project: path)
+                }
+            })
+    }
+
+    /// The pinned projects by the name their folder goes by in the list: your favorite projects, not archived.
+    private var pinnedProjects: [String] {
+        let settings = app.workspace.settings
+        var seen: Set<String> = []
+        return ProjectSettings.withoutArchived(settings.favoriteProjects, overrides: settings.projectOverrides)
+            .map { InboxProject.key(folder: ($0 as NSString).lastPathComponent, path: $0) }
+            .filter { $0 != InboxProject.none && seen.insert($0).inserted }
+    }
+
+    /// The archived projects by the name their folder goes by in the list.
+    private var archivedProjects: Set<String> {
+        let settings = app.workspace.settings
+        return Set(settings.projectOverrides.projects.filter(settings.isArchivedProject)
+            .map { ($0 as NSString).lastPathComponent })
+    }
+
+    /// Adds a project from a folder you pick or make, as t3code's "Add project": pinned, so its folder shows, and the
+    /// new-session composer opens on it.
+    private func addProject() {
+        guard let path = ProjectFolderPanel.choose() else { return }
+        withAnimation(NookTheme.reveal) {
+            app.workspace.settings.addProject(path)
+            store.collapsedProjects.remove(InboxProject.key(folder: (path as NSString).lastPathComponent, path: path))
+        }
+        newSession(in: path)
+    }
+
+    /// The icon the group's project set for itself (Settings › Projects): by its folder, else by the project's name.
+    private func folderIcon(_ group: InboxProjectGroup, folder: String?) -> ProjectIcon? {
+        let settings = app.workspace.settings
+        if let icon = folder.flatMap(settings.projectIcon) { return icon }
         guard !group.project.isEmpty, !settings.projectOverrides.byProject.isEmpty else { return nil }
         let path = settings.projectOverrides.projects.first { ($0 as NSString).lastPathComponent == group.project }
         return path.flatMap(settings.projectIcon)
@@ -855,7 +941,11 @@ struct AgentInboxList: View {
             runID(byID[id]).map { run in pullRequests.autoSettleState(run, since: workspace.lastWrittenAt(run)) } ?? .none
         }, now: now)
         let settle = ids.compactMap { byID[$0] }
-        if !settle.isEmpty { store.settle(settle, now: now, record: false) }
+        guard !settle.isEmpty else { return }
+        store.settle(settle, now: now, record: false)
+        // As a settle of yours: a few seconds to take it back (⌘Z); after that Reopen on the Settled shelf brings it back,
+        // and it then stays until it has new activity.
+        store.note(.autoSettled, ids: settle.map(\.finishKey), now: now)
     }
 
     // MARK: Undo
@@ -989,31 +1079,58 @@ private struct ProjectHeaderRow: View {
     let name: String
     /// Unfolded (or opened by a search): handed in as a value, so a fold anywhere redraws the header.
     let open: Bool
-    let needsYou: Bool
+    /// What the sessions in it say, shown while it is folded.
+    let dot: InboxProjectGroup.Dot?
     let count: Int
     let icon: ProjectIcon?
+    let pinned: Bool
     let toggle: () -> Void
     /// Nil for a project without a folder on this Mac: no "+".
     let newSession: (() -> Void)?
-    let remove: () -> Void
+    /// Nil for a project without a folder on this Mac: nothing to pin, rename or archive.
+    let actions: ProjectFolderActions?
+    /// Nil when nothing in it can be taken out of the list (a pinned project with no sessions).
+    let remove: (() -> Void)?
     @State private var hovering = false
 
     private static let chevronWidth: CGFloat = 12
     private static let newSessionWidth: CGFloat = 24
+    /// The row's inset and the gap between its parts.
+    private static let gap = NookTheme.Spacing.md + NookTheme.Spacing.xxs
 
     var body: some View {
         foldButton
             .overlay(alignment: .trailing) {
                 if let newSession {
+                    // Shown while the pointer is on the folder, over the count (which steps aside), as in t3code.
                     ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name),
                                       height: Self.newSessionWidth, width: Self.newSessionWidth) { newSession() }
-                    // Just before the chevron, in the room `foldButton` keeps free.
-                    .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
+                    // On the count's slot in `foldButton`, just before the chevron.
+                    .padding(.trailing, Self.chevronWidth + 2 * Self.gap)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
                 }
             }
             .contextMenu {
-                // The folder comes back by itself when a new session starts in it; its sessions stay under Settled.
-                Button(tr("inbox.project.remove"), role: .destructive, action: remove)
+                if let newSession {
+                    Button(tr("inbox.project.newSession", name), action: newSession)
+                }
+                if let actions {
+                    Button(tr("inbox.project.copyPath"), action: actions.copyPath)
+                    Button(tr("inbox.project.reveal"), action: actions.reveal)
+                    Divider()
+                    if !actions.archived {
+                        Button(tr(actions.pinned ? "inbox.project.unpin" : "inbox.project.pin"), action: actions.togglePin)
+                    }
+                    Button(tr("inbox.project.rename"), action: actions.rename)
+                    Button(tr("inbox.project.settings"), action: actions.settings)
+                    Button(tr(actions.archived ? "inbox.project.unarchive" : "inbox.project.archive"), action: actions.toggleArchive)
+                }
+                if let remove {
+                    Divider()
+                    // The folder comes back by itself when a new session starts in it; its sessions stay under Settled.
+                    Button(tr("inbox.project.remove"), role: .destructive, action: remove)
+                }
             }
             .onHover { hovering = $0 }
     }
@@ -1021,7 +1138,7 @@ private struct ProjectHeaderRow: View {
     private var foldButton: some View {
         Button(action: toggle) {
             // The folder's mark is 16 wide, so with this padding and gap a session's name (36 in) lines up with the project's.
-            HStack(spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) {
+            HStack(spacing: Self.gap) {
                 if let icon {
                     ProjectIconView(icon: icon, size: 15)
                         .foregroundStyle(NookTheme.textSecondary)
@@ -1037,28 +1154,35 @@ private struct ProjectHeaderRow: View {
                     .foregroundStyle(NookTheme.textStrong)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                // Folded, the header still says that something in it waits for you.
-                if !open && needsYou {
-                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
+                if pinned {
+                    Image(icon: "pin.fill")
+                        .font(NookTheme.font(9, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .accessibilityLabel(tr("inbox.project.pinned"))
+                }
+                // Folded, the header still says what the sessions in it do: waiting for you, failed, done or working.
+                if !open, let dot {
+                    Circle().fill(Self.color(dot)).frame(width: 6, height: 6)
+                        .accessibilityLabel(tr("inbox.project.dot." + Self.key(dot)))
                 }
                 Spacer(minLength: 0)
-                if !open {
-                    Text("\(count)")
-                        .font(NookTheme.TextStyle.detail.monospacedDigit())
-                        .foregroundStyle(NookTheme.textTertiary)
+                // The count, and the slot the new-session button takes while the pointer is on the folder.
+                ZStack(alignment: .trailing) {
+                    if !open && count > 0 {
+                        Text("\(count)")
+                            .font(NookTheme.TextStyle.detail.monospacedDigit())
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .opacity(hovering && newSession != nil ? 0 : 1)
+                    }
                 }
-                // Keeps the name and the count clear of the new-session button laid over this row. The button sits closer
-                // to the chevron than this stack's spacing, so the room it needs here is that much smaller.
-                if newSession != nil {
-                    Color.clear.frame(width: Self.newSessionWidth - NookTheme.Spacing.md, height: 1)
-                }
+                .frame(minWidth: newSession == nil ? 0 : Self.newSessionWidth, alignment: .trailing)
                 Image(icon: "chevron.down")
                     .font(NookTheme.font(10, .semibold))
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(width: Self.chevronWidth)
             }
-            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .padding(.horizontal, Self.gap)
             .frame(height: 32)
             // The fill lifts in the frame the pointer arrives, as session rows do.
             .background {
@@ -1068,10 +1192,40 @@ private struct ProjectHeaderRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .nookTip(project)
+        .nookTip(project.isEmpty ? name : project)
         .accessibilityLabel(name)
         .accessibilityValue(open ? tr("compose.queue.expanded") : "")
     }
+
+    private static func color(_ dot: InboxProjectGroup.Dot) -> Color {
+        switch dot {
+        case .needsYou: return NookTheme.amber
+        case .failed: return NookTheme.coral
+        case .done: return NookTheme.mint
+        case .working: return NookTheme.blue
+        }
+    }
+
+    private static func key(_ dot: InboxProjectGroup.Dot) -> String {
+        switch dot {
+        case .needsYou: return "needsYou"
+        case .failed: return "failed"
+        case .done: return "done"
+        case .working: return "working"
+        }
+    }
+}
+
+/// What a project folder's menu can do with the folder on this Mac.
+struct ProjectFolderActions {
+    var pinned: Bool
+    var archived: Bool
+    var togglePin: () -> Void
+    var copyPath: () -> Void
+    var reveal: () -> Void
+    var rename: () -> Void
+    var settings: () -> Void
+    var toggleArchive: () -> Void
 }
 
 /// Reads a row's session ahead of the click once the pointer has rested on it a moment (`AgentInboxList.restBeforePrefetch`),

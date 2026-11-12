@@ -307,4 +307,13 @@ final class ProjectSettingsTests: XCTestCase {
         XCTAssertTrue(both.hasSuffix("\n\nBe brief."), "the session's own instructions come last, so they win")
         XCTAssertFalse(ProjectSettings.instructions(project: "Use pnpm.", session: "").hasSuffix("\n\n"))
     }
+
+    func testDisplayNameIsTheGivenNameElseTheFolders() {
+        var overrides = ProjectOverrides()
+        XCTAssertEqual(ProjectSettings.displayName("/code/nook", overrides: overrides), "nook")
+        overrides.set(.name, .string("  Nook app "), for: "/code/nook")
+        XCTAssertEqual(ProjectSettings.displayName("/code/nook/", overrides: overrides), "Nook app")
+        overrides.set(.name, .string("   "), for: "/code/nook")
+        XCTAssertEqual(ProjectSettings.displayName("/code/nook", overrides: overrides), "nook")
+    }
 }

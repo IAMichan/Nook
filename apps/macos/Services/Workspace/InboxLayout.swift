@@ -28,6 +28,9 @@ struct InboxRow: Identifiable, Equatable, Sendable {
     var unread = true
     /// The session this one was started from (a delegated or forked session, a task another session spawned).
     var parentID: String? = nil
+    /// When you last brought it back from Settled (Reopen, or undoing a settle): until it has new activity after that, it
+    /// does not settle by itself again (`AutoSettlePolicy`).
+    var unsettledAt: Date? = nil
 
     /// Needs you, from either source: the derived attention or a raw request flag.
     var needsYou: Bool { hasOpenRequest || attention.needsYou }
@@ -123,17 +126,53 @@ struct InboxEntry: Identifiable, Equatable, Sendable {
 }
 
 /// The sessions of one project (a repository: an agent's worktree counts as the repository it was made from), drawn as a
-/// dropdown when the list is grouped by project.
+/// dropdown when the list is grouped by project. The project "" holds the sessions without one (`InboxProject`).
 struct InboxProjectGroup: Identifiable, Equatable, Sendable {
+    /// What a folded project's dot says about the sessions in it, the most urgent first.
+    enum Dot: Equatable, Sendable { case needsYou, failed, done, working }
+
     var project: String
     /// Each row with the section it comes from, so a drag and the row's actions keep working as in that section.
     var rows: [(kind: InboxSection.Kind, entry: InboxEntry)]
+    /// Pinned by you: on top of the projects, and kept as a folder also when nothing in it is active.
+    var pinned = false
+    /// Archived (Settings › Projects): listed after the others, and only while something in it is active.
+    var archived = false
     var id: String { project }
-    /// Something in it waits for you: the group sorts first and its folded header says so.
+    /// Something in it waits for you: its folded header says so.
     var needsYou: Bool { rows.contains { $0.entry.row.needsYou } }
 
+    /// Waits for you, else failed or stopped by a limit, else finished since you looked, else works; nil when all is quiet.
+    var dot: Dot? {
+        let rows = rows.map(\.entry.row)
+        if rows.contains(where: \.needsYou) { return .needsYou }
+        if rows.contains(where: { $0.attention == .failed || $0.attention == .limited }) { return .failed }
+        if rows.contains(where: { $0.attention == .ready }) { return .done }
+        if rows.contains(where: { $0.attention == .working || $0.isActive }) { return .working }
+        return nil
+    }
+
     static func == (a: Self, b: Self) -> Bool {
-        a.project == b.project && a.rows.map(\.kind) == b.rows.map(\.kind) && a.rows.map(\.entry) == b.rows.map(\.entry)
+        a.project == b.project && a.pinned == b.pinned && a.archived == b.archived && a.rows.map(\.kind) == b.rows.map(\.kind)
+            && a.rows.map(\.entry) == b.rows.map(\.entry)
+    }
+}
+
+/// The project a session is listed under when the list is grouped by project. A session without a real project, one in
+/// a folder Nook made for "No project" (`ScratchProjects`), in your home folder or without a folder, goes under "", one
+/// group for all of them, instead of a folder of its own per session. Text only: it runs for every row on every redraw.
+enum InboxProject {
+    static let none = ""
+
+    /// `folder` is the row's folder name (a worktree already named after its repository), `path` the folder it works in.
+    static func key(folder: String, path: String, scratchRoot: String = NookPaths.scratchDirectory.path,
+                    home: String = NSHomeDirectory()) -> String {
+        if folder.isEmpty || folder == "no folder" { return none }
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        guard !trimmed.isEmpty, trimmed != "/" else { return folder }
+        let root = scratchRoot.hasSuffix("/") ? String(scratchRoot.dropLast()) : scratchRoot
+        if trimmed == home || trimmed == root || trimmed.hasPrefix(root + "/") { return none }
+        return folder
     }
 }
 
@@ -346,13 +385,20 @@ enum InboxLayout {
         }
     }
 
-    /// The Working and Active rows per project. The projects keep a fixed place (by name), so activity in one never
-    /// moves the whole folder; inside a project the session with the newest activity comes first, with the sessions it
-    /// started still right under it. Pinned, snoozed and settled sessions keep their own sections.
-    static func projectGroups(_ sections: [InboxSection]) -> [InboxProjectGroup] {
+    /// The Active rows per project. Pinned projects come first, in the order you pinned them, and keep their folder also
+    /// when nothing in them is active; the rest keep a fixed place (by name), so activity in one never moves the whole
+    /// folder, with the sessions without a project and then the archived projects last. Inside a project the session with the newest activity comes first, with the sessions it started still
+    /// right under it. Pinned sessions, the Working shelf (when it is on) and snoozed and settled sessions keep their own
+    /// sections; with the Working shelf off, working sessions are Active and sit in their project.
+    static func projectGroups(_ sections: [InboxSection], pinned: [String] = [],
+                              archived: Set<String> = []) -> [InboxProjectGroup] {
         var groups: [String: InboxProjectGroup] = [:]
         var order: [String] = []
-        for section in sections where section.kind == .working || section.kind == .active {
+        for project in pinned where groups[project] == nil && !archived.contains(project) {
+            groups[project] = InboxProjectGroup(project: project, rows: [], pinned: true)
+            order.append(project)
+        }
+        for section in sections where section.kind == .active {
             for entry in section.rows {
                 let project = entry.row.project
                 if groups[project] == nil {
@@ -366,9 +412,15 @@ enum InboxLayout {
             .map { group in
                 var group = group
                 group.rows = newestOnTop(group.rows)
+                group.archived = !group.pinned && archived.contains(group.project)
                 return group
             }
             .sorted { a, b in
+                if a.pinned != b.pinned { return a.pinned }
+                if a.archived != b.archived { return b.archived }
+                if a.pinned { return pinned.firstIndex(of: a.project) ?? 0 < pinned.firstIndex(of: b.project) ?? 0 }
+                // Sessions without a project come after the named projects.
+                if (a.project == InboxProject.none) != (b.project == InboxProject.none) { return b.project == InboxProject.none }
                 let compared = a.project.localizedStandardCompare(b.project)
                 return compared != .orderedSame ? compared == .orderedAscending : a.project < b.project
             }

@@ -507,6 +507,25 @@ final class WorkspaceSettings: ObservableObject {
 
     func projectIcon(_ path: String) -> ProjectIcon? { ProjectSettings.icon(path, overrides: projectOverrides) }
 
+    func projectDisplayName(_ path: String) -> String { ProjectSettings.displayName(path, overrides: projectOverrides) }
+
+    /// Renames a project in Nook's lists; an empty name (or the folder's own) goes back to the folder's name.
+    func setProjectName(_ name: String, project path: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty || clean == (path as NSString).lastPathComponent {
+            projectOverrides.reset(.name, for: path)
+        } else {
+            projectOverrides.set(.name, .string(clean), for: path)
+        }
+    }
+
+    /// Adds a folder as a project: pinned, so it keeps a folder in the Agents list and leads the project pickers, and out
+    /// of the archive if it was there.
+    func addProject(_ path: String) {
+        if !isFavoriteProject(path) { toggleFavoriteProject(path) }
+        if isArchivedProject(path) { setArchived(false, project: path) }
+    }
+
     func setProjectIcon(_ icon: ProjectIcon?, project path: String) {
         if let icon { projectOverrides.set(.icon, .string(icon.stored), for: path) } else { projectOverrides.reset(.icon, for: path) }
     }
