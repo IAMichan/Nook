@@ -56,7 +56,8 @@ extension AgentRunPanel {
         } else if let question = workspace.questions[runID]?.first {
             // The agent asks something: its question takes the composer's place until answered (Stop stays).
             RunQuestionPanel(question: question, agent: run.provider.displayName, folder: run.workingDirectory,
-                             onStop: { workspace.stop(runID) }) { answers in
+                             onStop: { workspace.stop(runID) },
+                             onDismiss: question.isRestored ? { workspace.dismissQuestion(runID, questionID: question.id) } : nil) { answers in
                 workspace.answer(runID, questionID: question.id, answers: answers)
             }
             .id(question.id)

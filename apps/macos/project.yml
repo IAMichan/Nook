@@ -552,6 +552,7 @@ targets:
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/WorkspaceBridgeArguments.swift
+      - path: Services/Workspace/SessionCommandReceipts.swift
       - path: Services/Workspace/SecretFiles.swift
       - path: Services/Workspace/SudoAskpass.swift
       - path: Services/Workspace/OnePassword.swift

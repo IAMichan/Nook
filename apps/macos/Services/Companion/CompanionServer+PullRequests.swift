@@ -121,6 +121,11 @@ extension CompanionServer {
     func pullWork(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         guard let work = request.pullWork, let provider = RunProvider(rawValue: work.agent),
               launchableProviders(app).contains(provider) else { return .failure(request.id, .badRequest) }
+        // Started before (a retry after a restart of Nook): the same session, not a second worktree and session.
+        let command = SessionCommand.phone(request.id)
+        if let earlier = app.workspace.commandReceipt(command), let created = earlier.created {
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: created)
+        }
         guard let reader = PullReader(app: app, address: work.url) else { return .failure(request.id, .unknownItem) }
         do {
             let detail = try await reader.read()
@@ -137,6 +142,7 @@ extension CompanionServer {
             if let model = work.model, app.models(for: provider).contains(model) { config.model = model }
             config.permission = phonePermission(provider, preferred: config.permission, plan: false)
             let id = try await app.workspace.start(config, allowSharedFolder: false)
+            app.workspace.recordCommand(command, .started, created: id.uuidString)
             audit("pr_work", "\(detail.repo)#\(detail.number) · \(provider.displayName)")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: id.uuidString)
         } catch {

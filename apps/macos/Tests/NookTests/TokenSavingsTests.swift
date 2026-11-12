@@ -169,7 +169,8 @@ final class TokenSavingsTests: XCTestCase {
         // idle starts, send modes).
         // 38,519 bytes on 2026-11-11: session_suggest, Claude's "New session" card (a side task the user starts, hands
         // back or dismisses), kept to a one-line description and four short arguments.
-        XCTAssertLessThanOrEqual(tools.count, 38_600, "the tool list")
+        // 38,602 bytes on 2026-11-12: client_request_id on session_send for idempotent command delivery.
+        XCTAssertLessThanOrEqual(tools.count, 38_700, "the tool list")
     }
 
     private func size(_ setting: Int = 350_000, tokens: Int?, window: Int? = 1_000_000, can: Bool = true, completed: Bool = true,

@@ -324,7 +324,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "session_id": ["type": "string", "description": "The session id from session_list."],
                 "message": ["type": "string", "description": "The message; complete and self-contained."],
                 "mode": ["type": "string", "enum": BridgeSessionArguments.SendMode.allCases.map(\.rawValue),
-                         "description": "queue (default), auto, steer or restart."]
+                         "description": "queue (default), auto, steer or restart."],
+                "client_request_id": ["type": "string", "description": "A retry sends nothing twice."]
             ], required: ["session_id", "message"])
         case .sessionWait:
             return object([
@@ -763,22 +764,27 @@ struct BridgeLaunch: Equatable, Sendable {
     var script: String
     /// Set for a session on another machine: the agent's way back to Nook (see `RemoteBridge`).
     var remote: Remote? = nil
-    /// The secret that proves a call comes from this session's own server (`NOOK_BRIDGE_TOKEN`). Without it the bridge
-    /// treats a caller as an agent you started yourself, never as a session with the rights you gave it.
-    var token: String? = nil
+    /// The file that holds the secret proving a call comes from this session's own server (`BridgeTokenFiles`). Only its
+    /// path goes on the agent's command line and in the server's environment (`NOOK_BRIDGE_TOKEN_FILE`): an argument is
+    /// visible to every process on the Mac (`ps`), a file of your own (0600 in a 0700 folder) only to you. Without it the
+    /// bridge treats a caller as an agent you started yourself, never as a session with the rights you gave it.
+    var tokenFile: String? = nil
 
     struct Remote: Equatable, Sendable {
         var socket: String
+        /// On another machine the token still goes along as `NOOK_BRIDGE_TOKEN`: the file lives on this Mac, and the
+        /// agent's command line there is the ssh command here (see docs/WORKSPACE-AGENTS.md).
         var token: String
     }
 
-    /// What the server needs in its environment.
+    /// What the server needs in its environment. Never the token of a session on this Mac, only the file that holds it.
     func environment(runID: UUID) -> [String: String] {
         var variables = ["NOOK_RUN_ID": runID.uuidString]
-        if let token { variables["NOOK_BRIDGE_TOKEN"] = token }
         if let remote {
             variables["NOOK_BRIDGE_SOCK"] = remote.socket
             variables["NOOK_BRIDGE_TOKEN"] = remote.token
+        } else if let tokenFile {
+            variables[BridgeTokenFiles.variable] = tokenFile
         }
         return variables
     }
@@ -932,6 +938,56 @@ enum BridgeRPC {
         default:
             return failure(-32601, "Method not found: \(method)")
         }
+    }
+}
+
+/// The per-session files that hold a session's bridge token (`BridgeLaunch.tokenFile`), so the secret never sits on an
+/// agent's command line, where `ps` shows it to every process on the Mac. One file per session, 0600, in a folder only you
+/// may enter (0700). The `nook-mcp` server and the `sudo -A` helper read it (`NOOK_BRIDGE_TOKEN_FILE`) and send the token
+/// to Nook with each call, as before. A file goes with its session, and all of them go when Nook starts: tokens live only
+/// for one run of Nook, so a file from an earlier run opens nothing anyway.
+enum BridgeTokenFiles {
+    /// The variable that names the file.
+    static let variable = "NOOK_BRIDGE_TOKEN_FILE"
+
+    static func file(for run: UUID, in directory: URL) -> URL {
+        directory.appendingPathComponent(run.uuidString.lowercased())
+    }
+
+    /// Writes the token for `run` (0600, the folder 0700) and answers with its path. A file already holding this token is
+    /// left as it is, so every launch of a session may call this.
+    @discardableResult
+    static func write(_ token: String, for run: UUID, in directory: URL, fileManager: FileManager = .default) throws -> URL {
+        let url = file(for: run, in: directory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        if let existing = try? String(contentsOf: url, encoding: .utf8), existing == token { return url }
+        // Made 0600 before the token goes in, then moved into place, so the secret is never readable by others, not even
+        // for a moment, and a server reading at that moment sees a whole token.
+        let staging = directory.appendingPathComponent("." + UUID().uuidString.lowercased())
+        guard fileManager.createFile(atPath: staging.path, contents: Data(token.utf8), attributes: [.posixPermissions: 0o600]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        do {
+            if fileManager.fileExists(atPath: url.path) {
+                _ = try fileManager.replaceItemAt(url, withItemAt: staging)
+            } else {
+                try fileManager.moveItem(at: staging, to: url)
+            }
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
+        return url
+    }
+
+    static func remove(_ run: UUID, in directory: URL, fileManager: FileManager = .default) {
+        try? fileManager.removeItem(at: file(for: run, in: directory))
+    }
+
+    /// Every file, when Nook starts (also after a crash): their tokens are no longer valid.
+    static func removeAll(in directory: URL, fileManager: FileManager = .default) {
+        try? fileManager.removeItem(at: directory)
     }
 }
 

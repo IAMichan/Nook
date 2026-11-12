@@ -99,6 +99,18 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(env["NOOK_RUN_ID"], "r")
     }
 
+    func testAgentsDoNotJoinTheSessionNookWasStartedFrom() {
+        var base = ["PATH": "/usr/bin", "HOME": "/Users/x", "KEEP": "1"]
+        for key in ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+                    "ELECTRON_RUN_AS_NODE", "NOOK_RUN_ID", "NOOK_BRIDGE_TOKEN", "NOOK_BRIDGE_TOKEN_FILE", "NOOK_BRIDGE_SOCK"] {
+            base[key] = "inherited"
+        }
+        let env = AgentCommand.environment(base: base, executable: "/bin/claude", extra: ["NOOK_RUN_ID": "mine"])
+        for key in AgentCommand.inheritedSessionVariables where key != "NOOK_RUN_ID" { XCTAssertNil(env[key], key) }
+        XCTAssertEqual(env["NOOK_RUN_ID"], "mine", "what Nook sets itself goes back in")
+        XCTAssertEqual(env["KEEP"], "1")
+    }
+
     func testDisplayCommandHidesEnvironment() {
         var withKey = input(.claude)
         withKey.accountEnvironment["ANTHROPIC_API_KEY"] = "sk-ant-geheim"
