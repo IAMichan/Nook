@@ -111,6 +111,29 @@ struct TurnPin: Equatable, Sendable {
     }
 }
 
+/// Whether a lazy conversation shows any of its rows, from where the drawn rows stand and what the scroll view shows,
+/// both in the conversation's own coordinates. A lazy stack's own reports are not enough for this: the rows it reports
+/// in view go stale after a jump, and a row it keeps drawn just outside the view counts as drawn. Where the rows and
+/// the view really stand is what the user sees.
+enum RowsInView {
+    /// The top and bottom of a drawn row.
+    struct Span: Equatable, Sendable {
+        var top: Double
+        var bottom: Double
+    }
+
+    /// How far a row must reach into the view to count: a hairline at the edge does not make a conversation readable.
+    static let margin = 8.0
+
+    /// `rows` is how many rows the conversation has, `drawn` where the drawn ones stand, `top` and `height` the part
+    /// of the conversation in view. Blank: rows to show, and none of them reaches into the view.
+    static func blank(rows: Int, drawn: some Collection<Span>, top: Double, height: Double) -> Bool {
+        guard rows > 0, height > margin * 2 else { return false }
+        let bottom = top + height
+        return !drawn.contains { $0.bottom - $0.top > 1 && $0.bottom > top + margin && $0.top < bottom - margin }
+    }
+}
+
 /// Where a scroll view stands: its offset, the height of its content and of its container, and the room around it.
 struct ScrollFrame: Equatable, Sendable {
     var offset = 0.0

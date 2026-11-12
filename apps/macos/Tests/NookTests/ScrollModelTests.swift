@@ -169,6 +169,24 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertEqual(odd, .end)
     }
 
+    func testRowsInViewIsBlankOnlyWhenNoDrawnRowReachesIntoTheView() {
+        typealias Span = RowsInView.Span
+        // A row in the middle of the view, or one running through all of it.
+        XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [Span(top: 1200, bottom: 1300)], top: 1000, height: 600))
+        XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [Span(top: 0, bottom: 5000)], top: 1000, height: 600))
+        // Rows still drawn, but all of them above or below the view: what a lazy stack's own reports call "in view".
+        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [Span(top: 200, bottom: 990), Span(top: 1700, bottom: 1800)],
+                                       top: 1000, height: 600))
+        // A hairline at the edge, or a row with no height, is not something to read.
+        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [Span(top: 900, bottom: 1004)], top: 1000, height: 600))
+        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [Span(top: 1200, bottom: 1200)], top: 1000, height: 600))
+        // No row drawn at all.
+        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [], top: 1000, height: 600))
+        // Nothing to show, or no view yet: never blank.
+        XCTAssertFalse(RowsInView.blank(rows: 0, drawn: [], top: 1000, height: 600))
+        XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [], top: 0, height: 0))
+    }
+
     func testOnlyTheFirstFrameOfAScrollChangesTheState() {
         var m = ScrollModel()
         XCTAssertFalse(m.isFreeAfterUserScroll)

@@ -149,12 +149,12 @@ struct TranscriptConversation: View {
                                     self.row(row)
                                 }
                                 .pinProbe(row.id, room: pinRoom)
-                                .countsAsDrawnRow(drawnRows)
+                                .countsAsDrawnRow(drawnRows, id: row.id)
                                 .id(row.id)
                             } else {
                                 // The "new since" line is a hairline of its own: a fold right above it gives up its own.
                                 self.row(row, ruled: row.id != beforeNew).pinProbe(row.id, room: pinRoom)
-                                    .countsAsDrawnRow(drawnRows).id(row.id)
+                                    .countsAsDrawnRow(drawnRows, id: row.id).id(row.id)
                             }
                         }
                         // A compaction between turns (your /compact while the agent waits): the line under the last turn.
