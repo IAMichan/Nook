@@ -45,6 +45,11 @@ final class ProcessRunnerTests: XCTestCase {
 
     /// A grandchild that keeps stdout open after the program itself has gone cannot hold the caller past the deadline.
     func testTimeoutIsNotHeldByAGrandchildKeepingStdoutOpen() throws {
+        #if !canImport(Darwin)
+        // swift-corelibs-foundation learns that a child ended through a socket the child inherits; the grandchild keeps
+        // it open too, so `Process` on Linux reports the exit only when the grandchild ends. Nook runs on macOS.
+        throw XCTSkip("Linux Foundation's Process waits for grandchildren that inherit its exit socket")
+        #endif
         let started = Date()
         let result = try ProcessRunner.run("/bin/sh", ["-c", "echo started; /bin/sleep 30 & exit 0"], timeout: 1)
         XCTAssertTrue(result.timedOut)
