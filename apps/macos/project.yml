@@ -614,6 +614,7 @@ targets:
       - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/RemoteHostDiscovery.swift
       - path: Services/Workspace/ResourceUsage.swift
+      - path: Services/Workspace/BackgroundCommandActivity.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/OpenCodeServerProtocol.swift

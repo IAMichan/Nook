@@ -528,11 +528,13 @@ struct BackgroundCommandInfo: Identifiable, Equatable, Sendable {
     var failed: Bool { state == .failed || state == .denied || state == .expired }
 
     /// What the command printed, without the note an agent gets when it starts one in the background ("Command running
-    /// in background with ID: b3k9. Output is being written to: … Read on that file path"): that note says nothing about
-    /// how the command is doing. Nil when nothing else is left.
+    /// in background with ID: b3k9. Output is being written to: … Read on that file path"), or when its call ran past
+    /// its time limit and moved there ("Command did not complete within its 600s timeout and was moved to the
+    /// background …"): that note says nothing about how the command is doing. Nil when nothing else is left.
     var printed: String? {
         guard var text = output?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        if text.hasPrefix("Command running in background with ID:") {
+        if text.hasPrefix("Command running in background with ID:")
+            || (text.hasPrefix("Command did not complete within") && text.contains("moved to the background")) {
             guard let end = text.range(of: "Read on that file path") else { return nil }
             text = String(text[end.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: ".").union(.whitespacesAndNewlines))
         }
