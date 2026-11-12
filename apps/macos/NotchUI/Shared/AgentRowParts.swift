@@ -18,11 +18,18 @@ struct AgentRowLayout<Slot: View, Title: View, Logo: View, Meta: View>: View {
     @ViewBuilder var title: () -> Title
     @ViewBuilder var logo: () -> Logo
     @ViewBuilder var meta: () -> Meta
+    /// The project's badge in place of the folder symbol (its icon, or its initials on its tint), so a list of sessions from
+    /// several projects shows at a glance which project each is from.
+    var mark: () -> AnyView? = { nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(icon: "folder").font(NookTheme.textFont(9.5, .semibold))
+                if let mark = mark() {
+                    mark.padding(.trailing, NookTheme.Spacing.xxs)
+                } else {
+                    Image(icon: "folder").font(NookTheme.textFont(9.5, .semibold))
+                }
                 Text(folder)
                     .lineLimit(1)
                     .sharedTip(folderHelp)

@@ -1,10 +1,12 @@
 import AppKit
 
-/// The Agents list grouped by project: a folder per project, a project you added pinned on top
-/// even with no sessions, and the sessions without a project together under one folder instead of one each.
+/// The Agents list grouped by project (Settings › General, "boring mode"): a folder per project, a project you
+/// added pinned on top even with no sessions, and the sessions without a project together under one folder instead of one
+/// each.
 final class SidebarProjectFolders: Scenario {
     func testSidebarProjectFolders() throws {
         try scenario("Sessions sit in project folders; chats without a project share one folder") { nook, screen, app in
+            InboxStore.shared.groupByProject = true
             let shop = try nook.project("shop")
             let blog = try nook.project("blog")
             let added = try nook.project("docs-site")

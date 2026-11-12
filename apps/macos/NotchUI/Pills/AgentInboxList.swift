@@ -51,6 +51,11 @@ struct AgentInboxList: View {
     @State private var projectName = ""
     /// The favorite (pinned) and archived projects shape the folders.
     @ObservedObject private var projectSettings = WorkspaceSettings.shared
+    /// Clones started from "Add project": once one is done its folder becomes a project and the composer opens on it.
+    @State private var pendingClones: Set<UUID> = []
+    /// The height of each docked shelf's rows, so the shelf is as tall as they are (`dockedShelf`).
+    @State private var shelfHeights: [InboxSection.Kind: CGFloat] = [:]
+    private static let shelfMaxHeight: CGFloat = 280
 
     private static let wakeFormat: DateFormatter = {
         let format = DateFormatter()
@@ -167,6 +172,7 @@ struct AgentInboxList: View {
                                             settledLimit: settledLimit, selectedID: current)
         let groups = store.groupByProject
             ? InboxLayout.projectGroups(sections, pinned: pinnedProjects, archived: archivedProjects) : []
+        let projects = projectFolders
         // The rows as shown, top to bottom (a folded shelf only with the open session): what select all and a ⇧-click range go by.
         let shown = shownIDs(sections, groups: groups)
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
@@ -177,9 +183,9 @@ struct AgentInboxList: View {
                         if selection.isActive { selection.clear() } else { selection.begin() }
                     }
                 }
-                //: a project is added from the list itself, from a folder you pick or make.
+                //: a project is added from the list itself: made new, a folder on disk, or cloned.
                 if !app.demoMode {
-                    ToolbarIconButton("folder.badge.plus", tr("inbox.project.add")) { addProject() }
+                    AddProjectButton(added: addProject, cloning: { pendingClones.insert($0) })
                 }
                 headerActions
             }
@@ -205,20 +211,20 @@ struct AgentInboxList: View {
                         LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             if store.groupByProject {
                                 ForEach(sections.filter { $0.kind == .pinned }, id: \.kind) { section in
-                                    sectionView(section, sections: sections, byID: byID, shown: shown)
+                                    sectionView(section, sections: sections, byID: byID, shown: shown, projects: projects)
                                 }
-                                ForEach(groups) { group in projectView(group, sections: sections, byID: byID, shown: shown) }
-                                // What works and needs nothing from you sits under the projects, as one shelf.
-                                ForEach(sections.filter { $0.kind == .working }, id: \.kind) { section in
-                                    sectionView(section, sections: sections, byID: byID, shown: shown)
+                                ForEach(groups) { group in
+                                    projectView(group, sections: sections, byID: byID, shown: shown, projects: projects)
                                 }
                             } else {
                                 ForEach(sections.filter { !Self.isDocked($0.kind) }, id: \.kind) { section in
-                                    sectionView(section, sections: sections, byID: byID, shown: shown)
+                                    sectionView(section, sections: sections, byID: byID, shown: shown, projects: projects)
                                 }
                             }
-                            // Only the docked shelves left (or nothing): say so instead of an empty space.
-                            if sections.allSatisfy({ Self.isDocked($0.kind) }) { emptyState }
+                            // Only the docked shelves left (or nothing): say so instead of an empty space. Sessions at work
+                            // below are not "nothing": then the space stays empty.
+                            if sections.allSatisfy({ Self.isDocked($0.kind) }), groups.isEmpty,
+                               !sections.contains(where: { $0.kind == .working }) { emptyState }
                         }
                     }
                     // A session opened from elsewhere (the keyboard, a card, search) is brought into view in the list; a click
@@ -240,9 +246,10 @@ struct AgentInboxList: View {
                     }
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
-                // What you snoozed and settled sits at the foot of the list, above the footer, each header above its rows.
+                //: what works, what you snoozed and what you settled sit at the foot of the list, above the
+                // footer, each header above its rows. A session that finishes leaves Working and comes up on top.
                 ForEach(sections.filter { Self.isDocked($0.kind) }, id: \.kind) { section in
-                    dockedShelf(section, sections: sections, byID: byID, shown: shown)
+                    dockedShelf(section, sections: sections, byID: byID, shown: shown, projects: projects)
                 }
             }
             .overlay(alignment: .bottom) { undoNotice }
@@ -263,6 +270,11 @@ struct AgentInboxList: View {
                 renamingProject = nil
             }
             Button(tr("inbox.project.renameCancel"), role: .cancel) { renamingProject = nil }
+        }
+        // A clone started from "Add project" is done: its folder becomes a project and the composer opens on it.
+        .onReceive(CloneCenter.shared.$finished) { finished in
+            guard let finished, pendingClones.remove(finished.id) != nil else { return }
+            addProject(finished.path)
         }
         .sheet(item: $customSnooze) { item in
             CustomSnoozeSheet(title: item.title, onSnooze: { end in
@@ -309,7 +321,8 @@ struct AgentInboxList: View {
     /// The whole panel is empty: no search, nothing loading, and at most a closed shelf of settled sessions below.
     private func showsEmptyState(_ sections: [InboxSection], groups: [InboxProjectGroup]) -> Bool {
         // A pinned project keeps its folder also with no sessions, so a list with one is not empty.
-        showsSetUp && groups.isEmpty && sections.allSatisfy { Self.isDocked($0.kind) } && sections.allSatisfy { collapsed.contains($0.kind) }
+        showsSetUp && groups.isEmpty && sections.allSatisfy { $0.kind == .snoozed || $0.kind == .settled }
+            && sections.allSatisfy { collapsed.contains($0.kind) }
     }
 
     @ViewBuilder
@@ -326,8 +339,8 @@ struct AgentInboxList: View {
 
     // MARK: Sections
 
-    /// The shelves at the foot of the list, under the scrolling rows.
-    private static func isDocked(_ kind: InboxSection.Kind) -> Bool { kind == .snoozed || kind == .settled }
+    /// The shelves at the foot of the list, under the scrolling rows: Working, Snoozed and Settled.
+    private static func isDocked(_ kind: InboxSection.Kind) -> Bool { kind == .working || kind == .snoozed || kind == .settled }
 
     /// The shelves you folded, kept across launches. Snoozed and Settled start folded.
     private var collapsed: Set<InboxSection.Kind> { store.collapsedShelves }
@@ -346,32 +359,35 @@ struct AgentInboxList: View {
     }
 
     @ViewBuilder
-    private func sectionView(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem], shown: [String]) -> some View {
+    private func sectionView(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem], shown: [String],
+                             projects: [String: String]) -> some View {
         switch section.kind {
         case .pinned, .active:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                ForEach(rows(of: section)) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
+                ForEach(rows(of: section)) { entry in
+                    entryRow(entry, in: section, sections: sections, byID: byID, shown: shown, projects: projects)
+                }
             }
             .padding(.bottom, section.kind == .pinned ? NookTheme.Spacing.md : 0)
         case .working, .snoozed, .settled:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 shelfHeader(section)
                 ForEach(rows(of: section)) { entry in
-                    entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
+                    entryRow(entry, in: section, sections: sections, byID: byID, shown: shown, projects: projects)
                 }
             }
             .padding(.top, NookTheme.Spacing.md)
         }
     }
 
-    /// The ids top to bottom; grouped by project, the Active rows sit in their project's dropdown, with the Working shelf
-    /// under the projects.
+    /// The ids top to bottom; grouped by project, the Active rows sit in their project's dropdown, with the docked shelves
+    /// (Working, Snoozed, Settled) under the projects.
     private func shownIDs(_ sections: [InboxSection], groups: [InboxProjectGroup]) -> [String] {
         guard store.groupByProject else { return sections.flatMap { rows(of: $0).map(\.id) } }
         func ids(_ kinds: Set<InboxSection.Kind>) -> [String] {
             sections.filter { kinds.contains($0.kind) }.flatMap { rows(of: $0).map(\.id) }
         }
-        return ids([.pinned]) + groups.flatMap { rows(of: $0).map(\.entry.id) } + ids([.working]) + ids([.snoozed, .settled])
+        return ids([.pinned]) + groups.flatMap { rows(of: $0).map(\.entry.id) } + ids([.working, .snoozed, .settled])
     }
 
     // MARK: Projects
@@ -387,14 +403,14 @@ struct AgentInboxList: View {
 
     /// One project as a dropdown: its header folds it, its rows act as the section they come from.
     private func projectView(_ group: InboxProjectGroup, sections: [InboxSection], byID: [String: AgentListItem],
-                             shown: [String]) -> some View {
+                             shown: [String], projects: [String: String]) -> some View {
         let home = Dictionary(sections.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
         let active = home[.active] ?? InboxSection(kind: .active, rows: [])
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             projectHeader(group, folder: folder(of: group, byID: byID), byID: byID)
             // Full width, so a row's fill runs under the header's; each row indents its name to the project's name.
             ForEach(rows(of: group), id: \.entry.id) { pair in
-                entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown)
+                entryRow(pair.entry, in: home[pair.kind] ?? active, sections: sections, byID: byID, shown: shown, projects: projects)
             }
         }
         .padding(.top, NookTheme.Spacing.md)
@@ -512,10 +528,9 @@ struct AgentInboxList: View {
         return Set(archived.map(name)).subtracting(inUse)
     }
 
-    /// Adds a project from a folder you pick or make "Add project": pinned, so its folder shows, and the
-    /// new-session composer opens on it.
-    private func addProject() {
-        guard let path = ProjectFolderPanel.choose() else { return }
+    /// Adds a project ("Add project"): pinned, so it is in the pickers and its folder shows when the list is
+    /// grouped, and the new-session composer opens on it.
+    private func addProject(_ path: String) {
         withAnimation(NookTheme.reveal) {
             app.workspace.settings.addProject(path)
             store.collapsedProjects.remove(InboxProject.key(folder: (path as NSString).lastPathComponent, path: path))
@@ -523,23 +538,95 @@ struct AgentInboxList: View {
         newSession(in: path)
     }
 
-    /// The icon the group's project set for itself (Settings › Projects): by its folder, else by the project's name.
+    /// The icon the group's project set for itself (Settings › Projects): by its folder, else by the project's name, else
+    /// the badge its sessions show (`ProjectIcon.defaultIcon`), so a folder and its rows look alike.
     private func folderIcon(_ group: InboxProjectGroup, folder: String?) -> ProjectIcon? {
+        guard !group.project.isEmpty else { return nil }
         let settings = app.workspace.settings
         if let icon = folder.flatMap(settings.projectIcon) { return icon }
-        guard !group.project.isEmpty, !settings.projectOverrides.byProject.isEmpty else { return nil }
         let path = settings.projectOverrides.projects.first { ($0 as NSString).lastPathComponent == group.project }
-        return path.flatMap(settings.projectIcon)
+        if let icon = path.flatMap(settings.projectIcon) { return icon }
+        let name = folder.map(settings.projectDisplayName) ?? group.project
+        return .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(group.project))
+    }
+
+    // MARK: A row's project
+
+    /// The project folders on this Mac by the name their sessions are listed under (`InboxProject.key`): the projects you
+    /// set something for, your favorites, the recent ones and the last one. Made once per redraw from settings only; a row
+    /// never touches the disk to find its project.
+    private var projectFolders: [String: String] {
+        let settings = app.workspace.settings
+        var folders: [String: String] = [:]
+        let known = settings.projectOverrides.projects + settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
+        for path in known where !path.isEmpty {
+            let key = InboxProject.key(folder: (path as NSString).lastPathComponent, path: path)
+            if key != InboxProject.none, folders[key] == nil { folders[key] = path }
+        }
+        return folders
+    }
+
+    /// The project a row names: the name you gave it and its badge, for every session with a project. A session
+    /// in a folder not known yet goes by its folder's name; one without a project gets none.
+    private func rowProject(_ item: AgentListItem, projects: [String: String]) -> RowProject? {
+        let key = InboxProject.key(folder: item.folder, path: item.path)
+        guard key != InboxProject.none else { return nil }
+        let settings = app.workspace.settings
+        let path = projects[key] ?? (item.machine == MachineName.local && (item.path as NSString).lastPathComponent == key ? item.path : nil)
+        let name = path.map(settings.projectDisplayName) ?? key
+        let icon = path.flatMap(settings.projectIcon) ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
+        return RowProject(name: name, icon: icon, path: path)
+    }
+
+    /// The row's Project menu: what a project folder's menu does, from any of its sessions, so the list does not have to
+    /// be grouped to start a session in a project, rename it, give it a color, pin it or open its settings.
+    @ViewBuilder
+    private func projectMenu(_ project: RowProject) -> some View {
+        if let path = project.path {
+            let settings = app.workspace.settings
+            Menu(tr("inbox.project.menu", project.name)) {
+                Button(tr("inbox.project.newSession", project.name)) { newSession(in: path) }
+                Divider()
+                Button(tr("inbox.project.rename")) {
+                    projectName = settings.projectDisplayName(path)
+                    renamingProject = path
+                }
+                Menu(tr("inbox.project.color")) {
+                    ForEach(ProjectIcon.Tint.allCases) { tint in
+                        Button {
+                            let letters: String
+                            if case .monogram(let current, _) = project.icon { letters = current } else {
+                                letters = ProjectIcon.initials(project.name)
+                            }
+                            settings.setProjectIcon(.monogram(letters, tint), project: path)
+                        } label: {
+                            if project.icon.tint == tint {
+                                Label(tr("inbox.project.tint." + tint.rawValue), icon: "checkmark")
+                            } else {
+                                Text(tr("inbox.project.tint." + tint.rawValue))
+                            }
+                        }
+                    }
+                }
+                if !settings.isArchivedProject(path) {
+                    Button(tr(settings.isFavoriteProject(path) ? "inbox.project.unpin" : "inbox.project.pin")) {
+                        withAnimation(NookTheme.reveal) { settings.toggleFavoriteProject(path) }
+                    }
+                }
+                Button(tr("inbox.project.reveal")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                Button(tr("inbox.project.settings")) { app.openProjectSettings(path) }
+            }
+        }
     }
 
     /// A shelf docked at the foot of the list: opening it lifts its header and lays its rows out below, scrolling on their
     /// own once they no longer fit.
     private func dockedShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
-                              shown: [String]) -> some View {
+                              shown: [String], projects: [String: String]) -> some View {
         let open = !collapsed.contains(section.kind)
         let list = VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             ForEach(rows(of: section)) { entry in
-                entryRow(entry, in: section, sections: sections, byID: byID, shown: shown)
+                entryRow(entry, in: section, sections: sections, byID: byID, shown: shown, projects: projects)
             }
             if open && section.hiddenCount > 0 {
                 Button { settledLimit += InboxLayout.settledPage } label: {
@@ -555,11 +642,13 @@ struct AgentInboxList: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             shelfHeader(section)
             if !rows(of: section).isEmpty {
-                ViewThatFits(in: .vertical) {
-                    list
-                    ScrollView(showsIndicators: false) { list }
+                // As tall as its rows, up to 280, then it scrolls. Measured: a flexible scroll view would take all 280 and
+                // leave a gap between the header and a single row.
+                ScrollView(showsIndicators: false) {
+                    list.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shelfHeights[section.kind] = $0 }
                 }
-                .frame(maxHeight: 280)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: min(shelfHeights[section.kind] ?? 0, Self.shelfMaxHeight))
             }
         }
     }
@@ -578,9 +667,9 @@ struct AgentInboxList: View {
 
     /// A session's row, and under a session that started others the fold of its sub-threads.
     private func entryRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
-                          shown: [String]) -> some View {
+                          shown: [String], projects: [String: String]) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            sessionRow(entry, in: section, sections: sections, byID: byID, shown: shown)
+            sessionRow(entry, in: section, sections: sections, byID: byID, shown: shown, projects: projects)
             if entry.subThreads > 0, byID[entry.id] != nil { threadToggle(entry) }
         }
     }
@@ -624,16 +713,20 @@ struct AgentInboxList: View {
 
     @ViewBuilder
     private func sessionRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
-                            shown: [String]) -> some View {
+                            shown: [String], projects: [String: String]) -> some View {
         if let item = byID[entry.id] {
             let slim = section.kind == .snoozed || section.kind == .settled
             let isRun = runID(item) != nil
             let snoozeActive = section.kind == .snoozed
+            // Under its project's header a row needs no badge; everywhere else it names its project.
+            let grouped = store.groupByProject && section.kind == .active
+            let project = rowProject(item, projects: projects)
             AgentListRow(
                 item: item, now: now, selected: current == item.id,
                 receded: entry.receded, pinned: entry.row.pinned, woke: entry.woke, slim: slim,
-                grouped: store.groupByProject && (section.kind == .active || section.kind == .working),
+                grouped: grouped,
                 wakeLabel: snoozeActive ? item.snoozedUntil.map { tr("inbox.snooze.until", Self.wakeFormat.string(from: $0)) } : nil,
+                project: grouped ? nil : project,
                 actions: AgentRowActions(
                     pinned: entry.row.pinned,
                     onPin: { withAnimation(NookTheme.reveal) { entry.row.pinned ? store.unpin(item.id) : pinAndUnsettle(item, entry) } },
@@ -687,7 +780,7 @@ struct AgentInboxList: View {
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
-            .contextMenu { contextMenu(item, entry, in: section) }
+            .contextMenu { contextMenu(item, entry, in: section, project: project) }
             // Files dropped on a session Nook runs open it with them attached to its composer.
             .onDrop(of: [.fileURL], isTargeted: Binding(
                 get: { dropTarget == item.id },
@@ -817,7 +910,7 @@ struct AgentInboxList: View {
     }
 
     @ViewBuilder
-    private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry, in section: InboxSection) -> some View {
+    private func contextMenu(_ item: AgentListItem, _ entry: InboxEntry, in section: InboxSection, project: RowProject?) -> some View {
         if runID(item) != nil {
             Button(tr("agents.run.rename")) { renaming = item.id }
         }
@@ -875,6 +968,7 @@ struct AgentInboxList: View {
                 .disabled(!app.workspace.canRestartAgent(id))
         }
         Button(tr("inbox.markUnread")) { visits.markUnread(item.id) }
+        if let project { projectMenu(project) }
         Divider()
         Menu(tr("inbox.copy")) {
             Button(tr("inbox.copy.path")) { Pasteboard.copy(item.path) }

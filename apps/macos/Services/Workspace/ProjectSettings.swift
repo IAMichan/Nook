@@ -548,4 +548,24 @@ enum ProjectIcon: Equatable, Sendable {
                                       : String(words.first?.prefix(2) ?? "")
         return letters.isEmpty ? "?" : letters.uppercased()
     }
+
+    /// The tint a project gets until you choose one: picked from its name, so it is the same on every launch and every
+    /// Mac, and two projects next to each other usually differ (FNV-1a; `hashValue` changes per launch).
+    static func defaultTint(_ name: String) -> Tint {
+        var hash: UInt32 = 2_166_136_261
+        for byte in name.lowercased().utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 16_777_619
+        }
+        return Tint.allCases[Int(hash % UInt32(Tint.allCases.count))]
+    }
+
+    /// The badge a project shows in the session list until you set an icon: its initials on its own tint.
+    static func defaultIcon(_ name: String) -> ProjectIcon { .monogram(initials(name), defaultTint(name)) }
+
+    /// The tint of the icon, for "Color" in a row's Project menu: a monogram's, else none.
+    var tint: Tint? {
+        if case .monogram(_, let tint) = self { return tint }
+        return nil
+    }
 }

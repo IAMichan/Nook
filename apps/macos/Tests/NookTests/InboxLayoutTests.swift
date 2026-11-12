@@ -27,11 +27,38 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(ids(s, .active), ["b"])
     }
 
-    func testActiveSortsByAttentionThenManualOrderThenRecency() {
+    func testActiveSortsNeedsYouThenNewestReturnThenManualOrder() {
         let rows = [row("idle-old", age: 500), row("idle-new", age: 10), row("fail", .failed), row("ask", .approval),
                     row("m1", age: 900), row("m2", age: 5)]
         let s = sections(rows, InboxState(order: ["m1", "m2"]))
-        XCTAssertEqual(ids(s, .active), ["ask", "fail", "m1", "m2", "idle-new", "idle-old"])
+        //: what needs you, then what came back newest first, then what you gave a place.
+        XCTAssertEqual(ids(s, .active), ["ask", "idle-new", "fail", "idle-old", "m1", "m2"])
+    }
+
+    func testPlacedSessionThatComesBackRisesToTheTop() {
+        let placed = now.addingTimeInterval(-50)
+        let state = InboxState(order: ["back", "stays"], orderedAt: ["back": placed, "stays": placed])
+        // "back" finished after you placed it (age 10 < 50); "stays" has nothing new since.
+        let rows = [row("back", .ready, age: 10), row("stays", age: 80), row("fresh", age: 30)]
+        XCTAssertEqual(ids(sections(rows, state), .active), ["back", "fresh", "stays"])
+    }
+
+    func testReorderStampsThePlacesShown() {
+        let rows = [row("a", age: 10), row("b", age: 20)]
+        var st = InboxState()
+        st.reorder("b", toIndex: 0, within: sections(rows).first { $0.kind == .active }!, now: now)
+        XCTAssertEqual(st.order, ["b", "a"])
+        XCTAssertEqual(st.orderedAt, ["a": now, "b": now])
+        XCTAssertEqual(ids(sections(rows, st), .active), ["b", "a"])
+    }
+
+    func testOrderSavedWithoutTimesIsLetGo() throws {
+        let old = try JSONDecoder().decode(InboxState.self, from: Data(#"{"order":["a","b"]}"#.utf8))
+        XCTAssertEqual(old.order, [])
+        var st = InboxState(order: ["a"], orderedAt: ["a": now])
+        st = try JSONDecoder().decode(InboxState.self, from: JSONEncoder().encode(st))
+        XCTAssertEqual(st.order, ["a"])
+        XCTAssertEqual(st.orderedAt, ["a": now])
     }
 
     func testOrderIsStableAcrossInputPermutations() {
@@ -52,10 +79,10 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(Set(ids(off, .active)), ["w", "bg", "asks", "f"])
     }
 
-    func testWorkingShelfSitsAboveEverythingElse() {
+    func testWorkingShelfSitsAtTheFootAboveSettled() {
         let rows = [row("a"), row("w", .working), row("p"), row("z")]
         let s = sections(rows, InboxState(pinned: ["p"], settled: ["z"]))
-        XCTAssertEqual(s.map(\.kind), [.working, .pinned, .active, .settled])
+        XCTAssertEqual(s.map(\.kind), [.pinned, .active, .working, .settled])
     }
 
     func testSnoozeAndWakeAreReversible() {
@@ -276,7 +303,7 @@ final class InboxLayoutTests: XCTestCase {
         let rows = [row("a", .input), row("b", age: 100), row("c", age: 200), row("d", age: 300)]
         let active = sections(rows).first { $0.kind == .active }!
         XCTAssertEqual(active.rows.map(\.id), ["a", "b", "c", "d"])
-        // "a" needs you and sorts first by attention: it cannot trade places with the idle rows.
+        // "a" needs you and sorts first: it cannot trade places with the rows that do not.
         XCTAssertNil(InboxLayout.moveTarget("a", up: false, in: active))
         XCTAssertNil(InboxLayout.moveTarget("b", up: true, in: active))
         XCTAssertNil(InboxLayout.moveTarget("d", up: false, in: active))
