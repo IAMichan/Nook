@@ -138,4 +138,18 @@ final class GitQuickActionTests: XCTestCase {
         try "## Wat\n".write(to: root.appendingPathComponent(".github/pull_request_template.md"), atomically: true, encoding: .utf8)
         XCTAssertEqual(GitService.pullRequestTemplate(root.path), "## Wat\n")
     }
+
+    func testPullRequestBodyFallsBackToTemplateWhenGenerationReturnsEmpty() {
+        let template = "## Summary\n- Template content"
+        func resolveBody(_ answerBody: String?, template: String?) -> String {
+            let generatedBody = answerBody?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let templateBody = template?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (generatedBody?.isEmpty == false ? generatedBody : nil) ?? templateBody ?? ""
+        }
+        XCTAssertEqual(resolveBody(nil, template: template), "## Summary\n- Template content")
+        XCTAssertEqual(resolveBody("", template: template), "## Summary\n- Template content")
+        XCTAssertEqual(resolveBody("   \n\t ", template: template), "## Summary\n- Template content")
+        XCTAssertEqual(resolveBody("## Real Summary\n- AI wrote this", template: template), "## Real Summary\n- AI wrote this")
+        XCTAssertEqual(resolveBody(nil, template: nil), "")
+    }
 }

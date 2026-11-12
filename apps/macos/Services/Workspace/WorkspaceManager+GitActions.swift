@@ -335,7 +335,9 @@ extension WorkspaceManager {
         let title = TextGeneration.pullRequestTitle((answer?["title"] as? String) ?? (facts.commits.split(separator: "\n").first.map {
             String($0.drop { $0 != " " }.dropFirst())
         } ?? ""))
-        let body = (answer?["body"] as? String) ?? ""
+        let generatedBody = (answer?["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let templateBody = facts.template?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = (generatedBody?.isEmpty == false ? generatedBody : nil) ?? templateBody ?? ""
         progress(tr("ws.quick.creatingPR"))
         do {
             if let create = pullRequestCreate, let link = try await create(repo, title, body, branch, base) {
