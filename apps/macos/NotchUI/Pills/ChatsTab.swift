@@ -1056,7 +1056,7 @@ struct ChatsTab: View {
             searchField
 
             ScrollViewReader { proxy in
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 ChatsListRows(sections: sections, selected: current?.id, collapsed: collapsed, searching: searching,
                               day: today, typing: typingLines,
                               toggle: { group in
