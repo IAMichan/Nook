@@ -1178,11 +1178,13 @@ struct AgentConversation: View {
 }
 
 /// Sessions Nook runs itself (started here, taken over, or from the workspace), newest first. One you have not settled
-/// stays however long ago it last ran, so a quiet chat never drops out of its folder; a settled one only for a day, and
-/// at most `settledLimit` of those. Selecting one shows it on the right, where you control it completely.
+/// stays however long ago it last ran, so a quiet chat never drops out of its folder; a settled one as long as earlier
+/// sessions from transcripts (`AgentHistory.listDays`), so the "Settled" count grows with every session you settle. The
+/// list pages through them (`InboxLayout.settledPage`). Selecting one shows it on the right, where you control it completely.
 @MainActor
 enum WorkspaceRunsSection {
-    static let settledLimit = 12
+    /// How long a settled session stays in the list after its last activity.
+    static let settledLifetime = TimeInterval(AgentHistory.listDays) * 86_400
 
     static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions? = nil, now: Date = Date()) -> [WorkspaceRun] {
         let finished = finished ?? .shared
@@ -1199,7 +1201,7 @@ enum WorkspaceRunsSection {
             let run = runs[index]
             if run.status.isActive || !finished.isSettled(FinishedSessions.key(run: run), lastActive: run.updatedAt) {
                 open.append(run)
-            } else if settled.count < settledLimit, now.timeIntervalSince(run.updatedAt) < 24 * 3600 {
+            } else if now.timeIntervalSince(run.updatedAt) < settledLifetime {
                 settled.append(run)
             }
         }
