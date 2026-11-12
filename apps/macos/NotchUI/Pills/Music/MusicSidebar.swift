@@ -23,7 +23,8 @@ struct MusicSidebar: View {
                         ForEach(sections) { item in
                             MusicSidebarRow(title: item.title, symbol: item.symbol,
                                             selected: item == section && !(item == .playlists && service.playlistDetail != nil),
-                                            playing: item == .nowPlaying && service.current?.isPlaying == true) {
+                                            playing: item == .nowPlaying && service.current?.isPlaying == true,
+                                            count: item == .queue ? service.playQueue.entries.count : 0) {
                                 open(item)
                             }
                         }
@@ -72,6 +73,8 @@ private struct MusicSidebarRow: View {
     let selected: Bool
     /// Now Playing while music plays: a still waveform in the Music colour, so the row says it without an animation.
     var playing = false
+    /// How many tracks wait (Up next), as a quiet count on the right.
+    var count = 0
     let action: () -> Void
     @State private var hovering = false
 
@@ -88,6 +91,12 @@ private struct MusicSidebarRow: View {
                     .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(NookTheme.TextStyle.caption.monospacedDigit())
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .accessibilityLabel(tr("music.queue.count", count))
+                }
                 if playing {
                     Image(icon: "waveform")
                         .font(NookTheme.font(11, .semibold))

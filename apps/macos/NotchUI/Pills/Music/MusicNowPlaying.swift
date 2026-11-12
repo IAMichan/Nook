@@ -24,6 +24,7 @@ struct MusicNowPlayingView: View {
     @ObservedObject var service: NowPlayingService
     @ObservedObject var lyrics: LyricsService
     @AppStorage(MusicNowPlayingTab.storageKey) private var storedTab = MusicNowPlayingTab.lyrics.rawValue
+    @ObservedObject private var outputs = MusicOutputService.shared
     @State private var width: Double = 0
 
     /// Side by side from this width; under each other below it.
@@ -118,11 +119,15 @@ struct MusicNowPlayingView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.md)
-            if let volume = info.volume {
-                MusicVolumeControl(volume: volume, width: 120) { service.setVolume($0) }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, NookTheme.Spacing.md)
+            // Where it plays beside how loud: the two things one changes about the sound.
+            HStack(spacing: NookTheme.Spacing.md) {
+                MusicOutputButton(info: info, outputs: outputs)
+                if let volume = info.volume {
+                    MusicVolumeControl(volume: volume, width: 110) { service.setVolume($0) }
+                }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, NookTheme.Spacing.md)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
