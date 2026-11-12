@@ -358,6 +358,22 @@ struct DockedSessionPanel: View {
     }
 }
 
+/// Beside a session still to start: only the chosen account's limits, in the same card and column as a running
+/// session's, so you see how much room is left before you start.
+struct DockedUsagePanel: View {
+    let source: SessionUsageSource
+
+    var body: some View {
+        ScrollView {
+            SessionUsageCard(source: source, boxed: true)
+                // The scroll view would cut off the card's outline.
+                .padding(.vertical, NookTheme.Spacing.xxs)
+                .padding(.trailing, NookTheme.Spacing.sm)
+        }
+        .scrollIndicators(.never)
+    }
+}
+
 /// The changes in a folder, laid out as a stacked diff (`StackedDiffList`): a toolbar with the number of files,
 /// the lines and the buttons that fold every file or show the tree, then every file in one scroll, folded until you
 /// open it.

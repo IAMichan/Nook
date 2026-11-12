@@ -15,6 +15,8 @@ struct NewSessionComposer: View {
     var headerAccessory: AnyView? = nil
     /// Called with the folder the new session will work in, so its panels open there; empty on another machine.
     var onDirectory: (String) -> Void = { _ in }
+    /// Called with the account the new session will use, so the limits beside it follow the agent menu.
+    var onProfile: (String?) -> Void = { _ in }
     /// Called with the new session once it runs.
     let onStarted: (UUID) -> Void
 
@@ -61,6 +63,8 @@ struct NewSessionComposer: View {
     /// "New session in this worktree": the session works in the folder as it is, whatever this folder's default says.
     @State var keepCheckout = false
     @FocusState var focused: Bool
+    /// The limits are in the docked column beside the box (`SessionWorkbench.usageOnlyPanel`), not in the box.
+    @Environment(\.sessionPanelDocked) var panelDocked
 
     /// Where this draft's words are kept in `ComposerDraftStore`: one draft per folder, or per machine over SSH, so what
     /// you typed for one project waits there (and in the list's unsent rows) while you start something in another.
@@ -92,6 +96,7 @@ struct NewSessionComposer: View {
         // Only when a clone ends, not on its progress: the box does not watch the clone itself.
         .onReceive(CloneCenter.shared.$finished.removeDuplicates()) { finished in adoptClone(finished) }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
+        .onChange(of: config.profileID, initial: true) { _, profileID in onProfile(profileID.isEmpty ? nil : profileID) }
         // ⌥⌘↩, and ⌘↩ here too: start it and keep a fresh box for the next one. Return starts and opens it.
         // Above the box's own ⌘↩ (`priority`), which would only send.
         .keyCommands(["composer.startInBackground": startInBackgroundKey, "composer.send": startInBackgroundKey],
