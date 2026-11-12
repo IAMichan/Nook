@@ -206,6 +206,10 @@ struct PullRequestRow: View, Equatable {
                     }
                     // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
                     if role == .review, item.state == .open, !showRepo { NookTag(tr("agents.pulls.scope.reviews"), tint: NookTheme.amber) }
+                    // Yours, and nothing left in its way: say so, so it does not wait for a reason nobody sees.
+                    if role == .mine, PullRequestRepoGroup.Row(item: item, role: role).isReadyToMerge {
+                        NookTag(tr("agents.pr.ready.verdict.ready"), tint: NookTheme.mint)
+                    }
                     if linked != nil {
                         branches.layoutPriority(-2)
                     } else {

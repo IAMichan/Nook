@@ -225,6 +225,8 @@ struct PullRequestsPanel: View {
             } else {
                 // Filtered once per redraw: the empty check, the count and the rows below all read this.
                 let shown = self.shown
+                // What asks something of you, first: a chip each, counting it, that narrows the list to it.
+                PullRequestAttentionBar(filter: $filterStore.filter, accounts: accounts)
                 searchRow
                 PullRequestCloseSweepBar()
                 if !unreadable.isEmpty { unreadableNote }

@@ -49,10 +49,12 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
     var hiddenRepos: [String] = []
     /// The id of the GitHub account to list, or nil for every connected account.
     var account: String?
+    /// One of the chips over the list (see `PullRequestAttention`): only what asks that of you. Nil shows everything.
+    var attention: PullRequestAttention?
 
     init(query: String = "", state: State = .open, scope: Scope = .all, author: String? = nil, labels: [String] = [],
          draft: Draft = .all, review: Review = .all, status: Status = .any, repo: String? = nil, hiddenRepos: [String] = [],
-         account: String? = nil) {
+         account: String? = nil, attention: PullRequestAttention? = nil) {
         self.query = query
         self.state = state
         self.scope = scope
@@ -64,13 +66,14 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
         self.repo = repo
         self.hiddenRepos = hiddenRepos
         self.account = account
+        self.attention = attention
     }
 
     /// How many dropdown choices differ from the default (the search not counted), for the badge on the Filters button.
     /// The hidden repositories count once, however many there are.
     var activeCount: Int {
         [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil,
-         !hiddenRepos.isEmpty, account != nil]
+         !hiddenRepos.isEmpty, account != nil, attention != nil]
             .filter { $0 }.count + labels.count
     }
 
@@ -161,10 +164,14 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
     func apply(_ account: AccountPullRequests) -> AccountPullRequests {
         let parsed = self.parsed
         let keep: (PullRequestItem) -> Bool = { matches($0, parsed: parsed) }
+        // With a chip on, a row also has to ask that of you, in the list it is in.
+        let asks: (PullRequestItem, PullRequestRepoGroup.Role) -> Bool = { item, role in
+            attention?.includes(PullRequestRepoGroup.Row(item: item, role: role)) ?? true
+        }
         var result = account
-        result.reviews = scope == .all || scope == .reviews ? account.reviews.filter(keep) : []
-        result.mine = scope == .all || scope == .mine ? account.mine.filter(keep) : []
-        result.watched = scope == .all || scope == .watched ? account.watched.filter(keep) : []
+        result.reviews = scope == .all || scope == .reviews ? account.reviews.filter { keep($0) && asks($0, .review) } : []
+        result.mine = scope == .all || scope == .mine ? account.mine.filter { keep($0) && asks($0, .mine) } : []
+        result.watched = scope == .all || scope == .watched ? account.watched.filter { keep($0) && asks($0, .watched) } : []
         return result
     }
 
@@ -218,7 +225,43 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
                   status: (try? c.decodeIfPresent(Status.self, forKey: .status)) ?? .any,
                   repo: try? c.decodeIfPresent(String.self, forKey: .repo),
                   hiddenRepos: (try? c.decodeIfPresent([String].self, forKey: .hiddenRepos)) ?? [],
-                  account: try? c.decodeIfPresent(String.self, forKey: .account))
+                  account: try? c.decodeIfPresent(String.self, forKey: .account),
+                  attention: try? c.decodeIfPresent(PullRequestAttention.self, forKey: .attention))
+    }
+}
+
+/// What on the Pull requests page asks something of you, each a chip over the list that counts it and, clicked, shows
+/// only that: the reviews asked of you, your own pull requests whose checks fail, and your own that are ready to merge.
+/// The page leads with what needs you instead of making you read every row to find it.
+enum PullRequestAttention: String, CaseIterable, Identifiable, Codable, Sendable {
+    case review, failing, ready
+    var id: String { rawValue }
+
+    /// Whether `row` asks this of you. Only open pull requests ask anything.
+    func includes(_ row: PullRequestRepoGroup.Row) -> Bool {
+        guard row.item.state == .open else { return false }
+        switch self {
+        case .review: return row.role == .review
+        case .failing: return row.role == .mine && row.item.ci == .failing
+        case .ready: return row.role == .mine && row.isReadyToMerge
+        }
+    }
+
+    /// How many pull requests in `accounts` ask each thing of you, each pull request counted once (as a review, else as
+    /// yours, as the list shows it), even when two accounts list it. The chips count the list as the other filters left
+    /// it, so a search narrows the counts too.
+    static func counts(in accounts: [AccountPullRequests]) -> [PullRequestAttention: Int] {
+        var ids: [PullRequestAttention: Set<String>] = [:]
+        for account in accounts {
+            var seen = Set<String>()
+            let tagged = account.reviews.map { ($0, PullRequestRepoGroup.Role.review) } + account.mine.map { ($0, .mine) }
+                + account.watched.map { ($0, .watched) }
+            for (item, role) in tagged where seen.insert(item.id).inserted {
+                let row = PullRequestRepoGroup.Row(item: item, role: role)
+                for attention in allCases where attention.includes(row) { ids[attention, default: []].insert(item.id) }
+            }
+        }
+        return ids.mapValues(\.count)
     }
 }
 
@@ -309,6 +352,11 @@ struct PullRequestRepoGroup: Identifiable, Equatable, Sendable {
 
         /// An open pull request someone asked you to review.
         var waitsForReview: Bool { role == .review && item.state == .open }
+
+        /// Open, out of draft, approved, with passing checks and no conflict: nothing stands between it and its merge.
+        var isReadyToMerge: Bool {
+            item.state == .open && !item.draft && !item.conflict && item.ci == .passing && item.review == .approved
+        }
 
         /// How much it needs you: 0 waits for your review, 1 is yours with failing checks, 2 is another open one,
         /// 3 is closed or merged.
