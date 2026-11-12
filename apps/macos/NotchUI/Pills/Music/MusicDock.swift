@@ -1,17 +1,20 @@
 import SwiftUI
 
-/// The player at the bottom of the Music pages: the playing track, transport and volume in one floating bar, lit from
-/// the left by the cover's colours. Its track (or the chevron) opens Now Playing, where the bar steps aside.
+/// The player at the bottom of the Music pages: the playing track, transport, where it plays, volume and the queue in
+/// one floating bar, lit from the left by the cover's colours. It stays in the same place on every page, so the
+/// controls never have to be looked for. Its track (or the chevron) opens Now Playing, where the bar steps aside.
 struct MusicDock: View {
     let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
+    /// The Up next page shows: its button in the bar is lit.
+    var queueShown = false
     let onOpen: () -> Void
 
     static let barHeight: CGFloat = 64
 
     var body: some View {
         let shape = NookTheme.shape(NookTheme.Radius.composer)
-        MusicBar(info: info, service: service, onExpand: onOpen)
+        MusicBar(info: info, service: service, queueShown: queueShown, onExpand: onOpen)
             .frame(maxWidth: .infinity)
             .frame(height: Self.barHeight)
             .background {
@@ -36,7 +39,9 @@ struct MusicDock: View {
 private struct MusicBar: View {
     let info: NowPlayingInfo
     @ObservedObject var service: NowPlayingService
+    let queueShown: Bool
     let onExpand: () -> Void
+    @ObservedObject private var outputs = MusicOutputService.shared
     @State private var hoveringTrack = false
 
     var body: some View {
@@ -76,13 +81,10 @@ private struct MusicBar: View {
             // Narrower in a narrow tab (split view), so the track and the buttons beside it stay on screen.
             .frame(minWidth: 180, idealWidth: 320, maxWidth: 320)
 
-            HStack(spacing: NookTheme.Spacing.xs) {
-                if let volume = info.volume {
-                    MusicVolumeControl(volume: volume, width: 72) { service.setVolume($0) }
-                        .padding(.trailing, NookTheme.Spacing.sm)
-                }
-                MusicAddToPlaylistButton(track: service.currentTrack, service: service)
-                NookIconButton(systemName: "chevron.up", label: tr("music.openNowPlaying"), size: 30, action: onExpand)
+            // Where it plays with its name while there is room, only its icon in a narrow tab.
+            ViewThatFits(in: .horizontal) {
+                controls(compact: false)
+                controls(compact: true)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -93,6 +95,55 @@ private struct MusicBar: View {
     }
 
     private var subtitle: String { musicSubtitle(info) }
+
+    /// Where it plays, the volume, Up next and Add to playlist, then the full player.
+    private func controls(compact: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            MusicOutputButton(info: info, outputs: outputs, compact: compact)
+            if let volume = info.volume {
+                MusicVolumeControl(volume: volume, width: compact ? 56 : 72) { service.setVolume($0) }
+                    .padding(.trailing, NookTheme.Spacing.xs)
+            }
+            MusicQueueButton(count: service.playQueue.entries.count, shown: queueShown) {
+                MusicSection.show(queueShown ? .home : .queue)
+            }
+            MusicAddToPlaylistButton(track: service.currentTrack, service: service)
+            NookIconButton(systemName: "chevron.up", label: tr("music.openNowPlaying"), size: 30, action: onExpand)
+        }
+        .fixedSize()
+    }
+}
+
+/// Up next in the bar: lit while the queue shows, with how many tracks wait in it.
+private struct MusicQueueButton: View {
+    let count: Int
+    let shown: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(icon: "list.bullet")
+                    .font(NookTheme.font(12.5, .semibold))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(NookTheme.TextStyle.caption.monospacedDigit())
+                }
+            }
+            .foregroundStyle(shown ? NookTheme.music : (hovering ? NookTheme.paper : NookTheme.textSecondary))
+            .padding(.horizontal, count > 0 ? NookTheme.Spacing.sm : 0)
+            .frame(minWidth: 30, minHeight: 30)
+            .roundedBackground(shown ? NookTheme.rowSelected : (hovering ? NookTheme.graphite : Color.clear), radius: NookTheme.Radius.control)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(tr("music.section.upNext"))
+        .accessibilityLabel(count > 0 ? tr("music.queue.count", count) : tr("music.section.upNext"))
+        .accessibilityAddTraits(shown ? [.isSelected] : [])
+    }
 }
 
 struct MusicShowAllButton: View {
