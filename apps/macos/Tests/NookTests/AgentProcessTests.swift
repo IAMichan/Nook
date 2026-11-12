@@ -203,9 +203,9 @@ final class AgentProcessTests: XCTestCase {
         XCTAssertEqual(lines.all.map { CodexStreamParser.parse($0) }.first, [.threadStarted("t")])
     }
 
-    /// Every coding agent runs behind your own work, and so does what it starts (a build, a test run): several agents
-    /// compiling at full priority once froze the whole Mac and Nook with it.
-    func testAgentAndWhatItStartsRunBehindYourOwnWork() throws {
+    /// A coding agent runs at Nook's own priority, and so does what it starts: an agent the user waits on must not be
+    /// slowed down. Heavy builds lower their own priority (scripts/build-slot.sh).
+    func testAgentAndWhatItStartsRunAtNooksPriority() throws {
         // Nook's own priority (the parent), the agent's, and that of a process the agent starts.
         let path = try script("for p in $PPID $$; do ps -o nice= -p $p | tr -d ' '; done\nsh -c 'ps -o nice= -p $$' | tr -d ' '\n")
         let spec = LaunchSpec(executable: path, arguments: [], extraEnvironment: [:], workingDirectory: folder,
@@ -220,18 +220,8 @@ final class AgentProcessTests: XCTestCase {
         let values = lines.all.compactMap { Int32($0) }
         XCTAssertEqual(values.count, 3, "\(lines.all)")
         guard values.count == 3 else { return }
-        XCTAssertEqual(values[1], min(20, values[0] + AgentCommand.backgroundPriority), "the agent runs behind Nook")
+        XCTAssertEqual(values[1], values[0], "the agent runs at Nook's priority")
         XCTAssertEqual(values[2], values[1], "and so does what it starts")
-    }
-
-    func testBehindForegroundGoesThroughNiceAndKeepsTheCommand() {
-        let wrapped = AgentCommand.behindForeground(executable: "/opt/homebrew/bin/claude", arguments: ["-p", "--verbose"],
-                                                    niceAvailable: true)
-        XCTAssertEqual(wrapped.executable, "/usr/bin/nice")
-        XCTAssertEqual(wrapped.arguments, ["-n", "10", "/opt/homebrew/bin/claude", "-p", "--verbose"])
-        let plain = AgentCommand.behindForeground(executable: "/x/codex", arguments: ["exec"], niceAvailable: false)
-        XCTAssertEqual(plain.executable, "/x/codex")
-        XCTAssertEqual(plain.arguments, ["exec"])
     }
 
     func testStopEndsALongRunningAgent() throws {

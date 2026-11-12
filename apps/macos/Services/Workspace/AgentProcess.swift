@@ -275,22 +275,6 @@ enum AgentCommand {
         "ELECTRON_RUN_AS_NODE",
         "NOOK_RUN_ID", "NOOK_BRIDGE_TOKEN", BridgeTokenFiles.variable, "NOOK_BRIDGE_SOCK"
     ]
-
-    /// How far behind your own work an agent runs (a Unix nice value). An agent and everything it starts (compilers, test
-    /// runs, dev servers) inherit it, so a few agents that build at once take the cores that are left over instead of the
-    /// ones the windows, typing and Nook himself need. On an idle Mac it changes nothing: nice only counts when there is
-    /// more work than cores. Several agents compiling at full priority once drove the load to 185 on 14 cores and froze
-    /// the Mac and Nook with it.
-    static let backgroundPriority: Int32 = 10
-    static let niceTool = "/usr/bin/nice"
-
-    /// The command that starts `executable` behind your own work: through `nice`, which replaces itself with the agent
-    /// (same pid, so its process group and stop work as before). Unchanged where `nice` is missing.
-    static func behindForeground(executable: String, arguments: [String],
-                                 niceAvailable: Bool = FileManager.default.isExecutableFile(atPath: niceTool)) -> (executable: String, arguments: [String]) {
-        guard niceAvailable else { return (executable, arguments) }
-        return (niceTool, ["-n", String(backgroundPriority), executable] + arguments)
-    }
 }
 
 /// A single running agent process. Delivers stdout lines one by one on a dedicated queue.
@@ -410,9 +394,9 @@ final class AgentProcess: @unchecked Sendable {
         guard !LiveAgentProcesses.shared.quitting else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(ECANCELED)) }
         var environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
         for key in spec.removedEnvironment where spec.extraEnvironment[key] == nil { environment[key] = nil }
-        // Behind your own work, with everything it starts (`AgentCommand.backgroundPriority`).
-        let command = AgentCommand.behindForeground(executable: spec.executable, arguments: spec.arguments)
-        let options = SpawnedProcess.Options(executable: command.executable, arguments: command.arguments, environment: environment,
+        // At Nook's own priority: an agent the user waits on must not lose the processor to anything else. Heavy builds
+        // lower their own priority (scripts/build-slot.sh), and `AgentGovernor` steps in when memory runs out.
+        let options = SpawnedProcess.Options(executable: spec.executable, arguments: spec.arguments, environment: environment,
                                              workingDirectory: spec.workingDirectory, keepsInputOpen: spec.keepsInputOpen)
         // SIGPIPE would terminate Nook if the agent exits while writing.
         signal(SIGPIPE, SIG_IGN)
