@@ -222,22 +222,31 @@ struct PanelNewButton: View {
     let label: String
     var active = false
     let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { PanelHeaderIcon(symbol: "square.and.pencil", active: active) }
+            .buttonStyle(.nookPlain)
+            .help(label)
+            .accessibilityLabel(label)
+    }
+}
+
+/// The face of every icon button in a list's header, next to its search field (new, add project, filter): one size,
+/// one hover, lit while what it opens or turns on is active. Put it in a `Button` or a `ComposerDropdown` trigger.
+struct PanelHeaderIcon: View {
+    let symbol: String
+    var active = false
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            Image(icon: "square.and.pencil")
-                .font(NookTheme.font(13, .medium))
-                .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
-                .frame(width: 28, height: 28)
-                .roundedBackground(active || hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-        .help(label)
-        .accessibilityLabel(label)
+        Image(icon: symbol)
+            .font(NookTheme.font(13, .medium))
+            .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .frame(width: 28, height: 28)
+            .roundedBackground(active || hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .animation(NookTheme.hover, value: hovering)
     }
 }
 

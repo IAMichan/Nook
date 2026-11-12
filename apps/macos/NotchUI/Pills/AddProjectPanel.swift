@@ -11,7 +11,10 @@ struct AddProjectButton: View {
     @State private var open = false
 
     var body: some View {
-        ToolbarIconButton("folder.badge.plus", tr("inbox.project.add")) { open.toggle() }
+        Button { open.toggle() } label: { PanelHeaderIcon(symbol: "folder.badge.plus", active: open) }
+            .buttonStyle(.nookPlain)
+            .help(tr("inbox.project.add"))
+            .accessibilityLabel(tr("inbox.project.add"))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 AddProjectPanel(workspace: app.workspace, added: { path in open = false; added(path) },
                                 cloning: { id in open = false; cloning(id) })
