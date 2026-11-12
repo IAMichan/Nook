@@ -407,6 +407,7 @@ struct UsageLimitsModal: View {
                             let read = UsageLimitSection.make(app, now: context.date)
                             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxxl) {
                                 UsageLimitPools(sections: read.sections, notices: read.notices, now: context.date)
+                                if !app.cliProxy.hubs.isEmpty { hubs(now: context.date) }
                                 credits
                             }
                         }
@@ -451,6 +452,16 @@ struct UsageLimitsModal: View {
                                 selected: window, onSelect: { value in withAnimation(NookTheme.swap) { windowRaw = value.rawValue } },
                                 segmented: true)
             .fixedSize()
+    }
+
+    /// The CLIProxyAPI hubs and the accounts they pool; they are added and removed in Settings.
+    private func hubs(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            Text(tr("cliproxy.title"))
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+            CLIProxyHubsList(usage: app.cliProxy, editable: false, now: now)
+        }
     }
 
     /// Reset credits are spent after a confirmation, so they stay out of the bar's popovers.

@@ -68,6 +68,18 @@ final class LimitPoolTests: XCTestCase {
         XCTAssertEqual(session.columns[0].refill, 100)
     }
 
+    func testASpentWeekOfAnotherGroupLeavesTheSessionWindowAlone() throws {
+        let account = LimitPool.Account(id: "a", name: "a", limits: [
+            .init(label: "Gemini · 5 hours", used: 19, resetsAt: now.addingTimeInterval(3 * 3600), duration: fiveHours),
+            .init(label: "Gemini · Week", used: 8, resetsAt: now.addingTimeInterval(4 * 86_400), duration: week),
+            .init(label: "Gemini 4 Argon · Week", used: 100, resetsAt: now.addingTimeInterval(4 * 86_400), duration: week),
+        ])
+        let pool = try XCTUnwrap(LimitPool.make([account], now: now))
+        let session = try XCTUnwrap(pool.windows.first { $0.label == "Gemini · 5 hours" })
+        XCTAssertEqual(session.used, 19)
+        XCTAssertEqual(session.columns[0].limit?.resetsAt, now.addingTimeInterval(3 * 3600))
+    }
+
     func testSessionWindowsSortBeforeTheWeek() throws {
         let account = LimitPool.Account(id: "a", name: "a", limits: [
             .init(label: "Week", used: 10, resetsAt: now.addingTimeInterval(86_400), duration: week),

@@ -82,4 +82,30 @@ final class PullRequestBatchMergeTests: XCTestCase {
         ✗ acme/app#3 failed: GitHub refused the merge (422).
         """)
     }
+
+    private func row(_ repo: String, _ number: Int, state: PullRequestItem.State = .open, known: Bool) -> PullRequestItem {
+        PullRequestItem(repo: repo, number: number, title: "T", url: nil, draft: false, updated: nil, author: "ada",
+                        state: state, conflictKnown: known)
+    }
+
+    func testAfterAMergeTheListIsReadUntilGitHubKnowsTheOtherPullRequestsAgain() {
+        typealias FollowUp = PullRequestMergeFollowUp
+        let unknown = [AccountPullRequests(id: "github", name: "a", login: "a",
+                                           mine: [row("acme/app", 2, known: false), row("acme/other", 3, known: true)], reviews: [])]
+        XCTAssertTrue(FollowUp.pending(unknown, repos: ["acme/app"]))
+        // Another repository, or a pull request no longer open, is not waited for.
+        XCTAssertFalse(FollowUp.pending(unknown, repos: ["acme/other"]))
+        let merged = [AccountPullRequests(id: "github", name: "a", login: "a",
+                                          mine: [row("acme/app", 2, state: .merged, known: false)], reviews: [])]
+        XCTAssertFalse(FollowUp.pending(merged, repos: ["acme/app"]))
+
+        // Twice at least, since GitHub can still answer the old mergeability right after the merge.
+        XCTAssertTrue(FollowUp.goesOn(reads: 1, pending: false))
+        XCTAssertFalse(FollowUp.goesOn(reads: 2, pending: false))
+        XCTAssertTrue(FollowUp.goesOn(reads: 4, pending: true))
+        XCTAssertFalse(FollowUp.goesOn(reads: FollowUp.waits.count, pending: true))
+        // Quick at first.
+        XCTAssertEqual(FollowUp.wait(before: 0), 1)
+        XCTAssertEqual(FollowUp.wait(before: 99), FollowUp.waits.last)
+    }
 }

@@ -144,19 +144,19 @@ enum BridgeScheduleArguments {
     /// The schedule and rights fields that schedule_task and update_scheduled_task share.
     static var scheduleProperties: [String: Any] {
         [
-            "every_minutes": ["type": "integer", "description": "Run every this many minutes, counted from when the previous run finished (at least 1, at most \(maxIntervalMinutes))."],
-            "at": ["type": "string", "description": "Or run at this local time, \"HH:MM\" (24-hour)."],
+            "every_minutes": ["type": "integer", "description": "Interval in minutes after the previous run finishes (1...\(maxIntervalMinutes))."],
+            "at": ["type": "string", "description": "Local 24-hour time, \"HH:MM\"."],
             "weekdays": ["type": "array", "items": ["type": "string", "enum": weekdayNames],
-                         "description": "With at: only on these days. Default every day."],
+                         "description": "With at: days to run (default all)."],
             "rights": ["type": "string", "enum": [PermissionPolicy.ask.rawValue, PermissionPolicy.acceptEdits.rawValue],
-                       "description": "What each run may do without asking: ask (default) or acceptEdits. Never more than you have."],
-            "once_at": ["type": "string", "description": "Or run once at this local time, \"YYYY-MM-DD HH:MM\"."],
-            "enabled": ["type": "boolean", "description": "Whether the task is on. Default true for a new task."],
+                       "description": "ask (default) or acceptEdits; never above yours."],
+            "once_at": ["type": "string", "description": "Run once at local time \"YYYY-MM-DD HH:MM\"."],
+            "enabled": ["type": "boolean", "description": "Default true for new tasks."],
             "target": ["type": "string", "enum": ["new_session", "this_session", "session"],
                        "description": "new_session (in project_path), this_session, or session (session_id)."],
-            "session_id": ["type": "string", "description": "With target session: an id from session_list."],
+            "session_id": ["type": "string", "description": "With target session: id from session_list."],
             "conversation": ["type": "string", "enum": ["continue", "fresh"],
-                             "description": "With a session target: continue its conversation (default) or start fresh each run."]
+                             "description": "With session target: continue (default) or fresh each run."]
         ]
     }
 
@@ -391,9 +391,9 @@ enum BridgePullRequestTarget {
 
     static var properties: [String: Any] {
         [
-            "url": ["type": "string", "description": "The pull request's address. Optional."],
-            "number": ["type": "integer", "description": "The pull request's number, in repository (default: your folder's remote). Optional."],
-            "repository": ["type": "string", "description": "With number: owner/repo. Optional."]
+            "url": ["type": "string", "description": "PR/MR URL."],
+            "number": ["type": "integer", "description": "PR/MR number in repository (default: your folder's remote)."],
+            "repository": ["type": "string", "description": "With number: owner/repo."]
         ]
     }
 
@@ -475,9 +475,9 @@ enum BridgeBrowserScript {
 
     static var targetProperties: [String: Any] {
         [
-            "ref": ["type": "string", "description": "The element's ref from browser_snapshot, such as \"e7\". Preferred."],
-            "selector": ["type": "string", "description": "Or a CSS selector."],
-            "text": ["type": "string", "description": "Or the visible text of a link, button or label."]
+            "ref": ["type": "string", "description": "Element ref from browser_snapshot (e.g. \"e7\"; preferred)."],
+            "selector": ["type": "string", "description": "Or CSS selector."],
+            "text": ["type": "string", "description": "Or visible text of a link, button or label."]
         ]
     }
 

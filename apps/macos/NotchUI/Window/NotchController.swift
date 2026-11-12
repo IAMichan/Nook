@@ -115,7 +115,7 @@ final class NotchController {
 
         let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)
-        let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel)
+        let host = NotchHostingView(rootView: NotchRootView(viewModel: viewModel)
             .nookAttention()
             .environmentObject(app)
             .environmentObject(app.workspace)

@@ -51,7 +51,7 @@ enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
 
 /// Merges sent from a pull request's row or from the selection bar under a list. They queue up in the order given and
 /// go to GitHub one at a time, so each is checked against what the merge before it changed (a conflict, a stack). The
-/// list is read again once, when the queue is empty, so rows do not jump while the merges go through.
+/// list is read again after each merge (see `PullRequestMergeFollowUp`), so a conflict a merge causes shows at once.
 struct PullRequestQuickMergeQueue: Equatable, Sendable {
     /// Waiting their turn, in the order given.
     private(set) var waiting: [String] = []
@@ -111,5 +111,33 @@ struct PullRequestQuickMergeQueue: Equatable, Sendable {
         guard isIdle, changed || failed > 0 else { return nil }
         defer { merged = []; autoMerged = []; failed = 0 }
         return (merged, autoMerged, failed)
+    }
+}
+
+/// After a merge from Nook the other open pull requests on the same repository can now conflict with their base. GitHub
+/// works that out again on its own time (`mergeable` is UNKNOWN meanwhile), so one read right after the merge rarely
+/// shows it. The store reads the list again a few times, quickly at first, until GitHub knows every open pull request
+/// on the merged repositories again (see `PullRequestStore.followMerge`). Each new merge starts the count over, so a
+/// batch keeps the rows behind it current while it goes through.
+enum PullRequestMergeFollowUp {
+    /// The wait before each read, in seconds; the last read is the one at the end of this list.
+    static let waits: [TimeInterval] = [1, 3, 5, 8, 13, 21]
+    /// Reads made even when nothing looks pending: GitHub can answer the old mergeability for a moment after a merge.
+    static let minimumReads = 2
+
+    static func wait(before read: Int) -> TimeInterval { waits[min(max(read, 0), waits.count - 1)] }
+
+    /// Whether GitHub is still working out mergeability for an open pull request on one of `repos`.
+    static func pending(_ accounts: [AccountPullRequests], repos: Set<String>) -> Bool {
+        accounts.contains { account in
+            (account.mine + account.reviews + account.watched).contains {
+                $0.state == .open && !$0.conflictKnown && repos.contains($0.repo)
+            }
+        }
+    }
+
+    /// Whether to read again after `reads` reads since the last merge.
+    static func goesOn(reads: Int, pending: Bool) -> Bool {
+        reads < waits.count && (reads < minimumReads || pending)
     }
 }
