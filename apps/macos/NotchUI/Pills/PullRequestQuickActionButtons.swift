@@ -113,7 +113,7 @@ struct PullRequestQuickActionButtons: View {
     }
 
     /// How a quick action is drawn, in Nook's own buttons: Merge is the main action (filled with the accent, soft white
-    /// by default), Close is red (a soft red, filled once it asks to confirm), Ready and Reopen are outline buttons that
+    /// by default), Close is a quiet outline that turns red on hover (filled red once it asks to confirm), Ready and Reopen are outline buttons that
     /// fill with the accent when armed. A merge in the queue reads as its state: waiting quietly in outline, busy at
     /// GitHub as a dimmed main button, merged in the merged violet, handed to auto-merge in amber.
     struct Look {
@@ -141,8 +141,10 @@ struct PullRequestQuickActionButtons: View {
         switch action {
         case .close:
             if confirming { return Look(text: .white, fill: NookTheme.coral.opacity(hovering ? 1 : 0.9), stroke: .clear) }
-            return Look(text: NookTheme.coral, fill: NookTheme.coral.opacity(hovering ? 0.2 : 0.12),
-                        stroke: NookTheme.coral.opacity(0.35))
+            // Quiet outline at rest, as every secondary action; red only once the pointer is on it.
+            return Look(text: hovering ? NookTheme.coral : NookTheme.textSecondary,
+                        fill: hovering ? NookTheme.coral.opacity(0.12) : NookTheme.outlineFill,
+                        stroke: hovering ? NookTheme.coral.opacity(0.35) : NookTheme.outlineStroke)
         case .merge:
             return Look(text: NookTheme.onPrimary, fill: hovering ? NookTheme.primaryHover : NookTheme.primary, stroke: .clear)
         case .ready, .reopen:

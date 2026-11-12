@@ -63,10 +63,15 @@ faint white fills and one light grey `border` between columns instead of grey pa
 clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
 and a selected row stands a full step above a hovered one. In practice:
 
-- **Color means state, nothing else.** A status mark and its word, an error, a diff's `+`/`−` in the diff itself, and
-  links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.
-  An agent's brand color lives in its logo only, and a row's logo is grey until the pointer is on the row or it is
-  selected (`AgentMark(quiet:)`). The composer keeps Nook's own quiet tint for every agent.
+- **Color means state, nothing else** (t3code's rule). A status mark and its word, an error, a diff's `+`/`−`, and
+  web links (`NookTheme.blue`, no underline). In dark, the state colors are t3code's soft status tones (emerald, amber,
+  sky and violet 300 at 90 %), so a list of them stays calm; diff counts take the brighter `added`/`removed` of the
+  palette, as a change is what the eye should find first. Everything else is black, white and grey: headers, composer
+  controls, menus (neutral-900, no blue tint), bubbles (yours one grey step above theirs), tool rows, counts
+  (`NookCountBadge` is white on a faint wash), unread chats (white, not amber), read ticks, people's initials, file
+  glyphs and links to files (a white chip, as t3code's file mentions), the update button and the account badge. An
+  agent's brand color lives in its logo only, and a list row's logo is always grey (`AgentMark(quiet: true)`). The
+  composer keeps Nook's own quiet tint for every agent.
 - **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron,
   and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).

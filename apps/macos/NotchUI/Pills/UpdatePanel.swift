@@ -40,7 +40,7 @@ struct UpdatePanel: View {
 
     private func available(_ update: AppUpdater.Available) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(symbol: "arrow.down.circle.fill", tint: NookTheme.mint, title: tr("update.title"),
+            header(symbol: "arrow.down.circle.fill", tint: NookTheme.paper, title: tr("update.title"),
                    detail: tr("update.subtitle", update.count, update.branch), refreshable: true)
             commitRange(from: updater.source?.shortCommit ?? "", to: update.shortTarget, update: update)
             changeList(update.changes, total: update.count, github: update.github)
@@ -128,7 +128,7 @@ struct UpdatePanel: View {
 
     private func releaseAvailable(_ release: ReleaseCandidate) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(symbol: "arrow.down.circle.fill", tint: NookTheme.mint, title: tr("update.title"),
+            header(symbol: "arrow.down.circle.fill", tint: NookTheme.paper, title: tr("update.title"),
                    detail: tr("update.release.subtitle", release.title), refreshable: true)
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(verbatim: updater.release.map { "\($0.version)" } ?? "").foregroundStyle(NookTheme.textSecondary)
@@ -274,7 +274,7 @@ struct UpdatePanel: View {
 
     private var readyToRestart: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(symbol: "arrow.clockwise.circle.fill", tint: NookTheme.mint, title: tr("update.ready.title"),
+            header(symbol: "arrow.clockwise.circle.fill", tint: NookTheme.paper, title: tr("update.ready.title"),
                    detail: tr("update.ready.detail", updater.runningSessions))
             HStack(spacing: NookTheme.Spacing.md) {
                 Spacer(minLength: 0)
@@ -287,7 +287,7 @@ struct UpdatePanel: View {
 
     private var readyToBuildInXcode: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            header(symbol: "hammer.circle.fill", tint: NookTheme.mint, title: tr("update.xcode.title"),
+            header(symbol: "hammer.circle.fill", tint: NookTheme.paper, title: tr("update.xcode.title"),
                    detail: tr("update.xcode.detail"))
             if updater.runningSessions > 0 {
                 note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)

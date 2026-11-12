@@ -42,9 +42,11 @@ struct TranscriptWorkLine: View {
         let color = tint ?? (reveals == true || (hovering && clickable) ? NookTheme.paper : NookTheme.textSecondary)
         let head = Text(label).foregroundStyle(color)
         guard let detail, !detail.isEmpty else { return head }
+        // The detail a step quieter than the label, so "Ran" and its command read as a label and its value.
+        let detailColor = tint ?? (reveals == true || (hovering && clickable) ? NookTheme.textStrong : NookTheme.textTertiary)
         return head + Text(" ") + Text(detail)
             .font(mono ? NookTheme.mono(12) : NookTheme.TextStyle.body)
-            .foregroundStyle(color)
+            .foregroundStyle(detailColor)
     }
 
     var body: some View {
@@ -283,7 +285,8 @@ struct TranscriptFoldLine: View {
 
 // MARK: The turn that runs
 
-/// Right under your message while the agent works: "Working for 12s", ticking, over a hairline.
+/// Right under your message while the agent works: "Working for 12s", ticking. No rule under it, as in t3code: the
+/// "new since your last visit" divider often follows, and two lines a few points apart read as clutter.
 struct TranscriptWorkingLine: View {
     let since: Date?
 
@@ -303,7 +306,6 @@ struct TranscriptWorkingLine: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, NookTheme.Spacing.xxs)
         .padding(.bottom, NookTheme.Spacing.md)
-        .overlay(alignment: .bottom) { NookDivider() }
     }
 }
 
@@ -481,8 +483,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .contentShape(Rectangle())
-                .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2,
-                                radius: NookTheme.Radius.control)
+                .roundedBackground(hovering ? NookTheme.smoke : NookTheme.field, radius: NookTheme.Radius.card)
             }
             .buttonStyle(.nookPlain)
             .onHover { hovering = $0 }

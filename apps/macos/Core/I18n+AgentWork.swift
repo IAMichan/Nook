@@ -81,7 +81,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "ws.tasks.accessibility": "Taken: %ld van %ld klaar. Nu: %@",
         // What the agent does right now, the checks it ran, and its live task list.
         "ws.activity.starting": "Aan het beginnen…",
-        "ws.activity.running": "Voert %@ uit",
+        "ws.activity.running": "Bezig met %@",
         "ws.activity.running.any": "Voert een commando uit",
         "ws.console.open": "Open de terminal met wat dit commando doet",
         "ws.console.waiting": "Wachten op uitvoer… Sommige agents sturen de uitvoer pas als het commando klaar is.",

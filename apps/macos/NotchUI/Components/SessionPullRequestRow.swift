@@ -38,12 +38,14 @@ struct SessionPullRequestRow: View {
         let action = listed.flatMap { PullRequestRowAction.pick(open: link.state.isOpen, conflicted: link.conflicted, draft: link.state == .draft, checks: $0.item.ci) }
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             Button(action: open) {
-                HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
+                // The same 10 pt inset, 20 pt icon column and 10 pt gap as the panel's other rows, so the title lines
+                // up under theirs.
+                HStack(alignment: .top, spacing: 10) {
                     PullRequestStateIcon(glyph: glyph).frame(width: 20).padding(.top, 1)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(link.title ?? link.repository)
                             .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(NookTheme.textStrong)
+                            .foregroundStyle(NookTheme.paper)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         HStack(spacing: NookTheme.Spacing.xs) {
@@ -66,9 +68,10 @@ struct SessionPullRequestRow: View {
             .buttonStyle(.nookPlain)
             if let action, let listed { actionButton(action, listed: listed).padding(.top, NookTheme.Spacing.xxs) }
         }
-        .padding(.horizontal, NookTheme.Spacing.sm)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .hoverRowFill()
+        .padding(.leading, 10)
+        .padding(.trailing, NookTheme.Spacing.md)
+        .padding(.vertical, NookTheme.Spacing.sm)
+        .hoverRowFill(radius: NookTheme.Radius.card)
         .help(link.url)
         .hoverCard(arrowEdge: .leading) {
             HoverCard(title: link.title ?? "#\(link.number)") {

@@ -1220,7 +1220,7 @@ private struct ReactionChips: View {
                 Text("\(total)")
                     .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
-                    .foregroundStyle(mine ? NookTheme.mint : NookTheme.textSecondary)
+                    .foregroundStyle(mine ? NookTheme.paper : NookTheme.textSecondary)
             }
         }
         .lineLimit(1)
@@ -1230,7 +1230,7 @@ private struct ReactionChips: View {
         .background {
             NookTheme.shape(NookTheme.Radius.chip)
                 .fill(NookTheme.chatTheirs)
-                .overlay(NookTheme.shape(NookTheme.Radius.chip).fill(mine ? NookTheme.mint.opacity(0.18) : .clear))
+                .overlay(NookTheme.shape(NookTheme.Radius.chip).fill(mine ? NookTheme.wash.opacity(0.12) : .clear))
         }
         .contentShape(NookTheme.shape(NookTheme.Radius.chip))
     }
@@ -1417,7 +1417,7 @@ private struct ReactionPickerButton: View {
             Text(emoji)
                 .font(NookTheme.font(22))
                 .frame(width: 36, height: 36)
-                .background(Circle().fill(chosen ? NookTheme.mint.opacity(0.2) : (hovering ? NookTheme.smoke : Color.clear)))
+                .background(Circle().fill(chosen ? NookTheme.wash.opacity(0.16) : (hovering ? NookTheme.smoke : Color.clear)))
                 .contentShape(Circle())
         }
         .buttonStyle(.nookPlain)

@@ -1007,8 +1007,12 @@ private struct ProjectHeaderRow: View {
                 if let newSession {
                     ToolbarIconButton("square.and.pencil", tr("inbox.project.newSession", name),
                                       height: Self.newSessionWidth, width: Self.newSessionWidth) { newSession() }
-                    // Just before the chevron, in the room `foldButton` keeps free.
+                    // Just before the chevron, in the room `foldButton` keeps free. Only under the pointer, as a row's own
+                    // actions: a pencil on every project header made the list read as a toolbar.
                     .padding(.trailing, Self.chevronWidth + NookTheme.Spacing.md + NookTheme.Spacing.xs)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
+                    .animation(NookTheme.hover, value: hovering)
                 }
             }
             .contextMenu {
