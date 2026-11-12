@@ -21,11 +21,11 @@ struct MusicStatsView: View {
                                selected: period, onSelect: { storedPeriod = $0.rawValue }, segmented: true)
                 }
                 if !AppSettings.shared.musicHistory {
-                    MusicPlaceholder(symbol: "chart.bar", title: tr("music.stats.off"), detail: tr("music.stats.offDetail", tr("settings.section.connections")))
+                    WSEmptyState(symbol: "chart.bar", title: tr("music.stats.off"), message: tr("music.stats.offDetail", tr("settings.section.connections")))
                         .frame(minHeight: 160)
                 } else if let stats {
                     if stats.isEmpty {
-                        MusicPlaceholder(symbol: "chart.bar", title: tr("music.stats.empty"), detail: tr("music.stats.emptyDetail"))
+                        WSEmptyState(symbol: "chart.bar", title: tr("music.stats.empty"), message: tr("music.stats.emptyDetail"))
                             .frame(minHeight: 160)
                     } else {
                         content(stats)

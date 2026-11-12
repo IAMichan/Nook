@@ -14,13 +14,13 @@ struct MusicLyricsView: View {
     var body: some View {
         switch lyrics.trackKey == info.trackKey ? lyrics.state : .loading {
         case .idle, .loading:
-            MusicPlaceholder(symbol: "quote.bubble", title: tr("music.lyrics.loading"), loading: true)
+            WSEmptyState(symbol: "quote.bubble", title: tr("music.lyrics.loading"), loading: true)
         case .notFound:
-            MusicPlaceholder(symbol: "text.badge.xmark", title: tr("music.lyrics.notFound"), detail: tr("music.lyrics.notFoundDetail")) {
+            WSEmptyState(symbol: "text.badge.xmark", title: tr("music.lyrics.notFound"), message: tr("music.lyrics.notFoundDetail")) {
                 SmallGhostButton(title: tr("music.lyrics.retry")) { lyrics.load(for: info, force: true) }
             }
         case .offline:
-            MusicPlaceholder(symbol: "network.slash", title: tr("music.lyrics.offline"), detail: tr("music.lyrics.offlineDetail")) {
+            WSEmptyState(symbol: "network.slash", title: tr("music.lyrics.offline"), message: tr("music.lyrics.offlineDetail")) {
                 SmallGhostButton(title: tr("music.lyrics.turnOn")) {
                     settings.onlineLyrics = true
                     lyrics.load(for: info, force: true)
@@ -28,7 +28,7 @@ struct MusicLyricsView: View {
             }
         case .found(let found):
             if found.instrumental {
-                MusicPlaceholder(symbol: "pianokeys", title: tr("music.lyrics.instrumental"))
+                WSEmptyState(symbol: "pianokeys", title: tr("music.lyrics.instrumental"))
             } else if found.isSynced {
                 // Paused, the position stands still: so does the timeline. Each tick only redraws the lyrics when the
                 // current line changed (`SyncedLyrics` is equatable).
@@ -232,12 +232,12 @@ struct MusicUpNextView: View {
                 .padding(.bottom, NookTheme.Spacing.xl)
             }
         } else if showsPlayerQueue, service.upNext == nil, service.libraryLoading {
-            MusicPlaceholder(symbol: "list.bullet", title: tr("music.upNext.loading"), loading: true)
+            WSEmptyState(symbol: "list.bullet", title: tr("music.upNext.loading"), loading: true)
         } else if showsPlayerQueue {
-            MusicPlaceholder(symbol: "checkmark.circle", title: tr("music.upNext.empty"), detail: tr("music.queue.emptyDetail"))
+            WSEmptyState(symbol: "checkmark.circle", title: tr("music.upNext.empty"), message: tr("music.queue.emptyDetail"))
         } else {
-            MusicPlaceholder(symbol: "text.line.last.and.arrowtriangle.forward", title: tr("music.queue.empty"),
-                             detail: tr("music.queue.emptyDetail") + " " + tr("music.queue.connectSpotify", tr("settings.section.connections")))
+            WSEmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: tr("music.queue.empty"),
+                         message: tr("music.queue.emptyDetail") + " " + tr("music.queue.connectSpotify", tr("settings.section.connections")))
         }
     }
 }
@@ -296,8 +296,8 @@ struct MusicSearchView: View {
         let searches = service.history.searches
         let recent = service.recent.tracks
         if searches.isEmpty, recent.isEmpty {
-            MusicPlaceholder(symbol: "magnifyingglass", title: isSpotify ? tr("music.search.idleSpotify") : tr("music.search.idleMusic"),
-                             detail: tr("music.search.idleDetail"))
+            WSEmptyState(symbol: "magnifyingglass", title: isSpotify ? tr("music.search.idleSpotify") : tr("music.search.idleMusic"),
+                         message: tr("music.search.idleDetail"))
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
@@ -334,25 +334,23 @@ struct MusicSearchView: View {
         let result = service.searchResult
         switch result.state {
         case .idle:
-            MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.loading"), loading: true)
+            WSEmptyState(symbol: "magnifyingglass", title: tr("music.search.loading"), loading: true)
         case .connectSpotify, .reconnectSpotify:
-            MusicPlaceholder(symbol: "link", title: tr("music.search.connectSpotify"),
-                             detail: tr("music.search.connectSpotifyDetail", tr("settings.section.connections"))) {
+            WSEmptyState(symbol: "link", title: tr("music.search.connectSpotify"),
+                         message: tr("music.search.connectSpotifyDetail", tr("settings.section.connections"))) {
                 SmallPrimaryButton(title: tr("music.playlists.openConnections")) { app.openSettings(section: .connections) }
             }
         case .failed(let message):
-            MusicPlaceholder(symbol: "exclamationmark.triangle", title: tr("music.search.failed"), detail: message) {
-                SmallGhostButton(title: tr("music.lyrics.retry")) {
-                    service.search(for: "")
-                    service.search(for: text)
-                }
+            WSEmptyState(loadFailed: tr("music.search.failed"), message: message, retryTitle: tr("music.search.retry")) {
+                service.search(for: "")
+                service.search(for: text)
             }
         case .loading where result.tracks.isEmpty:
-            MusicPlaceholder(symbol: "magnifyingglass", title: tr("music.search.loading"), loading: true)
+            WSEmptyState(symbol: "magnifyingglass", title: tr("music.search.loading"), loading: true)
         case .loading, .done:
             if result.tracks.isEmpty {
-                MusicPlaceholder(symbol: "music.note", title: tr("music.search.empty", result.query),
-                                 detail: isSpotify ? nil : tr("music.search.emptyMusicDetail"))
+                WSEmptyState(symbol: "music.note", title: tr("music.search.empty", result.query),
+                             message: isSpotify ? nil : tr("music.search.emptyMusicDetail"))
             } else {
                 list(result)
                     .opacity(result.state == .loading ? 0.6 : 1)
@@ -674,49 +672,5 @@ struct MusicCoverCard: View {
         }
         .accessibilityLabel(item.subtitle.isEmpty ? item.title : "\(item.title), \(item.subtitle)")
         .accessibilityHint(item.help)
-    }
-}
-
-/// An empty, loading or unavailable state, centred in the section.
-struct MusicPlaceholder<Actions: View>: View {
-    let symbol: String
-    let title: String
-    var detail: String? = nil
-    var loading = false
-    @ViewBuilder var actions: () -> Actions
-
-    var body: some View {
-        // The same empty state as the rest of the panel (`WSEmptyState`), with room for a spinner and several buttons.
-        VStack(spacing: NookTheme.Spacing.md) {
-            if loading {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(icon: symbol)
-                    .font(NookTheme.font(26, .light))
-                    .foregroundStyle(NookTheme.textTertiary)
-            }
-            Text(title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
-                .multilineTextAlignment(.center)
-            if let detail {
-                Text(detail)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            actions()
-                .padding(.top, NookTheme.Spacing.xs)
-        }
-        .padding(NookTheme.Spacing.xxl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-extension MusicPlaceholder where Actions == EmptyView {
-    init(symbol: String, title: String, detail: String? = nil, loading: Bool = false) {
-        self.init(symbol: symbol, title: title, detail: detail, loading: loading) { EmptyView() }
     }
 }

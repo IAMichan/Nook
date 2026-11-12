@@ -176,7 +176,7 @@ struct MusicHomeContent: View {
     }
 
     private var emptyHint: some View {
-        MusicPlaceholder(symbol: "music.note", title: tr("music.nothingPlayingTitle"), detail: tr("music.home.emptyDetail")) {
+        WSEmptyState(symbol: "music.note", title: tr("music.nothingPlayingTitle"), message: tr("music.home.emptyDetail")) {
             SmallGhostButton(title: tr("music.section.search")) { onOpen(.search) }
         }
         .frame(minHeight: 180)

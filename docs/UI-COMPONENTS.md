@@ -189,8 +189,12 @@ The checklist for a new or changed view:
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice in a
   tab a `PanelNoticeBar` (`floating:` for what waits for you in the top-right corner, on top of the toasts). Change one of these and every tab follows.
-- Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: a whole panel or pane waiting for its content shows `PatientSpinner()` (nothing for the first 350 ms, so a quick load never flashes a spinner; show what was read last time while reading again where you can); a button or a row that is busy shows `ProgressView().controlSize(.small)`.
-  Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry.
+- Empty: `WSEmptyState` for a whole panel (`loading:` puts a small spinner in its symbol's place, `actions` holds
+  its buttons), `ListEmptyNote` in a list. Loading: a whole panel or pane waiting for its content shows `PatientSpinner()` (nothing for the first 350 ms, so a quick load never flashes a spinner; show what was read last time while reading again where you can); a button or a row that is busy shows `ProgressView().controlSize(.small)`.
+  Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry. A pane whose
+  content could not be read is a `WSEmptyState(loadFailed:message:retryTitle:retry:)`; a part of a view that could not
+  be read (one mail in a conversation) a `LoadFailedNote`. Name the retry button for what it does (`button.tryAgain`,
+  `music.search.retry`), never borrow another feature's key.
 
 ## Toasts — the result of what you did
 
@@ -268,6 +272,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSkeleton`, `NookSkeletonLines`, `CopiedBadge` | `NookFeedback.swift` | Loading and copy feedback: a soft breathing placeholder in the shape of the content to come (use a few instead of a spinner where the layout is known; `PatientSpinner` stays for a pane of unknown shape), and the "Copied" chip for a place with no button to turn into a checkmark |
 | `PatientSpinner` | `PatientSpinner.swift` | What a panel or pane shows while its content loads: invisible for the first 350 ms, then a small spinner that fades in |
 | `ListEmptyNote` | `Shared/ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
+| `WSEmptyState` | `Shared/PanelParts.swift` | A whole panel or pane without content, also on the iPhone: symbol (drawn through `NookSymbol` on the Mac, so `PullRequestIcon.generic` works), title, an optional message, and one main `action` or a row of `actions` (ghost or small buttons). `loading: true` shows a small spinner in the symbol's place. The Music pages, the side panel's pull request picker and every tab use it; never build an empty, loading or unavailable pane by hand |
+| `WSEmptyState(loadFailed:…)`, `LoadFailedNote` | `LoadFailedNote.swift` | A load error: the pane's own (`WSEmptyState(loadFailed:message:retryTitle:retry:)`, a warning symbol, what failed, the error's words and a ghost retry), or a part inside a view that did load (`LoadFailedNote`: the reason in soft coral, a retry, and an optional `extra` button such as "Open in Mail") |
 | `.cardBackground(_:stroke:radius:style:)` | `Shared/CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `.chatColumn()` | `PanelResize.swift` | Keeps a conversation, its composer or an agent's question to one centered column of `PanelLayout.chatColumn` (736 pt) |

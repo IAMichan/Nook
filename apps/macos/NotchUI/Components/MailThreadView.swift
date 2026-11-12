@@ -327,15 +327,8 @@ struct MailMessageCard: View {
     /// The whole mail did not come: why, and what to do about it. The start of its text, when the conversation has it,
     /// still shows under it.
     private func failureLine(_ reason: String) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            Text(reason)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                SmallGhostButton(title: tr("chats.mail.tryAgain"), action: onRetry)
-                SmallGhostButton(title: tr("button.openInMail")) { onAction(.openInMail) }
-            }
+        LoadFailedNote(reason, retryTitle: tr("chats.mail.tryAgain"), retry: onRetry) {
+            SmallGhostButton(title: tr("button.openInMail")) { onAction(.openInMail) }
         }
     }
 
