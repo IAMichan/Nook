@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Color is rare on purpose: everything is black, white and grey, and a hue appears only where it means
 /// something (a change in a diff, a session that is working, waits on you, is done or failed). In dark the state colors
-/// are the soft 300 shades at 90 % (status tones), so a list of them stays calm; diff counts keep the brighter
+/// are the soft 300 shades at 90 %, so a list of them stays calm; diff counts keep the brighter
 /// 400 shades in `added` and `removed`, because a change is what the eye should find first.
 struct NookPalette: Equatable, Sendable {
     var isDark: Bool
@@ -55,7 +55,7 @@ struct NookPalette: Equatable, Sendable {
     var coralSoft: UInt32
     var violet: UInt32
     var music: UInt32
-    /// Added and removed lines in a diff and in change counts (diff-addition and diff-deletion foregrounds).
+    /// Added and removed lines in a diff and in change counts (the diff-addition and diff-deletion foregrounds).
     var added: UInt32
     var removed: UInt32
 
@@ -80,7 +80,7 @@ struct NookPalette: Equatable, Sendable {
 
     /// Nook's own dark look: a true black canvas, raised surfaces (cards, menus, the composer) about 3 %
     /// white over it, and separation by 8 % white lines and hover fills rather than grey panels. Text is neutral-100
-    /// with neutral-400 for what is quieter. State colors are status tones (emerald, sky and violet 300 at
+    /// with neutral-400 for what is quieter. State colors are soft status tones (emerald, sky and violet 300 at
     /// 90 % on black; red 400 for errors), with a warm honey for what waits on you instead of amber-300's mustard yellow. Chat bubbles keep the colors of the chat apps they come from. Nook's accent
     /// (the main action) is soft white.
     static let nookDark = NookPalette(

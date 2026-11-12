@@ -109,7 +109,7 @@ final class AutoSettlePolicyTests: XCTestCase {
         XCTAssertTrue(s.perThreadOptOut.isEmpty)
     }
 
-    func testOldUntouchedDefaultGetsRulesOnce() {
+    func testOldUntouchedDefaultGetsNewInstallRulesOnce() {
         let old = AutoSettlePolicy.Settings(perThreadOptOut: ["run:a"])
         let up = AutoSettlePolicy.upgradingOldDefault(old)
         XCTAssertTrue(up.enabled)

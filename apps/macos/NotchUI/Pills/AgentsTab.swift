@@ -251,7 +251,7 @@ struct AgentsTab: View {
     @ViewBuilder
     private func listActions(_ selection: Selection, isNew: Bool) -> some View {
         if !app.demoMode {
-            //: first the project the session starts in, in the palette's list of projects.
+            // First the project the session starts in, in the palette's list of projects.
             PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.requestNewSession() }
         }
     }

@@ -74,14 +74,13 @@ faint white fills and one light grey `border` between columns instead of grey pa
 clarity: every text color, `textTertiary` included, reads at WCAG AA (4.5:1 or more) on every surface up to `smoke`,
 and a selected row stands a full step above a hovered one. In practice:
 
-- **Color means state, nothing else** (rule). A status mark and its word, an error, a diff's `+`/`−`, and
+- **Color means state, nothing else**. A status mark and its word, an error, a diff's `+`/`−`, and
   web links (`NookTheme.blue`, no underline). In dark, the state colors are soft status tones (emerald, amber,
   sky and violet 300 at 90 %), so a list of them stays calm; diff counts take the brighter `added`/`removed` of the
   palette, as a change is what the eye should find first. What waits on you (an unread chat, a count) is `amber`, a warm honey (`#F0B65A` in dark) rather than a mustard yellow.
   Chats keep the look of the chat apps they come from: your bubble, read ticks, people's names and initials, quotes and
   voice notes in their colors, and a file glyph keeps its editor color. Chrome stays black, white and grey: headers, composer controls, menus (neutral-900, no
-  blue tint), the attach tiles of the chat composer, tool rows, links to files (a white chip
-  mentions), the update button and the account badge. An agent's brand color lives in its logo only, and a row's logo
+  blue tint), the attach tiles of the chat composer, tool rows, links to files (a white chip), the update button and the account badge. An agent's brand color lives in its logo only, and a row's logo
   is grey until the pointer is on the row or it is selected (`AgentMark(quiet:)`). The composer keeps Nook's own quiet
   tint for every agent.
 - **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron,

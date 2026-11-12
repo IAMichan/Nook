@@ -17,8 +17,8 @@ final class InboxStore: ObservableObject {
     /// Machines with auto-settle rules of their own, by `RemoteMachine.id` (`AutoSettlePolicy.thisMac` for this Mac);
     /// the others follow `autoSettle`.
     @Published var autoSettleByMachine: [String: AutoSettlePolicy.Settings] { didSet { save() } }
-    /// The sessions that work or wait sit in a dropdown per project instead of one list. Off by default:,
-    /// the list is one inbox with the newest on top and every row names its project (folders are its "boring mode").
+    /// The sessions that work or wait sit in a dropdown per project instead of one list. Off by default: the list is one
+    /// inbox with the newest on top and every row names its project.
     @Published var groupByProject: Bool { didSet { save() } }
     /// The projects you folded in that view.
     @Published var collapsedProjects: Set<String> { didSet { save() } }
@@ -139,7 +139,7 @@ final class InboxStore: ObservableObject {
     }
 
     /// Set once the old default of auto-settle was looked at (`AutoSettlePolicy.upgradingOldDefault`).
-    private static let autoSettleUpgradedKey = "agents.autoSettle.Defaults"
+    private static let autoSettleUpgradedKey = "agents.autoSettle.upgradedDefaults"
 
     /// `FinishedSessions.keepsOpenSince`: when this Mac first ran a Nook with an Agents list.
     private static let usedSinceKey = "agents.keepsUnsettledSince"

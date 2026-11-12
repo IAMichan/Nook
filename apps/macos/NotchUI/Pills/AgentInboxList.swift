@@ -152,7 +152,7 @@ struct AgentInboxList: View {
                 searchField
                 // Selecting several sessions starts with a ⌘- or ⇧-click on a row, so it needs no button here.
                 InboxViewMenu(store: store)
-                //: a project is added from the list itself: made new, a folder on disk, or cloned.
+                // A project is added from the list itself: made new, a folder on disk, or cloned.
                 if !app.demoMode {
                     AddProjectButton(added: addProject, cloning: { pendingClones.insert($0) })
                 }
@@ -210,7 +210,7 @@ struct AgentInboxList: View {
                     }
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
-                //: what works, what you snoozed and what you settled sit at the foot of the list, above the
+                // What works, what you snoozed and what you settled sit at the foot of the list, above the
                 // footer, each header above its rows. A session that finishes leaves Working and comes up on top.
                 ForEach(sections.filter { Self.isDocked($0.kind) }, id: \.kind) { section in
                     dockedShelf(section, sections: sections, byID: byID, shown: shown, projects: projects)

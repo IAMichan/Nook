@@ -40,7 +40,7 @@ final class WorktreeArchiveTests: XCTestCase {
     }
 
     func testAClonedRepositoryOrBuildInScratchIsNotKept() throws {
-        let clone = worktree.appendingPathComponent(".scratch/")
+        let clone = worktree.appendingPathComponent(".scratch/clone")
         try manager.createDirectory(at: clone.appendingPathComponent(".git"), withIntermediateDirectories: true)
         try Data("swift".utf8).write(to: clone.appendingPathComponent("main.swift"))
         try manager.createDirectory(at: worktree.appendingPathComponent(".scratch/web/node_modules/x"), withIntermediateDirectories: true)

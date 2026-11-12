@@ -44,7 +44,7 @@ enum AutoSettlePolicy {
     static let newInstallDefaults = Settings(enabled: true, inactivityDays: 7, settleOnMergedPullRequest: true,
                                              settleOnClosedPullRequest: true)
 
-    /// Once, for an install that still has the old default (off, never changed): rules, as a new install gets
+    /// Once, for an install that still has the old default (off, never changed): the rules a new install gets,
     /// them. Settings you changed stay as they are; the sessions you kept out of it stay out.
     static func upgradingOldDefault(_ settings: Settings) -> Settings {
         var untouched = settings
@@ -58,15 +58,15 @@ enum AutoSettlePolicy {
     /// The key of this Mac among the machines with rules of their own; an SSH machine goes by its `RemoteMachine.id`.
     static let thisMac = "local"
 
-    /// The rules for sessions on `machine` (nil: this Mac): its own when it has them, else the ones for all machines, as
-    /// rules per environment. The sessions you kept out of it stay out on every machine.
+    /// The rules for sessions on `machine` (nil: this Mac): its own when it has them, else the ones for all machines, per
+    /// environment. The sessions you kept out of it stay out on every machine.
     static func settings(for machine: String?, all: Settings, perMachine: [String: Settings]) -> Settings {
         guard var own = perMachine[machine ?? thisMac] else { return all }
         own.perThreadOptOut = all.perThreadOptOut
         return own
     }
 
-    /// One rule changed for all machines: the machines with their own rules take it too "All environments".
+    /// One rule changed for all machines: the machines with their own rules take it too.
     static func settingAll<Value>(_ field: WritableKeyPath<Settings, Value>, to value: Value, all: inout Settings,
                                   perMachine: inout [String: Settings]) {
         all[keyPath: field] = value

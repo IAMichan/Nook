@@ -16,7 +16,7 @@ final class ProjectFaviconTests: XCTestCase {
         try Data(text.utf8).write(to: url)
     }
 
-    func testWellKnownPlacesInsOrder() throws {
+    func testWellKnownPlacesInOrder() throws {
         try touch("public/favicon.png")
         try touch("assets/logo.svg")
         XCTAssertEqual(ProjectFavicon.find(in: root.path), root.appendingPathComponent("public/favicon.png").path)

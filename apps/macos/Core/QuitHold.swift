@@ -5,8 +5,7 @@ import Foundation
 /// app menu, and macOS quitting Nook (logging out, restarting, an update) go straight to `applicationShouldTerminate`,
 /// which this never sees (`QuitHoldMonitor` only looks at key events).
 ///
-/// The timing, without AppKit, so it is tested without real key events (`QuitHoldTests`).
-/// (apps/desktop/src/window/QuitHold.ts):
+/// The timing, without AppKit, so it is tested without real key events (`QuitHoldTests`):
 /// - A hold is proven by the key's auto-repeat, or by the key still being down when the time is up (`check`), so it
 ///   also works with key repeat turned off.
 /// - Once held long enough, quitting waits until the key is released (a key-up, ⌘ let go, or no repeat for a quiet

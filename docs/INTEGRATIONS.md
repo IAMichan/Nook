@@ -547,7 +547,7 @@ after two quiet seconds; and a `session/set_config_option` answer is ignored whe
 `config_option_update` while it was on its way. Nook does not advertise `session.notices` (it has nothing to show from
 them). It never sends `session/cancel` before the prompt request (Stop during the settings before a prompt ends the turn
 without sending the prompt), but ACP gives no sign that a prompt has started, so a cancel right after the prompt is not
-held back for an agent that ignores it then (Kiro's `cancelAfterPromptStarts` in).
+held back for an agent that ignores it then (Kiro).
 
 Sessions in a terminal are read from the agent's own transcript (`AgentTranscript`). Claude Code and Codex give
 messages, thinking, steps with their outcome and output, compactions and errors. Gemini CLI's chat file gives messages,

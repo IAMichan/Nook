@@ -7,12 +7,12 @@ import Foundation
 // interrupt that answers whether anything was running. This file only builds requests and reads events, so the tests
 // run it against recorded streams without OpenCode installed.
 //
-// Learned from OpenCode 2.2.7's `/openapi.json` and its stream, and from OpenCode 2 adapter: the event stream is
+// Learned from OpenCode 2.2.7's `/openapi.json` and its stream: the event stream is
 // volatile (subscribe before the first prompt), heartbeats come every 10-15 s, a rejection without a message cancels
 // the whole execution, and the last matching permission rule wins.
 
 enum OpenCodeServe {
-    /// The first OpenCode 2 whose server API Nook speaks (floor too). OpenCode 1.x also has `serve`, with an
+    /// The first OpenCode 2 whose server API Nook speaks. OpenCode 1.x also has `serve`, with an
     /// older API: those run over ACP.
     static let minimumVersion = CLIVersion("2.0.18")!
 

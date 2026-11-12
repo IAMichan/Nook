@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The auto-settle rules in Settings › Sessions, for all machines at once or for one: this Mac or an SSH machine, as
-/// sets them per environment. A machine without rules of its own follows the ones for all machines; a change for
+/// The auto-settle rules in Settings › Sessions, for all machines at once or for one: this Mac or an SSH machine. A
+/// machine without rules of its own follows the ones for all machines; a change for
 /// all machines goes to the machines with their own rules too, and the rows say which machines have them ("Mixed").
 struct AutoSettleRulesRows: View {
     @ObservedObject private var inbox = InboxStore.shared

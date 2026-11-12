@@ -48,7 +48,7 @@ struct InboxState: Codable, Equatable, Sendable {
     var pinned: [String] = []
     /// Manual order of the Active section (ids that are gone are harmless).
     var order: [String] = []
-    /// When you gave each row of `order` its place., a place holds only until the session comes back with
+    /// When you gave each row of `order` its place. A place holds only until the session comes back with
     /// something new (`InboxRow.lastActivity` after it): then it is unordered again and comes up on top of the list.
     /// A row in `order` without a time keeps its place.
     var orderedAt: [String: Date] = [:]
@@ -325,7 +325,7 @@ enum InboxLayout {
         }
 
         pinned.sort { (pinRank[$0.id] ?? Int.max, $1.row.lastActivity, $0.id) < (pinRank[$1.id] ?? Int.max, $0.row.lastActivity, $1.id) }
-        //: what needs you first, then the sessions that came back (finished, failed, a new message) with
+        // What needs you first, then the sessions that came back (finished, failed, a new message) with
         // the newest on top, then the ones you gave a place, in that order. A placed session that comes back with something
         // new loses its place and rises to the top again.
         active.sort {
@@ -393,7 +393,7 @@ enum InboxLayout {
         var result: [InboxSection] = [
             InboxSection(kind: .pinned, rows: pinned),
             InboxSection(kind: .active, rows: active),
-            //: what works and needs nothing from you sits at the foot of the list, above Snoozed and Settled.
+            // What works and needs nothing from you sits at the foot of the list, above Snoozed and Settled.
             // A session that finishes leaves it and comes up on top of Active.
             InboxSection(kind: .working, rows: working),
             InboxSection(kind: .snoozed, rows: snoozed),

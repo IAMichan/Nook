@@ -97,7 +97,7 @@ releases, behind the same footer button (`ReleaseUpdateCore.swift`, `AppUpdater`
   build follows Beta and a regular release Stable; the choice is saved as `nook.updates.channel` and checks right away.
   On every channel only versions above the running one count: an older build may not understand a database this one
   already migrated, so a beta that moves to Stable keeps running until the first regular release after it, and Settings
-  says so. (The same rule stable/nightly track: a switch never downgrades on its own.)
+  says so. (A switch never downgrades on its own.)
 - **Installing** shows four steps: **download** `Nook-<version>-macOS.zip` and `Nook-<version>-macOS.zip.sig` from
   GitHub; **verify** the Ed25519 signature of the .zip against the public key in this build (CryptoKit), unpack it with
   `ditto`, and refuse an app that is not `nl.imdigital.nook` or whose `NookReleaseVersion` is not the promised version

@@ -31,7 +31,7 @@ final class InboxLayoutTests: XCTestCase {
         let rows = [row("idle-old", age: 500), row("idle-new", age: 10), row("fail", .failed), row("ask", .approval),
                     row("m1", age: 900), row("m2", age: 5)]
         let s = sections(rows, InboxState(order: ["m1", "m2"]))
-        //: what needs you, then what came back newest first, then what you gave a place.
+        // What needs you, then what came back newest first, then what you gave a place.
         XCTAssertEqual(ids(s, .active), ["ask", "idle-new", "fail", "idle-old", "m1", "m2"])
     }
 

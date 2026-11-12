@@ -477,7 +477,7 @@ struct SelectableProse: NSViewRepresentable {
             }
             attributes[.font] = font
             // A web link takes the link blue here, a citation keeps its own grey (the view sets no color for links). A link
-            // to a file or a commit reads as a neutral chip file mentions: white on its code wash, so a
+            // to a file or a commit reads as a neutral chip: white on the code wash, so a
             // reply full of paths stays black and white and blue keeps meaning "goes to the web".
             let linkColor: Color? = {
                 guard let link = run.link, run[CitationMark.self] == nil else { return nil }

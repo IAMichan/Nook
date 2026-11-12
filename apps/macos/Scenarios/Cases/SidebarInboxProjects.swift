@@ -1,6 +1,6 @@
 import AppKit
 
-/// The Agents list: one inbox, not a folder per project. Every row names its project with a badge, a
+/// The Agents list as one inbox, not a folder per project. Every row names its project with a badge, a
 /// session at work sits on the Working shelf at the foot of the list, and a finished one comes up on top.
 final class SidebarInboxProjects: Scenario {
     func testSidebarInboxProjects() throws {

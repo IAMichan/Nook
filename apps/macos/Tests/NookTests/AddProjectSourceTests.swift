@@ -2,7 +2,7 @@ import XCTest
 
 final class AddProjectSourceTests: XCTestCase {
     func testGitHubOwnerRepoBecomesItsHTTPSAddress() {
-        XCTAssertEqual(AddProjectSource.githubURL("octocat/hello-world"), "")
+        XCTAssertEqual(AddProjectSource.githubURL("octocat/hello-world"), "https://github.com/octocat/hello-world.git")
         XCTAssertEqual(AddProjectSource.githubURL(" github.com/a-b/c_d.e "), "https://github.com/a-b/c_d.e.git")
         XCTAssertEqual(AddProjectSource.githubURL("http://www.github.com/a/b.git"), "https://github.com/a/b.git")
         XCTAssertEqual(AddProjectSource.githubURL("https://github.com/a/b/tree/main"), "https://github.com/a/b")

@@ -6,8 +6,7 @@ import Glibc
 #endif
 
 /// Approving a local dev server's own HTTPS certificate in Nook's browser (`vite --https`, mkcert, a self-signed
-/// certificate)(apps/desktop, "browser panel can approve local HTTPS
-/// certificates").
+/// certificate).
 ///
 /// Only for an address that is local by its name or number alone (`isLocal`); a public site with a certificate macOS does
 /// not trust keeps WebKit's error and can never be approved. An approval belongs to the host, the port and the

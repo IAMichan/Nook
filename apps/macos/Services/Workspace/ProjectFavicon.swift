@@ -1,11 +1,11 @@
 import Foundation
 
-/// Finds a project's own icon in its folder `ProjectFaviconResolver`: a favicon or app icon at a well-known
+/// Finds a project's own icon in its folder: a favicon or app icon at a well-known
 /// place, else the icon an `index.html` (or a root route) links, else one in a web app of a monorepo (`apps/*/public`),
 /// else an Xcode app's `AppIcon`. The session list shows it as the project's badge; without one the badge is the
 /// project's initials. Foundation only: it reads a few files, never more than a bounded walk, and runs off the main thread.
 enum ProjectFavicon {
-    /// The places looks first, in its order, plus `.icns` for Mac apps.
+    /// The places looked at first, in order, plus `.icns` for Mac apps.
     static let candidates = [
         "favicon.svg", "favicon.ico", "favicon.png",
         "public/favicon.svg", "public/favicon.ico", "public/favicon.png",
