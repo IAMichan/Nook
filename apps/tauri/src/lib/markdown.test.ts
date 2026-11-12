@@ -24,3 +24,11 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("[site](https://nook.app)")).toContain('<a href="https://nook.app" data-external>site</a>');
   });
 });
+
+describe("code blocks", () => {
+  it("carry a Copy button next to the escaped code", () => {
+    const html = renderMarkdown("```sh\nnpm run tauri dev\n```");
+    expect(html).toContain('data-copy-code');
+    expect(html).toContain('<pre><code data-lang="sh">npm run tauri dev</code></pre>');
+  });
+});

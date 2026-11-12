@@ -126,6 +126,10 @@ a { color: var(--iris); }
 .markdown code { font-family: var(--mono); font-size: 12px; background: var(--field); padding: 1px 5px; border-radius: 5px; }
 .markdown pre { background: var(--field); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; overflow-x: auto; }
 .markdown pre code { background: none; padding: 0; }
+.markdown .code-block { position: relative; }
+.markdown .copy-code { position: absolute; top: 6px; right: 6px; padding: 2px 8px; font-size: 11px; border-radius: 6px; opacity: 0; transition: opacity 0.15s; }
+.markdown .code-block:hover .copy-code, .markdown .copy-code:focus-visible, .markdown .copy-code.copied { opacity: 1; }
+.markdown .copy-code.copied { color: var(--mint); }
 .markdown table { border-collapse: collapse; margin: 6px 0; }
 .markdown th, .markdown td { border: 1px solid var(--line2); padding: 4px 8px; text-align: left; }
 .markdown blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line2); color: var(--text2); }

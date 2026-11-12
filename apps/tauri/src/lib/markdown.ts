@@ -41,7 +41,8 @@ export function renderMarkdown(source: string): string {
       i++;
       while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
       i++;
-      html.push(`<pre><code${fence[1] ? ` data-lang="${escapeHtml(fence[1])}"` : ""}>${escapeHtml(body.join("\n"))}</code></pre>`);
+      // Every code block has its own Copy button (handled in MessageView), so a command never has to be selected by hand.
+      html.push(`<div class="code-block"><button type="button" class="copy-code" data-copy-code title="Copy code">Copy</button><pre><code${fence[1] ? ` data-lang="${escapeHtml(fence[1])}"` : ""}>${escapeHtml(body.join("\n"))}</code></pre></div>`);
       continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
