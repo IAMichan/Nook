@@ -15,6 +15,8 @@ pub const BAR: &str = "bar";
 pub const COLLAPSED: (f64, f64) = (44.0, 44.0);
 /// A compact agent notice: the bar keeps its height and grows wider, with the message and its buttons in the row.
 pub const NOTICE: (f64, f64) = (560.0, 38.0);
+/// The closed bar with a chat chip under the round Nook ("Bericht van Peter"): the round Nook on top, the chip below it.
+pub const CHIP: (f64, f64) = (232.0, 82.0);
 /// The open panel's default size is this share of the screen's work area, in both directions.
 pub const EXPANDED_SCREEN_FRACTION: f64 = 0.75;
 /// The smallest the open panel can be dragged to.
@@ -132,15 +134,16 @@ fn create_bar(app: &AppHandle) -> tauri::Result<()> {
 
 /// Bovenaan in het midden van het gekozen scherm, of op de plek waar de gebruiker hem neerzette (zwevend).
 pub fn place_bar(app: &AppHandle, expanded: bool) {
-    place_bar_sized(app, expanded, false);
+    place_bar_sized(app, expanded, false, false);
 }
 
 /// The size you dragged the open panel to, and the "large" setting it was made under. Kept so closing the panel and
 /// opening it again brings it back at that size instead of the default; a changed "large" setting starts over.
 static DRAGGED_SIZE: Mutex<Option<(f64, f64, bool)>> = Mutex::new(None);
 
-/// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice.
-pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
+/// Like [`place_bar`]; `notice` widens the closed bar for a compact agent notice, `chip` makes room under the round
+/// Nook for the chip of a new chat message.
+pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool, chip: bool) {
     let was_open = PANEL_OPEN.swap(expanded, Ordering::Relaxed);
     let Some(window) = app.get_webview_window(BAR) else { return };
     let settings = app.state::<AppState>().settings();
@@ -176,6 +179,8 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
         .map(|(w, h, _)| (w, h));
     let (w, h) = if !expanded && notice {
         NOTICE
+    } else if !expanded && chip {
+        CHIP
     } else if !expanded {
         COLLAPSED
     } else if let Some((w, h)) = dragged {

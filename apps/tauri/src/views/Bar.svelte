@@ -397,12 +397,30 @@
     open();
   }
 
-  // WhatsApp: a new message opens the bar with its card, which stays until you answer or close it.
+  // WhatsApp: a new message never opens the bar by itself. The closed bar shows a chip under the round Nook ("Bericht
+  // van Peter"); once the panel is open (by the chip or any other way) the card of that chat shows in it.
   $effect(() => {
     whatsapp.start();
   });
   $effect(() => {
-    if (whatsapp.chat && !untrack(() => expanded) && !untrack(() => quiet.silent)) untrack(() => open());
+    const waiting = whatsapp.pending;
+    if (waiting && expanded) untrack(() => whatsapp.show(waiting.chat));
+  });
+  const chipName = $derived(whatsapp.pending?.name ?? whatsapp.card?.conversation.name ?? "");
+  const chipVisible = $derived(!expanded && !strip && !!chipName && !quiet.silent);
+  // The window makes room under the round Nook while the chip shows, and goes back to the round size when it leaves.
+  let chipSized = false;
+  $effect(() => {
+    const want = chipVisible;
+    untrack(() => {
+      if (want && !chipSized) {
+        chipSized = true;
+        api.barExpand(false, false, true);
+      } else if (!want && chipSized) {
+        chipSized = false;
+        if (!expanded && !strip) api.barExpand(false);
+      }
+    });
   });
 
   // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.
@@ -426,7 +444,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={blurClose} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
-<div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating class:hasChip={chipVisible} role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
     {@const card = agents.attention}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -461,6 +479,14 @@
       {#if nook.working}<span class="dot working corner"></span>{/if}
       {#if nook.waiting}<span class="dot waiting corner"></span>{/if}
     </div>
+    {#if chipVisible}
+      <div class="chip">
+        <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openByClick}>
+          {tr(`Bericht van ${chipName}`, `Message from ${chipName}`)}
+        </button>
+        <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={() => whatsapp.dismiss()}>×</button>
+      </div>
+    {/if}
   {:else}
     <div class="panel">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -531,6 +557,25 @@
 
 <style>
   .bar { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+  .bar.hasChip { flex-direction: column; align-items: center; gap: 4px; }
+  .bar.hasChip .pill.round { width: 44px; height: 44px; flex: none; }
+  /* The chat chip under the closed round Nook: who wrote, one click opens Nook. */
+  .chip {
+    display: flex;
+    align-items: center;
+    max-width: 100%;
+    box-sizing: border-box;
+    height: 30px;
+    background: var(--notch);
+    border: 2px solid #000;
+    border-radius: 999px;
+    overflow: hidden;
+    animation: drop 0.25s ease-out;
+  }
+  .chip button { background: transparent; border: 0; color: var(--paper); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .chiptext { padding: 0 6px 0 12px; height: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chipclose { padding: 0 10px 0 4px; height: 100%; color: var(--text3); font-size: 15px; }
+  .chipclose:hover { color: var(--paper); }
   .pill {
     height: 100%;
     width: 100%;
