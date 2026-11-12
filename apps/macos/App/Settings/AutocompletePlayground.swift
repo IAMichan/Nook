@@ -180,7 +180,8 @@ final class CompletionPlayground: ObservableObject {
         requested = before
         thinking = wasThinking
         let token = self.token
-        let delay = continuing ? 0 : UInt64(max(prefs.delayMilliseconds, 120)) * 1_000_000
+        // Long enough to skip the keys of a word typed quickly, short enough to feel like the real thing.
+        let delay = continuing ? 0 : UInt64(max(prefs.delayMilliseconds, 30)) * 1_000_000
         task = Task { [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
             guard let self, !Task.isCancelled, token == self.token else { return }
