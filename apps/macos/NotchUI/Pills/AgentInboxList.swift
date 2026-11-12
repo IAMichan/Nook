@@ -178,11 +178,8 @@ struct AgentInboxList: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 searchField
-                SelectionModeButton(active: selection.isActive) {
-                    withAnimation(NookTheme.reveal) {
-                        if selection.isActive { selection.clear() } else { selection.begin() }
-                    }
-                }
+                // Selecting several sessions starts with a ⌘- or ⇧-click on a row, so it needs no button here.
+                InboxViewMenu(store: store)
                 // As in t3code: a project is added from the list itself: made new, a folder on disk, or cloned.
                 if !app.demoMode {
                     AddProjectButton(added: addProject, cloning: { pendingClones.insert($0) })
@@ -1437,5 +1434,30 @@ final class PastSessionIndex {
             }
         }
         return byKey["\(agent):\(id)"]
+    }
+}
+
+/// The filter icon next to the session search: how the list is laid out (folders per project, the Working shelf), the
+/// same switches as Settings › Display, at hand where you look at the list. It stays unlit, like the icons next to it;
+/// the menu shows which switches are on.
+private struct InboxViewMenu: View {
+    @ObservedObject var store: InboxStore
+
+    var body: some View {
+        ComposerDropdown(width: 240) {
+            PanelHeaderIcon(symbol: "line.3.horizontal.decrease")
+        } content: {
+            DropdownHeader(title: tr("inbox.view"))
+            toggle("folder", tr("inbox.view.groupByProject"), on: store.groupByProject) { store.groupByProject.toggle() }
+            toggle("bolt", tr("inbox.view.showWorking"), on: store.showWorking) { store.showWorking.toggle() }
+        }
+        .help(tr("inbox.view"))
+        .accessibilityLabel(tr("inbox.view"))
+    }
+
+    private func toggle(_ symbol: String, _ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        DropdownRow(symbol: symbol, title: title, trailing: on ? "✓" : nil, chosen: on, staysOpen: true) {
+            withAnimation(NookTheme.reveal) { action() }
+        }
     }
 }
