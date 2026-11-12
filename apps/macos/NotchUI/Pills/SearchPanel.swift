@@ -19,6 +19,8 @@ struct SearchPanel: View {
     @ObservedObject private var photos = ContactPhotos.shared
     @State private var text = ""
     @State private var kind: SearchKind?
+    /// With Sessions chosen: only the sessions still open, or only the settled ones.
+    @State private var sessionScope: SessionScope?
     @State private var index = 0
     /// Return came before the results for what is typed: open the best one when they arrive.
     @State private var openWhenReady = false
@@ -52,12 +54,32 @@ struct SearchPanel: View {
         }
     }
 
+    /// Which sessions the Sessions kind keeps.
+    enum SessionScope: CaseIterable {
+        /// Running, waiting on you, failed or done but not settled yet: what still asks for attention.
+        case open
+        /// Settled or archived.
+        case settled
+
+        var title: String { tr(self == .open ? "search.sessions.open" : "search.sessions.settled") }
+
+        /// The scope as query words, handed to search with what is typed: the index then picks its best hits from these
+        /// sessions only, and the archive searches every one of them, not the few that made the list without it.
+        var filter: String { self == .open ? "in:sessions -is:settled" : "in:sessions is:settled" }
+
+        func keeps(_ document: SearchDocument) -> Bool {
+            document.isSettledSession == (self == .settled)
+        }
+    }
+
     /// The kinds in chip order.
     private static let kinds: [SearchKind] = [.conversation, .session, .chat, .note, .memory, .notice, .setting, .action]
 
     private var visible: [SearchHit] {
         guard let kind else { return center.hits }
-        return center.hits.filter { $0.document.kind == kind }
+        return center.hits.filter { hit in
+            hit.document.kind == kind && (kind != .session || sessionScope?.keeps(hit.document) ?? true)
+        }
     }
 
     private var typed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -82,7 +104,12 @@ struct SearchPanel: View {
         if let top = hits.first, kind == nil, hits.count > 1 { rows.append(.hit(top, top: true)) }
         let rest = kind == nil && hits.count > 1 ? Array(hits.dropFirst()) : hits
         for group in Self.kinds {
-            rows += rest.filter { $0.document.kind == group }.map { Row.hit($0, top: false) }
+            var inGroup = rest.filter { $0.document.kind == group }
+            // Sessions still open come before the settled ones, each in their own order, under their own label.
+            if group == .session {
+                inGroup = inGroup.filter { !$0.document.isSettledSession } + inGroup.filter(\.document.isSettledSession)
+            }
+            rows += inGroup.map { Row.hit($0, top: false) }
         }
         if !typed.isEmpty, !question { rows.append(.ai(typed)) }
         if !typed.isEmpty, center.query.hasText || center.query.isEmpty { rows.append(.ask(typed)) }
@@ -139,10 +166,17 @@ struct SearchPanel: View {
             index = 0
             openWhenReady = false
             if center.ai?.question != value.trimmingCharacters(in: .whitespacesAndNewlines) { center.stopAI() }
-            center.search(value)
+            center.search(value, filter: sessionScope?.filter ?? "")
         }
         .onChange(of: center.ai?.sources.map(\.id)) { _, _ in index = 0 }
-        .onChange(of: kind) { _, _ in index = 0 }
+        .onChange(of: kind) { _, value in
+            index = 0
+            if value != .session { sessionScope = nil }
+        }
+        .onChange(of: sessionScope) { _, value in
+            index = 0
+            if !typed.isEmpty { center.search(text, filter: value?.filter ?? "") }
+        }
         .onChange(of: center.hits) { _, _ in index = min(index, max(0, rows.count - 1)) }
         .onChange(of: center.searched) { _, value in
             guard openWhenReady, value == text else { return }
@@ -166,6 +200,18 @@ struct SearchPanel: View {
                 ForEach(Self.kinds.filter { counts[$0] != nil || $0 == kind }, id: \.self) { value in
                     NookFilterChip(title: Self.title(value), count: counts[value] ?? 0, selected: kind == value) {
                         kind = kind == value ? nil : value
+                    }
+                }
+                // With Sessions chosen: the open ones or the settled ones.
+                if kind == .session {
+                    NookDivider(vertical: true).frame(height: 16).accessibilityHidden(true)
+                    ForEach(SessionScope.allCases, id: \.self) { scope in
+                        // With a scope chosen the hits are its sessions only: the other one has no count to show.
+                        let count = sessionScope == nil || sessionScope == scope
+                            ? center.hits.filter { $0.document.kind == .session && scope.keeps($0.document) }.count : nil
+                        NookFilterChip(title: scope.title, count: count, selected: sessionScope == scope) {
+                            sessionScope = sessionScope == scope ? nil : scope
+                        }
                     }
                 }
             }
@@ -290,12 +336,16 @@ struct SearchPanel: View {
         func group(_ row: Row) -> String {
             switch row {
             case .hit(_, let top) where top: return tr("search.top")
+            case .hit(let hit, _) where hit.document.kind == .session:
+                let scope = (hit.document.isSettledSession ? SessionScope.settled : .open).title
+                return kind == .session ? scope : Self.title(.session) + " · " + scope
             case .hit(let hit, _): return Self.title(hit.document.kind)
             case .ai, .ask: return ""
             }
         }
         let current = group(list[offset])
-        guard !current.isEmpty, kind == nil else { return nil }
+        // One kind chosen needs no labels, except Sessions without a scope: open and settled stay apart.
+        guard !current.isEmpty, kind == nil || (kind == .session && sessionScope == nil) else { return nil }
         return offset == 0 || group(list[offset - 1]) != current ? current : nil
     }
 
@@ -328,6 +378,8 @@ struct SearchPanel: View {
                         Circle().fill(NookTheme.iris).frame(width: 6, height: 6).accessibilityHidden(true)
                     }
                     Spacer(minLength: NookTheme.Spacing.md)
+                    // A session says where it is at, as its row in the Agents list does: working, waiting on you, done…
+                    if let state = hit.document.sessionState { AgentStatusBadge(state: state) }
                     if hit.matches > 1 {
                         Text(tr("search.matches", hit.matches)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textMuted)
                     }
@@ -543,6 +595,26 @@ struct SearchPanel: View {
                     }
                     .padding(.bottom, NookTheme.Spacing.md)
                 }
+                // Straight to the sessions still open or the settled ones, without a word to search for.
+                NookSectionLabel(Self.title(.session), inset: NookTheme.Spacing.md)
+                ForEach(SessionScope.allCases, id: \.self) { scope in
+                    Button { showSessions(scope) } label: {
+                        HStack(spacing: NookTheme.Spacing.md) {
+                            Image(icon: (scope == .open ? AgentDisplayState.working : .finished).symbol)
+                                .font(NookTheme.font(12, .medium))
+                                .foregroundStyle(NookTheme.textTertiary).frame(width: 18)
+                            Text(tr(scope == .open ? "search.start.openSessions" : "search.start.settledSessions"))
+                                .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, NookTheme.Spacing.md)
+                        .frame(height: 30)
+                        .hoverRowFill()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.nookPlain)
+                }
+                .padding(.bottom, NookTheme.Spacing.md)
                 NookSectionLabel(tr("search.tips"), inset: NookTheme.Spacing.md)
                 ForEach(Self.tips, id: \.example) { tip in
                     Button {
@@ -565,6 +637,15 @@ struct SearchPanel: View {
             }
             .padding(NookTheme.Spacing.sm)
         }
+    }
+
+    /// Every session, kept to the open or the settled ones. The scope goes in the query too, so the index picks its
+    /// best hits from those sessions only and none fall past the limit.
+    private func showSessions(_ scope: SessionScope) {
+        text = scope.filter
+        kind = .session
+        sessionScope = scope
+        focused = true
     }
 
     /// The query language, by example; a click starts a search with it.

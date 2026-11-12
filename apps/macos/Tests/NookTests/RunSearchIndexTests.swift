@@ -83,6 +83,74 @@ final class RunSearchIndexTests: XCTestCase {
         XCTAssertTrue(reopened.compact(over: -1))
     }
 
+    func testAnIndexThatKeptPositionsIsBuiltAgainWithout() throws {
+        let url = folder.appendingPathComponent("runs.sqlite")
+        try XCTSkipUnless(sqlite3_libversion_number() >= 3_043_000, "older SQLite keeps the index it has")
+        // As written before 2026-11-12: contentless, but with every trigram's position (seven times the size).
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, """
+            CREATE VIRTUAL TABLE run_search USING fts5(body, tokenize = 'trigram', content = '', contentless_delete = 1);
+            CREATE TABLE run_search_keys (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, event_id TEXT NOT NULL, UNIQUE (run_id, event_id));
+            INSERT INTO run_search_keys (id, run_id, event_id) VALUES (1, 'old', 'old');
+            INSERT INTO run_search (rowid, body) VALUES (1, 'stale text');
+            """, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+
+        let log = try XCTUnwrap(RunEventLog(url: url))
+        try XCTSkipUnless(log.searchAvailable)
+        XCTAssertEqual(log.sessions(mentioning: "stale"), [], "the old index is gone, to be built anew")
+        let id = UUID()
+        log.reindex(id, TimelineSearchText.entries([event("Fixed the parser")]))
+        XCTAssertEqual(log.sessions(mentioning: "the parser"), [id])
+        let reopened = try XCTUnwrap(RunEventLog(url: url))
+        XCTAssertEqual(reopened.sessions(mentioning: "parser"), [id], "the new index stays across launches")
+    }
+
+    func testWithoutPositionsAWordIsFoundByAllItsTrigrams() throws {
+        let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite")))
+        try XCTSkipUnless(log.searchAvailable)
+        let together = UUID(), apart = UUID()
+        log.reindex(together, TimelineSearchText.entries([event("the parser broke")]))
+        // Every trigram of "parser" is here, but not "parser" itself: a false hit the caller's own search drops.
+        log.reindex(apart, TimelineSearchText.entries([event("par ars rse ser")]))
+        XCTAssertEqual(Set(log.sessions(mentioning: "parser") ?? []), [together, apart])
+        XCTAssertEqual(log.sessions(mentioning: "broke"), [together])
+        XCTAssertEqual(TrigramQuery.text("abcd"), #""abc" AND "bcd""#)
+        XCTAssertEqual(TrigramQuery.text(#"a"b"#), #""a""b""#, "quotes are doubled, never FTS syntax")
+        XCTAssertEqual(TrigramQuery.text(String(repeating: "abcdefghij", count: 20)).components(separatedBy: " AND ").count, 10,
+                       "repeated trigrams are asked for once")
+        XCTAssertEqual(TrigramQuery.text((0..<200).map { String($0) }.joined()).components(separatedBy: " AND ").count, 48)
+    }
+
+    func testASettledSessionsLogIsFoldedIntoOneSnapshot() throws {
+        let store = RunStore(directory: folder)
+        _ = store.loadRuns()
+        store.flush()
+        let id = UUID()
+        var answer = event("Streaming")
+        var events = [event("Start", kind: .user), answer]
+        // A streamed answer: the same event saved again and again, one row per version.
+        for count in 0..<40 {
+            answer.text = "Streaming word \(count)"
+            events[1] = answer
+            try store.saveEvents(id, events)
+        }
+        let log = try XCTUnwrap(RunEventLog(url: folder.appendingPathComponent("runs.sqlite"), readOnly: true))
+        XCTAssertGreaterThan(log.rows(id).count, 30)
+        store.compactSettled(id)
+        store.flush()
+        XCTAssertEqual(log.rows(id).count, 1, "one snapshot stands in for every version")
+        XCTAssertEqual(log.rows(id).first?.kind, .snapshot)
+        XCTAssertEqual(store.loadEvents(id).map(\.text), ["Start", "Streaming word 39"], "the timeline is the same")
+        // A log with nothing to fold is left as it is.
+        let quiet = UUID()
+        try store.saveEvents(quiet, [event("Only one")])
+        store.compactSettled(quiet)
+        store.flush()
+        XCTAssertEqual(log.rows(quiet).first?.kind, .event)
+    }
+
     func testTheStoreIndexesWhatItSavesAndForgetsWhatItDeletes() throws {
         let store = RunStore(directory: folder)
         _ = store.loadRuns()

@@ -78,6 +78,23 @@ struct SearchDocument: Identifiable, Equatable, Sendable {
     var icon: SearchIcon? = nil
 }
 
+extension SearchDocument {
+    /// A session's state in the words and colors of the Agents list, from its flags; nil for anything that is not a
+    /// session. Settled wins: a session you filed away reads as finished, whatever it ended on.
+    var sessionState: AgentDisplayState? {
+        guard kind == .session else { return nil }
+        if flags.contains("settled") { return .finished }
+        if flags.contains("waiting") { return flags.contains("approval") ? .approval : .input }
+        if flags.contains("failed") { return .failed }
+        if flags.contains("running") { return .working }
+        if flags.contains("done") { return .ready }
+        return .idle
+    }
+
+    /// A session that is settled (done and filed away, or archived), as opposed to one still open.
+    var isSettledSession: Bool { kind == .session && flags.contains("settled") }
+}
+
 /// Who or what a search result is, as its row draws it.
 enum SearchIcon: Equatable, Sendable {
     /// A coding agent, by its display name ("Claude Code", "Codex"): its logo.

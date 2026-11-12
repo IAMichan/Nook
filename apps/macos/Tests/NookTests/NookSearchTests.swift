@@ -266,4 +266,35 @@ final class NookSearchTests: XCTestCase {
         ]
         XCTAssertEqual(SearchIndex(documents).search(SearchQuery.parse("de")).map(\.id), ["title"])
     }
+
+    /// A session hit says its state in the Agents list's words, settled winning over how it ended; other kinds have none.
+    func testSessionStateFromFlags() {
+        func state(_ flags: Set<String>, kind: SearchKind = .session) -> AgentDisplayState? {
+            SearchDocument(id: "x", kind: kind, title: "x", flags: flags).sessionState
+        }
+        XCTAssertEqual(state(["running"]), .working)
+        XCTAssertEqual(state(["running", "waiting", "approval"]), .approval)
+        XCTAssertEqual(state(["waiting"]), .input)
+        XCTAssertEqual(state(["failed"]), .failed)
+        XCTAssertEqual(state(["done"]), .ready)
+        XCTAssertEqual(state(["done", "settled"]), .finished)
+        XCTAssertEqual(state(["failed", "settled"]), .finished)
+        XCTAssertEqual(state([]), .idle)
+        XCTAssertNil(state(["running"], kind: .conversation))
+        XCTAssertTrue(SearchDocument(id: "x", kind: .session, title: "x", flags: ["settled"]).isSettledSession)
+        XCTAssertFalse(SearchDocument(id: "x", kind: .session, title: "x", flags: ["done"]).isSettledSession)
+    }
+
+    /// The shortcuts to open and settled sessions are plain queries: the index keeps only those sessions.
+    func testOpenAndSettledSessionQueries() {
+        let documents = [
+            SearchDocument(id: "run:open", kind: .session, title: "Open one", flags: ["running"]),
+            SearchDocument(id: "run:done", kind: .session, title: "Done one", flags: ["done"]),
+            SearchDocument(id: "past:old", kind: .session, title: "Old one", flags: ["done", "settled"]),
+            SearchDocument(id: "conversation:c", kind: .conversation, title: "Chat", flags: ["running"]),
+        ]
+        let index = SearchIndex(documents)
+        XCTAssertEqual(Set(index.search(SearchQuery.parse("in:sessions -is:settled")).map(\.id)), ["run:open", "run:done"])
+        XCTAssertEqual(index.search(SearchQuery.parse("in:sessions is:settled")).map(\.id), ["past:old"])
+    }
 }
