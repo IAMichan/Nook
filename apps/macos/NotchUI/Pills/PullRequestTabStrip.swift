@@ -88,11 +88,10 @@ private struct PullRequestTab: View {
         .padding(.trailing, NookTheme.Spacing.md)
         .frame(height: 24)
         .frame(maxWidth: 144)
-        .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
+        .hoverRowFill($hovering, selected: active, radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
         .nookClickable()
         .onTapGesture(perform: select)
-        .onHover { hovering = $0 }
         .help(tab.item.repo + " #\(tab.item.number)" + (tab.item.title.isEmpty ? "" : " · " + tab.item.title))
         .accessibilityAddTraits(active ? .isSelected : [])
     }

@@ -345,7 +345,6 @@ private struct MusicLyricLine: View, Equatable {
 private struct MusicWeekCard: View {
     let stats: MusicStats
     let onOpen: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         let shape = NookTheme.shape(NookTheme.Radius.panel)
@@ -389,12 +388,10 @@ private struct MusicWeekCard: View {
             }
             .padding(NookTheme.Spacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(shape.fill(hovering ? NookTheme.rowHover : NookTheme.surface))
+            .hoverRowFill(radius: NookTheme.Radius.panel, rest: NookTheme.surface)
             .contentShape(shape)
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
         .help(tr("music.section.stats"))
         .accessibilityLabel(tr("music.home.thisWeek", musicListeningTime(stats.seconds)) + ", " + tr("music.stats.days", stats.streak))
     }
@@ -541,12 +538,10 @@ struct MusicTrackTile: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .padding(.vertical, filled ? MusicLayout.rowBleed : NookTheme.Spacing.xs)
-            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: filled ? NookTheme.surface : .clear),
-                               radius: NookTheme.Radius.card)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.card, rest: filled ? NookTheme.surface : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
         .contextMenu {

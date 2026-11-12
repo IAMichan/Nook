@@ -328,7 +328,6 @@ struct SettingsPickRow: View {
     let detail: String
     let selected: Bool
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -344,12 +343,10 @@ struct SettingsPickRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
-            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: NookTheme.smoke.opacity(0.5)),
-                               radius: NookTheme.Radius.control)
+            .hoverRowFill(selected: selected, rest: NookTheme.smoke.opacity(0.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
     }
 }
 

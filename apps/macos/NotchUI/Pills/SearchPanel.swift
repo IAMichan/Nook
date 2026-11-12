@@ -514,7 +514,7 @@ struct SearchPanel: View {
                     NookSectionLabel(tr("search.recentlyOpened"), inset: NookTheme.Spacing.md)
                     ForEach(center.recentlyOpened) { hit in
                         Button { openHit(hit) } label: {
-                            hitRow(hit, selected: false).modifier(SearchHoverFill())
+                            hitRow(hit, selected: false).hoverRowFill()
                         }
                         .buttonStyle(.nookPlain)
                     }
@@ -536,7 +536,7 @@ struct SearchPanel: View {
                             }
                             .padding(.horizontal, NookTheme.Spacing.md)
                             .frame(height: 30)
-                            .modifier(SearchHoverFill())
+                            .hoverRowFill()
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.nookPlain)
@@ -557,7 +557,7 @@ struct SearchPanel: View {
                         }
                         .padding(.horizontal, NookTheme.Spacing.md)
                         .frame(height: 28)
-                        .modifier(SearchHoverFill())
+                        .hoverRowFill()
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.nookPlain)
@@ -690,17 +690,5 @@ struct SearchPanel: View {
             out += part
         }
         return out
-    }
-}
-
-/// The soft fill under the pointer for the rows before you type (recent searches, tips).
-private struct SearchHoverFill: ViewModifier {
-    @State private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
-            .onHover { hovering = $0 }
-            .animation(NookTheme.hover, value: hovering)
     }
 }

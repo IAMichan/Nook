@@ -478,7 +478,6 @@ private struct MusicBestMatch: View {
     let playing: Bool
     @ObservedObject var service: NowPlayingService
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -504,12 +503,10 @@ private struct MusicBestMatch: View {
                     .padding(.trailing, NookTheme.Spacing.md)
             }
             .padding(MusicLayout.rowBleed)
-            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.panel)
+            .hoverRowFill(radius: NookTheme.Radius.panel)
             .roundedHitShape(NookTheme.Radius.panel)
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
         .contextMenu {
             Button(tr("music.play"), action: action)

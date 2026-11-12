@@ -313,11 +313,10 @@ struct MusicTrackRow: View {
             }
             .padding(.horizontal, MusicLayout.rowBleed)
             .frame(height: MusicLayout.rowHeight)
-            .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
+            .hoverRowFill($hovering, radius: NookTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
         .contextMenu {

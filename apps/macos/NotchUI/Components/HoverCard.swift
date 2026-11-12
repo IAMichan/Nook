@@ -31,7 +31,6 @@ struct HoverCardButton<Label: View>: View {
     var closes = true
     let action: () -> Void
     @ViewBuilder let label: Label
-    @State private var hovering = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -42,12 +41,11 @@ struct HoverCardButton<Label: View>: View {
             label
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(NookTheme.Spacing.xs)
-                .roundedBackground(NookTheme.rowFill(selected: false, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
+                .hoverRowFill(radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
         .padding(-NookTheme.Spacing.xs)
-        .onHover { hovering = $0 }
         .pointerStyle(.link)
         .help(help)
         .accessibilityHint(help)

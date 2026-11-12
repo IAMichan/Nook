@@ -73,7 +73,6 @@ private struct MusicSidebarRow: View {
     /// Now Playing while music plays: a still waveform in the Music colour, so the row says it without an animation.
     var playing = false
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -97,12 +96,10 @@ private struct MusicSidebarRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)
-            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+            .hoverRowFill(selected: selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -132,11 +129,10 @@ private struct MusicSidebarPlaylistRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)
-            .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.control)
+            .hoverRowFill($hovering, selected: selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
-        .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(tr("music.playlists.open", playlist.name))
         .contextMenu {
