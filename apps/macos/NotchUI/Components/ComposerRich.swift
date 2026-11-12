@@ -801,7 +801,6 @@ private struct ComposerUsagePanel: View {
                 Text(tr("limits.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
                 Text(account).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
             }
-            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             TimelineView(.nookTicks(every: 60)) { context in
                 UsageLimitRows(limits: shown, now: context.date)
             }

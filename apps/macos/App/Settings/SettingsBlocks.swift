@@ -203,13 +203,15 @@ struct SettingsSectionTitle: View {
 /// The small ⓘ that holds an explanation: a click opens it in a popover, hovering shows it as a tooltip.
 struct SettingsInfoButton: View {
     let text: String
+    /// Amber or coral when the explanation is a warning (a context that is getting full).
+    var tint: Color = NookTheme.textTertiary
     @State private var shown = false
 
     var body: some View {
         Button { shown.toggle() } label: {
             Image(icon: "info.circle")
                 .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
+                .foregroundStyle(tint)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
