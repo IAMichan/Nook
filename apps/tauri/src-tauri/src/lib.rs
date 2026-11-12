@@ -77,6 +77,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
+                    platform::desktop::closed_main(window.app_handle());
                     let _ = window.hide();
                 }
             }

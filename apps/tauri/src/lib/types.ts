@@ -71,6 +71,7 @@ export interface Settings {
   inboxSeenAt: string | null;
   /// Start an installed local brain (Ollama, LM Studio) that is not running.
   startLocalBrain: boolean;
+  trayHintShown: boolean;
 }
 
 /// What Nook does while you share your screen or sit in a meeting.
