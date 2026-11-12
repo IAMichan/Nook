@@ -19,6 +19,9 @@ plus the test files that declare helpers the picked ones use. A change to the pa
 scripts) or a deleted core source picks everything.
 
 Prints the selected test files and their classes, then `all`, `some` or `none` on its last line for the caller.
+
+It also says on stderr which changed app sources this package does not compile at all (views, AppKit, the excluded
+Apple-only files), with or without --changed: no core test can catch a mistake there, only `scripts/xcode.sh build`.
 """
 import os
 import re
@@ -126,6 +129,15 @@ def changed_files(base):
     return sorted(set(f for f in files if f))
 
 
+def uncovered(changed):
+    """The changed Swift sources of the app that this package does not compile (the base is `auto` without --changed)."""
+    macos = os.path.relpath(root, repo) + "/"
+    compiled = {os.path.normpath(os.path.join(macos, p)) for p in sources}
+    return [path for path in changed
+            if path.endswith(".swift") and path.startswith(macos) and not path.startswith(macos + "Tests/")
+            and path not in compiled and os.path.exists(os.path.join(repo, path))]
+
+
 def select(changed):
     """The test files `changed` needs, or None for all of them."""
     macos = os.path.relpath(root, repo) + "/"
@@ -194,10 +206,19 @@ def sync(folder, wanted):
 
 
 selection = None
-if base is not None:
-    changed = changed_files(base)
-    if changed is not None:
-        selection = select(changed)
+try:
+    changed = changed_files(base or "auto")
+except (OSError, subprocess.CalledProcessError):
+    if base is not None:
+        raise
+    changed = None  # not a Git checkout: the full run needs no change list
+if base is not None and changed is not None:
+    selection = select(changed)
+missing = uncovered(changed or [])
+if missing:
+    shown = " ".join(missing[:5]) + (f" (+{len(missing) - 5} more)" if len(missing) > 5 else "")
+    print(f"note: the core tests do not compile {len(missing)} changed file(s): {shown}\n"
+          "      check those with ./scripts/xcode.sh build (or ./scripts/xcode.sh test)", file=sys.stderr)
 
 sdir = os.path.join(work, "Sources", "Core")
 wanted_sources = {
