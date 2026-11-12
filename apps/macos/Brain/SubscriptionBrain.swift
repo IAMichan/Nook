@@ -177,20 +177,13 @@ enum SubscriptionBrain {
             arguments += ["-c", "features.\(feature)=false"]
         }
         arguments += ["-c", allowWebSearch ? #"web_search="live""# : #"web_search="disabled""#,
-                      "-c", "developer_instructions=" + tomlString(system),
+                      "-c", "developer_instructions=" + AgentTelemetry.tomlString(system),
                       "-c", #"model_reasoning_effort="low""#]
         if !model.isEmpty { arguments += ["-m", model] }
         arguments += ["--output-last-message", answerPath]
         for path in imagePaths { arguments += ["-i", path] }
         arguments.append("-")
         return arguments
-    }
-
-    /// A TOML basic string: JSON's escaping (quotes, backslashes, newlines, \uXXXX) is valid TOML too.
-    nonisolated static func tomlString(_ text: String) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: [text]),
-              let array = String(data: data, encoding: .utf8) else { return "\"\"" }
-        return String(array.dropFirst().dropLast())
     }
 
     // MARK: Gemini CLI
