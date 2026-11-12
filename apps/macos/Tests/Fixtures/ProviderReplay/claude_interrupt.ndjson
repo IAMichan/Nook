@@ -1,0 +1,6 @@
+{"type":"transcript_start","provider":"claude","protocol":"claude-code.stream-json","scenario":"claude_interrupt","source":"hand-written for Nook: Nook interrupts the turn before any answer arrives; no result follows"}
+{"type":"expect_outbound","frame":{"type":"user","message":{"role":"user","content":"Count slowly from one to a hundred, one number per line."}}}
+{"type":"expect_outbound","frame":{"type":"control_request","request":{"subtype":"interrupt"}}}
+{"type":"emit_inbound","frame":{"type":"system","subtype":"init","session_id":"0b8f2142-ed7d-439b-9d1e-817d1f42b51a","model":"claude-sonnet-4-6","cwd":"/tmp/nook-replay","tools":[],"permissionMode":"bypassPermissions","uuid":"28639fa2-6f5d-4606-ba6d-a7b24b5f1df8"}}
+{"type":"emit_inbound","frame":{"type":"control_response","response":{"subtype":"success","request_id":"interrupt-1","response":{}}}}
+{"type":"exit","status":0}

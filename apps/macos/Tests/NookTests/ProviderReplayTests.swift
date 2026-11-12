@@ -1,9 +1,10 @@
 import XCTest
 
-/// Recorded agent transcripts replayed through the real `AgentProcess` line handling and `ClaudeStreamParser`, with only
-/// the process itself replaced (`ReplayTransport`). Fixtures live in Tests/Fixtures/ProviderReplay; most are adapted
-/// from recorded Claude transcripts (MIT, see THIRD-PARTY-NOTICES.md).
+/// Agent transcripts replayed through the real `AgentProcess` line handling and `ClaudeStreamParser`, with only the
+/// process itself replaced (`ReplayTransport`). Fixtures live in Tests/Fixtures/ProviderReplay and are written by hand.
 final class ProviderReplayTests: XCTestCase {
+    private static let toolApprovalPrompt = "Add the line 'tea is ready' to notes/kitchen.txt, then tell me when it is done."
+
     private static let root: URL = {
         if let path = ProcessInfo.processInfo.environment["NOOK_MACOS_ROOT"] { return URL(fileURLWithPath: path) }
         return URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -53,14 +54,14 @@ final class ProviderReplayTests: XCTestCase {
 
     func testNormalTurn() throws {
         let outcome = try replay(try fixture("claude_normal_turn"),
-                                 prompt: "Respond with the following text: fixture simple ok")
+                                 prompt: "In one sentence, what does a lighthouse do?")
         XCTAssertEqual(outcome.exitStatus, 0)
         XCTAssertEqual(outcome.events.compactMap { if case .initialized(let session, _) = $0 { return session } else { return nil } }.count, 1)
-        XCTAssertTrue(outcome.events.contains(.text("fixture simple ok")))
+        XCTAssertTrue(outcome.events.contains(.text("A lighthouse guides ships safely past the coast at night.")))
         let results = outcome.results
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results.first?.isError, false)
-        XCTAssertEqual(results.first?.text, "fixture simple ok")
+        XCTAssertEqual(results.first?.text, "A lighthouse guides ships safely past the coast at night.")
         XCTAssertNotNil(results.first?.usage.outputTokens)
         XCTAssertEqual(outcome.written.count, 1, "only the prompt went to stdin")
     }
@@ -68,27 +69,27 @@ final class ProviderReplayTests: XCTestCase {
     func testToolApprovalRequestIsAnsweredOverStdin() throws {
         let asked = PermissionBox()
         let outcome = try replay(try fixture("claude_tool_approval"),
-                                 prompt: "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP.",
+                                 prompt: Self.toolApprovalPrompt,
                                  react: { event, process in
             guard case .permissionRequest(let request, let tool, let input, _, let toolUseID) = event else { return }
             asked.set(tool: tool, toolUseID: toolUseID)
             process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
         })
         XCTAssertEqual(asked.tool, "Bash")
-        XCTAssertNotNil(asked.toolUseID)
+        XCTAssertEqual(asked.toolUseID, "toolu_nook_kitchen_1")
         XCTAssertTrue(outcome.written.last?.contains("\"updatedInput\"") ?? false, "allow carries the tool's input back")
         // The tool ran after the approval, and the turn ended well.
-        XCTAssertTrue(outcome.events.contains { if case .toolResult = $0 { return true } else { return false } })
+        XCTAssertTrue(outcome.events.contains { if case .toolResult(id: "toolu_nook_kitchen_1", output: _, isError: false) = $0 { return true } else { return false } })
         XCTAssertEqual(outcome.results.map(\.isError), [false])
         XCTAssertEqual(outcome.exitStatus, 0)
     }
 
     func testInterruptRequest() throws {
         let outcome = try replay(try fixture("claude_interrupt"),
-                                 prompt: "Do not answer immediately. First run the local shell command `sleep 30`, then respond with exactly: interrupt fixture should not finish naturally.",
+                                 prompt: "Count slowly from one to a hundred, one number per line.",
                                  afterStart: { process in process.send(ClaudeStreamParser.interruptRequest(id: "interrupt-1")) })
         XCTAssertEqual(outcome.results, [], "the interrupted turn never finished")
-        XCTAssertFalse(outcome.events.contains(.text("interrupt fixture should not finish naturally.")))
+        XCTAssertFalse(outcome.events.contains { if case .text = $0 { return true } else { return false } }, "no answer came")
         XCTAssertEqual(outcome.exitStatus, 0)
     }
 
@@ -113,15 +114,16 @@ final class ProviderReplayTests: XCTestCase {
     }
 
     func testErrorResultThenRecovery() throws {
-        let outcome = try replay(try fixture("claude_error_result"), prompt: "Say hello before the credentials expire.",
+        let outcome = try replay(try fixture("claude_error_result"), prompt: "Give me a two-word name for a quiet reading corner.",
                                  react: { event, process in
             if case .result(let result) = event, result.isError {
-                process.send(ClaudeStreamParser.userMessage("Try again now that auth is back."))
+                process.send(ClaudeStreamParser.userMessage("Signed in again, please retry."))
             }
         })
         XCTAssertEqual(outcome.results.map(\.isError), [true, false])
         XCTAssertTrue(outcome.results.first?.text.contains("401") ?? false)
-        XCTAssertEqual(outcome.results.last?.text, "claude result is_error fixture recovered")
+        XCTAssertEqual(outcome.results.first?.apiErrorStatus, 401)
+        XCTAssertEqual(outcome.results.last?.text, "Lantern Nook")
         XCTAssertEqual(outcome.exitStatus, 0)
     }
 
@@ -199,7 +201,7 @@ final class ProviderReplayTests: XCTestCase {
     func testTrafficLogIsAReplayableFixture() throws {
         let url = temporaryFolder().appendingPathComponent("log.ndjson")
         let log = try XCTUnwrap(ProviderTrafficLog(url: url, provider: "claude"))
-        let prompt = "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP."
+        let prompt = Self.toolApprovalPrompt
         let approve: @Sendable (ClaudeStreamEvent, AgentProcess) -> Void = { event, process in
             if case .permissionRequest(let request, _, let input, _, _) = event {
                 process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
