@@ -191,7 +191,7 @@ struct AgentInboxList: View {
                 if !app.demoMode, store.query.isEmpty {
                     UnsentDraftRows(composerOpen: current == "new") { select("new") }
                 }
-                if showsEmptyState(sections) {
+                if showsEmptyState(sections, groups: groups) {
                     // Nothing working and the settled shelf closed: a calm, centered invitation instead of a bare line. With no
                     // session at all it sets up an agent, otherwise it starts a new session.
                     WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
@@ -307,8 +307,9 @@ struct AgentInboxList: View {
     private var showsSetUp: Bool { store.query.isEmpty && !app.history.loading && !app.demoMode }
 
     /// The whole panel is empty: no search, nothing loading, and at most a closed shelf of settled sessions below.
-    private func showsEmptyState(_ sections: [InboxSection]) -> Bool {
-        showsSetUp && sections.allSatisfy { Self.isDocked($0.kind) } && sections.allSatisfy { collapsed.contains($0.kind) }
+    private func showsEmptyState(_ sections: [InboxSection], groups: [InboxProjectGroup]) -> Bool {
+        // A pinned project keeps its folder also with no sessions, so a list with one is not empty.
+        showsSetUp && groups.isEmpty && sections.allSatisfy { Self.isDocked($0.kind) } && sections.allSatisfy { collapsed.contains($0.kind) }
     }
 
     @ViewBuilder
@@ -416,11 +417,22 @@ struct AgentInboxList: View {
         return WorktreeOrigin.newSessionFolder(project: group.project, paths: paths, known: known)
     }
 
-    /// Takes a project out of the list: every session in it settles (one undo brings them back), so the folder's dropdown goes.
-    private func removeProject(_ group: InboxProjectGroup, byID: [String: AgentListItem]) {
+    /// Takes a project out of the list: every session in it settles (one undo brings them back), and a pinned project is
+    /// unpinned, else its folder would come straight back empty.
+    private func removeProject(_ group: InboxProjectGroup, folder: String?, byID: [String: AgentListItem]) {
         let items = group.rows.compactMap { byID[$0.entry.id] }
-        guard !items.isEmpty else { return }
-        withAnimation(NookTheme.reveal) { store.settle(items) }
+        withAnimation(NookTheme.reveal) {
+            if group.pinned {
+                let settings = app.workspace.settings
+                // Every favorite that makes this folder pinned, not only the one the header resolved to.
+                let pins = settings.favoriteProjects.filter {
+                    InboxProject.key(folder: ($0 as NSString).lastPathComponent, path: $0) == group.project
+                }
+                for path in pins where settings.isFavoriteProject(path) { settings.toggleFavoriteProject(path) }
+                if let folder, settings.isFavoriteProject(folder) { settings.toggleFavoriteProject(folder) }
+            }
+            if !items.isEmpty { store.settle(items) }
+        }
     }
 
     /// Opens the new-session composer on `folder`.
@@ -449,7 +461,7 @@ struct AgentInboxList: View {
             },
             newSession: folder.map { path -> () -> Void in { newSession(in: path) } },
             actions: folder.map { path in projectActions(group, path: path) },
-            remove: group.rows.isEmpty ? nil : { removeProject(group, byID: byID) })
+            remove: group.rows.isEmpty ? nil : { removeProject(group, folder: folder, byID: byID) })
     }
 
     /// What a project's folder menu does with its folder on this Mac, as t3code's: pin, rename, settings, archive.
@@ -488,11 +500,16 @@ struct AgentInboxList: View {
             .filter { $0 != InboxProject.none && seen.insert($0).inserted }
     }
 
-    /// The archived projects by the name their folder goes by in the list.
+    /// The archived projects by the name their folder goes by in the list. A name another project you use still goes
+    /// by (a favorite or recent folder that is not archived) is left out: the folders are grouped by name, and archiving
+    /// one "app" must not put another one's sessions at the bottom.
     private var archivedProjects: Set<String> {
         let settings = app.workspace.settings
-        return Set(settings.projectOverrides.projects.filter(settings.isArchivedProject)
-            .map { ($0 as NSString).lastPathComponent })
+        func name(_ path: String) -> String { (path as NSString).lastPathComponent }
+        let archived = settings.projectOverrides.projects.filter(settings.isArchivedProject)
+        let inUse = Set((settings.favoriteProjects + settings.recentProjects)
+            .filter { !settings.isArchivedProject($0) }.map(name))
+        return Set(archived.map(name)).subtracting(inUse)
     }
 
     /// Adds a project from a folder you pick or make, as t3code's "Add project": pinned, so its folder shows, and the

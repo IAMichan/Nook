@@ -172,12 +172,20 @@ struct ProjectOverrides: Codable, Equatable, Sendable {
 
     mutating func resetAll(for project: String) { byProject[Self.normalize(project)] = nil }
 
+    /// Keys that only change how a project shows in Nook's lists (its name, icon, being archived). A folder that sets
+    /// only these is not where its subfolders take their settings from: renaming a project never changes how its next
+    /// session starts.
+    static let displayOnlyKeys: Set<String> = [ProjectSettingKey.name.raw, ProjectSettingKey.icon.raw,
+                                               ProjectSettingKey.archived.raw]
+
     /// The stored project a folder belongs to: the folder itself, else the closest folder above it that has overrides
-    /// (a subfolder or a worktree path inside the repository gets its repository's settings).
+    /// (a subfolder or a worktree path inside the repository gets its repository's settings). Folders that set only
+    /// `displayOnlyKeys` are passed over.
     func project(containing folder: String) -> String? {
         let path = Self.normalize(folder)
         guard !path.isEmpty else { return nil }
         return projects.filter { path == $0 || path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
+            .filter { byProject[$0]?.keys.contains { !Self.displayOnlyKeys.contains($0) } ?? false }
             .max { $0.count < $1.count }
     }
 
