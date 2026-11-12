@@ -1207,7 +1207,7 @@ final class WorkspaceManager: ObservableObject {
         if let request = acpRequests[pending.id] {
             return AcpRPC.autoAllows(request.call, permission: run.permission, mode: run.mode)
         }
-        return run.provider == .claude && LiveRights.coversClaude(tool: pending.tool, permission: run.permission, mode: run.mode)
+        return run.provider.capabilities.processChannel == .claudeStreamJSON && LiveRights.coversClaude(tool: pending.tool, permission: run.permission, mode: run.mode)
     }
 
     // MARK: Turns
@@ -1753,17 +1753,16 @@ final class WorkspaceManager: ObservableObject {
         // Pressing Stop again changes nothing: the first one is still on its way.
         if turns[id]?.stopping == true { return }
         turns[id]?.stopping = true
-        if run(id)?.provider == .pi {
-            // Pi stops its run on `abort`; if it never answers, its input closes and then the process ends.
-            process.send(PiRPC.abort())
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                guard let self, self.processes[id] === process else { return }
-                process.closeInput()
-                process.stop()
-            }
-        } else if run(id)?.provider == .claude {
-            process.send(ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8)))
+        // An agent that listens on stdin is asked to stop its turn; if it never answers, its input closes and then the
+        // process ends. Without a channel the process ends right away.
+        let request: String?
+        switch run(id)?.provider.capabilities.processChannel ?? ProcessChannel.none {
+        case .piRPC: request = PiRPC.abort()
+        case .claudeStreamJSON: request = ClaudeStreamParser.interruptRequest(id: "nook-stop-" + UUID().uuidString.prefix(8))
+        case .none: request = nil
+        }
+        if let request {
+            process.send(request)
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 guard let self, self.processes[id] === process else { return }
@@ -1800,18 +1799,25 @@ final class WorkspaceManager: ObservableObject {
             launchAcpTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }
-        // Codex over `codex exec`: Nook cannot count this turn, and a waiting rollback cannot go out.
-        if run.provider == .codex {
+        let capabilities = run.provider.capabilities
+        var rollback: PendingRollback?
+        switch capabilities.rollback {
+        case .threadRollback:
+            // Codex over `codex exec`: Nook cannot count this turn, and a waiting rollback cannot go out.
             dropUnusableRollback(id)
             markConversationInexact(id)
+        case .resumeAt:
+            // A rollback of Claude Code's conversation: this turn resumes a copy at the last message that stays.
+            rollback = takeClaudeRollback(id)
+            noteConversationTurn(id)
+        case .none:
+            break
         }
-        // A rollback of Claude Code's conversation: this turn resumes a copy at the last message that stays.
-        let rollback = run.provider == .claude ? takeClaudeRollback(id) : nil
-        if run.provider == .claude { noteConversationTurn(id) }
         // The lines above changed the stored session; carry on with that.
         if let latest = self.run(id) { run = latest }
         // Claude Code still running from the previous turn, with the same settings: continue in it.
-        if run.provider == .claude, rollback == nil, continueClaudeProcess(id, prompt: prompt, showPrompt: showPrompt) { return }
+        if capabilities.idleConnection == .parkedProcess, rollback == nil,
+           continueClaudeProcess(id, prompt: prompt, showPrompt: showPrompt) { return }
         if rollback != nil { closeClaudeProcess(id) }
         let input = AgentCommand.Input(
             provider: run.provider,
@@ -1828,15 +1834,16 @@ final class WorkspaceManager: ObservableObject {
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id,
             bridge: bridge(for: id),
-            thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
+            thinkingDisplay: capabilities.probesLaunchFlags && claudeThinkingDisplay[executable] == true,
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
-            effort: run.provider == .claude || run.provider == .pi ? run.effort : nil,
+            // Each agent takes it its own way (`ProviderCapabilities.effort`); `codex exec` as a config override.
+            effort: run.effort,
             speedTier: speedTier(run),
             ultracode: ultracode(run)
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
-        if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+        if capabilities.probesLaunchFlags, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
         let spec = placed(AgentCommand.spec(input), for: run)
         if showPrompt { append(id, RunEvent(kind: .user, text: shownPrompt(id, prompt))) }
         let process = AgentProcess(spec: spec)
@@ -1887,23 +1894,24 @@ final class WorkspaceManager: ObservableObject {
         guard !quitting, let run = run(id), run.canContinue, !run.status.isActive, !run.archived, processes[id] == nil,
               (run.providerSessionID != nil || run.pendingHandoff != nil), !forkNext.contains(id),
               let executable = launchExecutable(run),
-              run.provider != .claude || run.pendingRollback == nil,
+              run.provider.capabilities.rollback != .resumeAt || run.pendingRollback == nil,
               run.isRemote || WorkspacePathPolicy.verdict(for: run.workingDirectory) == .ok else { return }
-        switch run.provider {
-        case .claude:
+        let capabilities = run.provider.capabilities
+        switch capabilities.idleConnection {
+        case .parkedProcess:
             guard claudeIdle[id] == nil else { return }
-            if !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
+            if capabilities.probesLaunchFlags, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
             var spec = placed(AgentCommand.spec(AgentCommand.Input(
-                provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
+                provider: run.provider, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
                 instructions: launchInstructions(run), workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
-                thinkingDisplay: claudeThinkingDisplay[executable] == true,
+                thinkingDisplay: capabilities.probesLaunchFlags && claudeThinkingDisplay[executable] == true,
                 toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
                 effort: run.effort, speedTier: speedTier(run), ultracode: ultracode(run))), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
-                let parsed = ParsedStreamLine.parse(lines, provider: .claude)
+                let parsed = ParsedStreamLine.parse(lines, provider: run.provider)
                 Task { @MainActor in
                     // While it only waits, nothing it prints is a turn (a failed resume must not fail the session), apart
                     // from the answers to Nook's own requests (a connector's sign-in page).
@@ -1918,16 +1926,14 @@ final class WorkspaceManager: ObservableObject {
             }
             guard (try? process.start()) != nil else { return }
             parkWarmClaude(id, process, key: claudeKey(run))
-        case .codex:
+        case .appServer:
             guard settings.codexAppServer, !codexExecOnly.contains(executable), codexServers[id] == nil else { return }
             connectCodexServer(id, executable: executable, prompt: nil)
-        case .pi:
-            return
-        case .gemini, .opencode, .cursor, .grok, .acp:
+        case .acpSession:
             guard !acpFallback.contains(executable), acpClients[id] == nil else { return }
             connectAcp(id, executable: executable, prompt: nil)
-        case .antigravity:
-            // Not ahead of time: signing in could open Google's page just because you looked at the session.
+        case .none:
+            // Pi runs a process per turn; Antigravity is not opened ahead of time (see its capabilities).
             return
         }
     }
@@ -2318,7 +2324,7 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         let line: String
-        if run(runID)?.provider == .pi {
+        if run(runID)?.provider.capabilities.processChannel == .piRPC {
             // Pi's `confirm` dialog has no "always"; Nook remembers nothing for it.
             process.send(PiRPC.confirmResponse(requestID: requestID, confirmed: decision != .deny))
             approvals[runID]?.removeAll { $0.id == requestID }
