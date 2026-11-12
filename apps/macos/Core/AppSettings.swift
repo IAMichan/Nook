@@ -359,6 +359,13 @@ final class AppSettings: ObservableObject {
         }
     }
     private var customThemeCache: [NookColorTheme] = []
+    /// Colors set one by one (Settings › Appearance › Colors), over the chosen themes, per appearance.
+    @Published var colorOverrides: NookColorOverrides {
+        didSet {
+            UserDefaults.standard.setEncoded(colorOverrides, forKey: "colorOverrides")
+            applyTheme()
+        }
+    }
 
     /// Typeset TeX in answers and Markdown previews (`MathView`); off shows the TeX as written.
     @Published var renderMath: Bool {
@@ -376,7 +383,7 @@ final class AppSettings: ObservableObject {
     var themes: [NookColorTheme] { NookColorTheme.builtIn + customThemeCache }
 
     var themeChoice: NookThemeChoice {
-        NookThemeChoice(mode: appearanceMode, darkTheme: darkThemeID, lightTheme: lightThemeID)
+        NookThemeChoice(mode: appearanceMode, darkTheme: darkThemeID, lightTheme: lightThemeID, overrides: colorOverrides)
     }
 
     /// Hands the chosen palettes to `NookTheme` and the mode to the windows; a change redraws them.
@@ -777,6 +784,8 @@ final class AppSettings: ObservableObject {
                                               skipped: { $0.skipped }).value?.elements ?? []
         customThemes = storedThemes
         customThemeCache = storedThemes.compactMap(\.theme)
+        colorOverrides = (defaults.data(forKey: "colorOverrides")).flatMap { try? JSONDecoder().decode(NookColorOverrides.self, from: $0) }
+            ?? NookColorOverrides()
         renderMath = defaults.object(forKey: "renderMath") as? Bool ?? true
         MathText.renderingEnabled = defaults.object(forKey: "renderMath") as? Bool ?? true
         richComposer = defaults.object(forKey: "richComposer") as? Bool ?? true

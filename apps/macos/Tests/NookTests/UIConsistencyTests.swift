@@ -19,7 +19,6 @@ final class UIConsistencyTests: XCTestCase {
         "NotchUI/Components/BrandLogo.swift",
         "NotchUI/Shared/AgentLogo.swift",
         "NotchUI/Components/StatusStyleView.swift",
-        "NotchUI/Components/ComposerDropdown.swift",
         "NotchUI/Chat/ChatChartView.swift",
         "NotchUI/Workspace/WorkspaceComponents.swift",
         // A command's own terminal colors (256-color cube, RGB) in a tool call's output.
