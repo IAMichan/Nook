@@ -3,6 +3,7 @@
   // document (tekst, PDF, Word) slepen: Rust leest de tekst eruit en die gaat mee met je vraag.
   // Onder het veld: welke bronnen Nook mag gebruiken en welk brein denkt (klik om een ander lokaal model te kiezen).
   import { api } from "../lib/api";
+  import { askedBefore } from "../lib/recall";
   import { brainApi, type ServerModel } from "../lib/brain";
   import { barDraft, Draft } from "../lib/draft.svelte";
   import { nook } from "../lib/state.svelte";
@@ -27,6 +28,27 @@
   let fileInput: HTMLInputElement;
   let brainRoot = $state<HTMLDivElement>();
 
+  // Up in an empty field brings back your previous question (again for older ones), Down goes forward again.
+  let recall = -1;
+  let recallFor: string | null = null;
+  $effect(() => {
+    if (nook.activeId !== recallFor) {
+      recallFor = nook.activeId;
+      recall = -1;
+    }
+  });
+  function recallQuestion(step: 1 | -1): boolean {
+    const history = askedBefore(nook.active?.messages ?? []);
+    if (!history.length) return false;
+    if (recall === -1 ? draft.text.trim() !== "" || step === -1 : draft.text !== history[recall]) return false;
+    const next = recall + step;
+    if (next >= history.length) return false;
+    recall = next;
+    draft.text = next < 0 ? "" : history[next];
+    queueMicrotask(() => field?.setSelectionRange(draft.text.length, draft.text.length));
+    return true;
+  }
+
   export function focus() {
     field?.focus();
   }
@@ -48,14 +70,26 @@
     const attached = draft.images.map(({ mediaType, base64 }) => ({ mediaType, base64 }));
     const file = draft.attachment;
     draft.clear();
+    recall = -1;
     heard();
     await nook.ask(value || (file ? tr(`Wat staat er in ${file.name}?`, `What is in ${file.name}?`) : tr("Wat staat er op deze afbeelding?", "What is in this image?")), attached.length ? attached : undefined, file ?? undefined);
   }
 
   function key(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (e.isComposing) return;
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+      const atStart = field.selectionStart === 0 && field.selectionEnd === 0;
+      const atEnd = field.selectionStart === draft.text.length;
+      // While a recalled question is unchanged, Up and Down keep stepping through them wherever the caret is.
+      const stepping = recall >= 0;
+      if ((e.key === "ArrowUp" ? atStart || !draft.text || stepping : atEnd || stepping) && recallQuestion(e.key === "ArrowUp" ? 1 : -1)) e.preventDefault();
+    } else if (e.key === "Escape" && !compact && nook.busy) {
+      // In the window Escape stops the answer; in the bar it keeps closing the bar.
+      e.preventDefault();
+      nook.stop();
     }
   }
 
@@ -135,6 +169,7 @@
       onkeydown={key}
       onpaste={paste}
       rows="1"
+      oninput={() => (recall = -1)}
       aria-label={tr("Bericht aan Nook", "Message Nook")}
       placeholder={draft.attachment ? tr(`Vraag iets over ${draft.attachment.name}…`, `Ask about ${draft.attachment.name}…`) : tr("Vraag Nook iets…", "Ask Nook anything…")}
     ></textarea>
