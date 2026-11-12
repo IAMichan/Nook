@@ -73,7 +73,8 @@ struct NookIconButton: View {
     let label: String
     var filled: Bool = false
     var size: CGFloat = SharedMetrics.iconButton
-    /// Shows its label as the composer's own tip (`composerTip`) instead of a system tooltip: a button under a composer.
+    /// Shows its label as the composer's own tip (`composerTip`) instead of the window tip (`nookTip`): a button under a
+    /// composer.
     var inComposer = false
     let action: () -> Void
     @State private var hovering = false
@@ -96,12 +97,13 @@ struct NookIconButton: View {
 }
 
 private extension View {
-    /// The button's label on hover. The composer's own tips (`composerTip`, in SessionComposer.swift) are Mac-only, so
-    /// the iPhone app, which shares this file, falls back to `help`.
+    /// The button's label on hover: the composer's own tip under a composer (`composerTip`, in SessionComposer.swift),
+    /// the fast window tip (`nookTip`) elsewhere. Both are Mac-only, so the iPhone app, which shares this file, falls
+    /// back to `help`.
     @ViewBuilder
     func labelTip(_ label: String, inComposer: Bool) -> some View {
         #if os(macOS)
-        composerTip(label, inComposer: inComposer)
+        if inComposer { composerTip(label) } else { nookTip(label) }
         #else
         help(label)
         #endif

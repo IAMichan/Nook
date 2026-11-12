@@ -21,17 +21,143 @@ extension WorkspaceManager {
 
     private func generateWithAgent(_ prompt: String, schema: [String: Any], prefer provider: RunProvider?, profileID: String?,
                                    cwd: String, model: String?, timeout: TimeInterval) async -> [String: Any]? {
-        var order: [RunProvider] = [.claude, .codex]
-        if let provider, let index = order.firstIndex(of: provider) { order.insert(order.remove(at: index), at: 0) }
-        guard let pick = order.first(where: { executable($0) != nil }), let executable = executable(pick) else { return nil }
-        let environment = accountEnvironment(pick == provider ? (profileID ?? pick.kind.rawValue) : pick.kind.rawValue)
-        let engine: TextGeneration.Engine = pick == .claude ? .claude : .codex
-        let work = Task.detached(priority: .utility) {
-            await TextGenerationRunner.run(engine: engine, executable: executable, environment: environment, prompt: prompt,
-                                     schema: schema, cwd: cwd, timeout: timeout, model: model)
+        var order: [RunProvider] = [.claude, .codex, .antigravity]
+        if let provider {
+            if let index = order.firstIndex(of: provider) {
+                order.insert(order.remove(at: index), at: 0)
+            } else if provider.usesACP || executable(provider) != nil {
+                order.insert(provider, at: 0)
+            }
         }
-        // A detached task does not inherit cancellation: pass it on, so a cancelled request stops its agent process.
-        return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        for pick in order {
+            guard let executable = executable(pick) else { continue }
+            if pick.usesACP {
+                let resolvedProfile = (pick == provider ? profileID : nil) ?? pick.kind.rawValue
+                if let answer = await generateWithAcp(pick, profileID: resolvedProfile, prompt: prompt, timeout: timeout) {
+                    return answer
+                }
+            } else {
+                let environment = accountEnvironment(pick == provider ? (profileID ?? pick.kind.rawValue) : pick.kind.rawValue)
+                let engine: TextGeneration.Engine
+                switch pick {
+                case .claude: engine = .claude
+                default: engine = .codex
+                }
+                let work = Task.detached(priority: .utility) {
+                    await TextGenerationRunner.run(engine: engine, executable: executable, environment: environment, prompt: prompt,
+                                             schema: schema, cwd: cwd, timeout: timeout, model: model)
+                }
+                // A detached task does not inherit cancellation: pass it on, so a cancelled request stops its agent process.
+                if let answer = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() }) {
+                    return answer
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Runs a quick ACP prompt with an agent (such as Antigravity) in a temporary scratch folder, without MCP bridge or
+    /// session persistence, and parses the structured JSON answer from its reply.
+    func generateWithAcp(_ provider: RunProvider, profileID: String, prompt: String,
+                         timeout: TimeInterval = 120) async -> [String: Any]? {
+        switch provider {
+        case .antigravity:
+            guard hasAntigravityLogin(profileID) else { return nil }
+        case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp:
+            break
+        }
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(TextGenerationRunner.folderPrefix + UUID().uuidString, isDirectory: true)
+        guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        guard let client = startAcpProbe(provider, profileID: profileID, folder: temp) else { return nil }
+
+        final class ResponseCollector: @unchecked Sendable {
+            private let lock = NSLock()
+            private var message = ""
+            private var thought = ""
+            func appendMessage(_ text: String) { lock.withLock { message += text } }
+            func appendThought(_ text: String) { lock.withLock { thought += text } }
+            func result() -> [String: Any]? {
+                lock.withLock {
+                    if let obj = TextGeneration.object(message) { return obj }
+                    if let obj = TextGeneration.object(thought) { return obj }
+                    return nil
+                }
+            }
+        }
+
+        let collector = ResponseCollector()
+        client.onMessage = { _, events in
+            for event in events {
+                switch event {
+                case .messageChunk(let text):
+                    collector.appendMessage(text)
+                case .thoughtChunk(let text):
+                    collector.appendThought(text)
+                case .permission(let rpcID, _, _):
+                    client.respond(rpcID, AcpRPC.cancelledOutcome)
+                default:
+                    break
+                }
+            }
+        }
+
+        final class Once: @unchecked Sendable {
+            private let lock = NSLock()
+            private var done = false
+            func claim() -> Bool { lock.withLock { defer { done = true }; return !done } }
+        }
+
+        let once = Once()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                func finish(_ answer: [String: Any]?) {
+                    if once.claim() {
+                        client.stop()
+                        continuation.resume(returning: answer)
+                    }
+                }
+
+                client.onExit = { _, _ in
+                    finish(collector.result())
+                }
+
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                    finish(nil)
+                }
+
+                client.request("initialize", AcpRPC.initializeParams()) { result in
+                    guard case .success = result else { return finish(nil) }
+
+                    func startPrompt() {
+                        let params = AcpRPC.sessionParams(cwd: temp.path, bridge: nil, loadID: nil)
+                        client.request("session/new", params) { sessionResult in
+                            guard case .success(let response) = sessionResult,
+                                  let sessionID = response.dictionary["sessionId"] as? String else {
+                                return finish(nil)
+                            }
+                            let attachments: [[String: Any]] = []
+                            client.request("session/prompt", AcpRPC.promptParams(sessionID: sessionID, text: prompt, attachments: attachments)) { _ in
+                                finish(collector.result())
+                            }
+                        }
+                    }
+
+                    switch provider {
+                    case .antigravity:
+                        client.request("authenticate", ["methodId": AntigravityAcp.authMethod]) { authResult in
+                            guard case .success = authResult else { return finish(nil) }
+                            startPrompt()
+                        }
+                    case .claude, .codex, .gemini, .opencode, .cursor, .grok, .pi, .acp:
+                        startPrompt()
+                    }
+                }
+            }
+        } onCancel: {
+            client.stop()
+        }
     }
 
     /// A title for a new session from its first message, in place of the first line Nook shows until then. It is

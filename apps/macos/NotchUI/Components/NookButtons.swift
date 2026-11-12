@@ -61,6 +61,28 @@ struct NookAcknowledgeButton: View {
     }
 }
 
+/// A ring filled clockwise from the top to `fraction`, on a track for the rest. The fill and the track never overlap
+/// and share butt caps, so the filled part is exactly as thick as the empty part (drawn on top of a full track, its
+/// edges doubled up and a round cap stuck out, which made a filled ring look heavier). The stroke sits inside the frame.
+struct ProgressRing: View {
+    var fraction: CGFloat
+    var tint: Color
+    var track: Color = NookTheme.line2
+    var lineWidth: CGFloat = 2
+
+    var body: some View {
+        let filled = min(max(fraction, 0), 1)
+        ZStack {
+            Circle().inset(by: lineWidth / 2).trim(from: filled, to: 1)
+                .stroke(track, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+            Circle().inset(by: lineWidth / 2).trim(from: 0, to: filled)
+                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+        }
+        .rotationEffect(.degrees(-90))
+        .accessibilityHidden(true)
+    }
+}
+
 /// A small ring that empties over `duration` seconds and holds while `paused`. Starts when it appears; give it a new
 /// `.id` to start over. The ring runs as one linear animation instead of a per-frame clock, so it keeps moving in the
 /// notch panel and costs nothing between frames; holding snaps it to where it is, resuming animates the rest.
@@ -75,15 +97,9 @@ struct CountdownRing: View {
     @State private var runningSince: Date?
 
     var body: some View {
-        ZStack {
-            Circle().stroke(NookTheme.ink.opacity(0.14), lineWidth: 2.2)
-            Circle()
-                .trim(from: 0, to: left)
-                .stroke(NookTheme.ink, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-        .padding(1.5)
-        .frame(width: size, height: size)
+        ProgressRing(fraction: left, tint: NookTheme.ink, track: NookTheme.ink.opacity(0.14), lineWidth: 2.2)
+            .padding(0.4)
+            .frame(width: size, height: size)
         .onAppear {
             // A turn later, so the run does not merge into the notice's own opening animation.
             DispatchQueue.main.async { if !paused { run() } }
@@ -177,7 +193,8 @@ struct ToolbarIconButton: View {
     var selected: Bool = false
     /// The symbol's size: larger in a diff's toolbar, whose buttons are 28 pt.
     var symbolSize: CGFloat = 11
-    /// Shows its label as the composer's own tip (`composerTip`) instead of a system tooltip: a button under a composer.
+    /// Shows its label as the composer's own tip (`composerTip`) instead of the window tip (`nookTip`): a button under a
+    /// composer.
     var inComposer = false
     let action: () -> Void
     @State private var hovering = false
@@ -210,9 +227,18 @@ struct ToolbarIconButton: View {
         .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .composerTip(label, inComposer: inComposer)
+        .buttonTip(label, inComposer: inComposer)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private extension View {
+    /// The button's label on hover: the composer's own tip under a composer (`composerTip`), the fast window tip
+    /// (`nookTip`) everywhere else.
+    @ViewBuilder
+    func buttonTip(_ label: String, inComposer: Bool) -> some View {
+        if inComposer { composerTip(label) } else { nookTip(label) }
     }
 }
 

@@ -123,6 +123,32 @@ pub struct Settings {
     pub start_local_brain: bool,
     /// The one-time note that closing the main window keeps Nook running in the tray was shown.
     pub tray_hint_shown: bool,
+    /// Where the main window was, in physical pixels, so it opens there again.
+    pub main_window: Option<WindowPlacement>,
+}
+
+/// The main window's last place and size on the desktop.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPlacement {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub maximized: bool,
+}
+
+impl WindowPlacement {
+    /// Whether the window's title bar would land on one of these screens (`(x, y, width, height)`), so a window that
+    /// was on a screen that is gone now does not open out of reach.
+    pub fn visible_on(&self, screens: &[(i32, i32, u32, u32)]) -> bool {
+        if self.width < 200 || self.height < 200 {
+            return false;
+        }
+        // A point in the title bar, a little in from the left edge.
+        let (px, py) = (self.x.saturating_add(60), self.y.saturating_add(12));
+        screens.iter().any(|&(x, y, w, h)| px >= x && py >= y && px < x.saturating_add(w as i32) && py < y.saturating_add(h as i32))
+    }
 }
 
 impl Default for Settings {
@@ -178,6 +204,7 @@ impl Default for Settings {
             inbox_seen_at: None,
             start_local_brain: true,
             tray_hint_shown: false,
+            main_window: None,
         }
     }
 }
@@ -299,6 +326,22 @@ pub fn detect_language(text: &str) -> Option<&'static str> {
     let (best, top) = scores[0];
     let second = scores[1].1;
     (top >= 2 && top > second).then_some(best)
+}
+
+#[cfg(test)]
+mod window_placement_tests {
+    use super::*;
+
+    #[test]
+    fn a_window_on_a_screen_that_is_gone_does_not_count() {
+        let placement = WindowPlacement { x: 2200, y: 100, width: 1080, height: 720, maximized: false };
+        let one = [(0, 0, 1920, 1080)];
+        let two = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)];
+        assert!(!placement.visible_on(&one));
+        assert!(placement.visible_on(&two));
+        assert!(!WindowPlacement { width: 50, ..placement }.visible_on(&two));
+        assert!(WindowPlacement { x: -1800, y: 40, ..placement }.visible_on(&[(-1920, 0, 1920, 1080)]));
+    }
 }
 
 #[cfg(test)]

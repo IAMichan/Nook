@@ -92,6 +92,7 @@ final class NotchViewModel: ObservableObject {
             // Leaving a session counts as having seen what it finished, wherever the switch came from (the ring, a
             // notice, search), also while the Agents tab is not on screen to notice it: otherwise "done" came back on its
             // row until you opened it once more.
+            // The only "left" visit: the Agents tab records just the session you open.
             SessionVisits.shared.visit(oldValue)
             if continuingSession {
                 // The same conversation under another key: its browser, terminal and other tabs stay as they are.
@@ -99,9 +100,13 @@ final class NotchViewModel: ObservableObject {
                 sessionLayouts[oldValue] = nil
             } else {
                 // The session you left keeps its panels for when you come back; the one you open shows its own, or only
-                // its conversation the first time.
+                // its conversation the first time. All in this turn and without animation, so the switch lands as one
+                // update; the panel resizes once below instead of once per tool that changes.
                 sessionLayouts[oldValue] = currentSessionLayout()
-                restoreSessionLayout(sessionLayouts[selectedAgentID])
+                let layout = sessionLayouts[selectedAgentID]
+                restoringLayout = true
+                withTransaction(Transaction(animation: nil)) { restoreSessionLayout(layout) }
+                restoringLayout = false
             }
             resizeForWorkbench()
         }
@@ -109,6 +114,16 @@ final class NotchViewModel: ObservableObject {
 
     /// Set while `continueSession` moves the open conversation to its new key.
     private var continuingSession = false
+
+    /// Set while a session switch puts back the panels of the session you open: the tools' own resizes wait for the one
+    /// the switch does at the end.
+    private var restoringLayout = false
+
+    /// Assigns only a new value: a `@Published` write publishes even when nothing changed, and a session switch writes
+    /// most panel properties back to what they already are.
+    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<NotchViewModel, Value>, to value: Value) {
+        if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
+    }
 
     /// The conversation open under `previous` goes on as `id` (a new session that started, a terminal or earlier session
     /// Nook took over): it keeps the panels it has open instead of opening bare, as another session would. When you went
@@ -172,12 +187,12 @@ final class NotchViewModel: ObservableObject {
     /// Closes a session's side panel and drops all its tabs: another session's panels are about to take its place.
     func closeSidePanel() {
         if sessionTabs.contains(.artifact) { EmbeddedAppStore.shared.closeArtifact() }
-        sessionTool = .conversation
+        update(\.sessionTool, to: .conversation)
         hiddenSideTool = nil
-        sessionTabs = []
-        sideSubThread = nil
-        sidePullRequestTabs = []
-        activeSidePullRequest = nil
+        update(\.sessionTabs, to: [])
+        update(\.sideSubThread, to: nil)
+        update(\.sidePullRequestTabs, to: [])
+        update(\.activeSidePullRequest, to: nil)
     }
 
     /// What each session you left had open beside and under its conversation, by `selectedAgentID`, so going to
@@ -201,17 +216,17 @@ final class NotchViewModel: ObservableObject {
     private func restoreSessionLayout(_ layout: SessionLayout?) {
         closeSidePanel()
         guard let layout else {
-            bottomTool = .conversation
+            update(\.bottomTool, to: .conversation)
             return
         }
         if let file = layout.file, FileViewerStore.shared.target != file { FileViewerStore.shared.open(file) }
-        bottomTabs = layout.bottomTabs
-        bottomTool = layout.bottomTool
-        sessionTabs = layout.sideTabs.filter { $0 != .artifact }
-        sidePullRequestTabs = layout.pullRequestTabs
-        activeSidePullRequest = layout.activePullRequest
-        sideSubThread = layout.subThread
-        sessionTool = layout.sideTool == .artifact ? (sessionTabs.first ?? .picker) : layout.sideTool
+        update(\.bottomTabs, to: layout.bottomTabs)
+        update(\.bottomTool, to: layout.bottomTool)
+        update(\.sessionTabs, to: layout.sideTabs.filter { $0 != .artifact })
+        update(\.sidePullRequestTabs, to: layout.pullRequestTabs)
+        update(\.activeSidePullRequest, to: layout.activePullRequest)
+        update(\.sideSubThread, to: layout.subThread)
+        update(\.sessionTool, to: layout.sideTool == .artifact ? (sessionTabs.first ?? .picker) : layout.sideTool)
     }
 
     /// What the bottom panel under the selected session's conversation shows: nothing (closed), the list of tools, or
@@ -363,7 +378,7 @@ final class NotchViewModel: ObservableObject {
     }
 
     private func resizeForWorkbench() {
-        guard case .panel(.agents) = state, sheet == nil else { return }
+        guard !restoringLayout, case .panel(.agents) = state, sheet == nil else { return }
         withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
         scheduleAutoClose()
     }

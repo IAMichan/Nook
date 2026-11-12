@@ -171,13 +171,16 @@ final class GuestLinkTests: XCTestCase {
 
     func testMessagesWaitUntilSentOrDismissed() {
         var hold = GuestHold()
-        hold.add(held("a", bytes: 0))
-        hold.add(held("b", bytes: 10))
+        hold.add(held("a", bytes: 0), wireID: "wire-a")
+        hold.add(held("a2", bytes: 0), wireID: "wire-a")
+        XCTAssertTrue(hold.hasSeen("wire-a"))
+        hold.add(held("b", bytes: 10), wireID: "wire-b")
         XCTAssertEqual(hold.notes.map(\.id), ["a", "b"])
         XCTAssertEqual(hold.notes.last?.files, ["f.bin"])
         XCTAssertEqual(hold.take("a")?.id, "a")
         XCTAssertNil(hold.take("a"))
-        XCTAssertEqual(hold.messages.map(\.id), ["b"])
+        hold.add(held("a3", bytes: 0), wireID: "wire-a")
+        XCTAssertEqual(hold.messages.map(\.id), ["b"], "a resent guest message after take is not held again")
         XCTAssertEqual(hold.takeAll().map(\.id), ["b"])
         XCTAssertTrue(hold.messages.isEmpty)
     }

@@ -196,7 +196,10 @@ final class OpenTelemetryTests: XCTestCase {
         XCTAssertEqual(item["kind"] as? Int, 1)
         XCTAssertEqual(item["startTimeUnixNano"] as? String, "1700000000500000000")
         XCTAssertEqual(item["endTimeUnixNano"] as? String, "1700000002500000000")
-        XCTAssertEqual(item["status"] as? [String: AnyHashable], ["code": 2, "message": "failed"])
+        // Field by field: on Linux JSONSerialization gives NSNumber, whose AnyHashable never equals an Int's.
+        let status = try XCTUnwrap(item["status"] as? [String: Any])
+        XCTAssertEqual(status["code"] as? Int, 2)
+        XCTAssertEqual(status["message"] as? String, "failed")
         let attributes = try XCTUnwrap(item["attributes"] as? [[String: Any]])
         XCTAssertEqual(attributes.map { $0["key"] as? String }, ["n", "p"])
         XCTAssertEqual(attributes[0]["value"] as? [String: String], ["intValue": "3"])

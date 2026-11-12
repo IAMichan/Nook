@@ -41,7 +41,7 @@ enum CodexRPCMessage: Equatable {
 }
 
 /// A question an agent asks you (Codex `item/tool/requestUserInput`, Claude Code's AskUserQuestion), one or more at a time.
-struct RunQuestion: Equatable, Sendable {
+struct RunQuestion: Codable, Equatable, Sendable {
     var id: String
     var header: String
     var question: String
@@ -49,14 +49,47 @@ struct RunQuestion: Equatable, Sendable {
     var multiSelect: Bool
     /// The agent accepts an answer of your own besides the options.
     var allowsOther: Bool
+
+    init(id: String, header: String, question: String, options: [RunQuestionOption], multiSelect: Bool, allowsOther: Bool) {
+        self.id = id
+        self.header = header
+        self.question = question
+        self.options = options
+        self.multiSelect = multiSelect
+        self.allowsOther = allowsOther
+    }
+
+    /// Saved with its session (`SavedQuestion`): what a later Nook leaves out reads as empty, so the session still loads.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        header = try c.decodeIfPresent(String.self, forKey: .header) ?? ""
+        question = try c.decodeIfPresent(String.self, forKey: .question) ?? ""
+        options = try c.decodeIfPresent([RunQuestionOption].self, forKey: .options) ?? []
+        multiSelect = try c.decodeIfPresent(Bool.self, forKey: .multiSelect) ?? false
+        allowsOther = try c.decodeIfPresent(Bool.self, forKey: .allowsOther) ?? true
+    }
 }
 
-struct RunQuestionOption: Equatable, Sendable {
+struct RunQuestionOption: Codable, Equatable, Sendable {
     var label: String
     var description: String
     /// A mock-up or code snippet shown under the option in the code font (`QuestionPreview`); only Claude Code sends
     /// one, empty otherwise.
     var preview: String = ""
+
+    init(label: String, description: String, preview: String = "") {
+        self.label = label
+        self.description = description
+        self.preview = preview
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        preview = try c.decodeIfPresent(String.self, forKey: .preview) ?? ""
+    }
 }
 
 /// The preview an option of Claude Code's AskUserQuestion can carry (`options[].preview`, Markdown: a mock-up, a code
@@ -589,11 +622,15 @@ final class CodexAppServerClient: @unchecked Sendable {
     private var _threadID: String?
     private var _turnID: String?
 
-    init(spec: LaunchSpec) {
-        process = AgentProcess(spec: spec)
+    /// `transport` and `scheduler` replace the process and the clock in tests (a recorded agent, `ReplayTransport`).
+    init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
+        process = AgentProcess(spec: spec, transport: transport, scheduler: scheduler)
         // A keeper's agent has seen ids from an earlier Nook: answers to those must not match new requests.
-        if spec.keeper?.offset != nil { nextID = 1 + Int.random(in: 1_000_000...2_000_000) }
+        if spec.keeper?.offset != nil { nextID = AcpRPC.reattachedFirstID() }
     }
+
+    /// Held while a line is written, with the id it takes: everything reaches Codex in the order Nook sent it.
+    private let writeLock = NSLock()
 
     var isRunning: Bool { process.isRunning }
 
@@ -615,25 +652,27 @@ final class CodexAppServerClient: @unchecked Sendable {
     }
 
     func request(_ method: String, _ params: [String: Any]? = nil, completion: @escaping (Result<JSONBox, CodexAppServerError>) -> Void) {
-        let id = lock.withLock { () -> Int in
-            let id = nextID
-            nextID += 1
-            pending[id] = completion
-            return id
+        writeLock.withLock {
+            let id = lock.withLock { () -> Int in
+                let id = nextID
+                nextID = AcpRPC.nextRequestID(after: id)
+                pending[id] = completion
+                return id
+            }
+            process.send(CodexRPC.request(id: id, method: method, params: params))
         }
-        process.send(CodexRPC.request(id: id, method: method, params: params))
     }
 
     func notify(_ method: String, _ params: [String: Any]? = nil) {
-        process.send(CodexRPC.notification(method: method, params: params))
+        writeLock.withLock { process.send(CodexRPC.notification(method: method, params: params)) }
     }
 
     func respond(_ id: RPCID, _ result: [String: Any]) {
-        process.send(CodexRPC.response(id: id, result: result))
+        writeLock.withLock { process.send(CodexRPC.response(id: id, result: result)) }
     }
 
     func respondError(_ id: RPCID, code: Int = -32601, message: String) {
-        process.send(CodexRPC.errorResponse(id: id, code: code, message: message))
+        writeLock.withLock { process.send(CodexRPC.errorResponse(id: id, code: code, message: message)) }
     }
 
     func stop() {

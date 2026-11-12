@@ -50,6 +50,11 @@ extension CompanionServer {
     func launch(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         let workspace = app.workspace
         let settings = workspace.settings
+        // Started before (from the phone's outbox, after a restart of Nook): the same session, not a second one.
+        let command = SessionCommand.phone(request.id)
+        if let earlier = workspace.commandReceipt(command), let created = earlier.created {
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: created)
+        }
         guard let launch = request.launch, let provider = RunProvider(rawValue: launch.agent),
               launchableProviders(app).contains(provider),
               let words = CompanionPolicy.cleanMessage(launch.task) else {
@@ -103,6 +108,7 @@ extension CompanionServer {
         do {
             // A folder another session works in is refused, as in the composer; the phone can pick a worktree instead.
             let id = try await workspace.start(config, allowSharedFolder: false)
+            workspace.recordCommand(command, .started, created: id.uuidString)
             audit("start", "\(provider.displayName) · \(workspace.run(id)?.title ?? "")")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: id.uuidString)
         } catch {

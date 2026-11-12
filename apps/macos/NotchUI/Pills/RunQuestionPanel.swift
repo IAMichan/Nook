@@ -13,6 +13,8 @@ struct RunQuestionPanel: View {
     var folder: String? = nil
     /// Stops the agent instead of answering (the composer with its Stop button is hidden meanwhile).
     var onStop: (() -> Void)? = nil
+    /// Leaves a question nothing waits for unanswered (one asked before Nook restarted, `PendingQuestion.isRestored`).
+    var onDismiss: (() -> Void)? = nil
     let onAnswer: ([String: [String]]) -> Void
     @State private var index = 0
     @State private var answers: [String: [String]] = [:]
@@ -47,7 +49,6 @@ struct RunQuestionPanel: View {
                     Spacer(minLength: 6)
                     if index > 0 {
                         ToolbarIconButton("chevron.left", tr("ws.question.back")) { goBack() }
-                            .help(tr("ws.question.back"))
                     }
                     if question.questions.count > 1 {
                         Text("\(index + 1)/\(question.questions.count)")
@@ -59,9 +60,18 @@ struct RunQuestionPanel: View {
                                       collapsed ? tr("ws.question.expand") : tr("ws.question.collapse")) {
                         withAnimation(NookTheme.reveal) { collapsed.toggle() }
                     }
-                    if let onStop {
+                    if let onDismiss {
+                        ToolbarIconButton("xmark", tr("ws.question.dismiss")) { onDismiss() }
+                    } else if let onStop {
                         ToolbarIconButton("xmark", tr("ws.question.stop")) { onStop() }
                     }
+                }
+                if question.isRestored {
+                    // The agent that asked is gone after the restart: the answer reaches it as a message of yours.
+                    Text(tr("ws.question.restoredNote"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if collapsed {
                     Text(TranscriptPresentation.headline(item.question))

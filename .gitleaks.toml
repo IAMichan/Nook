@@ -1,0 +1,13 @@
+[allowlist]
+description = "Repository allowlist for tests and false positives"
+paths = [
+    '''apps/macos/Tests/''',
+    '''packages/protocol/Fixtures/''',
+    '''apps/tauri/core/src/companion/apns\.rs''',
+    '''apps/macos/Resources/mermaid/''',
+]
+regexes = [
+    '''-----BEGIN EC PRIVATE KEY-----''',
+    '''xyhdXQHlDecswVxeKnPnt7Rlvh67lWSD''',
+    '''mod\+shift\+enter''',
+]

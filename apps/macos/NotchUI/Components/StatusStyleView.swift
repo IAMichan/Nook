@@ -47,7 +47,7 @@ struct AgentStatusBadge: View {
             }
             .foregroundStyle(tint)
         }
-        .help(markOnly ? [state.longWord, detail].compactMap { $0 }.joined(separator: " · ") : "")
+        .nookTip([state.longWord, detail].compactMap { $0 }.joined(separator: " · "), enabled: markOnly)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([state.longWord, detail].compactMap { $0 }.joined(separator: " "))
     }

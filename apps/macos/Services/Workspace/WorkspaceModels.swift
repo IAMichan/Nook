@@ -139,8 +139,11 @@ struct ProviderCapabilities: Equatable, Sendable {
     var canRollbackConversation: Bool { rollback != .none }
     /// The agent can fork its conversation at an earlier turn, not only at its end.
     var canForkFromTurn = false
-    /// An approval or question the agent asked survives a restart of Nook (or of the agent). No agent Nook runs keeps
-    /// them: the process that asked is gone, so a session cut off while waiting on you stays yours to pick up.
+    /// An approval or question the agent asked survives a restart of Nook (or of the agent) as the agent's own request.
+    /// No agent Nook runs keeps them: the process that asked is gone, so a session cut off while waiting on you stays
+    /// yours to pick up. Nook itself keeps what it can for every agent alike (`RestartRequests`): a question shows again
+    /// and is answered as a message, an approval leaves a note that it expired. A kept agent (`SessionKeeper`) is still
+    /// waiting after a crash, and asks again (`KeptRuns.durableOffset`).
     var pendingRequestsSurviveRestart = false
     /// How reliably the agent says a turn is over (see `TurnEndSignal`).
     var turnEndSignal: TurnEndSignal = .strong
@@ -423,6 +426,15 @@ struct KeptSession: Codable, Equatable, Sendable {
     var turnID: String? = nil
 }
 
+/// A question an agent asked, as it is saved with its session (`WorkspaceRun.waitingQuestions`): enough to show it again
+/// after a restart and answer it as a message of yours (`RestartRequests`). How the asking process waited for the answer
+/// (a request id, an RPC id) is not kept: that process is gone.
+struct SavedQuestion: Codable, Equatable, Sendable {
+    var id: String
+    var questions: [RunQuestion]
+    var created: Date
+}
+
 struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var title: String
@@ -548,6 +560,13 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var promptCache: PromptCacheWindow? = nil
     /// How much of the work this session's timeline shows; nil follows Settings (`WorkspaceSettings.timelineDetail`).
     var timelineDetail: TimelineDetail? = nil
+    /// What waited on you when the list was saved, so it survives a restart (`RestartRequests`): the questions the
+    /// agent asked, the approvals it waited for (their summaries), and the messages you queued. Written only into
+    /// `runs.json` (`RestartRequests.merged`); in memory they live in `WorkspaceManager.questions`, `approvals` and
+    /// `queued`, and these stay nil.
+    var waitingQuestions: [SavedQuestion]? = nil
+    var waitingApprovals: [String]? = nil
+    var queue: MessageQueue? = nil
 
     var projectName: String {
         let name = (projectPath as NSString).lastPathComponent

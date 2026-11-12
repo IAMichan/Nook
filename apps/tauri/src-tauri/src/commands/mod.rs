@@ -245,13 +245,14 @@ pub fn clear_audit(state: State<'_, AppState>) {
 
 // Vensters
 
-/// Opens or closes the bar; `notice` keeps it closed but wide enough for a compact agent notice.
+/// Opens or closes the bar; `notice` keeps it closed but wide enough for a compact agent notice, `chip` keeps it closed
+/// with room under the round Nook for a chat chip.
 #[tauri::command]
-pub fn bar_expand(app: AppHandle, expanded: bool, notice: Option<bool>) {
+pub fn bar_expand(app: AppHandle, expanded: bool, notice: Option<bool>, chip: Option<bool>) {
     #[cfg(desktop)]
-    crate::platform::desktop::place_bar_sized(&app, expanded, notice.unwrap_or(false));
+    crate::platform::desktop::place_bar_sized(&app, expanded, notice.unwrap_or(false), chip.unwrap_or(false));
     #[cfg(not(desktop))]
-    let _ = (app, expanded, notice);
+    let _ = (app, expanded, notice, chip);
 }
 
 #[tauri::command]
@@ -278,6 +279,24 @@ pub async fn start_local_brain(name: String) -> Res<String> {
         let _ = name;
         Ok("notInstalled".into())
     }
+}
+
+/// The tray tooltip follows what waits on you and what Nook is working on.
+#[tauri::command]
+pub fn tray_status(app: AppHandle, waiting: usize, working: usize) {
+    #[cfg(desktop)]
+    crate::platform::desktop::tray_status(&app, waiting, working);
+    #[cfg(not(desktop))]
+    let _ = (app, waiting, working);
+}
+
+/// The global shortcuts (by action) that another app already holds.
+#[tauri::command]
+pub fn shortcut_problems() -> Vec<String> {
+    #[cfg(desktop)]
+    return crate::platform::desktop::shortcut_problems();
+    #[cfg(not(desktop))]
+    vec![]
 }
 
 /// De route die het hoofdvenster moet tonen, één keer.

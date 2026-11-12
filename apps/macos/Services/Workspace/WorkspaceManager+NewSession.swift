@@ -369,10 +369,8 @@ extension WorkspaceManager {
     func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
                history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false,
                continuesConversation: Bool = true) async throws -> UUID {
-        let taken = runs.first { $0.provider == provider && (fork ? $0.copiedFrom == sessionID : $0.isConversation(sessionID)) }
-        if let existing = taken {
-            if existing.archived { setArchived(existing.id, false) }
-            selectedRunID = existing.id
+        if let existing = takenRun(provider: provider, sessionID: sessionID, fork: fork) {
+            reopenTaken(existing)
             return existing.id
         }
         let projectPath = WorkspacePathPolicy.normalize(directory)
@@ -424,20 +422,50 @@ extension WorkspaceManager {
         if !continuesConversation { adopted.carriedOverFrom = sessionID }
         if fork { adopted.copiedFrom = sessionID }
         runs.insert(adopted, at: 0)
-        events[id] = []
         if fork { forkNext.insert(id) }
         settings.rememberProject(repoRoot ?? projectPath)
         selectedRunID = id
-        for entry in history where !entry.text.isEmpty {
-            append(id, RunEvent(kind: entry.kind, text: entry.text, state: entry.kind == .assistant ? .done : nil))
+        let replayed = history.filter { !$0.text.isEmpty }.map {
+            RunEvent(kind: $0.kind, text: $0.text, state: $0.kind == .assistant ? .done : nil)
         }
-        append(id, RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName)))
+        let note = RunEvent(kind: .system, text: tr(fork ? "ws.event.adoptedFork" : "ws.event.adopted", provider.displayName))
+        installAdoptedTimeline(id, replayed + [note])
         scheduleSave()
         // Resolve repository metadata and take the starting snapshot in the background without blocking an immediate reply.
         prepareFolderSession(id, directory: projectPath, knownRoot: repoRoot, knownBranch: branch, includeComparisonBase: true)
         if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
         if !continuesConversation { carryOverConversation(id, prompt: nil) }
         return id
+    }
+
+    /// The Nook session that already took over this conversation, if any: the same test `adopt` uses, so asking first
+    /// (to open that session at once) and adopting can never disagree. A fork is found by the conversation it copied.
+    func takenRun(provider: RunProvider, sessionID: String, fork: Bool = false) -> WorkspaceRun? {
+        runs.first { $0.provider == provider && (fork ? $0.copiedFrom == sessionID : $0.isConversation(sessionID)) }
+    }
+
+    /// Brings back a session that already took over a conversation: out of the archive, and selected.
+    func reopenTaken(_ run: WorkspaceRun) {
+        if run.archived { setArchived(run.id, false) }
+        selectedRunID = run.id
+    }
+
+    /// Puts the timeline of a session that just took over a conversation in memory in one go: one change to announce
+    /// and one write to the log, instead of one per earlier message. Keeps what `append` does per event that matters
+    /// for a replay: the byte count, the search index (written with the log) and the pull requests a message names.
+    private func installAdoptedTimeline(_ id: UUID, _ timeline: [RunEvent]) {
+        timelineStore.changing = id
+        timelineStore.countingBytes = true
+        events[id] = timeline
+        timelineStore.bytes.loaded(id, timeline)
+        timelineStore.countingBytes = false
+        timelineStore.changing = nil
+        timelineStore.use[id] = Date()
+        // New events only: the log writes them as rows in one transaction and indexes them for search.
+        store.saveEventsAsync(id, timeline)
+        for event in timeline where event.kind == .user {
+            noticePullRequests(id, PullRequestMentions.inMessage(event.text), mustExist: true)
+        }
     }
 
     /// Changes how the next turn runs: mode, permissions, and model. Also while a turn runs (a session Nook took over as

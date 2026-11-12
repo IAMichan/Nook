@@ -208,4 +208,39 @@ final class CompanionRoutesTests: XCTestCase {
         XCTAssertNil(guardian.admitRetry(request, now: now))
         XCTAssertEqual(guardian.admitRetry(request, now: now.addingTimeInterval(120)), .stale)
     }
+
+    func testSessionCommandReceiptsSurviveARestartAndKeepStaleStops() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nook-receipts-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("command-receipts.json")
+        let now = Date()
+
+        var store = SessionCommandReceipts()
+        let cmd = try XCTUnwrap(SessionCommand.phone("  req-1  ", turn: "turn-a"))
+        XCTAssertEqual(cmd.id, "phone:req-1")
+        XCTAssertEqual(cmd.turn, "turn-a")
+        XCTAssertNil(SessionCommand.phone("   "))
+
+        // A Stop meant for turn-a arrives after turn-b started: it does nothing and records .stale so a replay of it
+        // can never stop turn-b either.
+        XCTAssertFalse(SessionTurnCheck.applies(issuedFor: cmd.turn, current: "turn-b"))
+        XCTAssertFalse(SessionTurnCheck.applies(issuedFor: cmd.turn, current: nil))
+        XCTAssertTrue(SessionTurnCheck.applies(issuedFor: cmd.turn, current: "turn-a"))
+        XCTAssertTrue(SessionTurnCheck.applies(issuedFor: nil, current: "turn-b"), "older phone without turn acts on what runs now")
+
+        store.record(cmd.id, .stale, now: now)
+        store.record(cmd.id, .stopped, now: now.addingTimeInterval(1))
+        XCTAssertEqual(store.receipt(cmd.id, now: now)?.outcome, .stale, "a repeat keeps its first outcome")
+        store.record("phone:start-1", .started, created: "run-99", now: now)
+
+        SessionCommandReceipts.save(store.encoded(), to: file)
+        let mode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int)
+        XCTAssertEqual(mode, 0o600)
+
+        let loaded = SessionCommandReceipts.load(from: file, now: now.addingTimeInterval(60))
+        XCTAssertEqual(loaded.receipt(cmd.id, now: now)?.outcome, .stale)
+        XCTAssertEqual(loaded.receipt("phone:start-1", now: now)?.created, "run-99")
+        XCTAssertNil(loaded.receipt(cmd.id, now: now.addingTimeInterval(SessionCommandReceipts.lifetime + 1)))
+    }
 }

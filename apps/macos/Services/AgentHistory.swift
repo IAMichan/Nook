@@ -423,6 +423,10 @@ struct AgentUsageSummary: Equatable {
 /// (~/.claude and ~/.codex) in the background, re-reading a transcript only when it has changed.
 @MainActor
 final class AgentHistory: ObservableObject {
+    /// How many days back the Agents list shows earlier sessions: transcripts here, and settled sessions Nook ran itself
+    /// (`WorkspaceRunsSection.recent`), so both kinds in "Settled" go back equally far.
+    nonisolated static let listDays = 30
+
     @Published private(set) var sessions: [PastSession] = []
     /// The sessions read from transcripts on disk, and the ones agents listed themselves (ACP `session/list`) per account:
     /// `sessions` holds both, each conversation once.
@@ -670,7 +674,6 @@ private final class HistoryScanner: @unchecked Sendable {
     /// How many days back to read transcripts.
     /// Transcripts are read for 90 days (the Usage page's longest window); the session list shows the last 30.
     private static let days = 90
-    private static let listDays = 30
     private static let maxFiles = 1500
 
     private let iso: ISO8601DateFormatter = {
@@ -691,7 +694,7 @@ private final class HistoryScanner: @unchecked Sendable {
         let fm = FileManager.default
         loadDiskCache()
         let since = Date().addingTimeInterval(-Double(Self.days) * 86_400)
-        let listSince = Date().addingTimeInterval(-Double(Self.listDays) * 86_400)
+        let listSince = Date().addingTimeInterval(-Double(AgentHistory.listDays) * 86_400)
         var installed: Set<AgentKind> = []
         var files: [(url: URL, agent: AgentKind, profile: String, key: CacheKey)] = []
         var seenFolders = Set<String>()

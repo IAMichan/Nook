@@ -100,7 +100,7 @@ struct PullRequestPill: View {
             }
         }
         .modifier(RowBadgeBackground(horizontal: compact ? 3 : 5))
-        .help(tooltip ? (label.isEmpty ? status : "\(label) · \(status)") : "")
+        .nookTip(label.isEmpty ? status : "\(label) · \(status)", enabled: tooltip)
         .accessibilityLabel(label.isEmpty ? status : "\(label), \(status)")
     }
 
