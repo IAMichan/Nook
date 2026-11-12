@@ -16,6 +16,7 @@ struct UsageView: View {
             // Every agent on this Mac, from their own transcripts: cost, tokens, models and charts.
             UsageInsightsView(history: app.history)
             limitsSection
+            hubsSection
             activitySection(report)
             if !report.rows.isEmpty {
                 byModelSection(report)
@@ -48,6 +49,23 @@ struct UsageView: View {
                     .sheet(isPresented: $showLimits) { UsageLimitsModal { showLimits = false }.frame(width: 720).environmentObject(app) }
                 UsageRefreshButton()
             }
+        }
+    }
+
+    // MARK: - CLIProxyAPI hubs
+
+    /// The accounts a CLIProxyAPI hub pools, with the limits it has seen. The only place to add or remove a hub.
+    private var hubsSection: some View {
+        Section {
+            if app.cliProxy.hubs.isEmpty {
+                SettingNote(tr("cliproxy.empty"))
+            }
+            TimelineView(.nookTicks(every: 60)) { context in
+                CLIProxyHubsList(usage: app.cliProxy, editable: true, now: context.date)
+            }
+            CLIProxyAddForm(usage: app.cliProxy)
+        } header: {
+            SettingsSectionTitle(tr("cliproxy.title"), info: tr("cliproxy.info"))
         }
     }
 

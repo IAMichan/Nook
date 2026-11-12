@@ -36,6 +36,8 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Antigravity's quota windows, read from Google.
     let antigravityUsage = AntigravityUsage()
+    /// The CLIProxyAPI hubs added in Settings, and what each reports about its accounts.
+    let cliProxy = CLIProxyUsage()
     /// Claude's subscription limits, asked of the `claude` CLI for every signed-in Claude account.
     private(set) lazy var claudeUsage = ClaudeUsage(
         hub: hub,
@@ -52,14 +54,17 @@ final class AppModel: ObservableObject {
         claudeUsage.refreshNow()
         codex.refreshNow(maxAge: maxAge)
         antigravityUsage.refreshNow()
+        cliProxy.refreshNow()
     }
 
     /// The refresh button of a usage view: reads every account now and returns when Claude's and Codex's readings are in.
     func refreshQuotasManually() async {
         antigravityUsage.refreshNow(force: true)
         async let codexDone: Void = codex.refreshManually()
+        async let hubsDone: Void = cliProxy.refreshManually()
         await claudeUsage.refreshManually()
         await codexDone
+        await hubsDone
     }
 
     /// While a usage view is on screen: reads the limits when it opens and every two minutes after (slower when the energy

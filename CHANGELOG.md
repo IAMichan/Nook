@@ -11,6 +11,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- CLIProxyAPI hubs as a source of limits: add a hub in Settings › Usage & costs (its address and management key, kept
+  in the Keychain) and its accounts show in the usage modal and in Settings with their state, cooldowns, request
+  counts and the Claude and Codex limits the hub saw on its requests. Nook only reads what the hub reports about its
+  own accounts and never asks it to call a provider with an account's token. Plain http is accepted only for this Mac
+  and the local network (see docs/INTEGRATIONS.md).
+
 - Option previews under an agent's question options (mock-ups, code snippets, ASCII layouts) now always show in the
   code font in Nook and on the iPhone, and "Reply" in the footer of an agent's final answer (or its long-press menu on
   the phone) puts the answer or your selection from it as a quote at the top of the composer, shown as an inset card
