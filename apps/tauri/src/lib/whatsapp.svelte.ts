@@ -5,6 +5,9 @@ import { connectorEvents, connectorsApi, type WhatsAppCard } from "./connectors"
 import { toast } from "./toast.svelte";
 
 class WhatsAppCardState {
+  /** The newest message that has not been looked at yet. It never opens the bar: the closed bar shows a chip under the
+   *  round Nook, and the card opens in the panel once you open it yourself. */
+  pending = $state<{ chat: string; name: string } | null>(null);
   /** The chat whose card shows, or null. */
   chat = $state<string | null>(null);
   card = $state<WhatsAppCard | null>(null);
@@ -24,7 +27,7 @@ class WhatsAppCardState {
     connectorEvents.onWhatsApp((arrived) => {
       // Someone typing in a card keeps it; a new message never takes it away.
       if (this.chat && this.chat !== arrived.chat && this.draft.trim()) return;
-      this.show(arrived.chat);
+      this.pending = { chat: arrived.chat, name: arrived.name };
     });
     // New ticks redraw the card on screen; they never bring one up by themselves.
     connectorEvents.onWhatsAppReceipt((chat) => chat === this.chat && this.reload());
@@ -32,6 +35,7 @@ class WhatsAppCardState {
   }
 
   async show(chat: string) {
+    this.pending = null;
     if (this.chat !== chat) {
       this.notice = "";
       this.draft = "";
@@ -61,6 +65,7 @@ class WhatsAppCardState {
   }
 
   dismiss() {
+    this.pending = null;
     this.version++;
     this.chat = null;
     this.card = null;
