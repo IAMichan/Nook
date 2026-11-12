@@ -30,7 +30,15 @@ struct CompletionSuggestion: Equatable {
         var text = Substring(raw.replacingOccurrences(of: "\t", with: " "))
         if let newline = text.firstIndex(where: \.isNewline) { text = text[..<newline] }
         text = Substring(text.filter { !$0.unicodeScalars.contains { $0.properties.generalCategory == .control } })
-        if before.last?.isWhitespace ?? true { text = text.drop(while: \.isWhitespace) }
+        if before.last?.isWhitespace ?? true {
+            text = text.drop(while: \.isWhitespace)
+            // A mark after a typed space ("meenemen ?") belongs to the word before it: not a suggestion.
+            if before.last?.isWhitespace == true, let first = text.first, ".,!?;:…".contains(first) { return nil }
+        }
+        // A model that does not know a name writes a placeholder ("Hoi [Naam],"): the suggestion ends before it.
+        if let placeholder = text.range(of: #"[\[<{]\p{L}[\p{L} ._-]{0,30}[\]>}]"#, options: .regularExpression) {
+            text = text[..<placeholder.lowerBound]
+        }
 
         var parts = chunks(of: text)
         if unfinished, !(text.last?.isWhitespace ?? false), !parts.isEmpty { parts.removeLast() }
@@ -226,12 +234,20 @@ enum CompletionFieldKey {
 struct CompletionPrompt: Equatable, Sendable {
     var context: String
     var text: String
+    /// The user typed a space after `text` (taken off it, see `PromptBuilder.build`): what the model writes has to start
+    /// with one.
+    var typedSpace = false
 
     /// For a base model: the context as a header, then the text.
     var document: String { context.isEmpty ? text : context + "\n\n" + text }
 
-    /// Mid-word, the text without the word the cursor is in, and that word (see `CompletionHealing`).
+    /// Mid-word, the text without the word the cursor is in, and that word (see `CompletionHealing`). After a typed space,
+    /// the text and that space: left to itself the model often goes on with the word before it ("donderdag" + "middag",
+    /// "It" + "'s") or with a mark ("?"), which after the space reads wrong. Spelling the space first makes it pick the
+    /// likeliest next word instead.
     func healed() -> (prompt: CompletionPrompt, pending: String) {
+        // The word before the space is finished: it is read as it is, only the space is spelled.
+        if typedSpace { return (CompletionPrompt(context: context, text: text), " ") }
         let split = CompletionHealing.split(text)
         guard !split.pending.isEmpty else { return (self, "") }
         return (CompletionPrompt(context: context, text: split.stem), split.pending)
@@ -278,8 +294,9 @@ struct PromptBuilder {
 
         // A trailing space makes the model start in the middle of a token; drop it and the suggestion's leading space later.
         var body = window(of: input.before)
+        let typedSpace = body.last == " "
         while body.last == " " || body.last == "\t" { body.removeLast() }
-        return CompletionPrompt(context: sections.joined(separator: "\n\n"), text: body)
+        return CompletionPrompt(context: sections.joined(separator: "\n\n"), text: body, typedSpace: typedSpace && !body.isEmpty)
     }
 
     /// The end of `text`, at most `windowLength + windowStep` long, starting at a multiple of `windowStep`.
@@ -430,7 +447,8 @@ struct CompletionOptions: Equatable {
     /// ends where it drifts off, so long ones do not wander away from what you mean.
     var minSequenceProbability: Float
     /// The cursor is in the middle of a word: the engine reads the prompt without it and lets the model write it out again
-    /// (token healing), so the word is not split into odd tokens that make the model guess wildly.
+    /// (token healing), so the word is not split into odd tokens that make the model guess wildly. Also right after a typed
+    /// space: the model then has to start with a space (see `CompletionPrompt.healed`).
     var heal = false
     /// How many suggestions to write side by side and pick the surest of (see `CompletionRanking`): the greedy one and ones
     /// that start with the next likeliest tokens. 1 writes the greedy one alone. An engine writes as many as it can (see
@@ -450,6 +468,20 @@ struct CompletionOptions: Equatable {
     /// For the suggestion after one that was taken whole. Every suggestion ends where the model got unsure, so the next one
     /// starts at an unsure point: with the usual bar the chain stopped after two or three suggestions. The user is writing
     /// along with the model, so it may go on with less certainty.
+    /// For the rest of a suggestion that stopped at a word limit (see `CompletionResult.reachedWordLimit`) after
+    /// `sequenceProbability`, up to `maxWords` more words: the same bars as if the model had gone on writing it. Its first
+    /// token is in the middle of the suggestion (the per-token bar, not the first token's), and the certainty already spent
+    /// counts against the whole.
+    func extending(after sequenceProbability: Float, maxWords: Int) -> CompletionOptions {
+        var options = self
+        options.maxWords = maxWords
+        options.maxTokens = max(maxWords * 3, 6)
+        options.minFirstProbability = minProbability
+        options.minSequenceProbability = min(1, minSequenceProbability / max(sequenceProbability, .leastNonzeroMagnitude))
+        options.candidates = 1
+        return options
+    }
+
     func continuing() -> CompletionOptions {
         var options = self
         options.minFirstProbability *= 0.4
@@ -470,6 +502,11 @@ struct CompletionResult: Equatable {
     var confidence: Float? = nil
     /// How likely its first token was, when the engine measured it.
     var firstProbability: Float? = nil
+    /// It ended because it had `maxWords` words, not because the model got unsure: it can go on (see
+    /// `CompletionOptions.extending`).
+    var reachedWordLimit = false
+    /// The product of its tokens' probabilities, when the engine measured it.
+    var sequenceProbability: Float? = nil
 }
 
 /// One suggestion while it is being written, token by token: whether it goes on, how sure the model is of it as a whole, and
@@ -515,17 +552,22 @@ struct CompletionCandidate: Equatable {
         return true
     }
 
-    /// Ends it after the token just kept: a line break, or enough words.
-    mutating func end() {
+    /// It ended at the word limit (see `CompletionResult.reachedWordLimit`).
+    private(set) var reachedWordLimit = false
+
+    /// Ends it after the token just kept: a line break, or enough words (`atWordLimit`).
+    mutating func end(atWordLimit: Bool = false) {
         truncated = false
         done = true
+        reachedWordLimit = atWordLimit
     }
 
     /// The result for its `text`; nil when it was rejected or kept nothing.
     func result(text: String) -> CompletionResult? {
         guard !rejected, count > 0 else { return nil }
         return CompletionResult(text: text.replacingOccurrences(of: "\u{FFFD}", with: ""), truncated: truncated, unfinished: unfinished,
-                                confidence: logSum / Float(count), firstProbability: firstProbability)
+                                confidence: logSum / Float(count), firstProbability: firstProbability,
+                                reachedWordLimit: reachedWordLimit, sequenceProbability: sure)
     }
 }
 

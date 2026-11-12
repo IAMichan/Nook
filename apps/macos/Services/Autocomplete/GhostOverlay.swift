@@ -106,6 +106,16 @@ final class GhostOverlay {
         return true
     }
 
+    /// Shows `remaining` in place of the ghost's text, where it stands now (a suggestion that grew). Returns what fits on the
+    /// line, nil when there is no ghost on screen.
+    func redraw(_ remaining: String) -> String? {
+        guard let state = ghostState, panel.isVisible, panel.contentView === ghost else { return nil }
+        let shown = Self.fitting(remaining, font: state.font, from: state.caret.minX, to: state.limit)
+        guard !shown.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        draw(shown)
+        return shown
+    }
+
     private func draw(_ text: String) {
         guard let state = ghostState else { return }
         ghost.text = NSAttributedString(string: text, attributes: [.font: state.font, .foregroundColor: state.color])

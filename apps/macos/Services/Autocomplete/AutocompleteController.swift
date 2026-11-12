@@ -54,6 +54,8 @@ final class AutocompleteController: ObservableObject {
         var maxWords: Int
         /// From the user's own phrases (see `CompletionPhrases`), not the model: Escape makes it count less.
         var learned = false
+        /// Shown in a card under the cursor rather than as ghost text in the line.
+        var inCard = false
     }
 
     /// The suggestion after the one on screen, written while that one is on screen (see `writeAhead`).
@@ -1018,7 +1020,7 @@ final class AutocompleteController: ObservableObject {
               !(prefs.typos && prefs.holdOnTypo && AutocompleteTypos.suspectsWordBeingTyped(in: before, known: typoKnown)),
               // Shown from the memo or the user's own phrases, without the model.
               memo.recall(before: before, field: fieldKey(for: next, in: app)) == nil,
-              learnedPhrase(before: before, app: bundleID, maxWords: prefs.maxWords) == nil else { return }
+              learnedPhrase(before: before, app: bundleID, maxWords: suggestionWords) == nil else { return }
         let options = completionOptions(before: before, continuing: false)
         let prompt = self.prompt(for: next, in: app)
         let field = fieldKey(for: next, in: app)
@@ -1050,12 +1052,22 @@ final class AutocompleteController: ObservableObject {
         CompletionFieldKey.make(app: app.bundleIdentifier, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
     }
 
+    /// The longest suggestion: the user's setting, shorter on battery when asked.
+    private var suggestionWords: Int {
+        guard let short = power.maxWords else { return prefs.maxWords }
+        return min(prefs.maxWords, short)
+    }
+
+    /// The model is asked for this many words first, and the suggestion shows as soon as they are written; the rest (up to
+    /// `suggestionWords`) is written right after and added to it in one go (see `extend`). The model spends about 15 ms per
+    /// token, so a whole suggestion took twice as long to appear, while most suggestions are taken a word or two at a time.
+    /// Measured on 16 messages (Gemma 4 E4B, M3 Max): first suggestion after 66 ms instead of 123 (median), same typing saved.
+    static let firstWords = 2
+
     private func completionOptions(before: String, continuing: Bool) -> CompletionOptions {
-        var maxWords = prefs.maxWords
-        if let short = power.maxWords { maxWords = min(maxWords, short) }
-        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        var options = CompletionOptions(maxWords: min(suggestionWords, Self.firstWords), eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }
-        options.heal = Self.midWord(before)
+        options.heal = Self.heals(before)
         options.candidates = suggestionCandidates
         return options
     }
@@ -1146,7 +1158,7 @@ final class AutocompleteController: ObservableObject {
         let policy = CompletionPolicy(midLine: midLine)
         guard policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
         let options = completionOptions(before: snapshot.before, continuing: continuing)
-        let maxWords = options.maxWords
+        let maxWords = suggestionWords
         let token = readToken
         // Without `midLine` only closing punctuation can follow (see `CompletionPolicy`); the suggestion stops before it.
         let after = snapshot.after
@@ -1193,8 +1205,9 @@ final class AutocompleteController: ObservableObject {
                 memo.remember(result, before: base, field: field)
                 guard token == readToken else { return }
                 if let rest = memo.recall(before: snapshot.before, field: field) {
+                    // Written for exactly this text: its rest can still be written after it.
                     present(rest.text, truncated: rest.truncated, unfinished: rest.unfinished, token: token, snapshot: snapshot,
-                            after: after, maxWords: maxWords, app: app)
+                            after: after, maxWords: maxWords, app: app, written: base == snapshot.before ? result : nil)
                     return
                 }
             }
@@ -1206,7 +1219,7 @@ final class AutocompleteController: ObservableObject {
             if let result {
                 memo.remember(result, before: snapshot.before, field: field)
                 present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
-                        after: after, maxWords: maxWords, app: app)
+                        after: after, maxWords: maxWords, app: app, written: result)
             }
         }
     }
@@ -1219,8 +1232,10 @@ final class AutocompleteController: ObservableObject {
 
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
     /// on screen.
+    /// - Parameter written: the model's result the text comes from, when it was written for exactly this text: one that
+    ///   stopped at `firstWords` is then written on (see `extend`).
     private func present(_ text: String, truncated: Bool, unfinished: Bool = false, token: Int, snapshot: AutocompleteFieldSnapshot,
-                         after: String, maxWords: Int, app: NSRunningApplication, learned: Bool = false) {
+                         after: String, maxWords: Int, app: NSRunningApplication, learned: Bool = false, written: CompletionResult? = nil) {
         guard token == readToken, alternatives == nil, proposal == nil,
               let suggestion = CompletionSuggestion.make(raw: spelled(text, before: snapshot.before, after: after), before: snapshot.before, after: after,
                                                          maxWords: maxWords, truncated: truncated, unfinished: unfinished) else { return }
@@ -1229,7 +1244,62 @@ final class AutocompleteController: ObservableObject {
         proposal = .completion(completion)
         show(suggestion, for: snapshot, in: app)
         store.recordShown()
-        writeAhead(for: completion)
+        if let written, written.reachedWordLimit, let sure = written.sequenceProbability,
+           suggestion.remaining.completionWordCount < maxWords, case .completion(let shown) = proposal,
+           shown.suggestion.remaining == suggestion.remaining {
+            extend(completion, after: sure)
+        } else {
+            writeAhead(for: completion)
+        }
+    }
+
+    /// Writes the rest of a suggestion that stopped at `firstWords` (with certainty `sure`), as if the model had gone on, and
+    /// adds it to the suggestion in one go while that is still on screen. Taken or typed through in part meanwhile, it is added
+    /// after what is left; taken whole, it is the next suggestion (it is `upcoming`, see `continueAtOnce`).
+    private func extend(_ completion: Completion, after sure: Float) {
+        guard let model = activeModel else { return }
+        var next = completion.snapshot
+        next.before = completion.anchor + completion.suggestion.remaining
+        let before = next.before
+        let prompt = self.prompt(for: next, in: completion.app)
+        let words = completion.suggestion.remaining.completionWordCount
+        var options = CompletionOptions(maxWords: completion.maxWords, eagerness: prefs.eagerness)
+            .extending(after: sure, maxWords: completion.maxWords - words)
+        options.heal = Self.heals(before)
+        let field = fieldKey(for: next, in: completion.app)
+        let task = Task { () -> CompletionResult? in
+            guard let completer = await loadedCompleter(for: model) else { return nil }
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil)
+            if let result { memo.remember(result, before: before, field: field) }
+            if upcoming?.before == before {
+                upcoming?.done = true
+                upcoming?.result = result
+            }
+            if let result { added(result, after: before, maxWords: options.maxWords) }
+            return result
+        }
+        upcoming = Upcoming(app: completion.app.bundleIdentifier, before: before, task: task)
+    }
+
+    /// The rest written by `extend` for the text `before`: added to the suggestion on screen when that still leads up to it.
+    private func added(_ result: CompletionResult, after before: String, maxWords: Int) {
+        guard case .completion(var current) = proposal, current.anchor + current.suggestion.remaining == before,
+              let tail = CompletionSuggestion.make(raw: spelled(result.text, before: before, after: current.after), before: before,
+                                                   after: current.after, maxWords: maxWords, truncated: result.truncated,
+                                                   unfinished: result.unfinished) else { return }
+        let whole = CompletionSuggestion(current.suggestion.remaining + tail.remaining)
+        if let shown = overlay.redraw(whole.remaining) {
+            // Only what fits on the line is on screen, and only that can be taken (see `show`).
+            current.suggestion = CompletionSuggestion(shown)
+        } else if current.inCard, let anchor = current.snapshot.cardAnchor, current.anchor == current.snapshot.before {
+            current.suggestion = whole
+            overlay.showCard(card(whole.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
+        } else {
+            return
+        }
+        upcoming = nil
+        proposal = .completion(current)
+        writeAhead(for: current)
     }
 
     /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).
@@ -1243,7 +1313,7 @@ final class AutocompleteController: ObservableObject {
         let before = next.before
         let prompt = self.prompt(for: next, in: completion.app)
         var options = CompletionOptions(maxWords: completion.maxWords, eagerness: prefs.eagerness).continuing()
-        options.heal = Self.midWord(before)
+        options.heal = Self.heals(before)
         options.candidates = suggestionCandidates
         let field = fieldKey(for: next, in: completion.app)
         let task = Task { () -> CompletionResult? in
@@ -1259,10 +1329,11 @@ final class AutocompleteController: ObservableObject {
         upcoming = Upcoming(app: completion.app.bundleIdentifier, before: before, task: task)
     }
 
-    /// The cursor stands right after a letter or digit: the model has to finish that word first (see `CompletionOptions.heal`).
-    private static func midWord(_ before: String) -> Bool {
+    /// The cursor stands right after a letter or digit, so the model has to finish that word first, or right after a space,
+    /// so it has to start with one (see `CompletionOptions.heal`).
+    private static func heals(_ before: String) -> Bool {
         guard let last = before.last else { return false }
-        return last.isLetter || last.isNumber
+        return last.isLetter || last.isNumber || last == " "
     }
 
     /// After the last word of a suggestion is taken: waits until the app shows it, then suggests again right away, without
@@ -1473,6 +1544,10 @@ final class AutocompleteController: ObservableObject {
         // No room in the line, no cursor position, or the card style chosen: a card under the cursor or the field.
         if let anchor = snapshot.cardAnchor {
             overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
+            if case .completion(var completion) = proposal {
+                completion.inCard = true
+                proposal = .completion(completion)
+            }
         } else {
             proposal = nil
             overlay.hide()
@@ -1675,7 +1750,7 @@ final class AutocompleteController: ObservableObject {
         let prompt = builder.build(input)
         var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }
-        options.heal = Self.midWord(before)
+        options.heal = Self.heals(before)
         options.candidates = suggestionCandidates
         guard let completer = await loadedCompleter(for: model) else { return nil }
         let start = Date()
