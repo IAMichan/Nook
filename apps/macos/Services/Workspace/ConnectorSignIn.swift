@@ -16,7 +16,7 @@ struct ConnectorSignIn: Equatable, Identifiable, Sendable {
     var title: String { ConnectorSignIns.title(name) }
 
     /// The website whose icon is the connector's logo, wherever it is listed; nil shows the connector symbol.
-    var iconDomain: String? { SourceBrand.connectorDomain(name: title) }
+    var iconDomain: String? { ConnectorDomains.connectorDomain(name: title) }
 }
 
 /// Which connectors need you, read from what each agent reports.
