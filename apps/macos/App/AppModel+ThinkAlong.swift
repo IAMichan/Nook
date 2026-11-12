@@ -140,7 +140,7 @@ extension AppModel {
             return copy
         }
 
-        let split = FollowUps.split(plan.text)
+        let split = FollowUps.split(plan.text, limit: FollowUps.cardLimit)
         var body = split.body
         let bare = body.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
         if bare == "NONE" || bare.hasPrefix("NONE") { body = "" }

@@ -302,6 +302,8 @@ targets:
       - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
+      - path: Brain/ConversationWindow.swift
+      - path: Brain/FollowUps.swift
       - path: Brain/PlanArchive.swift
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ModelDownload.swift
