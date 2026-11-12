@@ -150,7 +150,7 @@ extension AgentRunPanel {
                             .equatable()
                         }
                         .pinProbe(block.id.uuidString, room: pinRoom)
-                        .countsAsDrawnRow(drawnRows)
+                        .countsAsDrawnRow(drawnRows, id: block.id)
                         .id(block.id)
                     }
                     if active {
