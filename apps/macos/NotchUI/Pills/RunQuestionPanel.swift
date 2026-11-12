@@ -362,11 +362,12 @@ private struct QuestionOptionRow: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                // The words take all the room, so they wrap at the same place whether or not the row is hovered.
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer(minLength: 4)
-
-                // Trailing selection affordance
+                // Trailing selection affordance, in a fixed slot so the hover icon swap never moves the text.
                 trailingIndicator
+                    .frame(width: 16, alignment: .center)
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
