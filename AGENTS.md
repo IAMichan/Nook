@@ -99,7 +99,7 @@ To build and test the full macOS app with Xcode, use the wrapper (it runs `xcode
 ./scripts/xcode.sh test
 ```
 
-It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. Do not call
+It keeps the build in `.build/xcode` inside the checkout, so it is removed together with the worktree. `test` uses the `NookTests` scheme, which builds only the unit tests and not Nook.app with its packages (`NOOK_XCODE_SCHEME=Nook` builds the app too, as CI does). The wrapper keeps the Mac usable while it builds: lower priority (`nice`), one job per performance core, no index store, no package update check when nothing changed, and tests in one process (see the script's header for the switches). Do not call
 `xcodebuild` with a `-derivedDataPath` under `/tmp`, `/private/tmp`, or your scratchpad, and do not leave it on Xcode's
 default DerivedData from a worktree: each of those leaves a 1–5 GB build behind that nothing removes. Agent sessions on
 this Mac once left more than 400 GB that way.
