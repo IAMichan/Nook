@@ -314,6 +314,62 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual((AcpRPC.cancelledOutcome["outcome"] as? [String: String])?["outcome"], "cancelled")
     }
 
+    func testTerminalSignInRunsTheAgentItselfAndIsNeverAuthenticated() {
+        let initialize: [String: Any] = ["authMethods": [
+            ["id": "login", "name": "Log in", "type": "terminal", "args": ["--login", "it's me"],
+             "env": [["name": "AGENT_MODE", "value": "login now"], ["name": "BAD;rm -rf ~", "value": "x"]]],
+            ["id": "key", "type": "env_var"],
+        ]]
+        XCTAssertEqual(AcpRPC.authMethodIDs(initialize), [], "neither a terminal nor a key method is something `authenticate` takes")
+        let method = AcpRPC.authMethods(initialize).first { $0.type == AcpAuthMethod.terminal }
+        XCTAssertEqual(method?.env, ["AGENT_MODE": "login now"], "a name a shell would run is dropped")
+        let agent = CustomAgent(profileID: "acp-x", name: "X", command: "npx", arguments: ["-y", "@x/acp@1.0.0"],
+                                environment: ["X_HOME": "/tmp/x y"])
+        XCTAssertEqual(method.map(agent.terminalSignIn),
+                       "AGENT_MODE='login now' X_HOME='/tmp/x y' npx -y @x/acp@1.0.0 --login 'it'\\''s me'")
+        let advertised = AcpRPC.initializeParams()["clientCapabilities"] as? [String: Any]
+        XCTAssertEqual((advertised?["auth"] as? [String: Bool])?["terminal"], true)
+        XCTAssertNotNil((advertised?["elicitation"] as? [String: Any])?["form"])
+    }
+
+    func testMcpServerQuestionsBecomeAConfirmationOrAreDeclined() {
+        func events(_ line: String) -> [AcpEvent] { AcpMapper.events(AcpRPC.parse(line)!) }
+        XCTAssertEqual(events(#"{"jsonrpc":"2.0","id":7,"method":"elicitation/create","params":{"sessionId":"s","mode":"form","message":"Deploy to production?","requestedSchema":{"type":"object","properties":{}},"_meta":{"serverName":"deploy"}}}"#),
+                       [.elicitation(rpcID: .int(7), server: "deploy", message: "Deploy to production?", isConfirmation: true)])
+        XCTAssertEqual(events(#"{"jsonrpc":"2.0","id":8,"method":"elicitation/create","params":{"sessionId":"s","mode":"form","message":"Name?","requestedSchema":{"type":"object","properties":{"name":{"type":"string"}}}}}"#),
+                       [.elicitation(rpcID: .int(8), server: "", message: "Name?", isConfirmation: false)], "fields to fill in are no yes or no")
+        XCTAssertEqual(AcpRPC.elicitationOutcome(true)["action"] as? String, "accept")
+        XCTAssertEqual(AcpRPC.elicitationOutcome(false)["action"] as? String, "decline")
+        XCTAssertEqual(AcpRPC.elicitationOutcome(nil)["action"] as? String, "cancel")
+        let question = AcpToolCall(id: "q", title: "Deploy?", kind: AcpRPC.elicitationKind, status: nil, input: nil, output: "", paths: [])
+        XCTAssertFalse(AcpRPC.autoAllows(question, permission: .bypass, mode: .agent), "a server's question always waits for you")
+    }
+
+    func testSubagentCallsBecomeAgentRows() {
+        // Claude Code over ACP: the first report names the tool only in `_meta`, the input follows in an update.
+        let first = AcpToolCall(id: "t", title: "Task", kind: "think", status: "pending", input: JSONBox([String: Any]()), output: "",
+                                paths: [], metaToolName: "Task")
+        XCTAssertEqual(first.toolName, "Agent")
+        XCTAssertNil(first.subagentInput)
+        let claude = AcpToolCall(id: "t", title: "", kind: "think", status: nil,
+                                 input: JSONBox(["description": "Audit the chats", "prompt": "Read every chat", "subagent_type": "Explore"]),
+                                 output: "", paths: [])
+        XCTAssertEqual(claude.toolName, "Agent")
+        XCTAssertEqual(claude.subagentInput?.dictionary["subagent_type"] as? String, "Explore")
+        // Copilot names the agent in `agent_type`.
+        let copilot = AcpToolCall(id: "c", title: "Delegate", kind: "other", status: nil,
+                                  input: JSONBox(["agent_type": "reviewer", "prompt": "Review the diff", "description": "Review"]),
+                                  output: "", paths: [])
+        XCTAssertEqual(copilot.subagentInput?.dictionary["subagent_type"] as? String, "reviewer")
+        let shell = AcpToolCall(id: "s", title: "ls", kind: "execute", status: nil, input: JSONBox(["prompt": "y/n"]), output: "", paths: [])
+        XCTAssertEqual(shell.toolName, "shell", "a prompt alone does not make a subagent")
+    }
+
+    func testForkIsOfferedByTheAgent() {
+        XCTAssertTrue(AcpSessionCapabilities(initialize: ["agentCapabilities": ["sessionCapabilities": ["fork": [String: Any]()]]]).fork)
+        XCTAssertFalse(AcpSessionCapabilities(initialize: ["agentCapabilities": ["sessionCapabilities": ["fork": NSNull()]]]).fork)
+    }
+
     func testGeminiChatLogReadsTheJsonlForm() throws {
         let lines = [
             #"{"sessionId":"s1","projectHash":"abc","startTime":"2026-10-29T10:00:00.000Z","lastUpdated":"2026-10-29T10:00:00.000Z","kind":"main"}"#,
@@ -349,7 +405,7 @@ final class AcpAgentTests: XCTestCase {
         let all = AcpSessionCapabilities(initialize: ["agentCapabilities": [
             "loadSession": true, "sessionCapabilities": ["list": [String: Any](), "resume": [String: Any](), "fork": [String: Any]()]
         ]])
-        XCTAssertEqual(all, AcpSessionCapabilities(load: true, list: true, resume: true))
+        XCTAssertEqual(all, AcpSessionCapabilities(load: true, list: true, resume: true, fork: true))
         XCTAssertEqual(all.continueMethod, "session/resume", "resume continues without replaying what Nook keeps")
         let loadOnly = AcpSessionCapabilities(initialize: ["agentCapabilities": ["loadSession": true, "sessionCapabilities": ["list": NSNull()]]])
         XCTAssertEqual(loadOnly, AcpSessionCapabilities(load: true), "null is not offered")

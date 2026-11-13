@@ -11,9 +11,11 @@ struct PendingPermission: Identifiable, Equatable {
     let suggestions: JSONBox?
     let eventID: UUID
     let created: Date
+    /// Why the agent asks, in its own words, and what it says about the request (`PermissionAsk`).
+    var ask = PermissionAsk()
 
     var canAlways: Bool {
-        guard let list = suggestions?.object as? [Any] else { return false }
+        guard !ask.noAlways, let list = suggestions?.object as? [Any] else { return false }
         return !list.isEmpty
     }
 }
@@ -445,6 +447,12 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions whose running turn is an independent copy (`forkNext` at launch): the id the agent reports is a new
     /// conversation, not a continuation, so the source's id is not an earlier id of it.
     var forkLaunched: Set<UUID> = []
+    /// Whether an ACP agent copies its own sessions (`AcpSessionCapabilities.fork`), as its last `initialize` said, by
+    /// `acpAgentKey`: Fork and side chats then keep the conversation (`forksNatively`).
+    var acpForks: [String: Bool] = [:]
+    /// The terminal sign-in of an agent you added whose session needed you to sign in (by `profileID`): its failed turn
+    /// offers "Sign in again", which runs it (`signInAcpInTerminal`).
+    @Published var acpTerminalSignIns: [String: AcpAuthMethod] = [:]
     /// Sessions whose settings changed during a turn: their Claude Code process is not reused afterwards, so the next turn
     /// surely starts with the new flags, even when this Claude Code could not take them over live.
     var claudeChangedDuringTurn: Set<UUID> = []

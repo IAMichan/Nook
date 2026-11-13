@@ -97,6 +97,8 @@ extension WorkspaceManager {
                     collector.appendThought(text)
                 case .permission(let rpcID, _, _):
                     client.respond(rpcID, AcpRPC.cancelledOutcome)
+                case .elicitation(let rpcID, _, _, _):
+                    client.respond(rpcID, AcpRPC.elicitationOutcome(nil))
                 default:
                     break
                 }

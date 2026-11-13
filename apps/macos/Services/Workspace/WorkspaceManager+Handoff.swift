@@ -183,8 +183,8 @@ extension WorkspaceManager {
 
     // MARK: Fork
 
-    /// A new session that starts from this one: Claude Code forks its own conversation; any other agent starts from a
-    /// summary. It works in the same folder (a fork never owns a worktree, so removing it cannot take the original's).
+    /// A new session that starts from this one: Claude Code, and an ACP agent that offers `session/fork`, copy their own
+    /// conversation; any other agent starts from a summary. It works in the same folder (a fork never owns a worktree, so removing it cannot take the original's).
     @discardableResult
     func fork(_ id: UUID, keepingEvents keep: Int? = nil) -> UUID? {
         guard canTransfer(id), let source = run(id) else { return nil }
@@ -194,7 +194,7 @@ extension WorkspaceManager {
         // conversation, so such a fork always starts from a summary.
         let partial = keep.map { $0 < all.count } ?? false
         let events = keep.map { Array(all.prefix(max(0, $0))) } ?? all
-        let nativeFork = source.provider.capabilities.nativeFork && !partial
+        let nativeFork = forksNatively(source) && !partial
         let strategy = ContextTransfer.forFork(nativeFork: nativeFork, hasNativeSession: source.providerSessionID != nil)
 
         let newID = UUID()

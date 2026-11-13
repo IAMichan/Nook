@@ -267,14 +267,16 @@ extension AgentRunPanel {
             // turn), and its task list.
             let subagents = derived.subagents
             if !subagents.isEmpty {
-                SubagentBar(agents: subagents) { outputsLink.openSubagents() }
+                SubagentBar(agents: subagents,
+                            stop: run.provider.capabilities.stopsOneSubagent ? { workspace.stopSubagent(runID, $0) } : nil,
+                            openPanel: outputsLink.showSubagents)
             }
             // The commands it left running in the background (a dev server, a watcher): the session is not done yet.
             let commands = derived.commands
             if !commands.isEmpty {
                 BackgroundCommandBar(commands: commands, focus: $barFocus,
                                      reveal: { conversationFocus = $0 },
-                                     openPanel: { outputsLink.openSubagents() },
+                                     openPanel: outputsLink.showSubagents,
                                      agentPIDs: { workspace.agentPIDs(runID) })
             }
             // The agent's task list: the step it works on now while it works, the list it left once it stops.

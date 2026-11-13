@@ -71,7 +71,7 @@ final class ProviderReplayTests: XCTestCase {
         let outcome = try replay(try fixture("claude_tool_approval"),
                                  prompt: Self.toolApprovalPrompt,
                                  react: { event, process in
-            guard case .permissionRequest(let request, let tool, let input, _, let toolUseID) = event else { return }
+            guard case .permissionRequest(let request, let tool, let input, _, let toolUseID, _) = event else { return }
             asked.set(tool: tool, toolUseID: toolUseID)
             process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
         })
@@ -203,7 +203,7 @@ final class ProviderReplayTests: XCTestCase {
         let log = try XCTUnwrap(ProviderTrafficLog(url: url, provider: "claude"))
         let prompt = Self.toolApprovalPrompt
         let approve: @Sendable (ClaudeStreamEvent, AgentProcess) -> Void = { event, process in
-            if case .permissionRequest(let request, _, let input, _, _) = event {
+            if case .permissionRequest(let request, _, let input, _, _, _) = event {
                 process.send(ClaudeStreamParser.permissionResponse(requestID: request, allow: true, input: input))
             }
         }

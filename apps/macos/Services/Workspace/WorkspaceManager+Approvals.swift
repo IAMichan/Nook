@@ -33,6 +33,25 @@ extension WorkspaceManager {
         }
     }
 
+    /// An MCP server's request (a tool that wants to run, or something to confirm, from Codex or Claude Code): the same
+    /// approval card as a command, titled with the tool and its server in readable words.
+    func presentMcpRequest(_ id: UUID, requestID: String, server: String, tool: String, message: String,
+                           arguments: [String: Any], suggestions: JSONBox?) {
+        let tool = "mcp__\(server.isEmpty ? "mcp" : server)__\(tool.isEmpty ? "confirm" : tool)"
+        var input = arguments
+        // Without arguments to show, the server's own question says what is being allowed.
+        if input.isEmpty, !message.isEmpty { input["message"] = message }
+        let label = McpToolName(tool)?.label ?? tool
+        let summary = message.isEmpty ? label : "\(label) · \(ToolSummary.oneLine(message, 120))"
+        let event = RunEvent(kind: .approval, text: summary, tool: tool, callID: requestID, detail: ToolSummary.json(input), state: .pending)
+        append(id, event)
+        let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: JSONBox(input),
+                                        suggestions: suggestions, eventID: event.id, created: Date())
+        approvals[id, default: []].append(pending)
+        update(id) { $0.move(to: .waitingApproval) }
+        if let run = run(id) { onApproval?(run, pending) }
+    }
+
     func expireApproval(_ runID: UUID, requestID: String) {
         guard let pending = approvals[runID]?.first(where: { $0.id == requestID }) else { return }
         approvals[runID]?.removeAll { $0.id == requestID }
@@ -58,6 +77,8 @@ extension WorkspaceManager {
         if let request = acpRequests[pending.id] {
             return AcpRPC.autoAllows(request.call, permission: run.permission, mode: run.mode)
         }
+        // An MCP server's question waits for you, whatever the session may do (as `LiveRights.coversCodex` for `mcpTool`).
+        if pending.id.hasPrefix(ClaudeElicitation.pendingPrefix) { return false }
         return run.provider.capabilities.processChannel == .claudeStreamJSON && LiveRights.coversClaude(tool: pending.tool, permission: run.permission, mode: run.mode)
     }
 }

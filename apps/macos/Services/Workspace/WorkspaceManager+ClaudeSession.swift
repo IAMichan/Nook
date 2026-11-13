@@ -116,6 +116,18 @@ extension WorkspaceManager {
         mutateEvent(id, launch.id) { $0.subagentSteps = SubagentStep.appending(step, to: $0.subagentSteps) }
     }
 
+    /// Stops one subagent at work in the background; the turn and the other subagents go on
+    /// (`ProviderCapabilities.stopsOneSubagent`). Its row settles from the agent's own report that it stopped. Only a
+    /// process that runs takes it: a closed one has no subagents left.
+    func stopSubagent(_ id: UUID, _ agent: SubagentInfo) {
+        guard let run = run(id), run.provider.capabilities.stopsOneSubagent, agent.isRunning, let task = agent.taskID else { return }
+        let sent = claudeControl(id, starts: false, { ClaudeStreamParser.stopTaskRequest(id: $0, taskID: task) }) { [weak self] _, error in
+            guard let self, let error else { return }
+            self.append(id, RunEvent(kind: .error, text: tr("ws.subagents.stopFailed", agent.title, error)))
+        }
+        if sent { append(id, RunEvent(kind: .system, text: tr("ws.subagents.stopping", agent.title))) }
+    }
+
     /// Claude Code says work it runs in the background (see `BackgroundTaskUpdate`) started or ended: a subagent, or a
     /// command (`BackgroundCommands`). Its row keeps running until then, and then settles with what it answered. The
     /// line where the agent picks up its result names it.

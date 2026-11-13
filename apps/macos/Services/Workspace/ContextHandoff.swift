@@ -236,9 +236,12 @@ enum SideChat {
 
     /// How the side chat gets the parent's conversation. `lastFinished`: where the conversation stood after the last
     /// finished turn (the newest checkpoint's mark).
-    static func start(provider: RunProvider, session: String?, turnRunning: Bool, lastFinished: ConversationMark?) -> Start {
+    /// `forksNatively`: the agent copies its own conversation (`WorkspaceManager.forksNatively`); by default what its
+    /// capabilities say.
+    static func start(provider: RunProvider, session: String?, turnRunning: Bool, lastFinished: ConversationMark?,
+                      forksNatively: Bool? = nil) -> Start {
         let capabilities = provider.capabilities
-        guard capabilities.nativeFork, session != nil else { return .summary }
+        guard forksNatively ?? capabilities.nativeFork, session != nil else { return .summary }
         if !turnRunning { return .nativeCopy }
         guard capabilities.canForkFromTurn, let mark = lastFinished, mark.provider == provider,
               let markSession = mark.session, let head = mark.head else { return .summary }

@@ -520,7 +520,7 @@ extension AgentRunPanel {
             onEdit: onEdit,
             // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
             showBackground: {
-                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { _ = outputsLink.openSubagents() }
+                if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.showSubagents?() }
             },
             onSuggestion: { app.chooseSuggestion($0, event: event, in: runID) }
         )

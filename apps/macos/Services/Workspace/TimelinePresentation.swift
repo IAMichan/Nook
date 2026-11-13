@@ -433,6 +433,8 @@ struct SubagentInfo: Identifiable, Equatable, Sendable {
     var started: Date = .distantPast
     /// What it thought, wrote and did while it worked, when its agent passes that on (`SubagentStep`).
     var steps: [SubagentStep] = []
+    /// The id its agent knows it by while it runs in the background (Claude Code's `agentId`): what Stop names.
+    var taskID: String? = nil
 
     var isRunning: Bool { state == nil || state == .running || state == .pending }
     var failed: Bool { state == .failed || state == .denied || state == .expired }
@@ -482,6 +484,13 @@ enum Subagents {
         output.hasPrefix("Async agent launched")
     }
 
+    /// The agent id a background launch note names ("Async agent launched successfully.\nagentId: a1b2 …").
+    static func taskID(launchNote output: String?) -> String? {
+        guard let output, isLaunchNote(output), let range = output.range(of: "agentId: ") else { return nil }
+        let id = output[range.upperBound...].prefix { !$0.isWhitespace && $0 != "," && $0 != ")" }
+        return id.isEmpty ? nil : String(id)
+    }
+
     /// The subagent a background task stands for: by the call that started it, else by the agent id its launch named.
     static func event(for update: BackgroundTaskUpdate, in events: [RunEvent]) -> RunEvent? {
         if let call = update.toolUseID, let event = events.last(where: { $0.callID == call && isLaunch($0) }) { return event }
@@ -503,7 +512,7 @@ enum Subagents {
             return SubagentInfo(id: event.id, kind: kind, title: title, prompt: (input["prompt"] as? String) ?? "",
                                 state: event.state, output: event.output,
                                 background: (input["run_in_background"] as? Bool) == true, started: event.date,
-                                steps: event.subagentSteps ?? [])
+                                steps: event.subagentSteps ?? [], taskID: taskID(launchNote: event.output))
         }
     }
 

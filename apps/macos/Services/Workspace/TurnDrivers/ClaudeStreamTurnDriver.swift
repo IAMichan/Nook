@@ -32,6 +32,11 @@ extension WorkspaceManager {
     /// (`ExecTurnDriver`), as before there were drivers.
     static func streamJSONPermissionResponse(requestID: String, _ pending: PendingPermission, _ decision: Decision,
                                              reason: String) -> String {
+        // An MCP server's question: its answer is the elicitation's result, under Claude Code's own request id.
+        if requestID.hasPrefix(ClaudeElicitation.pendingPrefix) {
+            return ClaudeStreamParser.elicitationResponse(requestID: String(requestID.dropFirst(ClaudeElicitation.pendingPrefix.count)),
+                                                          accept: decision != .deny)
+        }
         switch decision {
         case .allow:
             return ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: pending.input)
@@ -132,7 +137,7 @@ extension WorkspaceManager {
             turns[id]?.lastContext = tokens.context + tokens.output
             askContextWindowIfUnknown(id)
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
-        case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
+        case .permissionRequest(let requestID, let tool, let input, let suggestions, _, let ask):
             pauseLive(id)
             // A question is answered, not approved: the answers go back as the tool's input.
             if tool == "AskUserQuestion" {
@@ -165,10 +170,21 @@ extension WorkspaceManager {
                                  detail: ToolSummary.json(input.object), state: .pending)
             append(id, event)
             let pending = PendingPermission(id: requestID, runID: id, tool: tool, summary: summary, input: input,
-                                            suggestions: suggestions, eventID: event.id, created: Date())
+                                            suggestions: suggestions, eventID: event.id, created: Date(), ask: ask)
             approvals[id, default: []].append(pending)
             update(id) { $0.move(to: .waitingApproval) }
             if let run = run(id) { onApproval?(run, pending) }
+        case .elicitation(let question):
+            // A form with fields or a page to open: declined at once, so Claude Code and the server do not wait on it.
+            guard question.isConfirmation else {
+                processes[id]?.send(ClaudeStreamParser.elicitationResponse(requestID: question.requestID, accept: false))
+                append(id, RunEvent(kind: .system, text: tr("ws.elicitation.declined", question.server.isEmpty ? "MCP" : question.server)))
+                return
+            }
+            pauseLive(id)
+            // No "Always": Claude Code keeps no standing answer to a server's question.
+            presentMcpRequest(id, requestID: ClaudeElicitation.pendingPrefix + question.requestID, server: question.server,
+                              tool: question.title, message: question.message, arguments: [:], suggestions: nil)
         case .result(let result):
             pauseLive(id)
             // A steering message cut this segment short: the turn goes on with the new message.

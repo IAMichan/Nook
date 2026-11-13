@@ -205,8 +205,10 @@ struct TasksStrip: View {
 /// background, also after the turn that started them. The arrow shows them all in the side panel (`openPanel`).
 struct SubagentBar: View {
     let agents: [SubagentInfo]
+    /// Stops one subagent at work in the background, for an agent that can (`ProviderCapabilities.stopsOneSubagent`).
+    var stop: ((SubagentInfo) -> Void)? = nil
     /// Shows the subagents in the side panel's Subagents tab; false when the panel is busy with something else.
-    var openPanel: (() -> Bool)? = nil
+    var openPanel: (() -> Void)? = nil
     @State private var open = false
     @State private var shown: UUID?
 
@@ -247,7 +249,7 @@ struct SubagentBar: View {
                 .accessibilityLabel(tr("ws.subagents.title") + ", " + tr("ws.subagents.progress", done, agents.count))
                 if let openPanel {
                     ToolbarIconButton("sidebar.right", tr("ws.subagents.openPanel"), height: 20, width: 20) {
-                        if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
+                        openPanel()
                     }
                 }
             }
@@ -260,6 +262,14 @@ struct SubagentBar: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
         .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
+    }
+
+    /// Stop for one subagent still at work in the background, past its elapsed time.
+    @ViewBuilder
+    private func stopButton(_ agent: SubagentInfo) -> some View {
+        if let stop, agent.isRunning, agent.taskID != nil {
+            ToolbarIconButton("stop.fill", tr("ws.subagents.stop"), height: 18, width: 18) { stop(agent) }
+        }
     }
 
     /// One short bar per subagent: lit while it runs, mint once done, coral when it failed.
@@ -275,23 +285,26 @@ struct SubagentBar: View {
 
     private func row(_ agent: SubagentInfo) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            Button {
-                shown = shown == agent.id ? nil : agent.id
-            } label: {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    SubagentStatusMark(agent: agent)
-                    Text(agent.kind)
-                        .font(NookTheme.mono(10.5, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
-                    Text(agent.title).lineLimit(1)
-                    Spacer(minLength: 0)
-                    SubagentElapsed(agent: agent)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Button {
+                    shown = shown == agent.id ? nil : agent.id
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        SubagentStatusMark(agent: agent)
+                        Text(agent.kind)
+                            .font(NookTheme.mono(10.5, .medium))
+                            .foregroundStyle(NookTheme.textTertiary)
+                        Text(agent.title).lineLimit(1)
+                        Spacer(minLength: 0)
+                        SubagentElapsed(agent: agent)
+                    }
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .contentShape(Rectangle())
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .contentShape(Rectangle())
+                .buttonStyle(.nookPlain)
+                stopButton(agent)
             }
-            .buttonStyle(.nookPlain)
             if shown == agent.id {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     if !agent.prompt.isEmpty {
@@ -795,7 +808,7 @@ struct BackgroundCommandBar: View {
     let commands: [BackgroundCommandInfo]
     var focus: Binding<UUID?> = .constant(nil)
     var reveal: ((UUID) -> Void)? = nil
-    var openPanel: (() -> Bool)? = nil
+    var openPanel: (() -> Void)? = nil
     /// The session's agent processes: with them each running command says whether it still works.
     var agentPIDs: (() -> [Int32])? = nil
     @State private var open = false
@@ -852,7 +865,7 @@ struct BackgroundCommandBar: View {
                                     + (failed > 0 ? ", " + tr("ws.background.failedCount", failed) : ""))
                 if let openPanel {
                     ToolbarIconButton("sidebar.right", tr("ws.background.openPanel"), height: 20, width: 20) {
-                        if !openPanel() { withAnimation(NookTheme.reveal) { open = true } }
+                        openPanel()
                     }
                 }
             }

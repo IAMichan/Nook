@@ -32,6 +32,9 @@ enum AcpEvent: Equatable, Sendable {
     case plan([RunTaskStep])
     case usage(used: Int, size: Int, costUSD: Double?)
     case permission(rpcID: RPCID, call: AcpToolCall, options: [AcpPermissionOption])
+    /// An MCP server asks you something through the agent (`elicitation/create`, form mode). `isConfirmation`: nothing to
+    /// fill in, so Allow or Deny answers it; a form with fields is declined, as Claude Code's and Codex's are.
+    case elicitation(rpcID: RPCID, server: String, message: String, isConfirmation: Bool)
     /// The agent's own `/` commands (`available_commands_update`).
     case commands([AgentSlashCommand])
     /// The session's config options changed (`config_option_update`), all of them: a new model can bring other levels.
@@ -49,7 +52,7 @@ extension AcpEvent {
         switch self {
         case .messageChunk(let text): return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .toolCall(let call), .toolCallUpdate(let call): return call.status == "completed" || call.status == "failed"
-        case .permission: return true
+        case .permission, .elicitation: return true
         default: return false
         }
     }
@@ -77,6 +80,23 @@ struct AcpToolCall: Equatable, Sendable {
     var paths: [String]
     /// What the call changed (`diff` content): the text it replaced (nil for a new file) and what it wrote.
     var diffs: [AcpDiff] = []
+    /// The agent's own name for the tool, when its ACP adapter passes it on (Claude Code's `_meta.claudeCode.toolName`).
+    var metaToolName: String? = nil
+
+    /// The call starts a subagent: Claude Code over ACP names its Task or Agent tool in `_meta` (its first report may
+    /// come without input), and a call whose input hands a task to another agent (`subagentInput`) does too.
+    var launchesSubagent: Bool { Subagents.tools.contains(metaToolName ?? "") || subagentInput != nil }
+
+    /// The input of a call that starts a subagent, in the shape Nook's subagent rows read (Claude Code's Task:
+    /// `description`, `prompt`, `subagent_type`): Claude Code over ACP passes its Task input as it is, Copilot names the
+    /// agent in `agent_type`. Nil for any other call.
+    var subagentInput: JSONBox? {
+        guard var raw = input?.object as? [String: Any], let prompt = raw["prompt"] as? String, !prompt.isEmpty else { return nil }
+        let type = (raw["subagent_type"] as? String) ?? (raw["agent_type"] as? String)
+        guard type != nil || Subagents.tools.contains(metaToolName ?? "") else { return nil }
+        raw["subagent_type"] = type ?? "agent"
+        return JSONBox(raw)
+    }
 
     /// The call's input with its changes in the form Nook's edit rows read (`old_string`/`new_string`, `edits` when it
     /// changed more than one place), as Claude Code's Edit has them: the line count and the diff panel then work for every
@@ -104,8 +124,10 @@ struct AcpToolCall: Equatable, Sendable {
         return JSONBox(object)
     }
 
-    /// The tool name Nook's timeline groups by (see ToolCategory).
+    /// The tool name Nook's timeline groups by (see ToolCategory). A subagent's call is "Agent", as Claude Code's, so it
+    /// gets the subagent rows, the bar above the composer and the Subagents tab.
     var toolName: String {
+        if launchesSubagent { return "Agent" }
         switch kind {
         case "execute": return "shell"
         case "edit", "delete", "move": return "edit"
@@ -148,7 +170,7 @@ struct AcpOpenReads: Equatable, Sendable {
             earlier = []
             batch = []
             return done
-        case .userChunk, .plan, .usage, .permission, .commands, .configOptions, .currentMode, .unsupportedRequest:
+        case .userChunk, .plan, .usage, .permission, .elicitation, .commands, .configOptions, .currentMode, .unsupportedRequest:
             endBatch()
             return []
         }
@@ -171,6 +193,44 @@ struct AcpPermissionOption: Equatable, Sendable {
     var name: String
     /// allow_once, allow_always, reject_once, reject_always.
     var kind: String
+}
+
+/// A way an ACP agent lets you sign in (`initialize`'s `authMethods`).
+struct AcpAuthMethod: Equatable, Sendable {
+    /// The agent signs in when asked (`authenticate`): a page in your browser, a key it finds itself.
+    static let agent = "agent"
+    /// Nook runs the agent's own program with `args` (and `env`) in a Terminal window, where you sign in; the agent reads
+    /// the saved login when it starts again.
+    static let terminal = "terminal"
+
+    var id: String
+    var name: String
+    var type: String
+    var args: [String] = []
+    var env: [String: String] = [:]
+
+    init(id: String, name: String = "", type: String = AcpAuthMethod.agent, args: [String] = [], env: [String: String] = [:]) {
+        self.id = id
+        self.name = name
+        self.type = type
+        self.args = args
+        self.env = env
+    }
+
+    init?(_ raw: [String: Any]) {
+        guard let id = raw["id"] as? String, !id.isEmpty, id.count <= 128 else { return nil }
+        // `env` is a list of `{name, value}` in the schema; some agents send an object.
+        var env: [String: String] = [:]
+        if let list = raw["env"] as? [[String: Any]] {
+            for entry in list { if let name = entry["name"] as? String, let value = entry["value"] as? String { env[name] = value } }
+        } else if let object = raw["env"] as? [String: Any] {
+            for (name, value) in object { if let value = value as? String { env[name] = value } }
+        }
+        self.init(id: id, name: String(((raw["name"] as? String) ?? id).prefix(160)),
+                  type: (raw["type"] as? String) ?? Self.agent,
+                  args: ((raw["args"] as? [Any]) ?? []).compactMap { $0 as? String }.prefix(32).map { String($0.prefix(512)) },
+                  env: env.filter { CustomAgents.isEnvironmentName($0.key) && $0.value.count <= 4096 })
+    }
 }
 
 enum AcpRPC {
@@ -247,16 +307,19 @@ enum AcpRPC {
     static let loadReplayQuiet: TimeInterval = 2
 
     /// Nook neither reads files nor runs terminals for the agent: it does that itself. No `session.notices` either: Nook
-    /// has nothing to show from them.
+    /// has nothing to show from them. MCP servers may ask you to confirm something (`elicitation`, form mode), and an agent may sign you in
+    /// in a Terminal window (`auth.terminal`, `AcpAuthMethod.terminal`).
     static func initializeParams() -> [String: Any] {
         [
             "protocolVersion": protocolVersion,
-            "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false],
+            "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false,
+                                   "elicitation": ["form": [String: Any]()], "auth": ["terminal": true]],
             "clientInfo": ["name": "nook", "title": "Nook", "version": "1"]
         ]
     }
 
-    /// `session/new` or, to continue a conversation, `session/load`, with Nook's MCP bridge as a stdio server.
+    /// `session/new` or, to continue a conversation, `session/load` (or `session/fork` to copy it), with Nook's MCP bridge
+    /// as a stdio server.
     static func sessionParams(cwd: String, bridge: (command: String, args: [String], env: [String: String])?, loadID: String?) -> [String: Any] {
         var servers: [[String: Any]] = []
         if let bridge {
@@ -313,8 +376,14 @@ enum AcpRPC {
     }
 
     /// The sign-in methods `initialize` offers, in the agent's order.
+    static func authMethods(_ initialize: [String: Any]) -> [AcpAuthMethod] {
+        ((initialize["authMethods"] as? [[String: Any]]) ?? []).prefix(32).compactMap(AcpAuthMethod.init)
+    }
+
+    /// The methods `authenticate` takes: the agent signs in itself. A terminal method is run for you instead
+    /// (`AcpAuthMethod.terminal`), and one that wants keys in the environment cannot be asked for.
     static func authMethodIDs(_ initialize: [String: Any]) -> [String] {
-        ((initialize["authMethods"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
+        authMethods(initialize).filter { $0.type == AcpAuthMethod.agent }.map(\.id)
     }
 
     /// The option to answer a permission request with: the kind you chose, or the closest one the agent offers.
@@ -328,8 +397,23 @@ enum AcpRPC {
         return ["outcome": ["outcome": "cancelled"]]
     }
 
+    /// The kind Nook gives an MCP server's question in `acpRequests`: answered with an elicitation result, never allowed
+    /// by the session's rights.
+    static let elicitationKind = "elicitation"
+
+    /// The answer to an MCP server's question: accepted with nothing filled in, declined, or cancelled (the turn ended).
+    static func elicitationOutcome(_ decision: Bool?) -> [String: Any] {
+        switch decision {
+        case true?: return ["action": "accept", "content": [String: Any]()]
+        case false?: return ["action": "decline"]
+        case nil: return ["action": "cancel"]
+        }
+    }
+
     /// Whether a request may be allowed without asking, under the session's rights.
     static func autoAllows(_ call: AcpToolCall, permission: PermissionPolicy, mode: ExecutionMode) -> Bool {
+        // An MCP server's question waits for you, as for Claude Code and Codex.
+        if call.kind == elicitationKind { return false }
         if mode == .plan { return ["read", "search", "think", "fetch"].contains(call.kind) }
         switch permission {
         case .bypass: return true
@@ -367,6 +451,14 @@ enum AcpMapper {
             guard method == "session/update", let update = params.dictionary["update"] as? [String: Any] else { return [] }
             return self.update(update)
         case .request(let id, let method, let params):
+            if method == "elicitation/create" || method == "session/elicitation" {
+                let raw = params.dictionary
+                let fields = ((raw["requestedSchema"] as? [String: Any])?["properties"] as? [String: Any]) ?? [:]
+                let meta = (raw["_meta"] as? [String: Any]) ?? [:]
+                return [.elicitation(rpcID: id, server: (meta["serverName"] as? String) ?? (meta["mcpServerName"] as? String) ?? "",
+                                     message: String(((raw["message"] as? String) ?? "").prefix(600)),
+                                     isConfirmation: ((raw["mode"] as? String) ?? "form") == "form" && fields.isEmpty)]
+            }
             guard method == "session/request_permission" else { return [.unsupportedRequest(id)] }
             let raw = params.dictionary
             let call = toolCall((raw["toolCall"] as? [String: Any]) ?? [:])
@@ -440,7 +532,8 @@ enum AcpMapper {
         return AcpToolCall(id: (raw["toolCallId"] as? String) ?? UUID().uuidString, title: (raw["title"] as? String) ?? "",
                            kind: (raw["kind"] as? String) ?? "", status: raw["status"] as? String,
                            input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths,
-                           diffs: diffs)
+                           diffs: diffs,
+                           metaToolName: ((raw["_meta"] as? [String: Any])?["claudeCode"] as? [String: Any])?["toolName"] as? String)
     }
 
     /// A file as a path. The schema asks for an absolute path, but some agents (Kiro 2.32) name a diff's file as a
@@ -476,7 +569,7 @@ enum AcpMapper {
 
 /// What an ACP agent can do with its sessions, from `initialize`: load one again with its history replayed
 /// (`agentCapabilities.loadSession`), list them (`sessionCapabilities.list`) and resume one without the replay
-/// (`sessionCapabilities.resume`).
+/// (`sessionCapabilities.resume`), and copy one into a new session (`sessionCapabilities.fork`).
 struct AcpSessionCapabilities: Equatable, Sendable {
     var load = false
     var list = false
@@ -486,14 +579,19 @@ struct AcpSessionCapabilities: Equatable, Sendable {
     /// A session can be removed (`session/delete`) or ended (`session/close`).
     var delete = false
     var close = false
+    /// A session can be copied into a new one that goes on apart from it (`session/fork`): Nook's Fork keeps the
+    /// conversation instead of starting from a summary.
+    var fork = false
 
-    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false, delete: Bool = false, close: Bool = false) {
+    init(load: Bool = false, list: Bool = false, resume: Bool = false, images: Bool = false, delete: Bool = false, close: Bool = false,
+         fork: Bool = false) {
         self.load = load
         self.list = list
         self.resume = resume
         self.images = images
         self.delete = delete
         self.close = close
+        self.fork = fork
     }
 
     init(initialize: [String: Any]) {
@@ -505,6 +603,7 @@ struct AcpSessionCapabilities: Equatable, Sendable {
         resume = session["resume"] is [String: Any]
         delete = session["delete"] is [String: Any]
         close = session["close"] is [String: Any]
+        fork = session["fork"] is [String: Any]
         images = ((agent["promptCapabilities"] as? [String: Any])?["image"] as? Bool) ?? false
     }
 
@@ -834,7 +933,13 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _authMethods } }
         set { lock.withLock { _authMethods = newValue } }
     }
+    /// The agent's first terminal sign-in (`AcpAuthMethod.terminal`), for when it has no method `authenticate` takes.
+    var terminalSignIn: AcpAuthMethod? {
+        get { lock.withLock { _terminalSignIn } }
+        set { lock.withLock { _terminalSignIn = newValue } }
+    }
     private var _authMethods: [String] = []
+    private var _terminalSignIn: AcpAuthMethod?
     private var _effort: String?
     private var _startingEffort: String?
     private var _startingMode: String?
