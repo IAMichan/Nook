@@ -457,7 +457,7 @@ struct ImageAttachmentStrip: View {
                     }
                     ForEach(Array(files.enumerated()), id: \.offset) { index, file in
                         ZStack(alignment: .topTrailing) {
-                            ComposerFileTile(label: file.label, paste: file.kind == .paste, url: url(of: file))
+                            ComposerFileTile(label: file.label, paste: file.kind == .paste, element: file.kind == .element, url: url(of: file))
                             removeButton { removeFile(index) }
                         }
                     }
@@ -516,6 +516,8 @@ struct ComposerFileTile: View {
     let label: String
     /// Text you pasted, kept out of the box: a "TXT" tile without a file behind it.
     var paste = false
+    /// An element selected in Nook's browser: an "HTML" tile, its selector as the name.
+    var element = false
     let url: URL?
     @State private var preview: NSImage?
     @State private var isFolder = false
@@ -523,6 +525,7 @@ struct ComposerFileTile: View {
     private var type: String {
         if isFolder { return tr("compose.folder.type") }
         let ext = URL(fileURLWithPath: label).pathExtension
+        if element { return "HTML" }
         if paste || ext.isEmpty { return paste ? "TXT" : tr("compose.file.type") }
         return String(ext.uppercased().prefix(5))
     }
@@ -540,7 +543,7 @@ struct ComposerFileTile: View {
             if let preview {
                 Image(nsImage: preview).resizable().scaledToFill()
             } else {
-                Image(icon: paste ? "doc.plaintext" : "doc")
+                Image(icon: element ? "chevron.left.forwardslash.chevron.right" : paste ? "doc.plaintext" : "doc")
                     .font(NookTheme.font(22, .regular))
                     .foregroundStyle(NookTheme.textTertiary)
             }

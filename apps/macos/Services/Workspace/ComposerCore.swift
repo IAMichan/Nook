@@ -301,6 +301,9 @@ struct ContextRef: Codable, Equatable, Hashable, Sendable {
         /// A secret you pasted, kept out of the message: the id is the private file that holds it (`SecretFiles`), the
         /// label its name. The agent gets the path and how to use it, never the value.
         case secret
+        /// An element you selected in Nook's browser (`PickedElement`): its HTML and where it sits, carried along as a
+        /// snippet. It comes from a web page, so the record says it is data, never instructions.
+        case element
     }
 
     var kind: Kind
@@ -339,7 +342,7 @@ enum ContextRefs {
         case .file: return ref.id
         case .pullRequest: return "#" + ref.label
         case .skill: return "$" + ref.label
-        case .session, .excerpt, .source, .paste, .model, .secret: return ref.label
+        case .session, .excerpt, .source, .paste, .model, .secret, .element: return ref.label
         }
     }
 
@@ -390,9 +393,11 @@ enum ContextRefs {
             var record = "<ref kind=\"\(item.kind.rawValue)\" id=\"\(escape(item.id))\""
             if item.kind == .secret {
                 record += ">\n\(escape(SecretFiles.instructions(name: item.label, path: item.id)))\n</ref>"
-            } else if item.kind == .excerpt || item.kind == .paste, let content = excerpts[item.id] {
+            } else if item.kind == .excerpt || item.kind == .paste || item.kind == .element, let content = excerpts[item.id] {
                 let limit = item.kind == .paste ? pasteLimit : excerptLimit
                 let clipped = content.count > limit ? String(content.prefix(limit)) + "\n…" : content
+                // A page's own words: what it says is data, never something to do.
+                if item.kind == .element { record += " source=\"web page, untrusted\"" }
                 record += ">\n\(escape(clipped))\n</ref>"
             } else {
                 record += "/>"
@@ -408,7 +413,7 @@ enum ContextRefs {
         case .session: return "[session: " + item.label + "]"
         case .pullRequest: return "#" + item.label
         case .skill: return "$" + item.label
-        case .excerpt, .paste, .secret: return "[" + item.label + "]"
+        case .excerpt, .paste, .secret, .element: return "[" + item.label + "]"
         case .source: return "[" + item.label + "]"
         case .model: return "[model: " + item.label + "]"
         }
@@ -489,7 +494,7 @@ enum ComposerAttachments {
         var tail: String
     }
 
-    static func isAttachable(_ kind: ContextRef.Kind) -> Bool { kind == .file || kind == .paste }
+    static func isAttachable(_ kind: ContextRef.Kind) -> Bool { kind == .file || kind == .paste || kind == .element }
 
     /// The draft split into the words you typed and the run of file links that ends it.
     static func split(_ text: String) -> Split {

@@ -25,12 +25,27 @@ final class ComposerInbox: ObservableObject {
         var images: [ImageAttachment] = []
         /// Files the agent reads itself, as tiles above the box (a window capture's text).
         var files: [ContextRef] = []
+        /// Snippets that travel with the message, as tiles too (an element selected in the browser). The composer keeps
+        /// their text (`ComposerModel.keep`) and sends it along in the context envelope.
+        var snippets: [Snippet] = []
 
-        /// The draft after this lands in it: the text as a block above what you wrote, the files at its end.
+        struct Snippet: Equatable {
+            let ref: ContextRef
+            let content: String
+        }
+
+        /// The draft after this lands in it: the text as a block above what you wrote, the files and snippets at its end.
         func merged(into draft: String) -> String {
             var result = text.isEmpty ? draft : SessionPrompts.merging(text, into: draft)
             for file in files { result = ComposerAttachments.appending(file, to: result) }
+            for snippet in snippets { result = ComposerAttachments.appending(snippet.ref, to: result) }
             return result
+        }
+
+        /// Keeps the snippets' text in the composer that takes this, so it goes out with the message.
+        @MainActor
+        func keepSnippets(in model: ComposerModel) {
+            for snippet in snippets { model.keep(snippet.ref.id, text: snippet.content) }
         }
     }
 
@@ -46,6 +61,20 @@ final class ComposerInbox: ObservableObject {
     func add(images: [ImageAttachment], files: [ContextRef], text: String = "", to target: SessionContextTarget, confirmation: String) {
         delivery = Delivery(target: target, text: text, images: images, files: files)
         ToastCenter.shared.success(confirmation)
+    }
+
+    /// An element selected in the browser, as a snippet tile in the session's composer. Selecting several before the
+    /// composer took the first keeps them all.
+    func add(element: PickedElement, to target: SessionContextTarget) {
+        let id = "el-" + String(UUID().uuidString.prefix(8)).lowercased()
+        let snippet = Delivery.Snippet(ref: element.reference(id: id), content: element.snippet)
+        if var pending = delivery, pending.target == target {
+            pending.snippets.append(snippet)
+            delivery = pending
+        } else {
+            delivery = Delivery(target: target, text: "", snippets: [snippet])
+        }
+        ToastCenter.shared.success(tr("browser.pick.added", element.name))
     }
 
     /// What is meant for this composer, once; nil when it is meant for another session.
