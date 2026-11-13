@@ -45,6 +45,8 @@ struct TranscriptConversation: View {
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
     /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
     @State private var drawnRows = DrawnRows()
+    /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
+    @State private var timelineBuild = 0
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -176,6 +178,8 @@ struct TranscriptConversation: View {
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
+                // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
+                .id(timelineBuild)
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
@@ -215,6 +219,8 @@ struct TranscriptConversation: View {
                             // itself (one the lazy stack must draw), and only then on the very end.
                             scroll.jumpedToEnd()
                             pinRoom.release()
+                            // Scrolling brought nothing back: a new scroll view, which opens at its end.
+                            if RowsInView.rebuilds(attempt: attempt) { timelineBuild += 1 }
                             if let lastRow = rows.last?.id { proxy.scrollTo(lastRow, anchor: .bottom) }
                             DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
                         }

@@ -51,6 +51,8 @@ struct AgentRunPanel: View {
     @State var scrollPhase = Unobserved(ScrollPhase.idle)
     /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
     @State var drawnRows = DrawnRows()
+    /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
+    @State var timelineBuild = 0
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State var sentCount = 0

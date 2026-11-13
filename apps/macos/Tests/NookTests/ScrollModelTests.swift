@@ -187,6 +187,11 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [], top: 0, height: 0))
     }
 
+    func testABlankConversationIsRebuiltFromItsThirdTryOnEveryFourth() {
+        let rebuilt = (0..<12).filter { RowsInView.rebuilds(attempt: $0) }
+        XCTAssertEqual(rebuilt, [2, 6, 10])
+    }
+
     func testOnlyTheFirstFrameOfAScrollChangesTheState() {
         var m = ScrollModel()
         XCTAssertFalse(m.isFreeAfterUserScroll)
