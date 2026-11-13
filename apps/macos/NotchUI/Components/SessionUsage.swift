@@ -36,8 +36,10 @@ struct SessionUsageSnapshot: Equatable {
 
     var contextLevel: ContextMeter.Level { context == nil ? .normal : ContextMeter.level(pressure) }
 
-    /// The short and the long window ("5h 38%", "W 12%"), as the old composer chip showed them.
-    var limitLines: [UsageLimits.ChipLine] { UsageLimits.chipLines(limits.map { ($0.duration, $0.percent, $0.window) }) }
+    /// Each window of its own, shortest first ("5h 38%", "W 12%", a second weekly limit too), at most three.
+    var limitLines: [UsageLimits.ChipLine] {
+        UsageLimits.ringLines(limits.map { ($0.duration, $0.percent, $0.window, $0.group != nil) })
+    }
 
     /// The fullest of those lines.
     var fullestLimit: UsageLimits.ChipLine? { limitLines.max { $0.used < $1.used } }
@@ -407,23 +409,68 @@ struct SessionUsageSummary: View {
 
 // MARK: - Without the docked panel: a ring in the header
 
-/// Two rings in one: outside the context window, inside the short limit window (or, without a context, the short
-/// window outside and the long one inside, as the limits chip had them). Quiet and without a number while all is
-/// calm; the number of what needs attention comes beside it in amber or coral.
-struct SessionUsageRing: View, Equatable {
-    let snapshot: SessionUsageSnapshot
-    var hovering = false
+/// One ring of the header's nest: what it measures ("Context", "5h", "W"), how full, in which tone.
+struct SessionUsageRingItem: Equatable {
+    var label: String
+    var fraction: Double
+    var tint: Color
+    var used: String
+}
 
-    private struct Ring { let fraction: Double; let tint: Color }
-
-    private var rings: [Ring] {
-        var rings: [Ring] = []
-        if let context = snapshot.context { rings.append(Ring(fraction: context.fraction, tint: snapshot.contextTint)) }
-        for line in snapshot.limitLines.prefix(rings.isEmpty ? 2 : 1) {
-            rings.append(Ring(fraction: Double(line.used) / 100, tint: UsageTone.fill(used: line.used, calm: NookTheme.textSecondary)))
+extension SessionUsageSnapshot {
+    /// The rings from outside in: the context window, then each limit window from short to long.
+    var rings: [SessionUsageRingItem] {
+        var rings: [SessionUsageRingItem] = []
+        if let context {
+            rings.append(SessionUsageRingItem(label: tr("usage.session.context"), fraction: context.fraction,
+                                              tint: contextTint, used: ContextMeter.percentText(context.fraction)))
+        }
+        for line in limitLines {
+            rings.append(SessionUsageRingItem(label: line.short, fraction: Double(line.used) / 100,
+                                              tint: UsageTone.fill(used: line.used, calm: NookTheme.textSecondary),
+                                              used: "\(line.used)%"))
         }
         return rings
     }
+
+    /// "Rings, outside in: Context, 5h, W", for the header's tooltip.
+    var ringOrder: String? {
+        let rings = rings
+        guard rings.count > 1 else { return nil }
+        return tr("usage.ring.order", rings.map(\.label).joined(separator: ", "))
+    }
+}
+
+/// Rings nested in one another, the first outside. With `highlight` only that ring is drawn in its tone and the others
+/// as bare tracks: the legend's mark for "this one".
+struct NestedUsageRings: View {
+    let rings: [SessionUsageRingItem]
+    var size: CGFloat = 18
+    var lineWidth: CGFloat = 1.25
+    var gap: CGFloat = 0.75
+    var highlight: Int?
+
+    var body: some View {
+        let step = 2 * (lineWidth + gap)
+        ZStack {
+            ForEach(rings.indices, id: \.self) { index in
+                let diameter = max(lineWidth * 2, size - CGFloat(index) * step)
+                ProgressRing(fraction: highlight.map { $0 == index ? 1 : 0 } ?? rings[index].fraction,
+                             tint: highlight == nil ? rings[index].tint : NookTheme.textStrong, lineWidth: lineWidth)
+                    .frame(width: diameter, height: diameter)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The context window outside, the limit windows nested inside it from short to long (5 hours, the week, a second
+/// weekly limit). Quiet and without a number while all is calm; the number of what needs attention comes beside it in
+/// amber or coral. The tooltip names the rings from outside in; the popover's legend marks each one.
+struct SessionUsageRing: View, Equatable {
+    let snapshot: SessionUsageSnapshot
+    var hovering = false
 
     /// "84%" for a context past the warning line, "5h 78%" for a limit from 75 %; nil while calm.
     private var number: (String, Color)? {
@@ -438,17 +485,36 @@ struct SessionUsageRing: View, Equatable {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
-            ZStack {
-                ForEach(rings.indices, id: \.self) { index in
-                    ProgressRing(fraction: rings[index].fraction, tint: rings[index].tint, lineWidth: 1.75)
-                        .frame(width: index == 0 ? 15 : 9, height: index == 0 ? 15 : 9)
-                }
-            }
-            .frame(width: 15, height: 15)
+            NestedUsageRings(rings: snapshot.rings)
             if let number {
                 Text(number.0).font(NookTheme.TextStyle.caption.monospacedDigit()).foregroundStyle(number.1)
                     .lineLimit(1).fixedSize()
             }
+        }
+    }
+}
+
+/// Which ring is which, at the top of the header's popover: per ring a small nest with only that ring lit, its name and
+/// how full it is ("◎ Context 42%  ◎ 5h 38%  ◎ W 12%").
+struct SessionUsageRingLegend: View {
+    let snapshot: SessionUsageSnapshot
+
+    var body: some View {
+        let rings = snapshot.rings
+        if rings.count > 1 {
+            HStack(spacing: NookTheme.Spacing.md) {
+                ForEach(rings.indices, id: \.self) { index in
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        NestedUsageRings(rings: rings, size: 12, lineWidth: 1, gap: 0.5, highlight: index)
+                        Text(rings[index].label).foregroundStyle(NookTheme.textTertiary)
+                            + Text(" \(rings[index].used)").foregroundStyle(rings[index].tint)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .font(NookTheme.TextStyle.caption.monospacedDigit())
+            .lineLimit(1)
+            .fixedSize()
         }
     }
 }
@@ -475,23 +541,37 @@ struct SessionUsageButton: View {
             }
             .buttonStyle(.nookPlain)
             .fixedSize()
-            .help(snapshot.help)
-            .accessibilityLabel(snapshot.help)
+            .help(help(snapshot))
+            .accessibilityLabel(help(snapshot))
             .popover(isPresented: $open, arrowEdge: .bottom) {
-                SessionUsagePopover(source: source) { open = false }
+                SessionUsagePopover(source: source, legend: true) { open = false }
             }
         }
     }
+
+    /// The usage, then which ring is which.
+    private func help(_ snapshot: SessionUsageSnapshot) -> String {
+        [snapshot.help, snapshot.ringOrder].compactMap { $0 }.joined(separator: "\n")
+    }
 }
 
-/// The usage section on its own, as a popover from the header's ring or the composer's alert.
+/// The usage section on its own, as a popover from the header's ring or the composer's alert. From the ring it opens
+/// with the legend that says which ring is which.
 struct SessionUsagePopover: View {
+    @EnvironmentObject private var app: AppModel
+    @EnvironmentObject private var workspace: WorkspaceManager
     let source: SessionUsageSource
+    var legend = false
     let close: () -> Void
 
     var body: some View {
-        SessionUsageSection(source: source, close: close)
-            .padding(NookTheme.Spacing.lg)
-            .frame(width: PanelLayout.sessionPanel, alignment: .leading)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            if legend {
+                SessionUsageRingLegend(snapshot: SessionUsageSnapshot.read(source, app: app, workspace: workspace))
+            }
+            SessionUsageSection(source: source, close: close)
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(width: PanelLayout.sessionPanel, alignment: .leading)
     }
 }

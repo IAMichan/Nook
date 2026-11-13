@@ -85,6 +85,31 @@ enum UsageLimits {
         }
     }
 
+    /// The header ring's lines: every window of its own, shortest first, at most `limit`. A plain window ("5 hours",
+    /// "Week", a second weekly limit) keeps its own line; windows per model ("Gemini · Week") fold into the fullest of
+    /// each length, so an agent with a dozen models still fits.
+    static func ringLines(_ windows: [(duration: TimeInterval?, percent: Double, window: String, grouped: Bool)],
+                          limit: Int = 3) -> [ChipLine] {
+        var spans: [(key: String, duration: TimeInterval?, percent: Double, window: String)] = []
+        for window in windows {
+            let duration = window.duration.map { ($0 / 60).rounded() * 60 }
+            let key = window.grouped ? "span:\(duration.map { "\($0)" } ?? "-")" : "label:\(window.window)"
+            if let index = spans.firstIndex(where: { $0.key == key }) {
+                spans[index].percent = max(spans[index].percent, window.percent)
+            } else {
+                spans.append((key, duration, window.percent, window.window))
+            }
+        }
+        let ordered = spans.enumerated().sorted {
+            let left = $0.element.duration ?? .infinity, right = $1.element.duration ?? .infinity
+            return left == right ? $0.offset < $1.offset : left < right
+        }
+        return ordered.prefix(max(0, limit)).map { _, span in
+            ChipLine(short: shortWindow(span.duration, fallback: span.window),
+                     used: Int(min(100, max(0, span.percent)).rounded()))
+        }
+    }
+
     /// "5h", "W", "3d": a window's length in a letter or two, to fit beside the chip's ring.
     static func shortWindow(_ duration: TimeInterval?, fallback: String) -> String {
         guard let duration, duration > 0 else { return String(fallback.prefix(2)) }
