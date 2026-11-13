@@ -23,7 +23,7 @@ final class AppModel: ObservableObject {
     var agentSessionsCache: (runs: [WorkspaceRun], sessions: [AgentSession], detected: [AgentSession], value: [AgentSession])?
     /// The Agents list's rows, kept until what they are made from changes (`AppModel+AgentList`).
     var agentListMemo: AgentListMemo?
-    /// Counts up whenever an object the list's rows read without a key of their own changes (history, accounts, visits,
+    /// Counts up whenever an object the list's rows read without a key of their own changes (history, accounts,
     /// settled marks, project names), so `agentListMemo` is made again after it.
     var agentListGeneration = 0
     /// For each session Nook runs, when its transcript was last written outside Nook as last followed (see
@@ -307,12 +307,12 @@ final class AppModel: ObservableObject {
             .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
-        // The Agents list's rows read these besides the sessions themselves: any change makes them again (unthrottled,
+        // The Agents list's rows read these besides the sessions themselves (your visits are applied after,
+        // `AgentListEntries.seen`): any change makes them again (unthrottled,
         // so the list is never drawn from what they said before).
         let listInputs: [AnyPublisher<Void, Never>] = [
             history.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             profiles.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
-            SessionVisits.shared.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             FinishedSessions.shared.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             workspace.settings.objectWillChange.map { _ in () }.eraseToAnyPublisher()
         ]

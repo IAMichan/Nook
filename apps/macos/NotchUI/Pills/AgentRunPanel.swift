@@ -49,6 +49,8 @@ struct AgentRunPanel: View {
     @State var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew every block of the run again.
     @State var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// The last frame the scroll view reported, for `settleAtEnd`; read only by handlers, so nothing redraws with it.
+    @State var lastFrame = Unobserved<ScrollFrame?>(nil)
     /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
     @State var drawnRows = DrawnRows()
     /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
