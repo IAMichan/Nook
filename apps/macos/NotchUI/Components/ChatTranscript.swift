@@ -1391,29 +1391,55 @@ private struct BubbleActionButton: View {
     }
 }
 
-/// The emoji to react with, in a row, and "+" for every other emoji; the one you already put there is marked, and
-/// choosing it again takes it back.
+/// The emoji to react with, in a row, then the ones you use most (see `EmojiUsage`) after a horizontal scroll, and "+"
+/// for every other emoji, always in view beside the row. The one you already put there is marked, and choosing it again
+/// takes it back.
 private struct ReactionPicker: View {
     let mine: String?
     let choose: (String) -> Void
     /// "+" was clicked: every emoji, with a search.
     @State private var browsing = false
+    /// The ones you use most beyond the quick row, read when the picker opens so they do not move under the pointer.
+    @State private var recent: [String] = []
+
+    private static let button: CGFloat = 36
+    private static let spacing = NookTheme.Spacing.xs
+
+    /// The quick row, your reaction when it is not in there (so it can be taken back), then the ones you use most.
+    private var row: [String] {
+        var row = ChatReactions.quick
+        if let mine, !row.contains(mine) { row.append(mine) }
+        return row + recent.filter { !row.contains($0) }
+    }
+
+    /// Wide enough for the quick row; with more after it, half a button more peeks out so the row reads as scrollable.
+    private var visibleWidth: CGFloat {
+        let quick = CGFloat(ChatReactions.quick.count)
+        let width = quick * Self.button + (quick - 1) * Self.spacing
+        return row.count > ChatReactions.quick.count ? width + Self.spacing + Self.button / 2 : width
+    }
 
     var body: some View {
         if browsing {
             EmojiBrowser(chosen: mine, choose: choose)
         } else {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                ForEach(ChatReactions.quick, id: \.self) { emoji in
-                    ReactionPickerButton(emoji: emoji, chosen: emoji == mine) { choose(emoji) }
+            HStack(spacing: Self.spacing) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Self.spacing) {
+                        ForEach(row, id: \.self) { emoji in
+                            ReactionPickerButton(emoji: emoji, chosen: emoji == mine) {
+                                // Counts toward "Frequently used", unless it takes your reaction back.
+                                if emoji != mine { EmojiUsage.shared.record(emoji) }
+                                choose(emoji)
+                            }
+                        }
+                    }
                 }
-                // A reaction outside the quick row is marked here too, so it can be taken back.
-                if let mine, !ChatReactions.quick.contains(mine) {
-                    ReactionPickerButton(emoji: mine, chosen: true) { choose(mine) }
-                }
+                .frame(width: visibleWidth)
                 MoreEmojiButton { browsing = true }
             }
             .padding(NookTheme.Spacing.sm)
+            .onAppear { recent = EmojiUsage.shared.ranked() }
         }
     }
 }
