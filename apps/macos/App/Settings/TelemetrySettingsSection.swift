@@ -42,10 +42,11 @@ struct TelemetrySettingsSection: View {
                     SettingText("otel.signal." + signal.rawValue)
                 }
             } else {
-                TextField(text: binding(signal), prompt: Text(verbatim: "http://localhost:4318" + signal.path)) {
-                    SettingText("otel.signal." + signal.rawValue)
+                SettingFieldRow(tr("otel.signal." + signal.rawValue)) {
+                    TextField(tr("otel.signal." + signal.rawValue), text: binding(signal),
+                              prompt: Text(verbatim: "http://localhost:4318" + signal.path))
+                        .onSubmit { save(signal) }
                 }
-                .onSubmit { save(signal) }
             }
             if testing.contains(signal) { ProgressView().controlSize(.small) }
             Button(tr("otel.test")) { Task { await test(signal) } }
@@ -100,10 +101,10 @@ struct TelemetrySettingsSection: View {
             }
         } else {
             HStack {
-                SecureField(text: $headersDraft, prompt: Text(verbatim: "Authorization=Bearer …")) {
-                    SettingText("otel.headers")
+                SettingFieldRow(tr("otel.headers")) {
+                    SecureField(tr("otel.headers"), text: $headersDraft, prompt: Text(verbatim: "Authorization=Bearer …"))
+                        .onSubmit(saveHeaders)
                 }
-                .onSubmit(saveHeaders)
                 Button(tr("button.save"), action: saveHeaders)
                     .controlSize(.small)
                     .disabled(headersDraft.trimmingCharacters(in: .whitespaces).isEmpty)

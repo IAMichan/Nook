@@ -118,8 +118,8 @@ struct StatusRow<Trailing: View>: View {
     }
 }
 
-/// Toggle switch that shows only its title. The explanation is there when you want it, on hover and for VoiceOver,
-/// so a page full of switches reads as a calm list instead of a wall of captions.
+/// A switch on a Settings row: its name, the explanation in smaller text under it, and the switch on the right
+/// (`SettingsRowToggleStyle`), so every row of a page reads the same way.
 struct SettingToggle: View {
     let title: String
     let detail: String
@@ -132,20 +132,18 @@ struct SettingToggle: View {
     }
 
     var body: some View {
-        Toggle(title, isOn: $isOn)
-            .help(detail)
-            .accessibilityHint(detail)
-            .settingsAnchor(title)
+        Toggle(isOn: $isOn) {
+            SettingRowText(title: title, detail: detail)
+        }
+        .settingsAnchor(title)
     }
 }
 
-/// A setting's title for rows that hold a button or a picker. With `detail:` a short caption stays under it, for what
-/// you need to see (a state, a size, the step to take); with `hint:` only the title shows and the explanation is on
-/// hover and for VoiceOver, as with `SettingToggle`.
+/// A setting's title for rows that hold a button or a picker, with its explanation in smaller text under it, as
+/// `SettingToggle`. `detail:` and `hint:` read the same; both stay for the callers.
 struct SettingLabel: View {
     let title: String
     let detail: String
-    private var showsDetail = true
 
     init(_ title: String, detail: String) {
         self.title = title
@@ -155,26 +153,61 @@ struct SettingLabel: View {
     init(_ title: String, hint: String) {
         self.title = title
         self.detail = hint
-        self.showsDetail = false
     }
 
     var body: some View {
-        label.settingsAnchor(title)
+        SettingRowText(title: title, detail: detail).settingsAnchor(title)
+    }
+}
+
+/// A text field on a Settings row with its name beside it, or above it for a field of several lines (`stacked`),
+/// with an optional explanation under the name. The field keeps its own title for VoiceOver; the row shows the name, as
+/// a field in a Settings card draws no label of its own.
+struct SettingFieldRow<Field: View>: View {
+    let title: String
+    var detail = ""
+    var stacked = false
+    @ViewBuilder var field: () -> Field
+
+    init(_ title: String, detail: String = "", stacked: Bool = false, @ViewBuilder field: @escaping () -> Field) {
+        self.title = title
+        self.detail = detail
+        self.stacked = stacked
+        self.field = field
     }
 
-    @ViewBuilder private var label: some View {
-        if showsDetail {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(title)
+    var body: some View {
+        if stacked {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                SettingRowText(title: title, detail: detail).settingsAnchor(title)
+                field().labelsHidden().textFieldStyle(.roundedBorder)
+            }
+        } else {
+            HStack(spacing: NookTheme.Spacing.xl) {
+                SettingRowText(title: title, detail: detail).settingsAnchor(title)
+                    .layoutPriority(1)
+                field().labelsHidden().textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+}
+
+/// The left side of a Settings row: the name, and under it the explanation in smaller, softer text. An empty
+/// explanation leaves the name alone on one line.
+struct SettingRowText: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Text(title)
+                .foregroundStyle(NookTheme.paper)
+            if !detail.isEmpty {
                 Text(detail)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        } else {
-            Text(title)
-                .help(detail)
-                .accessibilityHint(detail)
         }
     }
 }
@@ -636,19 +669,23 @@ struct WorkspaceSettingsSection: View {
             .help(tr("settings.ws.browserSignIns.help"))
         }
         inheritable(.titleInstructions, path) {
-            TextField(tr("settings.ws.titleInstructions"), text: Binding(
-                get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
-                set: { ws.setOverride(.titleInstructions, $0, for: path) }),
-                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
-                .lineLimit(1...4)
+            SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
+                TextField(tr("settings.ws.titleInstructions"), text: Binding(
+                    get: { overrideText(.titleInstructions, path) ?? resolved.titleInstructions },
+                    set: { ws.setOverride(.titleInstructions, $0, for: path) }),
+                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                    .lineLimit(1...4)
+            }
         }
         inheritable(.agentInstructions, path) {
-            TextField(tr("settings.ws.agentInstructions"), text: Binding(
-                get: { overrideText(.agentInstructions, path) ?? resolved.agentInstructions },
-                set: { ws.setOverride(.agentInstructions, $0, for: path) }),
-                      prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
-                .lineLimit(2...8)
-                .help(tr("settings.ws.agentInstructions.help"))
+            SettingFieldRow(tr("settings.ws.agentInstructions"), detail: tr("settings.ws.agentInstructions.help"),
+                            stacked: true) {
+                TextField(tr("settings.ws.agentInstructions"), text: Binding(
+                    get: { overrideText(.agentInstructions, path) ?? resolved.agentInstructions },
+                    set: { ws.setOverride(.agentInstructions, $0, for: path) }),
+                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
+                    .lineLimit(2...8)
+            }
         }
         inheritable(.submodules, path) {
             Picker(tr("sc.submodules"), selection: Binding(
@@ -855,14 +892,18 @@ struct WorkspaceSettingsSection: View {
         Section(tr("settings.ws.behavior")) {
             Toggle(isOn: $ws.autoTitles) { SettingText("settings.ws.autoTitles") }
             // Also used by "Regenerate title" in a session's menu; a project can set its own under its defaults.
-            TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
-                      prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
-                .lineLimit(1...4)
+            SettingFieldRow(tr("settings.ws.titleInstructions"), stacked: true) {
+                TextField(tr("settings.ws.titleInstructions"), text: $ws.titleInstructions,
+                          prompt: Text(tr("settings.ws.titleInstructions.placeholder")), axis: .vertical)
+                    .lineLimit(1...4)
+            }
             // Every agent gets these at launch, in every project that does not set its own.
-            TextField(tr("settings.ws.agentInstructions"), text: $ws.agentInstructions,
-                      prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
-                .lineLimit(2...8)
-                .help(tr("settings.ws.agentInstructions.help"))
+            SettingFieldRow(tr("settings.ws.agentInstructions"), detail: tr("settings.ws.agentInstructions.help"),
+                            stacked: true) {
+                TextField(tr("settings.ws.agentInstructions"), text: $ws.agentInstructions,
+                          prompt: Text(tr("settings.ws.agentInstructions.placeholder")), axis: .vertical)
+                    .lineLimit(2...8)
+            }
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
             // A session can choose for itself in its menu.
             Picker(selection: $ws.timelineDetail) {

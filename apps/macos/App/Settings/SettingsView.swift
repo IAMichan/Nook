@@ -186,7 +186,7 @@ struct SettingsView: View {
             Form {
                 detail(for: section, attention: needs, problems: problems)
             }
-            .formStyle(.grouped)
+            .formStyle(SettingsFormStyle())
             // Every row reads at the panel's body size; captions and notes set their own smaller style.
             .font(NookTheme.TextStyle.body)
             .scrollContentBackground(.hidden)
