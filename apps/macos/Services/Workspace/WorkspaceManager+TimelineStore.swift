@@ -181,6 +181,7 @@ extension WorkspaceManager {
             timelineStore.countingBytes = false
         }
         store.appendEventAsync(id, event)
+        if !worktreeSetups.isEmpty { noteSetupEvent(id, event) }
         if event.countsAsActivity(runActive: runIndex(id).map { runs[$0].status.isActive } ?? false) {
             // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
             // agent appends many events a second, so in between turn boundaries the time moves on at most every 2 s.

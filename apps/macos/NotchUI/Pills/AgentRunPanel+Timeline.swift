@@ -91,7 +91,9 @@ extension AgentRunPanel {
         // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
         // that runs now only in the live line at the end, not also in the list above it.
         let active = run.status.isActive
-        let workingUnder = active ? events.last(where: { $0.kind == .user })?.id : nil
+        // A new worktree still being set up: its checklist is the live state, in place of "Working for …".
+        let setup = workspace.visibleSetup(run)
+        let workingUnder = active && setup == nil ? events.last(where: { $0.kind == .user })?.id : nil
         // A compaction that runs is the live line too ("Compacting the conversation…"); once done it is a row of its own.
         let liveStep = active ? events.last.flatMap {
             ($0.kind == .tool && $0.state == .running) || CompactionProgress.isRunning($0) ? $0.id : nil
@@ -157,7 +159,9 @@ extension AgentRunPanel {
                         .countsAsDrawnRow(drawnRows, id: block.id)
                         .id(block.id)
                     }
-                    if active {
+                    if let setup {
+                        WorktreeSetupChecklist(progress: setup, active: active) { workspace.stop(runID) }
+                    } else if active {
                         // The agent's task list, live, right above what it does now: the same live line as in an agent's
                         // own transcript.
                         let turn = TimelinePresentation.lastTurn(events)

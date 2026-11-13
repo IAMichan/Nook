@@ -201,7 +201,8 @@ extension WorkspaceManager {
     }
 
     /// Creates the session's worktree off the main thread (serialized per repository via `FolderLease`), launches the
-    /// agent as soon as the checkout exists, and records the initial snapshot and setup scripts in the background.
+    /// agent as soon as the checkout exists, and records the initial snapshot and setup scripts in the background. Each
+    /// step reports to `worktreeSetups`, so the conversation shows what really happens while it does.
     func prepareWorktreeAndLaunch(_ id: UUID, root: String, path: String, branch: String, base: String,
                                   prompt: String, executable: String) {
         guard let git = gitService else { return }
@@ -210,17 +211,44 @@ extension WorkspaceManager {
         let ref = GitService.checkpointRef(session: id, index: claimCheckpointIndex(id))
         let checkout = worktreeCheckout(git, root: root)
         prepareTasks[id]?.cancel()
+        worktreeSetups[id] = WorktreeSetupProgress()
         prepareTasks[id] = Task { [weak self] in
             let submoduleProblem: String?
             do {
-                submoduleProblem = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
-                    let cloned = try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: refreshBase,
+                // Fetching the base: its own step, under the same lease as the checkout so they never interleave with
+                // another session's worktree of this repository.
+                if refreshBase, base.contains("/") {
+                    self?.setupStep(id) { $0.begin(.fetchBase) }
+                    let fetched = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                        git.refreshRemoteBase(base, in: root)
+                    }
+                    guard let self, !Task.isCancelled else { return }
+                    self.recordFetch(id, fetched, base: base)
+                } else {
+                    self?.setupStep(id) {
+                        $0.skip(.fetchBase)
+                        $0.note(.fetchBase, base.contains("/") ? tr("ws.setup.note.fetchedRecently", base) : tr("ws.setup.note.localBase", base))
+                    }
+                }
+                self?.setupStep(id) { $0.begin(.checkOut) }
+                let made = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                    let cloned = try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: false,
                                                      checkoutCache: checkout.cache)
-                    return Self.finishWorktree(git, checkout: checkout, root: root, path: path, cloned: cloned)
+                    return (cloned, Self.finishWorktree(git, checkout: checkout, root: root, path: path, cloned: cloned))
+                }
+                submoduleProblem = made.1
+                self?.setupStep(id) {
+                    $0.finish(.checkOut)
+                    $0.note(.checkOut, tr("ws.setup.note.worktree", branch, base, AgentPathFormat.tilde(path)))
+                    $0.note(.checkOut, made.0 ? tr("ws.setup.note.cached") : tr("ws.setup.note.gitCheckout"))
+                    if let submoduleProblem = made.1 { $0.note(.checkOut, tr("sc.submodules.failed", submoduleProblem)) }
                 }
             } catch {
                 guard let self, !Task.isCancelled, self.run(id) != nil else { return }
                 self.prepareTasks[id] = nil
+                self.setupStep(id) {
+                    if $0.isRunning(.fetchBase) { $0.fail(.fetchBase, error.localizedDescription) } else { $0.fail(.checkOut, error.localizedDescription) }
+                }
                 self.update(id) {
                     $0.worktreePath = nil
                     $0.workingDirectory = root
@@ -241,6 +269,17 @@ extension WorkspaceManager {
             let setup = ProjectScripts.setup(await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value)
             guard !Task.isCancelled, self.run(id)?.status == .preparing else { return }
             let holds = setup.holdsAgent && !prompt.isEmpty
+            self.setupStep(id) {
+                if setup.scripts.isEmpty {
+                    $0.skip(.runSetup)
+                    $0.note(.runSetup, tr("ws.setup.note.noScript"))
+                } else {
+                    $0.begin(.runSetup)
+                    for script in setup.scripts {
+                        $0.note(.runSetup, script.async ? tr("ws.setup.note.scriptBackground", script.name) : tr("ws.setup.note.scriptWaits", script.name))
+                    }
+                }
+            }
             if !holds {
                 self.prepareTasks[id] = nil
                 self.startFirstTurn(id, prompt: prompt, executable: executable)
@@ -255,6 +294,10 @@ extension WorkspaceManager {
             }
             guard !Task.isCancelled, self.run(id) != nil else { return }
             let failure = await self.startSetupScripts(id, path: path, scripts: setup.scripts)
+            self.setupStep(id) {
+                guard $0.isRunning(.runSetup) else { return }
+                if let failure { $0.fail(.runSetup, failure) } else { $0.finish(.runSetup) }
+            }
             guard holds, !Task.isCancelled, self.run(id)?.status == .preparing else { return }
             self.prepareTasks[id] = nil
             if let failure {
@@ -269,11 +312,13 @@ extension WorkspaceManager {
     /// The first turn of a session in a new worktree; without a first message, the session waits for yours.
     private func startFirstTurn(_ id: UUID, prompt: String, executable: String) {
         if prompt.isEmpty {
+            setupStep(id) { $0.skip(.startAgent) }
             update(id) {
                 $0.status = .completed
                 $0.turnStartedAt = nil
             }
         } else {
+            setupStep(id) { $0.begin(.startAgent) }
             launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
         }
     }
