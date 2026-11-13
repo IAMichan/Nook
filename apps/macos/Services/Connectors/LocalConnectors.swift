@@ -927,11 +927,12 @@ final class BrowserConnector: ContextSource {
                         set ti to 0
                         repeat with u in us
                             set ti to ti + 1
-                            if ti > 15 or ti > (count of ns) then exit repeat
+                            if ti > (count of ns) then exit repeat
                             set u to contents of u
                             set mark to "0"
                             if u is act then set mark to "1"
-                            set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
+                            -- The first fifteen tabs, and always the one the window shows, however far along it is.
+                            if ti < 16 or mark is "1" then set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
                         end repeat
                     end repeat
                     return out
@@ -990,115 +991,18 @@ final class BrowserConnector: ContextSource {
         [
             ToolSpec(
                 name: "read_browser_tab",
-                description: "Leest de tekst van het huidige actieve tabblad (of een specifiek tabblad) in Safari, Google Chrome, Microsoft Edge of Arc. Gebruik dit wanneer de gebruiker vraagt wat er op het scherm/tabblad in de browser staat, of om een webpagina die open staat samen te vatten.",
+                description: "Reads the web page open in the user's browser (Safari, Chrome, Edge, Brave or Arc): its title, address and text, also while Nook's chat is in front. Without arguments it reads the page shown in the browser the user works in; with tab it finds the open tab whose title or address contains that text in any window (\"FileSender\", \"bol.com\"). Use it when the user talks about a page, form or site that is open in their browser. A page it finds is open, even when its text cannot be read: never tell the user it is not open. To fill in or click on the page, use take_over.",
                 schema: ["type": "object", "properties": [
-                    "browser": ["type": "string", "description": "Optionele browsernaam (Safari, Google Chrome, Microsoft Edge, Arc). Indien leeg, pakt hij de actieve browser."] as [String: Any]
+                    "tab": ["type": "string", "description": "Part of the title or address of the tab to read, when the user names the site or page. Leave empty for the page shown now."] as [String: Any],
+                    "browser": ["type": "string", "description": "Optional browser name (Safari, Google Chrome, Microsoft Edge, Brave, Arc)."] as [String: Any]
                 ]],
                 kind: .read,
                 summarize: { _ in "Browsertabblad lezen" },
                 tag: { _ in ("", .neutral) },
                 run: { input in
-                    let targetBrowser = (input["browser"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                    var scripts: [(name: String, bundle: String, script: String)] = []
-
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("safari") == true {
-                        if ScriptText.isRunning("com.apple.Safari") {
-                            scripts.append(("Safari", "com.apple.Safari", """
-                            tell application "Safari"
-                                if (count of documents) > 0 then
-                                    set doc to front document
-                                    set docTitle to name of doc
-                                    set docURL to URL of doc
-                                    set docText to text of doc
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("chrome") == true {
-                        if ScriptText.isRunning("com.google.Chrome") {
-                            scripts.append(("Google Chrome", "com.google.Chrome", """
-                            tell application "Google Chrome"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    set docText to execute front window's active tab javascript "document.body.innerText"
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("edge") == true {
-                        if ScriptText.isRunning("com.microsoft.edgemac") {
-                            scripts.append(("Microsoft Edge", "com.microsoft.edgemac", """
-                            tell application "Microsoft Edge"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    set docText to execute front window's active tab javascript "document.body.innerText"
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("brave") == true {
-                        if ScriptText.isRunning("com.brave.Browser") {
-                            scripts.append(("Brave Browser", "com.brave.Browser", """
-                            tell application "Brave Browser"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    set docText to execute front window's active tab javascript "document.body.innerText"
-                                    if (length of docText) > 12000 then set docText to text 1 thru 12000 of docText
-                                    return docTitle & "|||" & docURL & linefeed & docText
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-                    if targetBrowser == nil || targetBrowser?.lowercased().contains("arc") == true {
-                        if ScriptText.isRunning("company.thebrowser.Browser") {
-                            scripts.append(("Arc", "company.thebrowser.Browser", """
-                            tell application "Arc"
-                                if (count of windows) > 0 then
-                                    set tab to active tab of front window
-                                    set docTitle to title of tab
-                                    set docURL to URL of tab
-                                    return docTitle & "|||" & docURL
-                                end if
-                            end tell
-                            """))
-                        }
-                    }
-
-                    // Prioritize the frontmost browser if one is currently active on screen.
-                    if let frontBundle, let idx = scripts.firstIndex(where: { $0.bundle == frontBundle }), idx > 0 {
-                        let front = scripts.remove(at: idx)
-                        scripts.insert(front, at: 0)
-                    }
-
-                    for (browserName, _, script) in scripts {
-                        let result = await ScriptText.run(script, timeout: 3.0)
-                        if let text = result.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-                            let header = String(lines.first ?? "").components(separatedBy: "|||")
-                            let body = lines.count > 1 ? String(lines[1]) : ""
-                            let title = header.first ?? "Webpagina"
-                            let url = header.count > 1 ? header[1] : ""
-                            return "## \(title) (\(browserName))\nBron: \(url)\n\n\(body)\n\n" + ReferenceParser.line(title: title, url: url.isEmpty ? nil : url, detail: browserName)
-                        }
-                    }
-                    return "Geen geopende webpagina met tekst gevonden in Safari, Chrome of Edge."
+                    let tab = ((input["tab"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let browser = ((input["browser"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    return await BrowserTabReader.read(target: tab.isEmpty ? (browser.isEmpty ? nil : browser) : tab)
                 }
             )
         ]

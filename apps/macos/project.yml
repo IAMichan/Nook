@@ -314,6 +314,7 @@ targets:
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ModelDownload.swift
       - path: Brain/ChatIntent.swift
+      - path: Brain/OpenBrowserTab.swift
       - path: Services/EmbeddedApps/EmbeddedAppCatalog.swift
       - path: Services/EmbeddedApps/WhatsAppWeb.swift
       - path: Services/Messages/ChatInbox.swift

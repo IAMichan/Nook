@@ -23,6 +23,23 @@ extension AppModel {
         scope.keepingLocal(settings.privateSources)
     }
 
+    /// `take_over` for an external brain while the screen stays on this Mac: the task runs on the screen brain here
+    /// (`takeOver` routes itself there), so the brain only hands over the task in words and gets back a summary with the
+    /// privacy filter applied. Without it, "vul het formulier in" ended in "I cannot see that form" although it was open.
+    /// Empty when the brain may take over itself, no screen brain is picked, or the user left the screen out of this chat.
+    func takeoverOnThisMac(asked: SourceScope, scope: SourceScope) -> [ToolSpec] {
+        guard settings.screenWorker != nil, ScreenBrain.routed == nil, asked.allows(SourceCatalog.screen),
+              !scope.allowsTool(TakeoverPolicy.toolName),
+              let spec = takeoverTools.first(where: { $0.name == TakeoverPolicy.toolName }) else { return [] }
+        let run = spec.run
+        return [ToolSpec(
+            name: spec.name,
+            description: spec.description + " The user's screen stays on their Mac, out of your sight: Nook does this task there with a model on the Mac, which sees the screen. So a form, page or window you cannot see may well be open: hand the task over instead of saying it is not there.",
+            schema: spec.schema, kind: spec.kind, summarize: spec.summarize, tag: spec.tag,
+            run: { input in PrivacyFilter.apply(try await run(input), level: .strict) }
+        )]
+    }
+
     /// The "only on this Mac" sources the question asked for by name (or the scope puts first) that an external brain
     /// therefore did not use, so the answer can say why they are missing.
     func withheldSources(asked text: String, scope: SourceScope) -> Set<String> {
@@ -271,12 +288,13 @@ extension AppModel {
     ) async -> PreparedRun {
         // Every route to the brain (chat, cards, thinking along) passes here: sources kept on this Mac stay out of reach
         // of an external brain, even for a caller that passes the automatic scope.
+        let asked = scope
         let scope = privacyScope(scope)
         // Only sources relevant to this query are included in full; others as one-line summaries.
         var activeIDs = Set(connectors.searchable.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)
         let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs, history: history)
-        let tools = scopedTools(scope, ledger: ledger)
+        let tools = scopedTools(scope, ledger: ledger) + takeoverOnThisMac(asked: asked, scope: scope)
         // What Nook remembers about the user that matters here; a follow-up also recalls with the question before it.
         let recallText = text + (history.last(where: \.fromUser).map { "\n" + $0.text } ?? "")
         let recalled = recalledMemories(for: recallText, scope: scope, tools: tools)
