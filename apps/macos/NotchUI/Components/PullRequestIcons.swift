@@ -170,11 +170,16 @@ extension PullRequestItem {
     }
 
     /// The checks as their icon shows them; nil while unknown.
-    var checkOutcome: PullRequestCheck.Outcome? {
+    var checkOutcome: PullRequestCheck.Outcome? { PullRequestCheck.Outcome(ci) }
+}
+
+extension PullRequestCheck.Outcome {
+    /// A list row's checks as their icon shows them; nil while unknown.
+    init?(_ ci: PullRequestItem.CI) {
         switch ci {
-        case .passing: return .passing
-        case .failing: return .failing
-        case .pending: return .pending
+        case .passing: self = .passing
+        case .failing: self = .failing
+        case .pending: self = .pending
         case .unknown: return nil
         }
     }

@@ -8,6 +8,10 @@ struct SessionPullRequestRow: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var store = PullRequestStore.shared
+    /// The checks come from the status every place shares (the tray above the composer, the pull request page), which a
+    /// watch or the page updates long before the list is read again, so this row never says CI failed while those say
+    /// it passed.
+    @ObservedObject private var statuses = PullRequestStatusStore.shared
     let link: PullRequestLink
     let glyph: PullRequestBadge.Glyph
     let runID: UUID?
@@ -33,9 +37,15 @@ struct SessionPullRequestRow: View {
         SessionPullRequestRef(number: link.number, title: link.title ?? "", url: link.url, headBranch: link.headBranch ?? "", baseBranch: link.baseBranch ?? "")
     }
 
+    /// The newest known checks: the shared status once a read has said, else the list's.
+    private func checks(_ item: PullRequestItem) -> PullRequestItem.CI {
+        URL(string: link.url).flatMap { statuses.status($0)?.ci } ?? item.ci
+    }
+
     var body: some View {
         let listed = listed
-        let action = listed.flatMap { PullRequestRowAction.pick(open: link.state.isOpen, conflicted: link.conflicted, draft: link.state == .draft, checks: $0.item.ci) }
+        let ci = listed.map { checks($0.item) }
+        let action = ci.flatMap { PullRequestRowAction.pick(open: link.state.isOpen, conflicted: link.conflicted, draft: link.state == .draft, checks: $0) }
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             Button(action: open) {
                 // The same 10 pt inset, 20 pt icon column and 10 pt gap as the panel's other rows, so the title lines
@@ -50,7 +60,7 @@ struct SessionPullRequestRow: View {
                             .multilineTextAlignment(.leading)
                         HStack(spacing: NookTheme.Spacing.xs) {
                             Text(verbatim: "#\(link.number)").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary)
-                            if let item = listed?.item, let outcome = item.checkOutcome, !link.conflicted, link.state != .draft {
+                            if let ci, let outcome = PullRequestCheck.Outcome(ci), !link.conflicted, link.state != .draft {
                                 CheckOutcomeGlyph(outcome: outcome).help(tr("agents.pulls.status." + outcome.rawValue))
                             }
                             if watching {

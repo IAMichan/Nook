@@ -127,4 +127,13 @@ final class PullRequestStatusTests: XCTestCase {
         store.record(key: key, glyph: .open, checks: nil)
         XCTAssertEqual(store.status(url)?.mergeStatus, .ready)
     }
+
+    /// The session panel's pull request row reads its checks from here, so it says what the tray above the composer says.
+    func testTheChecksAsAListRowHoldsThem() {
+        XCTAssertEqual(PullRequestStatus(glyph: .open, checks: "success").ci, .passing)
+        XCTAssertEqual(PullRequestStatus(glyph: .open, checks: "failure").ci, .failing)
+        XCTAssertEqual(PullRequestStatus(glyph: .open, checks: "pending").ci, .pending)
+        XCTAssertEqual(PullRequestStatus(glyph: .open, checks: "").ci, .unknown)
+        XCTAssertNil(PullRequestStatus(glyph: .open, checks: nil).ci, "no read yet: the row keeps the list's checks")
+    }
 }
