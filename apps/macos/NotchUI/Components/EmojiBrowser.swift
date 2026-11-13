@@ -2,15 +2,21 @@ import SwiftUI
 
 /// Every emoji to choose from, as a chat app's emoji picker: a search on top (English names, and Nook's own names in
 /// your language where it has them), a tab per group (smileys, people, animals…) that jumps there, and the emoji in a
-/// grid under the name of their group. The one already chosen is marked. Used by the reaction picker's "+" under a chat
-/// bubble.
+/// grid under the name of their group. The ones you use most come first, under "Frequently used" (see `EmojiUsage`), and
+/// lead a search's results. The one already chosen is marked. Used by the reaction picker's "+" under a chat bubble and
+/// by the composer's smiley, for every chat integration.
 struct EmojiBrowser: View {
     /// The emoji already chosen (your reaction), marked in the grid.
     var chosen: String? = nil
     let choose: (String) -> Void
 
+    static let recentGroup = "emoji.group.recent"
+
     @State private var query = ""
     @State private var group = EmojiCatalog.groups.first?.id ?? ""
+    /// The ones you use most, read when the picker opens: choosing one while it is open does not move them under the
+    /// pointer.
+    @State private var recent: [EmojiCatalog.Emoji] = []
     @FocusState private var searching: Bool
 
     private static let columnCount = 9
@@ -18,7 +24,15 @@ struct EmojiBrowser: View {
     private let columns = Array(repeating: GridItem(.fixed(EmojiBrowser.cell), spacing: NookTheme.Spacing.xxs),
                                 count: EmojiBrowser.columnCount)
 
-    private var results: [EmojiCatalog.Emoji] { EmojiCatalog.search(query) }
+    private var results: [EmojiCatalog.Emoji] {
+        EmojiUsage.shared.usedFirst(EmojiCatalog.search(query), character: \.character)
+    }
+
+    /// Counts the choice (not taking your reaction back), then passes it on.
+    private func pick(_ character: String) {
+        if character != chosen { EmojiUsage.shared.record(character) }
+        choose(character)
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -28,17 +42,19 @@ struct EmojiBrowser: View {
                 ScrollView(showsIndicators: true) {
                     if query.isEmpty {
                         LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm, pinnedViews: [.sectionHeaders]) {
+                            if !recent.isEmpty {
+                                Section {
+                                    grid(recent)
+                                } header: {
+                                    header(Self.recentGroup)
+                                }
+                                .id(Self.recentGroup)
+                            }
                             ForEach(EmojiCatalog.groups) { group in
                                 Section {
                                     grid(group.emoji)
                                 } header: {
-                                    Text(tr(group.id))
-                                        .font(NookTheme.TextStyle.label)
-                                        .foregroundStyle(NookTheme.textTertiary)
-                                        .padding(.vertical, NookTheme.Spacing.xxs)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(NookTheme.surface)
-                                        .accessibilityAddTraits(.isHeader)
+                                    header(group.id)
                                 }
                                 .id(group.id)
                             }
@@ -60,21 +76,37 @@ struct EmojiBrowser: View {
         .frame(width: CGFloat(Self.columnCount) * (Self.cell + NookTheme.Spacing.xxs) + NookTheme.Spacing.lg)
         .padding(NookTheme.Spacing.md)
         .background(NookTheme.surface)
-        .onAppear { searching = true }
+        .onAppear {
+            recent = EmojiUsage.shared.ranked().map(EmojiCatalog.emoji(for:))
+            if !recent.isEmpty { group = Self.recentGroup }
+            searching = true
+        }
+    }
+
+    private func header(_ key: String) -> some View {
+        Text(tr(key))
+            .font(NookTheme.TextStyle.label)
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(NookTheme.surface)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var searchField: some View {
         NookSearchField(prompt: tr("emoji.search"), text: $query, focus: $searching,
-                        onSubmit: { if let first = results.first { choose(first.character) } })
+                        onSubmit: { if let first = results.first { pick(first.character) } })
     }
 
-    /// A tab per group: a click jumps to it.
+    /// A tab per group, after a clock for the ones you use most (when there are any): a click jumps to it.
     private func tabs(_ proxy: ScrollViewProxy) -> some View {
-        HStack(spacing: NookTheme.Spacing.xxs) {
-            ForEach(EmojiCatalog.groups) { group in
-                EmojiGroupTab(symbol: group.symbol, label: tr(group.id), selected: group.id == self.group) {
-                    self.group = group.id
-                    withAnimation(NookTheme.scroll) { proxy.scrollTo(group.id, anchor: .top) }
+        let tabs = (recent.isEmpty ? [] : [(id: Self.recentGroup, symbol: "clock")])
+            + EmojiCatalog.groups.map { (id: $0.id, symbol: $0.symbol) }
+        return HStack(spacing: NookTheme.Spacing.xxs) {
+            ForEach(tabs, id: \.id) { tab in
+                EmojiGroupTab(symbol: tab.symbol, label: tr(tab.id), selected: tab.id == group) {
+                    group = tab.id
+                    withAnimation(NookTheme.scroll) { proxy.scrollTo(tab.id, anchor: .top) }
                 }
             }
         }
@@ -83,7 +115,7 @@ struct EmojiBrowser: View {
     private func grid(_ emoji: [EmojiCatalog.Emoji]) -> some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             ForEach(emoji) { emoji in
-                EmojiCell(emoji: emoji, chosen: emoji.character == chosen) { choose(emoji.character) }
+                EmojiCell(emoji: emoji, chosen: emoji.character == chosen) { pick(emoji.character) }
             }
         }
     }

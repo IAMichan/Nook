@@ -30,6 +30,16 @@ enum EmojiCatalog {
 
     static let all: [Emoji] = groups.flatMap(\.emoji)
 
+    private static let byCharacter = Dictionary(all.map { ($0.character, $0) }, uniquingKeysWith: { first, _ in first })
+
+    /// The emoji for `character`, with its name; one the catalog lacks (a skin tone, a newer emoji) keeps its character
+    /// as its name.
+    static func emoji(for character: String) -> Emoji {
+        byCharacter[character] ?? byCharacter[character + "\u{FE0F}"]
+            ?? byCharacter[character.replacingOccurrences(of: "\u{FE0F}", with: "")]
+            ?? Emoji(character: character, name: character)
+    }
+
     /// The words `search` matches for each emoji in `all`, in the same order: the words of its name and its shortcodes.
     /// Made once: the picker searches on every keystroke, and building these took longer than the search itself.
     private static let searchNames: [[String]] = {
