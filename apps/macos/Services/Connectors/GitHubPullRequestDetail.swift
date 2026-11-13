@@ -43,7 +43,7 @@ enum GitHubPullRequestDetail {
         if !sha.isEmpty {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
             async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
-            detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
+            detail.checks = PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(((await runs)?["check_runs"] as? [[String: Any]]) ?? []),
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
         return detail
@@ -210,7 +210,7 @@ enum GitHubPullRequestDetail {
         if !sha.isEmpty, detail.state == .open {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
             async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
-            detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
+            detail.checks = PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(((await runs)?["check_runs"] as? [[String: Any]]) ?? []),
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
         return detail

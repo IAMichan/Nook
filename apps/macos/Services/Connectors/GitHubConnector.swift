@@ -235,7 +235,8 @@ final class GitHubConnector: CloudConnectorConfig {
         let bad: Set<String> = ["failure", "timed_out", "action_required", "startup_failure"]
 
         if let runs = await CloudHelp.optionalObject(URL(string: "\(base)/commits/\(sha)/check-runs?per_page=50"), headers: auth) {
-            for run in CloudHelp.list(runs["check_runs"]) {
+            // The newest run of each check: a cancelled or re-run workflow leaves its old failures behind.
+            for run in PullRequestDetailParser.latestRuns(CloudHelp.list(runs["check_runs"])) {
                 seen = true
                 if (run["status"] as? String) != "completed" {
                     pending = true
