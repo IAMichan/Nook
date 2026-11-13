@@ -1,13 +1,18 @@
 import Foundation
 
 /// Asks the composer's model for the rest of the sentence (`ComposerCompletion`): a local model through autocomplete's
-/// engines (`AutocompleteController.composerSuggestion`), or a model API of the brain's providers through the same request
-/// as the session titles (`TextGeneratorAPI`). One request at a time: a newer key cancels the one before.
+/// engines (`AutocompleteController.composerSuggestion`), a model API of the brain's providers through the same request
+/// as the session titles (`TextGeneratorAPI`), or your subscription through the agent's CLI (`agentWriter`). One request
+/// at a time: a newer key cancels the one before.
 @MainActor
 final class ComposerCompleter {
     static let shared = ComposerCompleter()
 
     private var work: Task<Void, Never>?
+
+    /// Writes a prompt's JSON answer with Claude Code or Codex on your subscription (`WorkspaceManager.generateText`), set
+    /// when the workspace starts; nil before that, and then the subscription gives no suggestion.
+    var agentWriter: ((String, [String: Any]) async -> [String: Any]?)?
     private var store: AutocompleteStore { .shared }
 
     /// On in Settings › Autocomplete (it is by default), whatever autocomplete does in other apps.
@@ -17,8 +22,12 @@ final class ComposerCompleter {
 
     /// A local model answers a moment after the last key; an API, which costs a request, once you pause.
     private func delay(for choice: ComposerCompletion.Choice) -> UInt64 {
-        if case .api = choice { return 450_000_000 }
-        return 120_000_000
+        switch choice {
+        case .api: return 450_000_000
+        // Starting the CLI takes seconds: only once you really pause.
+        case .agent: return 700_000_000
+        case .sameAsAutocomplete, .local: return 120_000_000
+        }
     }
 
     /// Asks for a suggestion for `before`, the text up to the caret, once typing pauses. `deliver` gets it on the main actor
@@ -53,6 +62,13 @@ final class ComposerCompleter {
             if case .local(let chosen) = choice { identity = chosen } else { identity = "" }
             let input = ComposerCompletion.context(before: before, after: after, situation: situation, hint: hint)
             return await AutocompleteController.shared.composerSuggestion(input, identity: identity)
+        case .agent:
+            guard let agentWriter else { return nil }
+            let prompt = ComposerCompletion.apiPrompt(before: before, situation: situation,
+                                                      instructions: prefs.instructions(app: nil, site: nil))
+            guard let answer = await agentWriter(prompt, ComposerCompletion.agentSchema)?["text"] as? String,
+                  !Task.isCancelled, let rest = ComposerCompletion.continuation(of: answer, before: before) else { return nil }
+            return CompletionSuggestion.make(raw: rest, before: before, after: after, maxWords: prefs.maxWords)
         case .api(let raw, let model):
             guard let provider = AIProvider(rawValue: raw), !provider.isSubscription else { return nil }
             let route = TextGenerationRoute.resolve(.api(provider, model: model), key: { SecretStore.read($0.keyAccount) })

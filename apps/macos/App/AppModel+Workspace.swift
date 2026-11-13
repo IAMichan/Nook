@@ -242,6 +242,11 @@ extension AppModel {
             return self.profiles.launchEnvironment(profile)
         }
         workspace.accountExecutable = { [weak self] profileID in self?.profiles.profile(id: profileID)?.executableOverride }
+        // The composers' sentence suggestions on your subscription: the agent's CLI, in an empty folder, briefly.
+        ComposerCompleter.shared.agentWriter = { [weak self] prompt, schema in
+            await self?.workspace.generateText(prompt, schema: schema, task: nil, prefer: nil, profileID: nil,
+                                               cwd: FileManager.default.temporaryDirectory.path, timeout: 25)
+        }
         workspace.accountArguments = { [weak self] profileID in self?.profiles.profile(id: profileID)?.launchArguments ?? [] }
         workspace.accountModels = { [weak self] profileID in self?.profiles.profile(id: profileID)?.customModels ?? [] }
         workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }

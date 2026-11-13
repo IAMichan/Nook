@@ -256,6 +256,9 @@ enum NextPromptSuggestion {
     /// At most this many characters are shown and taken with Tab.
     static let maxLength = 240
 
+    /// What an agent asked on its own thread is told (Codex's `thread/sample`), the words t3code uses.
+    static let agentInstruction = "Predict the next message the user will send in this conversation. Reply with only that message, written as the user would type it, in under 20 words. Do not use tools. If there is no clear next step, reply with nothing."
+
     /// The prompt: your recent messages and the agent's last reply, as data, then what to predict. Nil unless the
     /// conversation ends with the agent's reply to a message of yours.
     static func prompt(_ messages: [Message]) -> String? {
