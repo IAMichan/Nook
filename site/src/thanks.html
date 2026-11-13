@@ -1,0 +1,94 @@
+<!-- @head title="Thanks · Nook" desc="Nook is made by many hands: everyone who sent a change, and the open source projects it builds on. Thank you." -->
+<!-- @sprite -->
+<!-- @nav -->
+<style>
+.people{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:56px}
+.person{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;border-radius:24px;background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:28px 18px 22px;transition:background .3s,box-shadow .3s}
+.person:hover{background:var(--surface);box-shadow:inset 0 0 0 1px var(--sep)}
+.person img{width:72px;height:72px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 1px var(--sep),0 10px 30px rgba(0,0,0,.45);margin-bottom:10px}
+.person b{font-size:16px;font-weight:500}
+.person span{font-size:13px;color:var(--t3)}
+.person.lead{box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.oss{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:48px}
+.oss>div{border-radius:var(--r-pill);background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair);padding:24px}
+.oss b{font-size:16px;font-weight:500;display:block;margin-bottom:12px}
+.oss ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.oss li{font-size:14px;color:var(--t2);line-height:1.5}
+.oss li a{color:var(--strong)}
+.oss li small{color:var(--t3);font-size:12.5px}
+.note{font-size:14.5px;color:var(--t2);line-height:1.65}
+.note a{color:var(--blue)}
+@media (max-width:1000px){.people{grid-template-columns:repeat(2,1fr)}.oss{grid-template-columns:1fr}}
+</style>
+
+<header class="page-hero">
+  <div class="wrap">
+    <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>Community</div>
+    <h1 class="rv d1">Thank you</h1>
+    <p class="lede rv d2">Nook is free and open source because people give it their time: a fix, an idea, a test on their own Mac. This page is for them, and for the projects Nook stands on.</p>
+  </div>
+</header>
+
+<!-- contributors -->
+<section>
+  <div class="wrap center">
+    <div class="label rv">Contributors</div>
+    <h2 class="rv d1">Everyone who contributed</h2>
+  </div>
+  <div class="wrap">
+    <!-- Filled from GitHub by assets/nook.js; this list is the fallback when the API is not reachable. -->
+    <div class="people" data-contributors>
+      <a class="person lead rv" href="https://github.com/IAMichan"><img src="https://github.com/IAMichan.png?size=144" alt="" loading="lazy"><b>IAMichan</b><span>Creator</span></a>
+      <a class="person rv d1" href="https://github.com/GewoonNoah"><img src="https://github.com/GewoonNoah.png?size=144" alt="" loading="lazy"><b>GewoonNoah</b><span>73 contributions</span></a>
+      <a class="person rv d2" href="https://github.com/ArjandenHartog"><img src="https://github.com/ArjandenHartog.png?size=144" alt="" loading="lazy"><b>ArjandenHartog</b><span>5 contributions</span></a>
+      <a class="person rv d3" href="https://github.com/dxnnystyles"><img src="https://github.com/dxnnystyles.png?size=144" alt="" loading="lazy"><b>dxnnystyles</b><span>1 contribution</span></a>
+    </div>
+    <div class="ctas rv" style="margin-top:36px"><a class="btn primary" href="https://github.com/IAMichan/nook/blob/main/CONTRIBUTING.md">Add your name</a><a class="btn quiet" href="https://github.com/IAMichan/nook/graphs/contributors">All contributions on GitHub</a></div>
+  </div>
+</section>
+
+<!-- open source -->
+<section>
+  <div class="wrap center">
+    <div class="label rv">Open source</div>
+    <h2 class="rv d1">Projects Nook builds on</h2>
+  </div>
+  <div class="wrap">
+    <div class="oss">
+      <div class="rv"><b>Brains and voice</b><ul>
+        <li><a href="https://github.com/ml-explore/mlx-swift">MLX Swift</a> <small>· Apple</small></li>
+        <li><a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> <small>· the ggml authors</small></li>
+        <li><a href="https://github.com/mattt/llama.swift">llama.swift</a> <small>· Mattt</small></li>
+        <li><a href="https://github.com/huggingface/swift-transformers">swift-transformers</a> <small>· Hugging Face</small></li>
+        <li><a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a> <small>· FluidInference</small></li>
+      </ul></div>
+      <div class="rv d1"><b>Chats</b><ul>
+        <li><a href="https://github.com/mautrix">mautrix bridges</a> <small>· Tulir Asokan</small></li>
+        <li><a href="https://github.com/tulir/whatsmeow">whatsmeow</a> <small>· Tulir Asokan</small></li>
+        <li><a href="https://github.com/gotd/td">gotd/td</a> <small>· Aleksandr Razumov</small></li>
+        <li><a href="https://github.com/signalapp/libsignal">libsignal</a> <small>· Signal</small></li>
+      </ul></div>
+      <div class="rv d2"><b>Interface and tools</b><ul>
+        <li><a href="https://github.com/migueldeicaza/SwiftTerm">SwiftTerm</a> <small>· Miguel de Icaza</small></li>
+        <li><a href="https://github.com/lucide-icons/lucide">Lucide</a> <small>· Lucide contributors</small></li>
+        <li><a href="https://github.com/lobehub/lobe-icons">LobeHub Icons</a> <small>· LobeHub</small></li>
+        <li><a href="https://github.com/mermaid-js/mermaid">Mermaid</a> and <a href="https://github.com/KaTeX/KaTeX">KaTeX</a></li>
+        <li><a href="https://github.com/BrodySalvucci/Typist">Typist</a> <small>· Brody Salvucci</small>, and code by Louis Raillé</li>
+      </ul></div>
+    </div>
+    <p class="note rv" style="margin-top:20px;text-align:center">The full list with every license is in <a href="https://github.com/IAMichan/nook/blob/main/THIRD-PARTY-NOTICES.md">THIRD-PARTY-NOTICES.md</a>.</p>
+  </div>
+</section>
+
+<!-- you -->
+<section class="final">
+  <div class="wrap center">
+    <span class="mascot rv"><i></i><i></i></span>
+    <h2 class="rv d1">And everyone who tries Nook</h2>
+    <p class="sub rv d2">Every bug report, star and "this would be nice" makes Nook a little calmer.</p>
+    <div class="ctas rv d3"><a class="btn primary lg" href="https://github.com/IAMichan/nook/issues/new/choose">Share an idea</a><a class="btn quiet lg" href="https://github.com/IAMichan/nook">Star on GitHub</a></div>
+  </div>
+</section>
+<!-- @footer -->
+</body>
+</html>

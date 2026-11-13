@@ -12,7 +12,7 @@
 .grpline{font-size:11.5px;color:var(--t3);padding:2px 0 0 2px}
 .appwall{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:860px;margin:40px auto 0}
 .appwall span{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--strong);height:38px;padding:0 16px;border-radius:99px;background:var(--rowRest);box-shadow:inset 0 0 0 1px var(--hair)}
-.appwall span i{width:8px;height:8px;border-radius:50%}
+.appwall .app-ic{width:16px;height:16px;flex:none}
 .appwall span.more{color:var(--t3)}
 .notif{border-radius:18px;background:rgba(40,40,42,.72);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px -20px rgba(0,0,0,.9);padding:12px 14px;display:flex;gap:12px;align-items:flex-start;max-width:420px}
 .notif+.notif{margin-top:10px}
@@ -40,10 +40,10 @@
 .privacy-note span{font-size:14.5px;color:var(--t2);line-height:1.6}
 </style>
 
-<header class="page-hero" style="--tint:rgba(242,184,102,.12)">
+<header class="page-hero">
   <div class="wrap">
     <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg>Chats</div>
-    <h1 class="rv d1">Every conversation,<br><span>one inbox.</span></h1>
+    <h1 class="rv d1">All your conversations<br>in one inbox</h1>
     <p class="lede rv d2">WhatsApp, Messages, Telegram, Slack, Teams, Signal, Instagram and every mail account in one calm list. Read and answer without switching apps, and let Nook write the reply when you'd rather not.</p>
     <div class="ctas rv d3">
       <a class="btn primary lg" href="download.html"><!-- @apple -->Download for Mac</a>
@@ -100,10 +100,10 @@
 <section id="apps" style="padding-top:120px">
   <div class="wrap center">
     <div class="label rv">All your apps</div>
-    <h2 class="rv d1">The people you talk to, <span>wherever they are.</span></h2>
+    <h2 class="rv d1">Every chat app you use</h2>
     <p class="sub rv d2">Chats are grouped by Unread, Today, Yesterday and further back, and you can filter by app or search them all. <em style="font-style:normal;color:var(--strong)">@chat Anna</em> opens a chat from any app.</p>
     <div class="appwall rv d2">
-      <span><i style="background:#25D366"></i>WhatsApp</span><span><i style="background:#34C759"></i>Messages</span><span><i style="background:#229ED9"></i>Telegram</span><span><i style="background:#E01E5A"></i>Slack</span><span><i style="background:#6264A7"></i>Teams</span><span><i style="background:#3A76F0"></i>Signal</span><span><i style="background:#E1306C"></i>Instagram</span><span><i style="background:#0084FF"></i>Messenger</span><span><i style="background:#5865F2"></i>Discord</span><span><i style="background:#0A66C2"></i>LinkedIn</span><span><i style="background:#dadada"></i>X</span><span><i style="background:#FFFC00"></i>Snapchat</span><span><i style="background:#0A84FF"></i>Mail</span><span class="more">and any app that shows notifications on your Mac</span>
+      <span><svg class="app-ic" style="color:#25D366" aria-hidden="true"><use href="#app-whatsapp"/></svg>WhatsApp</span><span><svg class="app-ic" style="color:#34C759" aria-hidden="true"><use href="#app-imessage"/></svg>Messages</span><span><svg class="app-ic" style="color:#229ED9" aria-hidden="true"><use href="#app-telegram"/></svg>Telegram</span><span><svg class="app-ic" style="color:#E01E5A" aria-hidden="true"><use href="#app-slack"/></svg>Slack</span><span><svg class="app-ic" style="color:#6264A7" aria-hidden="true"><use href="#app-microsoftteams"/></svg>Teams</span><span><svg class="app-ic" style="color:#3A76F0" aria-hidden="true"><use href="#app-signal"/></svg>Signal</span><span><svg class="app-ic" style="color:#E1306C" aria-hidden="true"><use href="#app-instagram"/></svg>Instagram</span><span><svg class="app-ic" style="color:#0084FF" aria-hidden="true"><use href="#app-messenger"/></svg>Messenger</span><span><svg class="app-ic" style="color:#5865F2" aria-hidden="true"><use href="#app-discord"/></svg>Discord</span><span><svg class="app-ic" style="color:#0A66C2" aria-hidden="true"><use href="#app-linkedin"/></svg>LinkedIn</span><span><svg class="app-ic" style="color:#dadada" aria-hidden="true"><use href="#app-x"/></svg>X</span><span><svg class="app-ic" style="color:#FFFC00" aria-hidden="true"><use href="#app-snapchat"/></svg>Snapchat</span><span><svg class="app-ic" style="color:#0A84FF" aria-hidden="true"><use href="#app-mail"/></svg>Mail</span><span class="more">and any app that shows notifications on your Mac</span>
     </div>
   </div>
 </section>
@@ -113,7 +113,7 @@
   <div class="wrap split">
     <div class="copy">
       <div class="label rv"><span class="mascot" style="--s:18px"><i></i><i></i></span>@nook</div>
-      <h2 class="rv d1">Type @nook. <span>It writes the message for you.</span></h2>
+      <h2 class="rv d1">Type @nook and it drafts the reply</h2>
       <p class="sub rv d2">In any chat's answer field, say what you want: <em style="color:var(--strong);font-style:normal">@nook say yes, but at eight</em>. Nook reads the conversation, checks your calendar and mail when it helps, and writes the reply. You read it, and you send it.</p>
       <div class="points rv d2">
         <div class="pt"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/></svg><div><b>Ready-made requests</b><span>Type @ for say yes, say no kindly, suggest another time, ask when it suits them, or thank them.</span></div></div>
@@ -123,7 +123,6 @@
       </div>
     </div>
     <div class="rv d2" style="position:relative">
-      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(244,244,246,.18),transparent)"></div>
       <div class="panel">
         <div class="ct-head">Chats<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><b>Sam</b><span class="right"><span class="chip"><span style="width:7px;height:7px;border-radius:50%;background:#25D366"></span>WhatsApp</span></span></div>
         <div class="pad">
@@ -155,8 +154,8 @@
 
 <section id="field">
   <div class="wrap">
-    <div class="label rv">More than text</div>
-    <h2 class="rv d1">Answer right where you read. <span>With everything you'd send from your phone.</span></h2>
+    <div class="label rv">Replies</div>
+    <h2 class="rv d1">Reply right where you read</h2>
     <p class="sub rv d2">In WhatsApp, Telegram and every app Nook's chat helper links, you answer in Nook itself. Everything goes on your own click.</p>
     <div class="fgrid">
       <div class="rv"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg><b>Photos, videos and GIFs</b><span>Pick them with +, drop them on the chat or paste them. Stickers and emoji too.</span></div>
@@ -173,7 +172,7 @@
   <div class="wrap split">
     <div class="copy">
       <div class="label rv"><span class="st wait">Waiting on you</span></div>
-      <h2 class="rv d1">Answer from the notification. <span>Or let it wait.</span></h2>
+      <h2 class="rv d1">Reply from the notification, or leave it for later</h2>
       <p class="sub rv d2">New messages arrive as one quiet notification per chat, grouped in Notification Center. Reply straight from it, or mark it as read.</p>
       <div class="points rv d2">
         <div class="pt"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><div><b>Reply in place</b><span>Your answer goes straight to the chat where Nook can write in it. Type @nook and the card opens so Nook can write it with you.</span></div></div>
@@ -182,7 +181,6 @@
       </div>
     </div>
     <div class="rv d2" style="position:relative;display:flex;flex-direction:column;align-items:center">
-      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(242,184,102,.25),transparent)"></div>
       <div class="notif">
         <span class="appic" style="background:#25D366"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg></span>
         <div class="t"><b>Sam<small>now</small></b><span>Are we still on for tonight? 🍝</span><div class="nb"><span>Reply</span><span>Mark as read</span></div></div>
@@ -203,7 +201,7 @@
   <div class="wrap split rev">
     <div class="copy">
       <div class="label rv"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>On your phone</div>
-      <h2 class="rv d1">The same inbox, <span>in your pocket.</span></h2>
+      <h2 class="rv d1">The same inbox on your phone</h2>
       <p class="sub rv d2">The Chats tab of Nook Companion shows every chat Nook collects on your Mac, newest first, with a badge for what's unread.</p>
       <div class="points rv d2">
         <div class="pt"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1-4.2A8 8 0 1 1 20 12Z"/></svg><div><b>Answer WhatsApp from the phone</b><span>Also as a reply to one message: long‑press it. Other chats are read on the phone and answered in their own app.</span></div></div>
@@ -212,7 +210,6 @@
       </div>
     </div>
     <div class="rv d2" style="position:relative">
-      <div class="glowbg" style="background:radial-gradient(closest-side,rgba(94,214,166,.22),transparent)"></div>
       <div class="phone">
         <div class="isl"></div>
         <div class="ptabs"><span class="mascot" style="--s:22px;margin:0 2px"><i></i><i></i></span><span>Nook</span><span>Agents</span><span class="on">Chats <em>3</em></span></div>
@@ -224,8 +221,8 @@
 
 <section id="setup">
   <div class="wrap center">
-    <div class="label rv">Set up in a minute</div>
-    <h2 class="rv d1">Switch on the apps you use. <span>Nothing else to learn.</span></h2>
+    <div class="label rv">Setup</div>
+    <h2 class="rv d1">Turn on the apps you use</h2>
   </div>
   <div class="wrap">
     <div class="steps">
@@ -242,8 +239,8 @@
 
 <section id="faq">
   <div class="wrap center">
-    <div class="label rv">Questions</div>
-    <h2 class="rv d1">Good to know.</h2>
+    <div class="label rv">FAQ</div>
+    <h2 class="rv d1">Common questions</h2>
     <div class="faq rv d2">
       <details open><summary>Does Nook send messages by itself?</summary><p>No. @nook only writes the message into the field. You read it, change it if you like, and send it yourself.</p></details>
       <details><summary>Which apps can I answer in Nook itself?</summary><p>WhatsApp, Telegram, and every app Nook's chat helper links, such as Instagram, Messenger and Signal. For the others, ⌘ Return copies your answer and opens the chat in its own app.</p></details>
@@ -257,7 +254,7 @@
 <div class="wrap">
   <div class="band rv">
     <span class="mascot" style="--s:64px;box-shadow:0 0 80px rgba(255,255,255,.2)"><i></i><i></i></span>
-    <h2 style="margin-top:28px">Never leave someone waiting.<br><span>Without living in your apps.</span></h2>
+    <h2 style="margin-top:28px">Stay on top of your messages</h2>
     <p class="sub">One inbox, a buddy that writes along, and you always press send.</p>
     <div class="ctas"><a class="btn primary lg" href="download.html"><!-- @apple -->Download for Mac</a><a class="btn quiet lg" href="writing.html">Explore Writing</a></div>
   </div>

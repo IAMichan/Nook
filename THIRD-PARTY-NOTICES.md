@@ -64,7 +64,7 @@ SOFTWARE.
 
 ## Provider & Brand Icons
 
-Vector icon paths in `apps/macos/NotchUI/Components/BrandLogo.swift` are adapted from the open-source [LobeHub Icons (`@lobehub/icons`)](https://github.com/lobehub/lobe-icons) set:
+Vector icon paths in `apps/macos/NotchUI/Components/BrandLogo.swift` and the agent logos in the website's `site/_partials/sprite.html` are adapted from the open-source [LobeHub Icons (`@lobehub/icons`)](https://github.com/lobehub/lobe-icons) set:
 
 ```text
 MIT License
@@ -91,6 +91,10 @@ SOFTWARE.
 ```
 
 All third-party brand names and logos are trademarks of their respective owners and are used solely to identify user-configured integrations and AI providers.
+
+---
+
+The chat app and service logos on the website (`site/_partials/sprite.html`, ids starting with `app-`) come from [Simple Icons](https://github.com/simple-icons/simple-icons) (CC0 1.0); the brands remain trademarks of their owners.
 
 ---
 
