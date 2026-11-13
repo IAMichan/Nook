@@ -37,7 +37,8 @@ extension AppModel {
     ///
     /// Made again only when what they come from changed (`AgentListMemo.Key`): the panel redraws for much else (a chat
     /// that came in, the pointer, a click on a row), and making every row again each time held up the click that opens a
-    /// session. Opening another session reuses the rows: only the open one's unseen mark differs.
+    /// session. Which finished rows read as unseen is worked out after (`AgentListEntries.seen`): opening a session marks
+    /// it and the one you left as visited, and that must not make every row again.
     func agentListEntries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession],
                           selected: String) -> AgentListEntries {
         let key = AgentListMemo.Key(
@@ -46,10 +47,10 @@ extension AppModel {
             subagentsWorking: workspace.subagentsWorking, idleCompacting: workspace.idleCompacting,
             demoMode: demoMode, generation: agentListGeneration,
             period: Int(Date().timeIntervalSince1970 / AgentListMemo.period))
-        if let memo = agentListMemo, memo.key == key { return memo.entries.opening(selected) }
-        let entries = AgentListBuilder(app: self, selected: "").entries(live: live, past: past, transcripts: transcripts)
+        if let memo = agentListMemo, memo.key == key { return memo.entries.seen(selected: selected, demoMode: demoMode) }
+        let entries = AgentListBuilder(app: self).entries(live: live, past: past, transcripts: transcripts)
         agentListMemo = AgentListMemo(key: key, entries: entries)
-        return entries.opening(selected)
+        return entries.seen(selected: selected, demoMode: demoMode)
     }
 
     /// All of it at once, for work that runs without the list (`SessionTidier`).
@@ -71,7 +72,7 @@ struct AgentListMemo {
         let subagentsWorking: Set<UUID>
         let idleCompacting: Set<UUID>
         let demoMode: Bool
-        /// `AppModel.agentListGeneration`: history, accounts, visits, settled marks and project names.
+        /// `AppModel.agentListGeneration`: history, accounts, settled marks and project names.
         let generation: Int
         /// What the rows read from the clock and from disk (a branch, how long a settled session stays) is read again
         /// at least this often.
@@ -86,14 +87,15 @@ struct AgentListMemo {
 }
 
 extension AgentListEntries {
-    /// The rows with `selected` open: the session you are looking at never reads as unseen.
-    func opening(_ selected: String) -> AgentListEntries {
-        guard !selected.isEmpty, (running + earlier).contains(where: { $0.id == selected && $0.unseen }) else { return self }
+    /// The rows as you have seen them: a row that finished (`AgentListItem.unseenSince`) reads as unseen when it finished
+    /// after you last looked (`SessionVisits`), and never while it is the session you are looking at (`selected`).
+    @MainActor
+    func seen(selected: String, demoMode: Bool, visits: SessionVisits = .shared) -> AgentListEntries {
         func seen(_ items: [AgentListItem]) -> [AgentListItem] {
             items.map { item in
-                guard item.id == selected, item.unseen else { return item }
+                guard let since = item.unseenSince else { return item }
                 var item = item
-                item.unseen = false
+                item.unseen = !demoMode && item.id != selected && visits.isUnseen(item.id, finished: since)
                 return item
             }
         }
@@ -104,13 +106,11 @@ extension AgentListEntries {
 @MainActor
 private struct AgentListBuilder {
     let app: AppModel
-    let selected: String
     /// The linked accounts, read once per list instead of once per row (`account(_:)`).
     let linked: [AgentProfile]
 
-    init(app: AppModel, selected: String) {
+    init(app: AppModel) {
         self.app = app
-        self.selected = selected
         linked = app.linkedProfiles
     }
 
@@ -191,7 +191,7 @@ private struct AgentListBuilder {
 
     private func item(_ run: WorkspaceRun, comparisons: [UUID: Int]) -> AgentListItem {
         // One answer to "what does this need from you" (approval, question, limit, snooze), shared with the notch.
-        let attention = app.workspace.attention(run, unseen: unseen("run:" + run.id.uuidString, run.updatedAt),
+        let attention = app.workspace.attention(run, unseen: mayBeUnseen(run.updatedAt),
                                                 includeSnooze: false)
         let status: AgentListItem.Status
         switch attention {
@@ -216,6 +216,7 @@ private struct AgentListBuilder {
             path: run.workingDirectory,
             finishKey: FinishedSessions.key(run: run),
             unseen: attention == .ready,
+            unseenSince: attention == .ready ? run.updatedAt : nil,
             snoozedUntil: run.snoozedUntil,
             snoozedAt: run.snoozedAt,
             limitedAt: run.limitedAt,
@@ -270,7 +271,8 @@ private struct AgentListBuilder {
                 : (session.turnStarted ?? session.compactingSince ?? session.started ?? known?.started),
             path: session.cwd,
             finishKey: FinishedSessions.key(session: session),
-            unseen: session.status == .done && unseen(session.id, session.updated),
+            unseen: session.status == .done && mayBeUnseen(session.updated),
+            unseenSince: session.status == .done && mayBeUnseen(session.updated) ? session.updated : nil,
             machine: MachineName.local,
             model: known?.model ?? "",
             accountName: accountName(app.profile(for: session)),
@@ -315,9 +317,9 @@ private struct AgentListBuilder {
     }
 
     /// Finished after you last looked, and not the session you are looking at now.
-    private func unseen(_ id: String, _ finished: Date?) -> Bool {
-        guard !app.demoMode, let finished, id != selected else { return false }
-        return SessionVisits.shared.isUnseen(id, finished: finished)
+    /// Finished, so it reads as unseen unless you looked after (`AgentListEntries.seen` decides, from your visits).
+    private func mayBeUnseen(_ finished: Date?) -> Bool {
+        !app.demoMode && finished != nil
     }
 }
 

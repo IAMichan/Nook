@@ -532,6 +532,8 @@ struct AgentListItem: Identifiable, Equatable {
     let finishKey: String
     /// Finished after you last looked at it: "done" in green until you open it.
     var unseen = false
+    /// When it finished, for a row that may read as unseen; whether it does follows your visits (`AgentListEntries.seen`).
+    var unseenSince: Date? = nil
     /// Snoozed by you: out of the way until the snooze ends or the session needs you.
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil

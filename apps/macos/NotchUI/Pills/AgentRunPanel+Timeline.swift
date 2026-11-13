@@ -216,6 +216,7 @@ extension AgentRunPanel {
                             container: geometry.containerSize.height,
                             insetTop: geometry.contentInsets.top, insetBottom: geometry.contentInsets.bottom)
             } action: { old, frame in
+                lastFrame.value = frame
                 pinRoom.update(frame)
                 keepEnd(old, frame, proxy)
             }
@@ -381,12 +382,17 @@ extension AgentRunPanel {
 
     /// Scrolls to the end now and again while the layout settles: the lazy rows only learn their real height once
     /// laid out, so a single scroll from far up lands short of the end. Stops when you scroll away in the meantime.
+    /// Again only while it is not there yet: at its end, `keepEnd` holds it as the rows grow, and every `scrollTo`
+    /// first brings the whole panel up to date, which cost the click that opened the session a full update each time.
     private func settleAtEnd(_ proxy: ScrollViewProxy) {
         scroll.jumpedToEnd()
         proxy.scrollTo("bottom", anchor: .bottom)
         for delay in [0.0, 0.1, 0.3] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
+                guard scroll.shouldFollowEnd else { return }
+                // Exactly at its end (not `atEnd`, which allows a margin): nothing to do.
+                if let frame = lastFrame.value, frame.maxOffset - frame.offset <= 0.5 { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }
