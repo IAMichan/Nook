@@ -50,6 +50,52 @@ enum PullRequestQuickAction: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// What the menu beside a quick Merge offers (on a row while Shift is held, and in the selection bar): turn auto-merge
+/// on or off, or merge now with a method of your choice instead of the one you last picked. The Merge button itself is
+/// `.merge(nil)`: your usual method, and auto-merge when checks or reviews still hold it back. Foundation only, so tests
+/// can use it.
+enum PullRequestMergeChoice: Hashable, Sendable, Identifiable {
+    /// Merge now; nil for the method you last picked on a pull request's page.
+    case merge(PullRequestMergeMethod?)
+    /// GitHub merges it by itself once checks and reviews pass, also for an admin who could merge past them now.
+    case autoMerge
+    /// Stops a merge waiting on auto-merge.
+    case disableAutoMerge
+
+    var id: String {
+        switch self {
+        case .merge(let method): return "merge." + (method?.rawValue ?? "default")
+        case .autoMerge: return "autoMerge"
+        case .disableAutoMerge: return "disableAutoMerge"
+        }
+    }
+
+    /// The menu, in its order: auto-merge first (the reason the menu is there), then merging now by each method.
+    static let menu: [PullRequestMergeChoice] = [.autoMerge, .disableAutoMerge]
+        + PullRequestMergeMethod.allCases.map { .merge($0) }
+
+    /// The `tr` key of its name in the menu.
+    var titleKey: String {
+        switch self {
+        case .merge(let method): return method?.titleKey ?? "agents.pulls.quick.merge"
+        case .autoMerge: return "agents.pr.action.enableAutoMerge"
+        case .disableAutoMerge: return "agents.pr.action.disableAutoMerge"
+        }
+    }
+
+    /// Whether it goes through the merge queue; turning auto-merge off changes nothing that the next merge depends on.
+    var queues: Bool { self != .disableAutoMerge }
+
+    /// Whether a pull request the list shows can take it: a merge or auto-merge needs nothing the list already knows
+    /// holds it back (`mergeBlocker`); turning auto-merge off needs only an open pull request that is not a draft.
+    func applies(to item: PullRequestItem) -> Bool {
+        switch self {
+        case .merge, .autoMerge: return PullRequestQuickAction.mergeBlocker(item) == nil
+        case .disableAutoMerge: return item.state == .open && !item.draft && !item.nodeID.isEmpty
+        }
+    }
+}
+
 /// Merges sent from a pull request's row or from the selection bar under a list. They queue up in the order given and
 /// go to GitHub one at a time, so each is checked against what the merge before it changed (a conflict, a stack). The
 /// list is read again after each merge (see `PullRequestMergeFollowUp`), so a conflict a merge causes shows at once.
@@ -116,10 +162,24 @@ struct PullRequestQuickMergeQueue: Equatable, Sendable {
     /// Something changed at GitHub this run, so the list is read again.
     var changed: Bool { !merged.isEmpty || !autoMerged.isEmpty }
 
+    /// How many of `merged`, `autoMerged` and `failed` were reported already (`report`).
+    private var reportedMerged = 0, reportedAutoMerged = 0, reportedFailed = 0
+
+    /// While nothing waits or is at GitHub: what finished since the last report, for the toast. The rows keep showing
+    /// Merged or Auto-merge until `drain`, which waits for the list to be read again; the toast does not wait for that.
+    mutating func report() -> (merged: [String], autoMerged: [String], failed: Int)? {
+        guard isIdle else { return nil }
+        let result = (merged: Array(merged.dropFirst(reportedMerged)), autoMerged: Array(autoMerged.dropFirst(reportedAutoMerged)),
+                      failed: failed - reportedFailed)
+        (reportedMerged, reportedAutoMerged, reportedFailed) = (merged.count, autoMerged.count, failed)
+        guard !result.merged.isEmpty || !result.autoMerged.isEmpty || result.failed > 0 else { return nil }
+        return result
+    }
+
     /// Once the queue ran empty: how it went, and a clean slate for the next run.
     mutating func drain() -> (merged: [String], autoMerged: [String], failed: Int)? {
         guard isIdle, changed || failed > 0 else { return nil }
-        defer { merged = []; autoMerged = []; failed = 0 }
+        defer { merged = []; autoMerged = []; failed = 0; reportedMerged = 0; reportedAutoMerged = 0; reportedFailed = 0 }
         return (merged, autoMerged, failed)
     }
 }

@@ -43,6 +43,14 @@ struct PullRequestQuickActionButtons: View {
                 // A row in the merge queue shows only how its merge goes.
                 ForEach(merging == nil ? actions : [.merge]) { action in
                     button(action)
+                    // Beside Merge, while it is not queued: auto-merge and the other ways to merge.
+                    if action == .merge, merging == nil, running == nil {
+                        PullRequestMergeMenu(choices: PullRequestMergeChoice.menu.filter { $0.applies(to: item) },
+                                             look: Self.look(.merge, confirming: false, phase: nil, hovering: false)) { choice in
+                            armed = nil
+                            merges.add(item, accountID: accountID, app: app, choice: choice)
+                        }
+                    }
                 }
             }
             .padding(.trailing, NookTheme.Spacing.sm)
@@ -200,16 +208,58 @@ final class PullRequestQuickMerges: ObservableObject {
     static let shared = PullRequestQuickMerges()
 
     @Published private(set) var queue = PullRequestQuickMergeQueue()
-    private var requests: [String: (item: PullRequestItem, account: String)] = [:]
+    private var requests: [String: (item: PullRequestItem, account: String, choice: PullRequestMergeChoice)] = [:]
+    /// Pull requests whose auto-merge is being turned off now (`disableAutoMerge`), so a second pick does not send it twice.
+    private var disabling: Set<String> = []
     private var working = false
 
     private init() {}
 
-    /// Queues a merge, already confirmed, and starts sending when nothing is.
-    func add(_ item: PullRequestItem, accountID: String, app: AppModel) {
+    /// Queues a merge, already confirmed, and starts sending when nothing is. `choice` is the Merge button's own
+    /// (`.merge(nil)`) or one from the menu beside it; turning auto-merge off does not queue (`disableAutoMerge`).
+    func add(_ item: PullRequestItem, accountID: String, app: AppModel, choice: PullRequestMergeChoice = .merge(nil)) {
+        guard choice.queues else {
+            disableAutoMerge([PullRequestOpenRequest(account: accountID, item: item)], app: app)
+            return
+        }
         guard queue.add(item.id) else { return }
-        requests[item.id] = (item, accountID)
+        requests[item.id] = (item, accountID, choice)
         work(app: app)
+    }
+
+    /// Turns auto-merge off on these pull requests, one after the other, and says how it went once: which went off,
+    /// and why the others did not (it was not on, or GitHub refused).
+    func disableAutoMerge(_ targets: [PullRequestOpenRequest], app: AppModel) {
+        let targets = targets.filter { !disabling.contains($0.item.id) }
+        guard !targets.isEmpty else { return }
+        disabling.formUnion(targets.map(\.item.id))
+        Task {
+            var off: [String] = []
+            var failures: [String] = []
+            for target in targets {
+                let name = "#\(target.item.number)"
+                do {
+                    if try await PullRequestQuickRunner.disableAutoMerge(target.item, accountID: target.account, app: app) {
+                        off.append(name)
+                    } else {
+                        failures.append(tr("agents.pulls.quick.autoMergeNotOn", name))
+                    }
+                } catch {
+                    failures.append(tr("agents.pulls.close.failedOne", name, error.localizedDescription))
+                }
+                disabling.remove(target.item.id)
+            }
+            if failures.isEmpty {
+                ToastCenter.shared.success(off.count == 1 ? tr("agents.pulls.quick.done.autoMergeOff", off[0])
+                                                          : tr("agents.pulls.quick.done.autoMergeOffMany", off.count))
+            } else if targets.count == 1 {
+                ToastCenter.shared.error(tr("agents.pulls.quick.failed", "#\(targets[0].item.number)"), detail: failures[0])
+            } else {
+                ToastCenter.shared.error(tr("agents.pulls.quick.autoMergeOffPartial", off.count, targets.count),
+                                         detail: failures.joined(separator: "\n"))
+            }
+            if !off.isEmpty { await PullRequestStore.shared.refresh(force: true) }
+        }
     }
 
     /// Takes a merge out of the queue while it waits; one already at GitHub goes on.
@@ -229,7 +279,8 @@ final class PullRequestQuickMerges: ObservableObject {
                         continue
                     }
                     do {
-                        switch try await PullRequestQuickRunner.quickMerge(request.item, accountID: request.account, app: app) {
+                        switch try await PullRequestQuickRunner.quickMerge(request.item, accountID: request.account, app: app,
+                                                                           choice: request.choice) {
                         case .merged:
                             queue.finish(success: true)
                             // The row shows merged now, and the list is read again in a moment and a few times after,
@@ -243,25 +294,35 @@ final class PullRequestQuickMerges: ObservableObject {
                         ToastCenter.shared.error(error, title: tr("agents.pulls.quick.failed", "#\(request.item.number)"))
                     }
                 }
+                // Say how it went now. The read below can take a while: the reads that follow a merge
+                // (`PullRequestStore.followMerge`) keep asking it to go again, and the toast must not wait for them.
+                announce(queue.report())
                 // Read the list again before the rows let go of "Merged", so they do not flash Merge for a moment.
                 if queue.changed { await PullRequestStore.shared.refresh(force: true) }
                 // A merge clicked while the list was read goes in this same run.
                 if queue.isIdle { break }
             }
             working = false
-            if let result = queue.drain() {
-                let merged = result.merged.compactMap { requests[$0].map { "#\($0.item.number)" } }
-                if !merged.isEmpty {
-                    ToastCenter.shared.success(merged.count == 1 ? tr("agents.pulls.quick.done.merge", merged[0])
-                                                                 : tr("agents.pulls.stack.merged", merged.count))
-                }
-                let waiting = result.autoMerged.compactMap { requests[$0].map { "#\($0.item.number)" } }
-                if !waiting.isEmpty {
-                    ToastCenter.shared.success(waiting.count == 1 ? tr("agents.pulls.quick.done.autoMerge", waiting[0])
-                                                                  : tr("agents.pulls.quick.done.autoMergeMany", waiting.count))
-                }
-            }
+            announce(queue.report())
+            _ = queue.drain()
             requests = [:]
+        }
+    }
+}
+
+extension PullRequestQuickMerges {
+    /// The toasts for what the queue finished: merged, and handed to auto-merge. Failures said so one by one already.
+    fileprivate func announce(_ result: (merged: [String], autoMerged: [String], failed: Int)?) {
+        guard let result else { return }
+        let merged = result.merged.compactMap { requests[$0].map { "#\($0.item.number)" } }
+        if !merged.isEmpty {
+            ToastCenter.shared.success(merged.count == 1 ? tr("agents.pulls.quick.done.merge", merged[0])
+                                                         : tr("agents.pulls.stack.merged", merged.count))
+        }
+        let waiting = result.autoMerged.compactMap { requests[$0].map { "#\($0.item.number)" } }
+        if !waiting.isEmpty {
+            ToastCenter.shared.success(waiting.count == 1 ? tr("agents.pulls.quick.done.autoMerge", waiting[0])
+                                                          : tr("agents.pulls.quick.done.autoMergeMany", waiting.count))
         }
     }
 }
@@ -317,22 +378,64 @@ enum PullRequestQuickRunner {
 
     /// A merge from a row or the selection bar: an admin who may bypass the rules merges at once, as on the pull
     /// request's page; anyone else gets auto-merge while checks run or a review is missing, instead of an error.
-    static func quickMerge(_ item: PullRequestItem, accountID: String, app: AppModel) async throws -> MergeOutcome {
+    /// `choice` from the menu beside Merge picks the method, or asks for auto-merge whoever you are.
+    static func quickMerge(_ item: PullRequestItem, accountID: String, app: AppModel,
+                           choice: PullRequestMergeChoice = .merge(nil)) async throws -> MergeOutcome {
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { throw NookError(tr("agents.pr.noToken")) }
-        return try await merge(repo: item.repo, number: item.number, token: token, app: app, autoMerge: true)
+        switch choice {
+        case .merge(let method):
+            return try await merge(repo: item.repo, number: item.number, token: token, app: app, autoMerge: true, method: method)
+        case .autoMerge:
+            return try await merge(repo: item.repo, number: item.number, token: token, app: app, autoMerge: true, onlyAutoMerge: true)
+        case .disableAutoMerge:
+            // Not a merge: `PullRequestQuickMerges.add` sends it outside the queue. Here only for a complete switch.
+            guard try await disableAutoMerge(item, accountID: accountID, app: app) else {
+                throw NookError(tr("agents.pulls.quick.autoMergeNotOn", "#\(item.number)"))
+            }
+            return .autoMerge
+        }
+    }
+
+    /// Turns auto-merge off on one pull request; false when it was not on, and nothing was sent.
+    static func disableAutoMerge(_ item: PullRequestItem, accountID: String, app: AppModel) async throws -> Bool {
+        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { throw NookError(tr("agents.pr.noToken")) }
+        let detail = try await GitHubPullRequestDetail.loadForMerge(repo: item.repo, number: item.number, token: token)
+        guard detail.autoMerge != nil, !detail.nodeID.isEmpty else { return false }
+        let request = PullRequestAction.disableAutoMerge(nodeID: detail.nodeID)
+        let args = request.auditArgs(repo: item.repo, number: item.number)
+        do {
+            try await GitHubPullRequestDetail.perform(request, repo: item.repo, number: item.number, token: token)
+            app.store.audit(tool: request.auditTool, args: args, result: "ok")
+            return true
+        } catch {
+            app.store.audit(tool: request.auditTool, args: args, result: "error: " + error.localizedDescription)
+            throw error
+        }
     }
 
     /// Merges one pull request at the head GitHub reports right now, after checking it can go: open, not a draft, no
     /// conflict and write access. With `autoMerge`, one that must wait (`waitsForAutoMerge`) gets
     /// auto-merge instead; a stack passes false, since the next one needs this one merged before it can be retargeted.
-    static func merge(repo: String, number: Int, token: String, app: AppModel, autoMerge: Bool) async throws -> MergeOutcome {
+    /// `method` merges with that method (it must be allowed) instead of the one last picked. `onlyAutoMerge` never merges
+    /// at once: it turns auto-merge on, also for an admin who could merge past the rules now.
+    static func merge(repo: String, number: Int, token: String, app: AppModel, autoMerge: Bool,
+                      method requested: PullRequestMergeMethod? = nil, onlyAutoMerge: Bool = false) async throws -> MergeOutcome {
         let detail = try await GitHubPullRequestDetail.loadForMerge(repo: repo, number: number, token: token)
         if let reason = blocker(detail) { throw NookError(tr(reason, "#\(number)")) }
         let preferred = PullRequestMergeMethod(rawValue: UserDefaults.standard.string(forKey: "agents.pr.mergeMethod") ?? "") ?? .merge
-        guard let method = PullRequestQuickAction.mergeMethod(preferred: preferred, allowed: detail.methods) else {
+        if let requested, !detail.methods.contains(requested) {
+            throw NookError(tr("agents.pulls.quick.methodNotAllowed", tr(requested.titleKey), "#\(number)"))
+        }
+        guard let method = requested ?? PullRequestQuickAction.mergeMethod(preferred: preferred, allowed: detail.methods) else {
             throw NookError(tr("agents.pulls.quick.noMethod", "#\(number)"))
         }
-        if autoMerge, detail.waitsForAutoMerge {
+        if onlyAutoMerge {
+            if detail.autoMerge != nil { return .autoMerge }
+            guard detail.features.autoMerge, detail.autoMergeAllowed, !detail.nodeID.isEmpty else {
+                throw NookError(tr("agents.pulls.quick.noAutoMerge", "#\(number)"))
+            }
+        }
+        if onlyAutoMerge || (autoMerge && detail.waitsForAutoMerge) {
             // Already on: nothing to send, it merges by itself.
             if detail.autoMerge != nil { return .autoMerge }
             let request = PullRequestAction.enableAutoMerge(nodeID: detail.nodeID, method: method)
@@ -490,6 +593,60 @@ struct PullRequestCloseSweepBar: View {
             }
             .padding(NookTheme.Spacing.md)
             .panelCard()
+        }
+    }
+}
+
+/// The chevron beside a quick Merge (on a row while Shift is held, and in the selection bar): auto-merge on or off, and
+/// merging now with a method of your choice. A pick from the menu is the confirmation, as it already took two clicks.
+struct PullRequestMergeMenu: View {
+    let choices: [PullRequestMergeChoice]
+    /// The Merge button's colors, so the two read as one control.
+    let look: PullRequestQuickActionButtons.Look
+    var height: CGFloat = 22
+    let pick: (PullRequestMergeChoice) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        if !choices.isEmpty {
+            Menu {
+                let auto = choices.filter { if case .merge = $0 { return false } else { return true } }
+                let methods = choices.filter { if case .merge = $0 { return true } else { return false } }
+                ForEach(auto) { item(for: $0) }
+                if !auto.isEmpty && !methods.isEmpty { Divider() }
+                if !methods.isEmpty {
+                    Section(tr("agents.pulls.quick.mergeNow")) {
+                        ForEach(methods) { item(for: $0) }
+                    }
+                }
+            } label: {
+                Image(icon: "chevron.down")
+                    .font(NookTheme.font(9, .bold))
+                    .foregroundStyle(look.text)
+                    .frame(width: height, height: height)
+                    .roundedBackground(hovering ? NookTheme.primaryHover : look.fill, radius: NookTheme.Radius.control)
+                    .contentShape(NookTheme.shape(NookTheme.Radius.control))
+            }
+            .menuStyle(.nookButton)
+            .buttonStyle(.nookPlain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .onHover { hovering = $0 }
+            .help(tr("agents.pulls.quick.more"))
+            .accessibilityLabel(tr("agents.pulls.quick.more"))
+        }
+    }
+
+    /// Auto-merge with its bolt, as on the pull request's page; the methods by name only, under "Merge now".
+    @ViewBuilder
+    private func item(for choice: PullRequestMergeChoice) -> some View {
+        switch choice {
+        case .merge:
+            Button(tr(choice.titleKey)) { pick(choice) }
+        case .autoMerge:
+            Button { pick(choice) } label: { Label(tr(choice.titleKey), icon: "bolt") }
+        case .disableAutoMerge:
+            Button { pick(choice) } label: { Label(tr(choice.titleKey), icon: "bolt.slash") }
         }
     }
 }

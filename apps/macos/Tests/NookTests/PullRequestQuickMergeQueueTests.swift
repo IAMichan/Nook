@@ -81,4 +81,50 @@ final class PullRequestQuickMergeQueueTests: XCTestCase {
         failing.ci = .failing
         XCTAssertNil(PullRequestQuickAction.mergeBlocker(failing), "Failing checks are GitHub's call: an admin may merge past them")
     }
+    func testTheResultIsReportedBeforeTheListIsReadAgain() {
+        var queue = PullRequestQuickMergeQueue()
+        queue.add("a#1")
+        queue.add("b#2")
+        XCTAssertEqual(queue.next(), "a#1")
+        XCTAssertNil(queue.report(), "not while one is at GitHub")
+        queue.finish(success: true)
+        XCTAssertNil(queue.report(), "not while one waits")
+        _ = queue.next()
+        queue.finishAutoMerge()
+        let first = queue.report()
+        XCTAssertEqual(first?.merged, ["a#1"])
+        XCTAssertEqual(first?.autoMerged, ["b#2"])
+        XCTAssertNil(queue.report(), "each result is reported once")
+        XCTAssertEqual(queue.phase("a#1"), .merged, "the row keeps saying merged until the list is read again")
+        // A merge clicked while the list is read: only it is reported next.
+        queue.add("c#3")
+        _ = queue.next()
+        queue.finish(success: false)
+        let second = queue.report()
+        XCTAssertEqual(second?.merged, [])
+        XCTAssertEqual(second?.failed, 1)
+        XCTAssertNotNil(queue.drain())
+        XCTAssertNil(queue.phase("a#1"))
+        queue.add("d#4")
+        _ = queue.next()
+        queue.finish(success: true)
+        XCTAssertEqual(queue.report()?.merged, ["d#4"], "a new run starts counting again")
+    }
+
+    func testTheMergeMenuOffersWhatAPullRequestCanTake() {
+        func item(draft: Bool = false, state: PullRequestItem.State = .open, nodeID: String = "PR_1") -> PullRequestItem {
+            var item = PullRequestItem(repo: "acme/app", number: 1, title: "T", url: nil, draft: draft, updated: nil, author: "ada", state: state)
+            item.nodeID = nodeID
+            return item
+        }
+        XCTAssertEqual(PullRequestMergeChoice.menu.first, .autoMerge)
+        XCTAssertTrue(PullRequestMergeChoice.menu.contains(.merge(.squash)))
+        XCTAssertFalse(PullRequestMergeChoice.menu.contains(.merge(nil)), "the Merge button itself is not in its menu")
+        XCTAssertTrue(PullRequestMergeChoice.menu.allSatisfy { $0.applies(to: item()) })
+        XCTAssertFalse(PullRequestMergeChoice.autoMerge.applies(to: item(draft: true)))
+        XCTAssertFalse(PullRequestMergeChoice.disableAutoMerge.applies(to: item(state: .merged)))
+        XCTAssertFalse(PullRequestMergeChoice.disableAutoMerge.applies(to: item(nodeID: "")))
+        XCTAssertFalse(PullRequestMergeChoice.disableAutoMerge.queues)
+        XCTAssertTrue(PullRequestMergeChoice.autoMerge.queues)
+    }
 }

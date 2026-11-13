@@ -91,7 +91,8 @@ struct PullRequestSelectionBar: View {
                                              confirmTitle: tr("agents.pulls.select.mergeYes"),
                                              confirmDetail: Self.mergeDetail(mergeable, skipped: skipped),
                                              count: mergeable.count, primary: true,
-                                             leftOutHelp: skipped.joined(separator: "\n")) {
+                                             leftOutHelp: skipped.joined(separator: "\n"),
+                                             menu: PullRequestMergeChoice.menu.map { mergeAction($0, picked: picked) }) {
                                  merge(mergeable)
                              },
                          ],
@@ -99,6 +100,47 @@ struct PullRequestSelectionBar: View {
                          toggleAll: { selection.toggleAll(shown) },
                          done: { withAnimation(NookTheme.reveal) { selection.clear() } })
                 .padding([.horizontal, .bottom], inset)
+        }
+    }
+
+    /// One item of the menu beside Merge: auto-merge on or off, or merging now with one method, for the picked pull
+    /// requests it applies to, after its own question.
+    private func mergeAction(_ choice: PullRequestMergeChoice, picked: [PullRequestOpenRequest]) -> SelectionAction {
+        let targets = picked.filter { choice.applies(to: $0.item) }
+        let question: String
+        let yes: String
+        let detail: String
+        switch choice {
+        case .merge(let method):
+            question = Self.question(targets, one: "agents.pulls.select.mergeConfirmOne", many: "agents.pulls.select.mergeConfirm")
+            yes = tr("agents.pulls.select.mergeYes")
+            detail = tr("agents.pulls.select.mergeDetail", Self.numbers(targets))
+                + (method.map { "\n" + tr($0.titleKey) } ?? "")
+        case .autoMerge:
+            question = Self.question(targets, one: "agents.pulls.select.autoMergeConfirmOne", many: "agents.pulls.select.autoMergeConfirm")
+            yes = tr("agents.pulls.select.autoMergeYes")
+            detail = tr("agents.pulls.select.autoMergeDetail", Self.numbers(targets))
+        case .disableAutoMerge:
+            question = Self.question(targets, one: "agents.pulls.select.autoMergeOffConfirmOne", many: "agents.pulls.select.autoMergeOffConfirm")
+            yes = tr("agents.pulls.select.autoMergeOffYes")
+            detail = Self.numbers(targets)
+        }
+        let symbol: String
+        switch choice {
+        case .merge: symbol = ""
+        case .autoMerge: symbol = "bolt"
+        case .disableAutoMerge: symbol = "bolt.slash"
+        }
+        return SelectionAction(symbol: symbol, label: tr(choice.titleKey), enabled: !targets.isEmpty,
+                               confirm: question, confirmTitle: yes, confirmDetail: detail, count: targets.count) {
+            if choice.queues {
+                for target in targets {
+                    PullRequestQuickMerges.shared.add(target.item, accountID: target.account, app: AppModel.shared, choice: choice)
+                }
+            } else {
+                PullRequestQuickMerges.shared.disableAutoMerge(targets, app: AppModel.shared)
+            }
+            withAnimation(NookTheme.reveal) { selection.clear() }
         }
     }
 
