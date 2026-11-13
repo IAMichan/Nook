@@ -139,6 +139,17 @@ final class SecretsTests: XCTestCase {
         XCTAssertEqual(long?.command.count, 2_001)
     }
 
+    func testTheCardSaysWhatThePasswordIsFor() {
+        XCTAssertEqual(SudoAskpass.purpose(of: "sudo -A make install").command, "make install")
+        XCTAssertEqual(SudoAskpass.purpose(of: "/usr/bin/sudo -A -u root -E brew services start x").command,
+                       "brew services start x")
+        XCTAssertEqual(SudoAskpass.purpose(of: "sudo -A -- rm -rf /tmp/x").command, "rm -rf /tmp/x")
+        for check in ["sudo -A true", "sudo -A -v", "sudo -A -l", "sudo -A", ""] {
+            XCTAssertTrue(SudoAskpass.purpose(of: check).isCheck, check)
+        }
+        XCTAssertEqual(SudoAskpass.purpose(of: "make install").command, "make install", "not sudo: shown as it is")
+    }
+
     func testTheReplyCarriesTheValueOrADecline() {
         XCTAssertEqual(SudoAskpass.value(inReply: SudoAskpass.reply("hunter2")), "hunter2")
         XCTAssertNil(SudoAskpass.value(inReply: SudoAskpass.reply(nil)))
