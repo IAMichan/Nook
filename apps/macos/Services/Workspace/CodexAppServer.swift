@@ -270,6 +270,12 @@ enum CodexRPC {
         ["threadId": threadID, "turnId": turnID]
     }
 
+    /// `thread/sample`: a one-off answer from the thread's context after `turnID`, without changing the thread (the
+    /// suggested next prompt). Low effort: it is a line, not work.
+    static func sampleParams(threadID: String, turnID: String, prompt: String) -> [String: Any] {
+        ["threadId": threadID, "expectedTurnId": turnID, "prompt": prompt, "effort": "low"]
+    }
+
     /// `thread/rollback`: drops the thread's last `numTurns` turns from its history (not the files; Nook restores those).
     /// `thread/goal/set`: a new objective, a new status, or both.
     static func goalParams(threadID: String, objective: String? = nil, status: SessionGoal.Status? = nil) -> [String: Any] {
@@ -619,8 +625,14 @@ final class CodexAppServerClient: @unchecked Sendable {
         get { lock.withLock { _turnID } }
         set { lock.withLock { _turnID = newValue } }
     }
+    /// The last turn that started on the thread, kept after it ends (`thread/sample` names it).
+    var lastTurnID: String? {
+        get { lock.withLock { _lastTurnID } }
+        set { lock.withLock { _lastTurnID = newValue } }
+    }
     private var _threadID: String?
     private var _turnID: String?
+    private var _lastTurnID: String?
 
     /// `transport` and `scheduler` replace the process and the clock in tests (a recorded agent, `ReplayTransport`).
     init(spec: LaunchSpec, transport: ProviderTransport? = nil, scheduler: ProcessScheduler = DispatchProcessScheduler()) {

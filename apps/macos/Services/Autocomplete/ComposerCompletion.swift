@@ -13,18 +13,23 @@ enum ComposerCompletion {
         case local(String)
         /// A model API: the brain provider's raw value, and the model (empty: the provider's default).
         case api(provider: String, model: String)
+        /// Your subscription: Claude Code (or else Codex) headless, as for session titles (`TextGenerationRunner`).
+        case agent
 
-        /// "", "local:<identity>" or "api:<provider>:<model>".
+        /// "", "local:<identity>", "api:<provider>:<model>" or "agent".
         var stored: String {
             switch self {
             case .sameAsAutocomplete: return ""
+            case .agent: return "agent"
             case .local(let identity): return "local:" + identity
             case .api(let provider, let model): return "api:\(provider):\(model)"
             }
         }
 
         init(stored: String) {
-            if stored.hasPrefix("local:"), stored.count > 6 {
+            if stored == "agent" {
+                self = .agent
+            } else if stored.hasPrefix("local:"), stored.count > 6 {
                 self = .local(String(stored.dropFirst(6)))
             } else if stored.hasPrefix("api:") {
                 let rest = stored.dropFirst(4)
@@ -102,6 +107,12 @@ enum ComposerCompletion {
         lines.append("\nTEXT:\n" + apiText(before))
         return lines.joined(separator: "\n")
     }
+
+    /// The JSON answer asked of your subscription's CLI (`claude -p --json-schema`): the text written back with its
+    /// continuation, as `apiPrompt` asks.
+    static let agentSchema: [String: Any] = [
+        "type": "object", "properties": ["text": ["type": "string"]], "required": ["text"], "additionalProperties": false
+    ]
 
     /// The end of the message an API reads and writes back.
     static func apiText(_ before: String) -> String { String(before.suffix(apiTextLength)) }

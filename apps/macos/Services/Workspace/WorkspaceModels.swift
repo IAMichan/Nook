@@ -44,7 +44,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         rollback: .resumeAt, canForkFromTurn: true, liveSettings: true,
                                         reportsPromptCacheLifetime: true, denyReason: .inResponse, speedTiers: true,
                                         ultracode: true, stopsOneSubagent: true, effort: .launchFlag("--effort"),
-                                        processChannel: .claudeStreamJSON, idleConnection: .parkedProcess, probesLaunchFlags: true)
+                                        processChannel: .claudeStreamJSON, idleConnection: .parkedProcess, probesLaunchFlags: true,
+                                        promptSuggestions: .agentStream)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window. "Auto" routes its
             // approval requests to Codex's own reviewer (`approvalsReviewer: auto_review`).
@@ -53,7 +54,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
                                         policies: [.ask, .acceptEdits, .auto, .bypass], steering: true, rollback: .threadRollback,
                                         speedTiers: true, echoesSteers: true,
                                         // `effort` on app-server's `turn/start`; `codex exec` takes it as a config override.
-                                        effort: .launchConfig("model_reasoning_effort"), idleConnection: .appServer)
+                                        effort: .launchConfig("model_reasoning_effort"), idleConnection: .appServer,
+                                        promptSuggestions: .threadSample)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there). Its effort
             // is the session's `thought_level` option over ACP; the headless fallback has no flag for it.
@@ -195,6 +197,23 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// A server of the agent's own that Nook drives instead of its ACP server when the installed version has it
     /// (`ServerTransport`, `WorkspaceManager.usesOpenCodeServer`).
     var serverTransport: ServerTransport = .none
+    /// Who writes the suggested next prompt in the empty composer (`PromptSuggestionSource`, `NextPromptSuggestion`).
+    var promptSuggestions: PromptSuggestionSource = .generator
+}
+
+/// See `ProviderCapabilities.promptSuggestions`. The agent's own prediction reads the whole conversation from its prompt
+/// cache, so it is cheaper and better than Nook asking a second model; where the agent has none, Nook's text generator
+/// writes it from the timeline (Settings › Sessions › Text generation).
+enum PromptSuggestionSource: String, Sendable {
+    /// The agent sends one on its own after each turn: Claude Code's `--prompt-suggestions` (`prompt_suggestion` on
+    /// stream-json), on your subscription.
+    case agentStream
+    /// Nook asks the agent's own thread for one: Codex app-server's `thread/sample`. A Codex without it, or `codex exec`,
+    /// falls back to the generator.
+    case threadSample
+    /// Nook's text generator (`WorkspaceManager.generateText`): Gemini CLI, Antigravity, OpenCode, Cursor, Grok, Pi and
+    /// the ACP agents you add, none of which predicts a next prompt itself.
+    case generator
 }
 
 /// See `ProviderCapabilities.serverTransport`.

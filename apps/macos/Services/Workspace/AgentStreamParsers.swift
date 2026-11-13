@@ -135,6 +135,8 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     /// `task_started` and `task_notification` messages or the `<task-notification>` it hands the model. `toolUseID` is
     /// the call that started it, `taskID` the id its launch output names; `status` is nil while it runs.
     case backgroundTask(BackgroundTaskUpdate)
+    /// Claude Code's prediction of your next message, after a turn (`--prompt-suggestions`).
+    case promptSuggestion(String)
     /// An entry of the main conversation chain (an assistant or user message's `uuid`): where `--resume-session-at` can
     /// pick the conversation up again.
     case chainEntry(String)
@@ -377,6 +379,10 @@ enum ClaudeStreamParser {
                 return [.controlReply(requestID: requestID, response: nil, error: (response["error"] as? String) ?? "error")]
             }
             return [.controlReply(requestID: requestID, response: JSONBox(response["response"] ?? [String: Any]()), error: nil)]
+
+        case "prompt_suggestion":
+            let text = ((object["suggestion"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? [] : [.promptSuggestion(text)]
 
         case "rate_limit_event":
             let info = object["rate_limit_info"] as? [String: Any]

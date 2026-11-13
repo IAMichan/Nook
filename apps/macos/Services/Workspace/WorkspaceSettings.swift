@@ -188,7 +188,8 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(textGenerators, forKey: "ws.textGenerators") }
     }
     /// After an agent's turn the empty composer shows the message you will likely send next (`NextPromptSuggestion`).
-    /// Off by default: each suggestion is one more request.
+    /// On by default: Claude Code and Codex predict it from their own conversation on your subscription; for the other
+    /// agents it is one short request to the chosen generator, only while the session is open.
     @Published var suggestNextPrompt: Bool {
         didSet { defaults.set(suggestNextPrompt, forKey: "ws.suggestNextPrompt") }
     }
@@ -323,7 +324,7 @@ final class WorkspaceSettings: ObservableObject {
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         titleInstructions = defaults.string(forKey: "ws.titleInstructions") ?? ""
         textGenerators = defaults.dictionary(forKey: "ws.textGenerators") as? [String: String] ?? [:]
-        suggestNextPrompt = defaults.bool(forKey: "ws.suggestNextPrompt")
+        suggestNextPrompt = defaults.object(forKey: "ws.suggestNextPrompt") as? Bool ?? true
         agentInstructions = defaults.string(forKey: "ws.agentInstructions") ?? ""
         maxWorkingSessions = defaults.object(forKey: "ws.maxWorkingSessions") as? Int ?? 0
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard

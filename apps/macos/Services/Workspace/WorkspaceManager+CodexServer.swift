@@ -334,6 +334,7 @@ extension WorkspaceManager {
             switch event {
             case .turnStarted(let turn):
                 client.turnID = turn
+                client.lastTurnID = turn
                 noteConversationTurn(id, turnID: turn)
                 // Codex started a turn on its own (background work it waited for finished): the session works again.
                 if let run = run(id), !run.status.isActive, turns[id] == nil { wakeCodexServer(id) }
