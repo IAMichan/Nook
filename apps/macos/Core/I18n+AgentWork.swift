@@ -446,6 +446,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "ws.connector.failed": "Inloggen bij %@ lukte niet: %@",
         "ws.connector.noPage": "de agent gaf geen inlogpagina",
         "ws.connector.noAgent": "de agent draait niet",
+        "ws.connector.gone": "%@ hoeft niet meer: de agent heeft deze connector niet meer, of een andere connector doet hetzelfde.",
     ],
     .en: [
         // The Nook chat, laid out like the Agents tab.
@@ -888,6 +889,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "ws.connector.failed": "Signing in to %@ did not work: %@",
         "ws.connector.noPage": "the agent gave no sign-in page",
         "ws.connector.noAgent": "the agent is not running",
+        "ws.connector.gone": "%@ is no longer needed: the agent dropped this connector, or another connector covers the same service.",
     ],
     .de: [
         // The Nook chat, laid out like the Agents tab.
@@ -1330,6 +1332,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "ws.connector.failed": "Anmeldung bei %@ fehlgeschlagen: %@",
         "ws.connector.noPage": "der Agent hat keine Anmeldeseite geliefert",
         "ws.connector.noAgent": "der Agent läuft nicht",
+        "ws.connector.gone": "%@ wird nicht mehr gebraucht: Der Agent hat diesen Connector nicht mehr, oder ein anderer Connector deckt denselben Dienst ab.",
     ],
     .fr: [
         // The Nook chat, laid out like the Agents tab.
@@ -1772,6 +1775,7 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "ws.connector.failed": "La connexion à %@ a échoué : %@",
         "ws.connector.noPage": "l'agent n'a fourni aucune page de connexion",
         "ws.connector.noAgent": "l'agent ne tourne pas",
+        "ws.connector.gone": "%@ n'est plus nécessaire : l'agent n'a plus ce connecteur, ou un autre connecteur couvre le même service.",
     ],
     .es: [
         // The Nook chat, laid out like the Agents tab.
@@ -2214,5 +2218,6 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "ws.connector.failed": "No se pudo iniciar sesión en %@: %@",
         "ws.connector.noPage": "el agente no dio ninguna página de inicio de sesión",
         "ws.connector.noAgent": "el agente no se está ejecutando",
+        "ws.connector.gone": "%@ ya no hace falta: el agente ya no tiene este conector, u otro conector cubre el mismo servicio.",
     ],
 ]
