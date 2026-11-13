@@ -73,6 +73,48 @@ jobs:
       - name: Rust tests
         run: cargo test --workspace
 
+  # Fuzzes what nook-core reads from outside (attachments, the companion pairing link and frames) for a minute per
+  # target with cargo-fuzz (apps/tauri/core/fuzz). A crash fails the job and keeps the input as an artifact.
+  # libFuzzer needs a nightly compiler; it is pinned here so a new nightly cannot turn CI red on its own.
+  fuzz:
+    name: Fuzz
+    if: github.event.action != 'closed' && !github.event.pull_request.draft && inputs.version == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NIGHTLY: nightly-2026-11-01
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The fuzz crate has no lockfile of its own: start from the app's, so nook-core runs with the versions that ship.
+      - name: Lockfile
+        run: cp apps/tauri/Cargo.lock apps/tauri/core/fuzz/Cargo.lock
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: apps/tauri/core/fuzz
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal
+          cargo +"$NIGHTLY" install cargo-fuzz --version 0.13.2 --locked
+      - name: Fuzz every target for a minute
+        working-directory: apps/tauri/core
+        run: |
+          cargo +"$NIGHTLY" fuzz build
+          for target in $(cargo +"$NIGHTLY" fuzz list); do
+            echo "::group::$target"
+            cargo +"$NIGHTLY" fuzz run "$target" -- -max_total_time=60
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: apps/tauri/core/fuzz/artifacts
+          retention-days: 14
+          if-no-files-found: ignore
+
   windows:
     name: Windows checks
     needs: checks

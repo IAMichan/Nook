@@ -1,0 +1,6 @@
+target/
+corpus/
+artifacts/
+coverage/
+# Seeded from apps/tauri/Cargo.lock in CI (see Cargo.toml).
+Cargo.lock

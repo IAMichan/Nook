@@ -1,0 +1,42 @@
+# Fuzz targets of nook-core for cargo-fuzz (libFuzzer). Each one feeds the code that reads what comes from outside Nook
+# (attachments, the companion pairing link, companion frames) with random input and fails on a panic or a broken
+# round trip. Run one locally with a nightly toolchain:
+#   cd apps/tauri/core && cargo +nightly fuzz run attachments
+# CI (tauri.yml, job "Fuzz") runs every target for a minute. This crate is not part of the workspace, so stable builds
+# and Clippy never see it; CI seeds its Cargo.lock from apps/tauri/Cargo.lock so nook-core is fuzzed with the
+# dependency versions that ship.
+[package]
+name = "nook-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+nook-core = { path = ".." }
+
+[workspace]
+
+[[bin]]
+name = "attachments"
+path = "fuzz_targets/attachments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pairing_link"
+path = "fuzz_targets/pairing_link.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frames"
+path = "fuzz_targets/frames.rs"
+test = false
+doc = false
+bench = false
