@@ -503,7 +503,7 @@
           <button class:on={shown === "home"} onclick={() => select("home")}>Home</button>
           <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
           <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
-          <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
+          <button class:on={shown === "agents"} onclick={() => select("agents")}>{tr("Agents", "Agents")} {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
             <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
           {/if}

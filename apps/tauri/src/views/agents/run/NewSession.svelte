@@ -6,6 +6,7 @@
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { agentApi, type AgentProfile } from "../../../lib/agents";
   import { agents } from "../../../lib/agents.svelte";
+  import { tr } from "../../../lib/i18n.svelte";
   import {
     effortLabels, effortLevels, isActive, permissionHelp, permissionLabels, projectName, workspaceApi, type NewRunConfig, type PermissionPolicy, type ProjectInfo,
     type RunProvider,
@@ -83,10 +84,10 @@
 
   const worktreeAllowed = $derived(!!project && project.verdict === "ok" && !!project.repoRoot && project.hasCommits && !!workspace.overview?.gitAvailable);
   const worktreeBlocked = $derived(
-    !workspace.overview?.gitAvailable ? "Git is niet gevonden. Installeer Git en start Nook opnieuw."
-      : !project ? "Kies een project of map"
-        : !project.repoRoot ? "Een worktree kan alleen in een Git-repository."
-          : !project.hasCommits ? "Een worktree kan pas na de eerste commit." : "",
+    !workspace.overview?.gitAvailable ? tr("Git is niet gevonden. Installeer Git en start Nook opnieuw.", "Git wasn't found. Install Git and restart Nook.")
+      : !project ? tr("Kies een project of map", "Choose a project or folder")
+        : !project.repoRoot ? tr("Een worktree kan alleen in een Git-repository.", "A worktree only works in a Git repository.")
+          : !project.hasCommits ? tr("Een worktree kan pas na de eerste commit.", "A worktree needs at least one commit.") : "",
   );
   const sharing = $derived(
     project && project.verdict === "ok"
@@ -94,14 +95,14 @@
       : [],
   );
   const blockingReason = $derived.by((): string | null => {
-    if (!config.task.trim()) return "Schrijf eerst een opdracht.";
-    if (!config.projectPath) return "Kies een map.";
-    if (!policies.includes(config.permission)) return "Deze agent ondersteunt die rechten niet.";
-    if (config.isolation === "worktree" && !config.baseBranch) return "Kies een basis-branch.";
-    if (project?.verdict !== "ok") return project?.verdictMessage || "Kies een map.";
-    if (!provider?.supported) return `Nook kan ${provider?.name ?? config.provider} op dit platform nog niet zelf aansturen. Claude Code, Codex en Gemini CLI wel.`;
-    if (!provider?.executable) return `${provider?.name ?? config.provider} staat niet op deze computer.`;
-    if (config.isolation === "folder" && !allowShared && sharing.length) return "Kies een worktree of bevestig de gedeelde map.";
+    if (!config.task.trim()) return tr("Schrijf eerst een opdracht.", "Write a task first.");
+    if (!config.projectPath) return tr("Kies een map.", "Choose a folder.");
+    if (!policies.includes(config.permission)) return tr("Deze agent ondersteunt die rechten niet.", "This agent doesn't support that permission.");
+    if (config.isolation === "worktree" && !config.baseBranch) return tr("Kies een basis-branch.", "Choose a base branch.");
+    if (project?.verdict !== "ok") return project?.verdictMessage || tr("Kies een map.", "Choose a folder.");
+    if (!provider?.supported) return tr("Nook kan {agent} op dit platform nog niet zelf aansturen. Claude Code, Codex en Gemini CLI wel.", "Nook can't drive {agent} itself on this platform yet. Claude Code, Codex and Gemini CLI it can.", { agent: provider?.name ?? config.provider });
+    if (!provider?.executable) return tr("{agent} staat niet op deze computer.", "{agent} isn't installed on this computer.", { agent: provider?.name ?? config.provider });
+    if (config.isolation === "folder" && !allowShared && sharing.length) return tr("Kies een worktree of bevestig de gedeelde map.", "Choose a worktree or confirm the shared folder.");
     return null;
   });
 
@@ -248,7 +249,7 @@
   async function chooseFolder() {
     menu = "";
     try {
-      const picked = await openDialog({ directory: true, multiple: false, title: "In welke map werkt de agent?", defaultPath: project?.path });
+      const picked = await openDialog({ directory: true, multiple: false, title: tr("In welke map werkt de agent?", "Which folder does the agent work in?"), defaultPath: project?.path });
       if (typeof picked === "string") select(picked);
     } catch (e) {
       error = String(e);
@@ -306,88 +307,88 @@
 <div class="new">
   <div class="spacer-v"></div>
   <h2 class="heading">
-    Wat zullen we bouwen in
+    {tr("Wat zullen we bouwen in", "What shall we build in")}
     <span class="pop">
-      <button class="project" onclick={(e) => { stop(e); menu = menu === "project" ? "" : "project"; }} title={project?.path ?? "Kies een project of map"}>
-        {project?.name ?? (config.projectPath ? projectName(config.projectPath) : "welke map")}
+      <button class="project" onclick={(e) => { stop(e); menu = menu === "project" ? "" : "project"; }} title={project?.path ?? tr("Kies een project of map", "Choose a project or folder")}>
+        {project?.name ?? (config.projectPath ? projectName(config.projectPath) : tr("welke map", "which folder"))}
       </button>
       {#if menu === "project"}
         <div class="menu" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
           {#if favorites.length}
-            <div class="mhead">Favorites</div>
+            <div class="mhead">{tr("Favorieten", "Favorites")}</div>
             {#each favorites as path (path)}
               <div class="mrow" class:chosen={cleanProjectPath(project?.path ?? "") === path}>
                 <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
-                <button class="star starred" title="Remove from favorites" aria-label="Remove from favorites" onclick={() => toggleFavorite(path)}>★</button>
+                <button class="star starred" title={tr("Verwijder uit favorieten", "Remove from favorites")} aria-label={tr("Verwijder uit favorieten", "Remove from favorites")} onclick={() => toggleFavorite(path)}>★</button>
               </div>
             {/each}
           {/if}
           {#if recent.length}
-            <div class="mhead">Recent</div>
+            <div class="mhead">{tr("Recent", "Recent")}</div>
             {#each recent as path (path)}
               <div class="mrow" class:chosen={cleanProjectPath(project?.path ?? "") === path}>
                 <button class="mitem" onclick={() => select(path)}><span>{projectName(path)}</span><span class="faint small">{path}</span></button>
-                <button class="star" title="Add to favorites" aria-label="Add to favorites" onclick={() => toggleFavorite(path)}>☆</button>
+                <button class="star" title={tr("Voeg toe aan favorieten", "Add to favorites")} aria-label={tr("Voeg toe aan favorieten", "Add to favorites")} onclick={() => toggleFavorite(path)}>☆</button>
               </div>
             {/each}
           {/if}
           {#if favorites.length || recent.length}
             <hr />
           {/if}
-          <button onclick={chooseFolder}>Kies map…</button>
-          <button onclick={() => { menu = ""; showClone = true; }}>Kloon een repository…</button>
+          <button onclick={chooseFolder}>{tr("Kies map…", "Choose folder…")}</button>
+          <button onclick={() => { menu = ""; showClone = true; }}>{tr("Kloon een repository…", "Clone a repository…")}</button>
         </div>
       {/if}
     </span>?
-    {#if inspecting}<span class="faint small">Map bekijken…</span>{/if}
+    {#if inspecting}<span class="faint small">{tr("Map bekijken…", "Checking folder…")}</span>{/if}
   </h2>
 
   {#if showClone}
     <div class="clone">
-      <input bind:value={cloneUrl} placeholder="https://github.com/eigenaar/repo.git" onkeydown={(e) => e.key === "Enter" && clone()} />
-      <button disabled={cloning || !cloneUrl.trim()} onclick={clone}>{cloning ? "Klonen…" : "Kloon"}</button>
+      <input bind:value={cloneUrl} placeholder={tr("https://github.com/eigenaar/repo.git", "https://github.com/owner/repo.git")} onkeydown={(e) => e.key === "Enter" && clone()} />
+      <button disabled={cloning || !cloneUrl.trim()} onclick={clone}>{cloning ? tr("Klonen…", "Cloning…") : tr("Kloon", "Clone")}</button>
       <button class="ghost" onclick={() => (showClone = false)}>✕</button>
     </div>
   {/if}
 
   <div class="box">
-    <textarea bind:this={textarea} bind:value={config.task} rows="3" placeholder="Beschrijf wat de agent moet doen. Enter start de sessie." onkeydown={keydown}></textarea>
+    <textarea bind:this={textarea} bind:value={config.task} rows="3" placeholder={tr("Beschrijf wat de agent moet doen. Enter start de sessie.", "Describe what the agent should do. Enter starts the session.")} onkeydown={keydown}></textarea>
     <div class="bar">
       <span class="pop">
-        <button class="pill" onclick={(e) => { stop(e); menu = menu === "agent" ? "" : "agent"; }} title="Deze sessie houdt dit account, ook als je later het standaardaccount wisselt.">
-          {provider?.name ?? config.provider}{profile && profilesFor(config.provider).length > 1 ? ` · ${profile.label || "Standaard"}` : ""}{config.model ? ` · ${config.model}` : ""}
+        <button class="pill" onclick={(e) => { stop(e); menu = menu === "agent" ? "" : "agent"; }} title={tr("Deze sessie houdt dit account, ook als je later het standaardaccount wisselt.", "This session keeps this account, even if you switch the default account later.")}>
+          {provider?.name ?? config.provider}{profile && profilesFor(config.provider).length > 1 ? " · " + (profile.label || tr("Standaard", "Default")) : ""}{config.model ? ` · ${config.model}` : ""}
         </button>
         {#if menu === "agent"}
           <div class="menu wide" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
             {#if !connected.length}
-              <div class="mhead">Nog geen agent gekoppeld. Koppel er een bij Instellingen › Agents.</div>
+              <div class="mhead">{tr("Nog geen agent gekoppeld. Koppel er een bij Instellingen › Agents.", "No agent linked yet. Link one in Settings › Agents.")}</div>
             {/if}
             {#each runnable as p (p.provider)}
-              <div class="mhead">{p.name}{#if !p.executable} · niet gevonden{/if}</div>
+              <div class="mhead">{p.name}{#if !p.executable} · {tr("niet gevonden", "not found")}{/if}</div>
               {#each profilesFor(p.provider).length ? profilesFor(p.provider) : [{ id: p.provider, label: "", title: p.name } as AgentProfile] as acc (acc.id)}
                 <button class:chosen={config.provider === p.provider && config.profileId === acc.id} disabled={!p.executable}
-                  onclick={() => { choose(p.provider, acc.id); menu = ""; remember(); }}>{acc.label || "Standaardaccount"}</button>
+                  onclick={() => { choose(p.provider, acc.id); menu = ""; remember(); }}>{acc.label || tr("Standaardaccount", "Default account")}</button>
               {/each}
             {/each}
             <hr />
-            <div class="mhead">Model</div>
-            <input bind:value={config.model} placeholder="standaard" onchange={remember} />
+            <div class="mhead">{tr("Model", "Model")}</div>
+            <input bind:value={config.model} placeholder={tr("standaard", "default")} onchange={remember} />
           </div>
         {/if}
       </span>
       <span class="sep"></span>
-      <button class="pill" title={config.mode === "plan" ? "Alleen lezen en een plan maken; er wordt niets aangepast." : "De agent mag werken in de map, binnen de rechten hieronder."}
-        onclick={() => { config.mode = config.mode === "plan" ? "agent" : "plan"; remember(); }}>{config.mode === "plan" ? "Plan" : "Agent"}</button>
+      <button class="pill" title={config.mode === "plan" ? tr("Alleen lezen en een plan maken; er wordt niets aangepast.", "Only read and make a plan; nothing is changed.") : tr("De agent mag werken in de map, binnen de rechten hieronder.", "The agent may work in the folder, within the permissions below.")}
+        onclick={() => { config.mode = config.mode === "plan" ? "agent" : "plan"; remember(); }}>{config.mode === "plan" ? tr("Plan", "Plan") : tr("Agent", "Agent")}</button>
       <span class="sep"></span>
       <span class="pop">
         <button class="pill" class:hot={config.permission === "bypass" && config.mode !== "plan"} disabled={config.mode === "plan"}
-          title={config.mode === "plan" ? "In Plan-modus leest de agent alleen." : permissionHelp(config.permission, config.provider)}
+          title={config.mode === "plan" ? tr("In Plan-modus leest de agent alleen.", "In Plan mode the agent only reads.") : permissionHelp(config.permission, config.provider)}
           onclick={(e) => { stop(e); menu = menu === "permission" ? "" : "permission"; }}>
-          {config.mode === "plan" ? "Alleen lezen" : permissionLabels[config.permission]}
+          {config.mode === "plan" ? tr("Alleen lezen", "Read only") : permissionLabels[config.permission]}
         </button>
         {#if menu === "permission"}
           <div class="menu wide" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
-            <div class="mhead">Toegang</div>
+            <div class="mhead">{tr("Toegang", "Access")}</div>
             {#each policies as p (p)}
               <button class="opt" class:chosen={config.permission === p} onclick={() => { config.permission = p; menu = ""; remember(); }}>
                 <span class:hot={p === "bypass"}>{permissionLabels[p]}</span><span class="faint small">{permissionHelp(p, config.provider)}</span>
@@ -399,12 +400,12 @@
       {#if levels.length}
         <span class="sep"></span>
         <span class="pop">
-          <button class="pill" title="Hoe diep de agent nadenkt, vanaf de volgende beurt" onclick={(e) => { stop(e); menu = menu === "effort" ? "" : "effort"; }}>
+          <button class="pill" title={tr("Hoe diep de agent nadenkt, vanaf de volgende beurt", "How deeply the agent thinks, from the next turn")} onclick={(e) => { stop(e); menu = menu === "effort" ? "" : "effort"; }}>
             {effortLabels[config.effort ?? ""] ?? config.effort}
           </button>
           {#if menu === "effort"}
             <div class="menu" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
-              <div class="mhead">Denkniveau</div>
+              <div class="mhead">{tr("Denkniveau", "Effort")}</div>
               <button class:chosen={!config.effort} onclick={() => { config.effort = null; menu = ""; remember(); }}>{effortLabels[""]}</button>
               {#each levels as l (l)}
                 <button class:chosen={config.effort === l} onclick={() => { config.effort = l; menu = ""; remember(); }}>{effortLabels[l] ?? l}</button>
@@ -414,22 +415,22 @@
         </span>
       {/if}
       <span class="spacer"></span>
-      <button class="primary" disabled={!!blockingReason || starting} title={blockingReason ?? "Start sessie"} onclick={start}>{starting ? (config.isolation === "worktree" ? "Worktree maken en agent starten…" : "Agent starten…") : "Start sessie"}</button>
+      <button class="primary" disabled={!!blockingReason || starting} title={blockingReason ?? tr("Start sessie", "Start session")} onclick={start}>{starting ? (config.isolation === "worktree" ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session")}</button>
     </div>
   </div>
 
   <div class="below">
     <span class="pop">
-      <button class="pill" title={worktreeAllowed ? "De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn." : worktreeBlocked}
-        onclick={(e) => { stop(e); menu = menu === "where" ? "" : "where"; }}>{config.isolation === "worktree" ? "Nieuwe worktree" : "Huidige map"}</button>
+      <button class="pill" title={worktreeAllowed ? tr("De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn.", "The agent gets its own folder and branch. Your own checkout and branch stay exactly as they are.") : worktreeBlocked}
+        onclick={(e) => { stop(e); menu = menu === "where" ? "" : "where"; }}>{config.isolation === "worktree" ? tr("Nieuwe worktree", "New worktree") : tr("Huidige map", "Current folder")}</button>
       {#if menu === "where"}
         <div class="menu wide" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
-          <div class="mhead">Waar de agent werkt</div>
+          <div class="mhead">{tr("Waar de agent werkt", "Where the agent works")}</div>
           <button class="opt" class:chosen={config.isolation === "folder"} onclick={() => { config.isolation = "folder"; menu = ""; remember(); }}>
-            <span>Huidige map</span><span class="faint small">In de map zelf, op de branch die er nu staat.</span>
+            <span>{tr("Huidige map", "Current folder")}</span><span class="faint small">{tr("In de map zelf, op de branch die er nu staat.", "In the folder itself, on the branch that's checked out now.")}</span>
           </button>
           <button class="opt" class:chosen={config.isolation === "worktree"} disabled={!worktreeAllowed} onclick={() => { config.isolation = "worktree"; menu = ""; remember(); }}>
-            <span>Nieuwe worktree</span><span class="faint small">{worktreeAllowed ? "De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn." : worktreeBlocked}</span>
+            <span>{tr("Nieuwe worktree", "New worktree")}</span><span class="faint small">{worktreeAllowed ? tr("De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn.", "The agent gets its own folder and branch. Your own checkout and branch stay exactly as they are.") : worktreeBlocked}</span>
           </button>
         </div>
       {/if}
@@ -437,15 +438,15 @@
     <span class="spacer"></span>
     {#if config.isolation === "worktree" && project?.branches.length}
       <span class="pop">
-        <button class="pill" onclick={(e) => { stop(e); branchQuery = ""; menu = menu === "branch" ? "" : "branch"; }}>⑂ Vanaf {config.baseBranch}</button>
+        <button class="pill" onclick={(e) => { stop(e); branchQuery = ""; menu = menu === "branch" ? "" : "branch"; }}>⑂ {tr("Vanaf {branch}", "From {branch}", { branch: config.baseBranch })}</button>
         {#if menu === "branch"}
           <div class="menu wide right" role="menu" tabindex="-1" onclick={stop} onkeydown={() => {}}>
-            <input bind:value={branchQuery} placeholder="Zoek branches…" />
+            <input bind:value={branchQuery} placeholder={tr("Zoek branches…", "Search branches…")} />
             <div class="scrolllist">
               {#each sortedBranches(project.branches) as b (b)}
                 <button class:chosen={config.baseBranch === b} onclick={() => { config.baseBranch = b; menu = ""; }}>{b}</button>
               {:else}
-                <span class="faint small">Geen branches gevonden</span>
+                <span class="faint small">{tr("Geen branches gevonden", "No branches found")}</span>
               {/each}
             </div>
           </div>
@@ -460,17 +461,17 @@
     <p class="err">{error}</p>
   {:else if sharing.length && config.isolation === "folder"}
     <p class="note">
-      Er werkt al een sessie in deze map: {sharing.map((r) => r.title).join(", ")}. Twee agents in dezelfde map kunnen elkaars werk overschrijven.
-      <label><input type="checkbox" bind:checked={allowShared} /> Ik weet het, start toch in dezelfde map</label>
+      {tr("Er werkt al een sessie in deze map: {sessions}. Twee agents in dezelfde map kunnen elkaars werk overschrijven.", "A session is already working in this folder: {sessions}. Two agents in the same folder can overwrite each other's work.", { sessions: sharing.map((r) => r.title).join(", ") })}
+      <label><input type="checkbox" bind:checked={allowShared} /> {tr("Ik weet het, start toch in dezelfde map", "I know, start in the same folder anyway")}</label>
     </p>
   {:else if project && project.verdict !== "ok"}
     <p class="err">{project.verdictMessage}</p>
   {:else if blockingReason && project && config.task}
     <p class="faint small">{blockingReason}</p>
   {:else if project && !project.repoRoot}
-    <p class="faint small">Geen Git-repository: de agent werkt in de map zelf.</p>
+    <p class="faint small">{tr("Geen Git-repository: de agent werkt in de map zelf.", "No Git repository: the agent works in the folder itself.")}</p>
   {:else if config.isolation === "worktree" && project?.dirtyFiles}
-    <p class="faint small">Je hebt {project.dirtyFiles} niet-gecommitte wijzigingen. Die gaan niet mee naar de nieuwe worktree; hij begint vanaf de basis-branch.</p>
+    <p class="faint small">{tr("Je hebt {n} niet-gecommitte wijzigingen. Die gaan niet mee naar de nieuwe worktree; hij begint vanaf de basis-branch.", "You have {n} uncommitted changes. They don't move to the new worktree; it starts from the base branch.", { n: project.dirtyFiles })}</p>
   {/if}
   <div class="spacer-v"></div>
 </div>

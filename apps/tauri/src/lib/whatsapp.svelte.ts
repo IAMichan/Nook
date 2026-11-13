@@ -3,6 +3,7 @@
 // "Laat Nook antwoorden" hands only that chat to Nook, who proposes an answer as a plan you approve.
 import { connectorEvents, connectorsApi, type WhatsAppCard } from "./connectors";
 import { toast } from "./toast.svelte";
+import { tr } from "./i18n.svelte";
 
 class WhatsAppCardState {
   /** The newest message that has not been looked at yet. It never opens the bar: the closed bar shows a chip under the
@@ -81,15 +82,15 @@ class WhatsAppCardState {
     const text = this.draft.trim();
     if (!chat || !text || this.sending) return;
     this.sending = true;
-    this.notice = "Versturen…";
+    this.notice = tr("Versturen…", "Sending…");
     this.draft = "";
     try {
       const name = await connectorsApi.whatsappReply(chat, text);
       if (this.chat === chat) this.dismiss();
-      this.confirm(`Verstuurd naar ${name}`);
+      this.confirm(tr("Verstuurd naar {name}", "Sent to {name}", { name }));
     } catch (e) {
       if (this.chat === chat) {
-        this.notice = `Niet verstuurd: ${String(e)}`;
+        this.notice = tr("Niet verstuurd: {error}", "Not sent: {error}", { error: String(e) });
         this.draft = text;
       }
     } finally {
@@ -129,7 +130,7 @@ class WhatsAppCardState {
   async open(message: string, label: string) {
     const chat = this.chat;
     if (!chat) return;
-    this.notice = `${label} openen…`;
+    this.notice = tr("{label} openen…", "Opening {label}…", { label });
     try {
       await connectorsApi.whatsappOpenFile(chat, message);
       if (this.chat === chat) this.notice = "";
@@ -138,7 +139,7 @@ class WhatsAppCardState {
     }
   }
 
-  /** A short confirmation after the card closed ("Verstuurd naar Lisa"), in the bar's toast. */
+  /** A short confirmation after the card closed ("Sent to Lisa"), in the bar's toast. */
   private confirm(text: string) {
     toast.success(text);
   }

@@ -1,5 +1,6 @@
 // Een kleine, veilige Markdown-weergave voor antwoorden: kopjes, lijstjes, tabellen, code, vet/cursief, links en
 // bronnummers. Alles wordt eerst ge-escaped; er komt nooit HTML van het model in de pagina.
+import { tr } from "./i18n.svelte";
 
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -42,7 +43,7 @@ export function renderMarkdown(source: string): string {
       while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
       i++;
       // Every code block has its own Copy button (handled in MessageView), so a command never has to be selected by hand.
-      html.push(`<div class="code-block"><button type="button" class="copy-code" data-copy-code title="Copy code">Copy</button><pre><code${fence[1] ? ` data-lang="${escapeHtml(fence[1])}"` : ""}>${escapeHtml(body.join("\n"))}</code></pre></div>`);
+      html.push(`<div class="code-block"><button type="button" class="copy-code" data-copy-code title="${escapeHtml(tr("Code kopiëren", "Copy code"))}">${escapeHtml(tr("Kopieer", "Copy"))}</button><pre><code${fence[1] ? ` data-lang="${escapeHtml(fence[1])}"` : ""}>${escapeHtml(body.join("\n"))}</code></pre></div>`);
       continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.*)$/);

@@ -3,6 +3,7 @@
   // sessies in de werkruimte, per agent en model, zoals de agents ze zelf meldden. Wat niet gemeld is, blijft "niet
   // gemeld": Nook gokt nooit.
   import { formatTokens } from "../../lib/agents";
+  import { tr } from "../../lib/i18n.svelte";
   import { workspaceApi, type RunProvider, type UsageRange, type UsageReport } from "../../lib/workspace/api";
   import { workspace } from "../../lib/workspace/store.svelte";
   import Usage from "./Usage.svelte";
@@ -28,9 +29,9 @@
       .catch((e) => (error = String(e)));
   });
 
-  const ranges: [UsageRange, string][] = [["today", "Vandaag"], ["week", "7 dagen"], ["month", "30 dagen"], ["all", "Alles"]];
+  const ranges = $derived<[UsageRange, string][]>([["today", tr("Vandaag", "Today")], ["week", tr("7 dagen", "7 days")], ["month", tr("30 dagen", "30 days")], ["all", tr("Alles", "All")]]);
   const name = (p: string) => workspace.provider(p)?.name ?? p;
-  const cost = (v: number | null) => (v === null ? "niet gemeld" : `$${v.toFixed(2)}`);
+  const cost = (v: number | null) => (v === null ? tr("niet gemeld", "not reported") : `$${v.toFixed(2)}`);
   const days = $derived.by(() => {
     const map = new Map<string, number>();
     for (const d of report?.days ?? []) map.set(d.day, (map.get(d.day) ?? 0) + d.tokens);
@@ -43,20 +44,19 @@
   <section>
     <Usage />
     <p class="faint small">
-      Dit is je hele account, niet alleen de werkruimte. Claude meldt het via de statusregel (koppelen in Instellingen ›
-      Agents); Codex alleen voor het eerste account. Meldt een agent niets, dan toont Nook "niet beschikbaar".
+      {tr("Dit is je hele account, niet alleen de werkruimte. Claude meldt het via de statusregel (koppelen in Instellingen › Agents); Codex alleen voor het eerste account. Meldt een agent niets, dan toont Nook \"niet beschikbaar\".", "This is your whole account, not just the workspace. Claude reports it through the status line (connect it in Settings › Agents); Codex only for the first account. When an agent reports nothing, Nook shows \"not available\".")}
     </p>
   </section>
 
   <section>
     <div class="head">
       <div>
-        <h3>Werkruimte</h3>
-        <div class="faint small">Tokens en kosten van sessies in de werkruimte, zoals de agents ze zelf meldden.</div>
+        <h3>{tr("Werkruimte", "Workspace")}</h3>
+        <div class="faint small">{tr("Tokens en kosten van sessies in de werkruimte, zoals de agents ze zelf meldden.", "Tokens and costs of sessions in the workspace, as the agents reported them.")}</div>
       </div>
       <span class="spacer"></span>
       <select bind:value={provider}>
-        <option value="">Alle agents</option>
+        <option value="">{tr("Alle agents", "All agents")}</option>
         {#each workspace.providers.filter((p) => p.supported) as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
       </select>
       <div class="seg">
@@ -66,47 +66,45 @@
     {#if error}<p class="err">{error}</p>{/if}
     {#if report}
       {#if !report.sessions}
-        <p class="faint">Nog geen gebruik in deze periode.</p>
+        <p class="faint">{tr("Nog geen gebruik in deze periode.", "No usage in this period yet.")}</p>
       {:else}
         <div class="cards">
-          <div class="card"><span class="faint">Sessies</span><strong>{report.sessions}</strong><span class="faint small">{report.completed} klaar · {report.failed} mislukt · {report.running} bezig</span></div>
-          <div class="card"><span class="faint">Input</span><strong>{formatTokens(report.inputTokens)}</strong><span class="faint small">{report.sessionsWithTokens} van {report.sessions} sessies met cijfers</span></div>
-          <div class="card"><span class="faint">Output</span><strong>{formatTokens(report.outputTokens)}</strong></div>
-          <div class="card"><span class="faint">Cache gelezen</span><strong>{formatTokens(report.cacheReadTokens)}</strong>{#if report.cacheWriteTokens}<span class="faint small">+{formatTokens(report.cacheWriteTokens)} geschreven</span>{/if}</div>
+          <div class="card"><span class="faint">{tr("Sessies", "Sessions")}</span><strong>{report.sessions}</strong><span class="faint small">{tr("{done} klaar · {failed} mislukt · {running} bezig", "{done} done · {failed} failed · {running} running", { done: report.completed, failed: report.failed, running: report.running })}</span></div>
+          <div class="card"><span class="faint">{tr("Input", "Input")}</span><strong>{formatTokens(report.inputTokens)}</strong><span class="faint small">{tr("{n} van {total} sessies met cijfers", "{n} of {total} sessions with figures", { n: report.sessionsWithTokens, total: report.sessions })}</span></div>
+          <div class="card"><span class="faint">{tr("Output", "Output")}</span><strong>{formatTokens(report.outputTokens)}</strong></div>
+          <div class="card"><span class="faint">{tr("Cache gelezen", "Cache read")}</span><strong>{formatTokens(report.cacheReadTokens)}</strong>{#if report.cacheWriteTokens}<span class="faint small">{tr("+{n} geschreven", "+{n} written", { n: formatTokens(report.cacheWriteTokens) })}</span>{/if}</div>
           <div class="card">
-            <span class="faint">Kosten</span>
-            {#if !showCost}<strong class="faint">verborgen</strong><span class="faint small">verborgen in instellingen</span>
-            {:else if report.reportedCostUsd === null}<strong class="faint">—</strong><span class="faint small">geen agent meldde kosten</span>
-            {:else}<strong>{cost(report.reportedCostUsd)}</strong><span class="faint small">gemeld door {report.sessionsWithCost} van {report.sessions} sessies</span>{/if}
+            <span class="faint">{tr("Kosten", "Cost")}</span>
+            {#if !showCost}<strong class="faint">{tr("verborgen", "hidden")}</strong><span class="faint small">{tr("verborgen in instellingen", "hidden in settings")}</span>
+            {:else if report.reportedCostUsd === null}<strong class="faint">—</strong><span class="faint small">{tr("geen agent meldde kosten", "no agent reported costs")}</span>
+            {:else}<strong>{cost(report.reportedCostUsd)}</strong><span class="faint small">{tr("gemeld door {n} van {total} sessies", "reported by {n} of {total} sessions", { n: report.sessionsWithCost, total: report.sessions })}</span>{/if}
           </div>
         </div>
-        {#if report.running}<p class="faint small">Tokens van een lopende beurt komen binnen als de beurt klaar is.</p>{/if}
+        {#if report.running}<p class="faint small">{tr("Tokens van een lopende beurt komen binnen als de beurt klaar is.", "Tokens of a running turn come in when the turn is done.")}</p>{/if}
         {#if days.length}
-          <h4>Tokens per dag</h4>
+          <h4>{tr("Tokens per dag", "Tokens per day")}</h4>
           <div class="chart">
             {#each days as [day, tokens] (day)}
               <div class="bar" title={`${day}: ${formatTokens(tokens)}`}><span style:height="{(tokens / maxDay) * 100}%"></span><em>{day.slice(5)}</em></div>
             {/each}
           </div>
         {/if}
-        <h4>Per agent en model</h4>
+        <h4>{tr("Per agent en model", "Per agent and model")}</h4>
         <div class="table">
-          <div class="row header faint"><span>Agent · model</span><span>Sessies</span><span>Input</span><span>Output</span><span>Cache</span>{#if showCost}<span>Kosten</span>{/if}</div>
+          <div class="row header faint"><span>{tr("Agent · model", "Agent · model")}</span><span>{tr("Sessies", "Sessions")}</span><span>{tr("Input", "Input")}</span><span>{tr("Output", "Output")}</span><span>{tr("Cache", "Cache")}</span>{#if showCost}<span>{tr("Kosten", "Cost")}</span>{/if}</div>
           {#each report.rows as r (r.provider + r.model)}
             <div class="row">
               <span>{name(r.provider)} · <span class="mono">{r.model}</span></span>
-              <span>{r.sessions}{#if r.sessionsWithoutTokens} <span class="faint">({r.sessionsWithoutTokens} zonder cijfers)</span>{/if}</span>
+              <span>{r.sessions}{#if r.sessionsWithoutTokens} <span class="faint">{tr("({n} zonder cijfers)", "({n} without figures)", { n: r.sessionsWithoutTokens })}</span>{/if}</span>
               <span>{formatTokens(r.inputTokens)}</span>
               <span>{formatTokens(r.outputTokens)}</span>
               <span>{formatTokens(r.cacheReadTokens)}</span>
-              {#if showCost}<span>{r.provider === "claude" || r.reportedCostUsd !== null ? cost(r.reportedCostUsd) : `${name(r.provider)} meldt geen kosten.`}</span>{/if}
+              {#if showCost}<span>{r.provider === "claude" || r.reportedCostUsd !== null ? cost(r.reportedCostUsd) : tr("{name} meldt geen kosten.", "{name} doesn't report costs.", { name: name(r.provider) })}</span>{/if}
             </div>
           {/each}
         </div>
         <p class="faint small">
-          Claude Code: tokens en kosten komen uit zijn eigen eindmelding per beurt; de kosten rekent hij tegen API-prijzen
-          uit (met een abonnement betaal je die niet per token). Codex meldt geen kosten en geen contextgrootte. Alleen
-          sessies die Nook in de werkruimte startte.
+          {tr("Claude Code: tokens en kosten komen uit zijn eigen eindmelding per beurt; de kosten rekent hij tegen API-prijzen uit (met een abonnement betaal je die niet per token). Codex meldt geen kosten en geen contextgrootte. Alleen sessies die Nook in de werkruimte startte.", "Claude Code: tokens and costs come from its own final report per turn; it calculates the costs at API prices (with a subscription you don't pay per token). Codex reports no costs and no context size. Only sessions Nook started in the workspace.")}
         </p>
       {/if}
     {/if}

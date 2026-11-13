@@ -2,6 +2,7 @@
 // the Mac): the API, the search and Filters dropdown, and the words the views use.
 import { invoke } from "@tauri-apps/api/core";
 import type { AccountPullRequests, Ci, PullRequestItem } from "./connectors";
+import { tr } from "./i18n.svelte";
 
 export type DetailState = "open" | "draft" | "merged" | "closed";
 export type CheckOutcome = "passing" | "failing" | "pending" | "skipped";
@@ -65,237 +66,16 @@ export function ciStatusLine(check: PullRequestCheck, now: number = Date.now(), 
   const clock = seconds === null ? null : ciClock(seconds);
   switch (check.outcome) {
     case "pending":
-      if (!check.running) return "In de wachtrij";
-      return ["Bezig", clock, extra].filter(Boolean).join(" · ");
+      if (!check.running) return tr("In de wachtrij", "Queued");
+      return [tr("Bezig", "Running"), clock, extra].filter(Boolean).join(" · ");
     case "skipped":
-      return "Overgeslagen";
-    default: {
-      const [word, after] =
-        check.detail === "cancelled" ? ["Geannuleerd", "Geannuleerd na"]
-        : check.detail === "timed_out" ? ["Time-out", "Time-out na"]
-        : check.outcome === "passing" ? ["Geslaagd", "Geslaagd in"] : ["Mislukt", "Mislukt na"];
-      return clock ? `${after} ${clock}` : word;
-    }
+      return tr("Overgeslagen", "Skipped");
+    default:
+      if (check.detail === "cancelled") return clock ? tr("Geannuleerd na {time}", "Cancelled after {time}", { time: clock }) : tr("Geannuleerd", "Cancelled");
+      if (check.detail === "timed_out") return clock ? tr("Time-out na {time}", "Timed out after {time}", { time: clock }) : tr("Time-out", "Timed out");
+      if (check.outcome === "passing") return clock ? tr("Geslaagd in {time}", "Succeeded in {time}", { time: clock }) : tr("Geslaagd", "Succeeded");
+      return clock ? tr("Mislukt na {time}", "Failed after {time}", { time: clock }) : tr("Mislukt", "Failed");
   }
-}
-
-export type CiLineKind = "plain" | "group" | "command" | "error" | "warning" | "notice";
-export interface CiLine {
-  kind: CiLineKind;
-  text: string;
-}
-
-const MARKERS: [string, CiLineKind][] = [
-  ["##[group]", "group"],
-  ["##[command]", "command"],
-  ["##[error]", "error"],
-  ["##[warning]", "warning"],
-  ["##[notice]", "notice"],
-];
-
-/// The cleaned log as lines with a kind (`CILogParser.lines` on the Mac): GitHub's `##[…]` markers become the kind and
-/// leave the text, `##[endgroup]` and `##[debug]` are dropped, and a plain line saying "error:", "warning:" or that the
-/// build failed counts too.
-export function ciLines(text: string): CiLine[] {
-  const lines: CiLine[] = [];
-  for (const line of text.split("\n")) {
-    const marker = MARKERS.find(([prefix]) => line.startsWith(prefix));
-    if (marker) {
-      lines.push({ kind: marker[1], text: line.slice(marker[0].length) });
-      continue;
-    }
-    if (line.startsWith("##[endgroup]") || line.startsWith("##[debug]")) continue;
-    const lower = line.toLowerCase();
-    const kind: CiLineKind =
-      lower.includes("error:") || lower.includes("build failed") || lower.includes("test failed") || lower.startsWith("fatal:")
-        ? "error"
-        : lower.includes("warning:")
-          ? "warning"
-          : "plain";
-    lines.push({ kind, text: line });
-  }
-  return lines;
-}
-
-/// Only what went wrong: the error and warning lines, each group's name before its first one.
-export function ciProblems(lines: CiLine[]): CiLine[] {
-  const result: CiLine[] = [];
-  let group: CiLine | null = null;
-  for (const line of lines) {
-    if (line.kind === "group") group = line;
-    else if (line.kind === "error" || line.kind === "warning") {
-      if (group) {
-        result.push(group);
-        group = null;
-      }
-      result.push(line);
-    }
-  }
-  return result;
-}
-
-/// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); null for a check from another app, which
-/// has no log for Nook to read. The same rule as `job_id` in the core.
-export function jobId(url: string | null): number | null {
-  if (!url) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.hostname !== "github.com" && !parsed.hostname.endsWith(".github.com")) return null;
-  const parts = parsed.pathname.split("/").filter(Boolean);
-  const index = parts.indexOf("job");
-  if (index < 0 || !parts.includes("actions")) return null;
-  const id = Number(parts[index + 1]);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
-export type PullRequestEvent = {
-  id: string;
-  author: string;
-  /// Markdown, already rewritten from GitHub's HTML by the core; render it with `renderMarkdown`.
-  body: string;
-  date: string | null;
-  url: string | null;
-} & (
-  | { kind: "comment" }
-  | { kind: "review"; state: string }
-  | { kind: "lineComment"; path: string; line: number | null }
-  | { kind: "commit"; sha: string }
-  | { kind: "activity"; event: string; detail: string }
-);
-
-export interface PullRequestCommit {
-  sha: string;
-  message: string;
-  author: string;
-  date: string | null;
-}
-
-export interface PullRequestFile {
-  path: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  patch: string | null;
-  previousPath: string | null;
-}
-
-export interface PullRequestDetail {
-  repo: string;
-  number: number;
-  title: string;
-  body: string;
-  url: string | null;
-  author: string;
-  state: DetailState;
-  baseBranch: string;
-  headBranch: string;
-  headSha: string;
-  additions: number;
-  deletions: number;
-  changedFiles: number;
-  created: string | null;
-  updated: string | null;
-  mergeable: boolean | null;
-  mergeState: string;
-  checks: PullRequestCheck[];
-  events: PullRequestEvent[];
-  commits: PullRequestCommit[];
-  files: PullRequestFile[];
-  methods: MergeMethod[];
-  canPush: boolean | null;
-  /// Your permission in the repository: ADMIN, MAINTAIN, WRITE, TRIAGE or READ.
-  permission: string | null;
-  /// Whether you may merge although branch protection blocks it.
-  canBypass: boolean | null;
-  autoMerge: boolean;
-  isOpen: boolean;
-  canMerge: boolean;
-  checkSummary: Ci;
-  mergeNote: string | null;
-}
-
-export const pullsApi = {
-  detail: (account: string | null, repo: string, number: number) =>
-    invoke<PullRequestDetail>("github_pull_request", { account, repo, number }),
-  ciLog: (account: string | null, repo: string, job: number) => invoke<CiLog>("github_ci_log", { account, repo, job }),
-  /// Only after the confirmation in the view. Runs the `github_merge_pr` action and writes it to the action log.
-  merge: (account: string | null, repo: string, number: number, method: MergeMethod, sha: string) =>
-    invoke<string>("github_merge_pull_request", { account, repo, number, method, sha }),
-  /// Approves, asks for changes on or comments on a pull request (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`); only after a click.
-  review: (account: string | null, repo: string, number: number, event: ReviewEvent, body: string) =>
-    invoke<string>("github_review_pull_request", { account, repo, number, event, body }),
-  watchAdd: (text: string) => invoke<string[]>("pull_watch_add", { text }),
-  watchRemove: (entry: string) => invoke<string[]>("pull_watch_remove", { entry }),
-};
-
-export const itemId = (item: { repo: string; number: number }) => `${item.repo}#${item.number}`;
-export const isEmpty = (a: AccountPullRequests) => !a.mine.length && !a.reviews.length && !a.watched.length;
-
-// Search and filters
-
-export type StateFilter = "all" | "open" | "closed" | "merged";
-export type ScopeFilter = "all" | "reviews" | "mine" | "watched";
-export type DraftFilter = "all" | "drafts" | "ready";
-export type StatusFilter = "any" | "failing" | "pending" | "passing";
-
-export interface PullRequestFilter {
-  query: string;
-  state: StateFilter;
-  scope: ScopeFilter;
-  /// A login, or null for anyone.
-  author: string | null;
-  draft: DraftFilter;
-  status: StatusFilter;
-}
-
-export const defaultFilter = (query = ""): PullRequestFilter => ({ query, state: "open", scope: "all", author: null, draft: "all", status: "any" });
-
-/// How many dropdown choices differ from the default (the search not counted), for the badge on the Filters button.
-export function activeCount(f: PullRequestFilter): number {
-  return [f.state !== "open", f.scope !== "all", f.author !== null, f.draft !== "all", f.status !== "any"].filter(Boolean).length;
-}
-
-const words = (f: PullRequestFilter) => f.query.toLowerCase().split(/\s+/).filter(Boolean);
-
-export const isActive = (f: PullRequestFilter) => words(f).length > 0 || activeCount(f) > 0;
-
-/// Every word of the search must appear; "@ada" matches the author, "#12" (or a bare 12) the number.
-export function matches(f: PullRequestFilter, item: PullRequestItem): boolean {
-  if (f.state !== "all" && item.state !== f.state) return false;
-  if (f.author !== null && item.author.toLowerCase() !== f.author.toLowerCase()) return false;
-  if (f.draft === "drafts" && !item.draft) return false;
-  if (f.draft === "ready" && item.draft) return false;
-  if (f.status !== "any" && item.ci !== f.status) return false;
-  const text = `${item.repo}#${item.number} ${item.title} @${item.author}`.toLowerCase();
-  return words(f).every((word) => {
-    // A number is the pull request's number, never part of another one ("#123").
-    const digits = word.startsWith("#") ? word.slice(1) : word;
-    if (/^\d+$/.test(digits)) return item.number === Number(digits) || (!word.startsWith("#") && text.includes(word));
-    return text.includes(word);
-  });
-}
-
-/// The account with only the pull requests that match. An error stays, so a failing account never disappears.
-export function apply(f: PullRequestFilter, account: AccountPullRequests): AccountPullRequests {
-  const keep = (scope: ScopeFilter, items: PullRequestItem[]) => (f.scope === "all" || f.scope === scope ? items.filter((i) => matches(f, i)) : []);
-  return { ...account, reviews: keep("reviews", account.reviews), mine: keep("mine", account.mine), watched: keep("watched", account.watched) };
-}
-
-/// Every author in the lists, for the Author choice: most pull requests first, then by name.
-export function authors(accounts: AccountPullRequests[]): string[] {
-  const counts = new Map<string, number>();
-  for (const a of accounts) {
-    for (const item of [...a.mine, ...a.reviews, ...a.watched]) {
-      if (item.author) counts.set(item.author, (counts.get(item.author) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .sort((x, y) => y[1] - x[1] || x[0].toLowerCase().localeCompare(y[0].toLowerCase()))
-    .map(([login]) => login);
 }
 
 /// Watched entries that no account could search, while at least one account could be read.
@@ -305,78 +85,113 @@ export function unreadable(accounts: AccountPullRequests[], watching: string[]):
   return watching.filter((entry) => readers.every((a) => a.unreadable.includes(entry)));
 }
 
-// Words (the Dutch strings of the Mac app)
+// Words (the strings of the Mac app). The name tables read through getters, so each read is in the current language.
 
-export const stateNames: Record<StateFilter, string> = { all: "Alle", open: "Open", closed: "Gesloten", merged: "Gemerged" };
-export const scopeNames: Record<ScopeFilter, string> = { all: "Alles", reviews: "Te reviewen", mine: "Van jou", watched: "Gevolgd" };
-export const draftNames: Record<DraftFilter, string> = { all: "Alle", drafts: "Alleen concepten", ready: "Klaar voor review" };
-export const statusNames: Record<StatusFilter, string> = { any: "Elke status", failing: "CI faalt", pending: "CI loopt", passing: "CI geslaagd" };
-export const detailStateNames: Record<DetailState, string> = { open: "Open", draft: "Concept", merged: "Samengevoegd", closed: "Gesloten" };
+export const stateNames: Record<StateFilter, string> = {
+  get all() { return tr("Alle", "All"); },
+  get open() { return tr("Open", "Open"); },
+  get closed() { return tr("Gesloten", "Closed"); },
+  get merged() { return tr("Gemerged", "Merged"); },
+};
+export const scopeNames: Record<ScopeFilter, string> = {
+  get all() { return tr("Alles", "Everything"); },
+  get reviews() { return tr("Te reviewen", "To review"); },
+  get mine() { return tr("Van jou", "Yours"); },
+  get watched() { return tr("Gevolgd", "Watched"); },
+};
+export const draftNames: Record<DraftFilter, string> = {
+  get all() { return tr("Alle", "All"); },
+  get drafts() { return tr("Alleen concepten", "Drafts only"); },
+  get ready() { return tr("Klaar voor review", "Ready for review"); },
+};
+export const statusNames: Record<StatusFilter, string> = {
+  get any() { return tr("Elke status", "Any status"); },
+  get failing() { return tr("CI faalt", "CI failing"); },
+  get pending() { return tr("CI loopt", "CI running"); },
+  get passing() { return tr("CI geslaagd", "CI passed"); },
+};
+export const detailStateNames: Record<DetailState, string> = {
+  get open() { return tr("Open", "Open"); },
+  get draft() { return tr("Concept", "Draft"); },
+  get merged() { return tr("Samengevoegd", "Merged"); },
+  get closed() { return tr("Gesloten", "Closed"); },
+};
 export const methodNames: Record<MergeMethod, string> = {
-  merge: "Met merge-commit",
-  squash: "Squashen tot één commit",
-  rebase: "Rebasen op basisbranch",
+  get merge() { return tr("Met merge-commit", "Create a merge commit"); },
+  get squash() { return tr("Squashen tot één commit", "Squash into one commit"); },
+  get rebase() { return tr("Rebasen op basisbranch", "Rebase onto the base branch"); },
 };
 
-const notes: Record<string, string> = {
-  ready: "Klaar om te mergen.",
-  merged: "Deze pull request is samengevoegd.",
-  closed: "Deze pull request is gesloten.",
-  draft: "Concept: zet hem op GitHub klaar voor review voordat je merget.",
-  noAccess: "Je hebt geen schrijfrechten in deze repository, dus je kunt hem niet zelf mergen. Wacht tot een maintainer hem merget; Nook houdt hem bij.",
-  auto: "Automatisch mergen staat aan: hij wordt gemerged zodra alle vereiste reviews en checks er zijn.",
-  conflict: "Er is een merge-conflict met de basisbranch.",
-  blocked: "Branchbeveiliging houdt de merge tegen: er ontbreken vereiste reviews of checks. Je mag dat niet omzeilen, dus wacht tot het in orde is.",
-  behind: "De branch loopt achter op zijn basis en moet eerst worden bijgewerkt.",
-  unstable: "Sommige checks falen.",
-  checking: "GitHub controleert nog of hij kan worden gemerged.",
-};
+/// The sentence under the merge bar for GitHub's merge state.
+export function noteText(note: string | null): string {
+  switch (note ?? "ready") {
+    case "merged": return tr("Deze pull request is samengevoegd.", "This pull request was merged.");
+    case "closed": return tr("Deze pull request is gesloten.", "This pull request is closed.");
+    case "draft": return tr("Concept: zet hem op GitHub klaar voor review voordat je merget.", "Draft: mark it ready for review on GitHub before you merge.");
+    case "noAccess": return tr(
+      "Je hebt geen schrijfrechten in deze repository, dus je kunt hem niet zelf mergen. Wacht tot een maintainer hem merget; Nook houdt hem bij.",
+      "You don't have write access to this repository, so you can't merge it yourself. Wait for a maintainer to merge it; Nook keeps track of it.",
+    );
+    case "auto": return tr(
+      "Automatisch mergen staat aan: hij wordt gemerged zodra alle vereiste reviews en checks er zijn.",
+      "Auto-merge is on: it merges as soon as all required reviews and checks are in.",
+    );
+    case "conflict": return tr("Er is een merge-conflict met de basisbranch.", "There is a merge conflict with the base branch.");
+    case "blocked": return tr(
+      "Branchbeveiliging houdt de merge tegen: er ontbreken vereiste reviews of checks. Je mag dat niet omzeilen, dus wacht tot het in orde is.",
+      "Branch protection blocks the merge: required reviews or checks are missing. You can't bypass that, so wait until it's in order.",
+    );
+    case "behind": return tr("De branch loopt achter op zijn basis en moet eerst worden bijgewerkt.", "The branch is behind its base and must be updated first.");
+    case "unstable": return tr("Sommige checks falen.", "Some checks are failing.");
+    case "checking": return tr("GitHub controleert nog of hij kan worden gemerged.", "GitHub is still checking whether it can be merged.");
+    default: return tr("Klaar om te mergen.", "Ready to merge.");
+  }
+}
 
-export const noteText = (note: string | null) => notes[note ?? "ready"] ?? notes.ready;
-
-/// The sentence after "@actor" for a timeline event; `%` is what it is about.
-const activities: Record<string, string> = {
-  labeled: "voegde het label % toe",
-  unlabeled: "haalde het label % weg",
-  assigned: "wees % toe",
-  unassigned: "haalde % eraf",
-  review_requested: "vroeg % om een review",
-  review_request_removed: "trok het reviewverzoek aan % in",
-  renamed: "veranderde de titel in %",
-  head_ref_force_pushed: "deed een force-push op de branch",
-  head_ref_deleted: "verwijderde de branch",
-  head_ref_restored: "herstelde de branch",
-  base_ref_changed: "veranderde de basisbranch",
-  merged: "mergede commit %",
-  closed: "sloot deze pull request",
-  reopened: "heropende deze pull request",
-  ready_for_review: "zette hem klaar voor review",
-  convert_to_draft: "maakte er een concept van",
-  "cross-referenced": "noemde dit in %",
-  referenced: "verwees hiernaar in commit %",
-  milestoned: "voegde dit toe aan mijlpaal %",
-  demilestoned: "haalde dit uit mijlpaal %",
-  auto_merge_enabled: "zette automatisch mergen aan",
-  auto_merge_disabled: "zette automatisch mergen uit",
-  review_dismissed: "trok een review in",
-};
-
+/// The sentence after "@actor" for a timeline event; `detail` is what it is about. An event Nook does not know keeps
+/// GitHub's name.
 export function activitySentence(event: string, detail: string): string {
-  return (activities[event] ?? event).replaceAll("%", detail);
+  const x = { x: detail };
+  switch (event) {
+    case "labeled": return tr("voegde het label {x} toe", "added the label {x}", x);
+    case "unlabeled": return tr("haalde het label {x} weg", "removed the label {x}", x);
+    case "assigned": return tr("wees {x} toe", "assigned {x}", x);
+    case "unassigned": return tr("haalde {x} eraf", "unassigned {x}", x);
+    case "review_requested": return tr("vroeg {x} om een review", "requested a review from {x}", x);
+    case "review_request_removed": return tr("trok het reviewverzoek aan {x} in", "removed the review request for {x}", x);
+    case "renamed": return tr("veranderde de titel in {x}", "changed the title to {x}", x);
+    case "head_ref_force_pushed": return tr("deed een force-push op de branch", "force-pushed the branch");
+    case "head_ref_deleted": return tr("verwijderde de branch", "deleted the branch");
+    case "head_ref_restored": return tr("herstelde de branch", "restored the branch");
+    case "base_ref_changed": return tr("veranderde de basisbranch", "changed the base branch");
+    case "merged": return tr("mergede commit {x}", "merged commit {x}", x);
+    case "closed": return tr("sloot deze pull request", "closed this pull request");
+    case "reopened": return tr("heropende deze pull request", "reopened this pull request");
+    case "ready_for_review": return tr("zette hem klaar voor review", "marked it ready for review");
+    case "convert_to_draft": return tr("maakte er een concept van", "converted it to a draft");
+    case "cross-referenced": return tr("noemde dit in {x}", "mentioned this in {x}", x);
+    case "referenced": return tr("verwees hiernaar in commit {x}", "referenced this in commit {x}", x);
+    case "milestoned": return tr("voegde dit toe aan mijlpaal {x}", "added this to milestone {x}", x);
+    case "demilestoned": return tr("haalde dit uit mijlpaal {x}", "removed this from milestone {x}", x);
+    case "auto_merge_enabled": return tr("zette automatisch mergen aan", "enabled auto-merge");
+    case "auto_merge_disabled": return tr("zette automatisch mergen uit", "disabled auto-merge");
+    case "review_dismissed": return tr("trok een review in", "dismissed a review");
+    default: return event;
+  }
 }
 
 /// The label after "@author" on a review or comment card, and its tone.
 export function eventLabel(e: PullRequestEvent): { text: string; tone: "" | "good" | "bad" } {
   switch (e.kind) {
     case "comment":
-      return { text: "reageerde", tone: "" };
+      return { text: tr("reageerde", "commented"), tone: "" };
     case "lineComment":
-      return { text: `reageerde op ${e.line !== null ? `${e.path}:${e.line}` : e.path}`, tone: "" };
+      return { text: tr("reageerde op {place}", "commented on {place}", { place: e.line !== null ? `${e.path}:${e.line}` : e.path }), tone: "" };
     case "review":
-      if (e.state === "APPROVED") return { text: "keurde goed", tone: "good" };
-      if (e.state === "CHANGES_REQUESTED") return { text: "vroeg om wijzigingen", tone: "bad" };
-      if (e.state === "DISMISSED") return { text: "review ingetrokken", tone: "" };
-      return { text: "gaf een review", tone: "" };
+      if (e.state === "APPROVED") return { text: tr("keurde goed", "approved"), tone: "good" };
+      if (e.state === "CHANGES_REQUESTED") return { text: tr("vroeg om wijzigingen", "requested changes"), tone: "bad" };
+      if (e.state === "DISMISSED") return { text: tr("review ingetrokken", "review dismissed"), tone: "" };
+      return { text: tr("gaf een review", "reviewed"), tone: "" };
     default:
       return { text: "", tone: "" };
   }

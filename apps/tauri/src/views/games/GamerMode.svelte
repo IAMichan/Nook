@@ -86,7 +86,7 @@
             <h2>{game.title}</h2>
             <p class="muted">{coaches[game.id]?.tagline() ?? ""}</p>
           </div>
-          <button class="primary" disabled={!coaches[game.id]} onclick={() => (open = game.id)}>{tr(`Open ${game.title}-coach`, `Open ${game.title} Coach`)}</button>
+          <button class="primary" disabled={!coaches[game.id]} onclick={() => (open = game.id)}>{tr("Open {game}-coach", "Open {game} Coach", { game: game.title })}</button>
         </article>
       {:else}
         <p class="faint">{list ? tr("Nog geen games.", "No games yet.") : tr("Laden…", "Loading…")}</p>

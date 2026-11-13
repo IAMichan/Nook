@@ -47,7 +47,7 @@
   }
 
   const sources = $derived<Record<InboxSource, { icon: "agents" | "chat" | "tasks" | "calendar" | "message" | "code" | "gamepad" | "note" | "sparkle" | "home"; label: string }>>({
-    agents: { icon: "agents", label: "Agents" },
+    agents: { icon: "agents", label: tr("Agents", "Agents") },
     chats: { icon: "chat", label: tr("Chat", "Chat") },
     tasks: { icon: "tasks", label: tr("Open punt", "Open item") },
     calendar: { icon: "calendar", label: tr("Agenda", "Calendar") },

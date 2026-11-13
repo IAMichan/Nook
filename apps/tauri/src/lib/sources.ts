@@ -2,6 +2,7 @@
 // searching), in the order that needs attention first. Pure logic, so it can be tested without a component.
 import type { RetrievalStep } from "./brain";
 import type { ChatMessage, SourceReference } from "./types";
+import { tr } from "./i18n.svelte";
 
 export type SourceStatus = "found" | "empty" | "failed" | "running" | "context";
 
@@ -15,17 +16,19 @@ export interface SourceGroup {
   references: SourceReference[];
 }
 
-/** Shown for a search that was still running when the answer stopped (the same text as in Rust). */
-export const INTERRUPTED = "Het zoeken werd onderbroken voordat het klaar was.";
+/** The text Rust stores for a search that was still running when the answer stopped (`retrieval::INTERRUPTED`). */
+const RUST_INTERRUPTED = "Het zoeken werd onderbroken voordat het klaar was.";
+/** Shown for a search that was still running when the answer stopped. */
+export const interrupted = () => tr("Het zoeken werd onderbroken voordat het klaar was.", "The search was interrupted before it finished.");
 /** Shown when an error said nothing a person can use. */
-export const UNKNOWN_ERROR = "Er ging iets mis bij het lezen.";
+export const unknownError = () => tr("Er ging iets mis bij het lezen.", "Something went wrong while reading.");
 
 /** Older stored answers kept the raw error; show those the way new answers do. */
 export function readableFailure(reason: string): string {
   const text = reason.trim();
   const lower = text.toLowerCase();
-  if (lower.includes("cancellationerror") || lower === "gestopt" || lower.includes("cancelled")) return INTERRUPTED;
-  if (!text || lower.includes("couldn’t be completed") || lower.includes("couldn't be completed")) return UNKNOWN_ERROR;
+  if (text === RUST_INTERRUPTED || lower.includes("cancellationerror") || lower === "gestopt" || lower.includes("cancelled")) return interrupted();
+  if (!text || lower.includes("couldn’t be completed") || lower.includes("couldn't be completed")) return unknownError();
   return text;
 }
 
@@ -54,7 +57,7 @@ export function sourceGroups(message: ChatMessage, streaming: boolean): SourceGr
       if (streaming) g.status = "running";
       else {
         g.status = "failed";
-        g.reason = INTERRUPTED;
+        g.reason = interrupted();
       }
     } else if (!steps.some((s) => s.outcome.kind === "found") && failed) {
       g.status = "failed";
@@ -64,7 +67,7 @@ export function sourceGroups(message: ChatMessage, streaming: boolean): SourceGr
   }
   for (const ref of message.references ?? []) {
     const step = (message.retrieval ?? []).find((s) => s.sourceId === ref.sourceId);
-    get(step?.sourceTitle ?? ref.sourceId ?? "Bron", ref.sourceId).references.push(ref);
+    get(step?.sourceTitle ?? ref.sourceId ?? tr("Bron", "Source"), ref.sourceId).references.push(ref);
   }
   for (const source of [...(message.sources ?? []), ...(message.contextSources ?? [])]) get(source);
   return result.map((g, i) => [g, i] as const).sort((a, b) => rank[a[0].status] - rank[b[0].status] || a[1] - b[1]).map(([g]) => g);
@@ -75,22 +78,22 @@ export function statusText(group: SourceGroup): string {
   switch (group.status) {
     case "found": {
       const count = group.references.length;
-      if (count === 0) return "Gevonden";
-      return count === 1 ? "1 resultaat" : `${count} resultaten`;
+      if (count === 0) return tr("Gevonden", "Found");
+      return count === 1 ? tr("1 resultaat", "1 result") : tr("{n} resultaten", "{n} results", { n: count });
     }
-    case "context": return "Meegestuurd als context";
-    case "empty": return "Niets gevonden";
-    case "failed": return "Niet gelezen";
-    case "running": return "Zoekt…";
+    case "context": return tr("Meegestuurd als context", "Sent as context");
+    case "empty": return tr("Niets gevonden", "Nothing found");
+    case "failed": return tr("Niet gelezen", "Not read");
+    case "running": return tr("Zoekt…", "Searching…");
   }
 }
 
 /** The one line above the list: what was used, or that Nook is still searching. */
 export function sourcesSummary(groups: SourceGroup[], streaming: boolean): string {
-  if (streaming && groups.some((g) => g.status === "running")) return "Zoekt in je bronnen…";
+  if (streaming && groups.some((g) => g.status === "running")) return tr("Zoekt in je bronnen…", "Searching your sources…");
   const used = groups.filter((g) => g.status === "found" || g.status === "context").length;
-  if (used === 0) return "Niets gevonden";
-  return used === 1 ? "1 bron gebruikt" : `${used} bronnen gebruikt`;
+  if (used === 0) return tr("Niets gevonden", "Nothing found");
+  return used === 1 ? tr("1 bron gebruikt", "1 source used") : tr("{n} bronnen gebruikt", "{n} sources used", { n: used });
 }
 
 const legacyIncomplete = new Set([

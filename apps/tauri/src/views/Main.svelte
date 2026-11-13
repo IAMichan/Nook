@@ -18,6 +18,12 @@
   import { onBack, setupMobile } from "../lib/mobile";
   import { gamer } from "../lib/gamer.svelte";
   import { pullRequests } from "../lib/pulls.svelte";
+  import { agents } from "../lib/agents.svelte";
+  import { services, serviceEvents, type NowPlaying } from "../lib/services";
+  import type { Target } from "../lib/inbox";
+  import { tr } from "../lib/i18n.svelte";
+  import MicButton from "../components/MicButton.svelte";
+  import Music from "./services/Music.svelte";
 
   let route = $state<Route>(resumeRoute());
   let paletteOpen = $state(false);
@@ -49,7 +55,7 @@
     const title = titleDraft.trim();
     if (!id || !title || title === nook.active?.title) return;
     try { await api.setNookFlags(id, { title }); await nook.refreshList(); await nook.load(id); }
-    catch (e) { toast.error("Could not rename conversation", e); }
+    catch (e) { toast.error(tr("Kon het gesprek niet hernoemen", "Could not rename conversation"), e); }
   }
 
   // Gamer Mode's coaching shows up as a toast on any page.
@@ -60,6 +66,21 @@
 
   $effect(() => {
     companion.info().then((i) => (companionClient = i.client)).catch(() => {});
+  });
+
+  // Music: a tab of its own while something plays (as in the bar and on the Mac).
+  let playing = $state<NowPlaying | null>(null);
+  let playingSince = $state(Date.now());
+  $effect(() => {
+    services.nowPlaying().then((n) => ((playing = n), (playingSince = Date.now()))).catch(() => {});
+    const un = serviceEvents.onNowPlaying((n) => {
+      playing = n;
+      playingSince = Date.now();
+      if (!n && route === "music") route = "chat";
+    });
+    return () => {
+      un.then((f) => f());
+    };
   });
 
   // Android: marges, toetsenbord, terugknop en "Delen met Nook" (een nieuwe vraag in een nieuwe Nook).
@@ -110,17 +131,34 @@
     lastActive = nook.activeId;
   });
 
-  const routeTitle = $derived(routeTitles[route]);
-  // The Mac's tabs (Nook, Agents, Chats), then Nook's own: Workspace, Gamer Mode and, on a paired PC, Companion.
-  const tabs = $derived([
-    { route: "chat" as Route, title: "Nook", icon: "chat" as const },
-    { route: "agents" as Route, title: "Agents", icon: "agents" as const },
-    { route: "chats" as Route, title: "Chats", icon: "message" as const },
-    ...(nook.info?.capabilities.terminals ? [{ route: "workspace" as Route, title: "Workspace", icon: "workspace" as const }] : []),
-    { route: "games" as Route, title: "Gamer Mode", icon: "gamepad" as const },
-    ...(companionClient ? [{ route: "companion" as Route, title: "Companion", icon: "phone" as const }] : []),
+  const titleOf = (r: Route): string => {
+    switch (r) {
+      case "music": return tr("Muziek", "Music");
+      case "workspace": return tr("Werkruimte", "Workspace");
+      case "settings": return tr("Instellingen", "Settings");
+      default: return routeTitles[r];
+    }
+  };
+  const routeTitle = $derived(titleOf(route));
+  type TabIcon = "chat" | "agents" | "message" | "voice" | "workspace" | "gamepad" | "phone";
+  // The Mac's tabs on one bar: Nook, Agents, Chats, and Music while something plays.
+  const tabs = $derived<{ route: Route; icon: TabIcon }[]>([
+    { route: "chat", icon: "chat" },
+    { route: "agents", icon: "agents" },
+    { route: "chats", icon: "message" },
+    ...(playing || route === "music" ? [{ route: "music" as Route, icon: "voice" as const }] : []),
   ]);
-  const status = $derived(nook.waiting ? "Waiting for you" : nook.working ? "Working" : nook.info?.brainReady ? "Ready" : "Set up your brain");
+  // Nook's own pages, in the footer: Workspace, Gamer Mode and, on a paired PC, Companion.
+  const extras = $derived<{ route: Route; icon: TabIcon }[]>([
+    ...(nook.info?.capabilities.terminals ? [{ route: "workspace" as Route, icon: "workspace" as const }] : []),
+    { route: "games", icon: "gamepad" },
+    ...(companionClient ? [{ route: "companion" as Route, icon: "phone" as const }] : []),
+  ]);
+  // Ctrl+1 … Ctrl+9 in the order they show: the tabs, then the footer's pages.
+  const pages = $derived([...tabs, ...extras]);
+  const status = $derived(nook.waiting ? tr("Wacht op je", "Waiting for you") : nook.working ? tr("Bezig", "Working") : nook.info?.brainReady ? tr("Klaar", "Ready") : tr("Stel je brein in", "Set up your brain"));
+  // Which footer page the Agents tab shows (pull requests or usage), to light its button.
+  const agentsPage = $derived(route === "agents" ? agents.selectedId : null);
 
   function keys(e: KeyboardEvent) {
     const target = e.target instanceof Element ? e.target : null;
@@ -133,7 +171,7 @@
     if (!shortcut) return;
     // Ctrl+F belongs to the shell inside a terminal.
     if (shortcut === "search" && target?.closest(".xterm")) return;
-    const page = shortcut.startsWith("go-") ? tabs[Number(shortcut.slice(3)) - 1] : undefined;
+    const page = shortcut.startsWith("go-") ? pages[Number(shortcut.slice(3)) - 1] : undefined;
     if (shortcut.startsWith("go-") && !page) return;
     e.preventDefault();
     switch (shortcut) {
@@ -147,6 +185,11 @@
       case "settings": route = "settings"; break;
       case "stop": nook.stop(); break;
       case "search":
+        // In Settings, Ctrl+F finds a setting (as ⌘F on the Mac).
+        if (route === "settings") {
+          document.querySelector<HTMLInputElement>(".settings-search input")?.select();
+          break;
+        }
         route = "chat";
         showList = true;
         tick().then(() => document.querySelector<HTMLInputElement>('.list input[aria-label="Search conversations"]')?.select());
@@ -161,33 +204,72 @@
     if (next === "chat" && mobile) showList = false;
   }
 
+  /// Opens a page of the Agents tab: pull requests or usage (the footer's buttons, as on the Mac).
+  function openAgentsPage(page: "pulls" | "usage") {
+    agents.select(page);
+    navigate("agents");
+  }
+
+  /// Opens what the empty chat's rows and cards point at.
+  async function openTarget(target: Target) {
+    try {
+      switch (target.kind) {
+        case "route": return navigate(target.route);
+        case "settings":
+          try { localStorage.setItem("settings.section", target.section); } catch { /* opens on the last page instead */ }
+          return navigate("settings");
+        case "workspace":
+          if (target.page === "usage" || !nook.info?.capabilities.terminals) return openAgentsPage(target.page === "usage" ? "usage" : "pulls");
+          try { localStorage.setItem("ws.page", target.page); } catch { /* opens on the last page instead */ }
+          return navigate("workspace");
+        case "agents":
+          agents.select(target.select);
+          return navigate("agents");
+        case "nook":
+          navigate("chat");
+          return await nook.select(target.id);
+        case "newNook":
+          navigate("chat");
+          await nook.newNook();
+          if (target.ask) await nook.ask(target.ask);
+          return;
+      }
+    } catch (e) {
+      nook.error = String(e);
+    }
+  }
+
   async function copyConversation() {
     if (!nook.active?.messages.length) return;
     try {
       await navigator.clipboard.writeText(conversationMarkdown(nook.active, nook.streaming));
-      toast.success("Conversation copied", "Text copied as Markdown.");
-    } catch (e) { toast.error("Could not copy conversation", e); }
+      toast.success(tr("Gesprek gekopieerd", "Conversation copied"), tr("Tekst gekopieerd als Markdown.", "Text copied as Markdown."));
+    } catch (e) { toast.error(tr("Kon het gesprek niet kopiëren", "Could not copy conversation"), e); }
   }
 </script>
 
 <svelte:window onkeydown={keys} bind:innerWidth={width} />
 
 <div class="main" class:mobile class:overlay>
-  <nav class="rail" aria-label="Main navigation">
+  <nav class="rail" aria-label={tr("Hoofdnavigatie", "Main navigation")}>
     <div class="head">
       <Orb size={22} movable mood={nook.waiting ? "waiting" : nook.working ? "working" : "idle"} />
       <span class="spacer"></span>
-      <button class="ghost icon-button" onclick={() => (paletteOpen = true)} title="Search everything (Ctrl+K)" aria-label="Search everything"><Icon name="search" /></button>
+      <button class="ghost icon-button" onclick={() => (paletteOpen = true)} title={tr("Zoek overal (Ctrl+K)", "Search everything (Ctrl+K)")} aria-label={tr("Zoek overal", "Search everything")}><Icon name="search" size={16} /></button>
+      <span class="talk"><MicButton /></span>
     </div>
     <div class="tabbar" role="tablist">
       {#each tabs as tab, i (tab.route)}
-        <button role="tab" class="tab" class:on={route === tab.route} aria-selected={route === tab.route} aria-current={route === tab.route ? "page" : undefined}
-          onclick={() => { if (tab.route === "chat" && mobile && route === "chat") showList = !showList; navigate(tab.route); }} title={i < 9 ? `${tab.title} (Ctrl+${i + 1})` : tab.title}>
-          <Icon name={tab.icon} /><span>{tab.title}</span>
+        <button role="tab" class="tab" class:on={route === tab.route} aria-selected={route === tab.route} aria-current={route === tab.route ? "page" : undefined} aria-label={titleOf(tab.route)}
+          onclick={() => { if (tab.route === "chat" && mobile && route === "chat") showList = !showList; navigate(tab.route); }} title={i < 9 ? `${titleOf(tab.route)} (Ctrl+${i + 1})` : titleOf(tab.route)}>
+          <Icon name={tab.icon} size={16} /><span>{titleOf(tab.route)}</span>
         </button>
       {/each}
       {#if mobile}
-        <button role="tab" class="tab" class:on={route === "settings"} aria-selected={route === "settings"} onclick={() => (route = "settings")} title="Settings"><Icon name="settings" /><span>Settings</span></button>
+        {#each extras as tab (tab.route)}
+          <button role="tab" class="tab" class:on={route === tab.route} aria-selected={route === tab.route} onclick={() => navigate(tab.route)} title={titleOf(tab.route)}><Icon name={tab.icon} /><span>{titleOf(tab.route)}</span></button>
+        {/each}
+        <button role="tab" class="tab" class:on={route === "settings"} aria-selected={route === "settings"} onclick={() => (route = "settings")} title={tr("Instellingen", "Settings")}><Icon name="settings" /><span>{tr("Instellingen", "Settings")}</span></button>
       {/if}
     </div>
     {#if !mobile}
@@ -199,9 +281,16 @@
         {#if route === "chat" && showList}<NookList />{/if}
       </div>
       <div class="footer">
-        <span class="status" title={status}><span class="dot" class:waiting={nook.waiting > 0} class:working={nook.working > 0} class:unread={!nook.waiting && !nook.working && !!nook.info?.brainReady}></span><span class="status-text">{status}</span></span>
+        <button class="ghost icon-button" class:on={route === "settings"} aria-current={route === "settings" ? "page" : undefined} onclick={() => navigate("settings")} title={tr("Instellingen (Ctrl+,)", "Settings (Ctrl+,)")} aria-label={tr("Instellingen", "Settings")}><Icon name="settings" size={16} /></button>
+        <button class="ghost icon-button" class:on={agentsPage === "pulls"} onclick={() => openAgentsPage("pulls")} title="Pull requests" aria-label="Pull requests"><Icon name="pull" size={16} /></button>
+        <button class="ghost icon-button" class:on={agentsPage === "usage"} onclick={() => openAgentsPage("usage")} title={tr("Gebruik", "Usage")} aria-label={tr("Gebruik", "Usage")}><Icon name="chart" size={16} /></button>
+        {#if extras.length}<span class="sep" aria-hidden="true"></span>{/if}
+        {#each extras as page, i (page.route)}
+          <button class="ghost icon-button" class:on={route === page.route} aria-current={route === page.route ? "page" : undefined} onclick={() => navigate(page.route)}
+            title={tabs.length + i < 9 ? `${titleOf(page.route)} (Ctrl+${tabs.length + i + 1})` : titleOf(page.route)} aria-label={titleOf(page.route)}><Icon name={page.icon} size={16} /></button>
+        {/each}
         <span class="spacer"></span>
-        <button class="ghost icon-button" class:on={route === "settings"} aria-current={route === "settings" ? "page" : undefined} onclick={() => (route = "settings")} title="Settings (Ctrl+,)" aria-label="Settings"><Icon name="settings" /></button>
+        <span class="status" title={status} role="status" aria-label={status}><span class="dot" class:waiting={nook.waiting > 0} class:working={nook.working > 0} class:unread={!nook.waiting && !nook.working && !!nook.info?.brainReady}></span></span>
       </div>
     {/if}
   </nav>
@@ -218,28 +307,33 @@
         {/if}
         <div class="chatpane">
           <header class="title">
-            <button class="ghost icon-button" onclick={() => (showList = !showList)} title={showList ? "Hide conversations" : "Show conversations"} aria-label={mobile ? "Back to conversations" : "Toggle conversations"} aria-expanded={showList}><Icon name={mobile ? "back" : "sidebar"} /></button>
+            <button class="ghost icon-button" onclick={() => (showList = !showList)} title={showList ? tr("Verberg gesprekken", "Hide conversations") : tr("Toon gesprekken", "Show conversations")} aria-label={mobile ? tr("Terug naar gesprekken", "Back to conversations") : tr("Gesprekken tonen of verbergen", "Toggle conversations")} aria-expanded={showList}><Icon name={mobile ? "back" : "sidebar"} size={16} /></button>
             {#if renaming}
               <!-- svelte-ignore a11y_autofocus -->
-              <input class="rename" aria-label="Conversation title" autofocus bind:value={titleDraft} onblur={commitRename}
+              <input class="rename" aria-label={tr("Titel van het gesprek", "Conversation title")} autofocus bind:value={titleDraft} onblur={commitRename}
                 onkeydown={(e) => { if (e.key === "Enter") commitRename(); else if (e.key === "Escape") { e.stopPropagation(); renaming = false; } }} />
             {:else if nook.active}
-              <button class="name editable" title="Rename" onclick={() => { titleDraft = nook.active?.title ?? ""; renaming = true; }}>{nook.active.title}</button>
+              <button class="name editable" title={tr("Hernoemen", "Rename")} onclick={() => { titleDraft = nook.active?.title ?? ""; renaming = true; }}>{nook.active.title}</button>
             {:else}
-              <span class="name">New Nook</span>
+              <span class="name">{tr("Nieuwe Nook", "New Nook")}</span>
             {/if}
             <span class="spacer"></span>
-            <button class="ghost icon-button" disabled={!nook.active?.messages.length} onclick={copyConversation} title="Copy conversation as Markdown" aria-label="Copy conversation as Markdown"><Icon name="copy" /></button>
-            <button class="ghost icon-button" onclick={() => { nook.newNook(); if (mobile) showList = false; }} title="New Nook (Ctrl+N)" aria-label="New Nook"><Icon name="plus" /></button>
+            <button class="ghost icon-button" disabled={!nook.active?.messages.length} onclick={copyConversation} title={tr("Kopieer gesprek als Markdown", "Copy conversation as Markdown")} aria-label={tr("Kopieer gesprek als Markdown", "Copy conversation as Markdown")}><Icon name="copy" size={16} /></button>
+            <button class="ghost icon-button" onclick={() => { nook.newNook(); if (mobile) showList = false; }} title={tr("Nieuwe Nook (Ctrl+N)", "New Nook (Ctrl+N)")} aria-label={tr("Nieuwe Nook", "New Nook")}><Icon name="plus" size={16} /></button>
           </header>
-          <Chat onattention={() => navigate("agents")} />
+          <Chat onopen={openTarget} />
         </div>
       </div>
     {:else if route === "chats"}
       <header class="title page-title"><span class="name">{routeTitle}</span></header>
       <div class="route-body"><Chats onnook={(id) => { nook.select(id); route = "chat"; }} /></div>
+    {:else if route === "music"}
+      <header class="title page-title"><span class="name">{routeTitle}</span></header>
+      <div class="route-body music-body">
+        {#if playing}<Music info={playing} since={playingSince} />{:else}<p class="faint quiet">{tr("Er speelt nu niets.", "Nothing is playing right now.")}</p>{/if}
+      </div>
     {:else}
-      {#if route !== "agents"}<header class="title page-title"><span class="name">{routeTitle}</span></header>{/if}
+      {#if route !== "agents" && route !== "settings"}<header class="title page-title"><span class="name">{routeTitle}</span></header>{/if}
       <div class="route-body">
         {#key route}<LazyView load={routeViews[route]!} label={routeTitle} onretry={() => reloadRoute(route)} />{/key}
       </div>
@@ -253,27 +347,33 @@
   /* The main window as on the Mac: one sidebar (search, tab bar, the tab's list, footer) beside the content. */
   .main { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100dvh; overflow: hidden; background: var(--canvas); }
   .rail { background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; padding: 0 8px 8px; }
-  .head { display: flex; align-items: center; gap: 4px; height: 52px; padding: 0 4px; flex: none; }
+  .head { display: flex; align-items: center; gap: 2px; height: 52px; padding: 0 4px; flex: none; }
+  .talk { display: contents; }
+  .talk :global(.mic) { width: 28px; height: 28px; border-radius: var(--radius-control); color: var(--text2); }
+  .talk :global(.mic svg) { width: 16px; height: 16px; }
   .tabbar { display: flex; gap: 2px; padding: 2px; min-height: 34px; background: var(--surface); border-radius: var(--radius-card); flex: none; }
-  .tab { display: flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; min-width: 28px; height: 30px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-control); color: var(--text3); font-size: 13px; font-weight: 500; }
+  .tab { display: flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; min-width: 28px; height: 30px; padding: 0; background: transparent; border: 0; border-radius: var(--radius-control); color: var(--text3); font: var(--text-control); }
   .tab:not(.on) { flex: 1 1 0; }
   .tab span { display: none; }
   .tab.on { padding: 0 10px; background: var(--row-selected); color: var(--paper); }
   .tab.on span { display: inline; }
   .tab:hover:not(.on) { color: var(--text2); background: var(--row-hover); }
-  .rule { height: 1px; background: var(--border); margin: 8px 0 4px; flex: none; }
+  .rule { height: 1px; background: var(--hairline); margin: 12px 0 4px; flex: none; }
   .side-list { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .side-list :global(.list) { flex: 1; background: transparent; border-right: 0; }
-  .footer { display: flex; align-items: center; gap: 4px; padding: 6px 4px 0; flex: none; }
-  .status { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--text3); }
-  .status-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .footer { display: flex; align-items: center; gap: 2px; padding: 6px 0 0; flex: none; border-top: 1px solid var(--hairline); margin-top: 4px; }
+  .footer .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--line2); flex: none; }
+  .status { display: grid; place-items: center; width: 28px; height: 28px; flex: none; cursor: default; }
   .status .dot { background-color: var(--text3); }
   .status .dot.waiting { background-color: var(--amber); }
   .status .dot.working { background-color: var(--paper); }
   .status .dot.unread { background-color: var(--mint); }
   .spacer { flex: 1; }
   .icon-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; flex-shrink: 0; border: 0; border-radius: var(--radius-control); color: var(--text2); }
+  .icon-button:hover:not(:disabled) { background: var(--row-hover); color: var(--paper); }
   .icon-button.on { background: var(--row-selected); color: var(--paper); }
+  .music-body { overflow-y: auto; }
+  .quiet { padding: 24px; text-align: center; }
   .content { min-width: 0; min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--canvas); }
   .chatlayout { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; }
   .chatpane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -282,15 +382,17 @@
   .title { min-height: 52px; padding: 0 16px; display: flex; align-items: center; gap: 8px; min-width: 0; flex-shrink: 0; }
   .title .name.editable { background: transparent; border: 0; padding: 4px 8px; margin-left: -8px; border-radius: var(--radius-control); color: var(--paper); text-align: left; min-width: 0; }
   .title .name.editable:hover { background: var(--row-hover); }
-  .rename { min-width: 0; flex: 0 1 360px; font-size: 15px; font-weight: 600; padding: 4px 8px; margin-left: -8px; }
-  .title .name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rename { min-width: 0; flex: 0 1 360px; font: var(--text-title); padding: 4px 8px; margin-left: -8px; }
+  .title .name { font: var(--text-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .page-title { border-bottom: 1px solid var(--border); }
   .route-body { flex: 1; min-height: 0; overflow: hidden; }
   .chatpane :global(.chat) { flex: 1; min-height: 0; }
   @media (min-width: 641px) and (max-width: 860px) {
     .main { grid-template-columns: 56px minmax(0, 1fr); }
     .rail { padding: 0 6px 8px; }
-    .head :global(.orb), .head .spacer, .status-text { display: none; }
+    .head :global(.orb), .head .spacer, .talk { display: none; }
+    .footer { flex-direction: column; border-top: 0; }
+    .footer .sep { width: 16px; height: 1px; margin: 4px 0; }
     .tabbar { flex-direction: column; background: transparent; }
     .tab, .tab.on, .tab:not(.on) { flex: none; width: 36px; height: 36px; padding: 0; }
     .tab.on span { display: none; }

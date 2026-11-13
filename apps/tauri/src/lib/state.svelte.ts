@@ -127,7 +127,7 @@ export function onAccent(hex: number): string {
 export function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return tr("zojuist", "just now");
-  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+  if (diff < 3600) return tr("{n} min", "{n} min", { n: Math.floor(diff / 60) });
   if (diff < 86400) return tr("{n} u", "{n} h", { n: Math.floor(diff / 3600) });
   if (diff < 7 * 86400) return tr("{n} d", "{n} d", { n: Math.floor(diff / 86400) });
   return new Date(iso).toLocaleDateString(locale(), { day: "numeric", month: "short" });

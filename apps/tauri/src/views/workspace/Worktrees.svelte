@@ -2,6 +2,7 @@
   // Alle worktrees van de repositories in de werkruimte (`WorktreesView` op de Mac): de sessie erbij, de wijzigingen,
   // en een terminal of weghalen. Weghalen vraagt eerst bevestiging, en kan niet zolang er een sessie in werkt.
   import { agents } from "../../lib/agents.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import { isActive, projectName, toolsApi, workspaceApi, type WorktreeRow } from "../../lib/workspace/api";
   import { workspace } from "../../lib/workspace/store.svelte";
 
@@ -36,7 +37,7 @@
     error = null;
     try {
       await workspaceApi.removeWorktree(row.repoRoot, row.worktree.path, force);
-      agents.confirm("Worktree verwijderd");
+      agents.confirm(tr("Worktree verwijderd", "Worktree removed"));
     } catch (e) {
       error = String(e);
     }
@@ -51,43 +52,43 @@
 <div class="worktrees">
   <div class="head">
     <div>
-      <strong>Worktrees</strong>
-      <div class="faint small">Elke worktree is een eigen map met een eigen branch, naast je gewone checkout.</div>
+      <strong>{tr("Worktrees", "Worktrees")}</strong>
+      <div class="faint small">{tr("Elke worktree is een eigen map met een eigen branch, naast je gewone checkout.", "Each worktree is its own folder with its own branch, next to your regular checkout.")}</div>
     </div>
     <span class="spacer"></span>
-    <button class="ghost" disabled={loading} onclick={() => load(true)}>{loading ? "Bezig…" : "Ververs"}</button>
+    <button class="ghost" disabled={loading} onclick={() => load(true)}>{loading ? tr("Bezig…", "Busy…") : tr("Ververs", "Refresh")}</button>
   </div>
   {#if error}<p class="err">{error}</p>{/if}
   {#if workspace.overview && !workspace.overview.gitAvailable}
-    <div class="empty"><p>Git ontbreekt</p><p class="faint">Git is niet gevonden. Installeer Git en start Nook opnieuw.</p></div>
+    <div class="empty"><p>{tr("Git ontbreekt", "Git is missing")}</p><p class="faint">{tr("Git is niet gevonden. Installeer Git en start Nook opnieuw.", "Git wasn't found. Install Git and restart Nook.")}</p></div>
   {:else if !rows.length && !loading}
     <div class="empty">
-      <p>Nog geen worktrees</p>
-      <p class="faint">Start een sessie met 'Nieuwe worktree' om agents naast elkaar te laten werken zonder dat ze elkaars bestanden raken.</p>
+      <p>{tr("Nog geen worktrees", "No worktrees yet")}</p>
+      <p class="faint">{tr("Start een sessie met 'Nieuwe worktree' om agents naast elkaar te laten werken zonder dat ze elkaars bestanden raken.", "Start a session with 'New worktree' to let agents work side by side without touching each other's files.")}</p>
     </div>
   {:else}
     <div class="table">
-      <div class="row header faint"><span>Worktree</span><span>Branch</span><span>Sessie</span><span>Wijzigingen</span><span></span></div>
+      <div class="row header faint"><span>{tr("Worktree", "Worktree")}</span><span>{tr("Branch", "Branch")}</span><span>{tr("Sessie", "Session")}</span><span>{tr("Wijzigingen", "Changes")}</span><span></span></div>
       {#each rows as row (row.worktree.path)}
         {@const run = runFor(row)}
         <div class="row">
           <span class="cell"><span>{projectName(row.worktree.path)}</span><span class="mono faint">{row.worktree.path}</span></span>
-          <span class="cell"><span class="mono">{row.worktree.branch ?? "geen branch"}</span>{#if row.baseBranch}<span class="mono faint">← {row.baseBranch}</span>{/if}</span>
+          <span class="cell"><span class="mono">{row.worktree.branch ?? tr("geen branch", "no branch")}</span>{#if row.baseBranch}<span class="mono faint">← {row.baseBranch}</span>{/if}</span>
           <span class="cell">
             {#if run}
-              <button class="link" title="Open de sessie" onclick={() => openSession(run.id)}>{run.title}</button>
+              <button class="link" title={tr("Open de sessie", "Open the session")} onclick={() => openSession(run.id)}>{run.title}</button>
             {:else}
-              <span class="faint">{row.worktree.isMain ? "hoofdmap" : "geen sessie"}</span>
+              <span class="faint">{row.worktree.isMain ? tr("hoofdmap", "main folder") : tr("geen sessie", "no session")}</span>
             {/if}
           </span>
           <span class="cell">
-            <span>{row.changedFiles === null ? "niet beschikbaar" : row.changedFiles === 0 ? "Geen wijzigingen" : `${row.changedFiles} bestanden`}</span>
-            {#if row.ahead !== null && row.behind !== null}<span class="faint">{row.ahead} voor · {row.behind} achter</span>{/if}
+            <span>{row.changedFiles === null ? tr("niet beschikbaar", "not available") : row.changedFiles === 0 ? tr("Geen wijzigingen", "No changes") : tr("{n} bestanden", "{n} files", { n: row.changedFiles })}</span>
+            {#if row.ahead !== null && row.behind !== null}<span class="faint">{tr("{ahead} voor · {behind} achter", "{ahead} ahead · {behind} behind", { ahead: row.ahead, behind: row.behind })}</span>{/if}
           </span>
           <span class="actions">
-            <button class="ghost" title="Open terminal" onclick={() => { toolsApi.openTerminal(row.worktree.path); agents.select("terminals"); }}>›_</button>
+            <button class="ghost" title={tr("Open terminal", "Open terminal")} onclick={() => { toolsApi.openTerminal(row.worktree.path); agents.select("terminals"); }}>›_</button>
             {#if !row.worktree.isMain}
-              <button class="ghost danger" title={busy(row) ? "Kan niet terwijl de agent werkt." : "Verwijder worktree"} disabled={busy(row) || row.worktree.locked}
+              <button class="ghost danger" title={busy(row) ? tr("Kan niet terwijl de agent werkt.", "Can't while the agent is working.") : tr("Verwijder worktree", "Remove worktree")} disabled={busy(row) || row.worktree.locked}
                 onclick={() => (confirm = row)}>🗑</button>
             {/if}
           </span>
@@ -98,18 +99,18 @@
   {#if confirm}
     <div class="confirm">
       <div class="ctext">
-        <strong>Worktree verwijderen?</strong>
+        <strong>{tr("Worktree verwijderen?", "Remove worktree?")}</strong>
         <span class="faint">
           {(confirm.changedFiles ?? 0) > 0
-            ? `Er staan ${confirm.changedFiles} niet-gecommitte wijzigingen in. Die gaan verloren als je doorgaat. De branch en zijn commits blijven bestaan.`
-            : "De map verdwijnt. De branch en zijn commits blijven in de repository."}
+            ? tr("Er staan {n} niet-gecommitte wijzigingen in. Die gaan verloren als je doorgaat. De branch en zijn commits blijven bestaan.", "It has {n} uncommitted changes. They are lost if you continue. The branch and its commits stay.", { n: confirm.changedFiles ?? 0 })
+            : tr("De map verdwijnt. De branch en zijn commits blijven in de repository.", "The folder goes away. The branch and its commits stay in the repository.")}
         </span>
       </div>
-      <button class="ghost" onclick={() => (confirm = null)}>Annuleer</button>
+      <button class="ghost" onclick={() => (confirm = null)}>{tr("Annuleer", "Cancel")}</button>
       {#if (confirm.changedFiles ?? 0) > 0}
-        <button class="primary" onclick={() => remove(confirm!, true)}>Verwijder met wijzigingen</button>
+        <button class="primary" onclick={() => remove(confirm!, true)}>{tr("Verwijder met wijzigingen", "Remove with changes")}</button>
       {:else}
-        <button class="primary" onclick={() => remove(confirm!, false)}>Verwijder worktree</button>
+        <button class="primary" onclick={() => remove(confirm!, false)}>{tr("Verwijder worktree", "Remove worktree")}</button>
       {/if}
     </div>
   {/if}

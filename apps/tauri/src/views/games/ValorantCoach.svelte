@@ -45,7 +45,7 @@
     looking = true;
     try {
       const added = await games.look();
-      if (added) toast.success(tr(`${added} gebeurtenis(sen) onthouden`, `Remembered ${added} event(s)`));
+      if (added) toast.success(tr("{n} gebeurtenis(sen) onthouden", "Remembered {n} event(s)", { n: added }));
       else toast.info(tr("Niets nieuws gezien", "Nothing new seen"), gamer.view?.lastError ?? undefined);
     } catch (e) {
       toast.error(tr("Kon niet naar je scherm kijken", "Could not look at your screen"), e);
@@ -79,7 +79,7 @@
       <section class="card session">
         <h3>{tr("Huidige sessie", "Current session")}</h3>
         <dl>
-          <dt>Game</dt><dd>Valorant</dd>
+          <dt>{tr("Game", "Game")}</dt><dd>Valorant</dd>
           <dt>{tr("Map", "Map")}</dt>
           <dd>
             <select value={match?.map ?? ""} onchange={(e) => gamer.run(() => games.setMatch(e.currentTarget.value || null, match?.myAgent ?? null), tr("Kon de map niet zetten", "Could not set the map"))}>
@@ -131,7 +131,7 @@
             <div class="line"><strong>{p.agentName}</strong><span class="badge {p.status.state}">{statusLabel(p.status, p.occurrences, lang)}</span></div>
             <div>{p.abilityName} · {p.location}</div>
             <div class="faint small">
-              {tr(`${p.occurrences} keer gebruikt`, `Used ${p.occurrences} times`)} · {tr("rondes", "rounds")} {p.rounds.join(", ")}
+              {tr("{n} keer gebruikt", "Used {n} times", { n: p.occurrences })} · {tr("rondes", "rounds")} {p.rounds.join(", ")}
               {#if p.typicalTime !== null} · ~{clock(p.typicalTime)}{/if}
               · {tr("Zekerheid", "Confidence")}: {confidenceLabel(p.confidence, lang)}
             </div>
@@ -139,7 +139,7 @@
         {:else}
           <p class="faint">{tr("Nog geen herhaling gezien.", "No repeats seen yet.")}</p>
         {/each}
-        {#if seenOnce > 0}<p class="faint small">{tr(`${seenOnce} setup(s) één keer gezien.`, `${seenOnce} setup(s) seen once.`)}</p>{/if}
+        {#if seenOnce > 0}<p class="faint small">{tr("{n} setup(s) één keer gezien.", "{n} setup(s) seen once.", { n: seenOnce })}</p>{/if}
       </section>
 
       <section class="card">

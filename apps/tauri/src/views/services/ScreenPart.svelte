@@ -2,6 +2,7 @@
   // Een schermdeel: trek een kader over de schermafbeelding. Return of Vraag Nook geeft het aan de chat, Kopiëren zet
   // het op het klembord, Esc annuleert.
   import { services } from "../../lib/services";
+  import { tr } from "../../lib/i18n.svelte";
 
   let image = $state<string | null>(null);
   let start = $state<{ x: number; y: number } | null>(null);
@@ -61,13 +62,13 @@
     <div class="frame" style="left:{rect.x}px;top:{rect.y}px;width:{rect.w}px;height:{rect.h}px;{image ? `background-image:url(${image});background-position:-${rect.x}px -${rect.y}px` : ''}"></div>
     {#if !dragging && rect.w > 4 && rect.h > 4}
       <div class="tools" style="left:{rect.x}px;top:{Math.min(rect.y + rect.h + 8, window.innerHeight - 48)}px">
-        <button class="primary" onclick={() => done(false)}>Vraag Nook</button>
-        <button onclick={() => done(true)}>Kopiëren</button>
-        <button class="ghost" onclick={() => services.partCancel()}>Annuleren</button>
+        <button class="primary" onclick={() => done(false)}>{tr("Vraag Nook", "Ask Nook")}</button>
+        <button onclick={() => done(true)}>{tr("Kopiëren", "Copy")}</button>
+        <button class="ghost" onclick={() => services.partCancel()}>{tr("Annuleren", "Cancel")}</button>
       </div>
     {/if}
   {:else}
-    <div class="hint">Trek een kader om een stuk van je scherm. Esc annuleert.</div>
+    <div class="hint">{tr("Trek een kader om een stuk van je scherm. Esc annuleert.", "Drag a frame around a part of your screen. Esc cancels.")}</div>
   {/if}
   {#if error}<div class="hint err">{error}</div>{/if}
 </div>

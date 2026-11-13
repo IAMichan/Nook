@@ -2,6 +2,7 @@
   // The ghost text of Autocomplete Anywhere: gray text right after the caret in another app, or the emoji picker card under
   // it. A click-through window that never takes the focus; the controller places it and the keyboard hook picks emoji.
   import { autocompleteEvents, type GhostEvent } from "../../lib/autocomplete";
+  import { tr } from "../../lib/i18n.svelte";
 
   let ghost = $state<GhostEvent | null>(null);
   const ratio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
@@ -36,7 +37,7 @@
     </div>
     <div class="footer" style="height:{l.footer}px">
       <span>:{selectedName}</span>
-      <span class="faint">Tab kiest · 1–9 · Esc</span>
+      <span class="faint">{tr("Tab kiest · 1–9 · Esc", "Tab picks · 1–9 · Esc")}</span>
     </div>
   </div>
 {/if}
