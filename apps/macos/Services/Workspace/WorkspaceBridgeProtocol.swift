@@ -173,7 +173,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .browserScreenshot:
             return "Takes a screenshot of Nook's browser to check layout and visual changes."
         case .pullRequestCreate:
-            return "Proposes a pull request for your current branch (user approves unless full rights), pushes the branch, and opens the PR via GitHub (or opens GitHub in Nook's browser as fallback). Commit first; use instead of `gh pr create`, also when gh is rate limited. Returns the link."
+            return "Proposes a pull request for your current branch (user approves unless full rights), pushes the branch, and opens the PR via GitHub (or opens GitHub in Nook's browser as fallback). Commit first; use instead of `gh pr create`, also when gh is rate limited. When the repository has a pull request template, body must follow it (every section, filled in; workspace_info shows it), or the call returns what to fix. Returns the link."
         case .orchestratorCapabilities:
             return "Lists agents Nook can run for delegate_task (installed status, models, rights), your mode/rights, and delegation limits."
         case .delegateTask:
@@ -485,7 +485,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .pullRequestCreate:
             return object([
                 "title": ["type": "string", "description": "PR title."],
-                "body": ["type": "string", "description": "Markdown description of changes and testing."],
+                "body": ["type": "string", "description": "Markdown description of changes and testing, following the repository's pull request template when it has one."],
                 "base": ["type": "string", "description": "Target branch (default: session base or repo default)."],
                 "draft": ["type": "boolean", "description": "Open as draft; only when the user asks (default false)."]
             ], required: ["title"])
