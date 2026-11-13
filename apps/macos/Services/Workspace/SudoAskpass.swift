@@ -32,6 +32,35 @@ enum SudoAskpass {
         return Request(prompt: oneLine(prompt, limit: 200), command: oneLine(command, limit: 2_000))
     }
 
+    /// What the password is for, as the card says it: the command sudo will run as administrator, or none when the agent
+    /// only checks that sudo works (`sudo -v`, `sudo -A true`, `sudo -l`), which runs nothing itself.
+    struct Purpose: Equatable {
+        /// The command after `sudo` and its options, as it will run; empty for a check.
+        var command: String
+        var isCheck: Bool { command.isEmpty }
+    }
+
+    /// Reads the command line sudo was started with (`sudo -A -u root make install`) into what it will run.
+    static func purpose(of commandLine: String) -> Purpose {
+        var words = commandLine.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let first = words.first, (first as NSString).lastPathComponent == "sudo" else {
+            return Purpose(command: commandLine.trimmingCharacters(in: .whitespaces))
+        }
+        words.removeFirst()
+        // sudo's options before the command; these take a value as the next word.
+        let withValue: Set<String> = ["-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "-R"]
+        var checkOnly = false
+        while let word = words.first, word.hasPrefix("-") {
+            words.removeFirst()
+            if word == "--" { break }
+            if ["-v", "--validate", "-l", "--list"].contains(word) { checkOnly = true }
+            if withValue.contains(word), !words.isEmpty { words.removeFirst() }
+        }
+        let rest = words.joined(separator: " ")
+        if checkOnly || ["", "true", "/usr/bin/true", "/bin/true", ":"].contains(rest) { return Purpose(command: "") }
+        return Purpose(command: rest)
+    }
+
     /// Nook's answer to the helper: the value to give sudo, or nil to decline.
     static func reply(_ value: String?) -> Data {
         let object: [String: Any] = value.map { ["ok": true, "value": $0] } ?? ["ok": false]

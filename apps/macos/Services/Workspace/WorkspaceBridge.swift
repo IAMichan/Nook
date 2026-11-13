@@ -314,10 +314,14 @@ final class WorkspaceBridge: ObservableObject {
                 connection.reply(SudoAskpass.reply(nil))
                 return
             }
-            let command = request.command.isEmpty ? "sudo" : request.command
-            let detail = command + (request.prompt.isEmpty ? "" : "\n\n" + request.prompt)
-            let (allowed, typed) = await self.ask(caller, tool: .requestSecret, title: tr("secrets.sudo.title", caller.agent),
-                                                  detail: detail, note: tr("secrets.sudo.note"), danger: true,
+            // The card says what the password is for: the command that will run as administrator, or a check that runs
+            // nothing. sudo's own prompt ("Password:") adds nothing, so it is left out.
+            let purpose = SudoAskpass.purpose(of: request.command)
+            let title = purpose.isCheck ? tr("secrets.sudo.checkTitle", caller.agent) : tr("secrets.sudo.title", caller.agent)
+            let detail = purpose.isCheck ? (request.command.isEmpty ? "sudo" : request.command) : purpose.command
+            let note = purpose.isCheck ? tr("secrets.sudo.checkNote") : tr("secrets.sudo.note")
+            let (allowed, typed) = await self.ask(caller, tool: .requestSecret, title: title,
+                                                  detail: detail, note: note, danger: true,
                                                   connection: context.connection, secretName: "sudo", keepable: false)
             guard allowed else {
                 self.audit(.requestSecret, caller, "sudo", "niet toegestaan")
@@ -326,7 +330,9 @@ final class WorkspaceBridge: ObservableObject {
             }
             // Allowed where no field was (the phone): the Mac asks for it now.
             let value = typed?.value ?? BridgeSecretPrompt.ask(name: tr("secrets.sudo.field"), agent: caller.agent,
-                                                               keepable: false)?.value
+                                                               keepable: false, title: tr("secrets.sudo.promptTitle"),
+                                                               detail: purpose.isCheck ? tr("secrets.sudo.promptCheck")
+                                                                   : tr("secrets.sudo.promptDetail", purpose.command))?.value
             self.audit(.requestSecret, caller, "sudo", value == nil ? "geannuleerd" : "gegeven")
             connection.reply(SudoAskpass.reply(value))
         }
@@ -382,6 +388,8 @@ final class WorkspaceBridge: ObservableObject {
         switch agentID {
         case "claude-code": return "Claude Code"
         case "codex": return "Codex"
+        // The sudo helper is not who asks: an agent in this folder ran sudo.
+        case SudoAskpass.agentID: return tr("secrets.sudo.someAgent")
         default: return agentID.isEmpty ? "Agent" : agentID.prefix(1).uppercased() + agentID.dropFirst()
         }
     }

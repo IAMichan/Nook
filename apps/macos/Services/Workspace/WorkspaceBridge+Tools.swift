@@ -515,10 +515,13 @@ extension WorkspaceBridge {
 /// Where you paste a secret an agent asked for and Nook does not keep yet: a secure field, never shown, never logged.
 @MainActor
 enum BridgeSecretPrompt {
-    static func ask(name: String, agent: String, keepable: Bool = true) -> (value: String, remember: Bool)? {
+    /// `title` and `detail` replace the general words where the value goes elsewhere (sudo's password goes to sudo, not
+    /// to the agent).
+    static func ask(name: String, agent: String, keepable: Bool = true, title: String? = nil,
+                    detail: String? = nil) -> (value: String, remember: Bool)? {
         let alert = NSAlert()
-        alert.messageText = tr("bridge.secret.prompt.title", name)
-        alert.informativeText = tr("bridge.secret.prompt.detail", agent)
+        alert.messageText = title ?? tr("bridge.secret.prompt.title", name)
+        alert.informativeText = detail ?? tr("bridge.secret.prompt.detail", agent)
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         field.placeholderString = name
         alert.accessoryView = field
