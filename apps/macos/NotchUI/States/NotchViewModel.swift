@@ -90,6 +90,11 @@ final class NotchViewModel: ObservableObject {
     func requestNewSession() {
         picksProjectForNewSession = true
     }
+    /// "Add project" asked for in the Agents list: the Agents tab shows `AddProjectPalette` while this is on.
+    @Published var addsProject = false
+    func requestAddProject() {
+        addsProject = true
+    }
     @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
         didSet {
             guard selectedAgentID != oldValue else { return }

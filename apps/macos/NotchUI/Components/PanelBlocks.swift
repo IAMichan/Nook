@@ -19,6 +19,8 @@ struct NookSearchField: View {
     var onSubmit: (() -> Void)? = nil
     /// Escape after the text is cleared (e.g. to close a palette or drop focus).
     var onEscape: (() -> Void)? = nil
+    /// The glyph in front: a magnifier for a search, another one where the field asks for something else (a name, an address).
+    var symbol = "magnifyingglass"
     @State private var hovering = false
 
     private var glyphSize: CGFloat {
@@ -30,7 +32,7 @@ struct NookSearchField: View {
 
     var body: some View {
         HStack(spacing: style == .ghost ? NookTheme.Spacing.md : NookTheme.Spacing.sm) {
-            Image(icon: "magnifyingglass")
+            Image(icon: symbol)
                 .font(NookTheme.font(glyphSize, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
                 .accessibilityHidden(true)
