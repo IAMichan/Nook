@@ -156,5 +156,14 @@ The release workflow signs Nook with the best identity the repository secrets pr
 | `MACOS_SIGNING_P12`, `MACOS_SIGNING_P12_PASSWORD` (make them once with `scripts/make-release-identity.sh`) | A stable self-signed identity: the first launch is still blocked, but every update keeps the same signature, so the Keychain password and the permissions are asked for once. |
 | none | Ad hoc, as before: blocked on first launch, and every update is a new app to macOS. |
 
+**Release token.** GitHub refuses to create or publish a release on a commit whose `.github/workflows` differ from
+`main`'s unless the token has the Workflows permission, and the workflow's own `GITHUB_TOKEN` can never get it. A
+workflow change merged into `main` while a release builds (about an hour) therefore fails the release at *Create the
+draft release* with `HTTP 403: Resource not accessible by integration`, and re-running the failed jobs fails the same
+way. Set the repository secret `NOOK_RELEASE_TOKEN` to a fine-grained personal access token (or a GitHub App token)
+for this repository with **Contents** and **Workflows** read and write; the release steps then use it. Without it,
+start a new release from `main` instead of re-running. A tag made with this token starts `release.yml` again (the
+workflow's own token does not); `plan` sees that the tag's release is already published and stops.
+
 The installer window's background is `apps/macos/Config/DMG/background.png` (and `@2x`), drawn by
 `scripts/generate_dmg_background.py`; `apps/macos/Config/DMG/settings.py` lays out the window with `dmgbuild`.
