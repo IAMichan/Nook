@@ -58,9 +58,11 @@ extension WorkspaceManager {
             instructions: launchInstructions(run), workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
             accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
             thinkingDisplay: capabilities.probesLaunchFlags && claudeThinkingDisplay[executable] == true,
+            promptSuggestions: launchesPromptSuggestions(run, executable: executable),
             toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
             effort: run.effort, speedTier: speedTier(run), ultracode: ultracode(run))), for: run)
         spec.initialInput = []
+        let suggests = launchesPromptSuggestions(run, executable: executable)
         let process = AgentProcess(spec: spec)
         process.onLines = { [weak self, weak process] lines in
             let parsed = ParsedStreamLine.parse(lines, provider: run.provider)
@@ -68,7 +70,13 @@ extension WorkspaceManager {
                 // While it only waits, nothing it prints is a turn (a failed resume must not fail the session), apart
                 // from the answers to Nook's own requests (a connector's sign-in page).
                 guard let self, let process else { return }
-                guard self.processes[id] === process else { return self.handleClaudeReplies(lines, for: id) }
+                guard self.processes[id] === process else {
+                    // Parked after a turn: its prediction of your next message still counts.
+                    for case .claude(let events) in parsed {
+                        for case .promptSuggestion(let text) in events { self.offerAgentPrompt(id, text) }
+                    }
+                    return self.handleClaudeReplies(lines, for: id)
+                }
                 for line in parsed { self.handle(parsed: line, for: id) }
             }
         }
@@ -77,6 +85,7 @@ extension WorkspaceManager {
             Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: token) }
         }
         guard (try? process.start()) != nil else { return }
+        if suggests { agentSuggestsPrompts.insert(id) } else { agentSuggestsPrompts.remove(id) }
         parkWarmClaude(id, process, key: claudeKey(run))
     }
 
@@ -261,6 +270,8 @@ extension WorkspaceManager {
             if let event { noteClaudeLimit(id, event) }
         case .planWindow(let reading):
             if let run = run(id) { onPlanWindow?(reading, run.profileID) }
+        case .promptSuggestion(let text):
+            offerAgentPrompt(id, text)
         }
     }
 }

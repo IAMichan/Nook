@@ -336,6 +336,10 @@ final class WorkspaceManager: ObservableObject {
     var limitedTurns: [UUID: Date?] = [:]
     /// Whether a Claude Code executable knows `--thinking-display` (asked once with `--help`, in the background).
     var claudeThinkingDisplay: [String: Bool] = [:]
+    /// Whether a Claude Code knows `--prompt-suggestions` (from the same probe).
+    var claudePromptSuggestionFlag: [String: Bool] = [:]
+    /// Sessions whose Claude Code runs with `--prompt-suggestions`: their suggestion comes from the agent, not a generator.
+    var agentSuggestsPrompts: Set<UUID> = []
     /// The summary Nook sends a long idle session before its prompt cache expires, per session (`IdleCompaction`).
     var idleCompactionTimers: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose running turn is such a summary: it ends quietly, without a notification or a snapshot.
@@ -1395,6 +1399,7 @@ final class WorkspaceManager: ObservableObject {
         pendingSendNow[id] = nil
         pendingSendNowSteer[id] = nil
         pendingSendNowFresh.remove(id)
+        agentSuggestsPrompts.remove(id)
         pendingSendNowOrigin[id] = nil
         workStartedAt[id] = nil
         continuingTurns.remove(id)

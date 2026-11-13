@@ -58,6 +58,8 @@ enum AgentCommand {
         var bridge: BridgeLaunch? = nil
         /// Claude Code knows `--thinking-display`: ask for summarized thinking, so newer models show it.
         var thinkingDisplay = false
+        /// Claude Code predicts your next message after each turn (`--prompt-suggestions`, `PromptSuggestionSource`).
+        var promptSuggestions = false
         /// Claude Code's `ENABLE_TOOL_SEARCH` as Nook sets it (`ClaudeToolSearch`); nil leaves yours.
         var toolSearch: String? = nil
         /// The token suggestions you applied to Nook's sessions (Settings › Sessions › Tokens).
@@ -99,6 +101,7 @@ enum AgentCommand {
                                                               .merging(Ultracode.claudeSettings(input.ultracode)) { $1 })
             ]
             if input.thinkingDisplay { arguments += ["--thinking-display", "summarized"] }
+            if input.promptSuggestions { arguments += ["--prompt-suggestions", "true"] }
             if !input.model.isEmpty { arguments += ["--model", input.model] }
             arguments += effortArguments(input.provider, effort: input.effort)
             if let resume = input.resumeSessionID, !resume.isEmpty {

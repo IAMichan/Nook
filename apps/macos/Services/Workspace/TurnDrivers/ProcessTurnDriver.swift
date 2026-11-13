@@ -71,6 +71,7 @@ extension WorkspaceManager {
             runID: id,
             bridge: bridge(for: id),
             thinkingDisplay: capabilities.probesLaunchFlags && claudeThinkingDisplay[executable] == true,
+            promptSuggestions: launchesPromptSuggestions(run, executable: executable),
             toolSearch: claudeToolSearch(run),
             tuning: appliedTuning(run),
             // Each agent takes it its own way (`ProviderCapabilities.effort`); `codex exec` as a config override.
@@ -96,6 +97,7 @@ extension WorkspaceManager {
             return
         }
         processes[id] = process
+        if input.promptSuggestions { agentSuggestsPrompts.insert(id) } else { agentSuggestsPrompts.remove(id) }
         if forkNext.remove(id) != nil { forkLaunched.insert(id) } else { forkLaunched.remove(id) }
         if rollback != nil { run.pendingRollback = nil }
         run.move(to: .running)

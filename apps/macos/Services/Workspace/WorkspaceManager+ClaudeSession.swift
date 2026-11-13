@@ -236,12 +236,21 @@ extension WorkspaceManager {
     /// Asks this Claude Code once whether it knows `--thinking-display`; until the answer is in, sessions start without it.
     func probeClaudeFlags(_ executable: String) {
         claudeThinkingDisplay[executable] = false
+        claudePromptSuggestionFlag[executable] = false
         Task { [weak self] in
             let help = await Task.detached(priority: .utility) {
                 let environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: executable, extra: [:])
                 return (try? ProcessRunner.run(executable, ["--help"], environment: environment, timeout: 15))?.stdout ?? ""
             }.value
             self?.claudeThinkingDisplay[executable] = help.contains("--thinking-display")
+            self?.claudePromptSuggestionFlag[executable] = help.contains("--prompt-suggestions")
         }
+    }
+
+    /// Whether Claude Code is launched to predict your next message itself (`PromptSuggestionSource.agentStream`): with the
+    /// suggestion on, for a session you write in (a delegated one has no one typing), and a CLI that knows the flag.
+    func launchesPromptSuggestions(_ run: WorkspaceRun, executable: String) -> Bool {
+        run.provider.capabilities.promptSuggestions == .agentStream && settings.suggestNextPrompt && run.delegation == nil
+            && claudePromptSuggestionFlag[executable] == true
     }
 }
