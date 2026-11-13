@@ -6,6 +6,9 @@ name: PR vouch
 # `/recheck-vouch` on a pull request to run it again, and every open pull request is rechecked when VOUCHED.td changes
 # on main. It runs on pull_request_target so fork pull requests get a label too, and never checks out the pull request's
 # code. Runs on ubuntu and takes seconds. The labels are defined in .github/labels.yml.
+# The label job has no concurrency group on purpose: the recheck of every open pull request after a push to main shares
+# a group per pull request with that pull request's own run, and GitHub then cancels one of them, which shows as a red
+# check on a pull request that is fine. Labeling is idempotent and takes seconds, so two runs at once do no harm.
 on:
   # Safe: the jobs only read the author and VOUCHED.td from main through the API and never run pull request code.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
@@ -63,9 +66,6 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    concurrency:
-      group: ${{ github.workflow }}-${{ matrix.target.number }}
-      cancel-in-progress: true
     strategy:
       fail-fast: false
       max-parallel: 5
