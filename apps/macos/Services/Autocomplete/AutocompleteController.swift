@@ -451,6 +451,17 @@ final class AutocompleteController: ObservableObject {
         publishTapState()
     }
 
+    /// Whether autocomplete itself suggests in Nook's own fields right now: on, allowed and with a model, not paused. A
+    /// composer that writes with autocomplete's model then leaves the rest of the sentence to it (`ComposerCompleter.handsOver`),
+    /// so it gets everything that makes autocomplete fast (suggestions remembered and written ahead, the first words at once,
+    /// the prompt read in before the first letter) and the two never wait on each other's model.
+    var suggestsInOwnFields: Bool {
+        guard prefs.enabled, activeModel != nil, !power.paused else { return false }
+        guard state == .ready || state == .loading else { return false }
+        let bundleID = Bundle.main.bundleIdentifier
+        return (prefs.isEnabled(inApp: bundleID) || prefs.onlyAgentPrompts(inApp: bundleID)) && !store.isPaused(app: bundleID)
+    }
+
     /// What the battery allows right now. The signals are read by `EnergyMonitor` for the whole app, so this is a cached
     /// value and not a trip to IOKit per keystroke.
     private var power: CompletionPower { CompletionPower.plan(prefs: prefs, signals: EnergyMonitor.shared.signals) }
