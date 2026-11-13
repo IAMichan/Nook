@@ -68,6 +68,9 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     let saved = state.update_settings(|s| *s = settings);
     #[cfg(desktop)]
     {
+        if before.app_language != saved.app_language {
+            crate::platform::desktop::refresh_tray(&app);
+        }
         if before.shortcuts != saved.shortcuts {
             crate::platform::desktop::register_shortcuts(&app);
         }

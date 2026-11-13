@@ -39,6 +39,8 @@ quick-xml = "0.42"
 pdf-extract = "0.12"
 iana-time-zone = "0.1"
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+# The system language on first start, like `Locale.preferredLanguages` on the Mac.
+sys-locale = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

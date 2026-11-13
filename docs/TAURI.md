@@ -129,7 +129,7 @@ game. Events can also be logged by hand.
 
 ## To do
 
-- The interface is Dutch-only; the Mac also has English, German, French, and Spanish.
+- Error messages written on the Rust side are still partly Dutch; the interface itself has the Mac's five languages.
 - Real testing on Windows and on an Android device.
 - Everything marked ○ above.
 

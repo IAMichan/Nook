@@ -316,16 +316,39 @@ pub fn open_bar(app: &AppHandle, focus: &str) {
     }
 }
 
-fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open Nook", true, None::<&str>)?;
-    let window = MenuItem::with_id(app, "window", "Open in venster", true, Some("Alt+CommandOrControl+W"))?;
-    let new_nook = MenuItem::with_id(app, "new", "Nieuwe Nook", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Instellingen…", true, Some("CommandOrControl+,"))?;
-    let quit = MenuItem::with_id(app, "quit", "Stop Nook", true, None::<&str>)?;
-    let menu = Menu::with_items(
+/// The tray menu's labels in the interface language, in menu order: open, window, new, settings, quit.
+fn tray_labels(language: &str) -> [&'static str; 5] {
+    match language {
+        "nl" => ["Open Nook", "Open in venster", "Nieuwe Nook", "Instellingen…", "Stop Nook"],
+        "de" => ["Nook öffnen", "Im Fenster öffnen", "Neuer Nook", "Einstellungen…", "Nook beenden"],
+        "fr" => ["Ouvrir Nook", "Ouvrir dans une fenêtre", "Nouveau Nook", "Réglages…", "Quitter Nook"],
+        "es" => ["Abrir Nook", "Abrir en ventana", "Nuevo Nook", "Ajustes…", "Salir de Nook"],
+        _ => ["Open Nook", "Open in window", "New Nook", "Settings…", "Quit Nook"],
+    }
+}
+
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let [open, window, new_nook, settings, quit] = tray_labels(&app.state::<AppState>().settings().app_language);
+    let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
+    let window = MenuItem::with_id(app, "window", window, true, Some("Alt+CommandOrControl+W"))?;
+    let new_nook = MenuItem::with_id(app, "new", new_nook, true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", settings, true, Some("CommandOrControl+,"))?;
+    let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
+    Menu::with_items(
         app,
         &[&open, &window, &new_nook, &PredefinedMenuItem::separator(app)?, &settings, &PredefinedMenuItem::separator(app)?, &quit],
-    )?;
+    )
+}
+
+/// Rebuilds the tray menu after the interface language changed.
+pub fn refresh_tray(app: &AppHandle) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("nook"), tray_menu(app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+fn create_tray(app: &AppHandle) -> tauri::Result<()> {
+    let menu = tray_menu(app)?;
     let mut builder = TrayIconBuilder::with_id("nook").tooltip("Nook").menu(&menu).show_menu_on_left_click(false);
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());

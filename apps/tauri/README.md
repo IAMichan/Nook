@@ -8,9 +8,11 @@ connectors. The macOS app in [`apps/macos`](../macos) is the specification: name
 > [docs/TAURI.md](../../docs/TAURI.md) with a reason. On Linux it has been tested in the app; Windows code compiles but
 > has not yet been run on a real Windows PC, and Android builds only in CI.
 
-> **Interface language:** the Tauri app's interface is Dutch-only for now. Menu paths below give the English name with
-> the Dutch label you will see in the app in parentheses. Adding English and the other Mac languages is one of the
-> most useful things you can contribute; see [CONTRIBUTING.md](../../CONTRIBUTING.md#windows-linux--android-tauri).
+> **Interface language:** like the Mac, the interface speaks English, Dutch, German, French, and Spanish. It starts in
+> the system's language when Nook speaks it, otherwise in English; change it in **Settings › General › Language**.
+> Strings are written as `tr("Nederlands", "English")`; German, French, and Spanish live in `src/lib/i18n/*.ts`, and
+> `src/lib/i18n.test.ts` checks that none is missing. Text that comes from the Rust side (some error messages) is
+> still partly Dutch.
 
 ## Layout
 

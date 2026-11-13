@@ -159,8 +159,8 @@ impl Default for Settings {
         shortcuts.insert("window".into(), "Alt+CommandOrControl+W".into());
         shortcuts.insert("lookAlong".into(), "Alt+CommandOrControl+N".into());
         Self {
-            app_language: "nl".into(),
-            language: "nl".into(),
+            app_language: system_language().into(),
+            language: system_language().into(),
             // Lokaal eerst: niets verlaat de computer tot de gebruiker zelf voor een externe AI kiest.
             provider: AIProvider::Ollama,
             provider_models: BTreeMap::new(),
@@ -210,7 +210,21 @@ impl Default for Settings {
 }
 
 pub const ANSWER_LANGUAGES: [(&str, &str); 6] =
-    [("nl", "Nederlands"), ("en", "English"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"), ("auto", "Taal van mijn vraag")];
+    [("en", "English"), ("nl", "Nederlands"), ("de", "Deutsch"), ("fr", "Français"), ("es", "Español"), ("auto", "Taal van mijn vraag")];
+
+/// The interface languages, the same five as `AppLanguage` on the Mac.
+pub const APP_LANGUAGES: [&str; 5] = ["en", "nl", "de", "fr", "es"];
+
+/// The language Nook starts in: the system's preferred language when Nook speaks it, otherwise English (as on the Mac).
+pub fn system_language() -> &'static str {
+    let preferred = sys_locale::get_locale().unwrap_or_default().to_lowercase();
+    language_of_locale(&preferred)
+}
+
+fn language_of_locale(locale: &str) -> &'static str {
+    let code = locale.split(['-', '_', '.']).next().unwrap_or("");
+    APP_LANGUAGES.iter().copied().find(|c| *c == code).unwrap_or("en")
+}
 
 impl Settings {
     pub fn load() -> Self {
@@ -274,7 +288,7 @@ impl Settings {
                 None => "Respond in the language the user writes in.".into(),
             };
         }
-        let name = ANSWER_LANGUAGES.iter().find(|(c, _)| *c == self.language).map(|(_, n)| *n).unwrap_or("Nederlands");
+        let name = ANSWER_LANGUAGES.iter().find(|(c, _)| *c == self.language).map(|(_, n)| *n).unwrap_or("English");
         format!("Always respond in {name}, even if the data or tools are in a different language.")
     }
 
@@ -285,7 +299,7 @@ impl Settings {
         if ANSWER_LANGUAGES.iter().any(|(c, _)| *c == code && *c != "auto") {
             code
         } else {
-            "nl"
+            "en"
         }
     }
 
@@ -360,7 +374,17 @@ mod tests {
         assert_eq!(s.own_language(), "fr");
         s.language = "auto".into();
         s.app_language = "xx".into();
-        assert_eq!(s.own_language(), "nl");
+        assert_eq!(s.own_language(), "en");
+    }
+
+    #[test]
+    fn first_start_follows_the_system_language_or_english() {
+        assert_eq!(language_of_locale("nl-nl"), "nl");
+        assert_eq!(language_of_locale("de_de.utf-8"), "de");
+        assert_eq!(language_of_locale("fr"), "fr");
+        assert_eq!(language_of_locale("es-419"), "es");
+        assert_eq!(language_of_locale("ja-jp"), "en");
+        assert_eq!(language_of_locale(""), "en");
     }
 
     #[test]
