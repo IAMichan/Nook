@@ -478,11 +478,10 @@ enum InboxLayout {
     }
 
     /// The rows a shelf draws: all of them while it is open. Folded, a shelf shows only the session that is open on the
-    /// right, so the session you look at never vanishes from the list; the settled shelf shows none, since a settled
-    /// row would otherwise float above its closed header.
+    /// right, under its header, so the session you look at never vanishes from the list and you see which shelf it sits
+    /// on (a chat you settled while it is still open shows under Settled).
     static func shownRows(_ section: InboxSection, folded: Bool, selectedID: String?) -> [InboxEntry] {
-        guard folded else { return section.rows }
-        return section.kind == .settled ? [] : section.rows.filter { $0.id == selectedID }
+        folded ? section.rows.filter { $0.id == selectedID } : section.rows
     }
 
     /// A row on the Working shelf: busy, or waiting on background work, without needing a person.

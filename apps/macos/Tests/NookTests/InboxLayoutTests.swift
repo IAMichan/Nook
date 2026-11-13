@@ -140,9 +140,10 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(InboxLayout.shownRows(snoozed, folded: false, selectedID: "b").map(\.id), ["a", "b"])
     }
 
-    func testFoldedSettledShelfShowsNothing() {
+    func testFoldedSettledShelfStillShowsTheOpenSession() {
         let settled = sections([row("a"), row("b")], InboxState(settled: ["a", "b"]))[0]
-        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "b").map(\.id), [])
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "b").map(\.id), ["b"])
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "x").map(\.id), [])
         XCTAssertEqual(InboxLayout.shownRows(settled, folded: false, selectedID: "b").map(\.id), ["a", "b"])
     }
 
