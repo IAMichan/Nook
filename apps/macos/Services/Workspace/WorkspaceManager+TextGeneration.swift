@@ -5,9 +5,10 @@ import Foundation
 /// Codex, otherwise whichever of the two is connected. Nil when none can.
 extension WorkspaceManager {
     /// `task` picks the generator (nil: always an agent, as for review guides, which read the whole diff); `model` is
-    /// the Claude model of the agent route (a small one by default); `timeout` how long the call may take.
+    /// the Claude model of the agent route (a small one by default) and `effort` its effort; `timeout` how long the
+    /// call may take.
     func generateText(_ prompt: String, schema: [String: Any], task: TextTask?, prefer provider: RunProvider?, profileID: String?,
-                      cwd: String, model: String? = nil, timeout: TimeInterval = 120) async -> [String: Any]? {
+                      cwd: String, model: String? = nil, effort: String? = nil, timeout: TimeInterval = 120) async -> [String: Any]? {
         if let task, case .api(let api, let apiModel, let key) = TextGenerationRoute.resolve(settings.textGenerator(for: task),
                                                                                             key: { SecretStore.read($0.keyAccount) }) {
             // A failed request leaves the text to the caller's fallback, as an agent that gave no answer does: a key
@@ -16,11 +17,11 @@ extension WorkspaceManager {
                                                         maxTokens: task.maxTokens, timeout: min(timeout, 90))
         }
         return await generateWithAgent(prompt, schema: schema, prefer: provider, profileID: profileID, cwd: cwd, model: model,
-                                       timeout: timeout)
+                                       effort: effort, timeout: timeout)
     }
 
     private func generateWithAgent(_ prompt: String, schema: [String: Any], prefer provider: RunProvider?, profileID: String?,
-                                   cwd: String, model: String?, timeout: TimeInterval) async -> [String: Any]? {
+                                   cwd: String, model: String?, effort: String?, timeout: TimeInterval) async -> [String: Any]? {
         var order: [RunProvider] = [.claude, .codex, .antigravity]
         if let provider {
             if let index = order.firstIndex(of: provider) {
@@ -45,7 +46,7 @@ extension WorkspaceManager {
                 }
                 let work = Task.detached(priority: .utility) {
                     await TextGenerationRunner.run(engine: engine, executable: executable, environment: environment, prompt: prompt,
-                                             schema: schema, cwd: cwd, timeout: timeout, model: model)
+                                             schema: schema, cwd: cwd, timeout: timeout, model: model, effort: effort)
                 }
                 // A detached task does not inherit cancellation: pass it on, so a cancelled request stops its agent process.
                 if let answer = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() }) {

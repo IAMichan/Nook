@@ -199,12 +199,13 @@ enum TextGeneration {
 
     /// `claude -p` that only answers: a small model, a one-line system prompt (instead of the coding agent's 24k-token
     /// prompt), the schema, no user settings or CLAUDE.md (`--setting-sources local`), no tools, no slash commands, no MCP
-    /// servers, no hooks and no saved transcript. The prompt goes on stdin.
-    static func claudeArguments(schema: [String: Any], model: String = "haiku") -> [String] {
-        ["-p", "--output-format", "json", "--json-schema", json(schema), "--model", model,
-         "--system-prompt", system, "--setting-sources", "local",
-         "--settings", #"{"disableAllHooks":true}"#, "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
-         "--permission-mode", "dontAsk", "--no-session-persistence"]
+    /// servers, no hooks and no saved transcript. The prompt goes on stdin. `effort` caps how long a larger model thinks.
+    static func claudeArguments(schema: [String: Any], model: String = "haiku", effort: String? = nil) -> [String] {
+        ["-p", "--output-format", "json", "--json-schema", json(schema), "--model", model]
+            + (effort.map { ["--effort", $0] } ?? [])
+            + ["--system-prompt", system, "--setting-sources", "local",
+               "--settings", #"{"disableAllHooks":true}"#, "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
+               "--permission-mode", "dontAsk", "--no-session-persistence"]
     }
 
     /// `codex exec` that only answers: none of your config, rules, plugins, apps, MCP servers or built-in tools; read-only,
@@ -324,7 +325,8 @@ enum TextGenerationRunner {
     /// Waits for the call without holding a thread: a title or commit message can take up to `timeout` seconds, and a
     /// blocked thread of Swift's shared pool is one fewer for the rest of Nook meanwhile.
     static func run(engine: TextGeneration.Engine, executable: String, environment: [String: String], prompt: String,
-                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) async -> [String: Any]? {
+                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil,
+                    effort: String? = nil) async -> [String: Any]? {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -332,7 +334,7 @@ enum TextGenerationRunner {
         let arguments: [String]
         switch engine {
         case .claude:
-            arguments = TextGeneration.claudeArguments(schema: schema, model: model ?? "haiku")
+            arguments = TextGeneration.claudeArguments(schema: schema, model: model ?? "haiku", effort: effort)
         case .codex:
             let schemaFile = temp.appendingPathComponent("schema.json")
             guard (try? Data(TextGeneration.json(schema).utf8).write(to: schemaFile)) != nil else { return nil }

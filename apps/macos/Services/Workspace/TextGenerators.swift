@@ -256,6 +256,27 @@ enum NextPromptSuggestion {
     /// At most this many characters are shown and taken with Tab.
     static let maxLength = 240
 
+    /// How long Nook waits for an agent's own suggestion (Claude Code's `prompt_suggestion`) before the generator writes
+    /// one. The agent predicts on its warm cache in a few seconds; when it stays silent it sends nothing to say so.
+    static let agentGrace: TimeInterval = 5
+
+    /// The Claude model the agent route writes a suggestion with: the session's own, as you chose it, so the prediction
+    /// is as good as the conversation (measured on 2026-11-13: Opus 5.5 at low effort answered in ~1.3 s with ~60 output
+    /// tokens, where Haiku thought first and took 2–5 s). Nil, so the small default, for any session not on Claude Code:
+    /// its model name means nothing to `claude`.
+    static func agentModel(_ run: WorkspaceRun) -> String? {
+        switch run.provider {
+        case .claude: break
+        case .codex, .gemini, .opencode, .cursor, .grok, .antigravity, .pi, .acp: return nil
+        }
+        let chosen = run.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !chosen.isEmpty { return chosen }
+        return run.resolvedModel.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// One line to predict: a larger model needs no thinking for it.
+    static let agentEffort = "low"
+
     /// What an agent asked on its own thread is told (Codex's `thread/sample`), the words t3code uses.
     static let agentInstruction = "Predict the next message the user will send in this conversation. Reply with only that message, written as the user would type it, in under 20 words. Do not use tools. If there is no clear next step, reply with nothing."
 
