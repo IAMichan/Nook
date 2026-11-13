@@ -58,7 +58,7 @@ enum GitHubPullRequests {
     /// "owner/repo" and the number of a pull request link ("https://github.com/owner/repo/pull/12").
     static func parse(_ url: URL) -> (repo: String, number: Int)? {
         let parts = url.path.split(separator: "/").map(String.init)
-        guard url.host?.hasSuffix("github.com") == true, parts.count >= 4, parts[2] == "pull", let number = Int(parts[3]) else { return nil }
+        guard url.host.map { $0 == "github.com" || $0.hasSuffix(".github.com") } == true, parts.count >= 4, parts[2] == "pull", let number = Int(parts[3]) else { return nil }
         return (parts[0] + "/" + parts[1], number)
     }
 

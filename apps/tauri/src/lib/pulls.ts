@@ -144,7 +144,7 @@ export function jobId(url: string | null): number | null {
   } catch {
     return null;
   }
-  if (!parsed.hostname.endsWith("github.com")) return null;
+  if (parsed.hostname !== "github.com" && !parsed.hostname.endsWith(".github.com")) return null;
   const parts = parsed.pathname.split("/").filter(Boolean);
   const index = parts.indexOf("job");
   if (index < 0 || !parts.includes("actions")) return null;
@@ -362,7 +362,7 @@ const activities: Record<string, string> = {
 };
 
 export function activitySentence(event: string, detail: string): string {
-  return (activities[event] ?? event).replace("%", detail);
+  return (activities[event] ?? event).replaceAll("%", detail);
 }
 
 /// The label after "@author" on a review or comment card, and its tone.
