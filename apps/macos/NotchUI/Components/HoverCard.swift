@@ -167,7 +167,216 @@ enum HoverCardClicks {
     }
 
     private static func isCard(_ window: NSWindow) -> Bool {
-        String(describing: type(of: window)).contains("Popover")
+        window is RowCardWindow || String(describing: type(of: window)).contains("Popover")
+    }
+}
+
+// MARK: - A row's card window
+
+/// The window a list row's card (`hoverCard(warm:)`) is drawn in, beside the row: a child of the row's window that never
+/// takes the keyboard. A popover did take it, so the click on the row (or on the next one) under an open card only
+/// closed the card and gave the window its key status back, and opening the chat or session took a second click. The
+/// window still hears the pointer, so the card stays while you move onto it and its tips show.
+final class RowCardWindow: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+/// Shows one row's card at a time (`HoverCardWarmth` closes the previous one), in one `RowCardWindow`.
+@MainActor
+private final class RowCardPresenter {
+    static let shared = RowCardPresenter()
+    /// Room between the row and its card, and between the card and the screen's edge.
+    private static let gap = NookTheme.Spacing.xs
+    private static let margin: CGFloat = 5
+
+    private var panel: RowCardWindow?
+    private var host: NSHostingController<AnyView>?
+    private weak var owner: RowCardAnchorView?
+    private var monitor: Any?
+    private var resignObserver: NSObjectProtocol?
+
+    func show(_ anchor: RowCardAnchorView) {
+        guard let window = anchor.window, window.isVisible, let content = anchor.content else { return hide(anchor) }
+        let target = anchor.screenFrame
+        guard !target.isEmpty else { return }
+        let panel = makePanel()
+        guard let host else { return }
+        let first = owner !== anchor || !panel.isVisible
+        owner = anchor
+        host.rootView = AnyView(content()
+            .clipShape(NookTheme.shape(NookTheme.Radius.panel))
+            .roundedStroke(NookTheme.line2, radius: NookTheme.Radius.panel)
+            .environmentObject(AppModel.shared))
+        let fitted = host.sizeThatFits(in: CGSize(width: 400, height: 4_000))
+        let size = CGSize(width: ceil(fitted.width), height: ceil(fitted.height))
+        guard size.width > 0, size.height > 0 else { return }
+        let area = (window.screen ?? NSScreen.main)?.visibleFrame.insetBy(dx: Self.margin, dy: Self.margin)
+            ?? window.frame
+        panel.appearance = window.effectiveAppearance
+        panel.level = window.level
+        panel.setFrame(NSRect(origin: Self.origin(for: size, beside: target, edge: anchor.edge, in: area), size: size),
+                       display: true)
+        if panel.parent !== window {
+            panel.parent?.removeChildWindow(panel)
+            window.addChildWindow(panel, ordered: .above)
+        }
+        panel.invalidateShadow()
+        if first {
+            panel.alphaValue = 0
+            panel.orderFront(nil)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().alphaValue = 1
+            }
+        }
+        installMonitor()
+    }
+
+    /// Closes the card `anchor` shows; another row's card stays.
+    func hide(_ anchor: RowCardAnchorView) {
+        guard owner === anchor else { return }
+        owner = nil
+        removeMonitor()
+        guard let panel else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        // Let go of what the card showed (it may observe the app model).
+        host?.rootView = AnyView(EmptyView())
+    }
+
+    /// The card's origin beside `target` on `edge` (centred along it, as a popover), on the other side when there is no
+    /// room, and kept on screen.
+    nonisolated static func origin(for size: CGSize, beside target: NSRect, edge: Edge, in area: NSRect) -> CGPoint {
+        func origin(_ edge: Edge) -> CGPoint {
+            switch edge {
+            case .trailing: return CGPoint(x: target.maxX + gap, y: target.midY - size.height / 2)
+            case .leading: return CGPoint(x: target.minX - gap - size.width, y: target.midY - size.height / 2)
+            case .top: return CGPoint(x: target.midX - size.width / 2, y: target.maxY + gap)
+            case .bottom: return CGPoint(x: target.midX - size.width / 2, y: target.minY - gap - size.height)
+            }
+        }
+        func fits(_ point: CGPoint, _ edge: Edge) -> Bool {
+            switch edge {
+            case .trailing: return point.x + size.width <= area.maxX
+            case .leading: return point.x >= area.minX
+            case .top: return point.y + size.height <= area.maxY
+            case .bottom: return point.y >= area.minY
+            }
+        }
+        let opposite: Edge = switch edge {
+        case .trailing: .leading
+        case .leading: .trailing
+        case .top: .bottom
+        case .bottom: .top
+        }
+        var point = origin(edge)
+        if !fits(point, edge) {
+            let flipped = origin(opposite)
+            if fits(flipped, opposite) { point = flipped }
+        }
+        point.x = max(area.minX, min(point.x, area.maxX - size.width))
+        point.y = max(area.minY, min(point.y, area.maxY - size.height))
+        return point
+    }
+
+    private func makePanel() -> RowCardWindow {
+        if let panel { return panel }
+        let panel = RowCardWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+        let host = NSHostingController(rootView: AnyView(EmptyView()))
+        host.sizingOptions = []
+        panel.contentView = host.view
+        self.host = host
+        self.panel = panel
+        // A popover went when Nook went to the back; so does the card.
+        resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
+                                                                object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeShown() }
+        }
+        return panel
+    }
+
+    /// A scroll moves the row away from a card that stays put, and a key goes to what the card covers: either closes it.
+    private func installMonitor() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .keyDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.closeShown() }
+            return event
+        }
+    }
+
+    private func removeMonitor() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func closeShown() {
+        guard let owner else { return }
+        let close = owner.close
+        hide(owner)
+        close?()
+    }
+}
+
+/// Sits behind a row while its card may show, and tells `RowCardPresenter` where the row is. It takes no clicks.
+private struct RowCardAnchor: NSViewRepresentable {
+    let shown: Bool
+    let edge: Edge
+    let close: () -> Void
+    let content: () -> AnyView
+
+    func makeNSView(context: Context) -> RowCardAnchorView { RowCardAnchorView() }
+
+    func updateNSView(_ view: RowCardAnchorView, context: Context) {
+        view.edge = edge
+        view.close = close
+        view.content = content
+        view.shown = shown
+        view.sync()
+    }
+
+    static func dismantleNSView(_ view: RowCardAnchorView, coordinator: ()) {
+        RowCardPresenter.shared.hide(view)
+    }
+}
+
+@MainActor
+private final class RowCardAnchorView: NSView {
+    var shown = false
+    var edge: Edge = .trailing
+    var close: (() -> Void)?
+    var content: (() -> AnyView)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { RowCardPresenter.shared.hide(self) } else { sync() }
+    }
+
+    /// Where the row shows on screen: what a scroll view does not clip away of it.
+    var screenFrame: NSRect {
+        guard let window else { return .zero }
+        let shown = shownBounds
+        return window.convertToScreen(convert(shown.isEmpty ? bounds : shown, to: nil))
+    }
+
+    func sync() {
+        guard shown else { return RowCardPresenter.shared.hide(self) }
+        // A card that opens at once comes with its row's anchor, which is laid out only after this update.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.shown else { return }
+            RowCardPresenter.shared.show(self)
+        }
     }
 }
 
@@ -235,7 +444,18 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
             // Only on the row under the pointer: a popover on every row of a long list was carried along while it
             // scrolled. Behind the view, at its size, so the card points at the same place.
             .background {
-                if hovering || showCard {
+                if warm, hovering || showCard {
+                    // A row's card holds nothing to click, so it needs no popover, which took the keyboard from the
+                    // window: the click that opens the row then only closed the card (`RowCardWindow`).
+                    let showCard = $showCard
+                    RowCardAnchor(shown: showCard.wrappedValue, edge: arrowEdge,
+                                  close: { showCard.wrappedValue = false }) {
+                        AnyView(card().onHover { inside in
+                            onCard = inside
+                            update()
+                        })
+                    }
+                } else if hovering || showCard {
                     Color.clear.popover(isPresented: $showCard, arrowEdge: arrowEdge) {
                         card().onHover { inside in
                             onCard = inside
