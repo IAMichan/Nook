@@ -251,7 +251,7 @@ struct TranscriptConversation: View {
                         // The agent's task list, as above a session Nook runs itself: the phase it works on now.
                         if bottomBar != nil, let tasks = derived.tasks,
                            working || !RunTasks.isFinished(tasks), TaskChecklist.showsAboveComposer(tasks) {
-                            TasksStrip(steps: tasks, working: working).chatColumn()
+                            AgentActivityDock(tasks: tasks, working: working).chatColumn()
                         }
                         (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
                     }
