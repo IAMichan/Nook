@@ -11,6 +11,9 @@ enum ProjectFavicon {
         "public/favicon.svg", "public/favicon.ico", "public/favicon.png",
         "app/favicon.ico", "app/favicon.png", "app/icon.svg", "app/icon.png", "app/icon.ico",
         "src/favicon.ico", "src/favicon.svg", "src/app/favicon.ico", "src/app/icon.svg", "src/app/icon.png",
+        // Phoenix (`priv/static`) and SvelteKit or Hugo (`static`) serve their public files from here.
+        "priv/static/favicon.svg", "priv/static/favicon.ico", "priv/static/favicon.png",
+        "static/favicon.svg", "static/favicon.ico", "static/favicon.png",
         "assets/icon.svg", "assets/icon.png", "assets/logo.svg", "assets/logo.png",
         ".idea/icon.svg",
     ]

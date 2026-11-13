@@ -56,6 +56,13 @@ final class ProjectFaviconTests: XCTestCase {
         XCTAssertEqual(ProjectFavicon.find(in: root.path), root.appendingPathComponent("bettr-finance/favicon.svg").path)
     }
 
+    func testPhoenixStaticFolderInAServiceOfItsOwn() throws {
+        // mindlinq: an Elixir/Phoenix service `core` next to a CMS, its favicon in `priv/static`.
+        try touch("core/priv/static/favicon.ico")
+        try touch("cms/src/app/(frontend)/logo.svg")
+        XCTAssertEqual(ProjectFavicon.find(in: root.path), root.appendingPathComponent("core/priv/static/favicon.ico").path)
+    }
+
     func testMacAppIconAndLargeAppIconSet() throws {
         try touch("apps/ios/Companion/Assets.xcassets/AppIcon.appiconset/AppIcon.png", String(repeating: "a", count: 300 * 1024))
         XCTAssertEqual(ProjectFavicon.find(in: root.path),
