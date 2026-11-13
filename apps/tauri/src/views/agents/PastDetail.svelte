@@ -2,6 +2,7 @@
   // Een eerdere sessie uit het transcript van de agent: het hele gesprek, en verdergaan (in Nook of in de terminal).
   import { agentApi, agentNames, formatTokens, total, type PastSession } from "../../lib/agents";
   import Conversation from "./Conversation.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import { ago, duration, folderName } from "./time";
 
   let { session, oncontinue }: { session: PastSession; oncontinue?: (s: PastSession, message?: string) => void } = $props();
@@ -31,10 +32,10 @@
 
 <div class="detail">
   <header class="thread-head">
-    <div class="title"><span class="project">{folderName(session.cwd)}</span><span class="slash">/</span><span class="name">{session.title || "Sessie zonder titel"}</span></div>
+    <div class="title"><span class="project">{folderName(session.cwd)}</span><span class="slash">/</span><span class="name">{session.title || tr("Sessie zonder titel", "Untitled session")}</span></div>
     <div class="meta faint">
-      {agentNames[session.agent]} · {folderName(session.cwd)}{#if session.branch} · {session.branch}{/if} · {ago(session.ended)} · duurde {duration(seconds)} · {session.prompts} vragen
-      {#if total(session.tokens)} · {formatTokens(total(session.tokens))} tokens{/if}
+      {agentNames[session.agent]} · {folderName(session.cwd)}{#if session.branch} · {session.branch}{/if} · {ago(session.ended)} · {tr("duurde {time}", "took {time}", { time: duration(seconds) })} · {tr("{n} vragen", "{n} prompts", { n: session.prompts })}
+      {#if total(session.tokens)} · {tr("{n} tokens", "{n} tokens", { n: formatTokens(total(session.tokens)) })}{/if}
     </div>
   </header>
   <div class="scroll"><div class="thread-column body"><Conversation path={session.path} /></div></div>
@@ -42,13 +43,13 @@
   {#if error}<p class="err">{error}</p>{/if}
   {#if oncontinue}
     <div class="reply-box">
-      <input placeholder="Ga verder met deze sessie in Nook…" bind:value={message} onkeydown={(e) => e.key === "Enter" && send()} />
-      <button class="primary" disabled={!message.trim()} onclick={send}>Stuur</button>
+      <input placeholder={tr("Ga verder met deze sessie in Nook…", "Continue this session in Nook…")} bind:value={message} onkeydown={(e) => e.key === "Enter" && send()} />
+      <button class="primary" disabled={!message.trim()} onclick={send}>{tr("Stuur", "Send")}</button>
     </div>
   {/if}
   <div class="actions">
-    {#if oncontinue}<button onclick={() => oncontinue?.(session)}>Open in Nook</button>{/if}
-    <button onclick={inTerminal}>Ga verder in de terminal</button>
+    {#if oncontinue}<button onclick={() => oncontinue?.(session)}>{tr("Open in Nook", "Open in Nook")}</button>{/if}
+    <button onclick={inTerminal}>{tr("Ga verder in de terminal", "Continue in the terminal")}</button>
   </div>
   </div>
 </div>

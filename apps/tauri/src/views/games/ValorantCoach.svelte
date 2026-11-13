@@ -3,7 +3,7 @@
   // every round. The coach itself is `nook_core::games::valorant` (Rust); this page shows it and words it.
   import { games, clock, coachingText, confidenceLabel, generalText, habitText, statusLabel, type ValorantCatalog } from "../../lib/games";
   import { gamer } from "../../lib/gamer.svelte";
-  import { english, tr } from "../../lib/i18n.svelte";
+  import { english, locale, tr } from "../../lib/i18n.svelte";
   import { nook } from "../../lib/state.svelte";
   import { toast } from "../../lib/toast.svelte";
   import Icon from "../../components/Icon.svelte";
@@ -60,7 +60,7 @@
   const icon = (severity: string) => (severity === "success" ? "✓" : severity === "warning" ? "⚠" : "•");
   const effectLabel = (effect: string) =>
     effect === "hit" ? tr("raakte mij", "caught me") : effect === "avoided" ? tr("ontweken", "avoided") : effect === "destroyed" ? tr("kapot", "destroyed") : tr("gezien", "seen");
-  const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString(english() ? "en-GB" : "nl-NL", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
+  const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
 </script>
 
 <div class="coach">
@@ -190,7 +190,7 @@
           <h3>{tr("Eerdere potjes", "Earlier matches")}</h3>
           <p class="faint small">{tr("Apart bewaard; ze tellen niet mee voor dit potje.", "Kept apart; they don't count toward this match.")}</p>
           {#each view.history.slice(0, 5) as h (h.id)}
-            <div class="event"><span>{new Date(h.started).toLocaleDateString(english() ? "en-GB" : "nl-NL")} · {h.map ?? "?"} · {agentName(h.myAgent)} · {h.rounds} {tr("rondes", "rounds")} · {h.patterns} {tr("patronen", "patterns")}</span></div>
+            <div class="event"><span>{new Date(h.started).toLocaleDateString(locale())} · {h.map ?? "?"} · {agentName(h.myAgent)} · {h.rounds} {tr("rondes", "rounds")} · {h.patterns} {tr("patronen", "patterns")}</span></div>
           {/each}
         {/if}
       </section>

@@ -5,6 +5,7 @@
   import { api } from "../lib/api";
   import { brainApi, type BrainAdvice, type PullProgress, type Recommendation, type ServerModel } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
+  import { tr } from "../lib/i18n.svelte";
 
   let { compact = false }: { compact?: boolean } = $props();
   let advice = $state<BrainAdvice | null>(null);
@@ -31,7 +32,7 @@
 
   async function install(model: string) {
     error = null;
-    progress[model] = { model, status: "starten…", fraction: 0, done: false, error: null };
+    progress[model] = { model, status: tr("starten…", "starting…"), fraction: 0, done: false, error: null };
     try {
       await brainApi.pull(model);
     } catch (e) {
@@ -57,10 +58,10 @@
 </script>
 
 {#if !advice}
-  <p class="faint">Kijken wat er op deze computer draait…</p>
+  <p class="faint">{tr("Kijken wat er op deze computer draait…", "Checking what runs on this computer…")}</p>
 {:else}
   <div class="advice">
-    <p class="faint note">Deze computer heeft {advice.memoryGb} GB werkgeheugen.</p>
+    <p class="faint note">{tr("Deze computer heeft {gb} GB werkgeheugen.", "This computer has {gb} GB of memory.", { gb: advice.memoryGb })}</p>
     {#each (compact ? advice.recommendations.slice(0, 1) : advice.recommendations) as r (r.title + modelOf(r))}
       {@const model = modelOf(r)}
       {@const p = progress[model]}
@@ -78,23 +79,23 @@
         {#if r.choice.kind === "pull"}
           {#if r.ready}
             {@const m = { server: "ollama" as const, name: model }}
-            <button class:primary={!isCurrent(m)} disabled={isCurrent(m)} onclick={() => use(m)}>{isCurrent(m) ? "In gebruik" : "Gebruik"}</button>
+            <button class:primary={!isCurrent(m)} disabled={isCurrent(m)} onclick={() => use(m)}>{isCurrent(m) ? tr("In gebruik", "In use") : tr("Gebruik", "Use")}</button>
           {:else if !advice.ollamaRunning}
-            <button onclick={() => openUrl("https://ollama.com/download")}>Ollama downloaden</button>
+            <button onclick={() => openUrl("https://ollama.com/download")}>{tr("Ollama downloaden", "Download Ollama")}</button>
           {:else}
             <button class="primary" disabled={!!p && !p.done} onclick={() => install(model)}>
-              {p && !p.done ? "Bezig…" : `Installeer (${r.choice.option.sizeGb} GB)`}
+              {p && !p.done ? tr("Bezig…", "Working…") : tr("Installeer ({gb} GB)", "Install ({gb} GB)", { gb: r.choice.option.sizeGb })}
             </button>
           {/if}
         {:else if r.choice.kind === "server"}
           {@const m = r.choice.model}
-          <button class:primary={!isCurrent(m)} disabled={isCurrent(m)} onclick={() => use(m)}>{isCurrent(m) ? "In gebruik" : "Gebruik"}</button>
+          <button class:primary={!isCurrent(m)} disabled={isCurrent(m)} onclick={() => use(m)}>{isCurrent(m) ? tr("In gebruik", "In use") : tr("Gebruik", "Use")}</button>
         {/if}
       </div>
     {/each}
     {#if error}<p class="err">{error}</p>{/if}
     {#if !compact && (ollama.length || lmstudio.length)}
-      <h3>Draait nu</h3>
+      <h3>{tr("Draait nu", "Running now")}</h3>
       <div class="models">
         {#each [...ollama, ...lmstudio] as m (m.server + m.name)}
           <button class:on={isCurrent(m)} onclick={() => use(m)}>{m.name} <span class="faint">· {m.server === "ollama" ? "Ollama" : "LM Studio"}</span></button>
@@ -102,7 +103,7 @@
       </div>
     {/if}
     {#if !compact && !lmstudio.length}
-      <p class="faint note">LM Studio verschijnt hier zodra de server draait (Developer › Start server).</p>
+      <p class="faint note">{tr("LM Studio verschijnt hier zodra de server draait (Developer › Start server).", "LM Studio shows up here once its server runs (Developer › Start server).")}</p>
     {/if}
   </div>
 {/if}

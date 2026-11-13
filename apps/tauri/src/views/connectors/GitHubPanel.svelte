@@ -46,45 +46,44 @@
   const nothing = $derived(pullRequests.loaded && !shown.length && !shownIssues.length);
   const filtered = $derived(query !== "" || pick !== "all");
 
-  const titles: Record<Lane, [string, string]> = {
-    review: ["Wacht op jouw review", "Waiting for your review"],
-    fix: ["Moet je fixen", "Needs your fix"],
-    ready: ["Klaar om te mergen", "Ready to merge"],
-    waiting: ["Wachten op anderen", "Waiting on others"],
-    draft: ["Concepten", "Drafts"],
-    merged: ["Onlangs gemerged", "Recently merged"],
-  };
-  const hints: Record<Lane, [string, string]> = {
-    review: ["Iemand vroeg jou om mee te kijken.", "Someone asked you to take a look."],
-    fix: ["CI faalt, wijzigingen gevraagd of een conflict.", "CI is failing, changes were requested or there is a conflict."],
-    ready: ["Goedgekeurd en groen: alleen mergen nog.", "Approved and green: only the merge is left."],
-    waiting: ["CI loopt nog of er is nog geen review.", "CI is still running or no review yet."],
-    draft: ["Nog niet klaar voor review.", "Not ready for review yet."],
-    merged: ["Je laatste samengevoegde pull requests.", "Your latest merged pull requests."],
-  };
-  const reasonText: Record<Reason, [string, string]> = {
-    reviewRequested: ["review gevraagd", "review requested"],
-    failing: ["CI faalt", "CI failing"],
-    changes: ["wijzigingen gevraagd", "changes requested"],
-    conflict: ["conflict", "conflict"],
-    approved: ["goedgekeurd", "approved"],
-    passing: ["CI groen", "CI green"],
-    pending: ["CI loopt", "CI running"],
-    needsReview: ["wacht op review", "needs review"],
-    draft: ["concept", "draft"],
-    merged: ["gemerged", "merged"],
-  };
+  const titles = (): Record<Lane, string> => ({
+    review: tr("Wacht op jouw review", "Waiting for your review"),
+    fix: tr("Moet je fixen", "Needs your fix"),
+    ready: tr("Klaar om te mergen", "Ready to merge"),
+    waiting: tr("Wachten op anderen", "Waiting on others"),
+    draft: tr("Concepten", "Drafts"),
+    merged: tr("Onlangs gemerged", "Recently merged"),
+  });
+  const hints = (): Record<Lane, string> => ({
+    review: tr("Iemand vroeg jou om mee te kijken.", "Someone asked you to take a look."),
+    fix: tr("CI faalt, wijzigingen gevraagd of een conflict.", "CI is failing, changes were requested or there is a conflict."),
+    ready: tr("Goedgekeurd en groen: alleen mergen nog.", "Approved and green: only the merge is left."),
+    waiting: tr("CI loopt nog of er is nog geen review.", "CI is still running or no review yet."),
+    draft: tr("Nog niet klaar voor review.", "Not ready for review yet."),
+    merged: tr("Je laatste samengevoegde pull requests.", "Your latest merged pull requests."),
+  });
+  const reasonText = (): Record<Reason, string> => ({
+    reviewRequested: tr("review gevraagd", "review requested"),
+    failing: tr("CI faalt", "CI failing"),
+    changes: tr("wijzigingen gevraagd", "changes requested"),
+    conflict: tr("conflict", "conflict"),
+    approved: tr("goedgekeurd", "approved"),
+    passing: tr("CI groen", "CI green"),
+    pending: tr("CI loopt", "CI running"),
+    needsReview: tr("wacht op review", "needs review"),
+    draft: tr("concept", "draft"),
+    merged: tr("gemerged", "merged"),
+  });
   const tone = (r: Reason) =>
     r === "failing" || r === "changes" || r === "conflict" ? "bad" : r === "approved" || r === "passing" ? "good" : r === "merged" ? "merged" : r === "reviewRequested" ? "iris" : "";
-  const word = (pair: [string, string]) => tr(pair[0], pair[1]);
 
   const tiles = $derived<{ id: Pick; label: string; count: number; tone: string }[]>([
-    { id: "review", label: "Review", count: counts.review, tone: "iris" },
+    { id: "review", label: tr("Review", "Review"), count: counts.review, tone: "iris" },
     { id: "fix", label: tr("Fixen", "Fix"), count: counts.fix, tone: "bad" },
     { id: "ready", label: tr("Mergen", "Merge"), count: counts.ready, tone: "good" },
     { id: "waiting", label: tr("Wachten", "Waiting"), count: counts.waiting, tone: "" },
     { id: "draft", label: tr("Concepten", "Drafts"), count: counts.draft, tone: "" },
-    { id: "issues", label: "Issues", count: issues.length, tone: "wait" },
+    { id: "issues", label: tr("Issues", "Issues"), count: issues.length, tone: "wait" },
   ]);
 
   function settings() {
@@ -170,8 +169,8 @@
   <div class="scroll">
     {#each groups as g (g.lane)}
       <section>
-        <h5 class={g.lane}>{word(titles[g.lane])}<span class="n">{g.items.length}</span></h5>
-        {#if pick === g.lane}<p class="hint faint">{word(hints[g.lane])}</p>{/if}
+        <h5 class={g.lane}>{titles()[g.lane]}<span class="n">{g.items.length}</span></h5>
+        {#if pick === g.lane}<p class="hint faint">{hints()[g.lane]}</p>{/if}
         {#each g.items as t (itemId(t.item))}
           {@render pr(t)}
         {/each}
@@ -207,7 +206,7 @@
           {itemId(i)}{#if t.lane === "review" && i.author} · @{i.author}{/if}{#if i.comments} · {i.comments} {tr("reacties", "comments")}{/if}{#if sizeLabel(i)} · {sizeLabel(i)}{/if}
         </span>
         <span class="pills">
-          {#each t.reasons as r (r)}<span class="pill {tone(r)}">{word(reasonText[r])}</span>{/each}
+          {#each t.reasons as r (r)}<span class="pill {tone(r)}">{reasonText()[r]}</span>{/each}
         </span>
       </span>
     </button>

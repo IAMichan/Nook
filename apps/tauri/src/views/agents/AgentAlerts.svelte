@@ -44,7 +44,7 @@
       await agentApi.activateTerminal(card.host);
       agents.attention = null;
     } catch {
-      agents.error = tr(`Ik vind de terminal van ${card.name} niet. Staat hij nog open?`, `I can't find the terminal of ${card.name}. Is it still open?`);
+      agents.error = tr("Ik vind de terminal van {name} niet. Staat hij nog open?", "I can't find the terminal of {name}. Is it still open?", { name: card.name });
     }
   }
 
@@ -75,7 +75,7 @@
       <div class="qtext">
         <div class="qtitle" title={question.items[0]?.question ?? ""}>{question.items[0]?.question ?? ""}</div>
         <div class="faint qsub">
-          {question.agentName} {tr("vraagt", "asks")} · {question.project}{#if agents.questions.length > 1} · {tr("nog", "another")} {agents.questions.length - 1}{/if}
+          {tr("{agent} vraagt", "{agent} asks", { agent: question.agentName })} · {question.project}{#if agents.questions.length > 1} · {tr("nog {n}", "{n} more", { n: agents.questions.length - 1 })}{/if}
         </div>
       </div>
       {#if !question.sessionKey.startsWith("run:")}<button class="ghost" onclick={() => answerInTerminal(question)}>{tr("In terminal", "In terminal")}</button>{/if}
@@ -102,7 +102,7 @@
       <div class="buttons">
         <div class="actions">
           <button class="action bright" onclick={view}>{tr("Bekijk", "View")}</button>
-          {#if card.host}<span class="divider"></span><button class="action" onclick={openTerminal}>Open {terminalName}</button>{/if}
+          {#if card.host}<span class="divider"></span><button class="action" onclick={openTerminal}>{tr("Open {app}", "Open {app}", { app: terminalName })}</button>{/if}
         </div>
         <NoticeOk {left} onclick={ondismiss} />
       </div>

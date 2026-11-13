@@ -21,23 +21,22 @@
   });
 
   const desktop = $derived(nook.info?.capabilities.terminals ?? false);
-  const pages: [Page, string][] = [["terminals", "Terminals"], ["browser", "Browser"], ["worktrees", "Worktrees"], ["usage", "Gebruik"]];
+  const pages = $derived<[Page, string][]>([["terminals", tr("Terminals", "Terminals")], ["browser", tr("Browser", "Browser")], ["worktrees", tr("Worktrees", "Worktrees")], ["usage", tr("Gebruik", "Usage")]]);
 </script>
 
 {#if !nook.info}
-  <div class="empty"><p class="faint">Laden…</p></div>
+  <div class="empty"><p class="faint">{tr("Laden…", "Loading…")}</p></div>
 {:else if !desktop}
   <div class="empty">
-    <p>De werkruimte draait op je computer, niet op je telefoon.</p>
+    <p>{tr("De werkruimte draait op je computer, niet op je telefoon.", "The workspace runs on your computer, not on your phone.")}</p>
     <p class="faint">
-      Terminals, de browser van Nook, worktrees en de sessies van coding-agents horen bij je Windows- of Linux-computer
-      (of je Mac). Open Nook daar; op de telefoon volg je ze via de companion zodra die gekoppeld is.
+      {tr("Terminals, de browser van Nook, worktrees en de sessies van coding-agents horen bij je Windows- of Linux-computer (of je Mac). Open Nook daar; op de telefoon volg je ze via de companion zodra die gekoppeld is.", "Terminals, Nook's browser, worktrees and coding agent sessions belong on your Windows or Linux computer (or your Mac). Open Nook there; on your phone you follow them through the companion once it is paired.")}
     </p>
   </div>
 {:else}
   <div class="workspace" class:compact>
     <nav>
-      {#each pages as [id, label] (id)}<button class:on={page === id} onclick={() => (page = id)}>{id === "usage" ? tr("Gebruik", "Usage") : label}</button>{/each}
+      {#each pages as [id, label] (id)}<button class:on={page === id} onclick={() => (page = id)}>{label}</button>{/each}
     </nav>
     <div class="page">
       {#if page === "terminals"}<Terminals />

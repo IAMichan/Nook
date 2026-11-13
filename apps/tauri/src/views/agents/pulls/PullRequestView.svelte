@@ -13,6 +13,7 @@
   } from "../../../lib/pulls";
   import { pullDetails, pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
+  import { tr } from "../../../lib/i18n.svelte";
   import CheckLog from "./CheckLog.svelte";
   import PullGlyph from "./PullGlyph.svelte";
 
@@ -149,7 +150,7 @@
   async function sendReview(event: ReviewEvent) {
     if (!detail || reviewBusy) return;
     if (event !== "APPROVE" && !reviewText.trim()) {
-      reviewNote = { ok: false, text: "Schrijf eerst een opmerking." };
+      reviewNote = { ok: false, text: tr("Schrijf eerst een opmerking.", "Write a comment first.") };
       return;
     }
     reviewBusy = true;
@@ -170,8 +171,8 @@
 
   const confirmMessage = $derived(
     detail
-      ? `${detail.headBranch} mergen — ${methodNames[method]}. Dit is lastig ongedaan te maken.` +
-          (detail.checkSummary !== "passing" && detail.checks.length ? "\nNiet alle checks zijn geslaagd." : "")
+      ? tr("{branch} mergen — {method}. Dit is lastig ongedaan te maken.", "Merge {branch} — {method}. This is hard to undo.", { branch: detail.headBranch, method: methodNames[method] }) +
+          (detail.checkSummary !== "passing" && detail.checks.length ? "\n" + tr("Niet alle checks zijn geslaagd.", "Not all checks passed.") : "")
       : "",
   );
 
@@ -191,12 +192,12 @@
 
 <div class="detail">
   <div class="head">
-    <button class="ghost icon" title="Terug" aria-label="Terug" onclick={onback}>‹</button>
+    <button class="ghost icon" title={tr("Terug", "Back")} aria-label={tr("Terug", "Back")} onclick={onback}>‹</button>
     <span class="id muted">{itemId(item)}</span>
     <span class="spacer"></span>
-    {#if loading}<span class="faint small">Bezig…</span>{/if}
-    <button class="ghost" title="Vernieuwen" disabled={loading} onclick={load}>Vernieuwen</button>
-    {#if detail?.url ?? item.url}<button class="ghost" title="Open op GitHub" onclick={() => open(detail?.url ?? item.url)}>Open op GitHub ↗</button>{/if}
+    {#if loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
+    <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={loading} onclick={load}>{tr("Vernieuwen", "Refresh")}</button>
+    {#if detail?.url ?? item.url}<button class="ghost" title={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(detail?.url ?? item.url)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
   </div>
 
   {#if detail}
@@ -211,9 +212,9 @@
     </div>
 
     <div class="tabs" role="tablist">
-      <button role="tab" aria-selected={tab === "conversation"} class:on={tab === "conversation"} onclick={() => ((tab = "conversation"), (openFile = null), (openCheck = null))}>Gesprek</button>
-      <button role="tab" aria-selected={tab === "commits"} class:on={tab === "commits"} onclick={() => ((tab = "commits"), (openFile = null), (openCheck = null))}>Commits ({detail.commits.length})</button>
-      <button role="tab" aria-selected={tab === "files"} class:on={tab === "files"} onclick={() => ((tab = "files"), (openCheck = null))}>Bestanden ({Math.max(detail.changedFiles, detail.files.length)})</button>
+      <button role="tab" aria-selected={tab === "conversation"} class:on={tab === "conversation"} onclick={() => ((tab = "conversation"), (openFile = null), (openCheck = null))}>{tr("Gesprek", "Conversation")}</button>
+      <button role="tab" aria-selected={tab === "commits"} class:on={tab === "commits"} onclick={() => ((tab = "commits"), (openFile = null), (openCheck = null))}>{tr("Commits ({n})", "Commits ({n})", { n: detail.commits.length })}</button>
+      <button role="tab" aria-selected={tab === "files"} class:on={tab === "files"} onclick={() => ((tab = "files"), (openCheck = null))}>{tr("Bestanden ({n})", "Files ({n})", { n: Math.max(detail.changedFiles, detail.files.length) })}</button>
     </div>
 
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -222,10 +223,10 @@
         <CheckLog accountId={accountId} repo={detail.repo} check={shownCheck} onback={() => (openCheck = null)} />
       {:else if tab === "conversation"}
         <div class="card markdown">
-          {#if detail.body}{@html renderMarkdown(detail.body)}{:else}<span class="faint">Geen beschrijving.</span>{/if}
+          {#if detail.body}{@html renderMarkdown(detail.body)}{:else}<span class="faint">{tr("Geen beschrijving.", "No description.")}</span>{/if}
         </div>
         <div class="section">
-          <div class="label faint">Checks</div>
+          <div class="label faint">{tr("Checks", "Checks")}</div>
           {#each detail.checks as check, i (i)}
             <!-- A GitHub Actions job opens its steps and log here; a check from another app only has its own page. -->
             <button class="line" disabled={!check.url} onclick={() => (jobId(check.url) !== null ? (openCheck = check) : open(check.url))}>
@@ -238,18 +239,18 @@
               {#if check.url}<span class="faint small">{jobId(check.url) !== null ? "›" : "↗"}</span>{/if}
             </button>
           {:else}
-            <span class="faint small">Geen checks op de laatste commit.</span>
+            <span class="faint small">{tr("Geen checks op de laatste commit.", "No checks on the latest commit.")}</span>
           {/each}
         </div>
         <div class="section">
-          <div class="label faint">Tijdlijn</div>
+          <div class="label faint">{tr("Tijdlijn", "Timeline")}</div>
           {#if detail.created}
-            {@render activity("good", "open", detail.author, "opende deze pull request", detail.created)}
+            {@render activity("good", "open", detail.author, tr("opende deze pull request", "opened this pull request"), detail.created)}
           {/if}
           {#each detail.events as event (event.id)}
             {@render timelineRow(event)}
           {:else}
-            <span class="faint small">Nog geen reviews of reacties.</span>
+            <span class="faint small">{tr("Nog geen reviews of reacties.", "No reviews or comments yet.")}</span>
           {/each}
         </div>
       {:else if tab === "commits"}
@@ -262,27 +263,27 @@
             </span>
           </button>
         {:else}
-          <span class="faint small">Geen commits.</span>
+          <span class="faint small">{tr("Geen commits.", "No commits.")}</span>
         {/each}
       {:else if file}
         <div class="filehead">
-          <button class="ghost icon" title="Terug" aria-label="Terug" onclick={() => (openFile = null)}>‹</button>
+          <button class="ghost icon" title={tr("Terug", "Back")} aria-label={tr("Terug", "Back")} onclick={() => (openFile = null)}>‹</button>
           {@render letter(file)}
           <span class="stack">
             <span class="mono path" title={file.path}>{file.path}</span>
             {#if file.previousPath}<span class="mono faint small path">{file.previousPath} →</span>{/if}
           </span>
           <span class="good small">+{file.additions}</span><span class="bad small">−{file.deletions}</span>
-          <button class="ghost icon" title="Vorig bestand" aria-label="Vorig bestand" disabled={fileIndex <= 0} onclick={() => (openFile = detail!.files[fileIndex - 1].path)}>↑</button>
-          <button class="ghost icon" title="Volgend bestand" aria-label="Volgend bestand" disabled={fileIndex + 1 >= detail.files.length} onclick={() => (openFile = detail!.files[fileIndex + 1].path)}>↓</button>
+          <button class="ghost icon" title={tr("Vorig bestand", "Previous file")} aria-label={tr("Vorig bestand", "Previous file")} disabled={fileIndex <= 0} onclick={() => (openFile = detail!.files[fileIndex - 1].path)}>↑</button>
+          <button class="ghost icon" title={tr("Volgend bestand", "Next file")} aria-label={tr("Volgend bestand", "Next file")} disabled={fileIndex + 1 >= detail.files.length} onclick={() => (openFile = detail!.files[fileIndex + 1].path)}>↓</button>
         </div>
         {#if file.patch}
           <pre class="diff">{#each diffLines(file.patch) as line, i (i)}<span class={line.kind}>{line.text}</span>
 {/each}</pre>
         {:else}
           <div class="empty">
-            <strong>Geen diff om te tonen</strong>
-            <span class="muted small">GitHub laat de diff van binaire en heel grote bestanden weg. Open de pull request op GitHub om hem te zien.</span>
+            <strong>{tr("Geen diff om te tonen", "No diff to show")}</strong>
+            <span class="muted small">{tr("GitHub laat de diff van binaire en heel grote bestanden weg. Open de pull request op GitHub om hem te zien.", "GitHub leaves out the diff of binary and very large files. Open the pull request on GitHub to see it.")}</span>
           </div>
         {/if}
       {:else}
@@ -294,7 +295,7 @@
             <span class="good small">+{f.additions}</span><span class="bad small">−{f.deletions}</span>
           </button>
         {:else}
-          <span class="faint small">Geen gewijzigde bestanden.</span>
+          <span class="faint small">{tr("Geen gewijzigde bestanden.", "No changed files.")}</span>
         {/each}
       {/if}
     </div>
@@ -302,19 +303,19 @@
     <div class="bar">
       {#if detail.isOpen}
         {#if reviewing}
-          <textarea rows="3" placeholder="Opmerking bij je review (verplicht voor wijzigingen en reacties)" bind:value={reviewText}></textarea>
+          <textarea rows="3" placeholder={tr("Opmerking bij je review (verplicht voor wijzigingen en reacties)", "Comment on your review (required for changes and comments)")} bind:value={reviewText}></textarea>
           <div class="barline">
-            <button class="ghost" disabled={reviewBusy} onclick={() => ((reviewing = false), (reviewNote = null))}>Annuleren</button>
+            <button class="ghost" disabled={reviewBusy} onclick={() => ((reviewing = false), (reviewNote = null))}>{tr("Annuleren", "Cancel")}</button>
             <span class="spacer"></span>
-            <button disabled={reviewBusy} onclick={() => sendReview("COMMENT")}>Reageren</button>
-            <button disabled={reviewBusy} onclick={() => sendReview("REQUEST_CHANGES")}>Wijzigingen vragen</button>
-            <button class="primary" disabled={reviewBusy} onclick={() => sendReview("APPROVE")}>Goedkeuren</button>
+            <button disabled={reviewBusy} onclick={() => sendReview("COMMENT")}>{tr("Reageren", "Comment")}</button>
+            <button disabled={reviewBusy} onclick={() => sendReview("REQUEST_CHANGES")}>{tr("Wijzigingen vragen", "Request changes")}</button>
+            <button class="primary" disabled={reviewBusy} onclick={() => sendReview("APPROVE")}>{tr("Goedkeuren", "Approve")}</button>
           </div>
         {:else}
           <div class="barline">
-            <span class="muted small grow">Review</span>
-            <button onclick={() => ((reviewing = true), (reviewNote = null))}>Review schrijven…</button>
-            <button class="primary" disabled={reviewBusy} onclick={() => sendReview("APPROVE")}>{reviewBusy ? "Bezig…" : "Goedkeuren"}</button>
+            <span class="muted small grow">{tr("Review", "Review")}</span>
+            <button onclick={() => ((reviewing = true), (reviewNote = null))}>{tr("Review schrijven…", "Write review…")}</button>
+            <button class="primary" disabled={reviewBusy} onclick={() => sendReview("APPROVE")}>{reviewBusy ? tr("Bezig…", "Sending…") : tr("Goedkeuren", "Approve")}</button>
           </div>
         {/if}
         {#if reviewNote}<span class={reviewNote.ok ? "good small" : "err"}>{reviewNote.text}</span>{/if}
@@ -324,22 +325,22 @@
         <div class="barline">
           <span class="wait"><PullGlyph glyph="merged" size={14} /></span>
           <span class="stack grow">
-            <strong>#{detail.number} mergen in {detail.baseBranch}?</strong>
+            <strong>{tr("#{number} mergen in {branch}?", "Merge #{number} into {branch}?", { number: detail.number, branch: detail.baseBranch })}</strong>
             <span class="muted small pre">{confirmMessage}</span>
           </span>
-          <button class="ghost" onclick={() => (confirming = false)}>Annuleren</button>
-          <button class="primary" onclick={merge}>Pull request mergen</button>
+          <button class="ghost" onclick={() => (confirming = false)}>{tr("Annuleren", "Cancel")}</button>
+          <button class="primary" onclick={merge}>{tr("Pull request mergen", "Merge pull request")}</button>
         </div>
       {:else}
         <div class="barline">
           <span class={ready ? "good" : detail.canMerge ? "wait" : "faint"}>{ready ? "✓" : detail.canMerge ? "⚠" : "ⓘ"}</span>
           <span class="muted small grow">{noteText(detail.mergeNote)}</span>
-          {#if detail.isOpen && !detail.canMerge && detail.state !== "draft" && detail.mergeNote !== "conflict"}<span class="faint small">Wacht op merge…</span>{/if}
+          {#if detail.isOpen && !detail.canMerge && detail.state !== "draft" && detail.mergeNote !== "conflict"}<span class="faint small">{tr("Wacht op merge…", "Waiting to merge…")}</span>{/if}
           {#if detail.isOpen && detail.canMerge && detail.methods.length}
-            <select aria-label="Merge-methode" value={method} disabled={merging} onchange={(e) => pick(e.currentTarget.value as MergeMethod)}>
+            <select aria-label={tr("Merge-methode", "Merge method")} value={method} disabled={merging} onchange={(e) => pick(e.currentTarget.value as MergeMethod)}>
               {#each detail.methods as m (m)}<option value={m}>{methodNames[m]}</option>{/each}
             </select>
-            <button class="primary" disabled={!detail.canMerge || merging} onclick={() => ((mergeError = null), (confirming = true))}>{merging ? "Bezig met mergen…" : "Mergen"}</button>
+            <button class="primary" disabled={!detail.canMerge || merging} onclick={() => ((mergeError = null), (confirming = true))}>{merging ? tr("Bezig met mergen…", "Merging…") : tr("Mergen", "Merge")}</button>
           {/if}
         </div>
       {/if}
@@ -347,12 +348,12 @@
     </div>
   {:else if error}
     <div class="empty">
-      <strong>Kon de pull request niet laden</strong>
+      <strong>{tr("Kon de pull request niet laden", "Couldn't load the pull request")}</strong>
       <span class="err">{error}</span>
-      <button class="primary" onclick={load}>Opnieuw proberen</button>
+      <button class="primary" onclick={load}>{tr("Opnieuw proberen", "Try again")}</button>
     </div>
   {:else}
-    <p class="faint small">Pull request laden…</p>
+    <p class="faint small">{tr("Pull request laden…", "Loading pull request…")}</p>
   {/if}
 </div>
 
@@ -384,7 +385,7 @@
         <span class="small ellipsis {label.tone}">{label.text}</span>
         <span class="spacer"></span>
         {#if event.date}<span class="faint small">{ago(event.date, now)}</span>{/if}
-        {#if event.url}<button class="ghost tiny" title="Open op GitHub" onclick={() => open(event.url)}>↗</button>{/if}
+        {#if event.url}<button class="ghost tiny" title={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(event.url)}>↗</button>{/if}
       </div>
       {#if event.body}<div class="markdown body">{@html renderMarkdown(event.body)}</div>{/if}
     </div>

@@ -2,6 +2,7 @@
   // Een gekoppelde GitLab-host als rij, zoals elke andere dienst: de staat (live nagevraagd bij GitLab) met de
   // gebruikersnaam, en een klik opent het beheervenster.
   import { connectorsApi, gitlabDetail, gitlabHealth, type GitLabCheck } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
   import HealthPill from "./HealthPill.svelte";
   import GitLabSheet from "./GitLabSheet.svelte";
@@ -26,7 +27,7 @@
 </script>
 
 <div class="row">
-  <button class="plain" onclick={() => (managing = true)} title="Klik om GitLab te beheren">
+  <button class="plain" onclick={() => (managing = true)} title={tr("Klik om GitLab te beheren", "Click to manage GitLab")}>
     <ServiceIcon domain="gitlab.com" title="GitLab" />
     <span class="text">
       <span>GitLab</span>

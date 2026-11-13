@@ -39,9 +39,9 @@
     if (copy) {
       const code = copy.parentElement?.querySelector("pre code")?.textContent ?? "";
       navigator.clipboard.writeText(code).then(() => {
-        copy.textContent = "Copied";
+        copy.textContent = tr("Gekopieerd", "Copied");
         copy.classList.add("copied");
-        setTimeout(() => { copy.textContent = "Copy"; copy.classList.remove("copied"); }, 1500);
+        setTimeout(() => { copy.textContent = tr("Kopieer", "Copy"); copy.classList.remove("copied"); }, 1500);
       }).catch(() => {});
       return;
     }
@@ -55,7 +55,7 @@
   function recoveryTitle(r: Recovery): string {
     switch (r.kind) {
       case "chooseModel": return tr("Kies een model", "Choose a model");
-      case "openLocalServer": return starting ? tr(`${r.name} starten…`, `Starting ${r.name}…`) : tr(`Start ${r.name} en probeer opnieuw`, `Start ${r.name} and retry`);
+      case "openLocalServer": return starting ? tr("{name} starten…", "Starting {name}…", { name: r.name }) : tr("Start {name} en probeer opnieuw", "Start {name} and retry", { name: r.name });
       case "reconnectBrain":
       case "reconnectConnection": return tr("Opnieuw koppelen", "Reconnect");
       default: return tr("Instellingen", "Settings");
@@ -74,10 +74,10 @@
         openUrl(name === "Ollama" ? "https://ollama.com/download" : "https://lmstudio.ai");
         return;
       }
-      if (outcome === "noAnswer") return void toast.warning(`${name} start niet`, "Hij is gestart maar antwoordt nog niet. Probeer het zo nog eens.");
+      if (outcome === "noAnswer") return void toast.warning(tr("{name} start niet", "{name} does not start", { name }), tr("Hij is gestart maar antwoordt nog niet. Probeer het zo nog eens.", "It started but is not answering yet. Try again in a moment."));
       await brainApi.retryLast(nookId);
     } catch (e) {
-      toast.error(`${name} kon niet starten`, e);
+      toast.error(tr("{name} kon niet starten", "{name} could not start", { name }), e);
     } finally {
       starting = false;
     }
@@ -116,7 +116,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="markdown" onclick={click}>{@html html}</div>
       {#if !message.streaming && !message.isError}
-        <div class="tools"><button class="ghost" onclick={copyAnswer} title="Copy answer" aria-label="Copy answer">{copied ? "✓ Copied" : "Copy"}</button></div>
+        <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
       {/if}
     {/if}
     {#each message.charts ?? [] as chart (chart.id)}<ChartView {chart} />{/each}

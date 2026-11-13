@@ -1,6 +1,7 @@
 <script lang="ts">
   // The "OK" that closes an agent notice at once (NookAcknowledgeButton on the Mac): the white main button of a notice.
   // With `left` set, a ring in it shows what is left of the time before the notice closes by itself (1 full, 0 empty).
+  import { tr } from "../lib/i18n.svelte";
   let { left = null, compact = false, onclick }: { left?: number | null; compact?: boolean; onclick: () => void } = $props();
   const size = $derived(compact ? 16 : 18);
   const radius = $derived(size / 2 - 2.6);
@@ -22,7 +23,7 @@
       />
     </svg>
   {/if}
-  Oké
+  {tr("Oké", "OK")}
 </button>
 
 <style>

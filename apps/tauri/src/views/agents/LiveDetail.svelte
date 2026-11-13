@@ -4,6 +4,7 @@
   // beëindigen.
   import { agentApi, statusLabels, type AgentSession } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { tr } from "../../lib/i18n.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import Conversation from "./Conversation.svelte";
   import DiffView from "./DiffView.svelte";
@@ -27,7 +28,7 @@
   const busy = $derived(session.status === "running" || session.status === "waiting");
 
   async function end() {
-    if (!confirm(`${session.name} in ${session.project} beëindigen? De agent bewaart zijn gesprek, zodat je later verder kunt.`)) return;
+    if (!confirm(tr("{name} in {project} beëindigen? De agent bewaart zijn gesprek, zodat je later verder kunt.", "End {name} in {project}? The agent keeps its conversation, so you can continue later.", { name: session.name, project: session.project }))) return;
     try {
       await agentApi.end(session.id);
     } catch (e) {
@@ -39,7 +40,7 @@
     try {
       await agentApi.activateTerminal(session.host);
     } catch {
-      error = `Ik vind de terminal van ${session.name} niet. Staat hij nog open?`;
+      error = tr("Ik vind de terminal van {name} niet. Staat hij nog open?", "I can't find the terminal of {name}. Is it still open?", { name: session.name });
     }
   }
 
@@ -69,13 +70,12 @@
   {#if session.status === "detected"}
     <p class="muted">
       {#if canNook}
-        Nook ziet dat {session.name} draait, maar kan niet meekijken. Neem hem over: de oude sessie sluit af en het gesprek
-        gaat hier verder, met goedkeuringen en stoppen vanuit Nook.
+        {tr("Nook ziet dat {name} draait, maar kan niet meekijken. Neem hem over: de oude sessie sluit af en het gesprek gaat hier verder, met goedkeuringen en stoppen vanuit Nook.", "Nook sees that {name} is running, but can't follow along. Take it over: the old session closes and the conversation continues here, with approvals and stopping from Nook.", { name: session.name })}
       {:else}
-        Nook ziet dat {session.name} draait, maar kan niet meekijken of hem voortzetten. Je kunt de sessie wel beëindigen.
+        {tr("Nook ziet dat {name} draait, maar kan niet meekijken of hem voortzetten. Je kunt de sessie wel beëindigen.", "Nook sees that {name} is running, but can't follow along or continue it. You can still end the session.", { name: session.name })}
       {/if}
     </p>
-    <p class="faint small">{session.isLinked ? `Sluit ${session.name} en start hem opnieuw, dan volgt Nook hem.` : `Koppel ${session.name} bij Instellingen › Agents zodat Nook nieuwe sessies vanaf de start volgt.`}</p>
+    <p class="faint small">{session.isLinked ? tr("Sluit {name} en start hem opnieuw, dan volgt Nook hem.", "Close {name} and start it again, then Nook follows it.", { name: session.name }) : tr("Koppel {name} bij Instellingen › Agents zodat Nook nieuwe sessies vanaf de start volgt.", "Link {name} in Settings › Agents so Nook follows new sessions from the start.", { name: session.name })}</p>
   {/if}
 
     {#if session.transcriptPath}
@@ -100,22 +100,22 @@
   {#if canNook && ontakeover && session.status !== "detected"}
     <div class="reply-box">
       <input
-        placeholder={busy ? "Stuur een bericht (Nook gaat verder met een kopie)…" : "Ga verder met deze sessie in Nook…"}
+        placeholder={busy ? tr("Stuur een bericht (Nook gaat verder met een kopie)…", "Send a message (Nook continues with a copy)…") : tr("Ga verder met deze sessie in Nook…", "Continue this session in Nook…")}
         bind:value={message}
         onkeydown={(e) => e.key === "Enter" && send()}
       />
-      <button class="primary" disabled={!message.trim()} onclick={send}>Stuur</button>
+      <button class="primary" disabled={!message.trim()} onclick={send}>{tr("Stuur", "Send")}</button>
     </div>
-    {#if busy}<p class="faint small">De sessie is nog bezig: Nook gaat verder met een kopie van het gesprek, zodat ze elkaar niet storen.</p>{/if}
+    {#if busy}<p class="faint small">{tr("De sessie is nog bezig: Nook gaat verder met een kopie van het gesprek, zodat ze elkaar niet storen.", "The session is still busy: Nook continues with a copy of the conversation, so they don't get in each other's way.")}</p>{/if}
   {/if}
 
   <div class="actions">
-    {#if session.host && session.status !== "detected"}<button onclick={terminal}>Open {terminalName}</button>{/if}
+    {#if session.host && session.status !== "detected"}<button onclick={terminal}>{tr("Open {app}", "Open {app}", { app: terminalName })}</button>{/if}
     {#if canNook && ontakeover}
-      <button onclick={() => ontakeover?.(session, true)} disabled={!canEnd}>Neem over in Nook</button>
+      <button onclick={() => ontakeover?.(session, true)} disabled={!canEnd}>{tr("Neem over in Nook", "Take over in Nook")}</button>
     {/if}
     <span class="spacer"></span>
-    {#if canEnd}<button class="ghost danger" onclick={end}>Beëindig sessie</button>{/if}
+    {#if canEnd}<button class="ghost danger" onclick={end}>{tr("Beëindig sessie", "End session")}</button>{/if}
   </div>
   </div>
 </div>

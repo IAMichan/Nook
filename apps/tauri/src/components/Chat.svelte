@@ -3,7 +3,7 @@
   // die naar de drie instelstappen leidt.
   import { brainApi } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
-  import { english, tr } from "../lib/i18n.svelte";
+  import { locale, tr } from "../lib/i18n.svelte";
   import Composer from "./Composer.svelte";
   import MessageView from "./MessageView.svelte";
   import Onboarding from "./Onboarding.svelte";
@@ -43,7 +43,7 @@
   // A calm greeting for the time of day, the date, and one line on what waits for the user.
   const hour = new Date().getHours();
   const greeting = $derived(hour < 6 ? tr("Goedenacht", "Good night") : hour < 12 ? tr("Goedemorgen", "Good morning") : hour < 18 ? tr("Goedemiddag", "Good afternoon") : tr("Goedenavond", "Good evening"));
-  const dateLine = $derived(new Date().toLocaleDateString(english() ? "en" : "nl", { weekday: "long", day: "numeric", month: "long" }));
+  const dateLine = $derived(new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" }));
   const waiting = $derived(nook.waiting);
   const attention = $derived(waiting === 1 ? tr("1 gesprek wacht op je", "1 conversation is waiting for you") : tr(`${waiting} gesprekken wachten op je`, `${waiting} conversations are waiting for you`));
 

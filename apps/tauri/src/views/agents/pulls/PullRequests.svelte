@@ -9,6 +9,7 @@
   import { apply, authors, defaultFilter, isActive, isEmpty, itemId, stateNames, unreadable } from "../../../lib/pulls";
   import { nook } from "../../../lib/state.svelte";
   import { ago } from "../time";
+  import { tr } from "../../../lib/i18n.svelte";
   import FilterMenu from "./FilterMenu.svelte";
   import PullGlyph from "./PullGlyph.svelte";
   import PullRequestView from "./PullRequestView.svelte";
@@ -82,37 +83,37 @@
     <div class="head">
       <strong>Pull requests</strong>
       <span class="spacer"></span>
-      {#if pullRequests.loading}<span class="faint small">Bezig…</span>{/if}
-      <button class="ghost" title="Organisaties en repositories volgen" onclick={openSettings}>Volgen</button>
-      <button class="ghost" title="Vernieuwen" disabled={pullRequests.loading} onclick={() => pullRequests.refresh(true)}>Vernieuwen</button>
+      {#if pullRequests.loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
+      <button class="ghost" title={tr("Organisaties en repositories volgen", "Follow organizations and repositories")} onclick={openSettings}>{tr("Volgen", "Follow")}</button>
+      <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={pullRequests.loading} onclick={() => pullRequests.refresh(true)}>{tr("Vernieuwen", "Refresh")}</button>
     </div>
 
     {#if pullRequests.error && !accounts.length}<p class="err">{pullRequests.error}</p>{/if}
 
     {#if pullRequests.loaded && !pullRequests.available && !accounts.length}
-      {@render empty("GitHub is nog niet gekoppeld", "Koppel je GitHub-account (of accounts) onder Instellingen › Accounts & koppelingen, dan zie je hier al je pull requests.", ["Koppel GitHub", openSettings])}
+      {@render empty(tr("GitHub is nog niet gekoppeld", "GitHub is not connected yet"), tr("Koppel je GitHub-account (of accounts) onder Instellingen › Accounts & koppelingen, dan zie je hier al je pull requests.", "Connect your GitHub account (or accounts) under Settings › Accounts & connections to see all your pull requests here."), [tr("Koppel GitHub", "Connect GitHub"), openSettings])}
     {:else if pullRequests.loaded && accounts.every((a) => isEmpty(a) && !a.error)}
-      {@render empty("Geen open pull requests", "Je hebt niets open staan en niemand wacht op jouw review.")}
+      {@render empty(tr("Geen open pull requests", "No open pull requests"), tr("Je hebt niets open staan en niemand wacht op jouw review.", "You have nothing open and nobody is waiting for your review."))}
     {:else if !pullRequests.loaded}
-      <p class="faint small">Pull requests laden…</p>
+      <p class="faint small">{tr("Pull requests laden…", "Loading pull requests…")}</p>
     {:else}
       <div class="filters">
         <label class="search">
           <span class="faint" aria-hidden="true">⌕</span>
-          <input bind:this={search} placeholder="Zoek op titel, repo, #nummer of @auteur" bind:value={filter.query} onkeydown={(e) => e.key === "Escape" && ((filter.query = ""), search?.blur())} />
-          {#if filter.query}<button class="clear" aria-label="Wissen" onclick={() => (filter.query = "")}>✕</button>{/if}
+          <input bind:this={search} placeholder={tr("Zoek op titel, repo, #nummer of @auteur", "Search by title, repo, #number or @author")} bind:value={filter.query} onkeydown={(e) => e.key === "Escape" && ((filter.query = ""), search?.blur())} />
+          {#if filter.query}<button class="clear" aria-label={tr("Wissen", "Clear")} onclick={() => (filter.query = "")}>✕</button>{/if}
         </label>
         <FilterMenu bind:filter authors={authors(accounts)} watching={watching.length > 0} />
       </div>
       {#if missing.length}
-        <p class="note">⚠ GitHub kon {missing.join(", ")} niet doorzoeken. Controleer de naam, of dat een van je accounts er toegang toe heeft.</p>
+        <p class="note">⚠ {tr("GitHub kon {names} niet doorzoeken. Controleer de naam, of dat een van je accounts er toegang toe heeft.", "GitHub couldn't search {names}. Check the name, or whether one of your accounts has access to it.", { names: missing.join(", ") })}</p>
       {/if}
       {#if shown.every((a) => isEmpty(a) && !a.error)}
         {#if isActive(filter)}
-          {@render empty("Geen pull requests gevonden", "Niets past bij je zoekopdracht of filter.", ["Wis filter", () => (filter = defaultFilter())])}
+          {@render empty(tr("Geen pull requests gevonden", "No pull requests found"), tr("Niets past bij je zoekopdracht of filter.", "Nothing matches your search or filter."), [tr("Wis filter", "Clear filter"), () => (filter = defaultFilter())])}
         {:else}
           <!-- Only closed or merged pull requests: nothing open, but the Status filter shows them. -->
-          {@render empty("Geen open pull requests", "Je hebt niets open staan en niemand wacht op jouw review.")}
+          {@render empty(tr("Geen open pull requests", "No open pull requests"), tr("Je hebt niets open staan en niemand wacht op jouw review.", "You have nothing open and nobody is waiting for your review."))}
         {/if}
       {:else}
         <div class="list">
@@ -125,11 +126,11 @@
                 {#if account.errorKind === "auth"}
                   <!-- The token was rejected: say so in plain words and offer the fix right here. -->
                   <div class="expired">
-                    <strong>⚠ GitHub-login verlopen</strong>
-                    <span class="muted small">GitHub weigerde je token (401). Het is verlopen of ingetrokken. Log opnieuw in met je GitHub CLI-login, of vernieuw het token in de instellingen.</span>
+                    <strong>⚠ {tr("GitHub-login verlopen", "GitHub sign-in expired")}</strong>
+                    <span class="muted small">{tr("GitHub weigerde je token (401). Het is verlopen of ingetrokken. Log opnieuw in met je GitHub CLI-login, of vernieuw het token in de instellingen.", "GitHub rejected your token (401). It has expired or been revoked. Sign in again with your GitHub CLI login, or renew the token in Settings.")}</span>
                     <span class="actions">
-                      <button class="primary" disabled={signIn.busy} onclick={() => useCli(account.id)}>Log in met GitHub CLI</button>
-                      <button class="ghost" onclick={openSettings}>Instellingen</button>
+                      <button class="primary" disabled={signIn.busy} onclick={() => useCli(account.id)}>{tr("Log in met GitHub CLI", "Sign in with GitHub CLI")}</button>
+                      <button class="ghost" onclick={openSettings}>{tr("Instellingen", "Settings")}</button>
                     </span>
                     {#if signIn.error}<span class="err">{signIn.error}</span>{/if}
                   </div>
@@ -139,10 +140,10 @@
               {/if}
               {#if account.reviews.length}
                 <!-- Closed and merged ones no longer wait for you: those are the ones you reviewed. -->
-                {@render group(filter.state === "open" ? `Wacht op jouw review (${account.reviews.length})` : `Voor jouw review (${account.reviews.length})`, account.reviews, account.id, true)}
+                {@render group(filter.state === "open" ? tr("Wacht op jouw review ({n})", "Waiting for your review ({n})", { n: account.reviews.length }) : tr("Voor jouw review ({n})", "For your review ({n})", { n: account.reviews.length }), account.reviews, account.id, true)}
               {/if}
-              {#if account.mine.length}{@render group(`Van jou (${account.mine.length})`, account.mine, account.id, false)}{/if}
-              {#if account.watched.length}{@render group(`Gevolgd (${account.watched.length})`, account.watched, account.id, true)}{/if}
+              {#if account.mine.length}{@render group(tr("Van jou ({n})", "Yours ({n})", { n: account.mine.length }), account.mine, account.id, false)}{/if}
+              {#if account.watched.length}{@render group(tr("Gevolgd ({n})", "Following ({n})", { n: account.watched.length }), account.watched, account.id, true)}{/if}
             </section>
           {/each}
         </div>
@@ -163,7 +164,7 @@
   <div class="group">
     <div class="title faint">{title}</div>
     {#each items as item (itemId(item))}
-      <button class="row" title="Bekijk pull request" onclick={() => (opened = { account, item })}>
+      <button class="row" title={tr("Bekijk pull request", "View pull request")} onclick={() => (opened = { account, item })}>
         <span class="mark">
           {#if item.state === "merged"}<span class="merged" title={stateNames.merged}><PullGlyph glyph="merged" size={13} /></span>
           {:else if item.state === "closed"}<span class="closed" title={stateNames.closed}><PullGlyph glyph="closed" size={13} /></span>
@@ -174,7 +175,7 @@
         </span>
         <span class="text">
           <span class="name">{item.title}</span>
-          <span class="meta faint">{itemId(item)}{#if showAuthor && item.author} · @{item.author}{/if}{#if item.draft} · concept{/if}</span>
+          <span class="meta faint">{itemId(item)}{#if showAuthor && item.author} · @{item.author}{/if}{#if item.draft} · {tr("concept", "draft")}{/if}</span>
         </span>
         {#if item.updated}<span class="faint small">{ago(item.updated, now)}</span>{/if}
         <span class="chevron faint">›</span>

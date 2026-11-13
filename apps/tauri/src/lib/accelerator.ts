@@ -1,6 +1,8 @@
 // Turns a key press into a global shortcut ("Alt+CommandOrControl+Space") and back into something readable
 // ("Ctrl+Alt+Space"). Settings records a shortcut by pressing it, instead of asking you to type the accelerator syntax.
 
+import { tr } from "./i18n.svelte";
+
 type Key = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">;
 
 const NAMED: Record<string, string> = {
@@ -22,9 +24,9 @@ export function recordShortcut(e: Key): Recorded {
   if (plain && e.key === "Escape") return { kind: "cancel" };
   if (plain && (e.key === "Backspace" || e.key === "Delete")) return { kind: "clear" };
   const key = keyName(e.code);
-  if (!key) return { kind: "invalid", reason: "Deze toets kan geen sneltoets zijn." };
+  if (!key) return { kind: "invalid", reason: tr("Deze toets kan geen sneltoets zijn.", "This key can't be a shortcut.") };
   const fn = /^F\d{1,2}$/.test(key);
-  if (!fn && !e.ctrlKey && !e.metaKey && !e.altKey) return { kind: "invalid", reason: "Houd ook Ctrl, Alt of Windows ingedrukt." };
+  if (!fn && !e.ctrlKey && !e.metaKey && !e.altKey) return { kind: "invalid", reason: tr("Houd ook Ctrl, Alt of Windows ingedrukt.", "Also hold Ctrl, Alt, or Windows.") };
   const parts: string[] = [];
   if (e.altKey) parts.push("Alt");
   if (e.ctrlKey) parts.push("CommandOrControl");

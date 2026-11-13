@@ -14,6 +14,32 @@
   --radius-panel: 12px;
   --radius-sheet: 14px;
   --radius-composer: 16px;
+  /* The rest of NookTheme.Radius: your own bubble, a chat app's bubble, a card in a conversation, the notch's pill. */
+  --radius-bubble: 16px;
+  --radius-chat-bubble: 10px;
+  --radius-chat-join: 4px;
+  --radius-conversation-card: 16px;
+  --radius-pill: 20px;
+  /* NookTheme.TextStyle: one size and weight per kind of text. Use as `font: var(--text-body)`. */
+  --text-caption: 500 10.5px/1.35 var(--font);
+  --text-detail: 400 12px/1.45 var(--font);
+  --text-label: 500 11.5px/1.35 var(--font);
+  --text-body: 400 14px/1.5 var(--font);
+  --text-control: 500 13px/1.35 var(--font);
+  --text-title: 600 15px/1.3 var(--font);
+  --text-heading: 600 18px/1.3 var(--font);
+  --text-display: 600 22px/1.25 var(--font);
+  --text-code: 400 13px/1.5 var(--mono);
+  /* NookTheme.Spacing. */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
   --shadow-control: none;
   --shadow-popover: 0 12px 36px #0007;
   --graphite: #191a1d;
@@ -23,11 +49,16 @@
   --line2: #262626;
   --border: #1a1a1a;
   --separator: #1f1f1f;
+  --hairline: #171717;
+  --field-stroke: #262626;
+  --row-rest: #0a0a0a;
   --paper: #f5f5f5;
   --text-strong: #e5e5e5;
   --ink: #0b0b0d;
   --text2: #a1a1a1;
   --text3: #8f8f8f;
+  --text-muted: #8f8f8f;
+  --chat-stamp: #a3b0ab;
   --blue: #51a2ff;
   --iris: #f4f3f7;
   --on-iris: #0b0b0d;
@@ -36,8 +67,27 @@
   --coral: #ff6467;
   --violet: #a684ff;
   --music: #f0936a;
+  --mint-soft: #5ee9b5;
+  --coral-soft: #fca5a5;
+  --added: #00d492;
+  --removed: #ff6467;
   /* Your own message in a conversation (NookPalette.bubble): a soft fill a step off the canvas. */
   --bubble: #1e1e1e;
+  /* A chat app's bubbles (NookPalette.chatMine / chatTheirs), the composer and menus. */
+  --chat-mine: #17493a;
+  --chat-theirs: #1e1e1e;
+  --composer: #111111;
+  --composer-tray: #0d0d0d;
+  --menu: #171717;
+  /* Syntax colors of code blocks (NookPalette.syntax*). */
+  --syntax-keyword: #c3a6ee;
+  --syntax-string: #a8cf96;
+  --syntax-comment: #6f7378;
+  --syntax-number: #e6b98a;
+  --syntax-type: #8ec7e3;
+  --syntax-property: #a3bceb;
+  --syntax-tag: #e79bb8;
+  --syntax-attribute: #d9c27e;
   /* The width a coding agent's conversation reads at. */
   --thread-width: 768px;
   --radius: 12px;
@@ -118,13 +168,13 @@ a { color: var(--iris); }
 /* Error and warning messages can be selected and copied by dragging over them. */
 .err, .warn, .error:not(.orb) { user-select: text; cursor: text; }
 
-.markdown { user-select: text; line-height: 1.5; }
+.markdown { user-select: text; line-height: 1.55; }
 .markdown p { margin: 0 0 8px; }
 .markdown p:last-child { margin-bottom: 0; }
 .markdown h3, .markdown h4, .markdown h5, .markdown h6 { margin: 12px 0 6px; font-size: 13px; }
 .markdown ul, .markdown ol { margin: 4px 0 8px; padding-left: 20px; }
-.markdown code { font-family: var(--mono); font-size: 12px; background: var(--field); padding: 1px 5px; border-radius: 5px; }
-.markdown pre { background: var(--field); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; overflow-x: auto; }
+.markdown code { font-family: var(--mono); font-size: 12px; background: var(--field); padding: 1px 5px; border-radius: var(--radius-chip); }
+.markdown pre { background: var(--field); border: 1px solid var(--line2); border-radius: var(--radius-card); padding: 10px; overflow-x: auto; }
 .markdown pre code { background: none; padding: 0; }
 .markdown .code-block { position: relative; }
 .markdown .copy-code { position: absolute; top: 6px; right: 6px; padding: 2px 8px; font-size: 11px; border-radius: 6px; opacity: 0; transition: opacity 0.15s; }

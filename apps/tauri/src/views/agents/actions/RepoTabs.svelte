@@ -25,8 +25,8 @@
 
   function help(repo: string, status: RepoStatus | null | undefined): string {
     const parts = [repo];
-    if (status?.active) parts.push(tr(`${status.active} bezig`, `${status.active} running`));
-    if (status?.failing) parts.push(tr(`${status.failing} mislukt`, `${status.failing} failing`));
+    if (status?.active) parts.push(tr("{n} bezig", "{n} running", { n: status.active }));
+    if (status?.failing) parts.push(tr("{n} mislukt", "{n} failing", { n: status.failing }));
     return parts.join(" · ");
   }
 

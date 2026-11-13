@@ -1,6 +1,7 @@
 // De companion: de server op de computer (Instellingen › Companion) en de telefoonkant op Android.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { tr } from "./i18n.svelte";
 
 export interface DigestItem {
   id: string;
@@ -99,14 +100,14 @@ export function sortSessions(sessions: SessionDigest[]): SessionDigest[] {
 
 export function attentionWord(attention: string): string {
   switch (attention) {
-    case "approval": return "Wacht op toestemming";
-    case "input": return "Heeft een vraag";
-    case "failed": return "Mislukt";
-    case "limited": return "Limiet bereikt";
-    case "working": return "Aan het werk";
-    case "ready": return "Klaar";
-    case "finished": return "Afgerond";
-    default: return "Rust";
+    case "approval": return tr("Wacht op toestemming", "Waiting for approval");
+    case "input": return tr("Heeft een vraag", "Has a question");
+    case "failed": return tr("Mislukt", "Failed");
+    case "limited": return tr("Limiet bereikt", "Limit reached");
+    case "working": return tr("Aan het werk", "Working");
+    case "ready": return tr("Klaar", "Ready");
+    case "finished": return tr("Afgerond", "Finished");
+    default: return tr("Rust", "Idle");
   }
 }
 

@@ -74,7 +74,7 @@
   });
 
   async function act(action: RunAction) {
-    if (action === "cancel" && !confirm(tr(`Run #${run.number} van ${run.workflow} annuleren?`, `Cancel run #${run.number} of ${run.workflow}?`))) return;
+    if (action === "cancel" && !confirm(tr("Run #{number} van {workflow} annuleren?", "Cancel run #{number} of {workflow}?", { number: run.number, workflow: run.workflow }))) return;
     busy = action;
     actionError = null;
     try {
@@ -108,7 +108,7 @@
     </div>
 
     <div class="summary">
-      <span class="faint small">{run.workflow} #{run.number}{#if run.attempt > 1} · {tr("poging", "attempt")} {run.attempt}{/if}</span>
+      <span class="faint small">{run.workflow} #{run.number}{#if run.attempt > 1} · {tr("poging {n}", "attempt {n}", { n: run.attempt })}{/if}</span>
       <strong class="title">{run.title}</strong>
       <div class="meta faint">
         {#if run.branch}<span class="mono branch" title={run.branch}>⑂ {run.branch}</span>·{/if}

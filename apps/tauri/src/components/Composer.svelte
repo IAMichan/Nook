@@ -9,7 +9,7 @@
   import { brainApi, type ServerModel } from "../lib/brain";
   import { barDraft, Draft } from "../lib/draft.svelte";
   import { nook } from "../lib/state.svelte";
-  import { tr, english } from "../lib/i18n.svelte";
+  import { tr, locale } from "../lib/i18n.svelte";
   import { attachments } from "../lib/attachments.svelte";
   import { listening } from "../lib/listening.svelte";
   import { heard } from "./Orb.svelte";
@@ -91,7 +91,7 @@
     recall = -1;
     drafts.clear(draftFor);
     heard();
-    await nook.ask(value || (file ? tr(`Wat staat er in ${file.name}?`, `What is in ${file.name}?`) : tr("Wat staat er op deze afbeelding?", "What is in this image?")), attached.length ? attached : undefined, file ?? undefined);
+    await nook.ask(value || (file ? tr("Wat staat er in {name}?", "What is in {name}?", { name: file.name }) : tr("Wat staat er op deze afbeelding?", "What is in this image?")), attached.length ? attached : undefined, file ?? undefined);
   }
 
   function key(e: KeyboardEvent) {
@@ -173,7 +173,7 @@
       {#if draft.reading}<span class="file faint">{tr("Document lezen…", "Reading document…")}</span>{/if}
       {#if draft.attachment}
         <button class="file" title={tr("Weghalen", "Remove")} onclick={() => (draft.attachment = null)}>
-          📄 {draft.attachment.name} <span class="faint">· {draft.attachment.text.length.toLocaleString(english() ? "en-GB" : "nl-NL")} {tr("tekens", "characters")} ×</span>
+          📄 {draft.attachment.name} <span class="faint">· {draft.attachment.text.length.toLocaleString(locale())} {tr("tekens", "characters")} ×</span>
         </button>
       {/if}
       {#if dragging}<span class="slot" aria-hidden="true">+</span>{/if}
@@ -191,7 +191,7 @@
       rows="1"
       oninput={() => (recall = -1)}
       aria-label={tr("Bericht aan Nook", "Message Nook")}
-      placeholder={draft.attachment ? tr(`Vraag iets over ${draft.attachment.name}…`, `Ask about ${draft.attachment.name}…`) : tr("Vraag Nook iets…", "Ask Nook anything…")}
+      placeholder={draft.attachment ? tr("Vraag iets over {name}…", "Ask about {name}…", { name: draft.attachment.name }) : tr("Vraag Nook iets…", "Ask Nook anything…")}
     ></textarea>
     <MicButton />
     {#if nook.busy}

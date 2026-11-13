@@ -6,6 +6,7 @@
   import Toast from "./components/Toast.svelte";
   import { nook, accentCss, onAccent } from "./lib/state.svelte";
   import { quiet } from "./lib/quiet.svelte";
+  import { tr } from "./lib/i18n.svelte";
 
   // De balk bovenaan laadt index.html#bar; het hoofdvenster (en Android) de rest.
   const isBar = location.hash === "#bar";
@@ -33,15 +34,15 @@
 </script>
 
 {#if isBar}
-  <LazyView load={windows["#bar"]} label="Nook bar" />
+  <LazyView load={windows["#bar"]} label={tr("Nook-balk", "Nook bar")} />
 {:else if location.hash === "#aside"}
-  <LazyView load={windows["#aside"]} label="Suggestions" />
+  <LazyView load={windows["#aside"]} label={tr("Suggesties", "Suggestions")} />
 {:else if location.hash === "#recbadge"}
-  <LazyView load={windows["#recbadge"]} label="Recording" />
+  <LazyView load={windows["#recbadge"]} label={tr("Opname", "Recording")} />
 {:else if location.hash === "#screenpart"}
-  <LazyView load={windows["#screenpart"]} label="Screen selection" />
+  <LazyView load={windows["#screenpart"]} label={tr("Schermselectie", "Screen selection")} />
 {:else if location.hash === "#ghost"}
-  <LazyView load={windows["#ghost"]} label="Autocomplete" />
+  <LazyView load={windows["#ghost"]} label={tr("Aanvullen", "Autocomplete")} />
 {:else}
   <Main />
 {/if}

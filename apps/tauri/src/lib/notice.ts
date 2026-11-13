@@ -1,6 +1,7 @@
 // Agent notices in the bar (AgentCards on the Mac): how long one stays, the countdown on its OK button, and the one
 // line a compact notice shows. No UI code, so tests can use it on its own.
 import type { AgentStatus } from "./agents";
+import { tr } from "./i18n.svelte";
 
 /// How long a notice stays while the pointer is off the bar; the ring on its OK counts down the same time.
 export const NOTICE_SECONDS = 5.2;
@@ -41,11 +42,14 @@ export function noticeTone(status: AgentStatus): NoticeTone {
   return status === "done" ? "done" : status === "failed" ? "failed" : "waiting";
 }
 
-/// The line of a compact notice: "Claude Code is klaar · nook".
-export function compactNotice(name: string, project: string, status: AgentStatus, english = false): string {
+/// The line of a compact notice: "Claude Code is done · nook", in the interface language. The last argument is no longer
+/// used (the language comes from the setting); callers may drop it.
+export function compactNotice(name: string, project: string, status: AgentStatus, _english?: boolean): string {
   const tone = noticeTone(status);
-  const who = english
-    ? tone === "done" ? `${name} is done` : tone === "failed" ? `${name} stopped with an error` : `${name} is waiting for you`
-    : tone === "done" ? `${name} is klaar` : tone === "failed" ? `${name} is gestopt met een fout` : `${name} wacht op je`;
+  const who = tone === "done"
+    ? tr("{name} is klaar", "{name} is done", { name })
+    : tone === "failed"
+      ? tr("{name} is gestopt met een fout", "{name} stopped with an error", { name })
+      : tr("{name} wacht op je", "{name} is waiting for you", { name });
   return project ? `${who} · ${project}` : who;
 }

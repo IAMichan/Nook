@@ -19,17 +19,19 @@
   let view = $state<"inbox" | "catchup" | "history">("inbox");
   let snoozing = $state<string | null>(null);
 
-  const focusLabels: Record<FocusMode, [string, string]> = {
-    all: ["Alles", "Everything"],
-    work: ["Werk", "Work"],
-    deep: ["Diep werk", "Deep work"],
-    off_hours: ["Buiten werktijd", "Off hours"],
-  };
-  const snoozeChoices: [SnoozeChoice, [string, string]][] = [
-    ["hour", ["Over een uur", "In 1 hour"]],
-    ["tomorrow", ["Morgenochtend", "Tomorrow morning"]],
-    ["week", ["Volgende week", "Next week"]],
-  ];
+  function focusLabel(mode: FocusMode): string {
+    switch (mode) {
+      case "all": return tr("Alles", "Everything");
+      case "work": return tr("Werk", "Work");
+      case "deep": return tr("Diep werk", "Deep work");
+      case "off_hours": return tr("Buiten werktijd", "Off hours");
+    }
+  }
+  const snoozeChoices = $derived<[SnoozeChoice, string][]>([
+    ["hour", tr("Over een uur", "In 1 hour")],
+    ["tomorrow", tr("Morgenochtend", "Tomorrow morning")],
+    ["week", tr("Volgende week", "Next week")],
+  ]);
   const digest = $derived(digestFor(new Date().getHours()));
   const catchTitle = $derived(
     digest === "morning" ? tr("Ochtendoverzicht", "Morning brief") : digest === "evening" ? tr("Avondoverzicht", "Evening wrap-up") : tr("Even bijpraten", "Catch me up"),
@@ -44,18 +46,18 @@
     await inbox.snooze(item.id, choice);
   }
 
-  const sources: Record<InboxSource, { icon: "agents" | "chat" | "tasks" | "calendar" | "message" | "code" | "gamepad" | "note" | "sparkle" | "home"; label: [string, string] }> = {
-    agents: { icon: "agents", label: ["Agents", "Agents"] },
-    chats: { icon: "chat", label: ["Chat", "Chat"] },
-    tasks: { icon: "tasks", label: ["Open punt", "Open item"] },
-    calendar: { icon: "calendar", label: ["Agenda", "Calendar"] },
-    messages: { icon: "message", label: ["WhatsApp", "WhatsApp"] },
-    code: { icon: "code", label: ["Pull request", "Pull request"] },
-    gamer_mode: { icon: "gamepad", label: ["Gamer Mode", "Gamer Mode"] },
-    notes: { icon: "note", label: ["Notitie", "Note"] },
-    ai: { icon: "sparkle", label: ["Meedenken", "Think Along"] },
-    system: { icon: "home", label: ["Nook", "Nook"] },
-  };
+  const sources = $derived<Record<InboxSource, { icon: "agents" | "chat" | "tasks" | "calendar" | "message" | "code" | "gamepad" | "note" | "sparkle" | "home"; label: string }>>({
+    agents: { icon: "agents", label: "Agents" },
+    chats: { icon: "chat", label: tr("Chat", "Chat") },
+    tasks: { icon: "tasks", label: tr("Open punt", "Open item") },
+    calendar: { icon: "calendar", label: tr("Agenda", "Calendar") },
+    messages: { icon: "message", label: "WhatsApp" },
+    code: { icon: "code", label: tr("Pull request", "Pull request") },
+    gamer_mode: { icon: "gamepad", label: "Gamer Mode" },
+    notes: { icon: "note", label: tr("Notitie", "Note") },
+    ai: { icon: "sparkle", label: tr("Meedenken", "Think Along") },
+    system: { icon: "home", label: "Nook" },
+  });
 
   const shown = $derived(expanded ? [...inbox.ranked.shown, ...inbox.ranked.rest] : inbox.ranked.shown);
   const more = $derived(inbox.ranked.rest.length);
@@ -83,7 +85,7 @@
 
   <div class="focus" role="group" aria-label={tr("Focus", "Focus")}>
     {#each FOCUS_MODES as mode (mode)}
-      <button class="ghost chipbtn" class:on={inbox.focus === mode} aria-pressed={inbox.focus === mode} onclick={() => inbox.setFocus(mode)}>{tr(...focusLabels[mode])}</button>
+      <button class="ghost chipbtn" class:on={inbox.focus === mode} aria-pressed={inbox.focus === mode} onclick={() => inbox.setFocus(mode)}>{focusLabel(mode)}</button>
     {/each}
   </div>
 
@@ -93,11 +95,11 @@
         <strong>{tr("Je bent helemaal bij.", "You're all caught up.")}</strong>
         <span class="faint">{tr("Sinds je voor het laatst keek is er niets nieuws.", "Nothing new since you last looked.")}</span>
       {:else}
-        <strong>{inbox.summary.total === 1 ? tr("Eén ding sinds je keek", "One thing since you looked") : tr(`${inbox.summary.total} dingen sinds je keek`, `${inbox.summary.total} things since you looked`)}</strong>
-        {#if inbox.summary.needsYou}<span class="faint">{inbox.summary.needsYou === 1 ? tr("Eén daarvan wacht op jou.", "One of them is waiting on you.") : tr(`${inbox.summary.needsYou} daarvan wachten op jou.`, `${inbox.summary.needsYou} of them are waiting on you.`)}</span>{/if}
+        <strong>{inbox.summary.total === 1 ? tr("Eén ding sinds je keek", "One thing since you looked") : tr("{n} dingen sinds je keek", "{n} things since you looked", { n: inbox.summary.total })}</strong>
+        {#if inbox.summary.needsYou}<span class="faint">{inbox.summary.needsYou === 1 ? tr("Eén daarvan wacht op jou.", "One of them is waiting on you.") : tr("{n} daarvan wachten op jou.", "{n} of them are waiting on you.", { n: inbox.summary.needsYou })}</span>{/if}
         <ul class="digest">
           {#each inbox.summary.sources as row (row.source)}
-            <li><span class="meta">{tr(...sources[row.source].label)} · {row.count}</span><span class="detail">{row.latest}</span></li>
+            <li><span class="meta">{sources[row.source].label} · {row.count}</span><span class="detail">{row.latest}</span></li>
           {/each}
         </ul>
       {/if}
@@ -110,7 +112,7 @@
       {:else}
         <ul class="digest">
           {#each inbox.history.slice(0, 40) as entry (entry.id)}
-            <li><span class="meta">{tr(...sources[entry.source].label)} · {relativeTime(entry.at)}</span><span class="detail">{entry.title}</span></li>
+            <li><span class="meta">{sources[entry.source].label} · {relativeTime(entry.at)}</span><span class="detail">{entry.title}</span></li>
           {/each}
         </ul>
       {/if}
@@ -131,9 +133,9 @@
         {@const source = sources[item.source]}
         <li class="item {item.type}" animate:flip={{ duration: 260, easing: cubicOut }} in:fly={{ y: 8, duration: 320, delay: Math.min(index, 5) * 45, easing: cubicOut }} out:slide={{ duration: 220 }}>
           <button class="main" onclick={() => run(item, item.actions[0]?.id ?? "")} disabled={busy === item.id} title={item.actions[0]?.label}>
-            <span class="chip" title={tr(...source.label)}><Icon name={source.icon} size={16} /></span>
+            <span class="chip" title={source.label}><Icon name={source.icon} size={16} /></span>
             <span class="text">
-              <span class="meta">{tr(...source.label)}{#if time(item)}<span class="sep">·</span>{time(item)}{/if}</span>
+              <span class="meta">{source.label}{#if time(item)}<span class="sep">·</span>{time(item)}{/if}</span>
               <span class="title">{item.title}</span>
               {#if item.detail}<span class="detail">{item.detail}</span>{/if}
             </span>
@@ -146,7 +148,7 @@
               <button class="small" aria-haspopup="menu" aria-expanded={snoozing === item.id} onclick={() => (snoozing = snoozing === item.id ? null : item.id)}>{tr("Later", "Snooze")}</button>
               {#if snoozing === item.id}
                 <span class="menu" role="menu" transition:fade={{ duration: 120 }}>
-                  {#each snoozeChoices as [choice, label] (choice)}<button role="menuitem" class="small" onclick={() => snooze(item, choice)}>{tr(...label)}</button>{/each}
+                  {#each snoozeChoices as [choice, label] (choice)}<button role="menuitem" class="small" onclick={() => snooze(item, choice)}>{label}</button>{/each}
                 </span>
               {/if}
             </span>
@@ -157,14 +159,14 @@
     </ul>
     {#if more}
       <button class="ghost more" onclick={() => (expanded = !expanded)} aria-expanded={expanded}>
-        {expanded ? tr("Minder tonen", "Show less") : more === 1 ? tr("Nog één rustiger bericht", "One quieter update") : tr(`Nog ${more} rustiger berichten`, `${more} quieter updates`)}
+        {expanded ? tr("Minder tonen", "Show less") : more === 1 ? tr("Nog één rustiger bericht", "One quieter update") : tr("Nog {n} rustiger berichten", "{n} quieter updates", { n: more })}
       </button>
     {/if}
   {/if}
   {#if view === "inbox" && (inbox.held.length || inbox.snoozedItems.length)}
     <p class="foot faint">
-      {#if inbox.held.length}{inbox.held.length === 1 ? tr("Eén bericht wacht door je focus.", "One item is held back by your focus.") : tr(`${inbox.held.length} berichten wachten door je focus.`, `${inbox.held.length} items are held back by your focus.`)}{/if}
-      {#if inbox.snoozedItems.length}{inbox.snoozedItems.length === 1 ? tr("Eén uitgesteld.", "One snoozed.") : tr(`${inbox.snoozedItems.length} uitgesteld.`, `${inbox.snoozedItems.length} snoozed.`)}{/if}
+      {#if inbox.held.length}{inbox.held.length === 1 ? tr("Eén bericht wacht door je focus.", "One item is held back by your focus.") : tr("{n} berichten wachten door je focus.", "{n} items are held back by your focus.", { n: inbox.held.length })}{/if}
+      {#if inbox.snoozedItems.length}{inbox.snoozedItems.length === 1 ? tr("Eén uitgesteld.", "One snoozed.") : tr("{n} uitgesteld.", "{n} snoozed.", { n: inbox.snoozedItems.length })}{/if}
     </p>
   {/if}
 </div>

@@ -2,6 +2,7 @@
   // A global shortcut you set by pressing it: click, press the keys, done. Escape cancels, Backspace turns it off.
   // No more typing "Alt+CommandOrControl+Space" by hand.
   import { readableShortcut, recordShortcut } from "../lib/accelerator";
+  import { tr } from "../lib/i18n.svelte";
 
   let { value, taken = false, onchange }: { value: string; taken?: boolean; onchange: (accelerator: string) => void } = $props();
   let recording = $state(false);
@@ -36,10 +37,10 @@
     onclick={() => { recording = !recording; hint = null; }}
     onkeydown={keydown}
     onblur={stop}
-    aria-label={recording ? "Druk nu de nieuwe toetsen in" : `Sneltoets ${readableShortcut(value)}, klik om te wijzigen`}
-  >{recording ? "Druk de toetsen in…" : readableShortcut(value)}</button>
-  {#if recording}<small class="faint">{hint ?? "Esc annuleert · Backspace zet uit"}</small>
-  {:else if taken}<small class="taken-note">Bezet door een andere app — kies een andere</small>{/if}
+    aria-label={recording ? tr("Druk nu de nieuwe toetsen in", "Press the new keys now") : tr("Sneltoets {keys}, klik om te wijzigen", "Shortcut {keys}, click to change", { keys: readableShortcut(value) })}
+  >{recording ? tr("Druk de toetsen in…", "Press the keys…") : readableShortcut(value)}</button>
+  {#if recording}<small class="faint">{hint ?? tr("Esc annuleert · Backspace zet uit", "Esc cancels · Backspace turns it off")}</small>
+  {:else if taken}<small class="taken-note">{tr("Bezet door een andere app — kies een andere", "Taken by another app — choose another")}</small>{/if}
 </span>
 
 <style>

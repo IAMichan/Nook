@@ -6,11 +6,12 @@
     activeCount, defaultFilter, draftNames, scopeNames, stateNames, statusNames,
     type DraftFilter, type PullRequestFilter, type ScopeFilter, type StateFilter, type StatusFilter,
   } from "../../../lib/pulls";
+  import { tr } from "../../../lib/i18n.svelte";
 
   let { filter = $bindable(), authors, watching = false }: { filter: PullRequestFilter; authors: string[]; watching?: boolean } = $props();
 
   type Kind = "state" | "involvement" | "author" | "draft" | "checks";
-  const titles: Record<Kind, string> = { state: "Status", involvement: "Betrokkenheid", author: "Auteur", draft: "Concept", checks: "Checks" };
+  const titles = $derived<Record<Kind, string>>({ state: tr("Status", "Status"), involvement: tr("Betrokkenheid", "Involvement"), author: tr("Auteur", "Author"), draft: tr("Concept", "Draft"), checks: tr("Checks", "Checks") });
   let open = $state(false);
   let kind = $state<Kind>("state");
   let root = $state<HTMLElement | null>(null);
@@ -20,7 +21,7 @@
     switch (k) {
       case "state": return stateNames[filter.state];
       case "involvement": return scopeNames[filter.scope];
-      case "author": return filter.author ? `@${filter.author}` : "Iedereen";
+      case "author": return filter.author ? `@${filter.author}` : tr("Iedereen", "Everyone");
       case "draft": return draftNames[filter.draft];
       case "checks": return statusNames[filter.status];
     }
@@ -50,19 +51,19 @@
 <svelte:window onclick={outside} onkeydown={(e) => e.key === "Escape" && (open = false)} />
 
 <div class="menu" bind:this={root}>
-  <button class="trigger" class:active={count > 0} aria-expanded={open} title="Filters" onclick={() => (open = !open)}>
-    <span aria-hidden="true">≡</span> Filters
+  <button class="trigger" class:active={count > 0} aria-expanded={open} title={tr("Filters", "Filters")} onclick={() => (open = !open)}>
+    <span aria-hidden="true">≡</span> {tr("Filters", "Filters")}
     {#if count > 0}<span class="badge">{count}</span>{/if}
   </button>
   {#if open}
-    <div class="panel" role="dialog" aria-label="Filters">
+    <div class="panel" role="dialog" aria-label={tr("Filters", "Filters")}>
       <div class="kinds">
         {#each ["state", "involvement"] as const as k (k)}{@render kindRow(k)}{/each}
         <div class="divider"></div>
         {#each ["author", "draft", "checks"] as const as k (k)}{@render kindRow(k)}{/each}
         {#if count > 0}
           <div class="divider"></div>
-          <button class="choice" onclick={() => (filter = defaultFilter(filter.query))}><span class="mark">↺</span>Filters wissen</button>
+          <button class="choice" onclick={() => (filter = defaultFilter(filter.query))}><span class="mark">↺</span>{tr("Filters wissen", "Clear filters")}</button>
         {/if}
       </div>
       <div class="sep"></div>
@@ -76,7 +77,7 @@
           {#each scopes as s (s)}{@render choice(scopeNames[s], filter.scope === s, () => (filter.scope = s))}{/each}
         {:else if kind === "author"}
           <div class="scroll">
-            {@render choice("Iedereen", filter.author === null, () => (filter.author = null))}
+            {@render choice(tr("Iedereen", "Everyone"), filter.author === null, () => (filter.author = null))}
             {#each authors as login (login)}{@render choice(`@${login}`, filter.author === login, () => (filter.author = login))}{/each}
           </div>
         {:else if kind === "draft"}

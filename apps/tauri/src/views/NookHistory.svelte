@@ -166,7 +166,7 @@
         <div class="archived">{#each archived as item (item.id)}{@render row(item)}{/each}</div>
       {/if}
       <button class="shelf-toggle faint" onclick={() => (showArchived = !showArchived)}>
-        {tr(`Gearchiveerd (${archived.length})`, `Archived (${archived.length})`)} <span class:open={showArchived}>⌄</span>
+        {tr("Gearchiveerd ({n})", "Archived ({n})", { n: archived.length })} <span class:open={showArchived}>⌄</span>
       </button>
     </div>
   {/if}

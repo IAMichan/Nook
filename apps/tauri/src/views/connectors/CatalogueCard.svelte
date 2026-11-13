@@ -2,6 +2,7 @@
   // De ene kaartvorm van alles wat je kunt toevoegen in Instellingen › Accounts & koppelingen: icoon, naam, één regel
   // en een label dat zegt hoe het koppelt (Inloggen, Met sleutel, MCP). Inloggen is gevuld, omdat dat het makkelijkst is.
   import { methodLabel, type ConnectMethod } from "../../lib/connectors";
+  import { tr } from "../../lib/i18n.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
 
   let {
@@ -41,7 +42,7 @@
       <span class="detail" class:bad>{detail}</span>
     </span>
     {#if busy}
-      <span class="spin" aria-label="Bezig"></span>
+      <span class="spin" aria-label={tr("Bezig", "Busy")}></span>
     {:else}
       <span class="badge {method}">{badge ?? methodLabel[method]}</span>
     {/if}

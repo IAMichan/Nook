@@ -1,6 +1,7 @@
 // Gedeelde staat van de interface (Svelte 5 runes). Elk venster (balk en hoofdvenster) heeft zijn eigen exemplaar;
 // de waarheid staat in Rust en komt binnen via events.
 import { api, events } from "./api";
+import { locale, tr } from "./i18n.svelte";
 import type { AppInfo, Conversation, ConversationSummary, Settings } from "./types";
 
 class NookState {
@@ -124,11 +125,10 @@ export function onAccent(hex: number): string {
 }
 
 export function relativeTime(iso: string): string {
-  const en = nook.settings?.appLanguage === "en";
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return en ? "just now" : "zojuist";
+  if (diff < 60) return tr("zojuist", "just now");
   if (diff < 3600) return `${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} ${en ? "h" : "u"}`;
-  if (diff < 7 * 86400) return `${Math.floor(diff / 86400)} d`;
-  return new Date(iso).toLocaleDateString(en ? "en-GB" : "nl-NL", { day: "numeric", month: "short" });
+  if (diff < 86400) return tr("{n} u", "{n} h", { n: Math.floor(diff / 3600) });
+  if (diff < 7 * 86400) return tr("{n} d", "{n} d", { n: Math.floor(diff / 86400) });
+  return new Date(iso).toLocaleDateString(locale(), { day: "numeric", month: "short" });
 }
