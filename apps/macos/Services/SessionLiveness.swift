@@ -31,6 +31,14 @@ enum SessionLiveness {
     static let doneLifetime: TimeInterval = 24 * 3600
     static let busyLifetime: TimeInterval = 12 * 3600
 
+    /// The agent reopened an earlier conversation without doing anything in it yet (`SessionStart` with `source:
+    /// "resume"`): the Claude app warms up a past session in the background when you look at it, and `claude --resume` or
+    /// `codex resume` opens one before the first prompt. Nothing happened in it, so it is no activity: the session comes
+    /// back in the list at its first prompt or tool call, not on top of it now.
+    static func isQuietReopen(kind: String, source: String?) -> Bool {
+        kind == "SessionStart" && source?.lowercased() == "resume"
+    }
+
     /// `done`: the session ended its turn (done or failed), so only you settle it.
     static func isExpired(done: Bool, settled: Bool, age: TimeInterval) -> Bool {
         if done && !settled { return false }
