@@ -14,7 +14,7 @@ struct SideChatStrip: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
+        .composerStripBackground()
     }
 
     private func row(_ chat: WorkspaceRun) -> some View {
