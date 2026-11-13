@@ -413,6 +413,7 @@ enum NookIcon {
         "speaker.wave.3.fill": "volume-2",
         "square.and.arrow.down": "download",
         "square.and.pencil": "square-pen",
+        "square.dashed": "square-dashed",
         "square.grid.2x2": "layout-grid",
         "square.grid.2x2.fill": "layout-grid",
         "square.grid.3x3.fill": "grid-3x3",
