@@ -28,6 +28,24 @@ final class PullRequestStatusTests: XCTestCase {
         XCTAssertEqual(store.status(url), PullRequestStatus(glyph: .merged, checks: "pending"))
     }
 
+    /// The tray row of a pull request the branch sync has not named reads its title here; a read without one keeps it.
+    func testReadsKeepTheTitle() {
+        let store = PullRequestStatusStore()
+        let url = URL(string: "https://github.com/a/b/pull/6")!
+        let now = Date()
+        var snapshot = PullRequestSnapshot(state: "open", checks: "success", failedChecks: [], reviews: [], comments: [])
+        snapshot.title = "Fix the tray"
+        store.record(url: url, snapshot: snapshot, at: now)
+        XCTAssertEqual(store.status(url)?.title, "Fix the tray")
+        store.record([PullRequestLink(host: .github, repository: "a/b", number: 6, url: url.absoluteString, state: .merged)], at: now.addingTimeInterval(5))
+        XCTAssertEqual(store.status(url)?.glyph, .merged)
+        XCTAssertEqual(store.status(url)?.title, "Fix the tray")
+        var renamed = PullRequestLink(host: .github, repository: "a/b", number: 6, url: url.absoluteString, state: .merged)
+        renamed.title = "Fix the composer tray"
+        store.record([renamed], at: now.addingTimeInterval(10))
+        XCTAssertEqual(store.status(url)?.title, "Fix the composer tray")
+    }
+
     func testKeptStatesShowBeforeTheFirstReadAndTheReadWins() {
         let store = PullRequestStatusStore()
         let url = URL(string: "https://github.com/a/b/pull/3")!

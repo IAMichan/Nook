@@ -575,7 +575,8 @@ struct PullRequestWatchStrip: View {
     /// The branch the pull request is for, shown dimmed after its title when a session lists several (see `SessionBranches`).
     var branch: String? = nil
     var isCurrent = true
-    /// The pull request's title, so each row says what it was.
+    /// The pull request's title, so each row says what it was. Nil: the newest read's (`PullRequestStatusStore`), which the
+    /// state badge keeps current, so a row the branch sync has not named yet still says what it is.
     var title: String? = nil
     /// Nil for a session Nook does not run (or a request that landed): nothing to watch, so the row only shows and opens it.
     var toggle: (() -> Void)?
@@ -629,6 +630,7 @@ struct PullRequestWatchStrip: View {
     /// The title in the row's own voice, its branch after it in the quiet monospace of a name.
     @ViewBuilder
     private var identity: some View {
+        let title = title.flatMap { $0.isEmpty ? nil : $0 } ?? statuses.status(url)?.title
         HStack(spacing: NookTheme.Spacing.sm) {
             if let title, !title.isEmpty {
                 Text(title)

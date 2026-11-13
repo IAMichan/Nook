@@ -110,7 +110,7 @@ enum GitHubPullRequests {
                                                                     autoMerge: pull["auto_merge"] is [String: Any],
                                                                     baseBranch: ((pull["base"] as? [String: Any])?["ref"] as? String) ?? ""),
                                        mergeabilityKnown: PullRequestMergeability.githubKnown(pull),
-                                       checksKnown: checksKnown)
+                                       checksKnown: checksKnown, title: pull["title"] as? String)
         }
         return nil
     }

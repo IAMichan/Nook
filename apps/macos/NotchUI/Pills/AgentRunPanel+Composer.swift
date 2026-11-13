@@ -434,7 +434,7 @@ extension AgentRunPanel {
     private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch]) -> some View {
         if let url = URL(string: link.url) {
             let watch = watches.first { $0.url == link.url }
-            PullRequestWatchStrip(url: url, watch: watch, title: link.title ?? "#\(link.number)",
+            PullRequestWatchStrip(url: url, watch: watch, title: link.title,
                                   toggle: watch != nil || (link.state.isOpen && PullRequestWatch.canWatch(url)) ? {
                 if watch == nil { workspace.watchPullRequest(runID, url: url) } else { workspace.stopWatchingPullRequest(runID, url: url) }
             } : nil)

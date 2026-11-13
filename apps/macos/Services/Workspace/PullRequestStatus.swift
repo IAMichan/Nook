@@ -73,6 +73,8 @@ struct PullRequestStatus: Equatable, Sendable {
     var checks: String?
     /// Nil while no read has said.
     var merge: PullRequestMergeFacts? = nil
+    /// Its title, for a row that only knows the link (the tray above the composer). Nil while no read has said.
+    var title: String? = nil
 
     var mergeStatus: PullRequestMergeStatus { PullRequestMergeStatus(glyph: glyph, checks: checks, merge: merge) }
 
@@ -141,12 +143,14 @@ final class PullRequestStatusStore: ObservableObject {
 
     // MARK: Recording reads
 
-    /// `checks` or `merge` nil: this read does not know them, so the last known ones stay.
-    func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts? = nil, at date: Date = Date()) {
+    /// `checks`, `merge` or `title` nil: this read does not know them, so the last known ones stay.
+    func record(key: String?, glyph: PullRequestBadge.Glyph, checks: String?, merge: PullRequestMergeFacts? = nil,
+                title: String? = nil, at date: Date = Date()) {
         guard let key, glyph != .stack, date >= readAt[key] ?? .distantPast else { return }
         readAt[key] = date
         if checks != nil { checksReadAt[key] = date }
-        let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks, merge: merge ?? statuses[key]?.merge)
+        let title = title.flatMap { $0.isEmpty ? nil : $0 } ?? statuses[key]?.title
+        let next = PullRequestStatus(glyph: glyph, checks: checks ?? statuses[key]?.checks, merge: merge ?? statuses[key]?.merge, title: title)
         if statuses[key] != next { statuses[key] = next }
     }
 
@@ -154,14 +158,15 @@ final class PullRequestStatusStore: ObservableObject {
         let state: PullRequestState = snapshot.state == "merged" ? .merged : snapshot.state == "closed" ? .closed
             : snapshot.draft ? .draft : .open
         record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: state, conflicted: snapshot.conflicted),
-               checks: snapshot.checks, merge: snapshot.merge, at: date)
+               checks: snapshot.checks, merge: snapshot.merge, title: snapshot.title, at: date)
     }
 
     /// What the branch sync found: state and conflict, without checks.
     func record(_ links: [PullRequestLink], at date: Date = Date()) {
         for link in links {
             guard let url = URL(string: link.url) else { continue }
-            record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: link.state, conflicted: link.conflicted), checks: nil, at: date)
+            record(key: Self.key(url), glyph: PullRequestStatus.glyph(state: link.state, conflicted: link.conflicted), checks: nil,
+                   title: link.title, at: date)
         }
     }
 
@@ -169,7 +174,7 @@ final class PullRequestStatusStore: ObservableObject {
         let state = PullRequestState(rawValue: detail.state.rawValue) ?? .open
         let key = detail.url.flatMap(Self.key) ?? Self.key(repo: detail.repo, number: detail.number)
         record(key: key, glyph: PullRequestStatus.glyph(state: state, conflicted: detail.conflicted),
-               checks: PullRequestStatus.checks(detail.checks), merge: detail.mergeFacts, at: date)
+               checks: PullRequestStatus.checks(detail.checks), merge: detail.mergeFacts, title: detail.title, at: date)
     }
 
     /// What Nook kept from before this launch, shown until the first read of each request: the store starts empty, and a

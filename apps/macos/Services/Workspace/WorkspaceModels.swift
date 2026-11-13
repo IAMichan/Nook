@@ -763,6 +763,8 @@ struct PullRequestSnapshot: Equatable, Sendable {
     /// Whether `checks` is the forge's answer. Empty `checks` then means there are none on this commit (yet, right after a
     /// push); without an answer they may as well still be failing.
     var checksKnown = true
+    /// Its title, so a row that only knows the link can still say what it is; nil when this read does not say.
+    var title: String? = nil
 }
 
 /// News about a pull request that waits in the queue for the agent, line by line, so that what is no longer true can go
