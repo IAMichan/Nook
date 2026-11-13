@@ -40,3 +40,20 @@ addEventListener('mousemove',e=>{$$('.mascot i').forEach(i=>{const r=i.parentEle
       labels.forEach(l=>l.textContent=(rel.name||rel.tag_name));
     }).catch(()=>{});
 })();
+
+/* The thanks page lists everyone who sent a change, newest numbers from GitHub. Bots and AI accounts are left out;
+   without the API the list written in the page stays. */
+(function(){
+  const box=$('[data-contributors]');if(!box)return;
+  const skip=new Set(['claude']),owner='IAMichan';
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+  fetch('https://api.github.com/repos/IAMichan/nook/contributors?per_page=100',{headers:{Accept:'application/vnd.github+json'}})
+    .then(r=>r.ok?r.json():Promise.reject(r.status))
+    .then(list=>{
+      const people=list.filter(c=>c.type==='User'&&!skip.has(c.login.toLowerCase())&&!c.login.endsWith('[bot]'));
+      if(!people.length)return;
+      people.sort((a,b)=>(b.login===owner)-(a.login===owner)||b.contributions-a.contributions);
+      box.innerHTML=people.map((c,i)=>{const lead=c.login===owner,n=c.contributions;
+        return `<a class="person${lead?' lead':''} rv in" href="${esc(c.html_url)}"><img src="${esc(c.avatar_url)}&s=144" alt="" loading="lazy"><b>${esc(c.login)}</b><span>${lead?'Creator':n+(n===1?' contribution':' contributions')}</span></a>`}).join('');
+    }).catch(()=>{});
+})();
