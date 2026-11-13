@@ -110,6 +110,19 @@ final class UsageLimitTests: XCTestCase {
         XCTAssertTrue(UsageLimits.chipLines([]).isEmpty)
     }
 
+    func testHeaderRingLines() {
+        let hour: TimeInterval = 3600, week: TimeInterval = 7 * 24 * hour
+        XCTAssertEqual(UsageLimits.ringLines([(week, 12, "Week", false), (5 * hour, 38.4, "5 hours", false),
+                                              (week, 61, "Week (Opus)", false)]).map(\.used), [38, 12, 61],
+                       "every plain window its own ring, shortest first, a second weekly limit too")
+        XCTAssertEqual(UsageLimits.ringLines([(5 * hour, 10, "5 hours", true), (week, 20, "Week", true),
+                                              (5 * hour, 70, "5 hours", true), (week, 5, "Week", true)]).map(\.used), [70, 20],
+                       "windows per model fold into the fullest of each length")
+        XCTAssertEqual(UsageLimits.ringLines([(hour, 1, "a", false), (2 * hour, 2, "b", false),
+                                              (3 * hour, 3, "c", false), (4 * hour, 4, "d", false)]).count, 3, "at most three")
+        XCTAssertTrue(UsageLimits.ringLines([]).isEmpty)
+    }
+
     func testResetReadFromText() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
