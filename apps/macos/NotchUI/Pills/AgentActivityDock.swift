@@ -611,10 +611,7 @@ struct BackgroundCommandRows: View {
                             .help(tr("ws.background.hasOutput"))
                     }
                     SubagentElapsed(command: command)
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(8, .bold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: expanded, size: 8)
                 }
                 .frame(minHeight: 22)
                 .contentShape(Rectangle())

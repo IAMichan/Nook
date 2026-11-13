@@ -138,8 +138,7 @@ struct PullRequestRow: View, Equatable {
         }
         .help(tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
-        .opacity(hovering ? 1 : 0)
-        .allowsHitTesting(hovering)
+        .revealOnHover(hovering)
         .padding(.trailing, NookTheme.Spacing.sm)
         .padding(.bottom, NookTheme.Spacing.xs)
     }

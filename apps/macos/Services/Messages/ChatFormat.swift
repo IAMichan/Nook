@@ -764,6 +764,15 @@ enum ChatMentions {
         return result + rest
     }
 
+    /// Whether a message tags you: one of the ids its app says it tags (`ids`) is yours (`me`). Every app's parser reads
+    /// its own tags (WhatsApp's "@number" and mention list, Slack's "<@U1>", a Teams mention, a Telegram mention entity)
+    /// and hands them here, so a group that stays quiet still tells you when it names you, the same in every app
+    /// (`InboxMessage.mentionsMe`, `ChatNoticeRules.isQuiet`). "@here" and "@channel" are not you: calm by default.
+    static func mentionsMe<S: Sequence>(_ ids: S, me: String?) -> Bool where S.Element == String {
+        guard let me, !me.isEmpty else { return false }
+        return ids.contains(me)
+    }
+
     /// How a number is looked up: its last nine digits, as Contacts matches a number with or without its country code.
     /// Nil for something too short to be a number.
     static func key(_ number: String) -> String? {

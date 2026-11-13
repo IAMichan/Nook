@@ -187,9 +187,7 @@ struct SessionUsageSection: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 Text(tr("usage.session.breakdown")).font(NookTheme.TextStyle.detail)
                     .foregroundStyle(breakdownHovering ? NookTheme.paper : NookTheme.textSecondary)
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(8, .bold)).foregroundStyle(NookTheme.textTertiary)
-                    .rotationEffect(.degrees(breakdownOpen ? 90 : 0))
+                DisclosureChevron(open: breakdownOpen, size: 8)
                 Spacer(minLength: 0)
             }
             .frame(height: 18)

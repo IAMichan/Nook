@@ -93,10 +93,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                 }
                 moreMenu
                 // The chevron last: every row lines up, whether it opens or not.
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, size: 10, weight: .semibold)
                     .frame(width: 12)
                     .opacity(opens ? 1 : 0)
                     .accessibilityHidden(true)

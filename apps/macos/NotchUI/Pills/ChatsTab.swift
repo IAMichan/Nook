@@ -1375,10 +1375,7 @@ struct ChatsGroupHeader: View {
                 Text(title)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(8, .bold))
-                    .rotationEffect(.degrees(open ? 90 : 0))
-                    .foregroundStyle(NookTheme.textTertiary)
+                DisclosureChevron(open: open, size: 8)
                     .opacity(hovering || !open ? 1 : 0)
                 Spacer(minLength: NookTheme.Spacing.xs)
                 if !open {

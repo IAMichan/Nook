@@ -319,7 +319,7 @@ enum AgentTranscript {
                     // An API error Claude Code wrote in the place of an answer: an error, not something the agent said.
                     let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    messages.append(AgentChatMessage(id: id, notice: notice(error: text), date: when))
+                    messages.append(AgentChatMessage(id: id, notice: notice(error: text, at: when), date: when))
                 } else {
                     // One line can hold several blocks; keep their order (thinking, text, steps).
                     for (offset, block) in ((message["content"] as? [[String: Any]]) ?? []).enumerated() {
@@ -400,7 +400,7 @@ enum AgentTranscript {
                 case "error":
                     let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    messages.append(AgentChatMessage(id: id, notice: notice(error: text), date: when))
+                    messages.append(AgentChatMessage(id: id, notice: notice(error: text, at: when), date: when))
                 default:
                     continue
                 }
@@ -570,15 +570,22 @@ enum AgentTranscript {
     }
 
     /// An error the agent reported, or the usage limit it ran into: "Claude AI usage limit reached|1760040000" (with when
-    /// it resets), "5-hour limit reached ∙ resets 3pm", "You've hit your usage limit".
-    static func notice(error text: String) -> AgentNotice {
+    /// it resets), "5-hour limit reached ∙ resets 3pm", "You've hit your usage limit", and every other agent's way of
+    /// saying it (Gemini's `RESOURCE_EXHAUSTED`, "quota exceeded", a 429, a gateway's "(reset after 1h2m)"). It reads a
+    /// limit the way a session Nook runs does (`FailureClassifier`), so a session followed from its transcript says the
+    /// same as one Nook runs. `at`: when the agent wrote it, for a reset named by the clock ("resets 3pm").
+    static func notice(error text: String, at date: Date? = nil) -> AgentNotice {
         let lower = text.lowercased()
+        let gateway = FailureClassifier.gatewayResetSeconds(text)
         guard lower.contains("limit reached") || lower.contains("hit your") && lower.contains("limit")
-                || lower.contains("usage limit") || lower.contains("rate limit") else { return .error(errorLine(text) ?? text) }
+                || lower.contains("usage limit") || lower.contains("rate limit") || lower.contains("rate_limit_error")
+                || FailureClassifier.saysUsageLimit(lower) || gateway != nil else { return .error(errorLine(text) ?? text) }
         if let bar = text.lastIndex(of: "|"), let seconds = TimeInterval(text[text.index(after: bar)...].trimmingCharacters(in: .whitespaces)) {
             return .limit(String(text[..<bar]).trimmingCharacters(in: .whitespaces), resets: Date(timeIntervalSince1970: seconds))
         }
-        return .limit(errorLine(text) ?? text, resets: nil)
+        let now = date ?? Date()
+        let resets = gateway.flatMap { $0 > 0 ? now.addingTimeInterval($0) : nil } ?? UsageLimits.textReset(text, now: now)
+        return .limit(errorLine(text) ?? text, resets: resets)
     }
 
     /// What a Codex tool gave back: the `output` of the JSON it wraps it in, or what follows the "Output:" line of the

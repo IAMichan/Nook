@@ -246,6 +246,8 @@ enum TeamsData {
             // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
             if mine { inbox.receipt = .sent }
             if message["lastEditedDateTime"] as? String != nil { inbox.edited = true }
+            // Someone tagged you (Graph's `mentions`, each with the user it names): a quiet group still tells you.
+            if !mine, chat.isGroup { inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs(message), me: me) }
             inbox.quote = attachments.lazy.compactMap { quote($0, me: me) }.first
             inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool, name: String?) in
                 let user = (reaction["user"] as? [String: Any])?["user"] as? [String: Any]
@@ -255,6 +257,13 @@ enum TeamsData {
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// The user ids a Graph message tags (`mentions[].mentioned.user.id`).
+    static func mentionedIDs(_ message: [String: Any]) -> [String] {
+        (message["mentions"] as? [[String: Any]] ?? []).compactMap { mention in
+            ((mention["mentioned"] as? [String: Any])?["user"] as? [String: Any])?["id"] as? String
+        }
     }
 
     /// Who came into the chat or went, from a system notice's `eventDetail`: members added or removed by its `initiator`

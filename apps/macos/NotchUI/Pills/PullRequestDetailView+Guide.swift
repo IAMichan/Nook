@@ -94,10 +94,7 @@ extension PullRequestDetailView {
                         }
                     }) {
                         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                            Image(icon: "chevron.right")
-                                .font(NookTheme.font(8.5, .bold))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .rotationEffect(.degrees(guideFiles.contains(file.path) ? 90 : 0))
+                            DisclosureChevron(open: guideFiles.contains(file.path), size: 8.5)
                             filePath(file.path)
                             if !file.note.isEmpty {
                                 Text(file.note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(2)

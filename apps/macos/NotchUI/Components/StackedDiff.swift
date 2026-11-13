@@ -337,10 +337,7 @@ private struct StackedDiffHeader: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(icon: "chevron.right")
-                .font(NookTheme.font(10, .bold))
-                .foregroundStyle(file.tint)
-                .rotationEffect(.degrees(open ? 90 : 0))
+            DisclosureChevron(open: open, size: 10, tint: file.tint)
                 .animation(NookTheme.reveal, value: open)
                 .frame(width: 16)
             Text(file.path)

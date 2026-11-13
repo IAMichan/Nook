@@ -210,6 +210,11 @@ enum SlackData {
             // Who wrote it in a group, by their Slack id: their face beside the bubble goes by it.
             if !mine, conversation.isGroup, !user.isEmpty { inbox.senderID = user }
             if message["edited"] != nil { inbox.edited = true }
+            // Someone tagged you ("<@U1>" in the text as Slack sends it, before `clean` names it): a quiet group still
+            // tells you, as WhatsApp's groups do.
+            if !mine, conversation.isGroup {
+                inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs((message["text"] as? String) ?? ""), me: me)
+            }
             // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
             inbox.reactions = Self.reactions(message, me: me, users: users)
             inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)
@@ -360,6 +365,21 @@ enum SlackData {
 
     /// Slack's markup as plain text: `<@U1>` → "@Anna", `<#C1|general>` → "#general", `<https://x|label>` → "label",
     /// `<https://x>` → the link, and the three escaped characters back.
+    /// The user ids a message's text tags, as Slack writes a tag: "<@U123>" or "<@U123|name>". "<!here>" and
+    /// "<!channel>" tag nobody in particular and are left out.
+    static func mentionedIDs(_ text: String) -> [String] {
+        var ids: [String] = []
+        var rest = Substring(text)
+        while let open = rest.range(of: "<@") {
+            guard let close = rest[open.upperBound...].firstIndex(of: ">") else { break }
+            let inner = rest[open.upperBound..<close]
+            let id = inner.prefix { $0 != "|" }
+            if !id.isEmpty { ids.append(String(id)) }
+            rest = rest[rest.index(after: close)...]
+        }
+        return ids
+    }
+
     static func clean(_ text: String, users: [String: String]) -> String {
         var result = ""
         var rest = Substring(text)

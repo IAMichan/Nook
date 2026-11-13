@@ -731,10 +731,7 @@ private struct UsageBlockRows: View {
                 withAnimation(NookTheme.swap) { if open { expanded.remove(block.id) } else { expanded.insert(block.id) } }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10, weight: .semibold)
                         .frame(width: 12)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         HStack(spacing: NookTheme.Spacing.sm) {

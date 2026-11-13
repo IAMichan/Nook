@@ -279,6 +279,16 @@ enum TelegramData {
         return (object["phone_number"] as? String).map { "+" + $0 }
     }
 
+    /// The user ids a message's text or caption tags by name (`textEntityTypeMentionName`), as strings.
+    static func mentionedIDs(_ content: [String: Any]) -> [String] {
+        let formatted = (content["text"] as? [String: Any]) ?? (content["caption"] as? [String: Any]) ?? [:]
+        return (formatted["entities"] as? [[String: Any]] ?? []).compactMap { entity in
+            let kind = entity["type"] as? [String: Any] ?? [:]
+            guard type(kind) == "textEntityTypeMentionName" else { return nil }
+            return int64(kind["user_id"]).map(String.init)
+        }
+    }
+
     /// The user who wrote a message, from its `sender_id`; nil when a chat (a channel or group itself) wrote it.
     static func senderUser(_ message: [String: Any]) -> Int64? {
         let sender = message["sender_id"] as? [String: Any] ?? [:]
@@ -324,6 +334,12 @@ enum TelegramData {
         if let info = object["interaction_info"] { message.reactions = reactions(info, users: users) }
         // Changed after it was sent: Telegram dates the last change (`edit_date`, 0 when there was none).
         if (int64(object["edit_date"]) ?? 0) > 0 { message.edited = true }
+        // Someone tagged you: Telegram says so while it is unread (`contains_unread_mention`), and a mention of you by
+        // name stays in the text's entities. A quiet group still tells you, as WhatsApp's groups do.
+        if !mine, chat.isGroup {
+            message.mentionsMe = object["contains_unread_mention"] as? Bool == true
+                || ChatMentions.mentionsMe(mentionedIDs(content), me: me.map(String.init))
+        }
         return message
     }
 

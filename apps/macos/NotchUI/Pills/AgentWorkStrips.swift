@@ -382,7 +382,7 @@ struct PullRequestWatchStrip: View {
             ciMark
             if let toggle { watchMark(toggle) }
             ToolbarIconButton("arrow.up.right", tr("ws.prwatch.open"), height: 22, width: 22, open)
-                .opacity(hovering ? 1 : 0)
+                .revealOnHover(hovering)
         }
         .padding(.leading, NookTheme.Spacing.xs)
         .frame(minHeight: 26)

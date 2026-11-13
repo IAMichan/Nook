@@ -1157,9 +1157,7 @@ private struct ProjectHeaderRow: View {
                     // On the count's slot in `foldButton`, just before the chevron. Only under the pointer, as a row's own
                     // actions: a pencil on every project header made the list read as a toolbar.
                     .padding(.trailing, Self.chevronWidth + 2 * Self.gap)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
-                    .animation(NookTheme.hover, value: hovering)
+                    .revealOnHover(hovering, animated: true)
                 }
             }
             .contextMenu {

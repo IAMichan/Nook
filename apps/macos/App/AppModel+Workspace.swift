@@ -470,7 +470,7 @@ extension AppModel {
         let runID = run.id
         let message = tr("ws.notice.question", run.provider.displayName, run.title)
         logNotice(.waiting, title: message, target: .run(runID), key: "wsquestion-" + runID.uuidString,
-                  source: .agents, app: run.provider.rawValue)
+                  source: .agents, app: run.provider.rawValue, urgent: true)
         // The question is in the conversation, which a click opens: the card is the same line as the strip.
         let show: () -> Void = { [weak self] in
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }

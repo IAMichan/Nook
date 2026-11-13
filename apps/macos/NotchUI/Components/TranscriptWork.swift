@@ -64,10 +64,7 @@ struct TranscriptWorkLine: View {
                     .truncationMode(.tail)
             }
             if let open {
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(9, .bold))
-                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, tint: NookTheme.textTertiary.opacity(0.7))
                     .opacity(!quietChevron || open || hovering ? 1 : 0)
             }
             if failed {
@@ -468,10 +465,7 @@ struct TranscriptSupersededFold<Rows: View>: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button(action: toggle) {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10, weight: .semibold)
                     Text(tr("agents.superseded.title"))
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)

@@ -737,9 +737,7 @@ private struct ChatBubbleView: View, Equatable {
                             if armed {
                                 MessageMenuButton(bubble: bubble, items: menuItems, onPicture: bare)
                                     .padding(NookTheme.Spacing.xs)
-                                    .opacity(hovering ? 1 : 0)
-                                    .allowsHitTesting(hovering)
-                                    .animation(NookTheme.hover, value: hovering)
+                                    .revealOnHover(hovering, animated: true)
                             }
                         }
                         .popover(isPresented: $showingInfo, arrowEdge: .bottom) {

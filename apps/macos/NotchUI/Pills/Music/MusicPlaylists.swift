@@ -508,7 +508,7 @@ struct MusicTrackRow: View {
                     ToolbarIconButton("minus.circle", removeLabel ?? tr("music.playlists.removeTrack"), height: 28, width: 28, symbolSize: 12, onRemove)
                 }
             }
-            .opacity(hovering ? 1 : 0)
+            .revealOnHover(hovering)
             MusicTrackMenu(track: track, service: service, play: action, queues: queues, onRemove: onRemove, removeLabel: removeLabel)
                 .opacity(hovering ? 1 : 0.5)
             if let primary {

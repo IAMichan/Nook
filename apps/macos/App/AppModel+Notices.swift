@@ -6,11 +6,13 @@ extension AppModel {
     /// Keeps a notice in the history. Called where Nook decides to tell you something by himself, before the card,
     /// strip or banner is shown, so a notice held back (quiet during a meeting, a busy notch, "don't show") is kept
     /// as well. `source` and `app` name where it comes from: an app switched off in Settings › Notifications is silent
-    /// here too (its own tab still has it). Without them (a permission request) it is always kept.
+    /// here too (its own tab still has it). Without them (a permission request) it is always kept, and so is an `urgent`
+    /// one (it waits on you): it reaches you whatever the rules say (`NoticeRules.decide`), so the history has it too.
     func logNotice(_ kind: NoticeEntry.Kind, title: String, detail: String = "", context: String = "",
-                   target: NoticeEntry.Target = .nowhere, key: String? = nil, source: NoticeSource? = nil, app: String = "") {
+                   target: NoticeEntry.Target = .nowhere, key: String? = nil, source: NoticeSource? = nil, app: String = "",
+                   urgent: Bool = false) {
         guard !demoMode else { return }
-        if let source, !settings.noticeRules.isOn(source, app: app) { return }
+        if let source, !urgent, !settings.noticeRules.isOn(source, app: app) { return }
         NoticeHistory.shared.record(kind, title: title, detail: detail, context: context, target: target, key: key)
     }
 
@@ -41,7 +43,10 @@ extension AppModel {
                        card: @escaping () -> Void, strip: @escaping () -> Void,
                        open: (() -> Void)? = nil, window: (() -> Void)? = nil, banner: NoticeBanner = NoticeBanner(),
                        stillNew: (() -> Bool)? = nil) -> NoticeDecision {
-        let decision = settings.noticeRules.decide(source, app: app, quiet: quiet.silent, watching: watching)
+        // Urgent goes through the same rules as the approval and question cards (`AppModel+AgentCards`): it reaches you
+        // with its app switched off and in a quiet meeting, unless you are looking at it already.
+        let decision = settings.noticeRules.decide(source, app: app, urgent: urgent && !watching, quiet: quiet.silent,
+                                                   watching: watching)
         guard let style = decision.style else { return decision }
         var onNotch = false
         if case .card(let shown) = viewModel.state { onNotch = shown.id == id }

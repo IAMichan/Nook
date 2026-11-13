@@ -141,8 +141,7 @@ struct PullRequestEditableLine<Content: View>: View {
             content().frame(maxWidth: .infinity, alignment: .leading)
             if enabled {
                 ToolbarIconButton("pencil", help, height: 20, width: 20, edit)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
+                    .revealOnHover(hovering)
             }
         }
         .onHover { hovering = $0 }

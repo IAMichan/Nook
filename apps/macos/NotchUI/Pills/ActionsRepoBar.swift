@@ -74,8 +74,7 @@ struct ActionsRepoTab: View {
             }
             if closable {
                 ToolbarIconButton("xmark", tr("actions.repo.close"), height: 16, width: 16, onClose)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
+                    .revealOnHover(hovering)
             }
         }
         .padding(.leading, NookTheme.Spacing.md)

@@ -301,16 +301,14 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                     ComposerInbox.shared.add(SessionPrompts.comment(pullRequest, author: event.author, path: place.path, line: place.line,
                                                                     text: event.body), to: session)
                 }
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
+                .revealOnHover(hovering)
             }
             if editable, let onEdit {
                 ToolbarIconButton("pencil", tr("agents.pr.comment.edit"), height: 20, width: 20, onEdit)
-                    .opacity(hovering ? 1 : 0)
-                    .allowsHitTesting(hovering)
+                    .revealOnHover(hovering)
             }
             if reactable {
-                PullRequestReactionPicker(event: event).opacity(hovering ? 1 : 0).allowsHitTesting(hovering)
+                PullRequestReactionPicker(event: event).revealOnHover(hovering)
             }
             if reactions, !event.reactions.isEmpty { PullRequestReactionBar(event: event) }
             if let date = event.date {
@@ -326,8 +324,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                 ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
                     NSWorkspace.shared.open(url)
                 }
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
+                .revealOnHover(hovering)
             }
         }
     }

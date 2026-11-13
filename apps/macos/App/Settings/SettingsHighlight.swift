@@ -112,10 +112,7 @@ struct SettingsFold<Content: View>: View {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10, weight: .semibold)
                         .frame(width: 12)
                     Text(title).foregroundStyle(NookTheme.paper)
                     Spacer(minLength: NookTheme.Spacing.lg)

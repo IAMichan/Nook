@@ -578,8 +578,7 @@ private struct TerminalRow: View {
             }
             .buttonStyle(.nookPlain)
             .padding(.trailing, NookTheme.Spacing.sm)
-            .opacity(hovering ? 1 : 0)
-            .allowsHitTesting(hovering)
+            .revealOnHover(hovering)
             .help(tr("workbench.terminal.close"))
             .accessibilityLabel(tr("workbench.terminal.close"))
         }

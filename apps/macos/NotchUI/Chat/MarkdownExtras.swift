@@ -22,10 +22,7 @@ struct MarkdownDetailsBlock: View {
                 withAnimation(NookTheme.swap) { open.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(10, .bold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 10)
                     Text(MarkdownBlock.inline(summary.isEmpty ? tr("markdown.details") : summary, size: size))
                         .font(NookTheme.font(size, .medium))
                         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)

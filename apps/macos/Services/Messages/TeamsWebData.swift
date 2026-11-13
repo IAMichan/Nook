@@ -261,6 +261,8 @@ enum TeamsWebData {
             inbox.media = media
             if mine { inbox.receipt = .sent }
             if properties["edittime"] != nil { inbox.edited = true }
+            // Someone tagged you (the `mentions` property, each with the id it names): a quiet group still tells you.
+            if !mine, chat.isGroup { inbox.mentionsMe = ChatMentions.mentionsMe(mentionedIDs(properties["mentions"]), me: me) }
             inbox.quote = answer.quote
             inbox.reactions = reactions(properties["emotions"], me: me, names: names)
             return inbox
@@ -579,6 +581,16 @@ enum TeamsWebData {
             return "<p>" + written + escaped(String(line[last...])) + "</p>"
         }.joined()
         return (html, mentions)
+    }
+
+    /// The ids a message's `mentions` property tags: its `mri`s ("8:orgid:…"), from the JSON list the website keeps as a
+    /// string (or a list, as some replies carry it). The reverse of `mentionsProperty`.
+    static func mentionedIDs(_ value: Any?) -> [String] {
+        var list = value as? [[String: Any]]
+        if list == nil, let text = value as? String, let data = text.data(using: .utf8) {
+            list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+        }
+        return (list ?? []).compactMap { ($0["mri"] as? String).flatMap { $0.isEmpty ? nil : $0 } }
     }
 
     /// The `mentions` property of a message with tags: a JSON list, as a string, of each one's number, id and name.

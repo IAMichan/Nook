@@ -16,7 +16,8 @@ extension AppModel {
                             open: @escaping () -> Void, openApp: (title: String, action: () -> Void)? = nil,
                             reply: ((String) -> Void)? = nil) {
         logNotice(Self.noticeKind(notice.state), title: notice.headline, detail: notice.historyDetail,
-                  context: notice.project, target: target, source: .agents, app: app)
+                  context: notice.project, target: target, source: .agents, app: app,
+                  urgent: notice.state == .waiting)
         deliverNotice(.agents, app: app, id: notice.cardID, pace: notice.pace,
                       urgent: notice.state == .waiting, title: notice.headline, subtitle: notice.bannerSubtitle,
                       body: notice.bannerBody, sound: Self.noticeSound(notice.state), watching: watching,
