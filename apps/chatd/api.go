@@ -771,30 +771,46 @@ type mention struct {
 }
 
 // tag gives a text message the HTML a Matrix client writes for a tag: every "@Name" of someone in mentions becomes a
-// pill (a link to their user id), and m.mentions lists them, so each bridge sends its app's own tag.
+// pill (a link to their user id), and m.mentions lists them, so each bridge sends its app's own tag. It walks the text
+// once, so a pill is never matched again by a later name (or an id with a newline turned into <br> inside its link).
 func tag(content *event.MessageEventContent, mentions []mention) {
-	formatted := html.EscapeString(content.Body)
-	var ids []id.UserID
 	// The longest name first, so "@Anna Bakker" is not taken for "@Anna".
 	mentions = slices.Clone(mentions)
 	slices.SortStableFunc(mentions, func(a, b mention) int { return len(b.Name) - len(a.Name) })
-	for _, m := range mentions {
-		if m.ID == "" || m.Name == "" {
+	var formatted strings.Builder
+	var ids []id.UserID
+	for rest := content.Body; rest != ""; {
+		if rest[0] == '@' {
+			if i := slices.IndexFunc(mentions, func(m mention) bool {
+				return m.ID != "" && m.Name != "" && strings.HasPrefix(rest[1:], m.Name)
+			}); i >= 0 {
+				m := mentions[i]
+				formatted.WriteString(`<a href="https://matrix.to/#/` + html.EscapeString(m.ID) + `">` + html.EscapeString(m.Name) + `</a>`)
+				if !slices.Contains(ids, id.UserID(m.ID)) {
+					ids = append(ids, id.UserID(m.ID))
+				}
+				rest = rest[1+len(m.Name):]
+				continue
+			}
+		}
+		if rest[0] == '\n' {
+			formatted.WriteString("<br>")
+			rest = rest[1:]
 			continue
 		}
-		written := html.EscapeString("@" + m.Name)
-		if !strings.Contains(formatted, written) {
-			continue
+		// Plain text up to the next "@" or line break.
+		next := strings.IndexAny(rest[1:], "@\n") + 1
+		if next == 0 {
+			next = len(rest)
 		}
-		pill := `<a href="https://matrix.to/#/` + html.EscapeString(m.ID) + `">` + html.EscapeString(m.Name) + `</a>`
-		formatted = strings.ReplaceAll(formatted, written, pill)
-		ids = append(ids, id.UserID(m.ID))
+		formatted.WriteString(html.EscapeString(rest[:next]))
+		rest = rest[next:]
 	}
 	if len(ids) == 0 {
 		return
 	}
 	content.Format = event.FormatHTML
-	content.FormattedBody = strings.ReplaceAll(formatted, "\n", "<br>")
+	content.FormattedBody = formatted.String()
 	content.Mentions = &event.Mentions{UserIDs: ids}
 }
 

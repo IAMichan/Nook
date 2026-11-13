@@ -102,6 +102,10 @@ jobs:
       - name: go test
         if: steps.verified.outputs.verified != 'true'
         run: CGO_ENABLED=1 CGO_LDFLAGS="-L$RUNNER_TEMP/libsignal-lib" go test ./...
+      # Fuzzes tag() (message text and names to Matrix HTML) for 30 seconds; a crash fails the run and prints the input.
+      - name: go fuzz
+        if: steps.verified.outputs.verified != 'true'
+        run: CGO_ENABLED=1 CGO_LDFLAGS="-L$RUNNER_TEMP/libsignal-lib" go test -run='^$' -fuzz=FuzzTag -fuzztime=30s .
       - uses: ./.github/actions/verified-mark
         if: steps.verified.outputs.verified != 'true'
         with:

@@ -22,7 +22,8 @@ name: Release
 # The release stays a draft until the macOS, Windows and Linux files are all attached and checked; only then does the
 # `publish` job make it public (and create the tag). A run that fails halfway leaves a draft nobody can download or
 # update to: fix the cause and re-run the failed jobs, or delete the draft. Every download carries a build provenance
-# attestation (`gh attestation verify <file> --repo IAMichan/Nook` shows it was built by this workflow from this repo).
+# attestation (`gh attestation verify <file> --repo IAMichan/Nook` shows it was built by this workflow from this repo);
+# its Sigstore bundle is attached as Nook-<version>-<platform>.intoto.jsonl for offline checks (`--bundle <file>`).
 #
 # Signing, best first, by the repository secrets that are set:
 #   MACOS_DEVELOPER_ID_P12 (+ _PASSWORD), with APPLE_NOTARY_APPLE_ID, APPLE_NOTARY_PASSWORD (an app-specific password)
@@ -435,13 +436,22 @@ jobs:
           cat SHA256SUMS.txt
         env:
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
-      # Signed statement, kept by GitHub, that these files were built by this workflow from this commit.
+      # Signed statement, kept by GitHub, that these files were built by this workflow from this commit. Its Sigstore
+      # bundle is attached to the release too (.intoto.jsonl), so it can be checked offline:
+      # `gh attestation verify <file> --bundle Nook-<version>-macOS.intoto.jsonl --repo IAMichan/Nook`.
       - name: Build provenance
+        id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ runner.temp }}/dist/Nook-*-macOS.dmg
             ${{ runner.temp }}/dist/Nook-*-macOS.zip
+      - name: Provenance file
+        working-directory: ${{ runner.temp }}/dist
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
+        run: jq -c . "$BUNDLE" > "Nook-${STEPS_VERSION_OUTPUTS_VERSION}-macOS.intoto.jsonl"
       - name: Create the draft release
         working-directory: ${{ runner.temp }}/dist
         env:
@@ -461,7 +471,9 @@ jobs:
           FLAGS=""
           [ "${STEPS_VERSION_OUTPUTS_PRERELEASE}" = "true" ] && FLAGS="--prerelease"
           test -s "Nook-$VERSION-macOS.zip.sig"
-          FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt)
+          test -s "Nook-$VERSION-macOS.intoto.jsonl"
+          FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt
+            "Nook-$VERSION-macOS.intoto.jsonl")
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
           # A draft: not visible to users or the in-app updater, and the tag is created only when `publish` makes it
           # public. A draft left behind by an earlier failed run of this tag is replaced.
@@ -542,10 +554,22 @@ jobs:
           } >> notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
       - name: Build provenance
+        id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ runner.temp }}/desktop/out/Nook-*
+      # The Sigstore bundle of that statement, next to the files it covers (see "Build provenance" of the macOS job).
+      - name: Attach the provenance
+        env:
+          GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
+          TAG: ${{ needs.release.outputs.tag }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          FILE="$RUNNER_TEMP/Nook-${TAG#v}-Windows-Linux.intoto.jsonl"
+          jq -c . "$BUNDLE" > "$FILE"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber -- "$FILE"
 
   # Only now, with every file attached, does the release become public: the tag is created, the release page appears,
   # and the in-app updater of a downloaded Nook sees it.
@@ -568,7 +592,7 @@ jobs:
           # Everything a user or the updater downloads must be there before anyone can see the release.
           ASSETS="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           for NAME in "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" "Nook-$VERSION-macOS.zip.sig" SHA256SUMS.txt \
-            "Nook-$VERSION-Windows-setup.exe" "Nook-$VERSION-Windows.msi" "Nook-$VERSION-Linux.deb" \
+            "Nook-$VERSION-macOS.intoto.jsonl" "Nook-$VERSION-Windows-Linux.intoto.jsonl" "Nook-$VERSION-Windows-setup.exe" "Nook-$VERSION-Windows.msi" "Nook-$VERSION-Linux.deb" \
             "Nook-$VERSION-Linux.AppImage" SHA256SUMS-Windows-Linux.txt; do
             grep -qxF "$NAME" <<<"$ASSETS" || { echo "::error::$NAME is missing from the draft of $TAG."; exit 1; }
           done
