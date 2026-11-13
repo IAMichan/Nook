@@ -554,6 +554,8 @@ struct AgentListItem: Identifiable, Equatable {
     var comparison = 0
     /// Forked from another session (/fork): a branch mark before its name.
     var forked = false
+    /// Launched by another session from its shell (`LaunchedSessions`): a mark before its name that says which one.
+    var launchedBy: SessionLauncher? = nil
     /// Works in a linked git worktree rather than the repository's own folder: its branch shows a worktree mark.
     var worktree = false
     /// The lines it added and removed (counted by the hooks, or read from git for sessions Nook runs), and for sessions
@@ -926,7 +928,7 @@ struct AgentListRow: View, Equatable {
         }
     }
 
-    /// Pinned, forked, or the first of a model comparison: a quiet mark before the name.
+    /// Pinned, forked, launched by another session, or the first of a model comparison: a quiet mark before the name.
     @ViewBuilder
     private var marks: some View {
         if pinned {
@@ -938,6 +940,13 @@ struct AgentListRow: View, Equatable {
                 .foregroundStyle(NookTheme.textTertiary)
                 .nookTip(tr("lineage.forked"))
                 .accessibilityLabel(tr("lineage.forked"))
+        }
+        if let launcher = item.launchedBy {
+            Image(icon: "terminal")
+                .font(NookTheme.font(10))
+                .foregroundStyle(NookTheme.textTertiary)
+                .nookTip(tr("launched.by", launcher.title))
+                .accessibilityLabel(tr("launched.by", launcher.title))
         }
         if item.comparison > 0 {
             Image(icon: "square.stack.3d.up")

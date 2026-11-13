@@ -4,6 +4,8 @@ import Foundation
 
 let lineageControlTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "launched.by": "Gestart door een agent in %@",
+        "launched.help": "Een andere sessie startte deze vanuit zijn terminal, bijvoorbeeld als test. Klik om die sessie te openen.",
         "lineage.control": "Lineage",
         "lineage.control.running": "Lineage · %ld bezig",
         "lineage.control.help": "Verwante sessies: waar deze vandaan komt en wat hij startte",
@@ -25,6 +27,8 @@ let lineageControlTranslations: [AppLanguage: [String: String]] = [
         "lineage.status.stopped": "Gestopt",
     ],
     .en: [
+        "launched.by": "Started by an agent in %@",
+        "launched.help": "Another session started this one from its terminal, for example as a test. Click to open that session.",
         "lineage.control": "Lineage",
         "lineage.control.running": "Lineage · %ld running",
         "lineage.control.help": "Related sessions: where this one came from and what it started",
@@ -46,6 +50,8 @@ let lineageControlTranslations: [AppLanguage: [String: String]] = [
         "lineage.status.stopped": "Stopped",
     ],
     .de: [
+        "launched.by": "Von einem Agenten gestartet in %@",
+        "launched.help": "Eine andere Sitzung hat diese aus ihrem Terminal gestartet, zum Beispiel als Test. Klicken, um diese Sitzung zu öffnen.",
         "lineage.control": "Herkunft",
         "lineage.control.running": "Herkunft · %ld laufen",
         "lineage.control.help": "Verwandte Sitzungen: woher diese kommt und was sie gestartet hat",
@@ -67,6 +73,8 @@ let lineageControlTranslations: [AppLanguage: [String: String]] = [
         "lineage.status.stopped": "Gestoppt",
     ],
     .fr: [
+        "launched.by": "Lancée par un agent dans %@",
+        "launched.help": "Une autre session a lancé celle-ci depuis son terminal, par exemple pour un test. Cliquez pour ouvrir cette session.",
         "lineage.control": "Filiation",
         "lineage.control.running": "Filiation · %ld en cours",
         "lineage.control.help": "Sessions liées : d’où vient celle-ci et ce qu’elle a lancé",
@@ -88,6 +96,8 @@ let lineageControlTranslations: [AppLanguage: [String: String]] = [
         "lineage.status.stopped": "Arrêté",
     ],
     .es: [
+        "launched.by": "Iniciada por un agente en %@",
+        "launched.help": "Otra sesión inició esta desde su terminal, por ejemplo como prueba. Haz clic para abrir esa sesión.",
         "lineage.control": "Linaje",
         "lineage.control.running": "Linaje · %ld en curso",
         "lineage.control.help": "Sesiones relacionadas: de dónde viene esta y qué inició",

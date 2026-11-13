@@ -276,3 +276,43 @@ extension AppModel {
         return url.path
     }
 }
+
+/// The session that started another one from its shell (`LaunchedSessions`): an agent's test run or helper, which would
+/// otherwise look like a chat you started yourself.
+struct SessionLauncher: Equatable {
+    var title: String
+    /// The list id that opens it: "run:<uuid>" when Nook runs it or took it over, else "past:<id>".
+    var target: String
+}
+
+extension AppModel {
+    /// Who launched this earlier session, if another session did.
+    func launcher(of session: PastSession) -> SessionLauncher? {
+        history.launcher(of: session).map(sessionLauncher)
+    }
+
+    /// Who launched the conversation a Nook session runs or took over, if another session did.
+    func launcher(of run: WorkspaceRun) -> SessionLauncher? {
+        let conversations = [run.providerSessionID].compactMap { $0 } + run.earlierConversations
+        guard !conversations.isEmpty else { return nil }
+        for kind in AgentKind.allCases where RunProvider(kind: kind) == run.provider {
+            for conversation in conversations {
+                if let parent = history.launcher(agent: kind, conversation: conversation) { return sessionLauncher(parent) }
+            }
+        }
+        return nil
+    }
+
+    /// Who launched a session running outside Nook, if another session did.
+    func launcher(of session: AgentSession) -> SessionLauncher? {
+        guard let kind = AgentKind(agentName: session.name), let conversation = conversationID(for: session) else { return nil }
+        return history.launcher(agent: kind, conversation: conversation).map(sessionLauncher)
+    }
+
+    private func sessionLauncher(_ parent: PastSession) -> SessionLauncher {
+        if let provider = RunProvider(kind: parent.agent), let run = workspace.takenRun(provider: provider, sessionID: parent.sessionID) {
+            return SessionLauncher(title: run.title, target: "run:" + run.id.uuidString)
+        }
+        return SessionLauncher(title: AgentFormat.title(parent.title), target: "past:" + parent.id)
+    }
+}

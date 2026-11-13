@@ -314,6 +314,13 @@ struct PastSession: Identifiable, Equatable, Codable {
     var spawnedTasks: [String] = []
     /// `title` is the name the agent gave the conversation (the Claude app, `/rename`, Codex's thread names), not its first prompt.
     var titledByAgent = false
+    /// Run by a program rather than typed in a terminal or an app: `claude -p` (`entrypoint` "sdk-cli"), `codex exec`.
+    /// Only such a session can be one another agent launched from its shell (`LaunchedSessions`).
+    var headless = false
+    /// The shell commands this session ran that start an agent (`LaunchedSessions.launch`), to find what it launched.
+    var launches: [String] = []
+    /// The session (`id`) that launched this one from its shell; empty when you started it yourself.
+    var launchedBy = ""
 
     /// Whether `id` names this conversation: its latest session id or an earlier one.
     func isConversation(_ id: String) -> Bool { sessionID == id || earlierIDs.contains(id) }
@@ -444,7 +451,35 @@ final class AgentHistory: ObservableObject {
         var seen = Set(diskSessions.map(\.id))
         let listed = listedSessions.keys.sorted().flatMap { listedSessions[$0] ?? [] }.filter { seen.insert($0.id).inserted }
         let merged = listed.isEmpty ? diskSessions : (diskSessions + listed).sorted { $0.ended > $1.ended }
-        if sessions != merged { sessions = merged }
+        guard sessions != merged else { return }
+        indexLaunched(merged)
+        sessions = merged
+    }
+
+    /// The sessions another one launched, by every conversation id they hold, and the sessions that launched them, by id
+    /// (`LaunchedSessions`): a row and a header name the launcher without searching the whole history on every redraw.
+    private var launchedByConversation: [String: PastSession] = [:]
+    private var launchers: [String: PastSession] = [:]
+
+    private func indexLaunched(_ sessions: [PastSession]) {
+        let launched = sessions.filter { !$0.launchedBy.isEmpty }
+        var byConversation: [String: PastSession] = [:]
+        for session in launched {
+            for id in [session.sessionID] + session.earlierIDs { byConversation["\(session.agent.rawValue):\(id)"] = session }
+        }
+        let parents = Set(launched.map(\.launchedBy))
+        launchedByConversation = byConversation
+        launchers = Dictionary(sessions.filter { parents.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The session that launched `session` from its shell; nil when you started it yourself.
+    func launcher(of session: PastSession) -> PastSession? {
+        session.launchedBy.isEmpty ? nil : launchers[session.launchedBy]
+    }
+
+    /// The session that launched the conversation `conversation` of `agent` from its shell, if one did.
+    func launcher(agent: AgentKind, conversation: String) -> PastSession? {
+        launchedByConversation["\(agent.rawValue):\(conversation)"].flatMap(launcher(of:))
     }
     /// Per account (`AgentProfile.id`): who is logged in.
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
@@ -622,7 +657,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let diskSaveInterval: TimeInterval = 10 * 60
     private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
     /// Raise when the parsing changes within a build number.
-    private static let diskFormat = 4
+    private static let diskFormat = 5
     private static var diskBuild: String {
         "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
     }
@@ -836,7 +871,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
-        return Result(sessions: namedByCodex(sessions, homes: homes), accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
+        return Result(sessions: Self.linkLaunched(namedByCodex(sessions, homes: homes)), accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
     }
 
     /// One session per conversation: the transcripts of a chat that was resumed into new files become one, under the
@@ -862,8 +897,27 @@ private final class HistoryScanner: @unchecked Sendable {
                 latest.title = first.title
             }
             latest.prompts = parts.map(\.prompts).max() ?? latest.prompts
+            latest.launches = Array(parts.sorted { $0.started < $1.started }.flatMap(\.launches).suffix(LaunchedSessions.maxCommands))
             latest.earlierIDs = parts.dropFirst().map(\.sessionID).filter { $0 != latest.sessionID }
             return latest
+        }
+    }
+
+    /// Marks the sessions another session launched from its shell (`LaunchedSessions`) with that session's id.
+    static func linkLaunched(_ sessions: [PastSession]) -> [PastSession] {
+        let children = sessions.filter(\.headless).map {
+            LaunchedSessions.Child(id: $0.id, prompt: $0.firstPrompt, started: $0.started)
+        }
+        let launchers = sessions.filter { !$0.launches.isEmpty }.map {
+            LaunchedSessions.Launcher(id: $0.id, commands: $0.launches, started: $0.started, ended: $0.ended)
+        }
+        let parents = LaunchedSessions.parents(children: children, launchers: launchers)
+        guard !parents.isEmpty else { return sessions }
+        return sessions.map { session in
+            guard let parent = parents[session.id] else { return session }
+            var launched = session
+            launched.launchedBy = parent
+            return launched
         }
     }
 
@@ -1436,6 +1490,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let claudeCustomTitle = Data(#""type":"custom-title""#.utf8)
     private static let claudeQueued = Data(#""queued_command""#.utf8)
     private static let spawnTask = Data("spawn_task".utf8)
+    private static let bashTool = Data(#""name":"Bash""#.utf8)
     private static let toolResult = Data(#""tool_result""#.utf8)
 
     /// How far a transcript has been read: the state after every complete line up to `offset`. Transcripts only grow, so
@@ -1564,6 +1619,7 @@ private final class HistoryScanner: @unchecked Sendable {
             progress.session.lastCwd = cwd == progress.session.cwd ? "" : cwd
         }
         if let branch = object["gitBranch"] as? String, !branch.isEmpty, branch != "HEAD" { progress.session.branch = branch }
+        if let entrypoint = object["entrypoint"] as? String { progress.session.headless = entrypoint == "sdk-cli" }
         let message = (object["message"] as? [String: Any]) ?? [:]
         if (object["isSidechain"] as? Bool) != true {
             if let id = object["sessionId"] as? String, !id.isEmpty { progress.sessionIDs.insert(id) }
@@ -1580,6 +1636,12 @@ private final class HistoryScanner: @unchecked Sendable {
             if let model = message["model"] as? String, !model.hasPrefix("<") { progress.session.model = model }
             let text = Self.text(message["content"])
             if !text.isEmpty { progress.session.lastReply = text }
+            if line.range(of: Self.bashTool) != nil, let blocks = message["content"] as? [[String: Any]] {
+                for block in blocks where block["type"] as? String == "tool_use" && block["name"] as? String == "Bash" {
+                    let command = ((block["input"] as? [String: Any])?["command"] as? String) ?? ""
+                    LaunchedSessions.record(command, into: &progress.session.launches)
+                }
+            }
             if line.range(of: Self.spawnTask) != nil, (object["isSidechain"] as? Bool) != true {
                 for key in SpawnedSessions.taskKeys(in: message["content"]) where !progress.session.spawnedTasks.contains(key) {
                     progress.session.spawnedTasks.append(key)
@@ -1649,7 +1711,8 @@ private final class HistoryScanner: @unchecked Sendable {
 
     // MARK: Codex
 
-    private static let codexMarkers = ["session_meta", "turn_context", "user_message", "agent_message", "token_count"].map { Data($0.utf8) }
+    private static let codexMarkers = ["session_meta", "turn_context", "user_message", "agent_message", "token_count",
+                                       #""type":"function_call""#].map { Data($0.utf8) }
 
     private func parseCodex(_ url: URL, key: CacheKey) -> Parsed {
         // rollout-2026-10-14T10-12-33-<uuid>.jsonl: the uuid is what `codex resume` expects.
@@ -1671,6 +1734,7 @@ private final class HistoryScanner: @unchecked Sendable {
         session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
+        session.firstPrompt = Self.clip(SpawnedSessions.normalized(session.firstPrompt), 4_000)
         return Parsed(session: session, entries: result.entries)
     }
 
@@ -1687,6 +1751,11 @@ private final class HistoryScanner: @unchecked Sendable {
             if let id = payload["id"] as? String, !id.isEmpty { state.session.sessionID = id }
             if let cwd = payload["cwd"] as? String { state.session.cwd = cwd }
             if let git = payload["git"] as? [String: Any], let branch = git["branch"] as? String { state.session.branch = branch }
+            // `codex exec`: a program ran it, not you in Codex's own screen or app.
+            if let originator = payload["originator"] as? String { state.session.headless = originator == "codex_exec" }
+        case "response_item":
+            guard payload["type"] as? String == "function_call" else { return }
+            LaunchedSessions.record(LaunchedSessions.codexCommand(payload), into: &state.session.launches)
         case "turn_context":
             if let model = payload["model"] as? String { state.session.model = model }
             if state.session.cwd.isEmpty, let cwd = payload["cwd"] as? String { state.session.cwd = cwd }
@@ -1697,6 +1766,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 state.session.prompts += 1
                 state.session.lastPrompt = text
                 if state.session.title.isEmpty { state.session.title = text }
+                if state.session.firstPrompt.isEmpty { state.session.firstPrompt = text }
             case "agent_message":
                 if let text = payload["message"] as? String, !text.isEmpty { state.session.lastReply = text }
             case "token_count":

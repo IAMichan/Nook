@@ -71,6 +71,7 @@ extension AgentRunPanel {
                 .accessibilityLabel(tr("chat.more"))
             }
             if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
+            if let launcher = app.launcher(of: run) { LauncherLink(launcher: launcher) }
             // Its parent, forks, delegated tasks and side chats: the only way to the ones the Agents list leaves out.
             LineageControl(workspace: workspace, runID: runID)
             Spacer(minLength: 8)
