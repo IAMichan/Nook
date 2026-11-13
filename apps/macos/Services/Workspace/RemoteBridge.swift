@@ -12,6 +12,11 @@ enum RemoteBridge {
         home + "/.nook/b-" + run.uuidString.prefix(8).lowercased() + ".sock"
     }
 
+    /// The file that holds a session's token on that machine, under ~/.nook (0700) like the socket.
+    static func tokenPath(home: String, run: UUID) -> String {
+        home + "/.nook/bridge-tokens/" + run.uuidString.lowercased()
+    }
+
     /// The ssh arguments that carry the session's socket to this Mac.
     static func forward(socket: String, local: String) -> [String] {
         ["-o", "StreamLocalBindUnlink=yes", "-R", socket + ":" + local]
@@ -22,6 +27,8 @@ enum RemoteBridge {
         let encoded = Data(script.utf8).base64EncodedString()
         return #"mkdir -p "$HOME/.nook" && chmod 700 "$HOME/.nook" && printf %s '"# + encoded
             + #"' | { base64 -d 2>/dev/null || base64 -D; } > "$HOME/.nook/nook-mcp" && chmod 755 "$HOME/.nook/nook-mcp""#
+            // Tokens of sessions a week old: a token only works for the run of Nook that made it.
+            + #" && { find "$HOME/.nook/bridge-tokens" -type f -mtime +7 -exec rm -f {} + 2>/dev/null; true; }"#
             + #" && perl -MJSON::PP -MIO::Socket::UNIX -e 1 && printf %s "$HOME""#
     }
 

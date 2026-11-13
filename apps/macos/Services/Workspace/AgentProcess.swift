@@ -18,6 +18,11 @@ struct LaunchSpec: Equatable, Sendable {
     var initialInput: [String]
     /// Does stdin stay open (for approvals and interruption)? Otherwise the agent gets /dev/null.
     var keepsInputOpen: Bool
+    /// A line sent before `initialInput` and never written to the traffic log: a secret that must stay off every command
+    /// line (a session's bridge token for an agent on another machine, `RemoteLaunch.wrap`).
+    var secretInput: String? = nil
+    /// Closes stdin once `secretInput` and `initialInput` went: open only to carry them.
+    var closesInputAfterStart = false
     /// Variables of your environment the agent must not see (Antigravity: other Google accounts and projects).
     var removedEnvironment: [String] = []
     /// Runs through a keeper, so it outlives Nook (`SessionKeeper`).
@@ -435,16 +440,18 @@ final class AgentProcess: @unchecked Sendable {
         // A kept agent outlives Nook on purpose; every other one is stopped and waited for when Nook quits.
         if !isKept { LiveAgentProcesses.shared.add(self) }
         LiveAgentProcesses.shared.track(self)
+        if let secret = spec.secretInput { send(secret + "\n", logged: false) }
         for line in spec.initialInput { send(line) }
+        if spec.closesInputAfterStart { closeInput() }
     }
 
     /// Writes a line to stdin (a message, an answer to a permission prompt).
-    func send(_ line: String) {
+    func send(_ line: String, logged: Bool = true) {
         lock.lock()
         let done = finished
         lock.unlock()
         guard !done, let data = line.data(using: .utf8) else { return }
-        trafficLog?.outbound(line)
+        if logged { trafficLog?.outbound(line) }
         do {
             try process.write(data)
         } catch {
