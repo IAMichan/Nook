@@ -370,6 +370,9 @@ final class WorkspaceManager: ObservableObject {
     var turnPrompts: [UUID: String] = [:]
     /// Sessions whose running turn is that second try: when it fails too, it fails as it is.
     var recoveringConversation: Set<UUID> = []
+    /// The worktree an agent made with `git worktree add` during its turn, which the session may follow at the turn's end
+    /// (`followAddedWorktree`).
+    var addedWorktrees: [UUID: String] = [:]
     /// A goal Codex takes with the turn that is starting, and a goal control that waits for the connection (`SessionGoals`).
     /// $HOME per machine where Nook's MCP server is in place, and each remote session's proof (see `RemoteBridge`).
     var remoteHomes: [String: String] = [:]
@@ -1408,6 +1411,7 @@ final class WorkspaceManager: ObservableObject {
         continuingTurns.remove(id)
         freshArmed.remove(id)
         turnPrompts[id] = nil
+        addedWorktrees[id] = nil
         recoveringConversation.remove(id)
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil

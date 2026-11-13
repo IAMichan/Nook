@@ -506,6 +506,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.event.worktreeCreated": "Worktree erstellt: Branch %@ in %@",
         "ws.event.branchRenamed": "Branch umbenannt in %@",
         "ws.event.worktreeRemoved": "Worktree entfernt: %@",
+        "ws.event.worktreeFollowed": "Weiter im Worktree, den der Agent angelegt hat: %@",
         "ws.filter.label": "Filter",
         "ws.git.commit.help": "Wähle aus, was hineinkommt, und schreibe die Nachricht",
         "ws.git.errorTitle": "Das hat nicht geklappt",
