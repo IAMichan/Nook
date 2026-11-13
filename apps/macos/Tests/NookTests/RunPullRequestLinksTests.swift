@@ -34,6 +34,22 @@ final class RunPullRequestLinksTests: XCTestCase {
         XCTAssertNil(RunPullRequestLinks.created(in: [RunEvent(kind: .assistant, text: link(3))], before: &none))
     }
 
+    /// A script whose last line runs `gh pr create`: the event's text is cut short and its detail is the input as JSON,
+    /// where that line starts after a written-out "\n". The link it printed is still the pull request it made.
+    func testFindsAPullRequestMadeOnALaterLineOfAScript() {
+        let detail = #"{\n  "command" : "cd ~\/repo && git push -q -u origin HEAD\ngh pr create --repo acme\/app --base main --title \"Add logo\" --body-file \/tmp\/pr.md 2>&1 | tail -1"\n}"#
+        let tool = RunEvent(kind: .tool, text: "Bash · cd ~/repo && git push -q -u origin HEAD…", tool: "Bash",
+                            detail: detail, output: "\(link(4149))\nShell cwd was reset to /repo", state: .done)
+        var memo: RunPullRequestLinks.BeforeTurn?
+        let events = [RunEvent(kind: .user, text: "make a new PR"), tool,
+                      RunEvent(kind: .assistant, text: "The new PR is open: **acme/app#4149**."), RunEvent(kind: .result, text: "")]
+        XCTAssertEqual(RunPullRequestLinks.created(in: events, before: &memo), URL(string: link(4149)))
+        // A command that only reads a file named for pull requests still does not count.
+        let reading = RunEvent(kind: .tool, text: "Bash · cat notes.md", tool: "Bash",
+                               detail: #"{\n  "command" : "cd ~\/repo\ncat docs\/gh-pr-create.md"\n}"#, output: link(5))
+        XCTAssertNil(RunPullRequestLinks.pullRequest(in: reading))
+    }
+
     func testMatchesReadingTheWholeConversation() {
         var generator = SystemRandomNumberGenerator()
         for _ in 0..<200 {

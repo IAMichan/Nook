@@ -271,15 +271,19 @@ extension PullRequestFileAnchor {
 /// `glab mr view` and the like, or a tool named for pull or merge requests. A command that merely touches a file such as
 /// `PullRequestActions.swift` does not count: its output can hold any link (a test's sample `.../pull/3`).
 enum PullRequestToolCall {
+    /// Where a command can start: the start of the text, a space or line break, a shell separator, or a line break
+    /// written as `\n` (a tool call's `detail` holds its input as JSON, so a script's later lines read "\ngh pr create").
+    private static let start = #"(?:^|[\s;&|(`"']|\\[nrt])"#
+
     private static let command = try? NSRegularExpression(
-        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
+        pattern: start + #"(?:gh\s+pr|glab\s+mr|tea\s+(?:pr|pulls))\s+(?:create|new|view|show)\b"#,
         options: [.caseInsensitive])
 
     /// A forge CLI that merges or closes a pull request from the shell, in every spelling the CLI takes: `gh pr merge`,
     /// `glab mr merge` or `glab mr accept`, `tea pr merge` or `tea pulls m`, `fj pr close`, `cafe pr merge`, and Azure
     /// DevOps' `az repos pr update --status completed`. Bitbucket has no such CLI.
     private static let closing = try? NSRegularExpression(
-        pattern: #"(?:^|[\s;&|(`"'])(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
+        pattern: start + #"(?:gh\s+(?:pr\s+(?:merge|close)|stack\s+merge)|glab\s+mr\s+(?:merge|accept|close)|"#
             + #"tea\s+(?:pr|pulls?)\s+(?:merge|m|close)|fj\s+pr\s+(?:merge|close)|cafe\s+(?:pr|stack)\s+(?:merge|close)|"#
             + #"az\s+repos\s+pr\s+update\b[^;&|\n]*--status[\s=]+["']?(?:completed|abandoned))\b"#,
         options: [.caseInsensitive])
