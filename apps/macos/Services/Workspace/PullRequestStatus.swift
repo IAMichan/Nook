@@ -91,6 +91,17 @@ struct PullRequestStatus: Equatable, Sendable {
         if outcomes.contains(.failing) { return "failure" }
         return outcomes.contains(.pending) ? "pending" : "success"
     }
+
+    /// The checks as a pull request list row holds them; nil while no read has said, so the row keeps the list's.
+    var ci: PullRequestItem.CI? {
+        switch checks {
+        case "success": return .passing
+        case "failure": return .failing
+        case "pending": return .pending
+        case "": return .unknown
+        default: return nil
+        }
+    }
 }
 
 /// The one place every pull request status in Nook comes from, so the badge on a row, the tray above the composer and
