@@ -888,6 +888,10 @@ struct WAInbox: Equatable, Sendable {
             return .duplicate
         }
         guard !filters.ignored.contains(chat) else { return .ignored }
+        // A blank is dropped before its id counts as seen: WhatsApp can deliver a group message twice under one id, first
+        // as a blank (it only hands over the sender's key, which the gateway passes on as a message) and then with its
+        // text. Seen, the real one was a duplicate, never new, and came in only later with the history, read.
+        guard !message.isBlank else { return .ignored }
         if !seen {
             seenIds.insert(message.id)
             seenOrder.append(message.id)
@@ -902,7 +906,6 @@ struct WAInbox: Equatable, Sendable {
             applyVote(vote, chat: chat, voter: message.fromMe ? WAPoll.me : message.sender)
             return .quiet
         }
-        guard !message.isBlank else { return .ignored }
 
         let kind = WAJID.kind(chat)
         let isGroup = kind == .group
@@ -1654,8 +1657,11 @@ enum WAWebhook {
 
     /// `{"event":"chat_presence","payload":{from, sender_display_name, chat_id, state: "composing"|"paused", media: ""|"audio",
     /// is_group}}`: WhatsApp only sends it while this device says it is online (`WhatsAppProvider.setOnline`).
+    /// In a private chat GOWA gives `chat_id` as WhatsApp sent it, mostly the person's @lid, but `from` as their number
+    /// (as it names that chat everywhere else): the chat is the person who types, by their number.
     private static func parseGOWAPresence(_ json: [String: Any]) -> WAWebhookEvent {
-        guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]) else { return .ignored }
+        guard let p = json["payload"] as? [String: Any], var chat = nonEmpty(p["chat_id"]) else { return .ignored }
+        if !WAJID.isGroup(chat), let from = nonEmpty(p["from"]) { chat = from }
         return .typing(chat: chat, people: [WATyping(from: nonEmpty(p["from"]) ?? chat, name: nonEmpty(p["sender_display_name"]) ?? "",
                                                      active: p["state"] as? String == "composing",
                                                      recording: p["media"] as? String == "audio")])

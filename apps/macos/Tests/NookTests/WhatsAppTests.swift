@@ -718,6 +718,12 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: paused),
                        .typing(chat: "31611111111@s.whatsapp.net", people: [
                            WATyping(from: "31611111111@s.whatsapp.net", active: false)]))
+        // A private chat as WhatsApp sends it now: the chat by the person's @lid, `from` by their number, which is how
+        // every other event (and Nook) names that chat.
+        let lid = Data(#"{"event":"chat_presence","payload":{"from":"31611111111@s.whatsapp.net","from_lid":"98765432109876@lid","chat_id":"98765432109876@lid","state":"composing","media":"","is_group":false}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: lid),
+                       .typing(chat: "31611111111@s.whatsapp.net", people: [
+                           WATyping(from: "31611111111@s.whatsapp.net", active: true)]))
     }
 
     func testOpenWASaysWhoIsTypingAndWhoReadIt() {
@@ -784,6 +790,21 @@ final class WhatsAppTests: XCTestCase {
         // A message written now still reaches you.
         XCTAssertEqual(inbox.add(message("new", chat: chat, at: 200), filters: WAFilters(), quietBefore: woke), .notify)
         XCTAssertEqual(inbox.conversations[chat]?.unread, 1)
+    }
+
+    func testABlankFirstCopyOfAGroupMessageLeavesItNew() {
+        var inbox = WAInbox()
+        let group = "120363000000000001@g.us"
+        // WhatsApp hands a group's sender key over under the message's own id, before the text: GOWA passes it on as a
+        // blank message.
+        XCTAssertEqual(inbox.add(message("M1", chat: group, from: "31611111111@s.whatsapp.net", text: ""), filters: WAFilters()),
+                       .ignored)
+        XCTAssertNil(inbox.conversations[group])
+        // The message itself, under the same id, is new.
+        XCTAssertNotEqual(inbox.add(message("M1", chat: group, from: "31611111111@s.whatsapp.net"), filters: WAFilters()),
+                          .duplicate)
+        XCTAssertEqual(inbox.conversations[group]?.unread, 1)
+        XCTAssertEqual(inbox.conversations[group]?.messages.map(\.id), ["M1"])
     }
 
     // MARK: Webhook
