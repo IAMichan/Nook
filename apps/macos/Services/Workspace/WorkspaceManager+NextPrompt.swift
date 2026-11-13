@@ -23,19 +23,6 @@ extension WorkspaceManager {
             stale: Date().timeIntervalSince(reply.date) > NextPromptSuggestion.Gate.freshFor)
         guard gate.allows else { return }
         switch run.provider.capabilities.promptSuggestions {
-        case .agentStream where agentSuggestsPrompts.contains(id):
-            // Claude Code sends its own right after the turn (`offerAgentPrompt`), but often sends none at all: it skips
-            // early conversations, a cold cache, plan mode, a plan near its limit, and whatever its own filters drop. So
-            // wait for it a moment, then let the generator write one.
-            nextPrompts[id] = NextPromptState(turn: turn, phase: .writing)
-            nextPromptTasks[id]?.cancel()
-            nextPromptTasks[id] = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(NextPromptSuggestion.agentGrace * 1_000_000_000))
-                guard !Task.isCancelled, let self, self.nextPrompts[id]?.turn == turn, self.nextPrompts[id]?.phase == .writing,
-                      let run = self.run(id), run.status == .completed else { return }
-                self.writeNextPrompt(id, run: run, events: self.timeline(id), turn: turn)
-            }
-            return
         case .threadSample:
             if let client = codexServers[id], client.isRunning, let thread = client.threadID, let lastTurn = client.lastTurnID {
                 nextPrompts[id] = NextPromptState(turn: turn, phase: .writing)
@@ -43,13 +30,17 @@ extension WorkspaceManager {
                 return
             }
         case .agentStream, .generator:
+            // Claude Code sends its own after the turn (`offerAgentPrompt`), but often none at all: it skips early
+            // conversations, a cold cache, plan mode, a plan near its limit, and whatever its own filters drop, and it
+            // never says so. Waiting for it first made a suggestion take 8–10 s, so the generator (~3 s) starts at once:
+            // the agent's own still takes over while the generator writes, and stops it.
             break
         }
         writeNextPrompt(id, run: run, events: events, turn: turn)
     }
 
     /// Claude Code's own prediction (`prompt_suggestion`), which arrives after its turn ended: shown for that turn unless
-    /// you already typed, took or dismissed one, or the session is not waiting for you.
+    /// the generator was quicker, you already typed, took or dismissed one, or the session is not waiting for you.
     func offerAgentPrompt(_ id: UUID, _ text: String) {
         guard settings.suggestNextPrompt, let run = run(id), run.status == .completed, run.delegation == nil,
               let turn = NextPromptSuggestion.turnKey(timeline(id)) else { return }
