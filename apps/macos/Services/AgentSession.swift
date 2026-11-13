@@ -110,6 +110,8 @@ struct AgentSession: Identifiable, Equatable {
     var compactingSince: Date? = nil
     /// The last time anything happened in it (a hook event).
     var updated: Date? = nil
+    /// The other projects it changed files in, by their main checkout's folder (`SessionProjects`).
+    var otherProjects: [String] = []
     /// Derived from a running process rather than hooks.
     var isDetected: Bool { status == .detected }
 

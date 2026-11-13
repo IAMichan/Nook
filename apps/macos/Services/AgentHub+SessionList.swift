@@ -125,7 +125,8 @@ extension AgentHub {
                     started: record.started,
                     turnStarted: record.turnStarted,
                     compactingSince: HookCompaction.isLive(since: record.compactingSince) ? record.compactingSince : nil,
-                    updated: record.updated
+                    updated: record.updated,
+                    otherProjects: record.otherProjects
                 )
             }
     }

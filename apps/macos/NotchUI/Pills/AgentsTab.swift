@@ -563,6 +563,8 @@ struct AgentListItem: Identifiable, Equatable {
     var changedFiles: Int? = nil
     /// Its own turn ended, but this many sub-threads it delegated still work (`DelegatedTask.workingSubThreads`).
     var subThreadsWorking = 0
+    /// The names of the other projects it changed files in (`SessionProjects`): the row says "Nook + monorepo".
+    var otherProjects: [String] = []
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
@@ -774,8 +776,8 @@ struct AgentListRow: View, Equatable {
     /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
-        AgentRowLayout(folder: project?.name ?? (withoutProject ? tr("inbox.project.none") : item.folder),
-                       folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
+        AgentRowLayout(folder: SessionProjects.label(own: ownProject, others: item.otherProjects),
+                       folderHelp: folderHelp, hasMeta: hasMeta) {
             fadingSlot
         } title: {
             marks
@@ -788,6 +790,29 @@ struct AgentListRow: View, Equatable {
             if let project { return AnyView(ProjectBadge(project: project)) }
             guard withoutProject else { return nil }
             return AnyView(Image(icon: "square.dashed").font(NookTheme.textFont(9.5, .semibold)))
+        }
+    }
+
+    /// The session's own project, as the first line names it.
+    private var ownProject: String { project?.name ?? (withoutProject ? tr("inbox.project.none") : item.folder) }
+
+    /// The folder's path on hover; with other projects, each of them under it.
+    private var folderHelp: String {
+        let path = AgentPathFormat.tilde(item.path)
+        guard !item.otherProjects.isEmpty else { return path }
+        return ([path] + item.otherProjects.map { "+ " + $0 }).joined(separator: "\n")
+    }
+
+    /// Under its project's header, which names only its own project: "+ monorepo" on the line under the name.
+    @ViewBuilder
+    private var otherProjectsMark: some View {
+        if grouped, !item.otherProjects.isEmpty {
+            HStack(spacing: 3) {
+                Image(icon: "folder").font(NookTheme.textFont(9, .semibold))
+                Text("+ " + item.otherProjects.joined(separator: " + ")).lineLimit(1)
+            }
+            .nookTip(tr("agents.projects.others", item.otherProjects.joined(separator: ", ")))
+            .accessibilityLabel(tr("agents.projects.others", item.otherProjects.joined(separator: ", ")))
         }
     }
 
@@ -817,7 +842,9 @@ struct AgentListRow: View, Equatable {
     private var hasChanges: Bool { item.linesAdded + item.linesRemoved > 0 || (item.changedFiles ?? 0) > 0 }
 
     /// Anything for the line under the name: a branch, changes, or a pull request.
-    private var hasMeta: Bool { shownBranch != nil || hasChanges || !pullRequests.isEmpty }
+    private var hasMeta: Bool {
+        shownBranch != nil || hasChanges || !pullRequests.isEmpty || (grouped && !item.otherProjects.isEmpty)
+    }
 
     /// "feature/calm-ui  +120 −8  [#12]": the branch, cut in the middle when it is long, then what the session changed
     /// and the pull request last, so its mark keeps one column at the right edge whether or not a row has changes.
@@ -826,6 +853,7 @@ struct AgentListRow: View, Equatable {
             if let branch = shownBranch {
                 AgentRowBranch(branch: branch, worktree: item.worktree)
             }
+            otherProjectsMark
             Spacer(minLength: 0)
             changes
             pullRequestPill
@@ -1069,7 +1097,9 @@ struct AgentHoverCard: View {
 
     var body: some View {
         HoverCard(title: item.title) {
-            HoverCardRow(symbol: "folder", text: item.folder, help: item.path.isEmpty ? nil : AgentPathFormat.tilde(item.path))
+            HoverCardRow(symbol: "folder", text: SessionProjects.label(own: item.folder, others: item.otherProjects,
+                                                                       shown: item.otherProjects.count),
+                         help: item.path.isEmpty ? nil : AgentPathFormat.tilde(item.path))
             if !item.machine.isEmpty {
                 HoverCardRow(symbol: "laptopcomputer", text: item.machine)
             }

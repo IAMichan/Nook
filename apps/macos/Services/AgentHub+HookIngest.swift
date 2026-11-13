@@ -271,6 +271,7 @@ extension AgentHub {
             record.status = .running
             if let path = Self.filePath(input) { record.file = Self.shortPath(path) }
             if let edit = Self.editDiff(tool: tool, input: input) { record.diff = edit.lines }
+            record.pendingWrites = SessionProjects.writtenFiles(tool: tool, input: input, cwd: record.cwd)
             Self.push(&record, .running, Self.describe(tool: tool, input: input))
             // The prompt was missed (Nook started mid-turn): this turn is at least this old.
             if record.turnStarted == nil { record.turnStarted = Date() }
@@ -290,8 +291,10 @@ extension AgentHub {
                 record.linesRemoved += edit.removed
                 recap?.edit(added: edit.added, removed: edit.removed)
             }
+            Self.noteProjects(&record, tool: tool, input: input)
         case "PostToolUseFailure":
             Self.complete(&record, as: .failed)
+            record.pendingWrites = []
             Self.resume(&record, asking: isAsking(key))
         case "Notification":
             let message = (event["message"] as? String) ?? "waiting for you"
@@ -345,5 +348,20 @@ extension AgentHub {
         records[key] = record
         rebuild()
         return HookFollowUp(key: key, reopen: kind == "UserPromptSubmit", attention: attention, reply: mode != "permission")
+    }
+}
+
+extension AgentHub {
+    /// A file the tool call wrote in another project than the session's own: the list names both (`SessionProjects`),
+    /// the same as for a session Nook runs.
+    static func noteProjects(_ record: inout Record, tool: String, input: [String: Any]) {
+        let written = SessionProjects.writtenFiles(tool: tool, input: input, cwd: record.cwd)
+        let files = written.isEmpty && input.isEmpty ? record.pendingWrites : written
+        record.pendingWrites = []
+        for file in files {
+            if let projects = SessionProjects.adding(file: file, own: record.cwd, to: record.otherProjects) {
+                record.otherProjects = projects
+            }
+        }
     }
 }

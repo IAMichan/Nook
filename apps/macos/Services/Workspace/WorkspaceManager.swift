@@ -1287,7 +1287,13 @@ final class WorkspaceManager: ObservableObject {
         let base = run(id)?.workingDirectory ?? ""
         let shown = path.hasPrefix(base + "/") ? String(path.dropFirst(base.count + 1)) : path
         append(id, RunEvent(kind: .fileChange, text: shown, tool: kind, detail: path))
-        update(id) { $0.lastChangeAt = Date() }
+        update(id) { run in
+            run.lastChangeAt = Date()
+            // A file in another project than the session's own: the list names both (`SessionProjects`).
+            if !run.isRemote, let projects = SessionProjects.adding(file: path, own: run.workingDirectory, to: run.otherProjects ?? []) {
+                run.otherProjects = projects
+            }
+        }
         scheduleGitRefresh(id, delay: 1.5)
     }
 

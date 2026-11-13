@@ -26,6 +26,7 @@ extension AgentHub {
         var linesAdded: Int
         var linesRemoved: Int
         var turnStarted: Date?
+        var otherProjects: [String]?
     }
 
     private nonisolated static var recordsURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-sessions.json") }
@@ -51,7 +52,8 @@ extension AgentHub {
                         steps: r.steps.map { ["\($0.mark)", $0.text] }, file: r.file, lastMessage: r.lastMessage,
                         updated: r.updated, started: r.started, hostBundleID: r.hostBundleID, home: r.home,
                         sessionID: r.sessionID, transcriptPath: r.transcriptPath, lastPrompt: r.lastPrompt,
-                        firstPrompt: r.firstPrompt, linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted)
+                        firstPrompt: r.firstPrompt, linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted,
+                        otherProjects: r.otherProjects.isEmpty ? nil : r.otherProjects)
         }
         // A burst of hook events becomes one write.
         saveWork = Task.detached(priority: .utility) {
@@ -99,6 +101,7 @@ extension AgentHub {
             record.firstPrompt = item.firstPrompt ?? item.lastPrompt
             record.started = item.started
             record.turnStarted = status == .done ? nil : item.turnStarted
+            record.otherProjects = item.otherProjects ?? []
             restored[item.key] = record
         }
         unconfirmed = Set(restored.keys)

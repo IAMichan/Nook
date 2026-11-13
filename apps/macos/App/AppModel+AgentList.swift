@@ -171,7 +171,8 @@ private struct AgentListBuilder {
             linesRemoved: run.changedLinesRemoved ?? 0,
             changedFiles: run.changedFiles,
             // Its own turn ended while sub-threads it delegated still work: busy through them.
-            subThreadsWorking: run.status == .completed && attention == .working ? app.workspace.workingSubThreads(of: run.id) : 0
+            subThreadsWorking: run.status == .completed && attention == .working ? app.workspace.workingSubThreads(of: run.id) : 0,
+            otherProjects: projectNames(run.otherProjects ?? [], own: run.projectPath)
         )
     }
 
@@ -213,8 +214,16 @@ private struct AgentListBuilder {
             spawnedTasks: known?.spawnedTasks ?? [],
             worktree: GitHead.isWorktree(session.cwd),
             linesAdded: session.linesAdded,
-            linesRemoved: session.linesRemoved
+            linesRemoved: session.linesRemoved,
+            otherProjects: projectNames(session.otherProjects, own: session.cwd)
         )
+    }
+
+    /// The names you gave the other projects a session works in (else their folders'), for "Nook + monorepo".
+    private func projectNames(_ projects: [String], own: String) -> [String] {
+        guard !projects.isEmpty else { return [] }
+        let settings = app.workspace.settings
+        return SessionProjects.names(projects, own: settings.projectDisplayName(own), name: settings.projectDisplayName)
     }
 
     private func item(_ session: PastSession) -> AgentListItem {

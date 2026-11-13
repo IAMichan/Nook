@@ -120,6 +120,11 @@ final class AgentHub: ObservableObject {
         var pid: Int32? = nil
         /// When the agent started compacting the conversation (`HookCompaction`); nil when it does not.
         var compactingSince: Date? = nil
+        /// The other projects it changed files in (`SessionProjects`).
+        var otherProjects: [String] = []
+        /// The files the tool call that is running will write, from its `PreToolUse`: OpenCode's plugin sends no input
+        /// with `PostToolUse`, so what it wrote is read from here once it is done.
+        var pendingWrites: [String] = []
     }
 
     enum PendingKind {
