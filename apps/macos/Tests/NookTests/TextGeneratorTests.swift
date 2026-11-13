@@ -184,4 +184,30 @@ final class TextGeneratorTests: XCTestCase {
         XCTAssertNil(NextPromptState(turn: turn, phase: .writing).shown(for: turn))
         XCTAssertNil(NextPromptState(turn: turn, phase: .done).shown(for: turn))
     }
+
+    /// When Claude Code stays silent, the fallback writes with the session's own model at low effort; any other agent's
+    /// model name means nothing to `claude`, so those get the small default.
+    func testTheFallbackWritesWithTheSessionsOwnClaudeModel() {
+        var run = WorkspaceRun(id: UUID(), title: "t", task: "t", provider: .claude, profileID: "p", model: "claude-opus-5-5",
+                               resolvedModel: nil, mode: .agent, permission: .acceptEdits, isolation: .folder, projectPath: "/w",
+                               workingDirectory: "/w", repoRoot: nil, branch: nil, baseBranch: nil, worktreePath: nil,
+                               instructions: "", status: .completed, statusDetail: nil, providerSessionID: nil, createdAt: Date(),
+                               updatedAt: Date(), archived: false, usage: RunUsage(), turnStartedAt: nil, reviewedAt: nil,
+                               lastChangeAt: nil, changedFiles: nil)
+        XCTAssertEqual(NextPromptSuggestion.agentModel(run), "claude-opus-5-5")
+        run.model = ""
+        run.resolvedModel = "claude-sonnet-5-5"
+        XCTAssertEqual(NextPromptSuggestion.agentModel(run), "claude-sonnet-5-5", "the default model as Claude Code reported it")
+        run.resolvedModel = nil
+        XCTAssertNil(NextPromptSuggestion.agentModel(run))
+        run.provider = .codex
+        run.model = "gpt-5.5"
+        XCTAssertNil(NextPromptSuggestion.agentModel(run))
+
+        let arguments = TextGeneration.claudeArguments(schema: NextPromptSuggestion.schema, model: "claude-opus-5-5",
+                                                       effort: NextPromptSuggestion.agentEffort)
+        guard let index = arguments.firstIndex(of: "--effort") else { return XCTFail("effort missing") }
+        XCTAssertEqual(arguments[index + 1], "low")
+        XCTAssertFalse(TextGeneration.claudeArguments(schema: NextPromptSuggestion.schema).contains("--effort"))
+    }
 }

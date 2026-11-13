@@ -2,8 +2,9 @@ import Foundation
 
 /// The suggested next prompt (`NextPromptSuggestion`): after a turn of any agent ends, the message you will likely send
 /// next, shown as ghost text in the empty composer. The agent writes it itself where it can (`PromptSuggestionSource`):
-/// Claude Code sends one after each turn, Codex is asked on its own thread; every other agent, and a Codex that cannot,
-/// gets one from the generator chosen for it, built from Nook's own timeline. The composer on screen asks for it.
+/// Claude Code sends one after each turn, Codex is asked on its own thread; every other agent, and an agent that cannot
+/// or stays silent, gets one from the generator chosen for it, built from Nook's own timeline. The composer on screen
+/// asks for it.
 extension WorkspaceManager {
     /// The suggestion to show in a session's composer now, if any.
     func nextPrompt(_ id: UUID) -> String? {
@@ -23,7 +24,17 @@ extension WorkspaceManager {
         guard gate.allows else { return }
         switch run.provider.capabilities.promptSuggestions {
         case .agentStream where agentSuggestsPrompts.contains(id):
-            // Claude Code sends its own right after the turn (`offerAgentPrompt`); nothing to ask for.
+            // Claude Code sends its own right after the turn (`offerAgentPrompt`), but often sends none at all: it skips
+            // early conversations, a cold cache, plan mode, a plan near its limit, and whatever its own filters drop. So
+            // wait for it a moment, then let the generator write one.
+            nextPrompts[id] = NextPromptState(turn: turn, phase: .writing)
+            nextPromptTasks[id]?.cancel()
+            nextPromptTasks[id] = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(NextPromptSuggestion.agentGrace * 1_000_000_000))
+                guard !Task.isCancelled, let self, self.nextPrompts[id]?.turn == turn, self.nextPrompts[id]?.phase == .writing,
+                      let run = self.run(id), run.status == .completed else { return }
+                self.writeNextPrompt(id, run: run, events: self.timeline(id), turn: turn)
+            }
             return
         case .threadSample:
             if let client = codexServers[id], client.isRunning, let thread = client.threadID, let lastTurn = client.lastTurnID {
@@ -43,28 +54,32 @@ extension WorkspaceManager {
         guard settings.suggestNextPrompt, let run = run(id), run.status == .completed, run.delegation == nil,
               let turn = NextPromptSuggestion.turnKey(timeline(id)) else { return }
         if let state = nextPrompts[id], state.turn == turn, state.phase != .writing { return }
+        // Nothing usable: the generator's fallback (`requestNextPrompt`) still writes one.
+        guard let text = NextPromptSuggestion.clean(text) else { return }
         nextPromptTasks.removeValue(forKey: id)?.cancel()
-        nextPrompts[id] = NextPromptState(turn: turn, phase: NextPromptSuggestion.clean(text).map { .ready($0) } ?? .done)
+        nextPrompts[id] = NextPromptState(turn: turn, phase: .ready(text))
     }
 
     /// Codex app-server's `thread/sample`: the thread itself predicts the message, as t3code asks it. A Codex that does not
-    /// know the call (or a thread that moved on) leaves it to the generator.
+    /// know the call, a thread that moved on, or one that predicts nothing leaves it to the generator.
     private func sampleCodexNextPrompt(_ id: UUID, _ client: CodexAppServerClient, thread: String, turnID: String, turn: UUID) {
         client.request("thread/sample", CodexRPC.sampleParams(threadID: thread, turnID: turnID,
                                                               prompt: NextPromptSuggestion.agentInstruction)) { [weak self] result in
             Task { @MainActor in
                 guard let self, self.nextPrompts[id]?.turn == turn, self.nextPrompts[id]?.phase == .writing else { return }
-                if case .success(let reply) = result {
-                    let text = (reply.dictionary["text"] as? String).flatMap(NextPromptSuggestion.clean)
-                    self.nextPrompts[id] = NextPromptState(turn: turn, phase: text.map { .ready($0) } ?? .done)
+                if case .success(let reply) = result,
+                   let text = (reply.dictionary["text"] as? String).flatMap(NextPromptSuggestion.clean) {
+                    self.nextPrompts[id] = NextPromptState(turn: turn, phase: .ready(text))
                 } else if let run = self.run(id) {
+                    // Failed or empty: the thread said nothing, so the generator writes it, as for Claude Code.
                     self.writeNextPrompt(id, run: run, events: self.timeline(id), turn: turn)
                 }
             }
         }
     }
 
-    /// The generator chosen in Settings writes it from the timeline.
+    /// The generator chosen in Settings writes it from the timeline; on the agent route a Claude Code session's own
+    /// model writes it, at low effort (`NextPromptSuggestion.agentModel`).
     private func writeNextPrompt(_ id: UUID, run: WorkspaceRun, events: [RunEvent], turn: UUID) {
         guard let prompt = NextPromptSuggestion.prompt(NextPromptSuggestion.messages(events)) else {
             nextPrompts[id] = NextPromptState(turn: turn, phase: .done)
@@ -76,7 +91,9 @@ extension WorkspaceManager {
             guard let self else { return }
             let answer = await self.generateText(prompt, schema: NextPromptSuggestion.schema, task: .nextPrompt,
                                                  prefer: run.provider, profileID: run.profileID,
-                                                 cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory, timeout: 60)
+                                                 cwd: run.isRemote ? NSHomeDirectory() : run.workingDirectory,
+                                                 model: NextPromptSuggestion.agentModel(run),
+                                                 effort: NextPromptSuggestion.agentEffort, timeout: 60)
             guard !Task.isCancelled, self.nextPrompts[id]?.turn == turn, self.nextPrompts[id]?.phase == .writing else { return }
             self.nextPromptTasks[id] = nil
             let text = (answer?["prompt"] as? String).flatMap(NextPromptSuggestion.clean)
