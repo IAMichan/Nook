@@ -596,6 +596,9 @@ func (s *Store) list(query string, args ...any) ([]*Stored, error) {
 func (s *Store) PutMedia(from, mime, name string) (id.ContentURIString, error) {
 	mediaID := xid.New().String()
 	dest := filepath.Join(s.mediaDir, mediaID+mediaExtension(mime, name))
+	if strings.Contains(dest, "..") || filepath.Dir(dest) != filepath.Clean(s.mediaDir) {
+		return "", errors.New("media path outside the media folder")
+	}
 	if err := os.Rename(from, dest); err != nil {
 		data, readErr := os.ReadFile(from)
 		if readErr != nil {
@@ -635,8 +638,10 @@ func (s *Store) MediaPath(uri id.ContentURIString) (path, mime, name string) {
 }
 
 func mediaExtension(mime, name string) string {
-	if ext := filepath.Ext(name); ext != "" && len(ext) <= 6 {
-		return strings.ToLower(ext)
+	// Only a short run of letters and digits after the dot is kept, so a file name sent by a client can never
+	// add a separator or ".." to the path the media is stored under.
+	if ext := strings.ToLower(filepath.Ext(name)); len(ext) > 1 && len(ext) <= 6 && isPlainExtension(ext[1:]) {
+		return ext
 	}
 	switch mime {
 	case "image/jpeg":
@@ -657,4 +662,13 @@ func mediaExtension(mime, name string) string {
 		return ".mp3"
 	}
 	return ""
+}
+
+func isPlainExtension(ext string) bool {
+	for _, r := range ext {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }

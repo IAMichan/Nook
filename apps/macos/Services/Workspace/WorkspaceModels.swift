@@ -701,7 +701,7 @@ struct PullRequestWatch: Codable, Equatable, Sendable {
     /// A GitHub pull request, a GitLab merge request, or a pull request on a forge with a token.
     static func canWatch(_ url: URL) -> Bool {
         let parts = url.path.split(separator: "/")
-        let github = url.host?.hasSuffix("github.com") == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
+        let github = url.host.map { $0 == "github.com" || $0.hasSuffix(".github.com") } == true && parts.count >= 4 && parts[2] == "pull" && Int(parts[3]) != nil
         if github || url.absoluteString.contains("/-/merge_requests/") { return true }
         // Every other forge once it has a token.
         return PullRequestRef.parse(url.absoluteString)?.forgeRepository.flatMap(PullRequestForges.client) != nil

@@ -82,7 +82,7 @@ enum CILogParser {
 
     /// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); nil for a check from another app.
     static func jobID(from url: URL?) -> Int? {
-        guard let url, url.host?.hasSuffix("github.com") == true else { return nil }
+        guard let url, url.host.map { $0 == "github.com" || $0.hasSuffix(".github.com") } == true else { return nil }
         let parts = url.path.split(separator: "/").map(String.init)
         guard let index = parts.firstIndex(of: "job"), parts.index(after: index) < parts.endIndex,
               parts.contains("actions") else { return nil }

@@ -11,8 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
-  pull-requests: read
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}
@@ -22,6 +21,9 @@ jobs:
   cancel:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: write # cancels the stale runs
+      pull-requests: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}

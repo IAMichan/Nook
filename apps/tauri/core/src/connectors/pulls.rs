@@ -1156,7 +1156,7 @@ pub const LOG_LINES: usize = 2_000;
 /// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); None for a check from another app.
 pub fn job_id(url: &str) -> Option<i64> {
     let url = url::Url::parse(url).ok()?;
-    if !url.host_str().is_some_and(|h| h.ends_with("github.com")) {
+    if !url.host_str().is_some_and(|h| h == "github.com" || h.ends_with(".github.com")) {
         return None;
     }
     let parts: Vec<&str> = url.path_segments()?.collect();

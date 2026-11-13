@@ -182,3 +182,19 @@ func TestStorePollVotes(t *testing.T) {
 		t.Fatalf("the newest vote is not last: %+v", votes[1].Content.Parsed)
 	}
 }
+
+func TestMediaExtensionKeepsOnlyPlainExtensions(t *testing.T) {
+	cases := map[string]string{
+		"photo.JPG":        ".jpg",
+		"voice.m4a":        ".m4a",
+		"x./../../evil":    ".png", // falls back to the mime type
+		"name.a b":         ".png",
+		"archive.toolongx": ".png",
+		"noext":            ".png",
+	}
+	for name, want := range cases {
+		if got := mediaExtension("image/png", name); got != want {
+			t.Errorf("mediaExtension(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
