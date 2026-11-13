@@ -774,7 +774,8 @@ struct AgentListRow: View, Equatable {
     /// name; and the branch, its changes, the pull request and the agent's logo. Without any of those the logo moves up
     /// beside the name and the row keeps two lines. The hover card has the rest.
     private var fullBody: some View {
-        AgentRowLayout(folder: project?.name ?? item.folder, folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
+        AgentRowLayout(folder: project?.name ?? (withoutProject ? tr("inbox.project.none") : item.folder),
+                       folderHelp: AgentPathFormat.tilde(item.path), hasMeta: hasMeta) {
             fadingSlot
         } title: {
             marks
@@ -784,8 +785,16 @@ struct AgentListRow: View, Equatable {
         } meta: {
             metaLine
         } mark: {
-            project.map { AnyView(ProjectBadge(project: $0)) }
+            if let project { return AnyView(ProjectBadge(project: project)) }
+            guard withoutProject else { return nil }
+            return AnyView(Image(icon: "square.dashed").font(NookTheme.textFont(9.5, .semibold)))
         }
+    }
+
+    /// A session started with "No project" (or in the home folder): its first line says so, as the project folders in
+    /// the list do, instead of the name of the scratch folder Nook made for it.
+    private var withoutProject: Bool {
+        project == nil && InboxProject.key(folder: item.folder, path: item.path) == InboxProject.none
     }
 
     private var title: some View {
