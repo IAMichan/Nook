@@ -249,6 +249,6 @@ extension PullRequestForges {
         return PullRequestSnapshot(state: state, checks: checks, failedChecks: detail.checks.filter { $0.outcome == .failing }.map(\.name),
                                    reviews: conversation.filter(\.review).map(\.note), comments: conversation.filter { !$0.review }.map(\.note),
                                    draft: detail.state == .draft, conflicted: detail.conflicted, merge: detail.mergeFacts,
-                                   mergeabilityKnown: detail.mergeable != nil)
+                                   mergeabilityKnown: detail.mergeable != nil, title: detail.title)
     }
 }
