@@ -374,6 +374,8 @@ extension AgentRunPanel {
         // A pull request the git button is writing or opening shows here already, where it will appear.
         let pending = workspace.quickGitProgress(runID).flatMap { $0.action.proposes ? $0.step : nil }
         // The pull requests it works on besides its own branch's: one it was asked to fix, one you linked. Open first.
+        // They show above the session's own branches, so its current branch (where a new pull request appears) and the
+        // one being opened stay at the bottom, right above the box.
         let shownURLs = Set(([pullRequest] + branches.map(\.pullRequest)).compactMap { $0?.absoluteString })
         // Every pull request the session watches shows too, not only the first.
         let linked = pullRequestSync.others(run: runID)
@@ -393,6 +395,7 @@ extension AgentRunPanel {
                                            jump: { quote in jumpToQuote(quote) })
                         if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
+                    ForEach(others) { link in otherRow(link, watches: watches) }
                     if !branches.isEmpty {
                         RunBranchTray(rows: branches, watches: watches, canWatchCurrent: watchable != nil, runID: runID, workspace: workspace,
                                       pullRequestSync: pullRequestSync, showsOlderBranches: $showsOlderBranches)
@@ -402,7 +405,6 @@ extension AgentRunPanel {
                         } : nil)
                     }
                     if let pending { PullRequestPendingRow(step: pending) }
-                    ForEach(others) { link in otherRow(link, watches: watches) }
                     if hasPullRequests && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
                         QueuedMessagesStrip(
