@@ -436,6 +436,7 @@ targets:
       - path: Services/Connectors/PullRequestStack.swift
       - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
+      - path: Services/Workspace/SessionProjects.swift
       - path: Services/Workspace/AgentAttention.swift
       - path: Services/Workspace/Delegation.swift
       - path: Services/Workspace/ContextHandoff.swift

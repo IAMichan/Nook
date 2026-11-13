@@ -575,6 +575,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var prWatch: PullRequestWatch? = nil
     /// The pull requests watched besides `prWatch`, which stays the one the composer's tray shows.
     var extraPRWatches: [PullRequestWatch]? = nil
+    /// The other projects it changed files in, by their main checkout's folder (`SessionProjects`): "Nook + monorepo".
+    var otherProjects: [String]? = nil
     /// Every pull request this session watches.
     var prWatches: [PullRequestWatch] { (prWatch.map { [$0] } ?? []) + (extraPRWatches ?? []) }
     /// Runs on another machine over SSH; `workingDirectory` is then a path on that machine.
