@@ -92,16 +92,19 @@ struct AgentInboxList: View {
     /// The pull requests of a row, for its badge and the card that badge opens on hover: the ones the branch sync found for
     /// the session's branch (a session Nook runs by id, any other by folder), and for a session Nook runs also the ones of
     /// the branches and worktrees it worked on before, so a pull request it opened stays in view after it moved on. Until
-    /// the sync has found one, the pull request the chat itself shows: the same one as the tray above its composer.
+    /// the sync has found one, the pull request the chat itself shows: the same one as the tray above its composer. Like
+    /// that tray, the ones it works on besides its branches' (linked, or opened elsewhere and watched) count too.
     private func sessionPullRequests(_ item: AgentListItem) -> SessionPullRequests {
         if let id = runID(item) {
             let earlier = pullRequestStatuses.current(pullRequests.earlier[id] ?? [])
+            // An earlier branch's own request stays under that heading, not with these.
+            let others = otherPullRequests(run: id).filter { link in !earlier.contains { $0.id == link.id } }
             if let links = pullRequests.links[id], !links.isEmpty {
-                return SessionPullRequests(current: pullRequestStatuses.current(links), earlier: earlier)
+                return SessionPullRequests(current: pullRequestStatuses.current(links) + others, earlier: earlier)
             }
             // The watched one may be one of an earlier branch: it is listed there, not as this branch's.
             let known = knownPullRequest(run: id).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
-            return SessionPullRequests(current: pullRequestStatuses.current(known.filter { link in !earlier.contains { $0.id == link.id } }),
+            return SessionPullRequests(current: pullRequestStatuses.current(known.filter { link in !earlier.contains { $0.id == link.id } }) + others,
                                        earlier: earlier)
         }
         if let branch = item.branch,
@@ -113,6 +116,17 @@ struct AgentInboxList: View {
             : app.hub.sessions.first { $0.id == item.id }?.lastReply
         let printed = reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(PullRequestLink.init(url:)).map { [$0] } ?? []
         return SessionPullRequests(current: pullRequestStatuses.current(printed))
+    }
+
+    /// The pull requests a session works on besides its branches', as the tray above its composer lists them: the ones
+    /// linked to it, then every one it watches that is not linked. Open first, newest number first.
+    private func otherPullRequests(run id: UUID) -> [PullRequestLink] {
+        let linked = pullRequests.others(run: id)
+        let watched = (app.workspace.run(id)?.prWatches ?? []).compactMap { watch in
+            linked.contains { $0.url == watch.url } ? nil : URL(string: watch.url).flatMap(PullRequestLink.init(url:))
+        }
+        return (linked + pullRequestStatuses.current(watched))
+            .sorted { ($0.state.isOpen ? 0 : 1, -$0.number) < ($1.state.isOpen ? 0 : 1, -$1.number) }
     }
 
     /// The past session of a row ("past:" and the session's id, "agent:session"), compared by its parts: making the id
