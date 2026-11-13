@@ -57,6 +57,8 @@ struct ComposerConfig {
     /// Where a pasted secret goes when you keep it out of the message (`SecretFiles` scope: the session's id, or
     /// "composer" before there is one). Nil: no offer, as in a chat with people or a session on another machine.
     var secretScope: String? = nil
+    /// Who the message goes to and what they said last, for the composer's sentence suggestions (`ComposerCompleter`).
+    var situation: () -> ComposerCompletion.Situation = { ComposerCompletion.Situation() }
 
     var referencesEnabled: Bool { fileRoot != nil || repository != nil || !skills.isEmpty }
 }
@@ -129,6 +131,22 @@ final class ComposerModel: ObservableObject {
     }
 
     func keep(_ id: String, text: String) { excerpts[id] = text }
+
+    // MARK: Names typed without `@`
+
+    private var inlineNames: (names: [ComposerInlineName.Candidate], at: Date)?
+
+    /// The name typed right before `caret` (`ComposerInlineName`), while the list is closed. The names are read from the
+    /// agents once every few seconds, not on every key.
+    func inlineName(in text: String, caret: Int, _ config: ComposerConfig) -> ComposerInlineName.Match? {
+        guard !isOpen, caret >= ComposerInlineName.minimumLetters,
+              let index = String.Index(exactUTF16: caret, in: text), index > text.startIndex,
+              !text[text.index(before: index)].isWhitespace else { return nil }
+        if inlineNames.map({ Date().timeIntervalSince($0.at) > 5 }) ?? true {
+            inlineNames = (ComposerInlineName.candidates(models: config.models()), Date())
+        }
+        return ComposerInlineName.match(in: text, caret: caret, candidates: inlineNames?.names ?? [])
+    }
 
     // MARK: Suggestions
 

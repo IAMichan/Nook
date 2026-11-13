@@ -712,6 +712,7 @@ struct AgentSessionDetail: View {
         config.keepsBigPastes = true
         // An agent on this Mac reads the private file a pasted secret goes to.
         config.secretScope = SecretFiles.composerScope
+        config.situation = { ComposerCompletion.Situation(project: folder.isEmpty ? nil : (folder as NSString).lastPathComponent) }
         return config
     }
 

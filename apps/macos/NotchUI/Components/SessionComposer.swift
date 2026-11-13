@@ -328,6 +328,11 @@ struct SessionComposer<Controls: View>: View {
         }
         styleMarkdown()
         guard let extras else { return }
+        // Only typing proposes a name (`ComposerInlineName`) or asks for the rest of the sentence (`ComposerCompleter`):
+        // every other change (a paste, a chip, history) hides the grey text, unless it put in the start of the sentence.
+        var typedName: ComposerInlineName.Match?
+        var typedAt: Int?
+        defer { updateGhost(words: ComposerAttachments.split(newText).body, name: typedName, typedAt: typedAt) }
         // ⇧⌘V asked for this change to stay text; it holds for this one change only.
         let pastedAsText = extras.model.pastesAsText
         extras.model.pastesAsText = false
@@ -373,7 +378,71 @@ struct SessionComposer<Controls: View>: View {
             extras.model.close()
             return
         }
-        extras.model.update(for: new, caret: caret(in: new), extras.config)
+        let at = caret(in: new)
+        extras.model.update(for: new, caret: at, extras.config)
+        // A word or two more than before, typed at the caret: perhaps the start of a model's name.
+        if let at, new.utf16.count > old.utf16.count {
+            typedName = extras.model.inlineName(in: new, caret: at, extras.config)
+        }
+        typedAt = at
+    }
+
+    /// The grey text after the caret (`ComposerInlineGhost`) once the field shows `words`: a name typed without `@`, the
+    /// sentence on screen carried on (typed through, or a word taken), or after a pause in typing a new suggestion for the
+    /// rest of the sentence. Anything else hides it straight away, so Tab never takes what is no longer on screen.
+    private func updateGhost(words: String, name: ComposerInlineName.Match?, typedAt: Int?) {
+        let ghost = ComposerInlineGhost.shared
+        let completer = ComposerCompleter.shared
+        let editor = { ComposerFieldStyle.focusedEditor(expecting: ComposerChips.display(words)) }
+        if let name {
+            completer.cancel()
+            DispatchQueue.main.async { ghost.show(name, in: editor()) }
+            return
+        }
+        if let carried = ghost.carried(into: words) {
+            completer.cancel()
+            DispatchQueue.main.async { ghost.show(carried, in: editor()) }
+            return
+        }
+        ghost.hide()
+        guard let typedAt, let extras, isFocused, !extras.model.isOpen, completer.isOn,
+              let caretIndex = String.Index(exactUTF16: typedAt, in: words) else { return completer.cancel() }
+        let before = String(words[..<caretIndex]), after = String(words[caretIndex...])
+        completer.suggest(before: before, after: after, situation: extras.config.situation(), hint: prompt) { suggestion in
+            // Still the same words and the keyboard here: a suggestion for older text is not shown.
+            guard let suggestion, isFocused, typedText == words, !(self.extras?.model.isOpen ?? false) else { return }
+            ghost.show(.text(suggestion, words: words, caret: typedAt), in: editor())
+        }
+    }
+
+    /// Tab (one word) or ⇧Tab (all of it) on the sentence on screen: the words go in at the caret; what is left stays grey.
+    private func acceptGhostText(all: Bool) -> Bool {
+        let words = typedText
+        guard case .text(var suggestion, let shownWords, let caret)? = ComposerInlineGhost.shared.shown(
+                  for: ComposerFieldStyle.focusedEditor(expecting: ComposerChips.display(words))),
+              shownWords == words, let index = String.Index(exactUTF16: caret, in: words) else { return false }
+        let prefs = AutocompleteStore.shared.prefs
+        let piece = all ? suggestion.remaining
+            : suggestion.acceptNextChunk(.init(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.punctuationWithWord))
+        guard !piece.isEmpty else { return false }
+        let value = String(words[..<index]) + piece + String(words[index...])
+        assign(ComposerAttachments.replacingBody(of: text, with: value))
+        placeCaret(caret + piece.utf16.count, inWords: value)
+        return true
+    }
+
+    /// Tab on a name typed without `@`: the typed words become its chip, as if chosen from the `@` list.
+    private func acceptInlineName() -> Bool {
+        let words = typedText
+        guard let match = ComposerInlineGhost.shared.match(for: ComposerFieldStyle.focusedEditor(expecting: ComposerChips.display(words))) else {
+            return false
+        }
+        ComposerInlineGhost.shared.hide()
+        let (value, caret) = match.accepting(in: words)
+        guard let caret else { return false }
+        assign(ComposerAttachments.replacingBody(of: text, with: value))
+        placeCaret(caret, inWords: value)
+        return true
     }
 
     /// The pasted secrets go to private files and the box keeps references to them.
@@ -495,6 +564,12 @@ struct SessionComposer<Controls: View>: View {
 
     private func tabKey(_ press: KeyPress) -> KeyPress.Result {
         let outdent = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        if extras != nil, let shown = ComposerInlineGhost.shared.shown(for: ComposerFieldStyle.focusedEditor(expecting: shownText)) {
+            switch shown {
+            case .name: if !outdent, acceptInlineName() { return .handled }
+            case .text: if acceptGhostText(all: outdent) { return .handled }
+            }
+        }
         if !outdent, let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
             bodyBinding.wrappedValue = suggestion.text
             suggestion.accept()
@@ -575,6 +650,10 @@ struct SessionComposer<Controls: View>: View {
             discardDictation()
             return .handled
         }
+        if ComposerInlineGhost.shared.shown(for: ComposerFieldStyle.focusedEditor(expecting: shownText)) != nil {
+            ComposerInlineGhost.shared.dismiss()
+            return .handled
+        }
         if let suggestion, typedText.isEmpty, !(extras?.model.isOpen ?? false) {
             suggestion.dismiss()
             return .handled
@@ -622,6 +701,8 @@ struct SessionComposer<Controls: View>: View {
             .focused(focused)
             .onChange(of: focused.wrappedValue) { _, now in
                 if now {
+                    // The composer suggests in its own field: autocomplete leaves it alone meanwhile.
+                    if extras != nil, ComposerCompleter.shared.isOn { AutocompleteController.shared.standAside(true, for: "composer") }
                     Self.placeCaretAtEnd()
                     styleMarkdown()
                     wireFieldSession()
@@ -633,9 +714,19 @@ struct SessionComposer<Controls: View>: View {
                     }
                 } else {
                     fieldSession.detach()
+                    ComposerInlineGhost.shared.hide()
+                    ComposerCompleter.shared.cancel()
+                    AutocompleteController.shared.standAside(false, for: "composer")
                 }
             }
             .onChange(of: dictator.isActive) { _, active in dictationChanged(active) }
+            // A composer that goes while it has the keyboard (another session opened) takes its grey text along.
+            .onDisappear {
+                guard focused.wrappedValue else { return }
+                ComposerInlineGhost.shared.hide()
+                ComposerCompleter.shared.cancel()
+                AutocompleteController.shared.standAside(false, for: "composer")
+            }
             .onSubmit(submit)
             .onChange(of: text) { old, new in textChanged(old, new) }
             // In the non-activating notch and ask panels the binding can lag behind the field until Return commits it,

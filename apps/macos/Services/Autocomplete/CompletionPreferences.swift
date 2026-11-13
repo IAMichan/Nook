@@ -125,6 +125,11 @@ struct CompletionPreferences: Codable, Equatable {
     /// A LoRA adapter (GGUF) for a GGUF model, applied on top of it; empty for none. The brain's MLX model takes none.
     var loraAdapterPath = ""
 
+    // Nook's composers (`ComposerCompletion`): suggestions while you write to an agent or to Nook, also with autocomplete off
+    // elsewhere, with a model of their own (`ComposerCompletion.Choice.stored`; empty: autocomplete's model).
+    var composerSuggestions = true
+    var composerModel = ""
+
     // Context
     var windowContext = true
     /// The text around the field in the window being written in (see `CompletionScreenCapture`, or Accessibility without it).

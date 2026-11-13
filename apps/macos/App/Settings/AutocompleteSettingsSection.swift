@@ -37,6 +37,8 @@ struct AutocompleteSettingsSection: View {
         Group {
             if page == .general {
                 enableSection
+                // On its own switch, whether or not autocomplete runs in other apps.
+                ComposerAutocompleteSection()
             }
             if store.prefs.enabled {
                 switch page {

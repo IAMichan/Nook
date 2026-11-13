@@ -627,6 +627,9 @@ struct NookChatView: View {
         config.onCommand = { [app] command in
             if command.action == .new { app.newChat() }
         }
+        config.situation = { [chat] in
+            ComposerCompletion.Situation(recipient: "Nook", lastAnswer: chat.active?.messages.last { $0.role == .nook }?.text)
+        }
         return config
     }
 
