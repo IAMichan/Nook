@@ -4,11 +4,14 @@ import AVFoundation
 import Speech
 import EventKit
 
-/// Settings pages, in the order of the sidebar: Nook's own pages first, then
-/// what it thinks with, the coding agents, code, everything it is linked to, and maintenance and About last. Each subject
-/// lives in exactly one place and each page holds one subject, short enough to take in at once: a page that grew past a
-/// few groups is split into pages of its own (never tabs), and a list that grows with your data can be
-/// searched.
+/// Settings pages, in the order of the sidebar: Nook's own pages first, then what it thinks with, the coding agents,
+/// code, everything it is linked to, privacy, and maintenance and About last. Each subject lives in exactly one place
+/// and each page holds one subject, short enough to take in at once.
+///
+/// The sidebar stays short: a page that grew past a few groups keeps one entry in the sidebar and splits the rest into
+/// detail pages (never tabs). A detail page has no row of its own; its parent lists it under "More settings", the
+/// sidebar keeps the parent lit while it is open, and the bar over it leads back (Settings › Autocomplete › Playground).
+/// A list that grows with your data can be searched, and the search finds settings on detail pages too.
 /// A page whose main step is adding something (a chat app, a connection, a machine) has that button in the header of
 /// its list.
 enum SettingsSection: String, CaseIterable, Identifiable {
@@ -23,7 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     /// The sidebar groups, each a handful of pages. The first and the last have no heading: space alone sets them apart.
     enum Group: String, CaseIterable, Identifiable {
-        case nook, intelligence, typing, agents, code, connect, privacy, system
+        case nook, intelligence, agents, code, connect, privacy, system
 
         var id: String { rawValue }
 
@@ -35,31 +38,53 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             }
         }
 
+        /// The pages with a row in the sidebar. Detail pages are reached from their parent (`SettingsSection.parent`).
         var sections: [SettingsSection] {
             switch self {
             // Nook itself: how it behaves, where and how it shows, notifies and sounds, and its keys.
-            case .nook: return [.start, .general, .appearance, .notch, .notifications, .notificationApps, .sound, .shortcuts]
-            // The AI Nook thinks with, what it does with it, and what it remembers.
-            case .intelligence: return [.brain, .assistant, .memory, .instructions]
-            // Completing what you type, one page per part, and dictating.
-            case .typing: return [.autocomplete, .autocompleteApps, .autocompleteStyle, .autocompletePlayground,
-                                  .autocompleteStats, .dictation]
-            // The coding agents, how their sessions start and behave, what runs by itself, what they used, and what was put away.
-            case .agents: return [.agents, .sessions, .automation, .usage, .archive]
+            case .nook: return [.start, .general, .appearance, .notch, .notifications, .sound, .shortcuts]
+            // The AI Nook thinks with, what it does with it and remembers, and how it helps you type and dictate.
+            case .intelligence: return [.brain, .assistant, .memory, .instructions, .autocomplete, .dictation]
+            // The coding agents, how their sessions start and behave, what runs by itself, and what they used.
+            case .agents: return [.agents, .sessions, .automation, .usage]
             // Where the agents work and what comes out of it.
             case .code: return [.projects, .worktrees, .openIn, .pullRequests]
             // Everything Nook is linked to: chat apps, services, the iPhone and other machines.
             case .connect: return [.chats, .connections, .iphone, .machines]
             // What Nook may see and send, and what it did.
-            case .privacy: return [.privacy, .permissions, .onDevice, .activityLog]
-            // Keeping Nook up to date and healthy, and what it is.
-            case .system: return [.maintenance, .about]
+            case .privacy: return [.privacy, .permissions, .activityLog]
+            // Keeping Nook up to date and healthy, what was put away, and what Nook is.
+            case .system: return [.maintenance, .archive, .about]
             }
         }
     }
 
-    /// The group a page is in, for its breadcrumb.
-    var group: Group { Group.allCases.first { $0.sections.contains(self) } ?? .nook }
+    /// The page a detail page belongs to; nil for a page with its own row in the sidebar.
+    var parent: SettingsSection? {
+        switch self {
+        case .notificationApps: return .notifications
+        case .autocompleteApps, .autocompleteStyle, .autocompletePlayground, .autocompleteStats: return .autocomplete
+        case .onDevice: return .privacy
+        default: return nil
+        }
+    }
+
+    /// The detail pages of this page, in the order its "More settings" lists them.
+    var details: [SettingsSection] {
+        SettingsSection.allCases.filter { $0.parent == self }
+    }
+
+    /// The page whose sidebar row is lit while this one is open: itself, or its parent for a detail page.
+    var sidebarPage: SettingsSection { parent ?? self }
+
+    /// Where the page is, for a search result: its name, after its parent's for a detail page ("Autocomplete › Playground").
+    var trail: String {
+        guard let parent else { return title }
+        return "\(parent.title) › \(title)"
+    }
+
+    /// The group a page is in (a detail page: its parent's).
+    var group: Group { Group.allCases.first { $0.sections.contains(sidebarPage) } ?? .nook }
 
     var id: String { rawValue }
 
@@ -185,6 +210,10 @@ struct SettingsView: View {
         ScrollViewReader { proxy in
             Form {
                 detail(for: section, attention: needs, problems: problems)
+                // A page with detail pages ends with the way to each of them.
+                if !section.details.isEmpty {
+                    SettingsDetailLinks(section: section)
+                }
             }
             .formStyle(SettingsFormStyle())
             // Every row reads at the panel's body size; captions and notes set their own smaller style.

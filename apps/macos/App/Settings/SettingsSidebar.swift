@@ -118,7 +118,7 @@ struct SettingsSidebar: View {
                     .padding(.vertical, NookTheme.Spacing.xl)
             }
             ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
-                SettingsSidebarRow(symbol: hit.section.sidebarSymbol, title: hit.title, detail: hit.section.title,
+                SettingsSidebarRow(symbol: hit.section.sidebarSymbol, title: hit.title, detail: hit.section.trail,
                                    selected: index == active) {
                     active = index
                     open(hits)
@@ -141,8 +141,10 @@ struct SettingsSidebar: View {
                             .padding(.bottom, NookTheme.Spacing.xxs)
                     }
                     ForEach(group.sections) { section in
+                        // A detail page keeps its parent lit; a click on that row leads back to the parent.
                         SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.title,
-                                           selected: app.settingsSection == section, badge: badges[section] ?? 0) {
+                                           selected: app.settingsSection.sidebarPage == section,
+                                           badge: badges[section] ?? 0) {
                             guard app.settingsSection != section else { return }
                             app.settingsSection = section
                         }
@@ -197,10 +199,12 @@ struct SettingsSidebarRow: View {
     }
 }
 
-/// The bar over a page: where you are (Settings › group › page), the ⓘ that explains the page, and on the
-/// right Restore defaults. Adding sits in the header of the list it adds to ("+ Add machine"), not here.
+/// The bar over a page: where you are (Settings › page, or Settings › page › detail with a back arrow for a detail
+/// page), the ⓘ that explains the page, and on the right Restore defaults. The parent in the trail is a link back.
+/// Adding sits in the header of the list it adds to ("+ Add machine"), not here.
 struct SettingsPageBar: View {
     let section: SettingsSection
+    @EnvironmentObject private var app: AppModel
     /// Watched so "Restore defaults" dims the moment nothing on the page differs from the defaults any more.
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var settings = AppSettings.shared
@@ -210,10 +214,19 @@ struct SettingsPageBar: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
+            if let parent = section.parent {
+                ToolbarIconButton("chevron.left", tr("settings.crumb.back", parent.title)) {
+                    app.settingsSection = parent
+                }
+                .keyboardShortcut("[", modifiers: .command)
+            }
             Text(tr("settings.crumb.root")).foregroundStyle(NookTheme.textTertiary)
             crumbChevron
-            if let group = section.group.title {
-                Text(group).foregroundStyle(NookTheme.textTertiary)
+            if let parent = section.parent {
+                Button(parent.title) { app.settingsSection = parent }
+                    .buttonStyle(.nookPlain)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .help(tr("settings.crumb.back", parent.title))
                 crumbChevron
             }
             Text(section.title)
@@ -247,6 +260,25 @@ struct SettingsPageBar: View {
             .font(NookTheme.font(9, .semibold))
             .foregroundStyle(NookTheme.textMuted)
             .accessibilityHidden(true)
+    }
+}
+
+/// The end of a page that has detail pages: under "More settings", one row per detail page with its tile, name, what
+/// it holds and a chevron, so everything the sidebar no longer lists is one click away from where it belongs.
+struct SettingsDetailLinks: View {
+    let section: SettingsSection
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        Section {
+            ForEach(section.details) { detail in
+                SettingsLinkRow(title: detail.title, detail: detail.subtitle, section: detail) {
+                    app.settingsSection = detail
+                }
+            }
+        } header: {
+            Text(tr("settings.details.title"))
+        }
     }
 }
 

@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import UniformTypeIdentifiers
 
-/// Settings › Typing › Autocomplete and its pages: suggestions as you type in any app, with a GGUF model on this Mac or
+/// Settings › Intelligence › Autocomplete and its detail pages: suggestions as you type in any app, with a GGUF model on this Mac or
 /// the brain's own model. One page per part (general, apps, style, playground, statistics), never tabs.
 struct AutocompleteSettingsSection: View {
     /// The page this shows.

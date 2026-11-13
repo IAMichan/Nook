@@ -5,6 +5,8 @@ import Foundation
 
 let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "settings.details.title": "Meer instellingen",
+        "settings.crumb.back": "Terug naar %@",
         "music.connect.rowDetail": "Afspeellijsten, zoeken en de wachtrij in de Muziek-tab",
         "settings.ws.modelsPerAgent": "Model per agent",
         "whatsapp.settings.muteStatus": "Statussen stil",
@@ -143,6 +145,8 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigen mix"
     ],
     .en: [
+        "settings.details.title": "More settings",
+        "settings.crumb.back": "Back to %@",
         "music.connect.rowDetail": "Playlists, search and the queue in the Music tab",
         "settings.ws.modelsPerAgent": "Model per agent",
         "whatsapp.settings.muteStatus": "Status updates stay quiet",
@@ -281,6 +285,8 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "own mix"
     ],
     .de: [
+        "settings.details.title": "Weitere Einstellungen",
+        "settings.crumb.back": "Zurück zu %@",
         "music.connect.rowDetail": "Playlists, Suche und die Warteschlange im Musik-Tab",
         "settings.ws.modelsPerAgent": "Modell pro Agent",
         "whatsapp.settings.muteStatus": "Status stumm",
@@ -419,6 +425,8 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigene Mischung"
     ],
     .fr: [
+        "settings.details.title": "Plus de réglages",
+        "settings.crumb.back": "Retour à %@",
         "music.connect.rowDetail": "Playlists, recherche et file d’attente dans l’onglet Musique",
         "settings.ws.modelsPerAgent": "Modèle par agent",
         "whatsapp.settings.muteStatus": "Statuts silencieux",
@@ -557,6 +565,8 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "mélange personnel"
     ],
     .es: [
+        "settings.details.title": "Más ajustes",
+        "settings.crumb.back": "Volver a %@",
         "music.connect.rowDetail": "Listas, búsqueda y la cola en la pestaña Música",
         "settings.ws.modelsPerAgent": "Modelo por agente",
         "whatsapp.settings.muteStatus": "Estados en silencio",
