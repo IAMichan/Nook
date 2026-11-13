@@ -74,7 +74,7 @@ extension WorkspaceManager {
             guard let self else { return }
             let answer = response?.dictionary ?? [:]
             guard error == nil, let link = (answer["authUrl"] as? String).flatMap(URL.init(string:)) else {
-                return self.connectorSignInFailed(id, name: name, error ?? tr("ws.connector.noPage"))
+                return self.connectorSignInFailed(id, name: name, error ?? tr("ws.connector.noPage"), recheck: error != nil)
             }
             NSWorkspace.shared.open(link)
             // A claude.ai connector is connected on claude.ai: Claude Code learns of it when it connects again.
@@ -82,13 +82,21 @@ extension WorkspaceManager {
             self.waitForConnector(id, name: name) { [weak self] in
                 guard let self else { return }
                 if reconnects { _ = self.claudeControl(id, { ClaudeStreamParser.mcpReconnectRequest(id: $0, server: name) }) { _, _ in } }
-                _ = self.claudeControl(id, ClaudeStreamParser.mcpStatusRequest(id:)) { [weak self] response, _ in
-                    guard let self, let rows = response?.dictionary["mcpServers"] else { return }
-                    self.noteConnectorsNeedingSignIn(id, ConnectorSignIns.claude(rows))
-                }
+                self.checkClaudeConnectors(id)
             }
         }
         if !sent { connectorSignInFailed(id, name: name, tr("ws.connector.noAgent")) }
+    }
+
+    /// Asks Claude Code again which connectors need you and updates the list; `done` gets the names, nil without an answer.
+    func checkClaudeConnectors(_ id: UUID, done: @escaping ([String]?) -> Void = { _ in }) {
+        let sent = claudeControl(id, ClaudeStreamParser.mcpStatusRequest(id:)) { [weak self] response, _ in
+            guard let self, let rows = response?.dictionary["mcpServers"] else { return done(nil) }
+            let names = ConnectorSignIns.claude(rows)
+            self.noteConnectorsNeedingSignIn(id, names)
+            done(names)
+        }
+        if !sent { done(nil) }
     }
 
     /// Claude Code's answers to Nook's own requests, from a process that is only waiting (nothing else it prints counts).
@@ -103,12 +111,16 @@ extension WorkspaceManager {
     // MARK: Codex
 
     /// After its thread opened: which of Codex's MCP servers wait for you to sign in.
-    func checkCodexConnectors(_ id: UUID, _ client: CodexAppServerClient) {
-        guard let thread = client.threadID else { return }
+    /// `done` gets the names, nil without an answer.
+    func checkCodexConnectors(_ id: UUID, _ client: CodexAppServerClient, done: @escaping ([String]?) -> Void = { _ in }) {
+        guard let thread = client.threadID else { return done(nil) }
         Task { [weak self] in
             guard let response = try? await Self.codexRequest(client, "mcpServerStatus/list",
-                                                              ["threadId": thread, "detail": "toolsAndAuthOnly"], timeout: 30) else { return }
-            self?.noteConnectorsNeedingSignIn(id, ConnectorSignIns.codex(response))
+                                                              ["threadId": thread, "detail": "toolsAndAuthOnly"], timeout: 30),
+                  let self else { return done(nil) }
+            let names = ConnectorSignIns.codex(response)
+            self.noteConnectorsNeedingSignIn(id, names)
+            done(names)
         }
     }
 
@@ -129,7 +141,7 @@ extension WorkspaceManager {
                     self.checkCodexConnectors(id, client)
                 }
             } catch {
-                self?.connectorSignInFailed(id, name: name, error.localizedDescription)
+                self?.connectorSignInFailed(id, name: name, error.localizedDescription, recheck: true)
             }
         }
     }
@@ -161,8 +173,27 @@ extension WorkspaceManager {
         connectorSignIns[id] = list
     }
 
-    private func connectorSignInFailed(_ id: UUID, name: String, _ error: String) {
+    /// The agent turned the sign-in down. With `recheck` Nook first asks it again which connectors need you: the list
+    /// comes from the start of a turn, and an agent can drop a connector later (Claude Code drops a plugin's server once
+    /// a claude.ai connector covers the same service, and then answers "Server not found"). One that is gone just
+    /// leaves the list; only one that still needs you gets the error.
+    private func connectorSignInFailed(_ id: UUID, name: String, _ error: String, recheck: Bool = false) {
         setWaiting(id, name: name, false)
-        append(id, RunEvent(kind: .error, text: tr("ws.connector.failed", ConnectorSignIns.title(name), error)))
+        let report = { [weak self] (names: [String]?) in
+            guard let self else { return }
+            if let names, !names.contains(name) {
+                self.append(id, RunEvent(kind: .system, text: tr("ws.connector.gone", ConnectorSignIns.title(name))))
+            } else {
+                self.append(id, RunEvent(kind: .error, text: tr("ws.connector.failed", ConnectorSignIns.title(name), error)))
+            }
+        }
+        guard recheck, let run = run(id) else { return report(nil) }
+        switch run.provider {
+        case .claude: checkClaudeConnectors(id, done: report)
+        case .codex:
+            guard let client = codexServers[id], client.isRunning else { return report(nil) }
+            checkCodexConnectors(id, client, done: report)
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .pi, .acp: report(nil)
+        }
     }
 }

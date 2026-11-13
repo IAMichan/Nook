@@ -26,6 +26,9 @@ extension WorkspaceManager {
         }
         closeClaudeProcess(id)
         claudeIdle[id] = (process, changed ? "" : claudeKey(run))
+        // The connectors listed at the start of the turn may have changed since (a plugin's server dropped for a
+        // claude.ai connector): ask again, so the row above the composer only offers ones that still need you.
+        if connectorSignIns[id]?.isEmpty == false { checkClaudeConnectors(id) }
         let seconds = idleSeconds(id, Self.claudeIdleSeconds)
         claudeIdleClose[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
