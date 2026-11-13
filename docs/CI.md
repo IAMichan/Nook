@@ -16,7 +16,7 @@ reusable workflow that can also be started on its own with *Run workflow*.
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
-| `chatd.yml` | ubuntu | `apps/chatd`: `gofmt`, `go vet` and `go test` of the chat helper; the tests link a libsignal built once per pinned commit and cached |
+| `chatd.yml` | ubuntu | `apps/chatd`: `gofmt`, `go vet`, `go test` and 30 seconds of `go test -fuzz=FuzzTag` of the chat helper; the tests link a libsignal built once per pinned commit and cached |
 | `core-tests.yml` | ubuntu | `apps/macos`: `scripts/core-tests.sh`, the portable part of `NookTests`, so it keeps working for contributors without a Mac |
 | `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`, `.github/dependabot.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments), and [actionlint](https://github.com/rhysd/actionlint) catches unknown `needs`, outputs and inputs, expression typos and bad cron lines before a release or schedule runs into them |
 | `ci.yml` → *Workflow scripts* | ubuntu, seconds | `.github/scripts`: `node --test` for the scripts below |
@@ -36,6 +36,7 @@ reusable workflow that can also be started on its own with *Run workflow*.
 | `stale.yml` | ubuntu, daily | closes issues labeled `needs more info` after 7 days without a reply; marks pull requests from unvouched authors `stale` after 30 days without activity and closes them 14 days later; locks issues and pull requests closed for 30 days (`keep open` exempts all of it) |
 | `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
 | `scorecard.yml` | ubuntu, weekly, when the branch rules or workflows change | [OpenSSF Scorecard](https://scorecard.dev): rates the supply-chain practices; results in the Security tab and behind the README badge |
+| `gradle-wrapper.yml` | ubuntu, when the Gradle wrapper changes | checks `gradle-wrapper.jar` of the Tauri Android project against the checksums Gradle publishes |
 | `release.yml` | ubuntu (plan), macOS, then ubuntu and Windows | by hand, on a `v*` tag, or daily as a fresh beta with `NOOK_FRESH_BETA=true`: builds a draft release with the macOS files, attaches the Windows and Linux installers built by `tauri.yml`, and publishes it only when every file is there (see Releases below) |
 | CodeQL (default setup, in the repository settings) | ubuntu | code scanning of the workflows, JavaScript/TypeScript and Go on pull requests and `main`; Swift is left out because it needs a macOS runner, and Rust because the default setup API does not offer it yet |
 
@@ -144,7 +145,7 @@ the pull request by a maintainer (issue templates only label the issue). The sho
   and must stay up for 30 seconds. `codesign --verify` does not catch a crash at launch; this does.
 - **Draft until complete.** The release is created as a draft and the `publish` job makes it public (and creates the
   tag) only when the macOS, Windows and Linux files are all attached. A failed run leaves a draft nobody sees.
-- **Build provenance.** Every download is attested: `gh attestation verify <file> --repo IAMichan/Nook`.
+- **Build provenance.** Every download is attested: `gh attestation verify <file> --repo IAMichan/Nook`. The Sigstore bundles are attached as `Nook-<version>-macOS.intoto.jsonl` and `Nook-<version>-Windows-Linux.intoto.jsonl`, so the check also works offline with `--bundle <bundle>` (and OpenSSF Scorecard counts the releases as signed with provenance).
 
 ## Release signing (`release.yml`)
 
