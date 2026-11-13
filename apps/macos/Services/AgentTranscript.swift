@@ -171,8 +171,10 @@ enum AgentTranscript {
     }
 
     /// `remember: false` reads without keeping the result (search reads every earlier session once, which would push the
-    /// sessions on screen out of the cache).
-    static func recent(path: String, limit: Int = fullLimit, remember: Bool = true) -> [AgentChatMessage] {
+    /// sessions on screen out of the cache). `whole` reads a long JSONL file from its start instead of its last 8 MB: what
+    /// `SessionArchive` keeps of every session, one at a time in the background.
+    static func recent(path: String, limit: Int = fullLimit, remember: Bool = true, whole: Bool = false) -> [AgentChatMessage] {
+        let tailBytes = whole ? UInt64.max : Self.tailBytes
         // Gemini CLI writes one JSON file per chat, or (0.33 and newer) a JSONL log of changes to it.
         let isGemini = path.hasSuffix(".json") || GeminiChatLog.isLog(path: path)
         guard path.hasSuffix(".jsonl") || isGemini else { return [] }
@@ -207,7 +209,8 @@ enum AgentTranscript {
             cacheLock.unlock()
             let base: (parsed: [AgentChatMessage], to: UInt64, lines: Int)
             var data: Data
-            if let previous, previous.parsedTo > 0, end >= previous.parsedTo, end - previous.parsedTo <= tailBytes {
+            // Not for a whole read: what was parsed before may have started at the last 8 MB.
+            if !whole, let previous, previous.parsedTo > 0, end >= previous.parsedTo, end - previous.parsedTo <= tailBytes {
                 // The file grew: only what was added since the last complete line.
                 base = (previous.parsed, previous.parsedTo, previous.lines)
                 try? handle.seek(toOffset: previous.parsedTo)

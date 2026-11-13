@@ -1294,7 +1294,16 @@ final class WorkspaceManager: ObservableObject {
     func setArchived(_ id: UUID, _ archived: Bool) {
         guard let run = run(id), !(archived && run.status.isActive) else { return }
         update(id) { $0.archived = archived }
-        if archived { WorkspaceBridge.shared.forgetSecrets(run: id) }
+        if archived {
+            WorkspaceBridge.shared.forgetSecrets(run: id)
+            store.compactSettled(id)
+        }
+    }
+
+    /// A session was settled: its log keeps only what its timeline needs (`RunStore.compactSettled`).
+    func settled(_ id: UUID) {
+        guard let run = run(id), !run.status.isActive else { return }
+        store.compactSettled(id)
     }
 
     func markReviewed(_ id: UUID) {
@@ -1442,6 +1451,7 @@ final class WorkspaceManager: ObservableObject {
         var changed = false
         for index in runs.indices where !runs[index].archived && !runs[index].status.isActive && runs[index].updatedAt < cutoff {
             runs[index].archived = true
+            store.compactSettled(runs[index].id)
             changed = true
         }
         if changed { scheduleSave() }

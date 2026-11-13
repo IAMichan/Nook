@@ -272,9 +272,10 @@ final class RunStore: @unchecked Sendable {
     }
 
     private static let importedKey = "json_timelines_imported"
-    /// Set once every session is indexed. The third key: the first index (`run_text`) and the second, which kept a copy of
-    /// the text (`RunEventLog.dropSearchWithText`), are dropped and built anew.
-    private static let indexedKey = "search_index_v3_built"
+    /// Set once every session is indexed. The fourth key: the first index (`run_text`), the second, which kept a copy of
+    /// the text, and the third, which kept every trigram's position (`RunEventLog.dropSearchWithText`), are dropped and
+    /// built anew.
+    private static let indexedKey = "search_index_v4_built"
 
     /// Indexes every session written before the index existed, once, in the background. Rows are read on the read
     /// connection and folded without the lock; only writing a session's index takes it, so a timeline you open never waits
@@ -292,12 +293,17 @@ final class RunStore: @unchecked Sendable {
             lock.unlock()
             if skip { continue }
             guard let rows = reader?.readRows(id) ?? lockedRows(id) else { continue }
-            let entries = TimelineSearchText.entries(RunEventFold.fold(rows, decoder: Self.decoder).events)
+            let folded = RunEventFold.fold(rows, decoder: Self.decoder)
+            let entries = TimelineSearchText.entries(folded.events)
+            // Every version a streamed answer or a tool went through stays in the log until the session is read again,
+            // which a settled one rarely is: a quarter of the file on one Mac. Folded into one snapshot here, once.
+            let payload = Self.worthCompacting(folded, rows: rows.count) ? try? Self.encoder.encode(folded.events) : nil
             lock.lock()
             if let log, !deleted.contains(id) {
                 // A row written after the read: its save indexed it already, and these older entries must not undo that.
                 if log.lastSequence(id) == rows.last?.seq {
                     log.reindex(id, entries)
+                    if let payload { try? writeSnapshot(id, payload: payload, log: log) }
                 } else {
                     log.reindex(id, TimelineSearchText.entries(RunEventFold.fold(log.rows(id), decoder: Self.decoder).events))
                 }
@@ -306,7 +312,8 @@ final class RunStore: @unchecked Sendable {
         }
         lock.lock()
         log?.setMeta(Self.indexedKey, ISO8601DateFormatter().string(from: Date()))
-        // An index that kept the text was dropped on opening: its room goes back to the disk.
+        // An index that kept the text or the positions was dropped on opening, and the logs were folded: their room goes
+        // back to the disk.
         log?.compact()
         lock.unlock()
     }
@@ -389,6 +396,27 @@ final class RunStore: @unchecked Sendable {
             try? writeSnapshot(id, payload: payload, log: log)
         }
         return result.events
+    }
+
+    /// Whether a log is worth folding into one snapshot: it holds rows no longer needed, and nothing a newer version
+    /// wrote (compacting would drop that).
+    static func worthCompacting(_ result: RunEventFold.Result, rows: Int) -> Bool {
+        result.unreadableRows == 0 && result.supersededRows >= 8 && rows > 1
+    }
+
+    /// Folds a session's log into one snapshot when it holds versions no longer needed: for a session that was just
+    /// settled or archived, which may not be read again for a long time. In the background; a row written meanwhile
+    /// leaves the log as it is.
+    func compactSettled(_ id: UUID) {
+        ioQueue.async { [weak self] in
+            guard let self, let rows = self.readRows(id) else { return }
+            let folded = RunEventFold.fold(rows, decoder: Self.decoder)
+            guard Self.worthCompacting(folded, rows: rows.count), let payload = try? Self.encoder.encode(folded.events) else { return }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            guard !self.deleted.contains(id), let log = self.openLog(), log.lastSequence(id) == rows.last?.seq else { return }
+            try? self.writeSnapshot(id, payload: payload, log: log)
+        }
     }
 
     /// Reads what the log holds for a timeline this launch has not seen yet, before a save takes the lock for it.

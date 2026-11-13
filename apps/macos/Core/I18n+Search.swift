@@ -5,6 +5,10 @@ import Foundation
 
 let searchTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "search.sessions.open": "Lopend",
+        "search.sessions.settled": "Afgehandeld",
+        "search.start.openSessions": "Lopende sessies: bezig, wachten op jou of klaar",
+        "search.start.settledSessions": "Afgehandelde sessies",
         "sidebar.sessions": "Sessies",
         "sidebar.conversations": "Gesprekken",
         "search.sidebar": "Zoeken",
@@ -55,6 +59,10 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.ai.continue": "Verder in gesprek",
     ],
     .en: [
+        "search.sessions.open": "Open",
+        "search.sessions.settled": "Settled",
+        "search.start.openSessions": "Open sessions: running, waiting on you or done",
+        "search.start.settledSessions": "Settled sessions",
         "sidebar.sessions": "Sessions",
         "sidebar.conversations": "Conversations",
         "search.sidebar": "Search",
@@ -105,6 +113,10 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.ai.continue": "Continue in chat",
     ],
     .de: [
+        "search.sessions.open": "Offen",
+        "search.sessions.settled": "Erledigt",
+        "search.start.openSessions": "Offene Sitzungen: aktiv, warten auf dich oder fertig",
+        "search.start.settledSessions": "Erledigte Sitzungen",
         "sidebar.sessions": "Sitzungen",
         "sidebar.conversations": "Gespräche",
         "search.sidebar": "Suchen",
@@ -155,6 +167,10 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.ai.continue": "Im Gespräch weiter",
     ],
     .fr: [
+        "search.sessions.open": "En cours",
+        "search.sessions.settled": "Classées",
+        "search.start.openSessions": "Sessions en cours : actives, en attente de vous ou prêtes",
+        "search.start.settledSessions": "Sessions classées",
         "sidebar.sessions": "Sessions",
         "sidebar.conversations": "Conversations",
         "search.sidebar": "Rechercher",
@@ -205,6 +221,10 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.ai.continue": "Continuer en conversation",
     ],
     .es: [
+        "search.sessions.open": "Abiertas",
+        "search.sessions.settled": "Cerradas",
+        "search.start.openSessions": "Sesiones abiertas: en curso, esperándote o listas",
+        "search.start.settledSessions": "Sesiones cerradas",
         "sidebar.sessions": "Sesiones",
         "sidebar.conversations": "Conversaciones",
         "search.sidebar": "Buscar",

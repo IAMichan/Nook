@@ -717,6 +717,7 @@ targets:
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
       - path: Services/Search/NookSearch.swift
+      - path: Services/Search/SessionArchive.swift
       - path: Brain/ResponseStyle.swift
       - path: Brain/ContextBreakdown.swift
       - path: Services/Workspace/PromptLibrary.swift

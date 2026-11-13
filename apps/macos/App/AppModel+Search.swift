@@ -5,9 +5,9 @@ import Foundation
 /// notes, memories, notices, settings and actions) and where a hit takes you. Everything stays on this Mac; nothing here
 /// goes to a brain. The engine is `SearchIndex`; `SearchCenter` runs it for the panel.
 extension AppModel {
-    /// Everything search can find, as it is now. `transcripts` holds the passages of sessions, read from disk or made off
-    /// the main thread from the timeline in memory, and `agentTranscripts` those of every coding agent's own transcript files by path, both read from disk
-    /// earlier by `SearchCenter`.
+    /// Everything search can find, as it is now. `transcripts` holds the passages of the sessions whose timeline is in
+    /// memory, made off the main thread, and `agentTranscripts` those of the transcript files of the sessions Nook follows,
+    /// by path. Every other session is described lightly here; its text is in `SessionArchive`.
     func searchDocuments(transcripts: [UUID: [SearchPassage]] = [:], agentTranscripts: [String: [SearchPassage]] = [:]) -> [SearchDocument] {
         var documents = searchActions() + searchSettings()
         documents += searchConversations()
@@ -87,7 +87,7 @@ extension AppModel {
             if run.status.isActive { flags.insert("running") }
             switch run.status {
             case .failed: flags.insert("failed")
-            case .waitingApproval: flags.insert("waiting")
+            case .waitingApproval: flags.formUnion(["waiting", "approval"])
             case .completed: flags.insert("done")
             case .preparing, .running, .stopped: break
             }
@@ -102,7 +102,7 @@ extension AppModel {
             if let read = transcripts[run.id] {
                 passages += read
             } else if let loaded = workspace.events[run.id] {
-                passages += Self.searchPassages(loaded, run: run)
+                passages += SessionPassages.make(loaded, run: run)
             }
             let subtitle = [run.provider.displayName, run.projectName, run.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
             return SearchDocument(id: "run:" + run.id.uuidString, kind: .session, title: run.title, subtitle: subtitle,
@@ -154,63 +154,22 @@ extension AppModel {
                        flags: flags, passages: passages, icon: .agent(session.name))
     }
 
-    /// The transcript files of the agents Nook follows and of every earlier session, newest first, with the agent that
-    /// wrote each: what `SearchCenter` reads (off the main thread) for their whole conversation.
+    /// The transcript files of the agents Nook follows now, newest first, with the agent that wrote each: what
+    /// `SearchCenter` reads (off the main thread) for their whole conversation. Earlier ones are in `SessionArchive`.
     func searchTranscriptFiles() -> [(path: String, agent: String)] {
         let live = hub.sessions.filter { !$0.id.hasPrefix("run:") && !$0.transcriptPath.isEmpty }
             .map { (path: $0.transcriptPath, agent: $0.name, date: $0.updated ?? $0.started ?? .distantPast) }
-        let earlier = pastSessionsOutsideWorkspace.filter { !$0.path.isEmpty }
-            .map { (path: $0.path, agent: $0.agent.name, date: $0.ended) }
         var seen = Set<String>()
-        return (live + earlier).sorted { $0.date > $1.date }
+        return live.sorted { $0.date > $1.date }
             .filter { seen.insert($0.path).inserted }
             .map { (path: $0.path, agent: $0.agent) }
     }
 
-    /// The text of an agent's own transcript worth finding, the same way as a session Nook runs (`searchPassages(_:run:)`):
-    /// what you asked, what the agent said and the steps it took; thinking stays out. Bounded as the index keeps it.
-    nonisolated static func searchPassages(_ messages: [AgentChatMessage], agent: String) -> [SearchPassage] {
-        let passages = messages.compactMap { message -> SearchPassage? in
-            let text: String
-            switch message.kind {
-            case .thinking: return nil
-            case .tools:
-                let steps = message.steps.map { [$0.name, $0.summary, $0.error ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
-                text = String(steps.joined(separator: "\n").prefix(Self.toolPassageLimit))
-            case .user, .assistant, .notice:
-                text = String(message.text.prefix(SearchIndex.passageLimit)).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            guard !text.isEmpty else { return nil }
-            return SearchPassage(text: text, author: message.kind == .user ? "me" : agent, date: message.date, anchor: message.id)
-        }
-        return Array(passages.suffix(SearchIndex.passagesPerDocument))
-    }
-
-    /// The text of a session's timeline worth finding: what you asked, what the agent said, what failed, which tools ran.
-    /// Thinking and tool output stay out; they drown the conversation.
-    nonisolated static let toolPassageLimit = 1_000
-
-    nonisolated static func searchPassages(_ events: [RunEvent], run: WorkspaceRun) -> [SearchPassage] {
-        events.compactMap { event in
-            if event.kind == .thinking || event.kind == .approval || event.kind == .system { return nil }
-            // A tool's output is cut before it is trimmed: trimming walked all of it, hundreds of KB, for its first 1,000.
-            let tool = event.kind == .tool || event.kind == .fileChange
-            let text = (tool ? String(event.text.prefix(Self.toolPassageLimit + 64)) : event.text)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
-            switch event.kind {
-            case .user: return SearchPassage(text: text, author: "me", date: event.date, anchor: event.id.uuidString)
-            case .assistant, .result, .error, .page:
-                // A page the agent showed is found by its title.
-                return SearchPassage(text: text, author: run.provider.displayName, date: event.date, anchor: event.id.uuidString)
-            case .tool, .fileChange:
-                // A tool's output can run to hundreds of KB, and every session's passages stay in memory for the next
-                // search (`SearchCenter.transcripts`): its start is enough to find it by.
-                let line = [event.tool ?? "", text, event.kind == .fileChange ? (event.detail ?? "") : ""]
-                    .filter { !$0.isEmpty }.joined(separator: " ")
-                return SearchPassage(text: String(line.prefix(Self.toolPassageLimit)), author: run.provider.displayName, date: event.date, anchor: event.id.uuidString)
-            case .thinking, .approval, .system: return nil
-            }
+    /// Every earlier session of every coding agent with a transcript, as `SessionArchive` keeps it: the documents
+    /// `searchSessions` describes as "past:<id>".
+    func archiveTranscripts() -> [SessionArchiveSync.Transcript] {
+        pastSessionsOutsideWorkspace.filter { !$0.path.isEmpty }.map { past in
+            SessionArchiveSync.Transcript(key: "past:" + past.id, path: past.path, agent: past.agent.name, date: past.ended)
         }
     }
 

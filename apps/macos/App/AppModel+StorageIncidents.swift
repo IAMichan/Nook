@@ -70,6 +70,7 @@ extension AppModel {
         case "nook.sqlite": holds = tr("storage.holds.nook")
         case "chats.sqlite": holds = tr("storage.holds.chats")
         case "runs.sqlite": holds = tr("storage.holds.runs")
+        case "session-search.sqlite": holds = tr("storage.holds.sessionSearch")
         default: holds = tr("storage.holds.other")
         }
         switch incident.kind {
