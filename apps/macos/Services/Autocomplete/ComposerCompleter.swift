@@ -15,10 +15,18 @@ final class ComposerCompleter {
 
     var choice: ComposerCompletion.Choice { ComposerCompletion.Choice(stored: store.prefs.composerModel) }
 
-    /// A local model answers a moment after the last key; an API, which costs a request, once you pause.
+    /// The composer writes with autocomplete's model while autocomplete runs in Nook's fields: the rest of the sentence is
+    /// then autocomplete's own (`AutocompleteController.suggestsInOwnFields`), not a second, slower request to the same model
+    /// that would cancel autocomplete's and wait for it. The composer still completes names (`ComposerInlineName`).
+    var handsOver: Bool { choice == .sameAsAutocomplete && AutocompleteController.shared.suggestsInOwnFields }
+
+    /// Whether the composer asks for the rest of the sentence itself.
+    var suggestsItself: Bool { isOn && !handsOver }
+
+    /// A local model starts at once (a newer key stops it at its next token); an API, which costs a request, once you pause.
     private func delay(for choice: ComposerCompletion.Choice) -> UInt64 {
         if case .api = choice { return 450_000_000 }
-        return 120_000_000
+        return 30_000_000
     }
 
     /// Asks for a suggestion for `before`, the text up to the caret, once typing pauses. `deliver` gets it on the main actor
@@ -26,7 +34,7 @@ final class ComposerCompleter {
     func suggest(before: String, after: String, situation: ComposerCompletion.Situation, hint: String?,
                  deliver: @escaping @MainActor (CompletionSuggestion?) -> Void) {
         cancel()
-        guard isOn, ComposerCompletion.asks(before: before, after: after) else { return }
+        guard suggestsItself, ComposerCompletion.asks(before: before, after: after) else { return }
         let choice = self.choice
         let wait = delay(for: choice)
         work = Task { [weak self] in

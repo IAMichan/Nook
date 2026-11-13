@@ -405,7 +405,9 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         ghost.hide()
-        guard let typedAt, let extras, isFocused, !extras.model.isOpen, completer.isOn,
+        // Autocomplete may have started or stopped since the focus came: the sentence is its own or the composer's, never both.
+        if isFocused, extras != nil { AutocompleteController.shared.standAside(completer.suggestsItself, for: "composer") }
+        guard let typedAt, let extras, isFocused, !extras.model.isOpen, completer.suggestsItself,
               let caretIndex = String.Index(exactUTF16: typedAt, in: words) else { return completer.cancel() }
         let before = String(words[..<caretIndex]), after = String(words[caretIndex...])
         completer.suggest(before: before, after: after, situation: extras.config.situation(), hint: prompt) { suggestion in
@@ -701,8 +703,9 @@ struct SessionComposer<Controls: View>: View {
             .focused(focused)
             .onChange(of: focused.wrappedValue) { _, now in
                 if now {
-                    // The composer suggests in its own field: autocomplete leaves it alone meanwhile.
-                    if extras != nil, ComposerCompleter.shared.isOn { AutocompleteController.shared.standAside(true, for: "composer") }
+                    // The composer suggests in its own field: autocomplete leaves it alone meanwhile. With autocomplete's own
+                    // model while autocomplete runs here, the sentence is autocomplete's (`ComposerCompleter.handsOver`).
+                    if extras != nil, ComposerCompleter.shared.suggestsItself { AutocompleteController.shared.standAside(true, for: "composer") }
                     Self.placeCaretAtEnd()
                     styleMarkdown()
                     wireFieldSession()
