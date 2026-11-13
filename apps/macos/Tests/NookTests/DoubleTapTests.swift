@@ -378,4 +378,51 @@ final class DoubleTapTests: XCTestCase {
         XCTAssertEqual(run.steps.last?.text, "Stap \(DoubleTapRun.maxSteps + 4)")
         XCTAssertEqual(Set(run.steps.map(\.id)).count, run.steps.count, "ids stay unique")
     }
+
+    // MARK: The form as it reads
+
+    func testFormTextMarksFieldsByTheirPromptNumber() {
+        // Read order: a heading, a label then field 0, a label then field 1 (the focused one, so number 1 in the prompt).
+        let fields = DoubleTapLogic.candidates([
+            DoubleTapField(id: 1, role: "field", label: "", value: "", focused: false, source: 0),
+            DoubleTapField(id: 2, role: "field", label: "", value: "", focused: true, source: 1),
+            DoubleTapField(id: 3, role: "password", label: "", value: "", focused: false, secure: true, source: 2),
+        ])
+        let pieces: [DoubleTapFormPiece] = [
+            .text("Contactformulier"), .text("Naam\n"), .field(0), .text("E-mailadres"), .field(1),
+            .text("Wachtwoord"), .field(2), .text("Wachtwoord"),
+        ]
+        let text = DoubleTapLogic.formText(pieces, fields: fields)
+        XCTAssertEqual(text, "Contactformulier\nNaam\n[2]\nE-mailadres\n[1]\nWachtwoord")
+        XCTAssertFalse(text.contains("[3]"), "a field the brain may not fill is left out")
+    }
+
+    func testFormTextIsEmptyWithoutTextAndKeepsToItsLimit() {
+        let fields = [DoubleTapField(id: 1, role: "field", label: "Naam", value: "", focused: true, source: 0)]
+        XCTAssertEqual(DoubleTapLogic.formText([.field(0)], fields: fields), "", "only fields tell the brain nothing new")
+        let long = (0..<200).map { DoubleTapFormPiece.text("Regel \($0) met wat uitleg") } + [.field(0)]
+        XCTAssertLessThanOrEqual(DoubleTapLogic.formText(long, fields: fields, limit: 500).count, 500)
+    }
+
+    func testPromptCarriesTheFormText() {
+        let fields = [DoubleTapField(id: 1, role: "field", label: "", value: "", focused: true)]
+        let prompt = DoubleTapLogic.prompt(app: "Edge", window: "Aanmelden", fields: fields, facts: [], screen: "",
+                                           form: "Voornaam\n[1]")
+        XCTAssertTrue(prompt.contains("The form as it reads"))
+        XCTAssertTrue(prompt.contains("Voornaam\n[1]"))
+        let bare = DoubleTapLogic.prompt(app: "Edge", window: "", fields: fields, facts: [], screen: "")
+        XCTAssertFalse(bare.contains("The form as it reads"))
+    }
+
+    func testMissingSaysWhatTheBrainNeeded() {
+        XCTAssertEqual(DoubleTapLogic.missing(from: #"{"fields": {}, "missing": "je e-mailadres\nen telefoonnummer"}"#),
+                       "je e-mailadres en telefoonnummer")
+        XCTAssertEqual(DoubleTapLogic.missing(from: #"{"fields": {"1": "Michan"}, "missing": ""}"#), "")
+        XCTAssertEqual(DoubleTapLogic.missing(from: #"{"fields": {}, "missing": "…"}"#), "")
+        XCTAssertEqual(DoubleTapLogic.missing(from: "geen JSON"), "")
+        // The extra key is not a field.
+        let fields = [DoubleTapField(id: 1, role: "field", label: "Naam", value: "", focused: true)]
+        XCTAssertEqual(DoubleTapLogic.values(from: #"{"fields": {"1": "Michan"}, "missing": "adres"}"#, fields: fields),
+                       [1: "Michan"])
+    }
 }

@@ -59,11 +59,6 @@ struct PanelView: View {
               // Back brings the tab in as switching tabs does (a quick fade); the tab itself leaves at once under a task.
               VStack(alignment: .leading, spacing: 0) {
                 if !usesSidebar { header }
-                // A Double Tap Nook works on, or just finished: every step, and what it typed, to check.
-                if !app.demoMode {
-                    DoubleTapRunBar(doubleTap: DoubleTap.shared)
-                        .padding(.leading, usesSidebar ? PanelSidebarMetrics.inset : headerInset)
-                }
                 HStack(alignment: .top, spacing: 0) {
                     // A tab without a list of its own (Music) still gets the sidebar in the main window.
                     if sidebar != nil && !footerUnderList { sidebarColumn }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// One Double Tap from the request to its result: every step Nook took, how it ended, and what it typed, changed or
-/// filled in, so the open notch can show all of it while Nook works and after it is done (`DoubleTapRunBar`).
+/// filled in, so its result card can show all of it (`DoubleTapRunDetail`).
 struct DoubleTapRun: Equatable, Identifiable {
     enum StepState: Equatable {
         case running, done, failed

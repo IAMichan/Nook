@@ -227,6 +227,8 @@ enum CardDetail: Equatable {
     /// citations that open their source, the cited sources and what Nook can do next (`NookAnswerView`). It takes the
     /// title's place; the title keeps the answer's text for VoiceOver.
     case answer(NookAnswer)
+    /// How a Double Tap went: every step and what Nook typed or filled in, to check (`DoubleTapRunDetail`).
+    case doubleTapRun(DoubleTapRun)
 }
 
 /// A notification's state in a few words ("Done", "Needs approval"), as a tinted pill at the end of the card's header,

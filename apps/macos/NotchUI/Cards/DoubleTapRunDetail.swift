@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// A Double Tap in the open notch, under the tabs: the step Nook is on and every step before it, and once it is done
-/// the result and what it typed, changed or filled in, so you can check it. Stop while it works, Close once it is done;
-/// a finished run also leaves by itself after `DoubleTap.keepRun`.
-struct DoubleTapRunBar: View {
-    @ObservedObject var doubleTap: DoubleTap
+/// A Double Tap's result card (`CardDetail.doubleTapRun`), where Double Tap was asked: every step Nook took, and what it
+/// typed, changed or filled in, so you can check it. The card's title says how it ended.
+struct DoubleTapRunDetail: View {
+    let run: DoubleTapRun
     /// All steps instead of the last few.
     @State private var allSteps = false
     /// All of what Nook put in the document instead of the first few.
@@ -12,80 +11,34 @@ struct DoubleTapRunBar: View {
 
     /// The steps shown before "show all".
     static let recentSteps = 5
-    /// What Nook put in the document, shown before "show all": the notch keeps room for the tab under it.
+    /// What Nook put in the document, shown before "show all": the card keeps room for its buttons.
     static let firstChecks = 3
 
     var body: some View {
-        if let run = doubleTap.run {
-            content(run)
-                .padding(.horizontal, NookTheme.Spacing.lg)
-                .padding(.vertical, NookTheme.Spacing.md)
-                .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.panel)
-                .padding(.top, NookTheme.Spacing.md)
-                .transition(.opacity.combined(with: .offset(y: -4)))
-                .animation(NookTheme.reveal, value: run)
-                // The notch closed while Nook works: its step goes on under the notch (never over what opened since).
-                .onDisappear { Task { @MainActor in doubleTap.showStepAgain() } }
-                .onChange(of: run.id) { _, _ in
-                    allSteps = false
-                    allChecks = false
-                }
-        }
-    }
-
-    private func content(_ run: DoubleTapRun) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            NookNotice(title: title(run), detail: subtitle(run), symbol: symbol(run), tone: tone(run),
-                       actions: [action(run)], wraps: true)
-            if !run.steps.isEmpty { steps(run) }
-            if !run.checks.isEmpty { checks(run) }
+        // Long runs scroll inside the card instead of pushing its buttons out.
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                if !run.steps.isEmpty { steps(run) }
+                if !run.checks.isEmpty { checks(run) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("doubletap.run.title"))
-    }
-
-    // MARK: Header
-
-    /// Stop while Nook works, Close once it is done.
-    private func action(_ run: DoubleTapRun) -> NookNoticeAction {
-        if run.isRunning { return NookNoticeAction(tr("takeover.stop")) { doubleTap.stop() } }
-        return NookNoticeAction(tr("button.close")) {
-            withAnimation(NookTheme.close) { doubleTap.dismissRun() }
+        .onChange(of: run.id) { _, _ in
+            allSteps = false
+            allChecks = false
         }
     }
 
-    private func title(_ run: DoubleTapRun) -> String {
-        if !run.isRunning { return run.result.isEmpty ? tr("doubletap.run.ended") : run.result }
-        return run.steps.last?.text ?? tr("doubletap.run.starting")
-    }
-
-    /// Double Tap · the app · what you asked; once done also how long it took and the result's own line.
-    private func subtitle(_ run: DoubleTapRun) -> String {
-        var parts = [tr("doubletap.settings.title")]
-        if !run.app.isEmpty { parts.append(run.app) }
-        if !run.request.isEmpty { parts.append("“" + DoubleTapLogic.preview(run.request) + "”") }
-        if let seconds = run.seconds { parts.append(tr("doubletap.run.seconds", seconds)) }
-        let line = parts.joined(separator: " · ")
-        return run.resultDetail.isEmpty ? line : line + "\n" + run.resultDetail
-    }
-
-    private func symbol(_ run: DoubleTapRun) -> String {
-        switch run.outcome {
-        case nil: return "hand.tap.fill"
-        case .done: return "checkmark.circle.fill"
-        case .info: return "info.circle.fill"
-        case .failed: return "exclamationmark.triangle.fill"
-        case .stopped: return "stop.circle.fill"
-        }
-    }
-
-    private func tone(_ run: DoubleTapRun) -> Color {
-        switch run.outcome {
-        case nil, .info: return NookTheme.iris
-        case .done: return NookTheme.mint
-        case .failed: return NookTheme.amber
-        case .stopped: return NookTheme.textSecondary
-        }
+    /// How tall the card's detail wants to be for `run`, so the card asks the notch for that room.
+    static func height(of run: DoubleTapRun) -> CGFloat {
+        let steps = min(run.steps.count, recentSteps)
+        let checks = min(run.checks.count, firstChecks)
+        var height: CGFloat = 0
+        if steps > 0 { height += 22 + CGFloat(steps) * 22 + (run.steps.count > recentSteps ? 20 : 0) }
+        if checks > 0 { height += 22 + CGFloat(checks) * 56 + (run.checks.count + run.moreChecks > checks ? 20 : 0) }
+        return height
     }
 
     // MARK: Steps
