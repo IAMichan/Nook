@@ -33,8 +33,8 @@ struct RootView: View {
                     .environment(\.searchFocusRequest, searchRequest)
                     .modifier(TabFallback(router: router, available: router.available(client)))
             case .connected, .offline:
-                // The tabs along the bottom: Nook, Agents, Chats, pull requests and Settings,
-                // each with what waits there as a badge. Each tab keeps where it was.
+                // The Mac's three tabs along the bottom: Nook, Agents and Chats, each with what waits there as a
+                // badge, each keeping where it was. Pull requests and Settings open from the header.
                 let available = router.available(client)
                 TabView(selection: $router.tab) {
                     if available.contains(.nook) {
@@ -55,19 +55,41 @@ struct RootView: View {
                             .tag(CompanionTab.chats)
                             .badge(router.count(.chats, client))
                     }
-                    if available.contains(.pulls) {
-                        NavigationStack(path: $pullPath) { PullRequestListView() }
-                            .tabItem { tabLabel(.pulls) }
-                            .tag(CompanionTab.pulls)
-                    }
-                    NavigationStack { SettingsView() }
-                        .tabItem { tabLabel(.settings) }
-                        .tag(CompanionTab.settings)
                 }
                 .environmentObject(router)
                 .environment(\.searchFocusRequest, searchRequest)
                 .modifier(TabFallback(router: router, available: available))
-                .onChange(of: router.tab) { _, _ in Haptics.tap() }
+                .onChange(of: router.tab) { old, tab in
+                    // Pull requests and Settings are not along the bottom on the phone: they open as a sheet over the
+                    // tab you were in, as on the Mac they open from its footer.
+                    if !tab.isBarTab {
+                        router.sheet = tab
+                        router.tab = old.isBarTab ? old : .agents
+                    } else {
+                        Haptics.tap()
+                    }
+                }
+                .sheet(item: $router.sheet) { section in
+                    Group {
+                        switch section {
+                        case .pulls:
+                            NavigationStack(path: $pullPath) {
+                                PullRequestListView()
+                                    .toolbar {
+                                        ToolbarItem(placement: .cancellationAction) {
+                                            Button("Done") { router.sheet = nil }.foregroundStyle(Theme.paper)
+                                        }
+                                    }
+                            }
+                        default:
+                            NavigationStack { SettingsView() }
+                        }
+                    }
+                    .environmentObject(router)
+                    .environmentObject(client)
+                    .preferredColorScheme(.dark)
+                    .tint(Theme.paper)
+                }
             }
         }
         // The hardware keyboard's shortcuts, in both layouts (`CompanionMenuCommands`).
@@ -86,10 +108,13 @@ struct RootView: View {
         #if DEBUG
         // `-NookDemoShow agents|chats|session|chat` with `-NookDemo`: opens that screen of the demo.
         .task {
+            // After the launch screen, so the tab's stack is in place to push onto.
+            try? await Task.sleep(for: .seconds(1.5))
             switch UserDefaults.standard.string(forKey: "NookDemoShow") {
             case "agents": router.tab = .agents
-            case "session", "files": router.tab = .agents; sessionPath = ["s2"]
+            case "session", "files": router.tab = .agents; try? await Task.sleep(for: .seconds(1)); client.openSession = "s2"
             case "pulls": router.tab = .pulls
+            case "settings": router.tab = .settings
             case "chats": router.tab = .chats
             case "chat": router.tab = .chats; inboxPath = ["w1"]
             default: break
@@ -129,6 +154,13 @@ struct RootView: View {
         }
         // The icon's quick actions follow the sessions: the ones that need you, then the newest.
         .onChange(of: client.sessions, initial: true) { _, sessions in AppShortcut.update(sessions: sessions) }
+        // "For you" on the Nook tab opens a chat.
+        .onChange(of: router.openChat) { _, id in
+            guard let id else { return }
+            router.tab = .chats
+            inboxPath = [id]
+            router.openChat = nil
+        }
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
             guard let id else { return }
@@ -439,6 +471,8 @@ struct QRScanner: UIViewControllerRepresentable {
 /// you answer right there, then the sessions that work and the recent ones as quiet rows.
 struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
+    @EnvironmentObject private var router: TabRouter
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var path: [String]
     /// Set by a quick action elsewhere: open the New session sheet once.
     @Binding var newSessionRequested: Bool
@@ -501,6 +535,13 @@ struct SessionListView: View {
         List {
             Group {
                 PanelHeader {
+                    // The pull requests, as in the Mac's Agents footer (on an iPad they are a section of the sidebar).
+                    if sizeClass != .regular, router.available(client).contains(.pulls) {
+                        NookIconButton(systemName: "arrow.triangle.pull", label: String(localized: "Pull requests")) {
+                            Haptics.tap()
+                            router.sheet = .pulls
+                        }
+                    }
                     // Always in sight: a Mac that does not allow it (yet) says why instead.
                     NookIconButton(systemName: "square.and.pencil", label: String(localized: "New session")) { newSession() }
                 }

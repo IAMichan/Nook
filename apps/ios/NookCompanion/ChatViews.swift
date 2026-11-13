@@ -194,39 +194,38 @@ struct ChatView: View {
         guard let id else { return client.outbox.entries.filter { $0.id == waitingFor } }
         return client.outbox.questions(in: id)
     }
+    /// Changes when something new comes in at the end: a line, Nook's answer streaming in, a question waiting.
+    private var followKey: [String] {
+        [lines.last?.id ?? "", String(lines.last?.text.count ?? 0), String(lines.count), String(waiting.count), sending ? "1" : "0"]
+    }
     private var title: String {
         id.flatMap { id in client.conversations.first { $0.id == id }?.title } ?? String(localized: "New chat")
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
-                    if lines.isEmpty, !sending, waiting.isEmpty {
-                        AskNook { send($0) }
-                    }
-                    ForEach(lines) { ChatLineView(line: $0) }
-                    if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
-                    // What waits for the Mac, dimmed, until it takes it.
-                    ForEach(waiting) { entry in
-                        TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
-                    }
-                    Color.clear.frame(height: 1).id(Self.bottom)
+        ConversationScroll(followKey: followKey) { _ in
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
+                if lines.isEmpty, !sending, waiting.isEmpty {
+                    AskNook { send($0) }
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.lg)
-                .readingColumn()
+                ForEach(lines) { ChatLineView(line: $0) }
+                if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
+                // What waits for the Mac, dimmed, until it takes it.
+                ForEach(waiting) { entry in
+                    TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: lines.last?.text) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            .onChange(of: lines.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-        }
-        .safeAreaInset(edge: .bottom) {
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.lg)
+            .readingColumn()
+        } floating: {
+            EmptyView()
+        } dock: { scroll in
             ComposerDock {
                 SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady, busy: busy, onStop: stop) {
                     let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     text = ""
+                    scroll.scrollToEnd()
                     send(question)
                 }
             }
@@ -259,7 +258,6 @@ struct ChatView: View {
         }
     }
 
-    private static let bottom = "bottom"
 
     private func send(_ question: String) {
         sending = true

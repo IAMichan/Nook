@@ -133,9 +133,12 @@ struct TranscriptConversation: View {
 
     var body: some View {
         let rows = TranscriptRow.rows(entries, working: working)
-        LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        // A plain stack, not a lazy one: a lazy stack guesses the height of rows it has not drawn yet and corrects it
+        // once they come into view, and every correction moved the text you read. The conversation is paged (the
+        // Mac sends the end, older pages on request) and a finished turn folds, so there are never many rows.
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             ForEach(rows) { row in
-                self.row(row)
+                self.row(row).id(row.id)
             }
         }
     }
@@ -305,7 +308,6 @@ struct TranscriptWorkLine: View {
     var open: Bool? = nil
     var action: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
 
     /// The label, then its detail on the same line in the same quiet color, so a long command or path truncates as one
     /// sentence.
@@ -326,7 +328,7 @@ struct TranscriptWorkLine: View {
             labelText
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .opacity(live && dim ? 0.45 : 1)
+                .modifier(Breathing(active: live && !reduceMotion))
             if let open {
                 Image(icon: "chevron.right")
                     .font(Theme.font(10, .bold))
@@ -341,10 +343,6 @@ struct TranscriptWorkLine: View {
         .font(Theme.TextStyle.body)
         .frame(minHeight: 26)
         .contentShape(Rectangle())
-        .onAppear {
-            guard live, !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
-        }
 
         if let action, open != nil {
             Button(action: action) { content }
@@ -651,16 +649,14 @@ struct ToolTally {
 
 // MARK: Floating status
 
-/// What the session is doing, floating over the end of the conversation right above the composer:
-/// "Working for 12s" while the agent works, "Snoozed" with Wake while it sleeps, and an arrow back to the
-/// newest message once you scrolled up. Glass on iOS 26, a material before.
+/// What the session is doing, floating over the end of the conversation right above the composer (beside the arrow
+/// back to the newest message, `ConversationScroll`): "Working for 12s" while the agent works, "Snoozed" with Wake while
+/// it sleeps. Glass on iOS 26, a material before.
 struct FloatingWorkingControl: View {
     var workingSince: Date?
     var working = false
     var snoozed = false
     var onWake: (() -> Void)? = nil
-    var showScrollToEnd = false
-    let onScrollToEnd: () -> Void
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
@@ -698,23 +694,42 @@ struct FloatingWorkingControl: View {
                 .floatingGlass(Capsule())
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
-            if showScrollToEnd {
-                Button(action: onScrollToEnd) {
-                    Image(icon: "arrow.down")
-                        .font(Theme.font(14, .semibold))
-                        .foregroundStyle(Theme.paper)
-                        .frame(width: 40, height: 40)
-                        .floatingGlass(Circle())
-                }
-                .buttonStyle(PressFade())
-                .accessibilityLabel("Scroll to end")
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            }
         }
         .animation(Theme.reveal, value: working)
         .animation(Theme.reveal, value: snoozed)
-        .animation(Theme.reveal, value: showScrollToEnd)
-        .frame(maxWidth: .infinity)
+    }
+}
+
+/// The step that runs now breathes: its opacity only. A repeating `withAnimation` started in `onAppear` also caught
+/// the row's position, so the live line drifted up and down with the conversation around it.
+struct Breathing: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active {
+            content.phaseAnimator([false, true]) { view, dim in
+                view.opacity(dim ? 0.45 : 1)
+            } animation: { _ in .easeInOut(duration: 0.9) }
+        } else {
+            content
+        }
+    }
+}
+
+/// While the conversation's first page is on its way: three quiet placeholder lines, not an empty screen.
+struct TranscriptLoading: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ForEach([0.9, 0.7, 0.8], id: \.self) { width in
+                GeometryReader { geometry in
+                    Capsule().fill(Theme.smoke).frame(width: geometry.size.width * width, height: 12)
+                }
+                .frame(height: 12)
+            }
+        }
+        .padding(.top, Theme.Spacing.xxl)
+        .modifier(Breathing(active: true))
+        .accessibilityLabel("Loading the conversation")
     }
 }
 

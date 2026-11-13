@@ -13,8 +13,6 @@ struct SessionDetailView: View {
     @State private var confirmEnd = false
     @State private var renaming = false
     @State private var newName = ""
-    /// Whether the newest message is in sight; scrolled up, an arrow brings you back.
-    @State private var atEnd = true
     /// While the agent works, what a message does: steer the running turn now, or wait in line for after it. Remembered,
     /// as the Mac's "While the agent works" setting.
     @AppStorage("nook.companion.steerByDefault") private var steerByDefault = false
@@ -35,57 +33,61 @@ struct SessionDetailView: View {
 
     var body: some View {
         if let session {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        if client.can(CompanionFeature.timeline), !entries.isEmpty {
-                            if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
-                                EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(proxy) }
-                            }
-                            TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
-                                // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
-                                .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
-                                    message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
-                                    composerFocused = true
-                                } : nil)
-                        } else if !session.excerpt.isEmpty {
-                            SectionHeader(title: String(localized: "Latest reply"))
-                            TranscriptReply(text: session.excerpt, footer: false)
+            ConversationScroll(followKey: followKey(session), floatingRoom: floatingRoom(session)) { scroll in
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    if client.can(CompanionFeature.timeline), !entries.isEmpty {
+                        if client.canReadFullTranscript, !client.reachedStart.contains(sessionID) {
+                            EarlierMessagesButton(loading: loadingEarlier) { loadEarlier(scroll) }
                         }
-                        // Messages that wait in the outbox until the Mac takes them.
-                        let waiting = client.outbox.waiting(for: session.id)
-                        ForEach(waiting) { entry in
-                            TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
-                        }
-                        Color.clear.frame(height: 1).id(Self.bottom)
+                        TranscriptConversation(sessionID: sessionID, entries: entries, working: session.attention == "working")
+                            // "Reply" on an answer: a quote of it at the top of the message, where you can write one.
+                            .environment(\.replyToAnswer, client.allows(.operate) && session.canSend != false ? { answer in
+                                message = AnswerReply.inserting(AnswerReply.quote(answer), into: message).text
+                                composerFocused = true
+                            } : nil)
+                    } else if !session.excerpt.isEmpty {
+                        SectionHeader(title: String(localized: "Latest reply"))
+                        TranscriptReply(text: session.excerpt, footer: false)
+                    } else if client.can(CompanionFeature.timeline) {
+                        TranscriptLoading()
                     }
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .padding(.bottom, Theme.Spacing.lg)
-                    .readingColumn()
+                    // Messages that wait in the outbox until the Mac takes them.
+                    let waiting = client.outbox.waiting(for: session.id)
+                    ForEach(waiting) { entry in
+                        TranscriptUserMessage(text: entry.request.text ?? "", pending: true)
+                    }
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: entries.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-                .onChange(of: session.items.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-                .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-                .defaultScrollAnchor(.bottom)
-                .modifier(ScrollEndTracker(atEnd: $atEnd))
-                .safeAreaInset(edge: .bottom) { dock(session, proxy) }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.lg)
+                .readingColumn()
+            } floating: {
+                FloatingWorkingControl(
+                    workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
+                    working: session.attention == "working",
+                    snoozed: actions(session).contains(.unsnooze),
+                    onWake: { manage(session, .unsnooze) })
+            } dock: { scroll in
+                dock(session, scroll)
             }
             // Pictures, a file, links and text dragged onto the session wait in its composer (`composerDrop`).
             .composerDrop(text: $message, images: dropImages, files: dropFiles,
                           enabled: client.allows(.operate) && session.canSend != false && session.items.isEmpty)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Who works where, in the bar as the thread's header, so the conversation starts at the top.
-                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: Self.subtitle(session)) }
+                // The Mac's session header: "folder / title ⌄", the title opening what you can do with the session, and
+                // the agent and branch under it.
+                ToolbarItem(placement: .principal) {
+                    if hasActions(session) {
+                        manageMenu(session) { SessionHeaderTitle(session: session, opens: true) }
+                    } else {
+                        SessionHeaderTitle(session: session, opens: false)
+                    }
+                }
                 if client.can(CompanionFeature.diff) {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { reviewing = true } label: { Image(icon: "plusminus").foregroundStyle(Theme.paper) }
                             .accessibilityLabel("Changes")
                     }
-                }
-                if !actions(session).isEmpty || (canStop(session) && stoppable(session)) {
-                    ToolbarItem(placement: .topBarTrailing) { manageMenu(session) }
                 }
             }
             .confirmationDialog("Archive this session?", isPresented: $confirmArchive, titleVisibility: .visible) {
@@ -140,23 +142,26 @@ struct SessionDetailView: View {
         }
     }
 
-    private static let bottom = "bottom"
+    /// Changes when something new comes in at the end: an entry, text streaming into the last one, what waits on you,
+    /// a message waiting in the outbox.
+    private func followKey(_ session: SessionDigest) -> [String] {
+        let last = entries.last
+        return [last?.id ?? "", String(last.map { client.fullTexts[$0.id] ?? $0.text }?.count ?? 0), String(entries.count),
+                String(session.items.count), String(client.outbox.waiting(for: session.id).count), session.attention]
+    }
+
+    /// Room under the last message for the floating "Working for 12s" or "Snoozed", so it never covers the end.
+    private func floatingRoom(_ session: SessionDigest) -> CGFloat {
+        session.attention == "working" || actions(session).contains(.unsnooze) ? 56 : Theme.Spacing.lg
+    }
 
     /// What a drop may add: pictures and a file where this Mac takes them.
     private var dropImages: Binding<[CompanionImage]>? { client.can(CompanionFeature.images) ? $images : nil }
     private var dropFiles: Binding<[CompanionFile]>? { client.can(CompanionFeature.attachments) ? $files : nil }
 
     /// Under the conversation, at the reading width: the working control, then what waits on you or the composer.
-    private func dock(_ session: SessionDigest, _ proxy: ScrollViewProxy) -> some View {
+    private func dock(_ session: SessionDigest, _ scroll: ConversationScrollControl) -> some View {
         VStack(spacing: Theme.Spacing.md) {
-            FloatingWorkingControl(
-                workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
-                working: session.attention == "working",
-                snoozed: actions(session).contains(.unsnooze),
-                onWake: { manage(session, .unsnooze) },
-                showScrollToEnd: !atEnd) {
-                withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-            }
             // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
             // What waits on you, docked right above the composer, so it stays in
             // sight however far up you read; while it waits it takes the composer's place.
@@ -173,7 +178,7 @@ struct SessionDetailView: View {
                         _ = client.takeRejected(refused)
                     }
                 }
-                ComposerDock { composer(session) }
+                ComposerDock { composer(session, scroll) }
             }
         }
         .readingColumn()
@@ -181,7 +186,7 @@ struct SessionDetailView: View {
 
     /// The composer under the conversation, or why there is none.
     @ViewBuilder
-    private func composer(_ session: SessionDigest) -> some View {
+    private func composer(_ session: SessionDigest, _ scroll: ConversationScrollControl) -> some View {
         if !client.allows(.operate) {
             Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
                 .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
@@ -202,13 +207,13 @@ struct SessionDetailView: View {
                                         canSend: true, busy: stoppable(session),
                                         onStop: canStop(session) ? { confirmStop = true } : nil,
                                         focus: $composerFocused,
-                                        onSend: { send(session) }) {
+                                        onSend: { send(session, scroll) }) {
                             steerMenu
                         }
                     } else {
                         SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
                                         onStop: canStop(session) ? { confirmStop = true } : nil,
-                                        focus: $composerFocused) { send(session) }
+                                        focus: $composerFocused) { send(session, scroll) }
                     }
                 }
             }
@@ -225,7 +230,7 @@ struct SessionDetailView: View {
     }
 
     /// The page before the oldest message, keeping in sight what you were reading.
-    private func loadEarlier(_ proxy: ScrollViewProxy) {
+    private func loadEarlier(_ scroll: ConversationScrollControl) {
         guard !loadingEarlier, let first = entries.first?.id else { return }
         loadingEarlier = true
         Task {
@@ -233,13 +238,13 @@ struct SessionDetailView: View {
             loadingEarlier = false
             guard more, let session else { return }
             let rows = TranscriptRow.rows(entries, working: session.attention == "working")
-            if let row = rows.first(where: { $0.holds(first) }) { proxy.scrollTo(row.id, anchor: .top) }
+            if let row = rows.first(where: { $0.holds(first) }) { scroll.scrollTo(row.id, anchor: .top) }
         }
     }
 
     /// Sends the message: into the running turn when steering is chosen and possible, else as the Mac decides (now when
     /// the agent rests, after the turn while it works).
-    private func send(_ session: SessionDigest) {
+    private func send(_ session: SessionDigest, _ scroll: ConversationScrollControl) {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         let pictures = images
@@ -248,6 +253,8 @@ struct SessionDetailView: View {
         images = []
         files = []
         Haptics.tap()
+        // What you sent is at the end: that is where you want to be.
+        scroll.scrollToEnd()
         let steer = steerable(session) && steerByDefault
         Task { await client.send(session, text: text, steer: steer, images: pictures, files: attached) }
     }
@@ -293,7 +300,11 @@ struct SessionDetailView: View {
     }
 
     /// What you can do with the session from afar, as the Mac's row actions: stop or end it, snooze it, rename it, archive it.
-    private func manageMenu(_ session: SessionDigest) -> some View {
+    private func hasActions(_ session: SessionDigest) -> Bool {
+        !actions(session).isEmpty || (canStop(session) && stoppable(session))
+    }
+
+    private func manageMenu<MenuLabel: View>(_ session: SessionDigest, @ViewBuilder label: () -> MenuLabel) -> some View {
         let actions = actions(session)
         return Menu {
             if canStop(session), stoppable(session) {
@@ -324,9 +335,41 @@ struct SessionDetailView: View {
                 Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
             }
         } label: {
-            Image(icon: "ellipsis").foregroundStyle(Theme.paper)
+            label()
         }
-        .accessibilityLabel("More")
+        .accessibilityHint("Shows what you can do with this session")
+    }
+}
+
+/// The Mac's session header for the phone's bar: the folder as a quiet crumb, then the title, with a chevron when it
+/// opens the session's actions; the agent and branch under it.
+private struct SessionHeaderTitle: View {
+    let session: SessionDigest
+    let opens: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Spacing.xs) {
+                if !session.folder.isEmpty {
+                    // The folder stays whole (it is short); the title gives way.
+                    Text(verbatim: session.folder + " /").foregroundStyle(Theme.textTertiary).fixedSize()
+                }
+                Text(verbatim: session.title).foregroundStyle(Theme.paper)
+                if opens {
+                    Image(icon: "chevron.down").font(Theme.font(10, .bold)).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .font(Theme.TextStyle.strong)
+            .lineLimit(1)
+            let detail = [session.agent, session.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            if !detail.isEmpty {
+                Text(verbatim: detail).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: 260)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -356,23 +399,6 @@ private struct EarlierMessagesButton: View {
         .buttonStyle(PressFade())
         .disabled(loading)
         .padding(.top, Theme.Spacing.md)
-    }
-}
-
-/// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
-private struct ScrollEndTracker: ViewModifier {
-    @Binding var atEnd: Bool
-
-    func body(content: Content) -> some View {
-        if #available(iOS 18, *) {
-            content.onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height <= geometry.containerSize.height || geometry.visibleRect.maxY >= geometry.contentSize.height - 64
-            } action: { _, now in
-                atEnd = now
-            }
-        } else {
-            content
-        }
     }
 }
 

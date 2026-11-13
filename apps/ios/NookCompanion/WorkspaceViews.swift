@@ -46,11 +46,14 @@ struct SessionWorkspaceMenu: ViewModifier {
             .navigationDestination(isPresented: $showsFiles) { SessionFilesView(sessionID: sessionID) }
             .navigationDestination(isPresented: $showsTerminals) { SessionTerminalsView(sessionID: sessionID) }
             .navigationDestination(isPresented: $showsPulls) { PullRequestListView(session: sessionID) }
-            .inspector(isPresented: $inspecting) {
+            // Only where it can show: on an iPhone the inspector (even closed) made the navigation stack drop the
+            // session the moment it was pushed by a path (a notification, "For you", ⌘], a new session), so the
+            // session flashed open and the list came back.
+            .modifier(CompanionInspector(isPresented: $inspecting, enabled: sizeClass == .regular) {
                 WorkspaceInspector(sessionID: sessionID, panes: panes, pane: $pane)
                     .inspectorColumnWidth(min: CompanionLayout.inspectorMin, ideal: CompanionLayout.inspectorIdeal,
                                           max: CompanionLayout.inspectorMax)
-            }
+            })
             // The window got narrow (Slide Over, a small Split View): the inspector would turn into a sheet over the
             // conversation, so it closes; the menu pushes from then on.
             .onChange(of: sizeClass) { _, size in
@@ -87,6 +90,21 @@ struct SessionWorkspaceMenu: ViewModifier {
         case .files: showsFiles = true
         case .terminals: showsTerminals = true
         case .pulls: showsPulls = true
+        }
+    }
+}
+
+/// An inspector only where it is enabled (an iPad with room); elsewhere the view as it is.
+private struct CompanionInspector<Inspector: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let enabled: Bool
+    @ViewBuilder let inspector: () -> Inspector
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.inspector(isPresented: $isPresented, content: inspector)
+        } else {
+            content
         }
     }
 }
