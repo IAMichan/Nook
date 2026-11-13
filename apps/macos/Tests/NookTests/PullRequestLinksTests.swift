@@ -7,6 +7,19 @@ final class PullRequestLinksTests: XCTestCase {
                         updatedAt: at.map { Date(timeIntervalSince1970: $0) }, baseBranch: base, headBranch: head)
     }
 
+    // MARK: Naming a request
+
+    /// The folder's remote keeps a repository's old name after a rename; a merge from Nook names it by its new one.
+    func testRequestMatchesByRemoteNameOrByItsURL() {
+        let renamed = PullRequestLink(host: .github, repository: "InfarisHQ/pulse", number: 4121,
+                                      url: "https://github.com/InfarisHQ/monorepo/pull/4121")
+        XCTAssertTrue(renamed.isRequest(repository: "InfarisHQ/monorepo", number: 4121))
+        XCTAssertTrue(renamed.isRequest(repository: "infarishq/PULSE", number: 4121))
+        XCTAssertFalse(renamed.isRequest(repository: "InfarisHQ/monorepo", number: 4122))
+        XCTAssertFalse(renamed.isRequest(repository: "InfarisHQ/other", number: 4121))
+        XCTAssertFalse(link(4121, repo: "a/b").isRequest(repository: "InfarisHQ/monorepo", number: 4121))
+    }
+
     // MARK: Opening a link in Nook
 
     func testGitHubLinkOpensAsItem() throws {

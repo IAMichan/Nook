@@ -371,6 +371,16 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
 
     var id: String { "\(host.key)/\(repository.lowercased())#\(number)" }
 
+    /// Is this the request `number` in `repository`? `repository` comes from the folder's remote, which keeps the old name
+    /// after a rename on the forge (which redirects it), while an action from Nook names the request by where it lives
+    /// now. The link's URL says that too, so either name matches.
+    func isRequest(repository other: String, number: Int) -> Bool {
+        guard self.number == number else { return false }
+        let wanted = other.lowercased()
+        if repository.lowercased() == wanted { return true }
+        return PullRequestRef.parse(url)?.repository.map { $0.lowercased() == wanted } ?? false
+    }
+
     /// The pull request the tray above a session's composer shows from a branch's list: an open one first, else the
     /// newest one that merged or closed, so its state stays in view after it lands. GitHub and GitLab only.
     static func shown(in links: [PullRequestLink]) -> URL? {
