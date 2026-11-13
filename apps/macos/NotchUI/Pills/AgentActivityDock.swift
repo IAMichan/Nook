@@ -443,8 +443,8 @@ struct AgentActivityDock: View {
     }
 }
 
-/// The dock's card: the composer tray's fill, the watch over its running commands, and the focus a command's call in the
-/// conversation sends.
+/// The dock's card: the composer tray's fill and hairline, the watch over its running commands, and the focus a
+/// command's call in the conversation sends.
 private struct DockCard: ViewModifier {
     let watchKey: String
     let watch: () async -> Void
@@ -454,7 +454,7 @@ private struct DockCard: ViewModifier {
     func body(content: Content) -> some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
-            .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
+            .composerStripBackground()
             .task(id: watchKey) { await watch() }
             .onChange(of: focus.wrappedValue) { _, id in
                 guard let id else { return }

@@ -93,7 +93,7 @@ struct ResourceWaitStrip: View {
             // The same card as the subagent and background strips under it, so their icons share one column.
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, 7)
-            .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
+            .composerStripBackground()
         }
     }
 }
