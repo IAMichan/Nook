@@ -15,11 +15,45 @@ extension WorkspaceManager {
     func noteConnectorsNeedingSignIn(_ id: UUID, _ names: [String]) {
         let merged = ConnectorSignIns.merged(names, into: connectorSignIns[id] ?? [])
         // A waiting one that connected says so in the conversation.
-        for done in (connectorSignIns[id] ?? []).filter({ $0.waiting && !names.contains($0.name) }) {
+        let connected = (connectorSignIns[id] ?? []).filter { $0.waiting && !names.contains($0.name) }
+        for done in connected {
             connectorSignInChecks[id]?.removeValue(forKey: done.name)?.cancel()
             append(id, RunEvent(kind: .system, text: tr("ws.connector.connected", done.title)))
         }
         if merged != (connectorSignIns[id] ?? []) { connectorSignIns[id] = merged.isEmpty ? nil : merged }
+        if !connected.isEmpty { shareConnectorSignIns(from: id, connected.map(\.name)) }
+    }
+
+    /// You signed in to these connectors in one session. The agent keeps the sign-in for its account, but every other
+    /// session of that agent and account still lists them: its agent checked when it started, before you signed in. They
+    /// leave those lists, and an agent that is open connects them again, so you sign in once instead of once per chat.
+    /// A session whose agent is closed reads the sign-in when it starts again.
+    private func shareConnectorSignIns(from id: UUID, _ names: [String]) {
+        guard let source = run(id) else { return }
+        let account = ConnectorSignIns.account(source)
+        for (other, list) in connectorSignIns where other != id {
+            guard let run = run(other), ConnectorSignIns.account(run) == account else { continue }
+            let signedIn = list.map(\.name).filter(names.contains)
+            guard !signedIn.isEmpty else { continue }
+            for name in signedIn { connectorSignInChecks[other]?.removeValue(forKey: name)?.cancel() }
+            let rest = list.filter { !signedIn.contains($0.name) }
+            connectorSignIns[other] = rest.isEmpty ? nil : rest
+            reconnectConnectors(other, provider: run.provider, signedIn)
+        }
+    }
+
+    /// Asks a session's open agent to connect these servers again, now that their sign-in is there.
+    private func reconnectConnectors(_ id: UUID, provider: RunProvider, _ names: [String]) {
+        switch provider {
+        case .claude:
+            for name in names {
+                _ = claudeControl(id, starts: false, { ClaudeStreamParser.mcpReconnectRequest(id: $0, server: name) }) { _, _ in }
+            }
+        case .codex:
+            guard let client = codexServers[id], client.isRunning else { return }
+            Task { _ = try? await Self.codexRequest(client, "config/mcpServer/reload", [:], timeout: 30) }
+        case .gemini, .opencode, .cursor, .grok, .antigravity, .pi, .acp: return
+        }
     }
 
     /// Opens the connector's sign-in page and waits for it to connect.
