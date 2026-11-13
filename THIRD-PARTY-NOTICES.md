@@ -94,6 +94,10 @@ All third-party brand names and logos are trademarks of their respective owners 
 
 ---
 
+The chat app and service logos on the website (`site/_partials/sprite.html`, ids starting with `app-`) come from [Simple Icons](https://github.com/simple-icons/simple-icons) (CC0 1.0); the brands remain trademarks of their owners.
+
+---
+
 ## Interface Icons (Lucide)
 
 The interface icons in `apps/macos/Resources/Lucide.xcassets` are generated from [Lucide](https://lucide.dev) (`lucide-static` 0.564.0) by `scripts/lucide-icons.sh`:

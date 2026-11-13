@@ -17,7 +17,12 @@ function whenVisible(el,fn,threshold=.3){if(!el)return;let done=false;
 (function(){
   const page=(location.pathname.split('/').pop()||'index.html');
   $$('nav .links a').forEach(a=>{if(a.getAttribute('href')===page)a.classList.add('on')});
-  const b=$('.menu-btn');if(b)b.onclick=()=>$('nav').classList.toggle('open');
+  const b=$('.menu-btn'),nav=$('nav');if(!b)return;
+  const set=open=>{nav.classList.toggle('open',open);b.setAttribute('aria-expanded',open)};
+  b.onclick=()=>set(!nav.classList.contains('open'));
+  $$('nav .links a').forEach(a=>a.addEventListener('click',()=>set(false)));
+  addEventListener('keydown',e=>{if(e.key==='Escape')set(false)});
+  matchMedia('(min-width:1001px)').addEventListener('change',e=>{if(e.matches)set(false)});
 })();
 
 /* Copy buttons on code blocks. */
