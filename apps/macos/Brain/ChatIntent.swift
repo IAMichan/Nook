@@ -139,6 +139,10 @@ struct ChatIntent: Equatable {
         if has(#"systeeminstelling|system ?settings|systemeinstellung|réglages système|ajustes del sistema|\bklik|\bclick|\bklick|\bcliqu|\bmuis|\bmouse|\bmaus\b|toetsenbord|keyboard|tastatur|\bdruk op\b|\btyp (in|het|dit|dat)\b|\btype (in|this|it)\b|(instelling|setting|einstellung)\w* (aan|uit|wijzig|verander|aanpass|on|off|change|ändern)|(zet|schakel|turn|switch|schalte?)\b[^.?!]{0,40}\b(aan|uit|on|off|ein|aus)\b[^.?!]{0,30}\b(instelling|setting|einstellung)|\b(night ?shift|dark mode|donkere modus|bluetooth|wi-?fi|niet storen|do not disturb|true tone|screen saver|schermbeveiliging)\b"#) { kinds.append(.control) }
         // A task of many steps Nook carries out itself: ordering, booking, unsubscribing, finishing what is on screen.
         if has(#"\b(bestel|bestellen|koop|kopen|kaufe|kaufen|bestelle|commande|commander|achète|acheter|compra|comprar|pide)\b|\b(order|buy) (a|an|the|some|me|more|new)\b|place an order|\b(boek|book|buche|buchen|réserve|reserva|reserveer)\b[^.?!]{0,40}\b(vlucht|vluchten|flight|flights|ticket|tickets|kaartje|kaartjes|hotel|kamer|room|trein|train|tafel|table|flug|vol|vuelo)\b|\b(afmelden|uitschrijven|unsubscribe|abmelden|désabonne|darme de baja)\b|\b(finish|do) (this|it) for me\b|\bmaak (dit|het) (voor me )?af\b|\bdoe (dit|het) voor me\b|\bneem (dit|het) over\b|\btake (this )?over\b|\bmach (das|es) für mich\b|\b(vul|fill) (dit|het|this|the|out)\b[^.?!]{0,30}\b(formulier|form)\b"#) { kinds.append(.takeover) }
+        // Filling in a form ("vul nu het formulier in", "kun je dit formulier invullen", "fill out the form on my screen"):
+        // Nook does it itself in the app or browser where the form is open, however the sentence is built.
+        let fillsForm = Self.fillsForm(text)
+        if fillsForm, !kinds.contains(.takeover) { kinds.append(.takeover) }
         // Posting on a website ("maak posts op Reddit om Nook te promoten"): Nook writes the post and places it there
         // through the browser, with mouse and keyboard; the Post button waits for the user's yes.
         let posts = postsOnline(text)
@@ -182,7 +186,7 @@ struct ChatIntent: Equatable {
         // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
         // "I saw a post on Reddit" names a site too, but asks for nothing.
         let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen || namesOtherApp)
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen || namesOtherApp || fillsForm)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting
@@ -241,6 +245,17 @@ struct ChatIntent: Equatable {
         intent.wantsAction = true
         intent.isSmallTalk = false
         return intent
+    }
+
+    /// A form to fill in: a form named together with filling it in, in any of Nook's languages. A question about how to
+    /// do it ("hoe vul ik dit formulier in?") asks for an explanation, not for Nook to do it.
+    static func fillsForm(_ text: String) -> Bool {
+        let text = text.lowercased()
+        func has(_ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
+        let form = has(#"formulier|\bforms?\b|formular|formulaire|formulario|\b(de|die|alle|the|all) (velden|fields)\b|\balle felder\b"#)
+        let fill = has(#"\bvul\b|\bvult\b|invul|in te vullen|ingevuld|\bfill(ing|ed)?\b|\bcomplete\b|ausfüll|\bfüll\w*\b[^.?!]{0,40}\baus\b|ausgefüllt|rempli[rst]?\b|remplissez|rellen[aeoá]\w*|\bllen[ae]\w*|\bcompleta\w*"#)
+        guard form, fill else { return false }
+        return !has(#"^(hoe|how|wie|comment|cómo|como)\b|\b(hoe (moet|kan|vul)|how (do|should|can|to)|wie (fülle|kann)|comment (je|on)|cómo (se|lo|relleno))\b"#)
     }
 
     /// Asking for the text itself, to send yourself or as an example.

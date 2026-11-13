@@ -84,7 +84,8 @@ enum AppTextReader {
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func read(pid: pid_t, limit: Int) -> [(title: String, text: String)] {
+    /// Synchronous `text(pid:limit:)`: call it off the main thread.
+    static func read(pid: pid_t, limit: Int) -> [(title: String, text: String)] {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 1.5)
         let windows = (value(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
