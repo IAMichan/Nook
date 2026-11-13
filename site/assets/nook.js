@@ -27,3 +27,16 @@ $$('.copybtn').forEach(b=>b.onclick=()=>{const t=b.dataset.copy||b.parentElement
 /* Nook's eyes follow the pointer. */
 addEventListener('mousemove',e=>{$$('.mascot i').forEach(i=>{const r=i.parentElement.getBoundingClientRect();if(!r.width||r.bottom<0||r.top>innerHeight)return;
   const dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),d=Math.hypot(dx,dy)||1,m=r.width*.08;i.style.transform=`translate(${dx/d*m}px,${dy/d*m}px)`})});
+
+/* Download buttons point at the newest regular release (betas are skipped): a link marked data-latest-asset gets that
+   release's file whose name ends with the given suffix, and data-latest-version shows its version. Without the API
+   (offline, rate limited) the link keeps its fallback, the newest release page on GitHub. */
+(function(){
+  const links=$$('[data-latest-asset]'),labels=$$('[data-latest-version]');if(!links.length&&!labels.length)return;
+  fetch('https://api.github.com/repos/IAMichan/nook/releases/latest',{headers:{Accept:'application/vnd.github+json'}})
+    .then(r=>r.ok?r.json():Promise.reject(r.status))
+    .then(rel=>{
+      links.forEach(a=>{const f=(rel.assets||[]).find(x=>x.name.endsWith(a.dataset.latestAsset));if(f)a.href=f.browser_download_url});
+      labels.forEach(l=>l.textContent=(rel.name||rel.tag_name));
+    }).catch(()=>{});
+})();

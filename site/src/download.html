@@ -1,4 +1,4 @@
-<!-- @head title="Download · Nook" desc="Download Nook for Mac (beta, Apple Silicon, macOS 15+), with the iPhone companion and early apps for Windows, Linux and Android. Free and open source." -->
+<!-- @head title="Download · Nook" desc="Download Nook for Mac (Apple Silicon, macOS 15+), with the iPhone companion and early apps for Windows, Linux and Android. Free and open source." -->
 <!-- @sprite -->
 <!-- @nav -->
 <style>
@@ -40,8 +40,8 @@
     <p class="lede rv d2">Start on your Mac, where Nook is most complete. Add the iPhone companion to approve and reply on the go. Windows, Linux and Android are on their way.</p>
     <div class="dl-card rv d3">
       <div class="appicon"><span class="mascot" style="--s:44px"><i></i><i></i></span></div>
-      <div><b>Nook for Mac</b><small>Beta · Apple Silicon (M1 or newer) · macOS 15 or newer. Not notarized yet: the release notes explain how to open it the first time.</small></div>
-      <a class="btn primary lg" href="https://github.com/IAMichan/nook/releases"><!-- @apple -->Download .dmg</a>
+      <div><b>Nook for Mac</b><small><span data-latest-version>Latest release</span> · Apple Silicon (M1 or newer) · macOS 15 or newer. Not notarized yet: the release notes explain how to open it the first time.</small></div>
+      <a class="btn primary lg" href="https://github.com/IAMichan/nook/releases/latest" data-latest-asset="-macOS.dmg"><!-- @apple -->Download .dmg</a>
     </div>
     <p class="fine rv d3">Prefer to build it yourself? <a href="#source" style="color:var(--strong)">Build from source</a></p>
   </div>
@@ -55,7 +55,7 @@
   </div>
   <div class="wrap">
     <div class="steps">
-      <div class="step rv"><b>Download and open</b><span>Drag Nook to Applications. Because the beta is not notarized yet, open it the first time as the release notes describe.</span></div>
+      <div class="step rv"><b>Download and open</b><span>Drag Nook to Applications. Because Nook is not notarized yet, open it the first time as the release notes describe.</span></div>
       <div class="step rv d1"><b>Say hi</b><span>Nook lives in your menu bar. Press <kbd>⌥⌘W</kbd> for its window or <kbd>⌥⌘Space</kbd> to ask something from any app.</span></div>
       <div class="step rv d2"><b>Connect what you like</b><span>Chat apps, coding agents, calendars and services, one by one in Settings. The notch is optional: turn it on in Settings › Notch if you like it.</span></div>
     </div>
@@ -68,7 +68,7 @@
     <div class="label rv">Platforms</div>
     <h2 class="rv d1">One Nook. <span>Honest about where it is.</span></h2>
     <div class="surfs five">
-      <div class="sf rv"><div class="pic"><div class="p-mac"><div class="bar"><i></i><i></i><i></i></div><div class="r">Codex wants to push<span class="st wait">Ask</span></div><div class="r">Sam · WhatsApp<span class="st wait">Reply</span></div><div class="r">Refactor done<span class="st done">Done</span></div></div></div><b>Mac</b><span>The full app, and the one the others follow.</span><span class="st done stl">Beta</span></div>
+      <div class="sf rv"><div class="pic"><div class="p-mac"><div class="bar"><i></i><i></i><i></i></div><div class="r">Codex wants to push<span class="st wait">Ask</span></div><div class="r">Sam · WhatsApp<span class="st wait">Reply</span></div><div class="r">Refactor done<span class="st done">Done</span></div></div></div><b>Mac</b><span>The full app, and the one the others follow.</span><span class="st done stl">Available</span></div>
       <div class="sf rv d1"><div class="pic"><div class="p-phone"><div class="ap">Run swift test<i></i></div><p></p><p style="width:70%"></p><p></p><p style="width:60%"></p></div></div><b>iPhone</b><span>Nook Companion: follow and approve agents, chat with Nook.</span><span class="st work stl">Companion</span></div>
       <div class="sf rv d2"><div class="pic"><div class="p-bar"><span class="mascot" style="--s:12px"><i></i><i></i></span>2 need you</div><div class="p-drop"><div class="r">Codex wants to push<span class="st wait">Ask</span></div><div class="r">Build finished<span class="st done">Done</span></div></div></div><b>Windows</b><span>A bar at the top of the screen. Compiles in CI, not yet run on a real PC.</span><span class="st wait stl">Early</span></div>
       <div class="sf rv d3"><div class="pic"><div class="p-bar"><span class="mascot" style="--s:12px"><i></i><i></i></span>1 needs you</div><div class="p-drop"><div class="r">Lotte · Slack<span class="st wait">Reply</span></div><div class="r">Tests passed<span class="st done">Done</span></div></div></div><b>Linux</b><span>A bar at the top of the screen, tray and hotkeys on X11.</span><span class="st wait stl">Early</span></div>
@@ -144,7 +144,7 @@ open Nook.xcodeproj">Copy</button><span class="p">$ </span>brew install xcodegen
       <details open><summary>Is Nook free?</summary><p>Yes. Nook is open source under the MIT license. With a model on your Mac, questions cost nothing. Only a cloud provider you choose to connect may charge you, on your own account.</p></details>
       <details><summary>Do I need a MacBook with a notch?</summary><p>No. The notch is an optional extra you can turn on in Settings › Notch. Nook works fully in its own window, from the menu bar and the keyboard, on any Apple Silicon Mac and on an external display.</p></details>
       <details><summary>Which Macs are supported?</summary><p>Apple Silicon Macs (M1 or newer) with macOS 15 Sequoia or newer. The built‑in local model picks a size that fits your Mac's memory.</p></details>
-      <details><summary>Is it safe to open a build that isn't notarized?</summary><p>The beta is built in the open by a GitHub Actions workflow from the public source, but it is not notarized by Apple yet, so macOS asks you to confirm the first time. The release notes show how. If you'd rather not, build it from source in a few commands.</p></details>
+      <details><summary>Is it safe to open a build that isn't notarized?</summary><p>Every release is built in the open by a GitHub Actions workflow from the public source, but it is not notarized by Apple yet, so macOS asks you to confirm the first time. The release notes show how. If you'd rather not, build it from source in a few commands.</p></details>
       <details><summary>Which languages does it speak?</summary><p>The Mac app is in English, Dutch, German, French and Spanish (Settings › General › App language).</p></details>
     </div>
   </div>
