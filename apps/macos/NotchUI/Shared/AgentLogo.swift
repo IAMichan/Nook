@@ -286,10 +286,11 @@ extension AccountTag {
     /// The badge on the agent's logo where it runs under `profile`, or nil when there is nothing to tell apart.
     /// An account you gave a color or an icon always shows its badge; otherwise only while you have more than
     /// one account of that agent, so the model picker and the timeline say which account a model belongs to.
+    /// `linked`: `app.linkedProfiles`, when the caller already has it (the agent list asks for every row).
     @MainActor
-    static func badge(_ profile: AgentProfile?, app: AppModel) -> AccountTag? {
+    static func badge(_ profile: AgentProfile?, app: AppModel, linked: [AgentProfile]? = nil) -> AccountTag? {
         guard let profile, !app.demoMode else { return nil }
-        guard profile.hasOwnBadge || sharesAgent(profile, app: app) else { return nil }
+        guard profile.hasOwnBadge || sharesAgent(profile, linked: linked ?? app.linkedProfiles) else { return nil }
         return of(profile, app: app)
     }
 
@@ -297,7 +298,11 @@ extension AccountTag {
     /// account switched off still counts for itself, so an old session of it keeps its badge.
     @MainActor
     static func sharesAgent(_ profile: AgentProfile, app: AppModel) -> Bool {
-        app.linkedProfiles.filter { $0.kind == profile.kind && ($0.isEnabled || $0.id == profile.id) }.count > 1
+        sharesAgent(profile, linked: app.linkedProfiles)
+    }
+
+    static func sharesAgent(_ profile: AgentProfile, linked: [AgentProfile]) -> Bool {
+        linked.filter { $0.kind == profile.kind && ($0.isEnabled || $0.id == profile.id) }.count > 1
     }
 }
 #endif

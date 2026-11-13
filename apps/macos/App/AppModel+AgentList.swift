@@ -34,9 +34,22 @@ extension AppModel {
     }
 
     /// The list's rows; `selected` is the open session, which never reads as unseen.
+    ///
+    /// Made again only when what they come from changed (`AgentListMemo.Key`): the panel redraws for much else (a chat
+    /// that came in, the pointer, a click on a row), and making every row again each time held up the click that opens a
+    /// session. Opening another session reuses the rows: only the open one's unseen mark differs.
     func agentListEntries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession],
                           selected: String) -> AgentListEntries {
-        AgentListBuilder(app: self, selected: selected).entries(live: live, past: past, transcripts: transcripts)
+        let key = AgentListMemo.Key(
+            runs: workspace.runs, live: live, past: past, transcripts: transcripts,
+            approvals: workspace.approvals.mapValues(\.count), questions: workspace.questions.mapValues(\.count),
+            subagentsWorking: workspace.subagentsWorking, idleCompacting: workspace.idleCompacting,
+            demoMode: demoMode, generation: agentListGeneration,
+            period: Int(Date().timeIntervalSince1970 / AgentListMemo.period))
+        if let memo = agentListMemo, memo.key == key { return memo.entries.opening(selected) }
+        let entries = AgentListBuilder(app: self, selected: "").entries(live: live, past: past, transcripts: transcripts)
+        agentListMemo = AgentListMemo(key: key, entries: entries)
+        return entries.opening(selected)
     }
 
     /// All of it at once, for work that runs without the list (`SessionTidier`).
@@ -46,10 +59,60 @@ extension AppModel {
     }
 }
 
+/// The Agents list's rows with what they were made from (`AppModel.agentListEntries`).
+struct AgentListMemo {
+    struct Key: Equatable {
+        let runs: [WorkspaceRun]
+        let live: [AgentSession]
+        let past: [PastSession]
+        let transcripts: [String: PastSession]
+        let approvals: [UUID: Int]
+        let questions: [UUID: Int]
+        let subagentsWorking: Set<UUID>
+        let idleCompacting: Set<UUID>
+        let demoMode: Bool
+        /// `AppModel.agentListGeneration`: history, accounts, visits, settled marks and project names.
+        let generation: Int
+        /// What the rows read from the clock and from disk (a branch, how long a settled session stays) is read again
+        /// at least this often.
+        let period: Int
+    }
+
+    /// Seconds between two readings of the clock and the branches, at most.
+    static let period: TimeInterval = 5
+
+    let key: Key
+    let entries: AgentListEntries
+}
+
+extension AgentListEntries {
+    /// The rows with `selected` open: the session you are looking at never reads as unseen.
+    func opening(_ selected: String) -> AgentListEntries {
+        guard !selected.isEmpty, (running + earlier).contains(where: { $0.id == selected && $0.unseen }) else { return self }
+        func seen(_ items: [AgentListItem]) -> [AgentListItem] {
+            items.map { item in
+                guard item.id == selected, item.unseen else { return item }
+                var item = item
+                item.unseen = false
+                return item
+            }
+        }
+        return AgentListEntries(running: seen(running), earlier: seen(earlier), busyKeys: busyKeys, standIn: standIn)
+    }
+}
+
 @MainActor
 private struct AgentListBuilder {
     let app: AppModel
     let selected: String
+    /// The linked accounts, read once per list instead of once per row (`account(_:)`).
+    let linked: [AgentProfile]
+
+    init(app: AppModel, selected: String) {
+        self.app = app
+        self.selected = selected
+        linked = app.linkedProfiles
+    }
 
     func entries(live: [AgentSession], past: [PastSession], transcripts: [String: PastSession]) -> AgentListEntries {
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
@@ -118,7 +181,7 @@ private struct AgentListBuilder {
     }
 
     private func account(_ profile: AgentProfile?) -> AccountTag? {
-        AccountTag.badge(profile, app: app)
+        AccountTag.badge(profile, app: app, linked: linked)
     }
 
     private func accountName(_ profile: AgentProfile?) -> String {

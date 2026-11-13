@@ -189,8 +189,8 @@ enum InboxProject {
     static let none = ""
 
     /// `folder` is the row's folder name (a worktree already named after its repository), `path` the folder it works in.
-    static func key(folder: String, path: String, scratchRoot: String = NookPaths.scratchDirectory.path,
-                    home: String = NSHomeDirectory()) -> String {
+    static func key(folder: String, path: String, scratchRoot: String = scratchRootPath,
+                    home: String = homePath) -> String {
         if folder.isEmpty || folder == "no folder" { return none }
         let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
         guard !trimmed.isEmpty, trimmed != "/" else { return folder }
@@ -198,6 +198,12 @@ enum InboxProject {
         if trimmed == home || trimmed == root || trimmed.hasPrefix(root + "/") { return none }
         return folder
     }
+}
+
+/// The folders `InboxProject.key` compares every row's path with, looked up once instead of for every row.
+extension InboxProject {
+    static let scratchRootPath = NookPaths.scratchDirectory.path
+    static let homePath = NSHomeDirectory()
 }
 
 struct InboxSection: Equatable, Sendable {
