@@ -20,14 +20,16 @@ extension AgentRunPanel {
     }
 
     /// Counts the finished turns with git, between the snapshots around them; a turn counted between both of its
-    /// snapshots stays as it is, the others are counted again once their snapshot is made.
+    /// snapshots stays as it is, the others are counted again once their snapshot is made. The newest turn first: its
+    /// card is the one in view when a session opens, and a long session has many turns before it (two git runs each).
     private func countTurns(_ turns: [TurnDiff], run: WorkspaceRun) async {
         guard !run.isRemote else { return }
-        for turn in turns where countedLines[turn.id]?.complete != true {
+        for turn in turns.reversed() where countedLines[turn.id]?.complete != true {
             guard let start = turn.start, let end = turn.end else { continue }
             if let lines = try? await workspace.turnLines(runID, paths: turn.files.map(\.path), start: start, end: end) {
                 guard !Task.isCancelled else { return }
                 countedLines[turn.id] = lines
+                if lines.complete { CountedTurnLines.keep(lines, turn: turn.id, run: runID) }
             }
         }
     }
@@ -536,5 +538,27 @@ extension AgentRunPanel {
 
     private func toggle(_ id: UUID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+}
+
+/// The turns git counted completely (between the snapshots on both sides), per session, kept across visits: those
+/// snapshots never change, so opening a session again shows its cards whole at once instead of waiting for git to
+/// count every turn again. Only the most recently counted sessions are kept.
+@MainActor
+enum CountedTurnLines {
+    private static var byRun: [UUID: [String: TurnLines]] = [:]
+    private static var order: [UUID] = []
+    private static let limit = 16
+
+    static func forRun(_ id: UUID) -> [String: TurnLines] { byRun[id] ?? [:] }
+
+    static func keep(_ lines: TurnLines, turn: String, run id: UUID) {
+        guard lines.complete else { return }
+        byRun[id, default: [:]][turn] = lines
+        if order.last != id {
+            order.removeAll { $0 == id }
+            order.append(id)
+            while order.count > limit { byRun[order.removeFirst()] = nil }
+        }
     }
 }

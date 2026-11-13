@@ -107,6 +107,7 @@ struct AgentRunPanel: View {
         self.runID = runID
         self.headerAccessory = headerAccessory
         _derived = State(initialValue: .forRun(runID))
+        _countedLines = State(initialValue: CountedTurnLines.forRun(runID))
     }
 
     var draft: String {
@@ -252,7 +253,8 @@ struct AgentRunPanel: View {
                 editWorking = false
                 openBlocks = []
                 expanded = []
-                countedLines = [:]
+                // What git counted on an earlier visit comes back at once: only turns not counted yet wait for git.
+                countedLines = CountedTurnLines.forRun(runID)
                 quotes.removeAll()
                 seenOutputs = nil
                 seenSubagents = nil
