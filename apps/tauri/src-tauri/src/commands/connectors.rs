@@ -5,7 +5,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use nook_core::connectors::accounts::{self, ServiceAccount};
-use nook_core::connectors::actions::{self, ActionRuns, ActionsRepos, RunDetail, Workflow};
+use nook_core::connectors::actions::{self, ActionRuns, ActionsRepos, DispatchForm, RunDetail, Workflow};
 use nook_core::connectors::cloud::{self, ServiceInfo};
 use nook_core::connectors::github;
 use nook_core::connectors::hub::Connector;
@@ -547,6 +547,58 @@ pub async fn github_actions_run_action(
         }
         Err(e) => {
             state.store.audit(&tool, &format!("{repo} · run {run}"), &format!("FOUT: {}", e.message));
+            Err(e.message)
+        }
+    }
+}
+
+/// What the "Run workflow" form needs: the branches (default first) and the inputs of each workflow that can be started
+/// by hand, read from its file at the default branch.
+#[tauri::command]
+pub async fn github_actions_dispatch_form(c: State<'_, Connectors>, account: Option<String>, repo: String) -> Res<DispatchForm> {
+    actions_repo(&repo)?;
+    let tokens = actions_tokens(&c, account.as_deref())?;
+    Ok(actions::load_dispatch_form(&c.env, &tokens, &repo).await?)
+}
+
+/// What a dispatch answered: the account that started it and the new run, when GitHub said which one.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Dispatched {
+    account: String,
+    run: Option<i64>,
+}
+
+/// Starts a workflow (`workflow_dispatch`) on a branch with the inputs filled in on the form; only after a click on
+/// "Run", and written to the action log either way.
+#[tauri::command]
+pub async fn github_actions_dispatch(
+    c: State<'_, Connectors>,
+    state: State<'_, AppState>,
+    account: Option<String>,
+    repo: String,
+    workflow: i64,
+    git_ref: String,
+    inputs: std::collections::BTreeMap<String, String>,
+) -> Res<Dispatched> {
+    actions_repo(&repo)?;
+    let git_ref = git_ref.trim().to_string();
+    // GitHub takes at most 25 inputs; a ref is a branch or tag name.
+    if workflow <= 0 || git_ref.is_empty() || git_ref.len() > 255 || git_ref.chars().any(char::is_control) || inputs.len() > 25 {
+        return Err("Deze workflow kan zo niet starten.".into());
+    }
+    let tokens = actions_tokens(&c, account.as_deref())?;
+    match actions::dispatch_workflow(&c.env, &tokens, &repo, workflow, &git_ref, &inputs).await {
+        Ok((used, run)) => {
+            state.store.audit("github_actions_dispatch", &format!("{repo} · workflow {workflow} · {git_ref} · {used}"), "OK");
+            Ok(Dispatched { account: used, run })
+        }
+        Err(e) => {
+            state.store.audit(
+                "github_actions_dispatch",
+                &format!("{repo} · workflow {workflow} · {git_ref}"),
+                &format!("FOUT: {}", e.message),
+            );
             Err(e.message)
         }
     }

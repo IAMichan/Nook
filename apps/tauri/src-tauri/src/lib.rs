@@ -157,6 +157,8 @@ pub fn run() {
             commands::connectors::github_actions_runs,
             commands::connectors::github_actions_run,
             commands::connectors::github_actions_run_action,
+            commands::connectors::github_actions_dispatch_form,
+            commands::connectors::github_actions_dispatch,
             commands::connectors::pull_watch_add,
             commands::connectors::pull_watch_remove,
             commands::connectors::mcp_paste,

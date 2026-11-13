@@ -419,6 +419,7 @@ targets:
       - path: Services/Connectors/PullRequestFileOrder.swift
       - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/WorkflowRuns.swift
+      - path: Services/Connectors/WorkflowDispatch.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
       - path: Services/Connectors/PullRequestBatchClose.swift
       - path: Services/Connectors/GitHubMarkdown.swift
