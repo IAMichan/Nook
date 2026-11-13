@@ -1,6 +1,6 @@
 # Nook website
 
-A static site with no dependencies: plain HTML, one stylesheet and one script. It can be served as is, for example with GitHub Pages from this folder.
+A static site with no dependencies: plain HTML, one stylesheet and one script. It is published to GitHub Pages by `.github/workflows/site.yml` whenever `site/` changes on main.
 
 | Page | What it covers |
 |---|---|

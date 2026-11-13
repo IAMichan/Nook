@@ -1,0 +1,62 @@
+name: Site
+
+# Publishes the Nook website (site/) to GitHub Pages whenever it changes on main. The pages are built from site/src
+# and site/_partials with site/build.py; the job builds them again and fails when the committed pages are stale, so
+# what goes live is always what the sources say. Only the finished pages and assets/ are published, not the sources.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that the built pages match their sources
+        run: |
+          python3 site/build.py
+          if ! git diff --quiet -- site; then
+            echo "::error::The pages in site/ are out of date. Run python3 site/build.py and commit the result."
+            git diff --stat -- site
+            exit 1
+          fi
+      - name: Collect the public files
+        run: |
+          mkdir _site
+          cp site/*.html _site/
+          cp -R site/assets _site/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
