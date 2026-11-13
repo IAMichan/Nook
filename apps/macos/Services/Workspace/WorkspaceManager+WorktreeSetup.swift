@@ -10,18 +10,18 @@ extension WorkspaceManager {
         worktreeSetups[id] = progress
     }
 
-    func recordFetch(_ id: UUID, _ result: RemoteBaseRefresh, base: String) {
+    func recordFetch(_ id: UUID, _ result: RemoteBaseRefresh, base: String, now: Date = Date()) {
         setupStep(id) {
             switch result {
             case .fetched:
-                $0.finish(.fetchBase)
+                $0.finish(.fetchBase, now: now)
                 $0.note(.fetchBase, tr("ws.setup.note.fetched", base))
             case .local:
                 $0.skip(.fetchBase)
                 $0.note(.fetchBase, tr("ws.setup.note.localBase", base))
             case .failed(let message):
                 // Offline or without access: the worktree starts from what was fetched last, so the setup goes on.
-                $0.finish(.fetchBase)
+                $0.finish(.fetchBase, now: now)
                 $0.note(.fetchBase, tr("ws.setup.note.fetchFailed", base, message))
             }
         }
