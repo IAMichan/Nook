@@ -9,6 +9,16 @@ final class SessionLivenessTests: XCTestCase {
     private let partial = #"{"type":"assistant","uuid":"4","message":{"stop_reason":null,"content":[{"type":"text"}]}}"#
     private let reply = #"{"type":"assistant","uuid":"5","message":{"stop_reason":"end_turn","content":[{"type":"text"}]}}"#
 
+    /// The Claude app warming up yesterday's chat, or `claude --resume` before its first prompt, is no activity.
+    func testReopeningAnEarlierConversationIsNoActivity() {
+        XCTAssertTrue(SessionLiveness.isQuietReopen(kind: "SessionStart", source: "resume"))
+        XCTAssertTrue(SessionLiveness.isQuietReopen(kind: "SessionStart", source: "Resume"))
+        XCTAssertFalse(SessionLiveness.isQuietReopen(kind: "SessionStart", source: "startup"), "a new session shows at once")
+        XCTAssertFalse(SessionLiveness.isQuietReopen(kind: "SessionStart", source: "compact"))
+        XCTAssertFalse(SessionLiveness.isQuietReopen(kind: "SessionStart", source: nil))
+        XCTAssertFalse(SessionLiveness.isQuietReopen(kind: "UserPromptSubmit", source: "resume"), "a prompt is activity")
+    }
+
     /// A done chat you have not settled stays listed until you do; a settled one for a day.
     func testDoneSessionStaysListedUntilSettled() {
         XCTAssertFalse(SessionLiveness.isExpired(done: true, settled: false, age: 30 * 24 * 3600), "a quiet chat never drops out")

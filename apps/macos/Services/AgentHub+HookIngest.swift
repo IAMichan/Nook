@@ -26,6 +26,9 @@ extension AgentHub {
             return !run.isEmpty
         }
 
+        /// An earlier conversation reopened without anything done in it yet (`SessionLiveness.isQuietReopen`).
+        var isQuietReopen: Bool { SessionLiveness.isQuietReopen(kind: kind, source: event["source"] as? String) }
+
         static func parse(_ data: Data) -> HookMessage? {
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             let event = (object["event"] as? [String: Any]) ?? [:]
@@ -113,6 +116,11 @@ extension AgentHub {
                 closeQuestion(id, response: nil, status: nil, step: nil)
             }
             rebuild()
+            connection.reply(nil)
+            return nil
+        }
+
+        if message.isQuietReopen {
             connection.reply(nil)
             return nil
         }
