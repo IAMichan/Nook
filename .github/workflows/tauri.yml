@@ -89,7 +89,7 @@ jobs:
           persist-credentials: false
       # The fuzz crate has no lockfile of its own: start from the app's, so nook-core runs with the versions that ship.
       - name: Lockfile
-        run: cp apps/tauri/Cargo.lock apps/tauri/core/fuzz/Cargo.lock
+        run: cp Cargo.lock core/fuzz/Cargo.lock # in apps/tauri, the default working directory
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/tauri/core/fuzz
