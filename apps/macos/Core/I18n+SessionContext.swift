@@ -43,6 +43,7 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Fold to one line",
         "usage.session.unfold": "Show context and limits",
         "usage.session.hide": "Hide usage",
+        "usage.session.breakdown": "What fills the context",
     ],
     .nl: [
         "session.context.addComment": "Aan de composer toevoegen met deze reactie",
@@ -83,6 +84,7 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Inklappen tot één regel",
         "usage.session.unfold": "Context en limieten tonen",
         "usage.session.hide": "Gebruik verbergen",
+        "usage.session.breakdown": "Waar de context uit bestaat",
     ],
     .de: [
         "session.context.addComment": "Diesen Kommentar zum Composer hinzufügen",
@@ -123,6 +125,7 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Auf eine Zeile einklappen",
         "usage.session.unfold": "Kontext und Limits zeigen",
         "usage.session.hide": "Nutzung ausblenden",
+        "usage.session.breakdown": "Woraus der Kontext besteht",
     ],
     .fr: [
         "session.context.addComment": "Ajouter ce commentaire au composer",
@@ -163,6 +166,7 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Replier sur une ligne",
         "usage.session.unfold": "Afficher le contexte et les limites",
         "usage.session.hide": "Masquer l’utilisation",
+        "usage.session.breakdown": "Ce qui remplit le contexte",
     ],
     .es: [
         "session.context.addComment": "Añadir este comentario al composer",
@@ -203,5 +207,6 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Plegar en una línea",
         "usage.session.unfold": "Mostrar contexto y límites",
         "usage.session.hide": "Ocultar uso",
+        "usage.session.breakdown": "Qué llena el contexto",
     ],
 ]

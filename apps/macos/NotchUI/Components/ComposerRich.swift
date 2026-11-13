@@ -529,29 +529,15 @@ enum ComposerFilePicker {
     }
 }
 
-/// What fills the context window, as Claude Code's `/context` says it: how much is used, a bar in the colors of its
-/// parts, a line per part with its size and share, the parts loaded only when needed, and how many tools, memory files,
-/// agents and skills there are. For an agent that only reports the conversation's size: that, the room kept for
-/// summarizing and what is left. Below: the choice to summarize before your next message, and Summarize now.
-struct ContextUsageCard: View {
+/// What fills the context window, as Claude Code's `/context` says it: a line per part with its size and share, the
+/// parts loaded only when needed, and how many tools, memory files, agents and skills there are. For an agent that only
+/// reports the conversation's size: that, the room kept for summarizing and what is left. Shown inline under the context
+/// bar of the session panel's usage section, opened and closed like an accordion.
+struct ContextUsageBreakdown: View {
     let usage: ContextUsage
-    let pressure: Double
-    var autoCompactAt: Int?
-    var onCompact: (() -> Void)?
-    var compactFirst: Bool?
-    var toggleCompactFirst: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(tr("compose.context.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
-            HStack {
-                Text(tr("compose.context.used", ContextMeter.percentText(usage.fraction)))
-                    .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
-                Spacer(minLength: NookTheme.Spacing.md)
-                Text("\(TokenTally.format(usage.usedTokens)) / \(TokenTally.format(usage.window))")
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).monospacedDigit()
-            }
-            bar
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 ForEach(usage.inWindow) { row($0) }
             }
@@ -577,48 +563,10 @@ struct ContextUsageCard: View {
                     .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let autoCompactAt {
-                Text(tr("compose.context.autoCompact", ContextMeter.tokensText(autoCompactAt)))
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            NookDivider()
-            actions
         }
-        .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
-        .frame(width: 300, alignment: .leading)
-        .background(DropdownStyle.panel)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
     }
-
-    @ViewBuilder
-    private var actions: some View {
-        if ContextMeter.suggestsCompact(pressure), onCompact != nil {
-            Text(tr("compose.context.nearlyFull"))
-                .font(NookTheme.TextStyle.detail).foregroundStyle(ContextMeter.level(pressure) == .critical ? NookTheme.coral : NookTheme.amber)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        if let compactFirst {
-            // Was the chip by the send button: back at a session whose prompt cache expired.
-            Toggle(isOn: Binding(get: { compactFirst }, set: { _ in toggleCompactFirst() })) {
-                Text(tr("compose.context.compactFirst")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .help(tr(compactFirst ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp",
-                     ContextMeter.tokensText(usage.usedTokens)))
-        }
-        if let onCompact {
-            HoverCardButton(help: tr("compose.context.compact"), action: onCompact) {
-                Label(tr("compose.context.compact"), icon: "arrow.down.right.and.arrow.up.left")
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
-            }
-        } else {
-            Text(tr("compose.context.noCompact")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-        }
-    }
-
-    private var bar: some View { ContextUsageBar(usage: usage) }
 
     private func row(_ category: ContextUsage.Category) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {

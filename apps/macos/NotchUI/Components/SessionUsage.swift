@@ -90,7 +90,7 @@ struct SessionUsageSnapshot: Equatable {
 // MARK: - The section
 
 /// The context and the limits of one session: the share of the window used with a bar in the colors of its parts
-/// (hover for the full breakdown), when it summarizes by itself, the choice to summarize first and Summarize now;
+/// (an accordion under it for the full breakdown), when it summarizes by itself, the choice to summarize first and Summarize now;
 /// then the account's windows with their reset and pace, All limits and a refresh. The docked card, the header's
 /// popover and the composer's alert all show this.
 struct SessionUsageSection: View {
@@ -100,6 +100,9 @@ struct SessionUsageSection: View {
     /// Closes the popover it is in, before All limits opens the usage modal.
     var close: () -> Void = {}
     private static let shownLimits = 6
+    /// Whether the context's breakdown is open, the same in every session and kept across launches.
+    @AppStorage("agents.panel.contextBreakdownOpen") private var breakdownOpen = false
+    @State private var breakdownHovering = false
 
     var body: some View {
         let snapshot = SessionUsageSnapshot.read(source, app: app, workspace: workspace)
@@ -136,8 +139,7 @@ struct SessionUsageSection: View {
                     Text(tr("usage.session.context")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
                         .accessibilityAddTraits(.isHeader)
                     // What the window means now (getting long, or when it summarizes by itself) behind an ⓘ, in the
-                    // context's tone once it suggests summarizing, instead of a sentence under the bar. It sits outside
-                    // the hover card's area, so its tooltip and the card never open together.
+                    // context's tone once it suggests summarizing, instead of a sentence under the bar.
                     if let note = contextNote(snapshot) {
                         SettingsInfoButton(text: note,
                                            tint: ContextMeter.suggestsCompact(pressure) ? snapshot.contextTint : NookTheme.textTertiary)
@@ -148,14 +150,15 @@ struct SessionUsageSection: View {
                 ContextUsageBar(usage: usage)
                     .frame(height: 10)
                     .contentShape(Rectangle())
+                    .onTapGesture { toggleBreakdown() }
                     .accessibilityHidden(true)
-                    // What fills the window, part by part, as the agent reports it.
-                    .hoverCard(arrowEdge: .leading) {
-                        ContextUsageCard(usage: usage, pressure: pressure, autoCompactAt: snapshot.autoCompactAt,
-                                         onCompact: compact(snapshot), compactFirst: snapshot.compactFirst,
-                                         toggleCompactFirst: toggleCompactFirst)
-                            .onAppear { if let runID = source.runID { workspace.refreshContextUsage(runID) } }
-                    }
+            }
+            // What fills the window, part by part, as the agent reports it: an accordion under the bar.
+            breakdownToggle
+            if breakdownOpen {
+                ContextUsageBreakdown(usage: usage)
+                    .transition(.opacity)
+                    .onAppear { refreshBreakdown() }
             }
             if let compactFirst = snapshot.compactFirst {
                 HStack(spacing: NookTheme.Spacing.sm) {
@@ -174,6 +177,33 @@ struct SessionUsageSection: View {
                 CompactNowButton(action: onCompact)
             }
         }
+    }
+
+    /// "What fills the context ⌄": opens and closes the breakdown under the bar.
+    private var breakdownToggle: some View {
+        Button(action: toggleBreakdown) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text(tr("usage.session.breakdown")).font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(breakdownHovering ? NookTheme.paper : NookTheme.textSecondary)
+                Image(icon: "chevron.right")
+                    .font(NookTheme.font(8, .bold)).foregroundStyle(NookTheme.textTertiary)
+                    .rotationEffect(.degrees(breakdownOpen ? 90 : 0))
+                Spacer(minLength: 0)
+            }
+            .frame(height: 18)
+            .contentShape(Rectangle())
+            .onHover { breakdownHovering = $0 }
+        }
+        .buttonStyle(.nookPlain)
+    }
+
+    private func toggleBreakdown() {
+        withAnimation(NookTheme.Motion.panel) { breakdownOpen.toggle() }
+    }
+
+    /// Asks the agent again what fills its window, as the breakdown opens.
+    private func refreshBreakdown() {
+        if let runID = source.runID { workspace.refreshContextUsage(runID) }
     }
 
     /// "62%  124k / 200k".
@@ -262,7 +292,7 @@ private struct CompactNowButton: View {
     }
 }
 
-/// One bar across: each part of the window in its color (`ContextUsageCard.color`), the buffer dim, the free space empty.
+/// One bar across: each part of the window in its color (`ContextUsageBreakdown.color`), the buffer dim, the free space empty.
 struct ContextUsageBar: View {
     let usage: ContextUsage
     var height: CGFloat = 4
@@ -271,7 +301,7 @@ struct ContextUsageBar: View {
         GeometryReader { geometry in
             HStack(spacing: 1) {
                 ForEach(usage.inWindow.filter { $0.kind != .free }) { category in
-                    Rectangle().fill(ContextUsageCard.color(category))
+                    Rectangle().fill(ContextUsageBreakdown.color(category))
                         .frame(width: max(1, geometry.size.width * usage.share(category)))
                 }
                 Spacer(minLength: 0)
