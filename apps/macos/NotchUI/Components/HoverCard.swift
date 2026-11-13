@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The card a list row shows on hover, as in the Claude app: a title, then a few lines with an icon each.
@@ -122,6 +123,54 @@ enum HoverCardWarmth {
     }
 }
 
+/// Lets the click that lands beside an open hover card act at once. The card is a popover, which takes the keyboard from
+/// its window; the click on a row under it then only gave the window its key status back, and a second click was needed
+/// to open the row. `acceptsFirstMouse` on the window's hosting view (`NSWindow.keyIsOwnPopover`) does not cover this:
+/// AppKit asks the view the click lands on, and inside a scrolling list that is a view of the scroll view's own. So
+/// before AppKit hands the click on, the cards close and the window takes its key status back itself.
+@MainActor
+enum HoverCardClicks {
+    /// The cards on screen, and how to close each.
+    private static var open: [UUID: () -> Void] = [:]
+    private static var monitor: Any?
+
+    static func opened(_ id: UUID, close: @escaping () -> Void) {
+        open[id] = close
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            MainActor.assumeIsolated { clicked(event) }
+            return event
+        }
+    }
+
+    static func closed(_ id: UUID) {
+        guard open.removeValue(forKey: id) != nil, open.isEmpty, let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+    }
+
+    private static func clicked(_ event: NSEvent) {
+        // A click in a card itself (its buttons) goes on as it is.
+        guard let window = event.window, !isCard(window) else { return }
+        let closes = Array(open.values)
+        closes.forEach { $0() }
+        if takesKey(appActive: NSApp.isActive, windowIsKey: window.isKeyWindow, canBecomeKey: window.canBecomeKey,
+                    hasSheet: window.attachedSheet != nil) {
+            window.makeKey()
+        }
+    }
+
+    /// Whether the window clicked beside an open card takes the keyboard back before the click reaches it, so the click
+    /// acts instead of only activating the window: while Nook is in front, never past a sheet in front of the window.
+    nonisolated static func takesKey(appActive: Bool, windowIsKey: Bool, canBecomeKey: Bool, hasSheet: Bool) -> Bool {
+        appActive && !windowIsKey && canBecomeKey && !hasSheet
+    }
+
+    private static func isCard(_ window: NSWindow) -> Bool {
+        String(describing: type(of: window)).contains("Popover")
+    }
+}
+
 /// Opens a card next to the view once the pointer rests on it a moment (at once when its delays are zero), so sweeping
 /// over a list stays quiet. The card stays while the pointer is on the view or on the card, and waits a moment after it
 /// left either, so you can cross the gap between them and click what the card holds. A click on the view closes it.
@@ -168,11 +217,18 @@ private struct HoverCardModifier<Card: View>: ViewModifier {
             .onChange(of: showCard) { _, shown in
                 // A popover closed by a click elsewhere never reports the pointer leaving it.
                 if !shown { onCard = false }
+                if shown {
+                    let showCard = $showCard
+                    HoverCardClicks.opened(id) { showCard.wrappedValue = false }
+                } else {
+                    HoverCardClicks.closed(id)
+                }
                 presented?.wrappedValue = shown
                 if warm { noteWarm(shown: shown) }
             }
             .onDisappear {
                 delay?.cancel()
+                HoverCardClicks.closed(id)
                 if warm, HoverCardWarmth.open?.id == id { HoverCardWarmth.open = nil }
                 if warm, HoverCardWarmth.hoveredRow?.id == id { HoverCardWarmth.hoveredRow = nil }
             }

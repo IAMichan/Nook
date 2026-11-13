@@ -116,11 +116,24 @@ final class NotchViewModel: ObservableObject {
                 sessionLayouts[oldValue] = currentSessionLayout()
                 let layout = sessionLayouts[selectedAgentID]
                 restoringLayout = true
+                // Quiet: the switch to `selectedAgentID` already told the views, which read these with it. A change
+                // announced per panel property made SwiftUI draw the whole panel again for each one, before the next,
+                // which held the click that opens a session for most of a second.
+                quietPanel = true
                 withTransaction(Transaction(animation: nil)) { restoreSessionLayout(layout) }
+                quietPanel = false
                 restoringLayout = false
             }
             resizeForWorkbench()
         }
+    }
+
+    /// The side and bottom panel's properties announce a change as `@Published` ones do (`panelWillChange`), except while
+    /// a session switch puts them back together with `selectedAgentID`, which announced the change for all of them.
+    private var quietPanel = false
+
+    private func panelWillChange() {
+        if !quietPanel { objectWillChange.send() }
     }
 
     /// Set while `continueSession` moves the open conversation to its new key.
@@ -151,7 +164,8 @@ final class NotchViewModel: ObservableObject {
 
     /// What the selected session shows in the Agents tab: its conversation, or a terminal or the browser next to it.
     /// A tool that opens gets its own tab in the side panel, and leaves the bottom panel if it was open there.
-    @Published var sessionTool: SessionTool = .conversation {
+    var sessionTool: SessionTool = .conversation {
+        willSet { panelWillChange() }
         didSet {
             if SessionTool.sideTabs.contains(sessionTool) {
                 if !sessionTabs.contains(sessionTool) { sessionTabs.append(sessionTool) }
@@ -173,10 +187,10 @@ final class NotchViewModel: ObservableObject {
 
     /// The tools open as tabs in a session's side panel, in the order you opened them. They stay while the panel is
     /// put away (`toggleSidePanel`), so it opens again on what it showed; with none it opens on the list of tools.
-    @Published var sessionTabs: [SessionTool] = []
+    var sessionTabs: [SessionTool] = [] { willSet { panelWillChange() } }
 
     /// The sub-thread the side panel's Sub-thread tab shows beside its session (`SubThreadStrip`), nil with none.
-    @Published var sideSubThread: UUID?
+    var sideSubThread: UUID? { willSet { panelWillChange() } }
 
     /// The tools pinned to the front of the tab row (a tab's menu): `SidePanelTabOrder` keeps them there while you drag
     /// the others. Kept while Nook runs, for the side and the bottom panel alike.
@@ -242,7 +256,8 @@ final class NotchViewModel: ObservableObject {
 
     /// What the bottom panel under the selected session's conversation shows: nothing (closed), the list of tools, or
     /// a tool, the terminal at first. A tool that opens here gets its own tab, and leaves the side panel.
-    @Published var bottomTool: SessionTool = .conversation {
+    var bottomTool: SessionTool = .conversation {
+        willSet { panelWillChange() }
         didSet {
             if SessionTool.panelTools.contains(bottomTool) {
                 if !bottomTabs.contains(bottomTool) { bottomTabs.append(bottomTool) }
@@ -253,8 +268,9 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// The tools open as tabs in the bottom panel, like `sessionTabs`; never one that is open in the side panel.
-    @Published var bottomTabs: [SessionTool] = (UserDefaults.standard.stringArray(forKey: "nook.agents.bottomTabs") ?? [])
+    var bottomTabs: [SessionTool] = (UserDefaults.standard.stringArray(forKey: "nook.agents.bottomTabs") ?? [])
         .compactMap(SessionTool.init(rawValue:)).filter { SessionTool.panelTools.contains($0) } {
+        willSet { panelWillChange() }
         didSet { UserDefaults.standard.set(bottomTabs.map(\.rawValue), forKey: "nook.agents.bottomTabs") }
     }
 
@@ -304,9 +320,9 @@ final class NotchViewModel: ObservableObject {
     /// The Pull request tabs of the side panel: each shows one pull request, or (no request) the list to pick one. A pull
     /// request opened from a link or from the list takes the list tab in view, else a tab of its own, so the ones you
     /// have open stay. Not kept across launches.
-    @Published var sidePullRequestTabs: [SidePullRequestTab] = []
+    var sidePullRequestTabs: [SidePullRequestTab] = [] { willSet { panelWillChange() } }
     /// The Pull request tab in view while the side panel shows one.
-    @Published var activeSidePullRequest: UUID?
+    var activeSidePullRequest: UUID? { willSet { panelWillChange() } }
 
     /// The pull request in the active Pull request tab, if it shows one.
     var sidePullRequest: PullRequestOpenRequest? { sidePullRequestTabs.first { $0.id == activeSidePullRequest }?.request }
