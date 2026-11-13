@@ -72,6 +72,8 @@ struct AgentCommandPalette: View {
         var dragSession: String? = nil
         /// A key of its own in this list (⌘1…⌘9 on the projects), shown where a command's key would be.
         var keyHint: String? = nil
+        /// A project's folder: the row shows the project's icon (yours, else its favicon or app icon) for the symbol.
+        var project: String? = nil
         /// Runs it; true keeps the palette open (a step into a list).
         let run: () -> Bool
     }
@@ -341,7 +343,7 @@ struct AgentCommandPalette: View {
             .filter { seen.insert($0).inserted && !settings.isArchivedProject($0) && !ScratchProjects.isScratch($0) }
         var out = paths.map { path in
             Entry(id: "p:" + path, group: .projects, symbol: "folder", title: settings.projectDisplayName(path),
-                  detail: AgentPathFormat.tilde(path)) {
+                  detail: AgentPathFormat.tilde(path), project: path) {
                 PromptLinkInbox.shared.requestProject(path)
                 viewModel.selectedAgentID = "new"
                 return false
@@ -456,7 +458,8 @@ struct AgentCommandPalette: View {
     }
 
     private func row(_ entry: Entry, selected: Bool) -> some View {
-        PaletteRow(symbol: entry.symbol, title: entry.title, detail: entry.detail, selected: selected,
+        PaletteRow(symbol: entry.symbol, project: entry.project, projectIcon: entry.project.flatMap(app.workspace.settings.projectIcon),
+                   title: entry.title, detail: entry.detail, selected: selected,
                    keyHint: entry.keyHint ?? shortcut(entry.command),
                    steps: ["n:new", "x:appearance", "x:theme"].contains(entry.id))
     }
@@ -477,11 +480,14 @@ struct AgentCommandPalette: View {
     }
 }
 
-/// A row of a palette (⇧⌘K, the new-session projects, "Add project"): a symbol (or a site's logo), the title, a detail,
+/// A row of a palette (⇧⌘K, the new-session projects, "Add project"): a symbol (or a site's logo, or a project's icon), the title, a detail,
 /// the key that runs it and a chevron when it steps into a list. Lit while the pointer or the arrow keys are on it.
 struct PaletteRow: View {
     let symbol: String
     var site: String? = nil
+    /// A project's folder: its icon (`projectIcon`, else the project's favicon or app icon) stands in for the symbol.
+    var project: String? = nil
+    var projectIcon: ProjectIcon? = nil
     let title: String
     var detail = ""
     let selected: Bool
@@ -491,7 +497,10 @@ struct PaletteRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Group {
-                if let site {
+                if let project {
+                    ProjectIconView(icon: projectIcon, size: 16, folder: project, symbol: symbol)
+                        .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
+                } else if let site {
                     SiteIcon(domain: site, fallback: symbol, tint: selected ? NookTheme.iris : NookTheme.textTertiary, size: 14)
                 } else {
                     NookSymbol(symbol, size: 13).font(NookTheme.font(12, .medium))
