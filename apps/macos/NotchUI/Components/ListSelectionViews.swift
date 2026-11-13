@@ -61,6 +61,9 @@ struct SelectionAction: Identifiable {
     /// Nil for none.
     var note: Binding<String>? = nil
     var notePlaceholder: String? = nil
+    /// Other ways to do it, in a menu on a chevron beside its button (Merge: auto-merge, another merge method). Each asks
+    /// its own question first when it has one, as the action does.
+    var menu: [SelectionAction] = []
     let perform: () -> Void
     var id: String { symbol + label }
 }
@@ -84,7 +87,7 @@ struct SelectionBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            if let asking = actions.first(where: { $0.id == confirming }) {
+            if let asking = (actions + actions.flatMap(\.menu)).first(where: { $0.id == confirming }) {
                 question(asking)
             } else {
                 header
@@ -206,6 +209,53 @@ struct SelectionBar: View {
 
     @ViewBuilder
     private func actionButton(_ action: SelectionAction, labeled: Bool) -> some View {
+        if action.menu.isEmpty {
+            singleButton(action, labeled: labeled)
+        } else {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                singleButton(action, labeled: labeled)
+                menuButton(action, height: labeled ? 30 : 26)
+            }
+        }
+    }
+
+    /// The chevron beside an action with other ways to do it.
+    private func menuButton(_ action: SelectionAction, height: CGFloat) -> some View {
+        let items = action.menu
+        let usable = count > 0 && items.contains(where: \.enabled)
+        return Menu {
+            ForEach(items) { item in
+                Group {
+                    // A menu draws only SF Symbols and Nook's icons; an item without one (or with Nook's own pull request
+                    // mark) shows its name alone.
+                    if item.symbol.isEmpty || item.symbol.hasPrefix("nook.") {
+                        Button(title(item)) { run(item) }
+                    } else {
+                        Button { run(item) } label: { Label(title(item), icon: item.symbol) }
+                    }
+                }
+                .disabled(!item.enabled)
+            }
+        } label: {
+            Image(icon: "chevron.down")
+                .font(NookTheme.font(10, .bold))
+                .foregroundStyle(action.primary ? NookTheme.onPrimary : NookTheme.paper)
+                .frame(width: height, height: height)
+                .roundedBackground(action.primary ? NookTheme.primary : NookTheme.field, radius: NookTheme.Radius.control)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.nookButton)
+        .buttonStyle(.nookPlain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .opacity(usable ? 1 : 0.4)
+        .disabled(!usable)
+        .help(tr("select.moreOptions", action.label))
+        .accessibilityLabel(tr("select.moreOptions", action.label))
+    }
+
+    @ViewBuilder
+    private func singleButton(_ action: SelectionAction, labeled: Bool) -> some View {
         let usable = action.enabled && count > 0
         Group {
             if labeled, action.primary {
