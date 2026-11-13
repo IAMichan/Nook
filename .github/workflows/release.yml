@@ -1,10 +1,12 @@
 name: Release
-# Without a run-name, a run started by a tag push is listed under the message of the tagged commit, so the run that
-# publishing starts (see "Release token" below) looked like an unrelated change. Name every run after what it releases.
+# Runs are named the way the releases are ("Nook 0.1.0 Beta 7"): after what they make, not after the tagged commit,
+# which GitHub would show for a tag push. The version itself is computed later (scripts/next-release-tag.sh).
 run-name: >-
-  ${{ github.event_name == 'push' && format('Release {0}', github.ref_name)
-  || github.event_name == 'schedule' && 'Release: daily fresh beta check'
-  || format('Release: {0} from {1}', inputs.bump, github.ref_name) }}
+  ${{ github.event_name == 'push' && format('Nook {0}', github.ref_name)
+  || github.event_name == 'schedule' && 'Nook: daily beta check'
+  || inputs.bump == 'stable' && format('Nook: stable release of {0}', github.ref_name)
+  || inputs.bump == 'beta' && 'Nook: next beta'
+  || format('Nook: first beta of the next {0} version', inputs.bump) }}
 
 # Builds Nook.app in Release configuration and publishes it as a beta GitHub Release with a .dmg, a .zip and checksums.
 # Then tauri.yml builds the Windows (.exe, .msi) and Linux (.deb, .AppImage) apps of the same commit, and the `desktop`
@@ -17,8 +19,10 @@ run-name: >-
 #   stable the current version without the suffix (v0.1.0), built from its newest beta, so a regular release only
 #          ships code that beta users already ran. Run it on that beta's tag (Run workflow › Use workflow from › Tags ›
 #          v0.1.0-beta.4); the beta must be on main.
-# The tag is computed by scripts/next-release-tag.sh. Pushing a tag yourself (`git push origin v0.3.0-beta.1`) works
-# too. A tag with a suffix (-beta.N) becomes a pre-release; one without (v1.0.0) a regular release.
+# The tag is computed by scripts/next-release-tag.sh. Pushing a regular release tag yourself (`git push origin v1.0.0`)
+# works too; beta tags are left out of the push trigger, like t3code leaves out its nightly tags, because publishing
+# creates them and would otherwise start a second run that has nothing to do. Release a beta with Run workflow.
+# A tag with a suffix (-beta.N) becomes a pre-release; one without (v1.0.0) a regular release.
 # The version without the suffix becomes the app's CFBundleShortVersionString.
 #
 # Fresh beta: with the repository variable NOOK_FRESH_BETA set to `true`, the schedule below releases the next beta
@@ -55,7 +59,7 @@ run-name: >-
 # chat-helper apps stay on notifications in this build.
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', '!v*-beta.*'] # beta tags come from `publish`; see "Pushing a regular release tag" above
   schedule:
     - cron: '17 3 * * *' # fresh beta, only with NOOK_FRESH_BETA=true (see above)
   workflow_dispatch:
