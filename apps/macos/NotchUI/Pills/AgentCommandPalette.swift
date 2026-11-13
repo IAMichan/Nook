@@ -74,6 +74,8 @@ struct AgentCommandPalette: View {
         var keyHint: String? = nil
         /// A project's folder: the row shows the project's icon (yours, else its favicon or app icon) for the symbol.
         var project: String? = nil
+        /// Stays in a footer under the list, out of the scroll and the filter ("No project" under the projects).
+        var pinned = false
         /// Runs it; true keeps the palette open (a step into a list).
         let run: () -> Bool
     }
@@ -83,7 +85,10 @@ struct AgentCommandPalette: View {
     private var entries: [Entry] {
         let parsed = PaletteQuery(query)
         switch sublist {
-        case .projects: return numbered(filtered(projectEntries, parsed))
+        case .projects:
+            // The pinned rows come last, so the highlighted row's offset is the same in the list and in the footer.
+            let all = projectEntries
+            return numbered(filtered(all.filter { !$0.pinned }, parsed)) + all.filter(\.pinned)
         case .appearance: return filtered(appearanceEntries, parsed)
         case .theme: return filtered(themeEntries, parsed)
         case nil: break
@@ -350,7 +355,7 @@ struct AgentCommandPalette: View {
             }
         }
         out.append(Entry(id: "p:none", group: .projects, symbol: "tray", title: tr("ws.new.noProject"),
-                         detail: tr("ws.new.noProjectDetail")) {
+                         detail: tr("ws.new.noProjectDetail"), pinned: true) {
             // A scratch path that is not there yet: the composer makes the folder as it opens on it, and removes it
             // again when you leave it without starting anything.
             let folder = NookPaths.scratchDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true).path
@@ -401,35 +406,40 @@ struct AgentCommandPalette: View {
             if list.isEmpty {
                 ListEmptyNote(sublist?.emptyNote ?? tr("palette.none"), padding: NookTheme.Spacing.xl)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                            ForEach(Array(list.enumerated()), id: \.element.id) { offset, entry in
-                                if offset == 0 || list[offset - 1].group != entry.group {
-                                    NookSectionLabel(entry.group.title, inset: NookTheme.Spacing.md)
-                                        .padding(.top, offset == 0 ? NookTheme.Spacing.xxs : NookTheme.Spacing.sm)
-                                        .padding(.bottom, NookTheme.Spacing.xxs)
+                let scrolled = list.filter { !$0.pinned }
+                if !scrolled.isEmpty {
+                    ScrollViewReader { proxy in
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                                ForEach(Array(scrolled.enumerated()), id: \.element.id) { offset, entry in
+                                    if offset == 0 || scrolled[offset - 1].group != entry.group {
+                                        NookSectionLabel(entry.group.title, inset: NookTheme.Spacing.md)
+                                            .padding(.top, offset == 0 ? NookTheme.Spacing.xxs : NookTheme.Spacing.sm)
+                                            .padding(.bottom, NookTheme.Spacing.xxs)
+                                    }
+                                    listRow(entry, offset: offset, in: list)
+                                        .id(entry.id)
                                 }
-                                row(entry, selected: offset == index)
-                                    .id(entry.id)
-                                    // The pointer and the arrow keys share one highlighted row.
-                                    .onHover { if $0 { index = offset } }
-                                    .nookClickable()
-                                    .onTapGesture { index = offset; perform(list) }
-                                    // Dragged onto the composer under the palette, a session becomes its chip, as a
-                                    // row of the Agents list does; the palette closes as the drag starts so the
-                                    // composer can take the drop.
-                                    .sessionLinkDrag(id: entry.dragSession, title: entry.title, onStart: close)
                             }
+                            .padding(NookTheme.Spacing.sm)
                         }
-                        .padding(NookTheme.Spacing.sm)
+                        .frame(maxHeight: 360)
+                        // The arrow keys keep the highlighted row in view; a row the pointer moved to is already in view.
+                        .onChange(of: index) { _, value in
+                            guard scrolled.indices.contains(value) else { return }
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(scrolled[value].id) }
+                        }
                     }
-                    .frame(maxHeight: 360)
-                    // The arrow keys keep the highlighted row in view; a row the pointer moved to is already in view.
-                    .onChange(of: index) { _, value in
-                        guard list.indices.contains(value) else { return }
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo(list[value].id) }
+                }
+                // The pinned rows stay in view under the list, however long it is or whatever you typed.
+                if scrolled.count < list.count {
+                    if !scrolled.isEmpty { NookDivider() }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        ForEach(Array(list.enumerated()).filter { $0.element.pinned }, id: \.element.id) { offset, entry in
+                            listRow(entry, offset: offset, in: list)
+                        }
                     }
+                    .padding(NookTheme.Spacing.sm)
                 }
             }
         }
@@ -455,6 +465,17 @@ struct AgentCommandPalette: View {
             }
             return true
         }
+    }
+
+    /// A row at `offset` in `list`: the pointer and the arrow keys share one highlighted row.
+    private func listRow(_ entry: Entry, offset: Int, in list: [Entry]) -> some View {
+        row(entry, selected: offset == index)
+            .onHover { if $0 { index = offset } }
+            .nookClickable()
+            .onTapGesture { index = offset; perform(list) }
+            // Dragged onto the composer under the palette, a session becomes its chip, as a row of the Agents list
+            // does; the palette closes as the drag starts so the composer can take the drop.
+            .sessionLinkDrag(id: entry.dragSession, title: entry.title, onStart: close)
     }
 
     private func row(_ entry: Entry, selected: Bool) -> some View {
