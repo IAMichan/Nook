@@ -109,7 +109,7 @@ member cannot do:
 | Ticks on every message of yours | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (one tick, no receipts) | ✓ (two once read, from each member's read horizon) | ✓ (one tick, no receipts) | ✓ (one tick once it is in Sent; mail keeps no read receipts) |
 | Who read it, in a group | ✓ (per member) | ✓ (`message.receipt`, Baileys engine) | – | ✓ (`getMessageViewers`) | ✓ (`seen` per person) | – (Slack keeps no read receipts) | ✓ (`consumptionhorizons`, where read receipts are on, up to 20 people) | – (the website does not say per person) | – (mail keeps no read receipts) |
 | When they read it, in a private chat | ✓ (receipt arrival) | ✓ (receipt arrival) | ✓ (`date_read`) | ✓ (`getMessageReadDate`, unless either of you hides it) | ✓ (`seen` time) | – (Slack keeps no read receipts) | – (the read horizon says that, not when) | – (only "Opened" in the list, without a time) | – (mail keeps no read receipts) |
-| Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) | – (not read from the page yet) | – (mail has none) |
+| Who is typing | ✓ (`chat_presence`, while a chat is open; a private chat's person watched with `/user/presence/subscribe`, its @lid chat id mapped to their number) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) | – (not read from the page yet) | – (mail has none) |
 | Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) | – (the list shows the subject line; attachments are in the thread view) |
 | People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) | ✓ (the name in the sender's address) |
 | Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ | ✓ (Mail read again) |
@@ -372,7 +372,10 @@ Nook asks the gateway every ten seconds; with one, it still asks once a minute (
 webhook that keeps bringing ticks and typing may still have dropped a message.
 
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
-WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.
+WhatsApp sends no typing updates. In a private chat the person is watched as well (GOWA's `/user/presence/subscribe`), and
+GOWA's `chat_presence` names that chat by the person's @lid while every other event names it by their number: Nook
+takes the number (`from`), so the typing shows in the chat. While it is online, the phone may hold back its own
+notifications.
 
 ## Coding agent features
 

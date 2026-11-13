@@ -462,8 +462,13 @@ actor GOWAProvider: WhatsAppProvider {
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(id))/read", json: ["phone": chat])
     }
 
+    /// Online while a chat is open; a private chat's person is watched as well (`/user/presence/subscribe`, as WhatsApp
+    /// Web does when a chat opens), so their typing reaches this device too. A group needs no watch.
     func setOnline(_ online: Bool, chat: String?) async {
         _ = try? await scoped("POST", "/send/presence", json: ["type": online ? "available" : "unavailable"])
+        if online, let chat, WAJID.kind(chat) == .person, !chat.hasSuffix("@lid") {
+            _ = try? await scoped("POST", "/user/presence/subscribe", json: ["phone": chat])
+        }
     }
 
     func contacts() async -> [WAContact] {
