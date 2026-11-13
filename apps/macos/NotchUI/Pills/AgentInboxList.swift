@@ -723,7 +723,8 @@ struct AgentInboxList: View {
                 }
             }
             // Dragged onto an agent's composer, the row becomes that session's chip (`SessionLink`).
-            .sessionLinkDrag(id: runID(item)?.uuidString, title: item.title)
+            // A press on its Settle or Wake button that moves is that button's sweep, not a drag of the row.
+            .sessionLinkDrag(id: runID(item)?.uuidString, title: item.title, unless: { SessionSweep.rows.origin != nil })
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
@@ -753,8 +754,9 @@ struct AgentInboxList: View {
         }
     }
 
-    /// How long the pointer rests on a row before its session is read ahead of the click.
-    private static let restBeforePrefetch: Duration = .milliseconds(120)
+    /// How long the pointer rests on a row before its session is read ahead of the click: short enough that a pointer
+    /// moved straight to a row and clicked has its read under way, long enough that sweeping over the list reads nothing.
+    private static let restBeforePrefetch: Duration = .milliseconds(50)
 
     /// Reads what opening this row shows, off the main thread: a session Nook runs its timeline, an earlier session the
     /// session that took it over (else its transcript), a running session its transcript.
@@ -792,6 +794,8 @@ struct AgentInboxList: View {
         switch selection.click(command: keys.command, shift: keys.shift) {
         case .open:
             clickedID = item.id
+            // A click faster than the hover's rest: the read starts now, before the session's first frame asks for it.
+            if current != item.id { prefetch(item) }
             select(item.id)
             if entry.woke { store.dismissWoke(item.id) }
         case .toggle:
