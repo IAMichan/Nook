@@ -236,19 +236,40 @@ jobs:
   # new job to `needs` (and, when it can be skipped, to the jq map below). `always()` rather than `!cancelled()`: a
   # skipped job reports success to the ruleset, so a cancelled run must still produce a failing check.
   # Drafts and closed pull requests run nothing; GitHub does not merge a draft, and marking it ready starts a new run.
+  # One exception: a pull request run cancelled because the PR was merged or closed, or because a newer push replaced
+  # its commit, passes. Its commit can no longer be merged through this run, so a red check there only reports the
+  # cancel, not a failure. A cancel while the commit is still the open PR's head stays red.
   check:
     name: Check
     if: always() && github.event.action != 'closed' && !github.event.pull_request.draft
     needs: [changes, files, workflows, github_scripts, docs, dependencies, macos, ios, packages, relay, tauri, chatd, core_tests]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # reads whether a cancelled run's PR is still open at this commit
     steps:
       - name: Require every job to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          # A run cancelled after its PR was merged, closed or pushed to again is superseded, not failed. Anything other
+          # than a cancel (a failure, or a skip that was needed) still fails below.
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && echo "$RESULTS" | jq -e 'any(.[]; .result == "cancelled")
+              and all(.[]; .result == "success" or .result == "skipped" or .result == "cancelled")' > /dev/null; then
+            pr=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '.state + " " + .head.sha')
+            if [ "$pr" != "open $PR_HEAD_SHA" ]; then
+              echo "::notice::Cancelled because pull request #$PR_NUMBER was merged, closed or updated ($pr); nothing failed."
+              exit 0
+            fi
+          fi
           # A job may skip only when `changes` said its area was not needed, or when it only runs on pull requests and
           # this run is not one (a push to main, a merge queue group, a manual run).
           echo "$RESULTS" | jq -e --arg event "$EVENT_NAME" '.changes.outputs as $gates
