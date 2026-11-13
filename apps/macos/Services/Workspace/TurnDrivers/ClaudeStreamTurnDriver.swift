@@ -62,7 +62,6 @@ extension WorkspaceManager {
             toolSearch: claudeToolSearch(run), tuning: appliedTuning(run),
             effort: run.effort, speedTier: speedTier(run), ultracode: ultracode(run))), for: run)
         spec.initialInput = []
-        let suggests = launchesPromptSuggestions(run, executable: executable)
         let process = AgentProcess(spec: spec)
         process.onLines = { [weak self, weak process] lines in
             let parsed = ParsedStreamLine.parse(lines, provider: run.provider)
@@ -85,7 +84,6 @@ extension WorkspaceManager {
             Task { @MainActor in self?.processExited(id, status: status, stderr: stderr, process: token) }
         }
         guard (try? process.start()) != nil else { return }
-        if suggests { agentSuggestsPrompts.insert(id) } else { agentSuggestsPrompts.remove(id) }
         parkWarmClaude(id, process, key: claudeKey(run))
     }
 

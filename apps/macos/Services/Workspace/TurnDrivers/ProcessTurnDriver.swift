@@ -97,7 +97,6 @@ extension WorkspaceManager {
             return
         }
         processes[id] = process
-        if input.promptSuggestions { agentSuggestsPrompts.insert(id) } else { agentSuggestsPrompts.remove(id) }
         if forkNext.remove(id) != nil { forkLaunched.insert(id) } else { forkLaunched.remove(id) }
         if rollback != nil { run.pendingRollback = nil }
         run.move(to: .running)

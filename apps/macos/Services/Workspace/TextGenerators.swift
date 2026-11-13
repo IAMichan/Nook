@@ -256,10 +256,6 @@ enum NextPromptSuggestion {
     /// At most this many characters are shown and taken with Tab.
     static let maxLength = 240
 
-    /// How long Nook waits for an agent's own suggestion (Claude Code's `prompt_suggestion`) before the generator writes
-    /// one. The agent predicts on its warm cache in a few seconds; when it stays silent it sends nothing to say so.
-    static let agentGrace: TimeInterval = 5
-
     /// The Claude model the agent route writes a suggestion with: the session's own, as you chose it, so the prediction
     /// is as good as the conversation (measured on 2026-11-13: Opus 5.5 at low effort answered in ~1.3 s with ~60 output
     /// tokens, where Haiku thought first and took 2–5 s). Nil, so the small default, for any session not on Claude Code:
