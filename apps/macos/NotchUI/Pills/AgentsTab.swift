@@ -16,6 +16,8 @@ struct AgentsTab: View {
     @State private var palette = false
     /// The palette opened by the new-session button, on the projects to start in.
     @State private var paletteOnProjects = false
+    /// Clones started from "Add project": once one is done its folder becomes a project and the composer opens on it.
+    @State private var pendingClones: Set<UUID> = []
     /// How wide the session list is: drag the line beside it, double-click it to reset. Remembered.
     @AppStorage("nook.agents.listWidth") private var listWidth = PanelLayout.agentsList
     /// The list is put away beside a session, for more room for the conversation. Remembered.
@@ -202,10 +204,30 @@ struct AgentsTab: View {
                     .transition(.opacity)
             }
         }
+        // "Add project" from the list: the same kind of palette, on the sources a project comes from.
+        .overlay(alignment: .top) {
+            if viewModel.addsProject {
+                AddProjectPalette(workspace: app.workspace,
+                                  added: { path in viewModel.addsProject = false; addProject(path) },
+                                  cloning: { id in viewModel.addsProject = false; pendingClones.insert(id) },
+                                  close: { viewModel.addsProject = false })
+                    .padding(.top, 40)
+                    .transition(.opacity)
+            }
+        }
+        // One palette at a time.
+        .onChange(of: viewModel.addsProject) { _, adds in if adds { palette = false } }
+        .onChange(of: palette) { _, open in if open { viewModel.addsProject = false } }
+        // A clone started from "Add project" is done: its folder becomes a project and the composer opens on it.
+        .onReceive(CloneCenter.shared.$finished) { finished in
+            guard let finished, pendingClones.remove(finished.id) != nil else { return }
+            addProject(finished.path)
+        }
         // A new session asked for anywhere (⌘N, a button, search) opens on the projects to start in.
         .onChange(of: viewModel.picksProjectForNewSession, initial: true) { _, asked in
             guard asked else { return }
             viewModel.picksProjectForNewSession = false
+            viewModel.addsProject = false
             paletteOnProjects = true
             palette = true
         }
@@ -254,6 +276,17 @@ struct AgentsTab: View {
             // First the project the session starts in, in the palette's list of projects.
             PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.requestNewSession() }
         }
+    }
+
+    /// Adds a project ("Add project"): pinned, so it is in the pickers and its folder shows when the list is
+    /// grouped, and the new-session composer opens on it.
+    private func addProject(_ path: String) {
+        withAnimation(NookTheme.reveal) {
+            app.workspace.settings.addProject(path)
+            InboxStore.shared.collapsedProjects.remove(InboxProject.key(folder: (path as NSString).lastPathComponent, path: path))
+        }
+        PromptLinkInbox.shared.requestProject(path)
+        open("new")
     }
 
     // MARK: Selection

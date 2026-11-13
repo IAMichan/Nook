@@ -431,12 +431,7 @@ struct AgentCommandPalette: View {
                 }
             }
         }
-        // As wide as a narrow tab allows, never wider than the usual 480.
-        .frame(maxWidth: .infinity)
-        .frame(maxWidth: 480)
-        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
-        .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
-        .padding(.horizontal, NookTheme.Spacing.lg)
+        .paletteCard()
         .focusOnAppear($focused)
         .onChange(of: query) { _, _ in index = 0 }
         .onChange(of: sublist) { _, _ in index = 0 }
@@ -461,23 +456,9 @@ struct AgentCommandPalette: View {
     }
 
     private func row(_ entry: Entry, selected: Bool) -> some View {
-        HStack(spacing: 10) {
-            NookSymbol(entry.symbol, size: 13).font(NookTheme.font(12, .medium)).frame(width: 18)
-                .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
-            Text(entry.title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
-            if !entry.detail.isEmpty {
-                Text(entry.detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
-            }
-            Spacer(minLength: 0)
-            if let keys = entry.keyHint ?? shortcut(entry.command) { NookKeyHint(text: keys) }
-            if ["n:new", "x:appearance", "x:theme"].contains(entry.id) {
-                Image(icon: "chevron.right").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 34)
-        .roundedBackground(selected ? NookTheme.smoke : .clear, radius: NookTheme.Radius.control)
-        .contentShape(Rectangle())
+        PaletteRow(symbol: entry.symbol, title: entry.title, detail: entry.detail, selected: selected,
+                   keyHint: entry.keyHint ?? shortcut(entry.command),
+                   steps: ["n:new", "x:appearance", "x:theme"].contains(entry.id))
     }
 
     /// Escape: back from a list it stepped into, else closes (also from the projects the new-session button opened on).
@@ -493,5 +474,55 @@ struct AgentCommandPalette: View {
     private func perform(_ list: [Entry]) {
         guard list.indices.contains(index) else { return }
         if !list[index].run() { close() }
+    }
+}
+
+/// A row of a palette (⇧⌘K, the new-session projects, "Add project"): a symbol (or a site's logo), the title, a detail,
+/// the key that runs it and a chevron when it steps into a list. Lit while the pointer or the arrow keys are on it.
+struct PaletteRow: View {
+    let symbol: String
+    var site: String? = nil
+    let title: String
+    var detail = ""
+    let selected: Bool
+    var keyHint: String? = nil
+    var steps = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Group {
+                if let site {
+                    SiteIcon(domain: site, fallback: symbol, tint: selected ? NookTheme.iris : NookTheme.textTertiary, size: 14)
+                } else {
+                    NookSymbol(symbol, size: 13).font(NookTheme.font(12, .medium))
+                        .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
+                }
+            }
+            .frame(width: 18)
+            Text(title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
+            if !detail.isEmpty {
+                Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+            if let keyHint { NookKeyHint(text: keyHint) }
+            if steps {
+                Image(icon: "chevron.right").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 34)
+        .roundedBackground(selected ? NookTheme.smoke : .clear, radius: NookTheme.Radius.control)
+        .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// The card a palette floats in over the tab: as wide as a narrow tab allows, never wider than the usual 480.
+    func paletteCard() -> some View {
+        frame(maxWidth: .infinity)
+            .frame(maxWidth: 480)
+            .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
+            .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+            .padding(.horizontal, NookTheme.Spacing.lg)
     }
 }

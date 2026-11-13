@@ -51,8 +51,6 @@ struct AgentInboxList: View {
     @State private var projectName = ""
     /// The favorite (pinned) and archived projects shape the folders.
     @ObservedObject private var projectSettings = WorkspaceSettings.shared
-    /// Clones started from "Add project": once one is done its folder becomes a project and the composer opens on it.
-    @State private var pendingClones: Set<UUID> = []
     /// The height of each docked shelf's rows, so the shelf is as tall as they are (`dockedShelf`).
     @State private var shelfHeights: [InboxSection.Kind: CGFloat] = [:]
     /// The height of the list with its docked shelves, so the Working shelf can grow with the sessions at work.
@@ -154,7 +152,7 @@ struct AgentInboxList: View {
                 InboxViewMenu(store: store)
                 // A project is added from the list itself: made new, a folder on disk, or cloned.
                 if !app.demoMode {
-                    AddProjectButton(added: addProject, cloning: { pendingClones.insert($0) })
+                    AddProjectButton(viewModel: app.viewModel)
                 }
                 headerActions
             }
@@ -235,11 +233,6 @@ struct AgentInboxList: View {
                 renamingProject = nil
             }
             Button(tr("inbox.project.renameCancel"), role: .cancel) { renamingProject = nil }
-        }
-        // A clone started from "Add project" is done: its folder becomes a project and the composer opens on it.
-        .onReceive(CloneCenter.shared.$finished) { finished in
-            guard let finished, pendingClones.remove(finished.id) != nil else { return }
-            addProject(finished.path)
         }
         .sheet(item: $customSnooze) { item in
             CustomSnoozeSheet(title: item.title, onSnooze: { end in
@@ -475,16 +468,6 @@ struct AgentInboxList: View {
         let inUse = Set((settings.favoriteProjects + settings.recentProjects)
             .filter { !settings.isArchivedProject($0) }.map(name))
         return Set(archived.map(name)).subtracting(inUse)
-    }
-
-    /// Adds a project ("Add project"): pinned, so it is in the pickers and its folder shows when the list is
-    /// grouped, and the new-session composer opens on it.
-    private func addProject(_ path: String) {
-        withAnimation(NookTheme.reveal) {
-            app.workspace.settings.addProject(path)
-            store.collapsedProjects.remove(InboxProject.key(folder: (path as NSString).lastPathComponent, path: path))
-        }
-        newSession(in: path)
     }
 
     /// The icon the group's project set for itself (Settings › Projects): by its folder, else by the project's name, else
