@@ -29,6 +29,23 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(inbox.behind([moved], asked: [:], now: now).isEmpty, "caught up once the message is in")
     }
 
+    func testAQuietChatThatMovedWhileListeningIsFetched() {
+        // A group nobody wrote in for days: Nook holds nothing of it. You write there from the phone and the webhook and
+        // poll miss it: the chat list moving it on is the only word, and the message is fetched instead of waiting until
+        // someone else writes.
+        let inbox = WAInbox()
+        let now = Date(timeIntervalSince1970: 1_800_000_000 + 3600)
+        let linked = Date(timeIntervalSince1970: 1_800_000_000)
+        let group = WAChatInfo(jid: "120363000000000009@g.us", name: "Media team", last: linked.addingTimeInterval(1800))
+        let before = WAChatInfo(jid: "120363000000000010@g.us", name: "Old", last: linked.addingTimeInterval(-60))
+        let status = WAChatInfo(jid: "status@broadcast", name: "Status", last: group.last)
+        XCTAssertEqual(inbox.behind([group, before, status], asked: [:], liveSince: linked, now: now).map(\.jid), [group.jid],
+                       "only a chat that moved after the link began listening")
+        XCTAssertTrue(inbox.behind([group], asked: [:], now: now).isEmpty, "without a listening start nothing unknown is fetched")
+        XCTAssertTrue(inbox.behind([group], asked: [group.jid: group.last], liveSince: linked, now: now).isEmpty,
+                      "the same move is asked for once")
+    }
+
     func testAMessageWithNothingToShowIsNoBubble() {
         var inbox = WAInbox()
         let group = "120363000000000001@g.us"
