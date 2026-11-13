@@ -185,8 +185,8 @@ final class PullRequestSync: ObservableObject {
     func mark(repository: String, number: Int, state: PullRequestState) {
         func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
             list.map { link in
-                guard link.host == .github, link.number == number, link.state != .merged, link.state != state,
-                      link.repository.lowercased() == repository.lowercased() else { return link }
+                guard link.host == .github, link.state != .merged, link.state != state,
+                      link.isRequest(repository: repository, number: number) else { return link }
                 var link = link
                 link.state = state
                 return link
