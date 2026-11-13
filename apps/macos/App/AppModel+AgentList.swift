@@ -166,6 +166,7 @@ private struct AgentListBuilder {
             firstPrompt: run.task,
             comparison: comparisons[run.id] ?? 0,
             forked: run.lineage?.kind == .fork,
+            launchedBy: app.launcher(of: run),
             worktree: run.isolation == .worktree || run.worktreePath != nil,
             linesAdded: run.changedLinesAdded ?? 0,
             linesRemoved: run.changedLinesRemoved ?? 0,
@@ -211,6 +212,7 @@ private struct AgentListBuilder {
             accountName: accountName(app.profile(for: session)),
             firstPrompt: known?.firstPrompt ?? "",
             spawnedTasks: known?.spawnedTasks ?? [],
+            launchedBy: known.flatMap(app.launcher(of:)),
             worktree: GitHead.isWorktree(session.cwd),
             linesAdded: session.linesAdded,
             linesRemoved: session.linesRemoved
@@ -234,6 +236,7 @@ private struct AgentListBuilder {
             accountName: accountName(app.profile(for: session)),
             firstPrompt: session.firstPrompt,
             spawnedTasks: session.spawnedTasks,
+            launchedBy: app.launcher(of: session),
             // No file is read for the history's many rows: the worktrees agents make sit in a "worktrees" folder.
             worktree: session.cwd.contains("/worktrees/")
         )
