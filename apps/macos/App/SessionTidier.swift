@@ -62,7 +62,7 @@ final class SessionTidier {
         }, now: now)
         let settle = ids.compactMap { byID[$0] }
         guard !settle.isEmpty else { return }
-        store.settle(settle, now: now, record: false)
+        store.settle(settle, now: now, record: false, automatically: true)
         // As a settle of yours: a few seconds to take it back (⌘Z); after that Reopen on the Settled shelf brings it back,
         // and it then stays until it has new activity.
         store.note(.autoSettled, ids: settle.map(\.finishKey), now: now)

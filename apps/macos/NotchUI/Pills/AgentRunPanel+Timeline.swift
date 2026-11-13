@@ -64,6 +64,8 @@ extension AgentRunPanel {
             .chatColumn()
             .sessionComposerBounds()
         } else {
+            // Settled by the auto-settle rules: since when, and an Unsettle, at the end of the conversation.
+            AutoSettledLine(finishKey: FinishedSessions.key(run: run)).chatColumn()
             // Redrawn on its own with every keystroke, without the conversation above it; and not for every streamed
             // token, which redraws the conversation (`timelines`) but changes nothing the composer shows.
             RunComposerHost(state: composerState, workspace: workspace, app: app, pullRequests: pullRequestSync,

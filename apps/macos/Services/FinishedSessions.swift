@@ -24,12 +24,16 @@ final class FinishedSessions: ObservableObject {
     private static let keptKey = "agents.keptOpenSessions"
     private static let busyKey = "agents.finishedWhileBusy"
     private static let keepsOpenSinceKey = "agents.keepsUnsettledSince"
+    private static let autoSettledKey = "agents.autoSettledAt"
     /// How long a done session stays in the notch after its last activity. The Agents list keeps it until you settle it.
     static let autoFinishAfter: TimeInterval = 10 * 60
     /// Chats you reopened, and when.
     @Published private(set) var kept: [String: Date]
     /// A mark that falls off brings its chat back to the list, so keep plenty.
     private static let limit = 5000
+    /// Chats the auto-settle rules settled, and when, for the line at the end of their conversation. A chat you settle
+    /// yourself has no entry: you know you did. The entry goes with the mark.
+    @Published private(set) var autoSettled: [String: Date]
     /// Chats you marked while they were busy, until that busy spell ends.
     private var markedWhileBusy: Set<String>
     /// Since when an unsettled chat stays in the Agents list for good. Before, a quiet chat left the list a day after its
@@ -44,6 +48,8 @@ final class FinishedSessions: ObservableObject {
         let raw = UserDefaults.standard.dictionary(forKey: Self.keptKey) as? [String: Double] ?? [:]
         kept = raw.mapValues { Date(timeIntervalSince1970: $0) }
         markedWhileBusy = Set(UserDefaults.standard.stringArray(forKey: Self.busyKey) ?? []).intersection(storedKeys)
+        let auto = UserDefaults.standard.dictionary(forKey: Self.autoSettledKey) as? [String: Double] ?? [:]
+        autoSettled = auto.filter { storedKeys.contains($0.key) }.mapValues { Date(timeIntervalSince1970: $0) }
         if let since = UserDefaults.standard.object(forKey: Self.keepsOpenSinceKey) as? Date {
             keepsOpenSince = since
         } else {
@@ -65,10 +71,20 @@ final class FinishedSessions: ObservableObject {
         lastActive < since.addingTimeInterval(-SessionLiveness.doneLifetime)
     }
 
+    /// When the auto-settle rules settled this chat, while it is still settled; nil when you settled it yourself.
+    func autoSettledAt(_ key: String) -> Date? {
+        keys.contains(key) ? autoSettled[key] : nil
+    }
+
     /// `busy`: the chat still reads as busy, so the mark must outlast the current turn (see `reconcile(busy:)`).
-    func mark(_ key: String, busy: Bool = false) {
+    /// `automatically`: when the auto-settle rules settled it (`autoSettledAt`); a mark of yours clears that.
+    func mark(_ key: String, busy: Bool = false, automatically: Date? = nil) {
         guard !key.isEmpty else { return }
         if busy, markedWhileBusy.insert(key).inserted { saveBusy() }
+        if autoSettled[key] != automatically, automatically != nil || !keys.contains(key) {
+            autoSettled[key] = automatically
+            saveAutoSettled()
+        }
         guard !keys.contains(key) else { return }
         order.append(key)
         if order.count > Self.limit { order.removeFirst(order.count - Self.limit) }
@@ -78,6 +94,7 @@ final class FinishedSessions: ObservableObject {
 
     func reopen(_ key: String) {
         if markedWhileBusy.remove(key) != nil { saveBusy() }
+        if autoSettled.removeValue(forKey: key) != nil { saveAutoSettled() }
         if kept.removeValue(forKey: key) != nil {
             UserDefaults.standard.set(kept.mapValues { $0.timeIntervalSince1970 }, forKey: Self.keptKey)
         }
@@ -100,6 +117,10 @@ final class FinishedSessions: ObservableObject {
         order.removeAll { gone.contains($0) }
         keys = Set(order)
         save()
+        if !autoSettled.keys.filter(gone.contains).isEmpty {
+            for key in gone { autoSettled[key] = nil }
+            saveAutoSettled()
+        }
     }
 
     /// Marked by you while busy, and still in that busy spell: the list shows it as finished anyway.
@@ -132,6 +153,10 @@ final class FinishedSessions: ObservableObject {
 
     private func save() {
         UserDefaults.standard.set(order, forKey: Self.defaultsKey)
+    }
+
+    private func saveAutoSettled() {
+        UserDefaults.standard.set(autoSettled.mapValues { $0.timeIntervalSince1970 }, forKey: Self.autoSettledKey)
     }
 
     private func saveBusy() {

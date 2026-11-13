@@ -231,6 +231,7 @@ struct AgentSessionDetail: View {
             } else if !app.demoMode, let question = app.hub.question(for: session.id) {
                 questionPanel(question).chatColumn().sessionComposerBounds()
             } else {
+                AutoSettledLine(finishKey: FinishedSessions.key(session: session)).chatColumn()
                 errorLine
                 VStack(spacing: 0) {
                     pullRequestTray(pullRequest(cwd: session.cwd, branch: known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)), cwd: session.cwd)
@@ -660,6 +661,8 @@ struct AgentSessionDetail: View {
     /// The composer under an earlier session's conversation, with its error line and pull request tray.
     private func pastBottomBar(_ session: PastSession, canContinue: Bool, send: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            AutoSettledLine(finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID,
+                                                            fallback: "past:" + session.id)).chatColumn()
             errorLine
             VStack(spacing: 0) {
                 pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply), cwd: session.cwd)

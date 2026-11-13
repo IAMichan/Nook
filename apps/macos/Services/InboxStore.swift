@@ -219,11 +219,12 @@ final class InboxStore: ObservableObject {
     // MARK: Settled
 
     /// Settles sessions: they move to the shelf at the bottom, and a pin ends. A busy one settles too: it may hang.
-    func settle(_ items: [AgentListItem], now: Date = Date(), record: Bool = true) {
+    /// `automatically`: the auto-settle rules did it, which the end of the conversation then says (`AutoSettledLine`).
+    func settle(_ items: [AgentListItem], now: Date = Date(), record: Bool = true, automatically: Bool = false) {
         let keys = items.map(\.finishKey)
         for item in items {
             state.unpin(item.id)
-            FinishedSessions.shared.mark(item.finishKey, busy: item.isBusy)
+            FinishedSessions.shared.mark(item.finishKey, busy: item.isBusy, automatically: automatically ? now : nil)
         }
         let busy = items.filter(\.isBusy).map(\.id)
         if !busy.isEmpty { settleBusy?(busy) }
@@ -233,8 +234,13 @@ final class InboxStore: ObservableObject {
     }
 
     func unsettle(_ items: [AgentListItem], now: Date = Date(), record: Bool = true) {
-        for item in items { FinishedSessions.shared.reopenByUser(item.finishKey) }
-        if record { undoLog.record(.unsettled, ids: items.map(\.finishKey), now: now) }
+        unsettle(keys: items.map(\.finishKey), now: now, record: record)
+    }
+
+    /// Un-settles by the sessions' finish keys, for a view that has the conversation but not its list row.
+    func unsettle(keys: [String], now: Date = Date(), record: Bool = true) {
+        for key in keys { FinishedSessions.shared.reopenByUser(key) }
+        if record { undoLog.record(.unsettled, ids: keys, now: now) }
     }
 
     /// Something the list did not do itself (a snooze, an archive) still gets its place in the undo line.
