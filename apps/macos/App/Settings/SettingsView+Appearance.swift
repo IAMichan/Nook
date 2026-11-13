@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Settings › Appearance: how Nook looks and sounds. A large live Nook on top that shows each mood, the three styles as
-/// cards, then the color (the biggest change after the style), the windows' appearance and theme, the face and finish
-/// folded away, and Nook as a buddy.
+/// Settings › Appearance: how Nook looks and sounds, in a few groups instead of a long list. Nook first: a live Nook
+/// with a mood to preview, the three styles with the color under them, the face and finish folded away, and Nook as a
+/// buddy. Then the windows: System, Light or Dark and the theme, with text and layout and the custom colors each folded
+/// into one row.
 extension SettingsView {
     // MARK: Appearance
 
@@ -23,6 +24,7 @@ extension SettingsView {
                     }
                 }
                 .padding(.vertical, NookTheme.Spacing.xxs)
+                accentRow
             } header: {
                 Text(tr("settings.appearance.style"))
             } footer: {
@@ -30,38 +32,6 @@ extension SettingsView {
                     SettingNote(tr("settings.appearance.styleCustom"))
                 }
             }
-
-            Section {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    ForEach(Self.accentSwatches, id: \.hex) { swatch in
-                        let hex = swatch.hex
-                        Button { settings.accentHex = hex } label: {
-                            // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
-                            Circle().fill(hex == NookTheme.defaultAccentHex ? NookTheme.themeAccent : Color(hex: hex))
-                                .frame(width: 22, height: 22)
-                                .padding(NookTheme.Spacing.xs)
-                                .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.nookPlain)
-                        .accessibilityLabel(tr(swatch.name))
-                        .accessibilityHint(tr("settings.display.accent"))
-                        .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
-                    }
-                    Spacer(minLength: 8)
-                    ColorPicker(tr("settings.display.accent"), selection: Binding(
-                        get: { Color(hex: settings.accentHex) },
-                        set: { settings.accentHex = NSColor($0).nookHex }
-                    ), supportsOpacity: false)
-                    .labelsHidden()
-                }
-            } header: {
-                Text(tr("settings.display.color"))
-            }
-
-            themeSection
-
-            ColorTokensSettings()
 
             // The style above sets the face and the finish; changing them one by one is folded away.
             SettingsFold(tr("settings.appearance.fineTune"), summary: tr("settings.appearance.fineTuneSummary"),
@@ -92,6 +62,70 @@ extension SettingsView {
             // Putting the look back is "Restore defaults" in the bar over the page, as on General.
 
             buddySection
+
+            themeSection
+
+            readingFold
+
+            ColorTokensSettings()
+        }
+    }
+
+    /// Nook's color: the swatches, then any color of your own.
+    private var accentRow: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            SettingText("settings.display.color")
+            Spacer(minLength: NookTheme.Spacing.md)
+            ForEach(Self.accentSwatches, id: \.hex) { swatch in
+                let hex = swatch.hex
+                Button { settings.accentHex = hex } label: {
+                    // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
+                    Circle().fill(hex == NookTheme.defaultAccentHex ? NookTheme.themeAccent : Color(hex: hex))
+                        .frame(width: 18, height: 18)
+                        .padding(NookTheme.Spacing.xxs)
+                        .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.nookPlain)
+                .accessibilityLabel(tr(swatch.name))
+                .accessibilityHint(tr("settings.display.accent"))
+                .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
+            }
+            ColorPicker(tr("settings.display.accent"), selection: Binding(
+                get: { Color(hex: settings.accentHex) },
+                set: { settings.accentHex = NSColor($0).nookHex }
+            ), supportsOpacity: false)
+            .labelsHidden()
+        }
+    }
+
+    /// How text and rows read in the windows: density, the colors of a diff, math and Markdown as you type. Each is set
+    /// once and rarely again, so they share one fold.
+    private var readingFold: some View {
+        SettingsFold(tr("settings.appearance.reading"), summary: tr("settings.appearance.readingSummary"),
+                     keys: ["theme.density", "theme.diffColors", "theme.renderMath", "theme.richComposer"]) {
+            Picker(selection: $settings.density) {
+                ForEach(NookDensity.allCases) { density in
+                    Text(tr("theme.density.\(density.rawValue)")).tag(density)
+                }
+            } label: {
+                SettingText("theme.density")
+            }
+            .pickerStyle(.segmented)
+            SettingNote(tr("theme.densityNote"))
+            Picker(selection: $settings.diffColors) {
+                ForEach(NookDiffColors.allCases) { colors in
+                    Text(tr("theme.diffColors.\(colors.rawValue)")).tag(colors)
+                }
+            } label: {
+                SettingText("theme.diffColors")
+            }
+            .pickerStyle(.segmented)
+            SettingNote(tr("theme.diffColorsNote"))
+            Toggle(isOn: $settings.renderMath) { SettingText("theme.renderMath") }
+            SettingNote(tr("theme.renderMathNote"))
+            Toggle(isOn: $settings.richComposer) { SettingText("theme.richComposer") }
+            SettingNote(tr("theme.richComposerNote"))
         }
     }
 
@@ -103,29 +137,24 @@ extension SettingsView {
         (0xEF7B73, "settings.accent.coral"), (0xFF7EB6, "settings.accent.pink"),
     ]
 
-    /// Nook large and alive, with the moods underneath to see how each one looks.
+    /// Nook large and alive, with a menu of moods underneath to see how each one looks.
     private var lookPreview: some View {
-        VStack(spacing: NookTheme.Spacing.lg) {
+        VStack(spacing: NookTheme.Spacing.md) {
             NookOrb(mood: lookPreviewMood, size: 88, glow: settings.nookLook.glow, look: settings.nookLook)
                 .frame(width: 150, height: 130)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: NookTheme.Spacing.sm)], spacing: NookTheme.Spacing.sm) {
-                ForEach(Self.previewMoods, id: \.key) { item in
-                    let selected = lookPreviewMood == item.mood
-                    Button { lookPreviewMood = item.mood } label: {
-                        Text(tr(item.key))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                            .font(selected ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
-                            .padding(.horizontal, NookTheme.Spacing.md)
-                            .padding(.vertical, NookTheme.Spacing.xs)
-                            .foregroundStyle(selected ? NookTheme.onIris : NookTheme.textStrong)
-                            .background(NookTheme.shape(NookTheme.Radius.control).fill(selected ? NookTheme.iris : NookTheme.smoke))
-                            .contentShape(NookTheme.shape(NookTheme.Radius.control))
-                    }
-                    .buttonStyle(.nookPlain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
+            Picker(selection: Binding(
+                get: { Self.previewMoods.firstIndex { $0.mood == lookPreviewMood } ?? 0 },
+                set: { lookPreviewMood = Self.previewMoods[$0].mood }
+            )) {
+                ForEach(Self.previewMoods.indices, id: \.self) { index in
+                    Text(tr(Self.previewMoods[index].key)).tag(index)
                 }
+            } label: {
+                SettingText("settings.appearance.mood")
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, NookTheme.Spacing.xl)
@@ -215,24 +244,6 @@ extension SettingsView {
                 SettingText("theme.appearance")
             }
             .pickerStyle(.segmented)
-            Picker(selection: $settings.density) {
-                ForEach(NookDensity.allCases) { density in
-                    Text(tr("theme.density.\(density.rawValue)")).tag(density)
-                }
-            } label: {
-                SettingText("theme.density")
-            }
-            .pickerStyle(.segmented)
-            SettingNote(tr("theme.densityNote"))
-            Picker(selection: $settings.diffColors) {
-                ForEach(NookDiffColors.allCases) { colors in
-                    Text(tr("theme.diffColors.\(colors.rawValue)")).tag(colors)
-                }
-            } label: {
-                SettingText("theme.diffColors")
-            }
-            .pickerStyle(.segmented)
-            SettingNote(tr("theme.diffColorsNote"))
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NookTheme.Spacing.md)], spacing: NookTheme.Spacing.md) {
                 ForEach(settings.themes) { theme in
                     themeCard(theme)
@@ -243,10 +254,6 @@ extension SettingsView {
                 Button(tr("theme.import")) { importVSCodeTheme() }
                 Spacer()
             }
-            Toggle(isOn: $settings.renderMath) { SettingText("theme.renderMath") }
-            SettingNote(tr("theme.renderMathNote"))
-            Toggle(isOn: $settings.richComposer) { SettingText("theme.richComposer") }
-            SettingNote(tr("theme.richComposerNote"))
         } header: {
             Text(tr("theme.header"))
         } footer: {
@@ -352,10 +359,11 @@ extension SettingsView {
 
 // MARK: Colors
 
-/// Settings › Appearance › Colors: every named color Nook draws with, grouped (surfaces, lines, text, state, changes,
-/// chats, code), each with a picker for dark or for light and an ⓘ that says where it is used. A color set here lies
-/// over the chosen theme and changes every place that uses it at once (`NookWindowLook.repaintSoon`); "Reset" brings
-/// the theme's own color back. Nothing is set by default.
+/// Settings › Appearance › Custom colors: every named color Nook draws with, folded into one row. Open, it edits one
+/// appearance (dark or light) and one group at a time (surfaces, lines, text, state, changes, chats, code), with a
+/// preview on top; each color has a picker and an ⓘ that says where it is used. A color set here lies over the chosen
+/// theme and changes every place that uses it at once (`NookWindowLook.repaintSoon`); "Reset" brings the theme's own
+/// color back. Nothing is set by default.
 struct ColorTokensSettings: View {
     @ObservedObject private var settings = AppSettings.shared
     /// The overrides are not published by `AppSettings` (a picker changes them on every pointer move); this is.
@@ -363,57 +371,62 @@ struct ColorTokensSettings: View {
     @Environment(\.colorScheme) private var scheme
     /// The appearance being edited; until one is picked, the one Nook shows now.
     @State private var picked: Bool?
+    /// The group of colors shown.
+    @State private var group: NookColorToken.Group = .surfaces
 
     private var dark: Bool { picked ?? (scheme == .dark) }
     private var themePalette: NookPalette { settings.themeChoice.themePalette(dark: dark, themes: settings.themes) }
     private var overrides: [String: UInt32] { settings.colorOverrides.values(dark: dark) }
 
     var body: some View {
-        Group {
-            Section {
-                Picker(selection: Binding(get: { dark }, set: { picked = $0 })) {
-                    Text(tr("theme.mode.dark")).tag(true)
-                    Text(tr("theme.mode.light")).tag(false)
-                } label: {
-                    SettingText("colors.editFor")
-                }
-                .pickerStyle(.segmented)
-                if dark != (scheme == .dark) {
-                    SettingNote(tr(dark ? "colors.notShown.dark" : "colors.notShown.light"))
-                }
-                // Follows every step of a drag; the rest of Nook follows once the picker rests.
-                ColorTokensPreview(palette: themePalette.applying(overrides))
-                if !overrides.isEmpty {
-                    HStack {
-                        Text(tr("colors.changed", overrides.count))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                        Spacer()
-                        Button(tr("colors.resetAll")) {
-                            var all = settings.colorOverrides
-                            if dark { all.dark = [:] } else { all.light = [:] }
-                            settings.colorOverrides = all
-                        }
+        let changedTotal = settings.colorOverrides.values(dark: true).count + settings.colorOverrides.values(dark: false).count
+        SettingsFold(tr("colors.custom"),
+                     summary: changedTotal > 0 ? tr("colors.changed", changedTotal) : tr("colors.customSummary"),
+                     keys: ["colors.custom", "colors.editFor"]) {
+            SettingNote(tr("colors.info"))
+            Picker(selection: Binding(get: { dark }, set: { picked = $0 })) {
+                Text(tr("theme.mode.dark")).tag(true)
+                Text(tr("theme.mode.light")).tag(false)
+            } label: {
+                SettingText("colors.editFor")
+            }
+            .pickerStyle(.segmented)
+            if dark != (scheme == .dark) {
+                SettingNote(tr(dark ? "colors.notShown.dark" : "colors.notShown.light"))
+            }
+            // Follows every step of a drag; the rest of Nook follows once the picker rests.
+            ColorTokensPreview(palette: themePalette.applying(overrides))
+            if !overrides.isEmpty {
+                HStack {
+                    Text(tr("colors.changed", overrides.count))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                    Spacer()
+                    Button(tr("colors.resetAll")) {
+                        var all = settings.colorOverrides
+                        if dark { all.dark = [:] } else { all.light = [:] }
+                        settings.colorOverrides = all
                     }
                 }
-            } header: {
-                SettingsSectionTitle(tr("colors.header"), info: tr("colors.info"))
             }
-            ForEach(NookColorToken.Group.allCases) { group in
-                let tokens = NookColorToken.all.filter { $0.group == group }
-                let changed = tokens.filter { overrides[$0.id] != nil }.count
-                SettingsFold(tr("colors.group.\(group.rawValue)"),
-                             summary: changed > 0 ? tr("colors.changed", changed) : swatchSummary(tokens),
-                             keys: tokens.map { "colors.token.\($0.id)" }) {
-                    ForEach(tokens) { token in row(token) }
+            Picker(selection: $group) {
+                ForEach(NookColorToken.Group.allCases) { item in
+                    let changed = tokens(in: item).filter { overrides[$0.id] != nil }.count
+                    Text(changed > 0
+                         ? "\(tr("colors.group.\(item.rawValue)")) · \(tr("colors.changed", changed))"
+                         : tr("colors.group.\(item.rawValue)"))
+                        .tag(item)
                 }
+            } label: {
+                SettingText("colors.group")
             }
+            .pickerStyle(.menu)
+            ForEach(tokens(in: group)) { token in row(token) }
         }
     }
 
-    /// The group's names folded, so a closed group still says what is in it.
-    private func swatchSummary(_ tokens: [NookColorToken]) -> String {
-        tokens.prefix(4).map { tr("colors.token.\($0.id)") }.joined(separator: ", ") + (tokens.count > 4 ? "…" : "")
+    private func tokens(in group: NookColorToken.Group) -> [NookColorToken] {
+        NookColorToken.all.filter { $0.group == group }
     }
 
     private func row(_ token: NookColorToken) -> some View {
