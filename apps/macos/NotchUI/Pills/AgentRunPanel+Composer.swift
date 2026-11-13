@@ -263,25 +263,20 @@ extension AgentRunPanel {
             if workspace.freshArmed.contains(runID) {
                 FreshConversationStrip { workspace.keepConversation(runID) }
             }
-            // The subagents the agent started since your message (also those still at work in the background after its
-            // turn), and its task list.
+            // What it does besides talking, in one dock with a tab per kind: its task list, the subagents it started since
+            // your message (also those still at work in the background after its turn), and the commands it left
+            // running in the background (a dev server, a watcher): the session is not done while those run.
+            let tasks = run.tasks.flatMap { TaskChecklist.showsAboveComposer($0) ? $0 : nil } ?? []
             let subagents = derived.subagents
-            if !subagents.isEmpty {
-                SubagentBar(agents: subagents,
-                            stop: run.provider.capabilities.stopsOneSubagent ? { workspace.stopSubagent(runID, $0) } : nil,
-                            openPanel: outputsLink.showSubagents)
-            }
-            // The commands it left running in the background (a dev server, a watcher): the session is not done yet.
             let commands = derived.commands
-            if !commands.isEmpty {
-                BackgroundCommandBar(commands: commands, focus: $barFocus,
-                                     reveal: { conversationFocus = $0 },
-                                     openPanel: outputsLink.showSubagents,
-                                     agentPIDs: { workspace.agentPIDs(runID) })
-            }
-            // The agent's task list: the step it works on now while it works, the list it left once it stops.
-            if let tasks = run.tasks, TaskChecklist.showsAboveComposer(tasks) {
-                TasksStrip(steps: tasks, working: run.status.isActive)
+            if !tasks.isEmpty || !subagents.isEmpty || !commands.isEmpty {
+                AgentActivityDock(tasks: tasks, working: run.status.isActive,
+                                  subagents: subagents,
+                                  stopSubagent: run.provider.capabilities.stopsOneSubagent ? { workspace.stopSubagent(runID, $0) } : nil,
+                                  commands: commands, focus: $barFocus,
+                                  reveal: { conversationFocus = $0 },
+                                  openPanel: outputsLink.showSubagents,
+                                  agentPIDs: { workspace.agentPIDs(runID) })
             }
             // The pull request it watches and the messages waiting in line sit in a tray tucked above the box, the
             // same tray a new session shows its folder and branch in under the box.
