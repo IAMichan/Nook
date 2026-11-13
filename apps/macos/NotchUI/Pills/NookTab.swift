@@ -106,12 +106,14 @@ struct NookChatView: View {
                         } else {
                             header
                                 .padding(.bottom, NookTheme.Spacing.xs)
+                                .readableChat(!compact)
                             thread
                         }
                     }
                     // In the main window the conversation keeps a readable width, centered in the room beside the list.
-                    .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
-                    .frame(maxWidth: compact ? nil : .infinity)
+                    // A running chat keeps it inside its scroll view instead, so the scroll view (and the ladder of your
+                    // questions on its leading edge) spans the whole room, as an agent's transcript does.
+                    .readableChat(!compact && chat.isEmpty)
                     .frame(width: appSideOpen ? EmbeddedSplit.chatWidth(liveChatWidth ?? chatWidth, total: totalWidth) : nil)
                 }
                 if let terminalFolder {
@@ -423,6 +425,7 @@ struct NookChatView: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, NookTheme.Spacing.xxs)
+                .readableChat(!compact)
                 .padding(.top, NookTheme.Spacing.md)
                 .padding(.bottom, NookTheme.Spacing.xs)
                 .animation(NookTheme.reveal, value: chat.messages.count)
@@ -484,7 +487,7 @@ struct NookChatView: View {
             .overlay(alignment: .leading) {
                 let shown = marks.update(chat.messages)
                 if overflows, !shown.isEmpty {
-                    TranscriptPromptRail(marks: shown) { mark in
+                    TranscriptPromptRail(marks: shown, column: compact ? PanelLayout.chatColumn : PanelLayout.readableChat) { mark in
                         scroll.userScrolled()
                         guard let id = UUID(uuidString: mark.row) else { return }
                         withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
@@ -694,4 +697,12 @@ final class NookComposerState: ObservableObject {
         }
     }
     @Published var images: [ImageAttachment] = []
+}
+
+private extension View {
+    /// In the main window: at most `PanelLayout.readableChat` wide, centered in the room it is given.
+    func readableChat(_ on: Bool) -> some View {
+        frame(maxWidth: on ? PanelLayout.readableChat : nil)
+            .frame(maxWidth: on ? .infinity : nil)
+    }
 }

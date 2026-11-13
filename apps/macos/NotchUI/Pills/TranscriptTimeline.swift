@@ -775,6 +775,8 @@ final class TimelineViewport {
 /// column the marks would lie over the messages: there they show only while the pointer is on the leading edge.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
+    /// The widest the conversation's column gets, to tell whether there is a margin beside it for the rail.
+    var column: CGFloat = PanelLayout.chatColumn
     let onSelect: (PromptMark) -> Void
     @State private var hovered: String?
     /// The width of the conversation the rail lies over (the overlay is offered all of it).
@@ -788,7 +790,7 @@ struct TranscriptPromptRail: View {
 
     var body: some View {
         let inSight = onRail || room == 0
-            || TranscriptPresentation.railAlwaysShown(room: room, column: PanelLayout.chatColumn, rail: Self.width)
+            || TranscriptPresentation.railAlwaysShown(room: room, column: column, rail: Self.width)
         // The full width only to measure it: clicks pass through to the conversation.
         Color.clear
             .allowsHitTesting(false)
