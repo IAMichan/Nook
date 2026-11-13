@@ -381,7 +381,7 @@ struct ColorTokensSettings: View {
         let changedTotal = settings.colorOverrides.values(dark: true).count + settings.colorOverrides.values(dark: false).count
         SettingsFold(tr("colors.custom"),
                      summary: changedTotal > 0 ? tr("colors.changed", changedTotal) : tr("colors.customSummary"),
-                     keys: ["colors.custom", "colors.editFor"]) {
+                     keys: ["colors.custom", "colors.editFor"], folded: true) {
             SettingNote(tr("colors.info"))
             Picker(selection: Binding(get: { dark }, set: { picked = $0 })) {
                 Text(tr("theme.mode.dark")).tag(true)

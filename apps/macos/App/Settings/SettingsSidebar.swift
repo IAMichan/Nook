@@ -141,9 +141,8 @@ struct SettingsSidebar: View {
                             .padding(.bottom, NookTheme.Spacing.xxs)
                     }
                     ForEach(group.sections) { section in
-                        // A detail page keeps its parent lit; a click on that row leads back to the parent.
-                        SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.title,
-                                           selected: app.settingsSection.sidebarPage == section,
+                        SettingsSidebarRow(symbol: section.sidebarSymbol, title: section.pageTitle,
+                                           selected: app.settingsSection.host == section,
                                            badge: badges[section] ?? 0) {
                             guard app.settingsSection != section else { return }
                             app.settingsSection = section
@@ -199,12 +198,11 @@ struct SettingsSidebarRow: View {
     }
 }
 
-/// The bar over a page: where you are (Settings › page, or Settings › page › detail with a back arrow for a detail
-/// page), the ⓘ that explains the page, and on the right Restore defaults. The parent in the trail is a link back.
-/// Adding sits in the header of the list it adds to ("+ Add machine"), not here.
+/// The bar over a page: where you are (Settings › page) and on the right Restore defaults. What the page holds is
+/// written at the top of the page itself (`SettingsPageIntro`), not hidden here. Adding sits in the header of the list
+/// it adds to ("+ Add machine"), not here.
 struct SettingsPageBar: View {
     let section: SettingsSection
-    @EnvironmentObject private var app: AppModel
     /// Watched so "Restore defaults" dims the moment nothing on the page differs from the defaults any more.
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var settings = AppSettings.shared
@@ -214,29 +212,14 @@ struct SettingsPageBar: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            if let parent = section.parent {
-                ToolbarIconButton("chevron.left", tr("settings.crumb.back", parent.title)) {
-                    app.settingsSection = parent
-                }
-                .keyboardShortcut("[", modifiers: .command)
-            }
             Text(tr("settings.crumb.root")).foregroundStyle(NookTheme.textTertiary)
             crumbChevron
-            if let parent = section.parent {
-                Button(parent.title) { app.settingsSection = parent }
-                    .buttonStyle(.nookPlain)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .help(tr("settings.crumb.back", parent.title))
-                crumbChevron
-            }
-            Text(section.title)
+            Text(section.pageTitle)
                 .foregroundStyle(NookTheme.paper)
-                .help(section.subtitle)
-            if let info = section.info { SettingsInfoButton(text: info) }
             Spacer(minLength: NookTheme.Spacing.lg)
             if let restore = SettingsRestore(section) {
                 // Put this page's own settings back to how Nook ships, after asking.
-                ConfirmedButton(question: tr("settings.restore.question", section.title), confirmTitle: tr("settings.general.restore"),
+                ConfirmedButton(question: tr("settings.restore.question", section.pageTitle), confirmTitle: tr("settings.general.restore"),
                                 action: {
                                     restore.run()
                                     ToastCenter.shared.success(tr("settings.general.restored"))
@@ -263,22 +246,152 @@ struct SettingsPageBar: View {
     }
 }
 
-/// The end of a page that has detail pages: under "More settings", one row per detail page with its tile, name, what
-/// it holds and a chevron, so everything the sidebar no longer lists is one click away from where it belongs.
-struct SettingsDetailLinks: View {
+/// The top of every Settings page: its name in large type, one line on what it holds, what it means for your data
+/// when that matters, and for a page of several subjects a button per subject that scrolls to it. So you see what a
+/// page is for before reading a single row.
+struct SettingsPageIntro: View {
     let section: SettingsSection
-    @EnvironmentObject private var app: AppModel
+    /// Marks the intro as the first subject's place, for a page whose first subject has no heading of its own.
+    var anchorsFirstPart = false
 
     var body: some View {
         Section {
-            ForEach(section.details) { detail in
-                SettingsLinkRow(title: detail.title, detail: detail.subtitle, section: detail) {
-                    app.settingsSection = detail
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                Text(section.pageTitle)
+                    .font(NookTheme.TextStyle.display)
+                    .foregroundStyle(NookTheme.paper)
+                    .accessibilityAddTraits(.isHeader)
+                Text(section.pageSubtitle)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let info = section.info {
+                    Text(info)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if section.parts.count > 1 {
+                    ChipFlow(spacing: NookTheme.Spacing.xs) {
+                        ForEach(section.parts) { part in
+                            SettingsPartChip(part: part)
+                        }
+                    }
+                    .padding(.top, NookTheme.Spacing.xs)
                 }
             }
-        } header: {
-            Text(tr("settings.details.title"))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(OptionalSettingsAnchor(title: anchorsFirstPart ? section.title : nil))
         }
+        .settingsBareSection()
+    }
+}
+
+/// Marks a view as a setting's place only when it has a name, so two views never claim the same place.
+private struct OptionalSettingsAnchor: ViewModifier {
+    let title: String?
+
+    func body(content: Content) -> some View {
+        if let title {
+            content.settingsAnchor(title)
+        } else {
+            content
+        }
+    }
+}
+
+/// Whether a subject of a page shows right now: the parts of autocomplete only while completing is on.
+@MainActor
+enum SettingsPartVisibility {
+    static func shows(_ part: SettingsSection) -> Bool {
+        switch part {
+        case .autocompleteApps, .autocompleteStyle, .autocompletePlayground, .autocompleteStats:
+            return AutocompleteStore.shared.prefs.enabled
+        default:
+            return true
+        }
+    }
+}
+
+/// One subject of a page as a button at the top of that page: a click scrolls to the subject's heading.
+struct SettingsPartChip: View {
+    let part: SettingsSection
+    /// Watched so the parts of autocomplete come and go with its switch.
+    @ObservedObject private var autocomplete = AutocompleteStore.shared
+
+    var body: some View {
+        if SettingsPartVisibility.shows(part) {
+            chip
+        }
+    }
+
+    private var chip: some View {
+        Button {
+            // Cleared first, so a second click on the same subject scrolls again.
+            SettingsHighlight.shared.key = nil
+            DispatchQueue.main.async { SettingsHighlight.shared.key = "settings.section.\(part.rawValue)" }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(icon: part.sidebarSymbol)
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textSecondary)
+                Text(part.title)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textStrong)
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .hoverRowFill(selected: false, radius: NookTheme.Radius.chip, rest: NookTheme.surface)
+            .roundedStrokeBorder(NookTheme.separator, radius: NookTheme.Radius.chip)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nookPlain)
+        .help(part.subtitle)
+    }
+}
+
+/// The heading of one subject on a page of several: a line above it, its tile, its name, what it is for, and what it
+/// means for your data when that matters. A search for the subject (or its button at the top) scrolls here.
+struct SettingsPartHeader: View {
+    let part: SettingsSection
+    /// Watched so the parts of autocomplete come and go with its switch.
+    @ObservedObject private var autocomplete = AutocompleteStore.shared
+
+    var body: some View {
+        if SettingsPartVisibility.shows(part) {
+            header
+        }
+    }
+
+    private var header: some View {
+        Section {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                NookDivider()
+                HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
+                    SettingsTile(part, size: 30)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        Text(part.title)
+                            .font(NookTheme.TextStyle.heading)
+                            .foregroundStyle(NookTheme.paper)
+                        Text(part.subtitle)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let info = part.info {
+                            Text(info)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .settingsAnchor(part.title)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+            }
+            .padding(.top, NookTheme.Spacing.lg)
+        }
+        .settingsBareSection()
     }
 }
 

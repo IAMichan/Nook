@@ -212,9 +212,9 @@ struct SettingRowText: View {
     }
 }
 
-/// A section's title with an optional ⓘ next to it. The explanation of a section lives behind that ⓘ (a click opens it,
-/// hovering shows it too) instead of in a footer, so every page reads as titles and controls. Footers stay for what
-/// must be seen: a warning, an error, or the one step that unlocks the section.
+/// A section's title with, under it, what the section is for in smaller text, always visible: every group of a page
+/// says what it does without a click. Footers stay for what must stand out: a warning, an error, or the one step that
+/// unlocks the section.
 struct SettingsSectionTitle: View {
     let title: String
     var info: String? = nil
@@ -225,9 +225,14 @@ struct SettingsSectionTitle: View {
     }
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Text(title)
-            if let info { SettingsInfoButton(text: info) }
+            if let info, !info.isEmpty {
+                Text(info)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .settingsAnchor(title)
     }

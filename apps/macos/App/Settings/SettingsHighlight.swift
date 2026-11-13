@@ -86,27 +86,43 @@ struct SettingText: View {
     }
 }
 
-/// A group of rarely needed settings, folded away: the whole group is one row with a chevron, its name,
-/// and on the right a summary of what is inside (the current choice, a count), so you know what you would find before
-/// you open it. A search for a setting inside (`keys`) opens it before the page scrolls there. Use it for a whole group
-/// of a page, never for one row inside another group; a row that hides a single step says that step instead.
+/// A group of settings under its own title. Open by default, so nothing on a page needs a click to be seen. Only a
+/// group that is a long list of fine detail (every color of a theme) passes `folded: true`: it is then one row with a
+/// chevron, its name, and on the right a summary of what is inside, so you know what you would find before you open it.
+/// A search for a setting inside (`keys`) opens it before the page scrolls there.
 struct SettingsFold<Content: View>: View {
     let title: String
     var summary: String? = nil
-    /// The text keys of the settings inside, so a search for one of them opens the fold.
+    /// The text keys of the settings inside, so a search for one of them opens a folded group.
     var keys: [String] = []
+    /// Starts closed behind a row; only for a long list of fine detail.
+    var folded = false
     @ViewBuilder var content: () -> Content
     @ObservedObject private var highlight = SettingsHighlight.shared
     @State private var open = false
 
-    init(_ title: String, summary: String? = nil, keys: [String] = [], @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String, summary: String? = nil, keys: [String] = [], folded: Bool = false,
+         @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.summary = summary
         self.keys = keys
+        self.folded = folded
         self.content = content
     }
 
     var body: some View {
+        if folded {
+            foldedBody
+        } else {
+            Section {
+                content()
+            } header: {
+                SettingsSectionTitle(title)
+            }
+        }
+    }
+
+    private var foldedBody: some View {
         Section {
             Button {
                 withAnimation(NookTheme.reveal) { open.toggle() }
