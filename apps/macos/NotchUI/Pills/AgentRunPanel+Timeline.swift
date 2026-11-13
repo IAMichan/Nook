@@ -188,6 +188,8 @@ extension AgentRunPanel {
                 .coordinateSpace(name: TurnPinRoom.space)
                 .chatColumn()
             }
+            // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
+            .id(timelineBuild)
             // The files and lines of every finished turn from git (`countTurns`): again when a turn ends or a snapshot is made.
             .task(id: "\(runID)|\(memo.turns.count)|\(memo.turns.last?.files.count ?? 0)|\(run.checkpoints?.count ?? 0)") {
                 await countTurns(memo.turns, run: run)
@@ -234,6 +236,8 @@ extension AgentRunPanel {
                         // itself (a row the lazy stack must draw), and only then on the very end.
                         scroll.jumpedToEnd()
                         pinRoom.release()
+                        // Scrolling brought nothing back: a new scroll view, which opens at its end.
+                        if RowsInView.rebuilds(attempt: attempt) { timelineBuild += 1 }
                         if let lastBlock = shownBlocks.last?.id { proxy.scrollTo(lastBlock, anchor: .bottom) }
                         DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     }

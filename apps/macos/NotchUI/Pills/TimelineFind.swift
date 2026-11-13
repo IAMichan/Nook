@@ -274,7 +274,8 @@ extension View {
     /// the drawn rows (`drawn`, which every row reports to with `countsAsDrawnRow`) reaches into what the scroll view
     /// shows. `recover` gets the last row that was in view (nil if none was, or on a later try) and the number of the try
     /// (0 first): from the second try on it should go to the end the hard way (drop the room held under a sent message,
-    /// scroll to the last row itself). It keeps trying for as long as the view stays blank: a guard that gave up after a
+    /// scroll to the last row itself), and on the tries `RowsInView.rebuilds` names make the scroll view again (a new
+    /// `.id`), since a stuck lazy stack draws nothing wherever it scrolls. It keeps trying for as long as the view stays blank: a guard that gave up after a
     /// few tries left the conversation black for good. Every try is logged with where the rows and the view stood.
     func recoversBlankRows<ID: Hashable>(_ type: ID.Type, rows: Int, drawn: DrawnRows, idle: @escaping () -> Bool,
                                          recover: @escaping (_ last: ID?, _ attempt: Int) -> Void) -> some View {
@@ -359,7 +360,7 @@ private final class BlankRowsWatch<ID: Hashable> {
         Log.app.notice("""
             Blank conversation, recovering (try \(attempt)): rows \(self.rows), drawn \(spans.count) + \(self.drawn?.pending.count ?? 0) unplaced, \
             view \(Int(self.top))–\(Int(self.top + self.height)) of \(Int(self.content)), nearest row \(Int(nearest?.top ?? -1))–\(Int(nearest?.bottom ?? -1)), \
-            reported in view \(self.reportedInView), idle \(self.idle())
+            reported in view \(self.reportedInView), idle \(self.idle()), rebuilds \(RowsInView.rebuilds(attempt: attempt))
             """)
     }
 

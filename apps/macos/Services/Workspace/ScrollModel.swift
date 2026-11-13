@@ -132,6 +132,14 @@ enum RowsInView {
         let bottom = top + height
         return !drawn.contains { $0.bottom - $0.top > 1 && $0.bottom > top + margin && $0.top < bottom - margin }
     }
+
+    /// Whether try `attempt` (0 first) of a blank conversation's recovery makes its scroll view again instead of only
+    /// scrolling: from the third try on, every fourth. A lazy stack can get stuck drawing no row at all, even at the end
+    /// it was scrolled to (seen on 2026-11-13: 45 rows, none drawn, for minutes of tries); a new scroll view lays its
+    /// rows out from scratch, as when the conversation opens.
+    static func rebuilds(attempt: Int) -> Bool {
+        attempt >= 2 && (attempt - 2) % 4 == 0
+    }
 }
 
 /// Where a scroll view stands: its offset, the height of its content and of its container, and the room around it.
