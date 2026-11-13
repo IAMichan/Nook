@@ -1,8 +1,8 @@
 import Foundation
 
 /// Finds a project's own icon in its folder: a favicon or app icon at a well-known
-/// place, else the icon an `index.html` (or a root route) links, else one in a web app of a monorepo (`apps/*/public`),
-/// else an Xcode app's `AppIcon`. The session list shows it as the project's badge; without one the badge is the
+/// place, else the icon an `index.html` (or a root route) links, else one in a web app of a monorepo (`apps/*/public`,
+/// `apps/*/web/public`), else one in a site folder of its own, else an app's `AppIcon` (`.icns` or `.appiconset`). The session list shows it as the project's badge; without one the badge is the
 /// project's initials. Foundation only: it reads a few files, never more than a bounded walk, and runs off the main thread.
 enum ProjectFavicon {
     /// The places looked at first, in order, plus `.icns` for Mac apps.
@@ -12,7 +12,7 @@ enum ProjectFavicon {
         "app/favicon.ico", "app/favicon.png", "app/icon.svg", "app/icon.png", "app/icon.ico",
         "src/favicon.ico", "src/favicon.svg", "src/app/favicon.ico", "src/app/icon.svg", "src/app/icon.png",
         "assets/icon.svg", "assets/icon.png", "assets/logo.svg", "assets/logo.png",
-        ".idea/icon.svg", "Resources/AppIcon.icns", "AppIcon.icns",
+        ".idea/icon.svg",
     ]
 
     /// Files that may link the icon (`<link rel="icon" href="…">`, or `rel: "icon", href: "…"` in a route).
@@ -21,6 +21,26 @@ enum ProjectFavicon {
 
     /// Folders of a monorepo whose packages may hold the web app with the favicon.
     static let workspaces = ["apps", "packages", "web", "site", "website"]
+
+    /// Folders inside a monorepo package that hold its web app.
+    static let webFolders = ["web", "app", "site", "frontend", "client", "www"]
+
+    /// The repository's name, lowercased: the folder's own name, and for a worktree (`…/worktrees/<repo>/<branch>`)
+    /// also the repository's folder above it.
+    static func repositoryNames(of base: URL) -> [String] {
+        let components = base.standardizedFileURL.pathComponents
+        var names = [base.lastPathComponent.lowercased()]
+        if components.count >= 3, components[components.count - 3] == "worktrees" {
+            names.append(components[components.count - 2].lowercased())
+        }
+        return names
+    }
+
+    /// Whether a package is named after the repository (`infaris` in `infaris-monorepo`); short names never match.
+    static func matches(_ package: String, _ names: [String]) -> Bool {
+        let package = package.lowercased()
+        return package.count >= 3 && names.contains { $0.contains(package) }
+    }
 
     /// Folders never walked into while looking for an `AppIcon`.
     static let skipped: Set<String> = ["node_modules", ".git", ".build", "build", "dist", "DerivedData", "Pods", ".next",
@@ -41,13 +61,27 @@ enum ProjectFavicon {
             let clean = href.hasPrefix("/") ? String(href.dropFirst()) : href
             if let hit = ["public/" + clean, clean].lazy.compactMap(existing).first { return hit }
         }
-        // A monorepo: the first package (by name) with a favicon of its own.
+        // A monorepo: the package named after the repository first (`apps/infaris` in `Infaris-monorepo`), then the
+        // others by name; in each, the package itself or its web app (`apps/infaris/web/public/favicon.ico`).
+        let names = repositoryNames(of: base)
         for folder in workspaces {
             let packages = (try? fileManager.contentsOfDirectory(atPath: base.appendingPathComponent(folder).path)) ?? []
-            for package in packages.sorted() where !package.hasPrefix(".") {
-                let prefix = folder + "/" + package + "/"
-                if let hit = candidates.lazy.compactMap({ existing(prefix + $0) }).first { return hit }
+            let ordered = packages.filter { !$0.hasPrefix(".") }.sorted().sorted { lhs, rhs in
+                matches(lhs, names) && !matches(rhs, names)
             }
+            for package in ordered {
+                for sub in [""] + webFolders.map({ $0 + "/" }) {
+                    let prefix = folder + "/" + package + "/" + sub
+                    if let hit = candidates.lazy.compactMap({ existing(prefix + $0) }).first { return hit }
+                }
+            }
+        }
+        // A repository of several sites side by side (`bettr-finance/favicon.svg`): its own folders, the same way.
+        let folders = ((try? fileManager.contentsOfDirectory(atPath: base.path)) ?? [])
+            .filter { !$0.hasPrefix(".") && !skipped.contains($0) && !workspaces.contains($0) }
+            .sorted().sorted { matches($0, names) && !matches($1, names) }
+        for folder in folders {
+            if let hit = candidates.lazy.compactMap({ existing(folder + "/" + $0) }).first { return hit }
         }
         return appIcon(in: base, fileManager: fileManager)
     }
@@ -71,7 +105,8 @@ enum ProjectFavicon {
         return nil
     }
 
-    /// An Xcode app's icon: the biggest picture of up to 256 KB in the first `AppIcon.appiconset` within four levels.
+    /// An app's icon within four levels, nearest first: an `AppIcon.icns`, or the biggest picture of up to 2 MB in an
+    /// `AppIcon.appiconset` (a 1024 px icon is often a few hundred KB; it is drawn small once, so size barely matters).
     static func appIcon(in base: URL, fileManager: FileManager, maxDepth: Int = 4, budget: Int = 400) -> String? {
         var queue: [(URL, Int)] = [(base, 0)]
         var visited = 0
@@ -81,6 +116,7 @@ enum ProjectFavicon {
             guard let names = try? fileManager.contentsOfDirectory(atPath: folder.path) else { continue }
             for name in names.sorted() {
                 let url = folder.appendingPathComponent(name)
+                if name == "AppIcon.icns" { return url.path }
                 if name == "AppIcon.appiconset" || name == "AppIcon.icon" {
                     let pictures = ((try? fileManager.contentsOfDirectory(atPath: url.path)) ?? [])
                         .filter { $0.lowercased().hasSuffix(".png") }
@@ -89,7 +125,7 @@ enum ProjectFavicon {
                             let size = (try? fileManager.attributesOfItem(atPath: path)[.size] as? Int) ?? nil
                             return size.map { (path, $0) }
                         }
-                        .filter { $0.1 <= 256 * 1024 }
+                        .filter { $0.1 <= 2 * 1024 * 1024 }
                     if let best = pictures.max(by: { $0.1 < $1.1 }) { return best.0 }
                     continue
                 }

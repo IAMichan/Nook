@@ -39,6 +39,32 @@ final class ProjectFaviconTests: XCTestCase {
                        root.appendingPathComponent("App/Assets.xcassets/AppIcon.appiconset/icon-128.png").path)
     }
 
+    func testMonorepoPrefersTheAppNamedAfterTheRepository() throws {
+        let repo = root.appendingPathComponent("Infaris-monorepo")
+        try touch("Infaris-monorepo/apps/calendar/web/public/favicon.png")
+        try touch("Infaris-monorepo/apps/infaris/web/public/favicon.ico")
+        XCTAssertEqual(ProjectFavicon.find(in: repo.path), repo.appendingPathComponent("apps/infaris/web/public/favicon.ico").path)
+        // A worktree of it: named after its branch, but under `worktrees/<repository>`.
+        let worktree = URL(fileURLWithPath: "/x/worktrees/infaris-monorepo/fix-dashboard-12ab")
+        XCTAssertTrue(ProjectFavicon.repositoryNames(of: worktree).contains("infaris-monorepo"))
+        XCTAssertFalse(ProjectFavicon.matches("qr", ["qr-monorepo"]))
+    }
+
+    func testSitesSideBySide() throws {
+        try touch("bettr-finance/favicon.svg")
+        try touch("node_modules/a/favicon.svg")
+        XCTAssertEqual(ProjectFavicon.find(in: root.path), root.appendingPathComponent("bettr-finance/favicon.svg").path)
+    }
+
+    func testMacAppIconAndLargeAppIconSet() throws {
+        try touch("apps/ios/Companion/Assets.xcassets/AppIcon.appiconset/AppIcon.png", String(repeating: "a", count: 300 * 1024))
+        XCTAssertEqual(ProjectFavicon.find(in: root.path),
+                       root.appendingPathComponent("apps/ios/Companion/Assets.xcassets/AppIcon.appiconset/AppIcon.png").path)
+        // The Mac app's icon is nearer than the companion's set, so it wins.
+        try touch("apps/macos/App/AppIcon.icns")
+        XCTAssertEqual(ProjectFavicon.find(in: root.path), root.appendingPathComponent("apps/macos/App/AppIcon.icns").path)
+    }
+
     func testNothingAndLinksOutsideTheProject() throws {
         XCTAssertNil(ProjectFavicon.find(in: root.path))
         XCTAssertNil(ProjectFavicon.iconHref(in: #"<link rel="icon" href="https://cdn.example.com/f.ico">"#))
