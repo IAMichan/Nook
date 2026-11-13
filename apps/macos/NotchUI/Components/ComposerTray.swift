@@ -6,6 +6,9 @@ import SwiftUI
 struct ComposerTray<Content: View>: View {
     /// The side of the box the tray comes out of.
     var edge: VerticalEdge = .bottom
+    /// As wide as the box, flush with its sides, for what belongs to the message being typed (the message it answers),
+    /// instead of a little narrower, as a tray of the session around it is.
+    var fullWidth = false
     @ViewBuilder let content: Content
 
     /// How far the tray runs on behind the box.
@@ -23,7 +26,7 @@ struct ComposerTray<Content: View>: View {
             .overlay(shape.strokeBorder(NookTheme.fieldStroke, lineWidth: 1))
             .padding(inner, -Self.tuck)
             // Narrower than the box by a little more than its corner, so the tray clearly comes out from behind it.
-            .padding(.horizontal, NookTheme.Spacing.xl + NookTheme.Spacing.sm)
+            .padding(.horizontal, fullWidth ? 0 : NookTheme.Spacing.xl + NookTheme.Spacing.sm)
     }
 
     private var shape: UnevenRoundedRectangle {
