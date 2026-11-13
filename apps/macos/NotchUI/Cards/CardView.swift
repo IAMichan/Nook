@@ -320,6 +320,8 @@ struct CardView: View {
             NoteDetail(text: text, label: label)
         case .summary(let text):
             SummaryDetail(text: text)
+        case .doubleTapRun(let run):
+            DoubleTapRunDetail(run: run)
         case .answer:
             // Drawn in the title's place (`fullCard`).
             EmptyView()

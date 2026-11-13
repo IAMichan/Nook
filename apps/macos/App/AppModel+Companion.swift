@@ -102,13 +102,25 @@ extension AppModel {
         doubleTap.facts = { [weak self] in
             guard let self, self.settings.useMemory, !self.doubleTapHidden.contains(SourceCatalog.memory) else { return [] }
             let local = self.settings.isLocalBrain || self.settings.screenWorker != nil
-            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil && (local || !$0.localOnly) }
+            var facts = self.memory.items.filter { $0.kind != .lesson && $0.tool == nil && (local || !$0.localOnly) }
                 .sorted { $0.strength > $1.strength }.prefix(30).map(\.text)
+            // The name on this Mac's account: the field almost every form asks first, also before memory knows it.
+            let name = NSFullUserName().trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.contains(" "), !facts.contains(where: { $0.localizedCaseInsensitiveContains(name) }) {
+                facts.insert("The user's full name (from their Mac account): \(name)", at: 0)
+            }
+            return facts
         }
         doubleTap.screenText = { [weak self] bundleID in
             guard let self, self.settings.liveScreen, !self.doubleTapHidden.contains(SourceCatalog.screen) else { return nil }
             let windows = self.screenContext.windows.filter { $0.bundleID == bundleID }
             return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.doubleTapShielded)
+        }
+        // The form's own labels and questions, read as you asked to fill it in: also without the live screen, which
+        // reads the screen all the time, but never when the screen is a source this brain may not see.
+        doubleTap.formText = { [weak self] text in
+            guard let self, !text.isEmpty, !self.doubleTapHidden.contains(SourceCatalog.screen) else { return nil }
+            return self.doubleTapShielded(text)
         }
         doubleTap.clipboardText = { [weak self] in
             guard let self, !self.doubleTapHidden.contains("clipboard"),
@@ -122,17 +134,12 @@ extension AppModel {
         doubleTap.record = { [weak self] args, result in self?.store.audit(tool: "doubletap_edit", args: args, result: result) }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
         doubleTap.onScene = { [weak self] scene in self?.showDoubleTapScene(scene) }
-        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type. A click
-        // on it opens the notch, which lists every step and, once done, what Nook typed (`DoubleTapRunBar`).
+        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type. The
+        // result follows in the same place, as a card with every step and what Nook typed (`presentDoubleTapRun`).
         doubleTap.onStep = { [weak self] line in
-            self?.viewModel.showWork(line, opensPanel: true) { DoubleTap.shared.stop() }
+            self?.viewModel.showWork(line) { DoubleTap.shared.stop() }
         }
-        doubleTap.showSteps = { [weak self] in
-            // An open panel already shows the steps under its tabs.
-            guard let self else { return }
-            if case .panel = self.viewModel.state { return }
-            self.viewModel.openPanel()
-        }
+        doubleTap.presentRun = { [weak self] run, action in self?.presentDoubleTapRun(run, action: action) }
         doubleTap.onStepsEnd = { [weak self] last in
             // Only the step line goes: a result shown in its place since (a toast, a card) stays.
             guard let self, case .done(let shown) = self.viewModel.state, shown == last else { return }
@@ -154,6 +161,48 @@ extension AppModel {
     /// What Double Tap read, as the brain it runs on may get it: unchanged for the screen brain on this Mac.
     private func doubleTapShielded(_ text: String) -> String {
         settings.screenWorker != nil ? text : settings.shielded(text)
+    }
+
+    /// How a double tap ended, where you asked it (the notch, also with the notch off): the result, every step Nook took
+    /// and what it typed, with the result's own action (Undo, Open Settings) next to Close.
+    func presentDoubleTapRun(_ run: DoubleTapRun, action: NookToastAction?) {
+        let token = "doubletap-run-" + run.id.uuidString
+        let close = CardAction(label: tr("button.close"), outcome: .dismiss)
+        var primary = close
+        var secondary = CardAction(label: "", outcome: .dismiss)
+        if let action {
+            viewModel.register("\(token)#action") { action.perform() }
+            primary = CardAction(label: action.title, outcome: .callback("\(token)#action", ""))
+            secondary = close
+        }
+        var context = [tr("doubletap.settings.title")]
+        if !run.app.isEmpty { context.append(run.app) }
+        if !run.request.isEmpty { context.append("“" + DoubleTapLogic.preview(run.request, limit: 40) + "”") }
+        if let seconds = run.seconds { context.append(tr("doubletap.run.seconds", seconds)) }
+        let title = run.result.isEmpty ? tr("doubletap.run.ended") : run.result
+        let titleLines = max(1, min(3, Int(ceil(Double(title.count) / 48.0))))
+        let noticeHeight: CGFloat = run.resultDetail.isEmpty ? 0 : 40
+        let status: CardStatus?
+        let mood: NookMood
+        switch run.outcome {
+        case .done: (status, mood) = (CardStatus(text: tr("card.status.done"), tone: .done), .done)
+        case .failed: (status, mood) = (CardStatus(text: tr("card.status.failed"), tone: .failed), .worry)
+        case .info, .stopped, nil: (status, mood) = (nil, .rest)
+        }
+        let card = NookCard(
+            id: token,
+            mood: mood,
+            context: context.joined(separator: " · "),
+            title: title,
+            detail: .doubleTapRun(run),
+            primary: primary,
+            secondary: secondary,
+            contentHeight: min(460, 104 + CGFloat(titleLines) * 24 + DoubleTapRunDetail.height(of: run) + noticeHeight),
+            escape: close,
+            notice: run.resultDetail.isEmpty ? nil : run.resultDetail,
+            status: status
+        )
+        showInNotch(card)
     }
 
     /// What a double tap filled in, as a card that waits for you: Send presses the form's own button (only from here,

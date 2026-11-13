@@ -18,8 +18,8 @@ import NaturalLanguage
 /// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return and never
 ///   types into a password field or into apps that hold passwords or run commands (`UIControl.isBlocked`).
 /// - Every step (reading the app, thinking, what Nook is about to type) shows in the notch with Stop (`onStep`).
-///   Open the notch (or press Steps on the result) and every step of the run is listed there with what Nook typed,
-///   changed or filled in, while it works and after it is done, so you can check it (`run`, `DoubleTapRunBar`).
+///   The result comes where Double Tap was asked, as a card that lists every step of the run with what Nook typed,
+///   changed or filled in, so you can check it (`run`, `presentRun`).
 /// - The result is a card in the notch with what was filled, Undo (which empties the fields again) and, when the form has
 ///   a send button, Send: the form is only sent when the user presses it there. Buttons that pay, order or delete are
 ///   never offered.
@@ -35,8 +35,8 @@ final class DoubleTap: ObservableObject {
         didSet { defaults.set(key.rawValue, forKey: "doubleTapKey"); refresh() }
     }
     @Published private(set) var isFilling = false
-    /// The run Nook is on, or the last one, with every step and what it typed, changed or filled in: the open notch
-    /// shows it (`DoubleTapRunBar`), also once it is done, so you can check what happened.
+    /// The run Nook is on, or the last one, with every step and what it typed, changed or filled in: its result card
+    /// shows it (`presentRun`), so you can check what happened.
     @Published private(set) var run: DoubleTapRun?
 
     /// Nook's brain: system prompt, question, timeout → the answer, or nil. Set by `AppModel`.
@@ -45,6 +45,9 @@ final class DoubleTap: ObservableObject {
     var facts: () -> [String] = { [] }
     /// The text Nook read on screen in this app (bundle id), as the active brain may see it.
     var screenText: (String) -> String? = { _ in nil }
+    /// The form's own text (its labels and questions, `DoubleTapLogic.formText`) as the active brain may see it; nil
+    /// when the screen is a source the brain may not read. Set by `AppModel`.
+    var formText: (String) -> String? = { $0 }
     /// Shows the result as a card that waits for the user. Set by `AppModel`; without it the result is a toast.
     var present: ((DoubleTapOutcome) -> Void)?
     /// The notch asks what Nook should do (`AppModel.presentTakeoverPrompt`): on a double tap, and on one tap when
@@ -54,8 +57,10 @@ final class DoubleTap: ObservableObject {
     var onStep: ((String) -> Void)?
     /// The steps are over; `last` is the last step shown, so a result shown since is left alone.
     var onStepsEnd: ((_ last: String) -> Void)?
-    /// Opens the notch on the steps of the run (Steps on its result). Set by `AppModel`.
-    var showSteps: (() -> Void)?
+    /// Shows how a run ended where Double Tap was asked (a card in the notch, also with the notch off): the result,
+    /// every step, what Nook typed, and the result's own action (Undo, Open Settings). Set by `AppModel`; without it
+    /// the result is a toast.
+    var presentRun: ((DoubleTapRun, NookToastAction?) -> Void)?
     /// What is on the clipboard, as the active brain may see it ("punt 5 moet dit worden" after copying the new text).
     var clipboardText: () -> String? = { nil }
     /// Nook's own cursor where it acts in the document (screen point, top-left origin), and nil when it is done.
@@ -88,8 +93,6 @@ final class DoubleTap: ObservableObject {
 
     /// A local model may take a while on a long form; past this the double tap gives up.
     static let deadline: Double = 60
-    /// How long a finished run stays in the open notch when you do not close it.
-    static let keepRun: Double = 15 * 60
 
     private let defaults = UserDefaults.standard
     private var gesture = DoubleTapGesture()
@@ -270,22 +273,9 @@ final class DoubleTap: ObservableObject {
         task?.cancel()
     }
 
-    /// The notch closed while Nook works: the step it is on shows under the notch again, without waiting for the next.
-    func showStepAgain() {
-        guard run?.isRunning == true, !lastStep.isEmpty else { return }
-        onStep?(lastStep)
-    }
-
-    /// The closed run's OK in the notch: its steps go. A run that still works stays.
-    func dismissRun() {
-        guard run?.isRunning == false else { return }
-        run = nil
-    }
-
     private func start(request: String, after delay: Double, _ body: @escaping @MainActor () async -> Void) {
         guard task == nil else { return }
-        let id = UUID()
-        run = DoubleTapRun(id: id, request: request)
+        run = DoubleTapRun(request: request)
         task = Task { @MainActor [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard let self else { return }
@@ -297,16 +287,6 @@ final class DoubleTap: ObservableObject {
             self.isFilling = false
             self.endSteps()
             self.task = nil
-            self.forget(id)
-        }
-    }
-
-    /// A finished run leaves the notch after `keepRun`, unless a new one took its place.
-    private func forget(_ id: UUID) {
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.keepRun * 1_000_000_000))
-            guard let self, self.run?.id == id, self.run?.isRunning == false else { return }
-            self.run = nil
         }
     }
 
@@ -317,21 +297,21 @@ final class DoubleTap: ObservableObject {
         if let onStep { onStep(line) } else { pill.show(.message(line)) }
     }
 
-    /// The result: it ends the run, which keeps its steps, and shows as a toast with Steps to see them again (unless the
-    /// toast has an action of its own: Undo, Open Settings).
+    /// The result: it ends the run, which keeps its steps, and shows where Double Tap was asked, with every step and
+    /// what Nook typed (`presentRun`), and the result's own action (Undo, Open Settings).
     private func report(_ kind: NookToastKind, _ title: String, detail: String? = nil, action: NookToastAction? = nil) {
         finishRun(Self.outcome(of: kind), title, detail: detail ?? "")
-        ToastCenter.shared.show(title, detail: detail, kind: kind, action: action ?? stepsAction)
+        // The step line goes first, so the result does not wait behind it.
+        endSteps()
+        if let presentRun, let run {
+            presentRun(run, action)
+        } else {
+            ToastCenter.shared.show(title, detail: detail, kind: kind, action: action)
+        }
     }
 
     private func finishRun(_ outcome: DoubleTapRun.Outcome, _ result: String, detail: String = "") {
         run?.finish(outcome, result: result, detail: detail)
-    }
-
-    /// Steps on a result: the notch opens on how Nook got there and what it typed.
-    private var stepsAction: NookToastAction? {
-        guard let showSteps, run?.steps.isEmpty == false else { return nil }
-        return NookToastAction(title: tr("doubletap.steps.show"), perform: showSteps)
     }
 
     private static func outcome(of kind: NookToastKind) -> DoubleTapRun.Outcome {
@@ -386,13 +366,20 @@ final class DoubleTap: ObservableObject {
 
         step(tr("doubletap.step.fields", fields.count))
         let screen = screenText(app.bundleIdentifier ?? "") ?? ""
+        // The labels and questions around the fields: on a web page they are often not the field's own label.
+        let reads = formText(DoubleTapLogic.formText(form.pieces, fields: fields)) ?? ""
         let prompt = DoubleTapLogic.prompt(app: appName, window: form.title, fields: fields, facts: facts(), screen: screen,
-                                           request: request)
+                                           request: request, form: reads)
         let reply = await ask(DoubleTapLogic.system, prompt, Self.deadline)
         guard !Task.isCancelled else { return }
         guard let reply else { return report(.warning, tr("doubletap.failed")) }
         let values = DoubleTapLogic.values(from: reply, fields: fields)
-        guard !values.isEmpty else { return report(.info, tr("doubletap.nothing")) }
+        guard !values.isEmpty else {
+            // Say what Nook needed, so the next try can give it ("vul in met mijn werkadres") or memory can keep it.
+            let missing = DoubleTapLogic.missing(from: reply)
+            return report(.info, tr("doubletap.nothing"),
+                          detail: missing.isEmpty ? tr("doubletap.nothing.hint") : tr("doubletap.nothing.missing", missing))
+        }
 
         // The fields may have changed while the brain thought: write only where the same app is still in front.
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
@@ -647,11 +634,14 @@ struct DoubleTapForm {
     var focusIsSecure: Bool
     /// The button that sends this form (`DoubleTapLogic.submitButton`), if there is one.
     var submit: Button?
+    /// The window's text around its fields in reading order (`DoubleTapLogic.formText`).
+    var pieces: [DoubleTapFormPiece] = []
 
     private static let maxNodes = 4_000
     private static let maxDepth = 40
     private static let maxFields = 80
     private static let maxButtons = 80
+    private static let maxPieces = 1_500
 
     /// Chromium and Electron build their accessibility tree only for a client that asks.
     static func wake(_ app: NSRunningApplication) {
@@ -677,17 +667,19 @@ struct DoubleTapForm {
         }
         var entries: [Entry] = []
         var buttons: [Button] = []
+        var pieces: [DoubleTapFormPiece] = []
         var visited = 0
-        collect(window, depth: 0, focused: focused, visited: &visited, into: &entries, buttons: &buttons)
+        collect(window, depth: 0, focused: focused, visited: &visited, into: &entries, buttons: &buttons, pieces: &pieces)
         guard !entries.isEmpty || focusIsSecure else { return nil }
         let defaultButton = element(window, kAXDefaultButtonAttribute)
         let defaultIndex = defaultButton.flatMap { target in buttons.firstIndex { CFEqual($0.element, target) } }
         let submit = DoubleTapLogic.submitButton(labels: buttons.map(\.label), defaultIndex: defaultIndex).map { buttons[$0] }
-        return DoubleTapForm(title: string(window, kAXTitleAttribute) ?? "", fields: entries, focusIsSecure: focusIsSecure, submit: submit)
+        return DoubleTapForm(title: string(window, kAXTitleAttribute) ?? "", fields: entries, focusIsSecure: focusIsSecure,
+                             submit: submit, pieces: pieces)
     }
 
     private static func collect(_ node: AXUIElement, depth: Int, focused: AXUIElement?, visited: inout Int, into entries: inout [Entry],
-                                buttons: inout [Button]) {
+                                buttons: inout [Button], pieces: inout [DoubleTapFormPiece]) {
         guard depth <= maxDepth, visited < maxNodes, entries.count < maxFields else { return }
         visited += 1
         let axRole = string(node, kAXRoleAttribute) ?? ""
@@ -702,6 +694,7 @@ struct DoubleTapForm {
                 AXUIElementIsAttributeSettable(node, kAXValueAttribute as CFString, &settable)
                 let value = secure ? "" : (string(node, kAXValueAttribute) ?? "")
                 let isFocused = focused.map { CFEqual($0, node) } ?? false
+                pieces.append(.field(entries.count))
                 entries.append(Entry(field: DoubleTapField(id: entries.count + 1, role: role, label: label(of: node), value: value,
                                                            focused: isFocused, secure: secure, settable: settable.boolValue,
                                                            source: entries.count),
@@ -716,8 +709,14 @@ struct DoubleTapForm {
             }
             return
         }
+        // The text around the fields (a label, a question, an instruction) tells what a field without a label asks.
+        if axRole == kAXStaticTextRole, pieces.count < maxPieces,
+           let text = string(node, kAXValueAttribute), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            pieces.append(.text(text))
+            return
+        }
         for child in children(node) {
-            collect(child, depth: depth + 1, focused: focused, visited: &visited, into: &entries, buttons: &buttons)
+            collect(child, depth: depth + 1, focused: focused, visited: &visited, into: &entries, buttons: &buttons, pieces: &pieces)
             if visited >= maxNodes || entries.count >= maxFields { return }
         }
     }
