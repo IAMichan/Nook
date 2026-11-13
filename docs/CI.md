@@ -15,7 +15,7 @@ reusable workflow that can also be started on its own with *Run workflow*.
 | `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol`, and the Mac app's files the companion compiles too (`path: ../macos/…` in `apps/ios/project.yml`) |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
-| `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
+| `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri`; the Fuzz job runs each cargo-fuzz target of `apps/tauri/core/fuzz` for a minute |
 | `chatd.yml` | ubuntu | `apps/chatd`: `gofmt`, `go vet`, `go test` and 30 seconds of `go test -fuzz=FuzzTag` of the chat helper; the tests link a libsignal built once per pinned commit and cached |
 | `core-tests.yml` | ubuntu | `apps/macos`: `scripts/core-tests.sh`, the portable part of `NookTests`, so it keeps working for contributors without a Mac |
 | `ci.yml` → *Workflow security* | ubuntu, seconds | `.github/workflows`, `.github/actions`, `.github/zizmor.yml`, `.github/dependabot.yml`: [zizmor](https://docs.zizmor.sh) audits the workflows (settings and reasoned exceptions in `.github/zizmor.yml` and `# zizmor: ignore[...]` comments), and [actionlint](https://github.com/rhysd/actionlint) catches unknown `needs`, outputs and inputs, expression typos and bad cron lines before a release or schedule runs into them |
