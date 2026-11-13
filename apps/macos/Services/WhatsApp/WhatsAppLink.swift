@@ -358,6 +358,9 @@ final class WhatsAppLink: ObservableObject {
     private var refreshing = false
     private var polling = false
     private var backfilled = false
+    /// When this link began taking messages live (its backfill): a chat that moved after it should have brought its
+    /// message along (`WAInbox.behind`).
+    private var liveSince: Date?
     private var qrExpiry: Date = .distantPast
     private var lastWebhook: Date?
     private var lastPoll = Date()
@@ -508,6 +511,7 @@ final class WhatsAppLink: ObservableObject {
         qrPNG = nil
         me = nil
         backfilled = false
+        liveSince = nil
         lastWebhook = nil
         namingGroups = [:]
         failures = 0
@@ -766,6 +770,7 @@ final class WhatsAppLink: ObservableObject {
     /// The last hours of history, once linked: kept, but nothing counts as new.
     private func backfill(_ provider: WhatsAppProvider, gen: Int) async {
         backfilled = true
+        liveSince = Date()
         let since = Date().addingTimeInterval(-12 * 3600)
         guard let messages = try? await provider.recentMessages(since: since, me: me), gen == generation else { return }
         for message in messages { inbox.add(message, filters: filters, history: true) }
@@ -814,7 +819,7 @@ final class WhatsAppLink: ObservableObject {
         }
         // The list moved a chat on (its row goes under "Today") past the newest message Nook holds of it: that message
         // never came in live, so it is fetched, and the row gets its line and time.
-        for chat in inbox.behind(knownChats, asked: caughtUp) {
+        for chat in inbox.behind(knownChats, asked: caughtUp, liveSince: liveSince) {
             guard gen == generation, isConnected else { return }
             caughtUp[chat.jid] = chat.last
             _ = try? await fetchHistory(chat.jid, limit: Self.lineFetch)
@@ -905,7 +910,15 @@ final class WhatsAppLink: ObservableObject {
         let gen = generation
         Task {
             defer { if gen == generation { polling = false } }
-            guard let messages = try? await provider.recentMessages(since: since, me: me), gen == generation else { return }
+            let messages: [WAMessage]
+            do {
+                messages = try await provider.recentMessages(since: since, me: me)
+            } catch {
+                // The safety net for what the webhook missed (your own message from the phone too): its failing is said.
+                Log.connectors.error("WhatsApp: poll failed: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            guard gen == generation else { return }
             lastPoll = started
             ingest(messages, announce: true)
         }
