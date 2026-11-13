@@ -38,6 +38,12 @@ name: Release
 # variable NOOK_UPDATE_PUBLIC_KEY (make the pair once with `swift scripts/sign-update.swift generate`), the .zip gets an
 # Ed25519 signature (.zip.sig) and the app carries the public key, so a downloaded Nook installs the next release from
 # the update button after checking it. A release without them (or without a signing identity) fails instead of shipping.
+# Release token: with the repository secret NOOK_RELEASE_TOKEN (a fine-grained token, or a GitHub App's, for this
+# repository with Contents and Workflows read and write), the steps that create, fill and publish the release use it
+# instead of the workflow's own token. GitHub refuses a release on a commit whose .github/workflows differ from main's
+# to a token without the Workflows permission, and the workflow's own token can never have it. So without the secret, a
+# workflow change merged into main during the hour-long build fails the release at the end with "HTTP 403: Resource
+# not accessible by integration" (Beta 6); re-running does not help, start a new release from main instead.
 # TDLib and nook-chatd are not bundled (they need scripts/build-tdlib.sh and scripts/build-chatd.sh); Telegram and the
 # chat-helper apps stay on notifications in this build.
 on:
@@ -92,7 +98,14 @@ jobs:
           set -euo pipefail
           COMMIT="$GITHUB_SHA"
           case "$GITHUB_EVENT_NAME" in
-            push) TAG="$GITHUB_REF_NAME" ;;
+            push)
+              TAG="$GITHUB_REF_NAME"
+              # Publishing with NOOK_RELEASE_TOKEN creates the tag, and unlike the workflow's own token that starts
+              # this workflow again; the tag already has its release then, so there is nothing to build.
+              if [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = false ]; then
+                echo "$TAG is already published; nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+                echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+              fi ;;
             schedule)
               # The newest release (drafts included, so a release that is still being finished counts too).
               LAST="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=1" --jq '.[0] | "\(.tag_name) \(.created_at)"' || true)"
@@ -432,7 +445,7 @@ jobs:
       - name: Create the draft release
         working-directory: ${{ runner.temp }}/dist
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
           STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
           STEPS_VERSION_OUTPUTS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
           STEPS_VERSION_OUTPUTS_TITLE: ${{ steps.version.outputs.title }}
@@ -493,7 +506,7 @@ jobs:
       - name: Attach to the release
         working-directory: ${{ runner.temp }}/desktop
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
           TAG: ${{ needs.release.outputs.tag }}
         run: |
           set -euo pipefail
@@ -546,7 +559,7 @@ jobs:
     steps:
       - name: Publish the release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.NOOK_RELEASE_TOKEN || github.token }} # see "Release token" at the top
           TAG: ${{ needs.release.outputs.tag }}
           VERSION: ${{ needs.release.outputs.version }}
           PRERELEASE: ${{ needs.release.outputs.prerelease }}
