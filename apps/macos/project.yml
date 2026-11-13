@@ -246,6 +246,7 @@ targets:
       - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+AgentLifecycle.swift
       - path: Core/I18n+WorktreeCleanup.swift
+      - path: Core/I18n+WorktreeSetup.swift
       - path: Core/I18n+Automation.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
@@ -606,6 +607,7 @@ targets:
       - path: Services/Workspace/FileViewing.swift
       - path: Services/Workspace/TerminalLinks.swift
       - path: Services/Workspace/WorktreeCleanup.swift
+      - path: Services/Workspace/WorktreeSetupProgress.swift
       - path: Services/Workspace/WorktreeArchive.swift
       - path: Services/Workspace/DiskUsage.swift
       - path: Services/DirectoryListing.swift

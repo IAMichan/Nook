@@ -201,12 +201,18 @@ struct GitService: Sendable {
 
     /// Brings a remote-tracking base (`origin/main`) up to date right before a worktree starts from it. Best effort:
     /// offline or without access, the worktree starts from the last fetched state. Local bases are left alone.
-    func refreshRemoteBase(_ base: String, in repo: String) {
-        guard let slash = base.firstIndex(of: "/") else { return }
+    @discardableResult
+    func refreshRemoteBase(_ base: String, in repo: String) -> RemoteBaseRefresh {
+        guard let slash = base.firstIndex(of: "/") else { return .local }
         let remote = String(base[..<slash])
         let branch = String(base[base.index(after: slash)...])
-        guard !branch.isEmpty, remotes(repo).contains(remote), refExists("refs/remotes/\(base)", in: repo) else { return }
-        _ = try? run(["fetch", "--quiet", "--no-tags", remote, "+refs/heads/\(branch):refs/remotes/\(base)"], in: repo, timeout: 20)
+        guard !branch.isEmpty, remotes(repo).contains(remote), refExists("refs/remotes/\(base)", in: repo) else { return .local }
+        do {
+            _ = try run(["fetch", "--quiet", "--no-tags", remote, "+refs/heads/\(branch):refs/remotes/\(base)"], in: repo, timeout: 20)
+            return .fetched
+        } catch {
+            return .failed(error.localizedDescription)
+        }
     }
 
     func refExists(_ ref: String, in repo: String) -> Bool {

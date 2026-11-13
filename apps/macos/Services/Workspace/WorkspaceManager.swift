@@ -463,6 +463,9 @@ final class WorkspaceManager: ObservableObject {
     var stopCoordinators: [UUID: StopCoordinator] = [:]
     /// Worktree or remote preparation still running before the first turn starts; cancelled if you press Stop.
     var prepareTasks: [UUID: Task<Void, Never>] = [:]
+    /// A new worktree's steps (fetch, check out, setup script, agent) while it is being set up, shown as a checklist in
+    /// the conversation; gone once the agent answers (see WorkspaceManager+WorktreeSetup).
+    @Published var worktreeSetups: [UUID: WorktreeSetupProgress] = [:]
     /// Sessions whose removed worktree is being made again for a message (see `reopenWorktree`).
     var reopeningWorktrees: Set<UUID> = []
     /// Last inspected project metadata per normalized folder, so opening "New Session" or starting is instant.
@@ -1207,6 +1210,7 @@ final class WorkspaceManager: ObservableObject {
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
         guard !quitting else { return }
+        dropFinishedSetup(id)
         cancelIdleCompaction(id)
         guard processes[id] == nil else { return }
         if waitForCapacity(id, prompt: prompt, executable: executable, showPrompt: showPrompt) { return }
@@ -1379,6 +1383,7 @@ final class WorkspaceManager: ObservableObject {
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
+        worktreeSetups[id] = nil
         forgetConnectorSignIns(id)
         closeCodexServer(id)
         closeClaudeProcess(id)
