@@ -1191,7 +1191,30 @@ enum WorkspaceRunsSection {
     static let settledLifetime = TimeInterval(AgentHistory.listDays) * 86_400
 
     static func recent(_ workspace: WorkspaceManager, finished: FinishedSessions? = nil, now: Date = Date()) -> [WorkspaceRun] {
-        let finished = finished ?? .shared
+        // The notch's ring and the Agents list ask on every redraw; the answer only changes with the sessions, your
+        // settled marks, or (for how long a settled one stays) the clock, so it is kept until one of those moved.
+        guard finished == nil else { return make(workspace, finished: finished ?? .shared, now: now) }
+        let key = Memo.Key(runs: workspace.runs, settled: FinishedSessions.shared.keys,
+                           minute: Int(now.timeIntervalSince1970 / 60))
+        if let memo, memo.key == key { return memo.value }
+        let value = make(workspace, finished: .shared, now: now)
+        memo = Memo(key: key, value: value)
+        return value
+    }
+
+    private struct Memo {
+        struct Key: Equatable {
+            let runs: [WorkspaceRun]
+            let settled: Set<String>
+            let minute: Int
+        }
+        let key: Key
+        let value: [WorkspaceRun]
+    }
+
+    private static var memo: Memo?
+
+    private static func make(_ workspace: WorkspaceManager, finished: FinishedSessions, now: Date) -> [WorkspaceRun] {
         // Sorted by position, and each session copied once into the result: the notch and the Agents list ask for this on
         // every redraw, and sorting and filtering the sessions themselves copied every one (a large struct) several times.
         let runs = workspace.runs

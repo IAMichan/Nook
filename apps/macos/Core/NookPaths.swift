@@ -59,7 +59,8 @@ enum NookPaths {
     }
     static var databaseURL: URL { supportDirectory.appendingPathComponent("nook.sqlite") }
     /// Folders of sessions started without a project (`ScratchProjects`): ~/.nook/scratch, beside ~/.nook/worktrees.
-    static var scratchDirectory: URL {
+    /// Made once: the agent list asks for it for every row on every redraw, and looking up the home folder each time
+    /// cost a noticeable share of the main thread.
+    static let scratchDirectory: URL =
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/scratch")
-    }
 }
