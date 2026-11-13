@@ -757,6 +757,15 @@ private struct ChatBubbleView: View, Equatable {
             .outside(bubble.fromMe ? .leading : .trailing, spacing: NookTheme.Spacing.sm) { actions }
             if !bubble.fromMe { Spacer(minLength: 70) }
         }
+        // A double-click in the empty room beside the message answers it, as Reply does (and as chat apps do). Behind
+        // the bubble, so a double-click on its text still selects a word.
+        .background {
+            if let onReply {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2, perform: onReply)
+            }
+        }
         .onHover { inside in
             hovering = inside
             if inside, !armed {

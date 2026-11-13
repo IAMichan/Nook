@@ -61,6 +61,8 @@ struct ChatReplyField: View {
     /// The menu "@" opens above the field, as in Nook's own chat.
     @StateObject private var menu = ComposerModel()
     @State private var pasteMonitor = PasteMonitor()
+    /// The link whose preview you closed: the message goes without it, until another link is typed.
+    @State private var dismissedLink: URL?
 
     // What `extras` adds (see there).
     private var leadingAccessory: AnyView?
@@ -171,6 +173,12 @@ struct ChatReplyField: View {
     /// The panel above the field: Nook writing, or its draft in the field.
     private var showsDraft: Bool { drafting || drafted != nil || !proposed.isEmpty }
 
+    /// The first link in what is typed, previewed above the field as chat apps do; nil once you closed its preview.
+    private var typedLink: URL? {
+        guard !drafting, let link = ChatFormat.firstLink(text), link != dismissedLink else { return nil }
+        return link
+    }
+
     /// A message is on its way: the field and its button wait until it is there or failed.
     private var busy: Bool { outgoing.map { !$0.sent } ?? false }
 
@@ -208,10 +216,6 @@ struct ChatReplyField: View {
             if menu.isOpen {
                 ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
             }
-            if let quote {
-                ReplyingBar(quote: quote, cancel: cancelQuote)
-                    .transition(.opacity)
-            }
             if let aboveAccessory { aboveAccessory }
             VStack(spacing: 0) {
                 // A message on its way takes the tray, where an agent shows its queued messages; the host's line
@@ -221,6 +225,18 @@ struct ChatReplyField: View {
                         .transition(.opacity)
                 } else if let trayContent {
                     ComposerTray(edge: .top) { trayContent }
+                        .transition(.opacity)
+                }
+                // A link in the message, with the page it leads to as soon as that is known.
+                if outgoing == nil, let typedLink {
+                    ComposerTray(edge: .top, fullWidth: true) {
+                        TypedLinkBar(url: typedLink) { withAnimation(NookTheme.reveal) { dismissedLink = typedLink } }
+                    }
+                    .transition(.opacity)
+                }
+                // The message this one answers, as wide as the field and tucked behind it, as chat apps show it.
+                if let quote {
+                    ComposerTray(edge: .top, fullWidth: true) { ReplyingBar(quote: quote, cancel: cancelQuote) }
                         .transition(.opacity)
                 }
                 if let replacement {
@@ -1249,6 +1265,68 @@ private struct WritingDots: View {
     }
 }
 
+/// Above the field while what is typed holds a link: the page's picture (else a link mark), its title and the address,
+/// with a cross to send the message without it.
+private struct TypedLinkBar: View {
+    let url: URL
+    let dismiss: () -> Void
+    @State private var preview: ChatLinkPreviews.Preview?
+
+    private static let side: CGFloat = 40
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            thumbnail
+            VStack(alignment: .leading, spacing: 1) {
+                if let title = preview?.title, !title.isEmpty {
+                    Text(title)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                }
+                Text(url.absoluteString)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            ToolbarIconButton("xmark", tr("chat.linkPreview.remove"), dismiss)
+        }
+        .padding(.leading, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .accessibilityElement(children: .contain)
+        // A moment after the last key, so a link typed out by hand is not fetched at every letter.
+        .task(id: url) {
+            preview = nil
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            let loaded = await ChatLinkPreviews.shared.preview(url)
+            guard !Task.isCancelled else { return }
+            withAnimation(NookTheme.reveal) { preview = loaded }
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        if let image = preview?.image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: Self.side, height: Self.side)
+                .roundedClip(NookTheme.Radius.control)
+                .accessibilityHidden(true)
+        } else {
+            Image(icon: "link")
+                .font(NookTheme.font(16, .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: Self.side, height: Self.side)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// Above the field while it answers one message: who wrote that message and its start, with a cross to let it go.
 private struct ReplyingBar: View {
     let quote: BubbleQuote
@@ -1275,10 +1353,8 @@ private struct ReplyingBar: View {
             Spacer(minLength: NookTheme.Spacing.sm)
             ToolbarIconButton("xmark", tr("chat.reply.cancel"), cancel)
         }
-        .padding(.leading, NookTheme.Spacing.md)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.sm)
-        .roundedBackground(NookTheme.smoke, radius: NookTheme.Radius.card)
+        .padding(.leading, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
         .accessibilityElement(children: .contain)
     }
 }
