@@ -43,8 +43,6 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Fold to one line",
         "usage.session.unfold": "Show context and limits",
         "usage.session.hide": "Hide usage",
-        "usage.alert.limitReached": "%@ limit reached",
-        "usage.alert.compactFirst": "Summarizes first · %@",
     ],
     .nl: [
         "session.context.addComment": "Aan de composer toevoegen met deze reactie",
@@ -85,8 +83,6 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Inklappen tot één regel",
         "usage.session.unfold": "Context en limieten tonen",
         "usage.session.hide": "Gebruik verbergen",
-        "usage.alert.limitReached": "%@-limiet bereikt",
-        "usage.alert.compactFirst": "Eerst samenvatten · %@",
     ],
     .de: [
         "session.context.addComment": "Diesen Kommentar zum Composer hinzufügen",
@@ -127,8 +123,6 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Auf eine Zeile einklappen",
         "usage.session.unfold": "Kontext und Limits zeigen",
         "usage.session.hide": "Nutzung ausblenden",
-        "usage.alert.limitReached": "%@-Limit erreicht",
-        "usage.alert.compactFirst": "Erst zusammenfassen · %@",
     ],
     .fr: [
         "session.context.addComment": "Ajouter ce commentaire au composer",
@@ -169,8 +163,6 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Replier sur une ligne",
         "usage.session.unfold": "Afficher le contexte et les limites",
         "usage.session.hide": "Masquer l’utilisation",
-        "usage.alert.limitReached": "Limite %@ atteinte",
-        "usage.alert.compactFirst": "Résumé d’abord · %@",
     ],
     .es: [
         "session.context.addComment": "Añadir este comentario al composer",
@@ -211,7 +203,5 @@ let sessionContextTranslations: [AppLanguage: [String: String]] = [
         "usage.session.fold": "Plegar en una línea",
         "usage.session.unfold": "Mostrar contexto y límites",
         "usage.session.hide": "Ocultar uso",
-        "usage.alert.limitReached": "Límite de %@ alcanzado",
-        "usage.alert.compactFirst": "Resume primero · %@",
     ],
 ]

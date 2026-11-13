@@ -3,8 +3,7 @@ import SwiftUI
 // How full a session's context window is and how much of its account's limits are used, in one place: the session
 // panel. Docked beside the conversation it is a card under the panel (`SessionUsageCard`); without the docked panel
 // (hidden, a narrow window, the notch, a session without a folder) it is a ring in the header that opens the same
-// section (`SessionUsageButton`). The composer keeps only what needs a decision now (`ComposerUsageAlert`): a context
-// that is nearly full, or a limit that is nearly or fully used. Every agent gets what it reports: the context for the
+// section (`SessionUsageButton`). The composer shows none of it. Every agent gets what it reports: the context for the
 // agents that report their window, the limits for the accounts that report limits.
 
 /// Whose usage: a session Nook runs (its context, its account's limits) or one it only sees (its account's limits).
@@ -42,19 +41,6 @@ struct SessionUsageSnapshot: Equatable {
 
     /// The fullest of those lines.
     var fullestLimit: UsageLimits.ChipLine? { limitLines.max { $0.used < $1.used } }
-
-    /// What needs your attention now, the most urgent first: a limit from 90 % (it stops the agent), then a context
-    /// past the warning line or set to be summarized before your next message. Nil while all is calm.
-    var attention: Attention? {
-        if let line = fullestLimit, UsageTone.level(used: line.used) == .error { return .limit(line) }
-        if context != nil, contextLevel != .normal || compactFirst == true { return .context }
-        return nil
-    }
-
-    enum Attention: Equatable {
-        case context
-        case limit(UsageLimits.ChipLine)
-    }
 
     var contextTint: Color {
         switch contextLevel {
@@ -477,61 +463,5 @@ struct SessionUsagePopover: View {
         SessionUsageSection(source: source, close: close)
             .padding(NookTheme.Spacing.lg)
             .frame(width: PanelLayout.sessionPanel, alignment: .leading)
-    }
-}
-
-// MARK: - The composer: only what needs a decision
-
-/// Beside send, only while something needs a decision: the context past the warning line (or set to be summarized
-/// before your next message), or a limit from 90 %. Click for the usage section, with Summarize now. Nothing while
-/// all is calm: the numbers are in the session panel.
-struct ComposerUsageAlert: View {
-    @EnvironmentObject private var app: AppModel
-    @EnvironmentObject private var workspace: WorkspaceManager
-    let source: SessionUsageSource
-    @State private var open = false
-    @State private var hovering = false
-
-    var body: some View {
-        let snapshot = SessionUsageSnapshot.read(source, app: app, workspace: workspace)
-        if let attention = snapshot.attention {
-            let (text, tint, fraction) = Self.look(attention, snapshot)
-            Button { open.toggle() } label: {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    ProgressRing(fraction: fraction, tint: tint, lineWidth: 2.5)
-                        .frame(width: 18, height: 18)
-                    Text(text)
-                        .font(NookTheme.TextStyle.caption.monospacedDigit())
-                        .foregroundStyle(tint)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-                .padding(.horizontal, NookTheme.Spacing.sm)
-                .frame(height: 28)
-                .roundedBackground(hovering || open ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
-                .contentShape(Rectangle())
-                .onHover { hovering = $0 }
-            }
-            .buttonStyle(.nookPlain)
-            .composerTip(snapshot.help)
-            .accessibilityLabel(snapshot.help)
-            .popover(isPresented: $open, arrowEdge: .top) {
-                SessionUsagePopover(source: source) { open = false }
-            }
-        }
-    }
-
-    /// "Summarize first · 84%" or "84%" for the context, "5h 94%" or "5h limit reached" for a limit.
-    private static func look(_ attention: SessionUsageSnapshot.Attention, _ snapshot: SessionUsageSnapshot) -> (String, Color, Double) {
-        switch attention {
-        case .limit(let line):
-            let text = line.used >= 100 ? tr("usage.alert.limitReached", line.short) : "\(line.short) \(line.used)%"
-            return (text, UsageTone.text(used: line.used), Double(line.used) / 100)
-        case .context:
-            let fraction = snapshot.context?.fraction ?? 0
-            let percent = ContextMeter.percentText(fraction)
-            let text = snapshot.compactFirst == true ? tr("usage.alert.compactFirst", percent) : percent
-            return (text, snapshot.contextTint, fraction)
-        }
     }
 }

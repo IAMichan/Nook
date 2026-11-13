@@ -172,14 +172,6 @@ extension AgentRunPanel {
         return true
     }
 
-    /// Beside send, only while the context or a limit needs a decision (`ComposerUsageAlert`); the numbers themselves are
-    /// in the session panel (`SessionUsageCard`, or the header's ring without the docked panel). The microphone is the
-    /// composer's own (`dictating()`).
-    @ViewBuilder
-    private func composerTrailing(_ run: WorkspaceRun) -> some View {
-        ComposerUsageAlert(source: SessionUsageSource(runID: runID))
-    }
-
     // MARK: Composer
 
     /// `/btw` or `/side` (with a question): a side chat beside this session, which keeps working (see `SideChat`). It
@@ -312,7 +304,6 @@ extension AgentRunPanel {
                     }
                 }
                 .rich(composerModel, composerConfig(run))
-                .trailing { composerTrailing(run) }
                 .dictating()
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
