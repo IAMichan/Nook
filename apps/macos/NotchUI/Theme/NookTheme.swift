@@ -193,6 +193,9 @@ enum NookTheme {
     static let surface = themed(\.surface)
     /// The composer under a conversation; `surface` by default, a color of its own in Settings › Appearance › Colors.
     static let composer = themed(\.composer)
+    /// The trays above and below the composer, the bars above it (background commands, tasks, subagents, side chats),
+    /// and a chat's field while you are not typing in it.
+    static let composerTray = themed(\.composerTray)
     /// Menus, popovers, hover cards and tooltips: a dark card in every appearance, as their text is drawn for dark.
     static let menu = themed(\.menu)
     /// The faintest divider between regions of a panel.

@@ -19,7 +19,7 @@ struct ComposerTray<Content: View>: View {
             .padding(.horizontal, 10)
             .padding(inner, Self.tuck + 4)
             .padding(outer, 4)
-            .background(shape.fill(NookTheme.field))
+            .background(shape.fill(NookTheme.composerTray))
             .overlay(shape.strokeBorder(NookTheme.fieldStroke, lineWidth: 1))
             .padding(inner, -Self.tuck)
             // Narrower than the box by a little more than its corner, so the tray clearly comes out from behind it.

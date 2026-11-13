@@ -418,7 +418,8 @@ struct ColorTokensSettings: View {
 
     private func row(_ token: NookColorToken) -> some View {
         let themeValue = themePalette[keyPath: token.keyPath]
-        let value = overrides[token.id] ?? themeValue
+        // What Nook draws now: also a color that follows another one you set (the composer's trays follow the composer).
+        let value = themePalette.applying(overrides)[keyPath: token.keyPath]
         let changed = overrides[token.id] != nil
         return HStack(spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.xs) {

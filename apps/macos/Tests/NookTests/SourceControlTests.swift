@@ -278,7 +278,10 @@ final class SourceControlGitTests: XCTestCase {
         let oldest = git.commits(repo, count: 10).last!
         XCTAssertEqual(oldest.subject, "change 0")
         XCTAssertNil(oldest.parent)
-        let found = git.commit(repo, named: String(oldest.id.prefix(10)))
+        // A short hash Nook takes for one: at least one digit and one letter (a 10-character prefix of only digits,
+        // about 1 in 100 hashes, is read as a number and made this test fail now and then).
+        let short = (10...40).lazy.map { String(oldest.id.prefix($0)) }.first(where: CommitReference.isHash) ?? oldest.id
+        let found = git.commit(repo, named: short)
         XCTAssertEqual(found?.id, oldest.id)
         XCTAssertNil(git.commit(repo, named: "abc1234def"))
         XCTAssertNil(git.commit(repo, named: "--all"))

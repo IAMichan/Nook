@@ -93,7 +93,7 @@ struct ResourceWaitStrip: View {
             // The same card as the subagent and background strips under it, so their icons share one column.
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, 7)
-            .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+            .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
         }
     }
 }
@@ -162,7 +162,7 @@ struct TasksStrip: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+        .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
     }
 
     private var segments: some View {
@@ -259,7 +259,7 @@ struct SubagentBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+        .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
     }
 
     /// One short bar per subagent: lit while it runs, mint once done, coral when it failed.
@@ -864,7 +864,7 @@ struct BackgroundCommandBar: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.card)
+        .roundedBackground(NookTheme.composerTray, radius: NookTheme.Radius.card)
         .task(id: commands.filter(\.isRunning).map(\.id.uuidString).joined(separator: ",")) { await watch() }
         .onChange(of: focus.wrappedValue) { _, id in
             guard let id else { return }
@@ -1081,7 +1081,7 @@ struct BackgroundCommandLink: View {
             .font(NookTheme.TextStyle.caption)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)
-            .hoverRowFill($hovering, rest: NookTheme.field)
+            .hoverRowFill($hovering, rest: NookTheme.composerTray)
             .contentShape(NookTheme.shape(NookTheme.Radius.control))
         }
         .buttonStyle(.nookPlain)
