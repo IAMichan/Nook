@@ -523,9 +523,10 @@ final class WorkspaceBridge: ObservableObject {
         var lines = ["# Nook workspace for \(caller.agent)"]
         lines.append("Folder: \(caller.directory)")
         let directory = caller.directory
-        let git = await Task.detached(priority: .userInitiated) { () -> (branch: String?, changed: Int?, remote: String?) in
-            guard let service = GitService.shared else { return (nil, nil, nil) }
-            return (service.currentBranch(directory), service.changedFileCount(directory), service.remoteURL(directory))
+        let git = await Task.detached(priority: .userInitiated) { () -> (branch: String?, changed: Int?, remote: String?, template: String?) in
+            guard let service = GitService.shared else { return (nil, nil, nil, nil) }
+            let template = GitService.pullRequestTemplate(service.repositoryRoot(for: directory) ?? directory)
+            return (service.currentBranch(directory), service.changedFileCount(directory), service.remoteURL(directory), template)
         }.value
         if let branch = git.branch { lines.append("Branch: \(branch)") }
         if case .run(let id) = caller.kind, let base = app?.workspace.run(id)?.baseBranch, !base.isEmpty {
@@ -566,6 +567,13 @@ final class WorkspaceBridge: ObservableObject {
                 : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page in Nook's browser for the user to finish, after their approval unless the session has full rights.")
         } else {
             lines.append("- this folder has no GitHub remote")
+        }
+        if let template = git.template {
+            let headings = PullRequestBodyCheck.sections(template).map { "`\($0.heading)`" }
+            if !headings.isEmpty {
+                lines.append("- The repository has a pull request template; the body of pull_request_create must have its sections, "
+                             + "in order and filled in: " + headings.joined(separator: ", ") + ". The call returns what to fix otherwise.")
+            }
         }
 
         lines.append("")
@@ -903,12 +911,20 @@ final class WorkspaceBridge: ObservableObject {
             return nil
         }()
         let requestedBase = ((arguments["base"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let facts = await Task.detached(priority: .userInitiated) { () -> (branch: String?, remote: String, url: String?, base: String?, changed: Int?) in
+        let facts = await Task.detached(priority: .userInitiated) {
+            () -> (branch: String?, remote: String, url: String?, base: String?, changed: Int?, template: String?) in
             let remotes = git.remotes(directory)
             let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
             let base = requestedBase.isEmpty ? (sessionBase ?? git.defaultBaseBranch(directory)) : requestedBase
-            return (git.currentBranch(directory), remote, git.remoteURL(directory, remote: remote), base, git.changedFileCount(directory))
+            let template = GitService.pullRequestTemplate(git.repositoryRoot(for: directory) ?? directory)
+            return (git.currentBranch(directory), remote, git.remoteURL(directory, remote: remote), base, git.changedFileCount(directory), template)
         }.value
+        // A description that leaves the repository's template goes back to the agent before the user sees it, so a
+        // pull request never opens with the template check already failing.
+        if let template = facts.template {
+            let problems = PullRequestBodyCheck.problems(body: body, template: template)
+            if !problems.isEmpty { return .error(PullRequestBodyCheck.refusal(problems, template: template)) }
+        }
         guard let branch = facts.branch else { throw NookError("The folder is not on a branch (detached HEAD). Create a branch first.") }
         guard let forge = SourceForge.repository(remoteURL: facts.url) else {
             throw NookError("This folder has no remote Nook recognises (GitHub, GitLab, Bitbucket, Gitea, Forgejo or Azure DevOps), so it cannot open a pull request for it.")
