@@ -23,7 +23,8 @@ extension WorkspaceManager {
             return nil
         }
         return BridgeLaunch(script: RemoteBridge.scriptPath(home: home),
-                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: bridgeToken(id)))
+                            remote: .init(socket: RemoteBridge.socketPath(home: home, run: id), token: bridgeToken(id),
+                                          tokenFile: RemoteBridge.tokenPath(home: home, run: id)))
     }
 
     /// The token that proves the agent is this session's, for this run of Nook. Kept in memory only: after a restart of
@@ -100,8 +101,10 @@ extension WorkspaceManager {
             return AgentTelemetry.apply(run.provider, config: NookTelemetry.shared.agentConfig, to: spec)
         }
         let environment = run.provider == .acp ? (CustomAgents.agent(for: run.profileID)?.environment ?? [:]) : [:]
-        let forward = bridge(for: run.id)?.remote.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []
-        return RemoteLaunch.wrap(spec, target: remote, environment: environment, forward: forward)
+        let bridge = bridge(for: run.id)?.remote
+        let forward = bridge.map { RemoteBridge.forward(socket: $0.socket, local: NookPaths.remoteBridgeSocketURL.path) } ?? []
+        return RemoteLaunch.wrap(spec, target: remote, environment: environment, forward: forward,
+                                 token: bridge.map { RemoteLaunch.Token(value: $0.token, file: $0.tokenFile) })
     }
 
     /// A new session on another machine: in the folder there, or in a new worktree there (~/.nook/worktrees), under that

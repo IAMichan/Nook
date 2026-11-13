@@ -248,20 +248,38 @@ enum RemoteLaunch {
     /// `ssh -T … -- host 'exec "$SHELL" -lc "cd … && exec agent …"'`. The remote login shell finds the agent the way your
     /// terminal there would; without a password typed in Nook `BatchMode` makes a missing key fail at once instead of
     /// waiting for a prompt nobody sees. Only `environment` goes along (a local account folder means nothing over there).
+    /// The session's bridge token for the agent's MCP server there, and the file it goes to on that machine.
+    struct Token: Equatable, Sendable {
+        var value: String
+        var file: String
+    }
+
+    /// With a `token`, the token is the first line ssh sends, and the remote side writes it to its file before the agent
+    /// starts (`tokenWriter`): a command line is visible to every user of that machine (`ps`), a 0600 file only to you. An
+    /// agent that reads no stdin then gets /dev/null there, and stdin here closes once the token went.
     static func wrap(_ spec: LaunchSpec, target: RemoteTarget, environment: [String: String] = [:],
-                     forward: [String] = []) -> LaunchSpec {
+                     forward: [String] = [], token: Token? = nil) -> LaunchSpec {
         let secret = password(target)
         var arguments = ["-T"] + authentication(password: secret) + ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"] + forward
         arguments += destination(port: target.port, identityFile: target.identityFile)
-        arguments += ["--", target.host, command(executable: spec.executable, arguments: spec.arguments,
-                                                   directory: target.directory, environment: environment)]
-        return LaunchSpec(executable: ssh, arguments: arguments, extraEnvironment: askpassEnvironment(password: secret),
-                          workingDirectory: NSHomeDirectory(), initialInput: spec.initialInput, keepsInputOpen: spec.keepsInputOpen)
+        arguments += ["--", target.host, command(executable: spec.executable, arguments: spec.arguments, directory: target.directory,
+                                                   environment: environment, tokenFile: token?.file,
+                                                   inputFromNull: token != nil && !spec.keepsInputOpen)]
+        var wrapped = LaunchSpec(executable: ssh, arguments: arguments, extraEnvironment: askpassEnvironment(password: secret),
+                                 workingDirectory: NSHomeDirectory(), initialInput: spec.initialInput, keepsInputOpen: spec.keepsInputOpen)
+        if let token {
+            wrapped.secretInput = token.value
+            wrapped.keepsInputOpen = true
+            wrapped.closesInputAfterStart = !spec.keepsInputOpen
+        }
+        return wrapped
     }
 
-    /// The command line the remote side runs.
-    static func command(executable: String, arguments: [String], directory: String, environment: [String: String] = [:]) -> String {
-        let agent: String
+    /// The command line the remote side runs. `tokenFile`: first read the token from stdin into that file (`tokenWriter`).
+    /// `inputFromNull`: the agent gets /dev/null as stdin, as it would here without one.
+    static func command(executable: String, arguments: [String], directory: String, environment: [String: String] = [:],
+                        tokenFile: String? = nil, inputFromNull: Bool = false) -> String {
+        var agent: String
         // An ACP agent you added already comes as "<login shell> -ilc '<exec …>'": its line runs as it is.
         if arguments.count == 2, arguments[0] == "-ilc" {
             agent = arguments[1]
@@ -269,10 +287,20 @@ enum RemoteLaunch {
             let program = (executable as NSString).lastPathComponent
             agent = "exec " + ([program] + arguments).map(CustomAgents.quote).joined(separator: " ")
         }
+        if inputFromNull { agent += " </dev/null" }
         let exports = environment.keys.sorted().filter { $0.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil }
             .map { "export \($0)=" + CustomAgents.quote(environment[$0] ?? "") + "; " }.joined()
-        let inner = exports + "cd " + quotedDirectory(directory) + " && " + agent
+        let writer = tokenFile.map { tokenWriter(file: $0) + "; " } ?? ""
+        let inner = writer + exports + "cd " + quotedDirectory(directory) + " && " + agent
         return #"exec "${SHELL:-/bin/sh}" -lc "# + CustomAgents.quote(inner)
+    }
+
+    /// Reads one line from stdin (the token) and writes it to `file`, 0600 in a 0700 folder, replaced in one step. It runs
+    /// in /bin/sh whatever your login shell is; `read` and `printf` are built in, so the token is never an argument, and
+    /// the line is always read first, so it can never reach the agent, even when writing fails.
+    static func tokenWriter(file: String) -> String {
+        let script = #"IFS= read -r t; umask 077; d=${1%/*}; mkdir -p "$d" && chmod 700 "$d" && printf '%s\n' "$t" > "$1.$$" && mv -f "$1.$$" "$1"; t=; true"#
+        return "/bin/sh -c " + CustomAgents.quote(script) + " nook-token " + CustomAgents.quote(file)
     }
 
     /// The ssh arguments for one git command on the remote machine, in `directory` there (a leading `-C <folder>` becomes

@@ -774,9 +774,11 @@ struct BridgeLaunch: Equatable, Sendable {
 
     struct Remote: Equatable, Sendable {
         var socket: String
-        /// On another machine the token still goes along as `NOOK_BRIDGE_TOKEN`: the file lives on this Mac, and the
-        /// agent's command line there is the ssh command here (see docs/WORKSPACE-AGENTS.md).
+        /// The session's token. It never goes on a command line there either: ssh carries it as the first line of the
+        /// agent's stdin, and the remote side writes it to `tokenFile` before the agent starts (`RemoteLaunch.wrap`).
         var token: String
+        /// Where the token lives on that machine (`RemoteBridge.tokenPath`); only this path reaches the server there.
+        var tokenFile: String
     }
 
     /// What the server needs in its environment. Never the token of a session on this Mac, only the file that holds it.
@@ -784,7 +786,7 @@ struct BridgeLaunch: Equatable, Sendable {
         var variables = ["NOOK_RUN_ID": runID.uuidString]
         if let remote {
             variables["NOOK_BRIDGE_SOCK"] = remote.socket
-            variables["NOOK_BRIDGE_TOKEN"] = remote.token
+            variables[BridgeTokenFiles.variable] = remote.tokenFile
         } else if let tokenFile {
             variables[BridgeTokenFiles.variable] = tokenFile
         }
