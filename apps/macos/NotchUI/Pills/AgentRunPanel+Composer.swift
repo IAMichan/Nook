@@ -112,6 +112,13 @@ extension AgentRunPanel {
         config.keepsBigPastes = true
         // A pasted secret goes to this session's private files; a session on another machine could not read them.
         config.secretScope = run.remote == nil ? run.id.uuidString : nil
+        // The sentence suggestions read who the message goes to and the agent's last answer (`ComposerCompleter`).
+        config.situation = { [workspace, runID] in
+            let run = workspace.runs.first { $0.id == runID }
+            return ComposerCompletion.Situation(recipient: run?.provider.displayName,
+                                                project: run.map { ($0.workingDirectory as NSString).lastPathComponent },
+                                                lastAnswer: workspace.lastAnswer(runID))
+        }
         config.onCommand = { [workspace, app, runID] command in
             switch command.action {
             case .plan: workspace.configure(runID, mode: .plan)

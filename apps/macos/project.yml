@@ -439,6 +439,7 @@ targets:
       - path: Services/Workspace/Delegation.swift
       - path: Services/Workspace/ContextHandoff.swift
       - path: Services/Workspace/ComposerCore.swift
+      - path: Services/Workspace/ComposerInlineName.swift
       - path: Services/Workspace/SessionLink.swift
       - path: Services/Workspace/IncomingLinkRoute.swift
       - path: Services/Workspace/BrowserCookieImport.swift
@@ -690,6 +691,7 @@ targets:
       - path: Services/Autocomplete/GGUFReader.swift
       - path: Services/Autocomplete/CompletionModels.swift
       - path: Services/Autocomplete/CompletionSuggestion.swift
+      - path: Services/Autocomplete/ComposerCompletion.swift
       - path: Services/Autocomplete/TokenPieces.swift
       - path: Services/Autocomplete/CompletionSampling.swift
       - path: Services/Autocomplete/CompletionPreferences.swift

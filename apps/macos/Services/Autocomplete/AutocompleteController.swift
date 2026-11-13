@@ -435,7 +435,21 @@ final class AutocompleteController: ObservableObject {
 
     /// In Nook itself, only while a text view to write in has the focus (see `AutocompleteField.ownTextView`): every other key
     /// (a shortcut, a key recorder) stays Nook's.
-    private var ownFieldFocused: Bool { recordingKeys == 0 && AutocompleteField.ownTextView() != nil }
+    private var ownFieldFocused: Bool { recordingKeys == 0 && standAsideReasons.isEmpty && AutocompleteField.ownTextView() != nil }
+
+    /// Why autocomplete leaves Nook's focused field alone: a composer suggests in it itself (`ComposerCompleter`), or shows
+    /// grey text of its own there (`ComposerInlineGhost`). Then no suggestion of autocomplete's beside it, and Tab and Escape
+    /// stay with the composer.
+    private var standAsideReasons = Set<String>()
+
+    func standAside(_ on: Bool, for reason: String = "ghost") {
+        let before = standAsideReasons.isEmpty
+        if on { standAsideReasons.insert(reason) } else { standAsideReasons.remove(reason) }
+        guard before != standAsideReasons.isEmpty else { return }
+        // Off again: the next key asks for a suggestion as usual.
+        if on { dismiss() }
+        publishTapState()
+    }
 
     /// What the battery allows right now. The signals are read by `EnergyMonitor` for the whole app, so this is a cached
     /// value and not a trip to IOKit per keystroke.
@@ -1531,6 +1545,8 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func show(_ suggestion: CompletionSuggestion, for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) {
+        // A suggestion asked for before a composer drew a name of its own comes back too late: the name stays.
+        if !standAsideReasons.isEmpty, app.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
         let rule = prefs.app(app.bundleIdentifier)
         // Words or a period after the cursor: grey text drawn over them cannot be read, so the card shows it instead.
         let lineAfter = snapshot.after.prefix { !$0.isNewline }
@@ -1772,6 +1788,91 @@ final class AutocompleteController: ObservableObject {
 
     /// The Playground typed on: stop the running suggestion at its next token.
     func cancelPlaygroundCompletion() { completer?.cancel() }
+
+    // MARK: Nook's composers
+
+    /// A local model a composer writes with that is not autocomplete's loaded one (`ComposerCompletion.Choice.local`, or
+    /// autocomplete's choice while autocomplete is off): loaded on the first suggestion, let go after the same idle time.
+    private var composerEngine: (any CompletionEngine)?
+    private var composerLoading: (identity: String, task: Task<(any CompletionEngine)?, Never>)?
+    private var composerIdle: Task<Void, Never>?
+    private var composerEngineRunning: (any CompletionEngine)?
+
+    /// The models on this Mac, for the composer's model choice while autocomplete is off (it scans them itself when on).
+    func scanModels() async {
+        let folder = AutocompleteStore.modelsFolder
+        let found = await Task.detached(priority: .utility) {
+            CompletionModelLocator.foundModels() + CompletionModelLocator.nookModels(in: folder)
+        }.value
+        candidates = found.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+        brainModels = EmbeddedModel.shared.autocompleteModels
+    }
+
+    /// The local model behind `identity` ("" for autocomplete's own choice); nil when there is none on this Mac.
+    func composerSource(_ identity: String) async -> CompletionSource? {
+        if identity.isEmpty, let activeModel { return activeModel }
+        if candidates.isEmpty, brainModels.isEmpty { await scanModels() }
+        return CompletionSource.resolve(stored: identity.isEmpty ? prefs.modelPath : identity, files: candidates,
+                                        brainModels: brainModels, preferredBrain: AppSettings.shared.localModel)
+    }
+
+    /// A suggestion for a composer's text with a local model: the same options, instructions and memory as in other apps,
+    /// with the composer's context (`ComposerCompletion.context`) for the window and the screen. Nil when there is no
+    /// model, on battery while autocomplete pauses there, or when the model is not sure.
+    func composerSuggestion(_ input: CompletionContext, identity: String) async -> CompletionSuggestion? {
+        guard !power.paused, let source = await composerSource(identity), let engine = await composerEngine(for: source) else { return nil }
+        var input = input
+        input.instructions = prefs.instructions(app: nil, site: nil)
+        if prefs.memoryContext { input.facts = facts(input.topic(before: input.before)) }
+        let prompt = builder.build(input)
+        var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
+        options.heal = Self.heals(input.before)
+        options.candidates = suggestionCandidates
+        composerEngineRunning = engine
+        defer { composerEngineRunning = nil }
+        let result = await engine.complete(prompt: prompt, options: options, partial: nil)
+        return result.flatMap {
+            CompletionSuggestion.make(raw: $0.text, before: input.before, after: input.after, maxWords: options.maxWords,
+                                      truncated: $0.truncated, unfinished: $0.unfinished)
+        }
+    }
+
+    /// A newer key in the composer: the running suggestion stops at its next token.
+    func cancelComposerSuggestion() { composerEngineRunning?.cancel() }
+
+    /// Autocomplete's own engine when it runs this model (loaded, or loading it when it is its active model), else one of
+    /// the composer's own.
+    private func composerEngine(for source: CompletionSource) async -> (any CompletionEngine)? {
+        let identity = source.identity
+        if let completer, completer.identity == identity { return completer }
+        if prefs.enabled, activeModel?.identity == identity { return await loadedCompleter(for: source) }
+        defer { scheduleComposerUnload() }
+        if let composerEngine, composerEngine.identity == identity { return composerEngine }
+        if let composerLoading, composerLoading.identity == identity { return await composerLoading.task.value }
+        composerEngine?.cancel()
+        composerEngine = nil
+        let task = Task { () -> (any CompletionEngine)? in
+            switch source {
+            case .gguf(let file): return try? await LlamaCompleter.load(path: file.url.path, adapter: nil)
+            case .brain(let id, _): return BrainCompleter(modelID: id)
+            }
+        }
+        composerLoading = (identity, task)
+        let loaded = await task.value
+        if composerLoading?.identity == identity { composerLoading = nil }
+        if let loaded { composerEngine = loaded }
+        return loaded
+    }
+
+    private func scheduleComposerUnload() {
+        composerIdle?.cancel()
+        composerIdle = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.composerEngine?.cancel()
+            self.composerEngine = nil
+        }
+    }
 
     // MARK: The model
 
