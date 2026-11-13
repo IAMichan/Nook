@@ -133,11 +133,32 @@ final class FolderGitModel: ObservableObject {
         }
         let directory = directory
         let cached = refs.flatMap { Date().timeIntervalSince($0.at) < Self.refsMaxAge ? $0 : nil }
-        let result = await Task.detached(priority: .utility) { () -> (root: String?, status: GitStatus?, branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?, refs: Refs?) in
-            guard let root = cached?.root ?? git.repositoryRoot(for: directory) else { return (nil, nil, [], [], nil, [], nil, nil) }
+        // First the root and the status, published at once: they decide whether the branch, commit and changes rows
+        // show at all, and the branches, the base comparison and the diffs below can take seconds in a large repository.
+        let first = await Task.detached(priority: .userInitiated) { () -> (root: String, status: GitStatus?, key: String)? in
+            guard let root = cached?.root ?? git.repositoryRoot(for: directory) else { return nil }
             let status = try? git.status(root)
             let commits = git.headCommits(root).joined(separator: ",")
             let key = status.map { "\($0.branch ?? "")|\($0.upstream ?? "")|\($0.ahead)|\($0.behind)|\($0.detached)|\(commits)" } ?? ""
+            return (root, status, key)
+        }.value
+        guard let first else {
+            refs = nil
+            if root != nil { root = nil }
+            if status != nil { status = nil }
+            if !branches.isEmpty { branches = [] }
+            if !remotes.isEmpty { remotes = [] }
+            if base != nil { base = nil }
+            if !changes.isEmpty { changes = [] }
+            comparedTo = nil
+            Self.snapshots.set(Snapshot(root: nil, status: nil, branches: [], remotes: [], base: nil, changes: [],
+                                        comparedTo: nil, refs: nil), for: directory)
+            return
+        }
+        if root != first.root { root = first.root }
+        if status != first.status { status = first.status }
+        let result = await Task.detached(priority: .utility) { () -> (branches: [String], remotes: [String], base: String?, changes: [GitFileChange], comparedTo: String?, refs: Refs?) in
+            let root = first.root, status = first.status, key = first.key
             let refs: Refs
             if let cached, cached.root == root, cached.key == key, status != nil {
                 refs = cached
@@ -151,12 +172,10 @@ final class FolderGitModel: ObservableObject {
                             comparedTo: comparison?.point)
             }
             let changes = refs.comparedTo.flatMap { ref in status.flatMap { try? git.changes(root, since: ref, status: $0) } }
-            return (root, status, refs.branches, refs.remotes, refs.base, changes ?? status?.files ?? [], changes == nil ? nil : refs.comparedTo,
+            return (refs.branches, refs.remotes, refs.base, changes ?? status?.files ?? [], changes == nil ? nil : refs.comparedTo,
                     status == nil ? nil : refs)
         }.value
         refs = result.refs
-        if root != result.root { root = result.root }
-        if status != result.status { status = result.status }
         let sorted = result.branches.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         if branches != sorted { branches = sorted }
         if remotes != result.remotes { remotes = result.remotes }
