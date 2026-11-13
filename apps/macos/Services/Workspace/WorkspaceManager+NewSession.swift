@@ -200,6 +200,11 @@ extension WorkspaceManager {
         return id
     }
 
+    /// How long a new session waits for the fetch of its base. Usually it takes half a second, and opening New Session
+    /// already fetched it in the background; on a slow or hanging network the worktree starts from the last fetched
+    /// state instead of holding the session for the full 20 s.
+    nonisolated static let startFetchTimeout: TimeInterval = 5
+
     /// Creates the session's worktree off the main thread (serialized per repository via `FolderLease`), launches the
     /// agent as soon as the checkout exists, and records the initial snapshot and setup scripts in the background. Each
     /// step reports to `worktreeSetups`, so the conversation shows what really happens while it does.
@@ -215,23 +220,29 @@ extension WorkspaceManager {
         prepareTasks[id] = Task { [weak self] in
             let submoduleProblem: String?
             do {
-                // Fetching the base: its own step, under the same lease as the checkout so they never interleave with
-                // another session's worktree of this repository.
-                if refreshBase, base.contains("/") {
+                // Fetch and checkout under one lease, as one piece of work: no second wait in the queue between them and
+                // no hop to the main thread on the way. The checklist hears about each step as it really starts and ends.
+                let fetches = refreshBase && base.contains("/")
+                if fetches {
                     self?.setupStep(id) { $0.begin(.fetchBase) }
-                    let fetched = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
-                        git.refreshRemoteBase(base, in: root)
-                    }
-                    guard let self, !Task.isCancelled else { return }
-                    self.recordFetch(id, fetched, base: base)
                 } else {
                     self?.setupStep(id) {
                         $0.skip(.fetchBase)
                         $0.note(.fetchBase, base.contains("/") ? tr("ws.setup.note.fetchedRecently", base) : tr("ws.setup.note.localBase", base))
+                        $0.begin(.checkOut)
                     }
                 }
-                self?.setupStep(id) { $0.begin(.checkOut) }
-                let made = try await FolderLease.shared.run(repoKey, priority: .userInitiated) {
+                let made = try await FolderLease.shared.run(repoKey, priority: .userInitiated) { [weak self] in
+                    if fetches {
+                        let fetched = git.refreshRemoteBase(base, in: root, timeout: Self.startFetchTimeout)
+                        let checkoutStart = Date()
+                        DispatchQueue.main.async {
+                            MainActor.assumeIsolated {
+                                self?.recordFetch(id, fetched, base: base, now: checkoutStart)
+                                self?.setupStep(id) { $0.begin(.checkOut, now: checkoutStart) }
+                            }
+                        }
+                    }
                     let cloned = try git.addWorktree(repo: root, path: path, branch: branch, base: base, refreshBase: false,
                                                      checkoutCache: checkout.cache)
                     return (cloned, Self.finishWorktree(git, checkout: checkout, root: root, path: path, cloned: cloned))
