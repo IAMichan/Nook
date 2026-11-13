@@ -148,6 +148,23 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertTrue(PullRequestDetailParser.adminCanBypass(rulesets: [bypassable], protection: excludesAdmins))
     }
 
+    /// A workflow cancelled by a newer run leaves its failed run on the commit; only the newest run of each check counts,
+    /// as on GitHub, so a pull request whose re-run passed is not called failing.
+    func testChecksCountOnlyTheNewestRunOfEachName() throws {
+        let runs = try list("""
+        [{"id": 10, "name": "Check", "status": "completed", "conclusion": "failure", "started_at": "2026-11-12T21:54:28Z"},
+         {"id": 11, "name": "Changes", "status": "completed", "conclusion": "cancelled", "started_at": "2026-11-12T21:54:25Z"},
+         {"id": 30, "name": "Check", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T22:12:00Z"},
+         {"id": 20, "name": "Changes", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T21:54:39Z"},
+         {"id": 40, "name": "build", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T21:59:31Z"}]
+        """)
+        let checks = PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(runs), statuses: [])
+        XCTAssertEqual(checks.map(\.name), ["Check", "Changes", "build"])
+        XCTAssertEqual(checks.map(\.outcome), [.passing, .passing, .passing])
+        XCTAssertEqual(PullRequestStatus.checks(checks), "success")
+        XCTAssertEqual(PullRequestDetailParser.latestRuns(runs).compactMap { $0["id"] as? Int }, [30, 20, 40])
+    }
+
     func testChecksPutFailuresFirst() throws {
         let runs = try list("""
         [{"name": "lint", "status": "completed", "conclusion": "success", "html_url": "https://github.com/acme/app/runs/1"},

@@ -551,7 +551,25 @@ enum PullRequestDetailParser {
         return methods.filter { method in allowed.allSatisfy { $0.contains(method.rawValue) } }
     }
 
+    /// The newest check run of each name, as GitHub's own checks list and branch rules count them. A commit keeps every
+    /// run it ever had: a workflow cancelled by a newer push or re-run leaves its failed or cancelled runs behind, and
+    /// counting those would call a pull request failing while its checks passed.
+    static func latestRuns(_ runs: [[String: Any]]) -> [[String: Any]] {
+        func order(_ run: [String: Any]) -> (Date, Int) {
+            (date(run["started_at"]) ?? date(run["completed_at"]) ?? .distantPast, int(run["id"]) ?? 0)
+        }
+        var newest: [String: [String: Any]] = [:]
+        var names: [String] = []
+        for run in runs {
+            let name = (run["name"] as? String) ?? "?"
+            guard let known = newest[name] else { newest[name] = run; names.append(name); continue }
+            if order(run) > order(known) { newest[name] = run }
+        }
+        return names.compactMap { newest[$0] }
+    }
+
     /// Check runs (GitHub Actions and apps) and the older commit statuses, in one list: failing first, then running.
+    /// GitHub's runs go through `latestRuns` first.
     static func checks(runs: [[String: Any]], statuses: [[String: Any]]) -> [PullRequestCheck] {
         var result = runs.map { run -> PullRequestCheck in
             let status = (run["status"] as? String) ?? ""

@@ -12,7 +12,7 @@ enum GitHubCILogs {
             guard let sha = (pull["head"] as? [String: Any])?["sha"] as? String else { return [] }
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
             async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
-            return PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
+            return PullRequestDetailParser.checks(runs: PullRequestDetailParser.latestRuns(((await runs)?["check_runs"] as? [[String: Any]]) ?? []),
                                                   statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
         return nil

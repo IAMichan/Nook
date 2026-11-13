@@ -645,8 +645,10 @@ struct PullRequestWatchStrip: View {
             Button(action: openCI) {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     CheckOutcomeGlyph(outcome: ciOutcome, size: 11, running: ciOutcome == .pending)
-                    if ciOutcome == .failing { Text(ci) }
+                    // One line at any width: the title gives way first (`identity` truncates), never "CI failed".
+                    if ciOutcome == .failing { Text(ci).lineLimit(1).fixedSize() }
                 }
+                .layoutPriority(1)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coral)
                 .frame(minWidth: 22, minHeight: 22)

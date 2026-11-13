@@ -81,8 +81,10 @@ enum GitHubPullRequests {
             var failed: [String] = []
             var checksKnown = false
             if let sha = (pull["head"] as? [String: Any])?["sha"] as? String,
-               let runs = (await get("/commits/\(sha)/check-runs?per_page=100") as? [String: Any])?["check_runs"] as? [[String: Any]] {
+               let all = (await get("/commits/\(sha)/check-runs?per_page=100") as? [String: Any])?["check_runs"] as? [[String: Any]] {
                 checksKnown = true
+                // Only the newest run of each check counts: a cancelled or re-run workflow leaves its old failures behind.
+                let runs = PullRequestDetailParser.latestRuns(all)
                 failed = runs.filter { ["failure", "timed_out", "cancelled", "action_required"].contains(($0["conclusion"] as? String) ?? "") }
                     .compactMap { $0["name"] as? String }
                 let pending = runs.contains { ($0["status"] as? String) != "completed" }
