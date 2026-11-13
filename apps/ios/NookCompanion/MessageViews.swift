@@ -247,16 +247,13 @@ struct ChatBubbleView: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: line.fromMe ? .trailing : .leading, spacing: Theme.Spacing.xxs) {
-                bubble.opacity(pending ? 0.6 : 1)
-                    // Over the bubble's bottom edge at its leading side, clear of the time at its trailing side.
-                    .overlay(alignment: .bottomLeading) {
-                        if !line.reactions.isEmpty {
-                            reactions.alignmentGuide(.bottom) { $0[.top] + Theme.Spacing.sm }
-                        }
+                // The reactions under the bubble at its leading side, overlapping only its bottom edge, so they never
+                // cover the text or the time. (Aligned in an overlay they sat on the bubble's last line instead.)
+                VStack(alignment: .leading, spacing: line.reactions.isEmpty ? 0 : -Theme.Spacing.sm) {
+                    bubble.opacity(pending ? 0.6 : 1)
+                    if !line.reactions.isEmpty {
+                        reactions
                     }
-                if !line.reactions.isEmpty {
-                    // The room the pill takes under the bubble.
-                    reactions.hidden().frame(width: 0).padding(.top, -Theme.Spacing.sm).accessibilityHidden(true)
                 }
             }
             if !line.fromMe { Spacer(minLength: Self.inset) }

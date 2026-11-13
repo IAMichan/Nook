@@ -94,24 +94,24 @@ struct PulseDot: View {
     let color: Color
     var size: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var on = false
 
     var body: some View {
         ZStack {
             if !reduceMotion {
+                // The ring's scale and fade only, in a keyframe loop of its own: a repeating `withAnimation` from
+                // `onAppear` also caught the dot's position, so a row with it drifted while the list moved.
                 Circle().fill(color)
                     .frame(width: size, height: size)
-                    .scaleEffect(on ? 1.9 : 1.0)
-                    .opacity(on ? 0 : 0.45)
+                    .keyframeAnimator(initialValue: 0.0, repeating: true) { ring, progress in
+                        ring.scaleEffect(1 + 0.9 * progress).opacity(0.45 * (1 - progress))
+                    } keyframes: { _ in
+                        CubicKeyframe(1.0, duration: 1.2)
+                    }
             }
             Circle().fill(color)
                 .frame(width: size, height: size)
         }
         .frame(width: size * 2, height: size * 2)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) { on = true }
-        }
     }
 }
 
@@ -170,12 +170,9 @@ struct NookMark: View {
         )
         .contentShape(Circle())
         .onTapGesture { squish() }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
+        // Scoped to the breathing alone, so the mark's place never animates with it.
+        .animation(reduceMotion ? nil : .easeInOut(duration: 2.2).repeatForever(autoreverses: true), value: breathing)
+        .onAppear { if !reduceMotion { breathing = true } }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Double.random(in: 3.5...5.5)))

@@ -11,11 +11,17 @@ The phone sees two kinds of sessions:
 
 ## Starting from the phone
 
-The app is laid out as Nook's panel on the Mac: three tabs, **Nook**, **Agents** and **Chats**, switched in one
-quiet capsule at the top of every tab (`PanelHeader`, `PanelTabBar`), with what waits for you as an amber count on each.
-There is no tab bar along the bottom. Nook's orb on the left of that row opens the menu with the paired Macs, how the
-phone reaches the Mac, checking the connection, Live Activities and unpairing (`MacMenu`); a small amber dot on the orb
-means the Mac cannot be reached.
+The app is laid out as Nook's panel on the Mac: the Mac's three tabs, **Nook**, **Agents** and **Chats**, along the
+bottom, with what waits for you as a count on each. Every tab starts with the same header (`PanelHeader`): Nook's orb on
+the left opens the menu with the paired Macs, how the phone reaches the Mac, checking the connection, Live Activities
+and unpairing (`MacMenu`; a small amber dot on the orb means the Mac cannot be reached), and the gear on the right opens
+**Settings** as a sheet over the tab, as Settings opens from the Mac's footer. **Pull requests** open the same way from
+the Agents header, as from the Mac's Agents footer. On an iPad with room all five are sections of the sidebar.
+
+The **Nook** tab is the Mac's home: the date and a greeting, what waits on you, works and is unread as tiles, and
+**For you**, the sessions that wait on you and the unread chats by name in one card, a tap away (`ForYouCard`). A
+session's header is the Mac's: *folder / title ⌄*, the title opening what you can do with the session (stop, snooze,
+rename, archive…), with the agent and branch under it.
 
 The **Nook** tab asks Nook something straight from its composer at the bottom (a new chat); the **Agents** tab's round
 button opens the New session sheet. The quick actions on the app's icon start a session, ask Nook or open Chats. An
@@ -32,6 +38,13 @@ read. The Agents list has search and a project filter, and touching and holding 
 Nook, Answer a chat and the two sessions that need you most (`AppShortcut`).
 
 **The whole conversation.** An agent's answer reads as blocks on the phone, as on the Mac: headings, lists, quotes and call-outs as type, and code and tables in a card that scrolls sideways (code can wrap and be copied); the parser is the Mac's `MarkdownBlock`. One entry travels cut at `CompanionConstants.lineLimit`; with a Mac that lists `fullTranscript` a cut entry says so (`TimelineEntry.clipped`) and *Read the whole message* asks for all of it (`CompanionOp.entry`, up to `TimelineEntry.fullLimit`). *Earlier messages* at the top asks for the page before the oldest entry the phone has (`timeline` with `item`), kept beside the live conversation so a live update never drops it.
+
+**Reading holds still.** Every conversation on the phone (a session, a chat with Nook, a chat in your apps) reads in
+one scroll view (`ConversationScroll`). It opens at the newest message and follows what arrives only while you are at
+the end; once you scroll up it holds still however much the agent writes, and an arrow over the composer brings you
+back. Only your own scrolling leaves the end, so a long answer arriving never counts as you scrolling away. What floats
+over the end ("Working for 12s", the arrow) is an overlay and never changes the conversation's room, the rows are a
+plain stack (a lazy stack corrected its height guesses while you read), and the live step breathes in its opacity only.
 
 **Live conversation.** With a current Mac, an open session no longer asks every few seconds: the phone says which
 session is on screen (`CompanionOp.watch`), the Mac answers with its recent conversation and from then on sends only

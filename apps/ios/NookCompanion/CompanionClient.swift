@@ -1927,7 +1927,56 @@ extension CompanionClient {
             InboxLine(id: "l3", text: "Zie je morgen!", date: now - 120, sender: "Anna de Vries", fromMe: false,
                       attachment: nil, ticks: nil, quoteSender: nil, quoteText: nil, reactions: []),
         ]
+        // `-NookDemoLong YES`: a long conversation on s2 that the agent keeps adding to, to check that reading it holds
+        // still while new work streams in at the end.
+        if UserDefaults.standard.bool(forKey: "NookDemoLong") {
+            timelines["s2"] = Self.demoLongConversation(now: now) + (timelines["s2"] ?? [])
+            Task { @MainActor [weak self] in
+                var step = 0
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard let self else { return }
+                    step += 1
+                    let entry = step % 4 == 0
+                        ? TimelineEntry(id: "live\(step)", kind: .assistant,
+                                        text: "Checked step \(step). The reconnect holds after **\(step) sleeps**.\n\n- the socket reopens\n- the backoff resets",
+                                        date: Date().timeIntervalSince1970, failed: false)
+                        : TimelineEntry(id: "live\(step)", kind: .tool, text: "swift test --filter Relay\(step)", detail: "Bash",
+                                        date: Date().timeIntervalSince1970, failed: false)
+                    timelines["s2", default: []].append(entry)
+                }
+            }
+        }
         phase = .connected
+    }
+
+    /// Twelve finished turns, each a question, a few steps and an answer of a few paragraphs.
+    private static func demoLongConversation(now: Double) -> [TimelineEntry] {
+        (0..<12).flatMap { turn -> [TimelineEntry] in
+            let start = now - Double(12 - turn) * 3600 - 2000
+            return [
+                TimelineEntry(id: "l\(turn)u", kind: .user, text: "Question \(turn + 1): what about the reconnect after a Wi-Fi switch?",
+                              date: start, failed: false),
+                TimelineEntry(id: "l\(turn)a", kind: .tool, text: "Read RelayClient.swift", detail: "Read", date: start + 10, failed: false),
+                TimelineEntry(id: "l\(turn)b", kind: .tool, text: "rg reconnect", detail: "Grep", date: start + 20, failed: false),
+                TimelineEntry(id: "l\(turn)c", kind: .assistant, text: """
+                ### Turn \(turn + 1)
+
+                The relay keeps one socket per Mac. When the path changes, `NWPathMonitor` reports it and the client \
+                closes the old socket before it opens a new one, so nothing is sent twice.
+
+                1. The path changes.
+                2. The client waits for a satisfied path.
+                3. It reconnects with a fresh backoff.
+
+                ```swift
+                monitor.pathUpdateHandler = { path in reconnect(path) }
+                ```
+
+                That is why the phone came back within a second in every run.
+                """, date: start + 60, failed: false),
+            ]
+        }
     }
 }
 #endif

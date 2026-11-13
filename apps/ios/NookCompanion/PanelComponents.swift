@@ -40,10 +40,16 @@ struct HomeLogo: View {
 
 // MARK: Headers
 
-/// The tabs along the bottom, in Nook's order: the Mac's three (Nook, Agents, Chats),
-/// then pull requests and Settings, always last.
-enum CompanionTab: Hashable, CaseIterable {
+/// Nook's sections, in the Mac's order: Nook, Agents and Chats along the bottom of the phone, as the Mac's tab bar;
+/// pull requests and Settings open from the header as a sheet, as they open from the Mac's footer. On an iPad with room
+/// all five are the sidebar's sections (`CompanionSplitView`).
+enum CompanionTab: Hashable, CaseIterable, Identifiable {
     case nook, agents, chats, pulls, settings
+
+    var id: Self { self }
+
+    /// Along the bottom of the phone; the others open from the header (`TabRouter.sheet`).
+    var isBarTab: Bool { self == .nook || self == .agents || self == .chats }
 
     var title: LocalizedStringKey {
         switch self {
@@ -71,6 +77,10 @@ enum CompanionTab: Hashable, CaseIterable {
 @MainActor
 final class TabRouter: ObservableObject {
     @Published var tab = CompanionTab.nook
+    /// On the phone: pull requests or Settings, open as a sheet over the tab you were in.
+    @Published var sheet: CompanionTab?
+    /// A chat in your apps to open on the Chats tab (from "For you" on the Nook tab).
+    @Published var openChat: String?
 
     /// The tabs this phone may use: one the Mac does not allow it (`CompanionScope`), or cannot serve, is left out.
     func available(_ client: CompanionClient) -> [CompanionTab] {
@@ -101,21 +111,38 @@ final class TabRouter: ObservableObject {
 /// on the right. The tabs themselves are along the bottom.
 struct PanelHeader<Trailing: View>: View {
     @EnvironmentObject private var router: TabRouter
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.dismiss) private var dismiss
+    /// The page's own name where it is not the tab's (Settings in its sheet).
+    var title: LocalizedStringKey? = nil
+    /// The gear to Settings, on the phone where Settings is not a tab.
+    var showsSettings = true
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             MacMenu()
             VStack(alignment: .leading, spacing: 0) {
-                Text(router.tab.title)
+                Text(title ?? router.tab.title)
                     .font(Theme.TextStyle.display)
                     .foregroundStyle(Theme.paper)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 ConnectionTitle()
             }
             Spacer(minLength: 0)
             trailing()
+            if isPresented {
+                NookIconButton(systemName: "xmark", label: String(localized: "Close")) { dismiss() }
+            } else if showsSettings, sizeClass != .regular {
+                NookIconButton(systemName: "gearshape", label: String(localized: "Settings")) {
+                    Haptics.tap()
+                    router.sheet = .settings
+                }
+            }
         }
+        .buttonStyle(.borderless)
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.top, Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.lg)
@@ -123,7 +150,9 @@ struct PanelHeader<Trailing: View>: View {
 }
 
 extension PanelHeader where Trailing == EmptyView {
-    init() { self.init { EmptyView() } }
+    init(title: LocalizedStringKey? = nil, showsSettings: Bool = true) {
+        self.init(title: title, showsSettings: showsSettings) { EmptyView() }
+    }
 }
 
 /// Under the tab's name: the Mac and how the phone has it. "MacBook · live" while connected,

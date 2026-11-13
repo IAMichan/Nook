@@ -252,64 +252,57 @@ struct InboxChatView: View {
     private var whatsApp: Bool { WhatsAppLook.isWhatsApp(chat?.app) }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    if lines.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
-                    }
-                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                        let previous = index > 0 ? lines[index - 1] : nil
-                        let next = index + 1 < lines.count ? lines[index + 1] : nil
-                        if ChatRuns.newDay(line, after: previous) {
-                            let day = Date(timeIntervalSince1970: line.date)
-                            if whatsApp { WhatsAppDayPill(label: ChatDayDivider.label(day)) } else { ChatDayDivider(date: day) }
-                        }
-                        ChatBubbleView(line: line, first: !ChatRuns.sameRun(previous, line), last: !ChatRuns.sameRun(line, next),
-                                       whatsApp: whatsApp,
-                                       onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
-                            .contextMenu {
-                                if chat?.canSend == true {
-                                    Button { withAnimation { replyingTo = line } } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
-                                }
-                                Button { UIPasteboard.general.string = line.text.isEmpty ? (line.attachment ?? "") : line.text } label: {
-                                    Label("Copy", systemImage: "doc.on.doc")
-                                }
-                            }
-                    }
-                    // WhatsApp says it in the header instead.
-                    if let typing, !whatsApp {
-                        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                            // Their face beside it, as beside each of their messages in a group (`ChatBubbleView`).
-                            if let name = (client.inboxTyping[chatID] ?? []).first(where: { !$0.name.isEmpty })?.name {
-                                ChatInitialsFace(name: name, initials: InboxAvatar.initials(name), size: 28)
-                                    .accessibilityHidden(true)
-                            }
-                            ChatTypingBubble(text: typing)
-                        }
-                        .transition(.opacity)
-                    }
-                    // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
-                    let waiting = client.outbox.chatMessages(to: chatID)
-                    ForEach(waiting) { entry in
-                        ChatBubbleView(line: InboxLine(id: entry.id, text: entry.request.text ?? "", date: entry.queued, sender: "",
-                                                       fromMe: true, reactions: []), pending: true, whatsApp: whatsApp)
-                    }
-                    Color.clear.frame(height: 1).id(Self.bottom)
+        ConversationScroll(followKey: followKey) { _ in
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                if lines.isEmpty {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.lg)
+                ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                    let previous = index > 0 ? lines[index - 1] : nil
+                    let next = index + 1 < lines.count ? lines[index + 1] : nil
+                    if ChatRuns.newDay(line, after: previous) {
+                        let day = Date(timeIntervalSince1970: line.date)
+                        if whatsApp { WhatsAppDayPill(label: ChatDayDivider.label(day)) } else { ChatDayDivider(date: day) }
+                    }
+                    ChatBubbleView(line: line, first: !ChatRuns.sameRun(previous, line), last: !ChatRuns.sameRun(line, next),
+                                   whatsApp: whatsApp,
+                                   onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
+                        .contextMenu {
+                            if chat?.canSend == true {
+                                Button { withAnimation { replyingTo = line } } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                            }
+                            Button { UIPasteboard.general.string = line.text.isEmpty ? (line.attachment ?? "") : line.text } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                        }
+                }
+                // WhatsApp says it in the header instead.
+                if let typing, !whatsApp {
+                    HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                        // Their face beside it, as beside each of their messages in a group (`ChatBubbleView`).
+                        if let name = (client.inboxTyping[chatID] ?? []).first(where: { !$0.name.isEmpty })?.name {
+                            ChatInitialsFace(name: name, initials: InboxAvatar.initials(name), size: 28)
+                                .accessibilityHidden(true)
+                        }
+                        ChatTypingBubble(text: typing)
+                    }
+                    .transition(.opacity)
+                }
+                // Your messages that wait on the phone for the Mac, dimmed, until it takes them.
+                let waiting = client.outbox.chatMessages(to: chatID)
+                ForEach(waiting) { entry in
+                    ChatBubbleView(line: InboxLine(id: entry.id, text: entry.request.text ?? "", date: entry.queued, sender: "",
+                                                   fromMe: true, reactions: []), pending: true, whatsApp: whatsApp)
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: lines.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            // Someone starts typing: their bubble comes into view under the last message.
-            .onChange(of: typing != nil) { _, shown in
-                if shown { withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.lg)
             .animation(Theme.reveal, value: typing)
-            .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+        } floating: {
+            EmptyView()
+        } dock: { scroll in
+            footer(scroll)
         }
-        .safeAreaInset(edge: .bottom) { footer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if whatsApp, let chat {
@@ -382,12 +375,15 @@ struct InboxChatView: View {
         .onDisappear { Task { await client.unwatchChat(chatID) } }
     }
 
-    private static let bottom = "bottom"
+    /// Changes when something new comes in at the end: a message, someone typing, one of yours waiting to go.
+    private var followKey: [String] {
+        [lines.last?.id ?? "", String(lines.count), typing ?? "", String(client.outbox.chatMessages(to: chatID).count)]
+    }
 
     /// A WhatsApp chat gets the Mac's composer to answer, with the message it answers in a tray above it; any other
     /// chat says where to answer it.
     @ViewBuilder
-    private var footer: some View {
+    private func footer(_ scroll: ConversationScrollControl) -> some View {
         if chat?.canSend == true {
             ComposerDock(fill: whatsApp ? WhatsAppLook.wallpaper : Theme.canvas) {
                 VStack(spacing: 0) {
@@ -416,6 +412,7 @@ struct InboxChatView: View {
                         WhatsAppComposer(text: $text, sending: sending) {
                             let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
                             text = ""
+                            scroll.scrollToEnd()
                             send(message)
                         }
                         .zIndex(1)
@@ -423,6 +420,7 @@ struct InboxChatView: View {
                         SessionComposer(text: $text, prompt: "Message", sending: sending) {
                             let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
                             text = ""
+                            scroll.scrollToEnd()
                             send(message)
                         }
                         .zIndex(1)
