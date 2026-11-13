@@ -44,15 +44,19 @@ private struct TextGeneratorRow: View {
             SettingText("textgen.task." + task.rawValue)
         }
         if let provider = generator.provider {
-            TextField(tr("textgen.model"), text: $modelDraft,
-                      prompt: Text(provider.defaultModel.isEmpty ? tr("textgen.model.loaded") : provider.defaultModel))
-                .onSubmit { saveModel(provider) }
-                .onChange(of: modelDraft) { _, _ in result = nil }
-                .onAppear { modelDraft = currentModel }
-                .onChange(of: generator) { _, _ in modelDraft = currentModel }
+            SettingFieldRow(tr("textgen.model")) {
+                TextField(tr("textgen.model"), text: $modelDraft,
+                          prompt: Text(provider.defaultModel.isEmpty ? tr("textgen.model.loaded") : provider.defaultModel))
+                    .onSubmit { saveModel(provider) }
+                    .onChange(of: modelDraft) { _, _ in result = nil }
+                    .onAppear { modelDraft = currentModel }
+                    .onChange(of: generator) { _, _ in modelDraft = currentModel }
+            }
             if provider.needsKey && !brain.hasKey(for: provider) {
-                SecureField(tr("textgen.key"), text: $keyDraft, prompt: Text(provider.keyPlaceholder))
-                    .onSubmit { saveKey(provider) }
+                SettingFieldRow(tr("textgen.key")) {
+                    SecureField(tr("textgen.key"), text: $keyDraft, prompt: Text(provider.keyPlaceholder))
+                        .onSubmit { saveKey(provider) }
+                }
                 SettingNote(tr("textgen.key.missing", name(provider)) + " " + tr("textgen.key.onReturn"))
             }
             ConnectionTestRow(testing: testing, result: result,

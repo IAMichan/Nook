@@ -816,8 +816,7 @@ struct AutocompleteSettingsSection: View {
                              detail: tr("autocomplete.stats.words", stats.totalWords), symbol: "sum")
                 }
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
-            .listRowBackground(Color.clear)
+            .settingsBareSection()
 
             Section(tr("autocomplete.stats.chart")) {
                 if stats.totalTakes == 0 {
