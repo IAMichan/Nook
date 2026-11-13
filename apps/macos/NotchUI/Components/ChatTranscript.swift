@@ -716,10 +716,14 @@ private struct ChatBubbleView: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
             if bubble.fromMe { Spacer(minLength: 70) }
-            // In a group, who wrote it shows beside each of their messages: their picture in the chat's app, else their
-            // photo from Contacts, else their initials.
+            // In a group, who wrote it shows beside the first message of their run: their picture in the chat's app,
+            // else their photo from Contacts, else their initials. The rest of the run keeps the room, so it lines up.
             if !bubble.fromMe, !bubble.sender.isEmpty {
-                ChatSenderFace(name: bubble.sender, picture: bubble.senderFace, size: Self.faceSize)
+                if first {
+                    ChatSenderFace(name: bubble.sender, picture: bubble.senderFace, size: Self.faceSize)
+                } else {
+                    Color.clear.frame(width: Self.faceSize, height: 1)
+                }
             }
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
