@@ -97,6 +97,14 @@ member cannot do:
   is a pull request; one you took off the list stays off. It reads the shared timeline, so it holds for every coding
   agent Nook runs; `tea`, `fj`, `cafe` and `az` commands are not read yet, and a session Nook only sees (an agent in a
   terminal) has no tray above a composer of Nook's.
+- A pull request the agent made in a turn (its link in the agent's words, or in what `gh pr create` and the like printed:
+  `WorkspaceManager.noticeCreatedPullRequest`) is linked the same way, also when new pull requests are not watched, so
+  it shows even when its branch is not the session's.
+- An agent that makes a worktree of its own (`git worktree add`, read from any agent's shell commands: `WorktreeMove`)
+  takes its session along at the end of the turn when the session's own worktree is gone (cleaned up after a merge) or
+  the agent changed files in the new one (`WorkspaceManager.followAddedWorktree`). The branch it leaves stays listed
+  above the composer with its pull request. Only for sessions in a worktree on this Mac; a session in the project's own
+  folder or on another machine stays where it is.
 - The other platform apps (`apps/tauri`, `apps/ios`, `apps/android`, `apps/windows`, `apps/linux`) have no session side
   panel with a pull request tab, so there is nothing there to change.
 

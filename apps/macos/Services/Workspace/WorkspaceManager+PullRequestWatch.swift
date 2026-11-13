@@ -172,9 +172,12 @@ extension WorkspaceManager {
     }
 
     /// At the end of a turn: a pull request link the turn brought that the conversation did not have before is the one
-    /// the agent just made, also when it used its own `gh` instead of pull_request_create.
+    /// the agent just made, also when it used its own `gh` instead of pull_request_create. It joins the session's list
+    /// whether or not it is watched, so it shows above the composer also when its branch is one Nook does not follow.
     func noticeCreatedPullRequest(_ id: UUID) {
+        followAddedWorktree(id)
         guard let all = events[id], let made = RunPullRequestLinks.created(in: all, before: &pullRequestWatcher.beforeTurn[id]) else { return }
+        if let ref = PullRequestRef.parse(made.absoluteString) { noticePullRequests(id, [ref], mustExist: false) }
         pullRequestCreated?(id, made)
         watchCreatedPullRequest(id, url: made)
     }
