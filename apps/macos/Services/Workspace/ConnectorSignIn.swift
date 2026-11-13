@@ -46,6 +46,16 @@ enum ConnectorSignIns {
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
+    /// Where an agent keeps its connector sign-ins: per agent, account (profile) and machine. Sessions with the same one
+    /// share them.
+    static func account(provider: RunProvider, profileID: String, machine: String?) -> String {
+        [provider.rawValue, profileID, machine ?? ""].joined(separator: "|")
+    }
+
+    static func account(_ run: WorkspaceRun) -> String {
+        account(provider: run.provider, profileID: run.profileID, machine: run.remote?.machineID)
+    }
+
     static func title(_ name: String) -> String {
         if name.hasPrefix("claude.ai ") { return String(name.dropFirst("claude.ai ".count)) }
         if name.hasPrefix("plugin:"), let last = name.split(separator: ":").last { return String(last) }

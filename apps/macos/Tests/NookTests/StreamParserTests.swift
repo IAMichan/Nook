@@ -280,6 +280,14 @@ final class ConnectorSignInTests: XCTestCase {
         XCTAssertNil(ConnectorSignIn(name: "my-own-server").iconDomain)
     }
 
+    func testSessionsOfOneAgentAccountAndMachineShareSignIns() {
+        let personal = ConnectorSignIns.account(provider: .claude, profileID: "", machine: nil)
+        XCTAssertEqual(personal, ConnectorSignIns.account(provider: .claude, profileID: "", machine: nil))
+        XCTAssertNotEqual(personal, ConnectorSignIns.account(provider: .claude, profileID: "work", machine: nil))
+        XCTAssertNotEqual(personal, ConnectorSignIns.account(provider: .codex, profileID: "", machine: nil))
+        XCTAssertNotEqual(personal, ConnectorSignIns.account(provider: .claude, profileID: "", machine: "buildbox"))
+    }
+
     func testDismissedOnesHideUnlessWaiting() {
         let all = [ConnectorSignIn(name: "a"), ConnectorSignIn(name: "b", waiting: true), ConnectorSignIn(name: "c")]
         XCTAssertEqual(ConnectorSignIns.shown(all, dismissed: ["a", "b"]).map(\.name), ["b", "c"])
