@@ -106,9 +106,11 @@ extension AgentRunPanel {
         let context = TimelineRowContext(structure: memo.revision, status: run.status,
                                          directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
                                          openEvents: expanded, shownFile: sideLink.shownFile, counted: countedLines)
+        // The latest turns drawn in full, the rest lazily (`ConversationRows`): the end never stays blank.
+        let eager = HistoryWindow.eagerRows(rowsPerTurn: memo.rowsPerTurn, start: start)
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     if events.isEmpty {
                         // Still being read from disk is not an empty conversation.
                         if workspace.isTimelineLoaded(runID) {
@@ -127,7 +129,7 @@ extension AgentRunPanel {
                         }
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
-                    ForEach(shownBlocks) { block in
+                    ConversationRows(items: shownBlocks, eager: eager) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
