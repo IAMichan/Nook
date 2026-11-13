@@ -1,4 +1,10 @@
 name: Release
+# Without a run-name, a run started by a tag push is listed under the message of the tagged commit, so the run that
+# publishing starts (see "Release token" below) looked like an unrelated change. Name every run after what it releases.
+run-name: >-
+  ${{ github.event_name == 'push' && format('Release {0}', github.ref_name)
+  || github.event_name == 'schedule' && 'Release: daily fresh beta check'
+  || format('Release: {0} from {1}', inputs.bump, github.ref_name) }}
 
 # Builds Nook.app in Release configuration and publishes it as a beta GitHub Release with a .dmg, a .zip and checksums.
 # Then tauri.yml builds the Windows (.exe, .msi) and Linux (.deb, .AppImage) apps of the same commit, and the `desktop`
