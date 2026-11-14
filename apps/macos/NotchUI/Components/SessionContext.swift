@@ -50,7 +50,14 @@ final class ComposerInbox: ObservableObject {
     }
 
     /// Written only when something is handed over, so idle composers see nothing.
-    @Published private(set) var delivery: Delivery?
+    private(set) var delivery: Delivery? {
+        didSet { if delivery != nil { arrivals.send() } }
+    }
+
+    /// Fires once something waits in `delivery`, after it is stored. Composers take on this, not on a `@Published`
+    /// projection: that fires before the value is stored, so `take` read the previous one (the first element you
+    /// selected never landed, and the next selection brought it along twice).
+    let arrivals = PassthroughSubject<Void, Never>()
 
     func add(_ text: String, to target: SessionContextTarget) {
         delivery = Delivery(target: target, text: text)

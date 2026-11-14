@@ -220,7 +220,7 @@ struct AgentRunPanel: View {
             .onDisappear { workspace.timelineHidden(runID) }
             // What the side panel hands to this session lands in the draft, to read before sending; also when it
             // arrived while this composer was not on screen.
-            .onReceive(ComposerInbox.shared.$delivery.compactMap { $0 }) { _ in takeFromSidePanel() }
+            .onReceive(ComposerInbox.shared.arrivals) { takeFromSidePanel() }
             .onAppear { takeFromSidePanel() }
             // F2 or the command palette's Rename: the name field in the header, with the keyboard in it.
             .onReceive(SessionRenameRequest.shared.$pending.removeDuplicates()) { id in
