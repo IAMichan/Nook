@@ -55,7 +55,7 @@ extension AppModel {
                                        tr("suggest.github.failing", Self.short(entry.title, 30))))
                 }
             }
-            if let best = scorer.rank(candidates, by: \.item).first {
+            if let best = scorer.rank(candidates, by: { $0.item }).first {
                 add(best.item.needsYou == .review ? 88 : 86, "github", best.text, .source("github"))
             }
         }
