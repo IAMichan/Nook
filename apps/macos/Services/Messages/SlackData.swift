@@ -112,7 +112,8 @@ enum SlackData {
             person.phone = ChatProfile.text(profile["phone"] as? String)
             if let name = ChatProfile.text(member["name"] as? String) { person.username = "@" + name }
             person.timeZone = ChatProfile.text(member["tz_label"] as? String) ?? ChatProfile.text(member["tz"] as? String)
-            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true { person.bot = true }
+            // Slackbot itself (USLACKBOT) is no `is_bot` user in the list, but it is a bot all the same.
+            if member["is_bot"] as? Bool == true || member["is_app_user"] as? Bool == true || id == "USLACKBOT" { person.bot = true }
             people[id] = person
         }
         return people

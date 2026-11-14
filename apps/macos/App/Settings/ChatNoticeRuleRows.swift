@@ -146,7 +146,7 @@ struct ChatModeList: View {
                 modePicker(thread).pickerStyle(.menu).fixedSize()
             }
             .controlSize(.small)
-            .help(tr("whatsapp.mode.help", store.rules.kindIsQuiet(kind, app: app) ? tr("whatsapp.mode.muted") : tr("whatsapp.mode.loud")))
+            .help(tr("whatsapp.mode.help", store.rules.automaticIsQuiet(thread) ? tr("whatsapp.mode.muted") : tr("whatsapp.mode.loud")))
         }
         .padding(.vertical, 1)
     }

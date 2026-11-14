@@ -151,6 +151,8 @@ enum TeamsData {
                 }
             }
             profile.link = ChatProfile.text(chat["webUrl"] as? String)
+            // Graph says neither whether the chat is with a bot nor whether you muted it: `bot` and `mutedInApp` stay
+            // unknown for Teams (docs/INTEGRATIONS.md).
             result.profile = profile.isEmpty ? nil : profile
             return result
         }

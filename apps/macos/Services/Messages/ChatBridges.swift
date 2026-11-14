@@ -1364,6 +1364,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     /// Each chat's picture as last passed on (its address at the helper): a changed photo goes to the inbox without a
     /// new message too.
     private var reportedPicture: [String: String] = [:]
+    /// Whether each chat was muted in its app as last passed on: a mute changes only this, and still goes to the inbox
+    /// at once, so Nook's notice rules follow it (`InboxThread.mutedInApp`).
+    private var reportedMuted: [String: Bool] = [:]
     private static let behindRetries = 3
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
@@ -1419,6 +1422,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         behind = [:]
         reportedUnread = [:]
         reportedPicture = [:]
+        reportedMuted = [:]
         covered = []
         isWorking = false
     }
@@ -1450,8 +1454,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 // its count and its picture go.
                 let reread = reportedUnread[chat.id].map { $0 != chat.unread } ?? false
                 let repictured = reportedPicture[chat.id] != nil && chat.picture != nil && reportedPicture[chat.id] != chat.picture
-                guard reread || repictured else { continue }
+                let remuted = reportedMuted[chat.id].map { $0 != chat.isMuted } ?? false
+                guard reread || repictured || remuted else { continue }
                 reportedUnread[chat.id] = chat.unread
+                reportedMuted[chat.id] = chat.isMuted
                 var picture: String?
                 if repictured {
                     picture = await local(chat.picture, token: token)
@@ -1461,6 +1467,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 var bridged = BridgedChat(app: chat.app, name: chat.title, messages: [], unread: reread ? chat.unread : nil,
                                           avatar: picture, account: account)
                 bridged.profile = chat.profile
+                bridged.mutedInApp = chat.isMuted
                 result.append(bridged)
             }
             // The chats read before one that fails are already marked seen: their messages must still go to the inbox, or
@@ -1515,6 +1522,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 }
                 seen[chat.id] = chat.last ?? .distantPast
                 reportedUnread[chat.id] = chat.unread
+                reportedMuted[chat.id] = chat.isMuted
                 covered.insert(chat.app)
                 // Two chats of one name in one row (Instagram keeps two threads with some people): answers go to the
                 // one that moved last, whichever was read last.
@@ -1527,6 +1535,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 var bridged = BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
                                           members: chat.members.isEmpty ? nil : chat.members, deleted: deleted, account: account)
                 bridged.profile = chat.profile
+                bridged.mutedInApp = chat.isMuted
                 if !read.faces.isEmpty { bridged.faces = read.faces }
                 result.append(bridged)
             }

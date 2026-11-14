@@ -628,53 +628,81 @@ struct WAGroupInfo: Equatable, Sendable {
     var profile: WAGroupProfile? = nil
 }
 
-/// What one chat does when a message arrives, chosen per chat in Settings › WhatsApp.
-enum WAChatMode: String, CaseIterable, Sendable {
-    /// Follows the rule of its kind (groups, status updates, channels stay quiet; people reach you).
-    case automatic
-    /// Always reaches you, even a group without a mention or a channel.
-    case loud
-    /// Never reaches you; the chat is kept and can be opened.
-    case muted
-}
+/// What one chat does when a message arrives: the shared per-chat choice (`ChatMode`), by its old WhatsApp name.
+typealias WAChatMode = ChatMode
 
-/// What the user chose in Settings → WhatsApp.
+/// What one WhatsApp account sorts its gateway's messages by: the notice rules every chat app follows
+/// (`ChatNoticeRules`), keyed by this account's normalized JIDs (`ChatNoticeRulesStore.filters(account:)` makes them
+/// from the shared ones), plus the chats muted on the phone. Every decision goes through the shared rules, so WhatsApp's
+/// own list and the shared inbox never disagree.
 struct WAFilters: Equatable, Sendable {
+    /// The shared rules, by normalized JID under the app "whatsapp".
+    var rules = ChatNoticeRules()
+    /// Chats muted on the phone (normalized JIDs), as the gateway says (`WhatsAppLink.mutedChats`): quiet while their
+    /// choice in Nook is automatic, as every app's chat muted in the app (`InboxThread.mutedInApp`).
+    var mutedInApp: Set<String> = []
+
+    private static let app = "whatsapp"
+
     /// Groups stay quiet unless the message mentions you.
-    var muteGroups = true
-    /// Status updates (status@broadcast) stay quiet.
-    var muteStatus = true
-    /// Channels (…@newsletter) stay quiet.
-    var muteChannels = true
-    /// Chats never shown (JIDs).
-    var ignored: Set<String> = []
-    /// Per chat (normalized JID): louder or quieter than its kind. Absent means automatic.
-    var modes: [String: WAChatMode] = [:]
-
-    func mode(for chat: String) -> WAChatMode { modes[WAJID.normalized(chat)] ?? .automatic }
-
-    mutating func setMode(_ mode: WAChatMode, for chat: String) {
-        let key = WAJID.normalized(chat)
-        if mode == .automatic { modes[key] = nil } else { modes[key] = mode }
+    var muteGroups: Bool {
+        get { rules.quietKinds(for: Self.app).contains(.group) }
+        set { rules.setQuiet(newValue, kind: .group, app: Self.app) }
     }
+    /// Status updates (status@broadcast) stay quiet.
+    var muteStatus: Bool {
+        get { rules.quietKinds(for: Self.app).contains(.status) }
+        set { rules.setQuiet(newValue, kind: .status, app: Self.app) }
+    }
+    /// Channels (…@newsletter) stay quiet.
+    var muteChannels: Bool {
+        get { rules.quietKinds(for: Self.app).contains(.channel) }
+        set { rules.setQuiet(newValue, kind: .channel, app: Self.app) }
+    }
+    /// Chats never shown (normalized JIDs).
+    var ignored: Set<String> {
+        get { rules.hidden }
+        set { rules.hidden = newValue }
+    }
+    /// Per chat (normalized JID): louder or quieter than its kind. Absent means automatic.
+    var modes: [String: WAChatMode] {
+        get { rules.modes }
+        set { rules.modes = newValue }
+    }
+
+    func mode(for chat: String) -> WAChatMode { rules.mode(for: WAJID.normalized(chat)) }
+
+    mutating func setMode(_ mode: WAChatMode, for chat: String) { rules.setMode(mode, for: WAJID.normalized(chat)) }
+
+    private static func kind(_ chat: String) -> ChatKind { ChatKind(WAJID.kind(chat)) }
 
     /// Whether a chat's kind keeps it quiet, before any per-chat choice.
-    func kindIsQuiet(_ chat: String) -> Bool {
-        switch WAJID.kind(chat) {
-        case .person: return false
-        case .group: return muteGroups
-        case .status: return muteStatus
-        case .channel: return muteChannels
-        }
+    func kindIsQuiet(_ chat: String) -> Bool { rules.kindIsQuiet(Self.kind(chat), app: Self.app) }
+
+    /// Whether a message in this chat stays silent (`ChatNoticeRules.isQuiet`): the per-chat choice first, then the
+    /// phone's mute and the kind's rule. A mention in an automatic group still reaches you; a muted chat never does.
+    func isQuiet(_ chat: String, mentionsMe: Bool = false) -> Bool {
+        let key = WAJID.normalized(chat)
+        return rules.isQuiet(chat: key, app: Self.app, kind: Self.kind(key), mentionsMe: mentionsMe,
+                             mutedInApp: mutedInApp.contains(key))
     }
 
-    /// Whether a message in this chat stays silent: the per-chat choice first, then the kind's rule. A mention in an
-    /// automatic group still reaches you; a muted chat never does.
-    func isQuiet(_ chat: String, mentionsMe: Bool = false) -> Bool {
-        switch mode(for: chat) {
-        case .loud: return false
-        case .muted: return true
-        case .automatic: return kindIsQuiet(chat) && !(WAJID.kind(chat) == .group && mentionsMe)
+    /// Whether the chat shows in the account's list and counts (`ChatNoticeRules.isVisible`).
+    func isVisible(_ conversation: WAConversation) -> Bool {
+        let key = WAJID.normalized(conversation.id)
+        return rules.isVisible(chat: key, app: Self.app, kind: Self.kind(key), mutedInApp: mutedInApp.contains(key),
+                               incoming: conversation.messages.lazy.filter { !$0.fromMe }.map(\.mentionsMe))
+    }
+}
+
+extension ChatKind {
+    /// WhatsApp's kind of chat by its JID, by the shared name.
+    init(_ kind: WAJID.Kind) {
+        switch kind {
+        case .person: self = .person
+        case .group: self = .group
+        case .status: self = .status
+        case .channel: self = .channel
         }
     }
 }
@@ -1212,11 +1240,7 @@ struct WAInbox: Equatable, Sendable {
     /// The conversations the pill lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
     /// stay out of it unless something in them mentions you.
     func visible(filters: WAFilters) -> [WAConversation] {
-        sorted.filter { conversation in
-            guard !filters.ignored.contains(conversation.id) else { return false }
-            return conversation.messages.contains { !$0.fromMe && !filters.isQuiet(conversation.id, mentionsMe: $0.mentionsMe) }
-                || !filters.isQuiet(conversation.id)
-        }
+        sorted.filter(filters.isVisible)
     }
 
     /// Unread messages in the conversations the pill shows (a muted group's quiet messages

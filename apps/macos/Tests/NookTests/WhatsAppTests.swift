@@ -276,6 +276,17 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.add(message("g2", chat: "1@g.us", from: "316@s.whatsapp.net", at: 2), filters: filters), .quiet)
     }
 
+    func testAChatMutedOnThePhoneStaysQuietWhileAutomatic() {
+        var inbox = WAInbox()
+        var filters = WAFilters()
+        filters.mutedInApp = ["31600000002@s.whatsapp.net"]
+        XCTAssertEqual(inbox.add(message("p1", chat: "31600000002@s.whatsapp.net"), filters: filters), .quiet)
+        XCTAssertTrue(inbox.visible(filters: filters).isEmpty, "the shared rules decide WhatsApp's own list too")
+        filters.setMode(.loud, for: "31600000002@s.whatsapp.net")
+        XCTAssertEqual(inbox.add(message("p2", chat: "31600000002@s.whatsapp.net", at: 1), filters: filters), .notify)
+        XCTAssertEqual(filters.rules.mode(for: "31600000002@s.whatsapp.net"), .loud, "kept in the shared rules")
+    }
+
     func testGroupsStayQuietUnlessTheyMentionYou() {
         var inbox = WAInbox()
         let group = "120363000000000001@g.us"

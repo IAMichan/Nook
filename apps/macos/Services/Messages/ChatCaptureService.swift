@@ -727,7 +727,7 @@ final class ChatCaptureService: ObservableObject {
                 guard let thread = inbox.threads[id], isShown(thread) else { return false }
                 // A group that stays quiet still tells you about a message that names you.
                 let newest = thread.messages.last { !$0.isMine }
-                return !rules.isQuiet(chat: id, app: thread.app, kind: thread.noticeKind, mentionsMe: newest?.mentionsMe == true)
+                return !rules.isQuiet(thread, mentionsMe: newest?.mentionsMe == true)
             }
         if !fresh.isEmpty { onFresh(fresh) }
     }

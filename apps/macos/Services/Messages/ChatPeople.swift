@@ -73,10 +73,10 @@ enum ChatPeople {
     /// Finds each person once across apps. A private chat is the same person as another when they share a phone number,
     /// else an address, else the same name in the same letters (`InboxThread.identity`: what each app says of them, its
     /// handle or the chat's profile); a group, a status update and a channel are no person. Two people who share only a
-    /// first name stay two (the whole name must match).
+    /// first name stay two (the whole name must match). A bot is no person either (`InboxThread.isAutomated`).
     static func people(_ threads: [InboxThread]) -> [ChatPerson] {
         var byKey: [String: ChatPerson] = [:]
-        for thread in threads where thread.noticeKind == .person {
+        for thread in threads where thread.noticeKind == .person && !thread.isAutomated {
             let last = thread.last
             guard last > .distantPast, !thread.name.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
             let key = thread.identity

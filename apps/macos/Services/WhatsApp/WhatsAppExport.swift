@@ -16,6 +16,8 @@ enum WhatsAppExport {
         var unread: Int = 0
         /// Still unread in WhatsApp itself (`WhatsAppLink.waitsInWhatsApp`).
         var waitsInApp: Bool = false
+        /// Muted on the phone (`WhatsAppLink.mutedChats`).
+        var mutedInApp: Bool = false
         /// Whether the link knows where the chat stands (`WhatsAppLink.readIsKnown`).
         var readKnown: Bool = true
         /// The chat's picture on this Mac.
@@ -46,6 +48,7 @@ enum WhatsAppExport {
                                hasOlder: conversation.hasOlder, history: false)
         chat.activity = max(conversation.lastActivity, facts.activity ?? .distantPast)
         chat.waitsInApp = facts.waitsInApp
+        chat.mutedInApp = facts.mutedInApp
         chat.ephemeral = true
         if group, !facts.faces.isEmpty { chat.faces = facts.faces }
         if group, let members = conversation.members { chat.profile = profile(conversation.profile, members: members, names: &names) }
@@ -82,6 +85,7 @@ enum WhatsAppExport {
                                handle: kind == .person ? info.jid : nil, readKnown: facts.readKnown)
         chat.activity = max(info.last, facts.activity ?? .distantPast)
         chat.waitsInApp = facts.waitsInApp
+        chat.mutedInApp = facts.mutedInApp
         chat.ephemeral = true
         return chat
     }
@@ -201,17 +205,5 @@ enum WhatsAppExport {
         return chips.enumerated().sorted { a, b in
             a.element.count != b.element.count ? a.element.count > b.element.count : a.offset < b.offset
         }.map(\.element)
-    }
-}
-
-extension ChatKind {
-    /// WhatsApp's kind of chat by its JID, by the shared name.
-    init(_ kind: WAJID.Kind) {
-        switch kind {
-        case .person: self = .person
-        case .group: self = .group
-        case .status: self = .status
-        case .channel: self = .channel
-        }
     }
 }

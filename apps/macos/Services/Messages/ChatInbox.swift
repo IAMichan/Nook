@@ -509,6 +509,10 @@ struct BridgedChat: Equatable, Sendable {
     /// Whether the chat is still unread in the app itself, when the bridge knows that apart from how many messages are
     /// new in Nook (WhatsApp through the linked phone); nil leaves it to the app's count.
     var waitsInApp: Bool? = nil
+    /// You muted the chat in its app itself (Telegram, WhatsApp through OpenWA, the chat helper's networks): while its
+    /// per-chat choice in Nook is automatic, it stays quiet as a chat muted in Nook (`ChatNoticeRules.isQuiet`). Nil
+    /// when the app does not say, which keeps what Nook knew.
+    var mutedInApp: Bool? = nil
     /// The app keeps this chat's messages too (WhatsApp through the linked phone). Nook's archive keeps them like every
     /// chat's, and removes them when the app is turned off (`ChatCaptureService.forgetMessages`); only without the archive
     /// they stay in memory and never reach `chat-inbox.json` (`ChatInbox.forDisk`).
@@ -689,6 +693,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var waitsInApp: Bool? = nil
     /// Its app keeps its messages too (`BridgedChat.ephemeral`).
     var ephemeral: Bool? = nil
+    /// Muted in its app itself (`BridgedChat.mutedInApp`).
+    var mutedInApp: Bool? = nil
 
     /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
     /// Measured against the newest message only, never against `activity`: an app that says its chat moved for
@@ -734,6 +740,10 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     }
     /// The kind the notice rules go by: what its app says, else a group when it looks like one, else a person's chat.
     var noticeKind: ChatKind { kind ?? (isGroup ? .group : .person) }
+    /// A private chat with a bot or an app rather than a person, as its app says (`ChatProfile.bot`: Slack, Telegram,
+    /// the chat helper's networks). It stays quiet by default, as Mail's newsletters do (`ChatNoticeRules.isQuiet`), and
+    /// is no person in People.
+    var isAutomated: Bool { profile?.bot == true && noticeKind != .group }
     /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people. What its
     /// app says comes first.
     var isPrivate: Bool {
@@ -1259,6 +1269,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 || (chat.handle != nil && chat.handle != known.handle) || (chat.readKnown != nil && chat.readKnown != known.readKnown)
                 || (chat.hasOlder != nil && chat.hasOlder != known.hasOlder) || (chat.chatID != nil && chat.name != known.name)
                 || (chat.activity != nil && chat.activity != known.activity) || (chat.waitsInApp != nil && chat.waitsInApp != known.waitsInApp)
+                || (chat.mutedInApp != nil && chat.mutedInApp != known.mutedInApp)
         } ?? false
         guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil
                                                      || (chat.profile != nil && chat.profile?.merged(over: known?.profile) != known?.profile) || chat.listed || !chat.deleted.isEmpty
@@ -1408,6 +1419,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         if let readKnown = chat.readKnown { thread.readKnown = readKnown }
         if let hasOlder = chat.hasOlder { thread.hasOlder = hasOlder }
         if let waitsInApp = chat.waitsInApp { thread.waitsInApp = waitsInApp }
+        if let mutedInApp = chat.mutedInApp { thread.mutedInApp = mutedInApp }
         if chat.ephemeral { thread.ephemeral = true }
         if chat.listed, thread.listed.map({ now.timeIntervalSince($0) >= Self.listedRenewal }) ?? true { thread.listed = now }
         guard thread != before else { return false }
