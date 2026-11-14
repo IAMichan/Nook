@@ -130,6 +130,7 @@ enum SettingsSearch {
         .init("settings.connections.onYourMac", .connections),
         .init("chats.settings.collect", .chats),
         .init("chats.settings.readOnOpen", .chats),
+        .init("chats.settings.readInAppOnOpen", .chats),
         .init("chats.settings.otherApps", .chats),
         .init("chats.settings.addField", .chats),
         .init("chats.giphy.title", .chats),

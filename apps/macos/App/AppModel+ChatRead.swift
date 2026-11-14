@@ -9,9 +9,9 @@ enum ChatReadHandoff: Equatable {
     case opensApp
 }
 
-/// Every chat works the same way, whatever its app: opening it reads it in Nook (Settings › Connections can turn that off),
-/// which nobody else sees and which stays after a restart; "Mark as read in <app>" is your own click that passes it on to
-/// the app, so the chat is read on your phone too and the people who wrote can see it. "Mark as unread" marks it unread
+/// Every chat works the same way, whatever its app: opening it reads it in Nook (Settings › Chats can turn that off),
+/// which stays after a restart, and passes it on to the app where Nook can tell it (also a switch there), so the chat is
+/// read on your phone too and the people who wrote can see it; "Mark as read in <app>" does the same by your own click. "Mark as unread" marks it unread
 /// in Nook and, where the app takes it, in the app too (as its own "Mark as unread": nobody who wrote sees it).
 extension AppModel {
     /// Read in Nook: the badge goes, the app (and whoever wrote) hears nothing.
@@ -21,6 +21,30 @@ extension AppModel {
         if case .whatsApp(let key) = chatRoute(for: entry) {
             let (link, jid) = WhatsAppAccounts.shared.route(key)
             link.markReadInNook(jid)
+        }
+    }
+
+    /// Settings › Chats: opening a chat also tells its app you read it, where Nook can tell that app. On by default.
+    static let readInAppOnOpenKey = "nook.chats.readInAppOnOpen"
+    static var readsInAppOnOpen: Bool { UserDefaults.standard.object(forKey: readInAppOnOpenKey) as? Bool ?? true }
+    /// Chats whose app is being told right now, so a chat that redraws while it opens is told once.
+    private static var tellingAppOnOpen: Set<String> = []
+
+    /// A chat you opened (in the Chats tab, on the iPhone), with "Read in Nook when opened" on: read in Nook, and passed on
+    /// to its app as well where Nook can tell it and Settings › Chats says so, so the chat is read on your phone too and
+    /// whoever wrote sees it. An app that refused leaves the chat read in Nook only, without a toast: "Mark as read in
+    /// <app>" is still offered. An app Nook can only open is never opened for this.
+    func readOpenedChat(_ entry: ChatsEntry) {
+        if entry.read.isUnread { markChatReadInNook(entry) }
+        guard Self.readsInAppOnOpen, entry.read != .read, chatReadHandoff(entry) == .tells,
+              let route = chatRoute(for: entry), !Self.tellingAppOnOpen.contains(entry.id) else { return }
+        // What the app is told: what you saw now. A message that comes in while it goes stays new.
+        let through = ChatCaptureService.shared.readMark(entry.id)
+        Self.tellingAppOnOpen.insert(entry.id)
+        Task {
+            defer { Self.tellingAppOnOpen.remove(entry.id) }
+            guard (try? await self.markReadInChatApp(route, name: entry.name)) != nil else { return }
+            ChatCaptureService.shared.markReadInApp(entry.id, through: through)
         }
     }
 
