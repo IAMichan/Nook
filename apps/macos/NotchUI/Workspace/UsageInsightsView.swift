@@ -429,11 +429,7 @@ struct UsageModelRow: View {
                                 Text(model.model).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.middle)
                             }
                             if fraction > 0 {
-                                GeometryReader { proxy in
-                                    Capsule().fill(UsageColors.agent(model.agent))
-                                        .frame(width: max(6, min(proxy.size.width, 192) * fraction), height: 2)
-                                }
-                                .frame(height: 2)
+                                Bar(fraction: fraction, color: UsageColors.agent(model.agent), height: 2, track: nil, minFill: 6, maxLength: 192)
                             }
                         }
                     }
@@ -511,11 +507,7 @@ struct UsageChatRow: View {
                             .foregroundStyle(NookTheme.textTertiary)
                             .lineLimit(1)
                         if fraction > 0 {
-                            GeometryReader { proxy in
-                                Capsule().fill(UsageColors.agent(chat.chat.agent))
-                                    .frame(width: max(6, min(proxy.size.width, 192) * fraction), height: 2)
-                            }
-                            .frame(height: 2)
+                            Bar(fraction: fraction, color: UsageColors.agent(chat.chat.agent), height: 2, track: nil, minFill: 6, maxLength: 192)
                         }
                     }
                 }

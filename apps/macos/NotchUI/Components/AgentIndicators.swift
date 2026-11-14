@@ -2,19 +2,29 @@ import SwiftUI
 
 // Small status indicators shared by the agent, workspace and inbox views.
 
-/// A thin progress bar; `fraction` runs from 0 to 1.
+/// A thin progress or share bar; `fraction` runs from 0 to 1. Every bar in Nook is this one: a usage limit, a job's
+/// steps, a poll option, a share of the listening time or of the spend.
 struct Bar: View {
     let fraction: Double
     let color: Color
+    /// How thick the bar is.
+    var height: CGFloat = 4
+    /// The empty part behind the fill; nil for a bar that only shows its fill (a share in a ranked list).
+    var track: Color? = NookTheme.line2
+    /// The shortest fill, so a little progress still shows; 0 lets an empty bar be empty.
+    var minFill: CGFloat = 3
+    /// The longest the fill grows, for bars that compare rows of a wide table; the track still takes the full width.
+    var maxLength: CGFloat = .infinity
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(NookTheme.line2)
-                Capsule().fill(color).frame(width: max(3, geo.size.width * CGFloat(min(1, max(0, fraction)))))
+                if let track { Capsule().fill(track) }
+                Capsule().fill(color)
+                    .frame(width: max(minFill, min(geo.size.width, maxLength) * CGFloat(min(1, max(0, fraction)))))
             }
         }
-        .frame(height: 4)
+        .frame(height: height)
     }
 }
 

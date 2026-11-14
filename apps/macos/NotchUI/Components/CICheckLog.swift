@@ -86,7 +86,10 @@ struct CICheckLogView: View {
                 }
             }
             if running, let log, !log.steps.isEmpty {
-                ProgressBar(fraction: Double(log.doneSteps) / Double(log.steps.count))
+                // The thin bar under a running job's name, filling as its steps finish.
+                Bar(fraction: Double(log.doneSteps) / Double(log.steps.count), color: NookTheme.paper,
+                    height: 3, track: NookTheme.smoke, minFill: 4)
+                    .animation(NookTheme.reveal, value: log.doneSteps)
             }
         }
     }
@@ -485,18 +488,3 @@ struct CICheckStatusText: View {
     }
 }
 
-/// The thin bar under a running job's name, filling as its steps finish.
-private struct ProgressBar: View {
-    let fraction: Double
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(NookTheme.smoke)
-                Capsule().fill(NookTheme.paper).frame(width: max(4, proxy.size.width * min(1, max(0, fraction))))
-            }
-        }
-        .frame(height: 3)
-        .animation(NookTheme.reveal, value: fraction)
-    }
-}
