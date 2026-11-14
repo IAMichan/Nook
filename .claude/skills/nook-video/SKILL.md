@@ -22,7 +22,7 @@ for another language; Nook speaks English, Dutch, German, French and Spanish, so
 | `scripts/render.mjs` | Renders a page frame by frame with Playwright, composes the score, mixes and encodes the MP4, renders the cover, makes a storyboard |
 | `scripts/music.py` | The score: pads, soft bass, a lo-fi groove (plucked arpeggio, round kick, snap, a whisper of hi-hat) and sound cues, generated from scratch (numpy only), so it is free to use anywhere |
 | `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 25 s Reel on an 80 BPM grid with a cold open, and its cover: copy these to start |
-| `examples/readme-clip.html` | The 1600×900 README clip (`docs/assets/nook-demo.mp4` and `.gif`): the words on the left, Nook's main window on the right, its tabs (Nook, Agents, Chats, Music) changing per scene |
+| `examples/readme-clip.html` | The 1600×900 README clip (`docs/assets/nook-demo.mp4` and `.gif`): the words on the left, Nook's main window on the right at 1.2×, its tabs (Nook, Agents, Chats, Music) changing per scene, with Autocomplete and Double Tap shown in a plain mail window and a closing grid of what else Nook does. Drawn after an offscreen render of the real `WorkspaceView` with demo data; when the app's look changes, render the window again and redraw this page from it, not from memory |
 
 Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On a Mac:
 `brew install ffmpeg node && npm i -g playwright && npx playwright install chromium && pip3 install numpy`.
@@ -67,10 +67,10 @@ Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On 
 
 Everything comes from `NookTheme`; the kit already has it. Do not add colors, fonts or radii of your own.
 
-- **Canvas and surfaces:** one neutral grey ramp, no blue cast: canvas `#0A0A0A`, the notch `#000`, rows and cards
-  `#171717` (graphite), chips and selected tabs `#1F1F1F` (smoke). Regions read by their fill; strokes are rare and only
+- **Canvas and surfaces:** `NookPalette.nookDark`: a true black canvas (`#000`, window and notch alike), cards and rows
+  `#0F0F0F` just above it, the composer and the tab bar `#111111` (surface), a selected row `#1C1C1E`, chips `#242424` (smoke). Regions read by their fill; strokes are rare and only
   a shade lighter than what they edge.
-- **Text:** `#F5F5F5` (paper) for what matters, `#999999` for supporting lines, `#6E6E6E` for the quiet half of a
+- **Text:** `#F5F5F5` (paper) for what matters, `#A1A1A1` for supporting lines, `#8F8F8F` for metadata, `#6E6E6E` for the quiet half of a
   headline ("No Mac? <muted>No problem.</muted>").
 - **Type:** the system font (SF Pro on a Mac, Inter as the stand-in elsewhere); headlines bold with tight tracking, the
   rest regular. Mono only for code, commands and branch names.
@@ -95,14 +95,14 @@ the orb), never to decorate a card, a tag or a headline; decoration stays grey (
 | Color | Means | States in the app |
 |---|---|---|
 | iris `#F4F3F7` | Nook itself, busy, info | running, busy, thinking, connecting, info, note; the orb at rest |
-| mint `#5ED6A6` | good, done, going | done, open (PR), passing checks, approved, connected, working, success, listening, added, allowed |
-| amber `#F2B866` | waits on you | waiting, needs you, changes requested, expired, warning, caution, blocked, behind, stacked PR, approval pending |
-| coral `#EF7B73` | broken | error, failed, failing checks, conflict, unreachable, denied, deleted |
-| soft coral `#F29A92` | closed, gently failed | closed PR, a failed scheduled run, caring |
-| violet `#AE94F2` | merged | merged pull requests only |
-| blue `#8FB3F0` | links | links, read receipts, modified files |
-| grey `#999999` | nothing to do yet | draft, checks running, commented, review required |
-| music `#F0936A` | music | the Music tab only |
+| mint `#55D2A3` | good, done, going | done, open (PR), passing checks, approved, connected, working, success, listening, added, allowed |
+| amber `#F0B65A` | waits on you | waiting, needs you, changes requested, expired, warning, caution, blocked, behind, stacked PR, approval pending |
+| coral `#FF6467` | broken | error, failed, failing checks, conflict, unreachable, denied, deleted |
+| soft coral `#FCA5A5` | closed, gently failed | closed PR, a failed scheduled run, caring |
+| violet `#B0A2E6` | merged | merged pull requests only |
+| blue `#5DAACC` | links, working | links, read receipts, modified files; an agent's "Working" in the Agents list |
+| grey `#A1A1A1` | nothing to do yet | draft, checks running, commented, review required |
+| music `#E6A660` | music | the Music tab only |
 
 Chips are the state color at 14 % on its own tint, as in the app. Words on chips are the app's own (Done, Waiting,
 Open, Merged, Approved, Commented, Draft, Failed); check `I18n.swift` for the exact word.
@@ -192,7 +192,7 @@ Plain, warm, and concrete, the way the README and commit messages read.
 | Reel / TikTok / Short | 1080×1920, 30 fps | H.264 High, yuv420p, AAC 48 kHz 192 kbps, `+faststart`; 15–30 s |
 | Reel cover | 1080×1920 | Key content inside 1080×1440 centered (the grid crop) |
 | Feed post | 1080×1350 | Set `html, body` to that size and drop the menu bar; same rules |
-| README or release clip | 1600×900 or the banner's 1800×620 | Render with `--size 1600x900`; use `docs/assets/release-banner.png` as the reference layout. GitHub does not play a video from the repository inline, so embed a GIF (`fps=15`, 960 px wide, under 5 MB) that links to the MP4 |
+| README or release clip | 1600×900 or the banner's 1800×620 | Render with `--size 1600x900`; use `docs/assets/release-banner.png` as the reference layout. GitHub does not play a video from the repository inline, so embed a GIF (under 5 MB, 96 colors without dithering: `fps=12` at about 860 px for 28 s, `fps=10` at 700 px for 46 s; the breathing background makes every frame differ, so width and frame rate are what shrink it) that links to the MP4 |
 
 ## Caption
 

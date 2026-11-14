@@ -3,16 +3,16 @@
    (a 15 pt title becomes 40 px), so the panel reads like a close-up of the real one. Change a token there, change it here. */
 
 :root {
-  /* Surface ramp, darkest to lightest (pure grey, no blue cast) */
-  --notch:#000000; --well:#080808; --canvas:#0A0A0A; --field:#111111; --surface:#121212;
-  --graphite:#171717; --hairline:#181818; --field-stroke:#1C1C1C; --smoke:#1F1F1F;
-  --line2:#232323; --separator:#2B2B2B;
+  /* Surface ramp, darkest to lightest (NookPalette.nookDark: a true black canvas, surfaces a few % white over it) */
+  --notch:#000000; --well:#0A0A0A; --canvas:#000000; --field:#0D0D0D; --surface:#111111;
+  --graphite:#191A1D; --row:#0F0F0F; --row-selected:#1C1C1E; --hairline:#171717; --field-stroke:#262626; --smoke:#242424;
+  --line:#1A1A1A; --line2:#262626; --separator:#1F1F1F; --bubble:#1E1E1E; --chat-mine:#17493A;
   /* Text */
-  --paper:#F5F5F5; --strong:#D6D6D6; --secondary:#999999; --muted:#878787; --tertiary:#6E6E6E;
+  --paper:#F5F5F5; --strong:#E5E5E5; --secondary:#A1A1A1; --muted:#8F8F8F; --tertiary:#8F8F8F; --quiet:#6E6E6E;
   --ink:#0B0B0D; --eye:#0B0A12;
   /* Accent and state colors: one meaning each (see SKILL.md) */
-  --iris:#F4F3F7; --mint:#5ED6A6; --mint-soft:#74DDB3; --amber:#F2B866; --coral:#EF7B73;
-  --coral-soft:#F29A92; --violet:#AE94F2; --blue:#8FB3F0; --music:#F0936A;
+  --iris:#F4F3F7; --mint:#55D2A3; --mint-soft:#5EE9B5; --amber:#F0B65A; --coral:#FF6467;
+  --coral-soft:#FCA5A5; --violet:#B0A2E6; --blue:#5DAACC; --music:#E6A660;
   /* NookTheme.Radius x2.6 */
   --r-chip:16px; --r-control:21px; --r-card:26px; --r-panel:31px; --r-sheet:36px; --r-bubble:47px; --r-pill:52px; --r-composer:62px;
   /* NookTheme.Spacing x2.6 */
@@ -105,7 +105,7 @@ body { font-family:var(--font); color:var(--paper); -webkit-font-smoothing:antia
 /* Type */
 .headline { left:var(--gutter); right:var(--gutter); }
 .h1 { font-size:104px; line-height:1.04; font-weight:700; letter-spacing:-3px; }
-.h1 .muted, .muted { color:var(--tertiary); }
+.h1 .muted, .muted { color:var(--quiet); }
 .h2 { font-size:46px; line-height:1.3; color:var(--secondary); font-weight:400; margin-top:28px; }
 .mono { font-family:var(--mono); }
 

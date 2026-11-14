@@ -16,9 +16,9 @@
 **Everything that needs you, in one calm place: your people, your coding agents, your music, and the rest of your day.**
 
 <p align="center">
-  <a href="docs/assets/nook-demo.mp4"><img src="docs/assets/nook-demo.gif" width="100%" alt="Nook's main window: the Nook tab shows what waits on you and a pull request merges; in Agents you allow a push, checks pass and the pull request merges; in Chats you answer Sam; Music shows what is playing. Local-first, open source, and the notch is optional."></a>
+  <a href="docs/assets/nook-demo.mp4"><img src="docs/assets/nook-demo.gif" width="100%" alt="Nook in 46 seconds: the Nook tab shows three things for you; Autocomplete finishes a sentence in a mail (Tab takes a word, Shift-Tab all of it); Double Tap (right Command twice) puts the dates from a mail in your calendar; in Agents you allow a push and the pull request merges; in Chats you answer Sam; Music shows the song with its lyrics; then dictation, call notes, connectors, terminal, worktrees, models and the iPhone companion. Local-first, open source, and the notch is optional."></a>
   <br>
-  <sub><a href="docs/assets/nook-demo.mp4">Watch with sound (MP4, 28 s)</a></sub>
+  <sub><a href="docs/assets/nook-demo.mp4">Watch with sound (MP4, 46 s)</a></sub>
 </p>
 
 Nook is your buddy on the computer. People waiting for an answer, coding agents waiting for a yes, the song that is playing, and the meeting in ten minutes all flow into one overview. Nook sorts out what really needs you, tells you once and quietly, answers questions across all of it, and acts only after you say yes, so you keep the overview and steer instead of chase.
