@@ -502,7 +502,7 @@ struct SessionListView: View {
         let words = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return client.sessions
             .filter { session in
-                words.isEmpty || [session.title, session.folder, session.branch ?? "", session.agent]
+                words.isEmpty || [session.title, session.folder, session.projectKey, session.branch ?? "", session.agent]
                     .contains { $0.localizedCaseInsensitiveContains(words) }
             }
             .sorted { $0.updated > $1.updated }
@@ -612,7 +612,9 @@ struct SessionListView: View {
         // What a new session can start with, asked once per connection: the New session sheet opens on it at once, and a
         // project's "+" knows its folder.
         .task(id: client.phase == .connected) {
-            guard client.phase == .connected, client.can(CompanionFeature.start) else { return }
+            // Only where the sheet could open (`QuickActionBlock`): a Mac that does not let this phone start sessions is
+            // never asked, so its refusal never shows up as a notice.
+            guard client.phase == .connected, QuickActionBlock.session(client) == nil else { return }
             await client.loadLaunchOptions()
         }
         .confirmationDialog("Stop this session?", isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }),
@@ -664,10 +666,17 @@ struct SessionListView: View {
         }
     }
 
+    /// The folders a new session can start in, by name, when this phone may start one (`QuickActionBlock`).
+    private var startProjects: [(name: String, path: String)] {
+        guard QuickActionBlock.session(client) == nil, let projects = client.launchOptions?.projects else { return [] }
+        return projects.map { (name: $0.name, path: $0.path) }
+    }
+
     /// The project folder on the Mac a new session for `folder` starts in, when the Mac offers it.
-    private func startPath(_ folder: String) -> String? {
-        guard client.can(CompanionFeature.start), let projects = client.launchOptions?.projects else { return nil }
-        return ProjectGroups.path(forFolder: folder, in: projects.map { (name: $0.name, path: $0.path) })
+    private func startPath(_ folder: String, in projects: [(name: String, path: String)]? = nil) -> String? {
+        let projects = projects ?? startProjects
+        guard !projects.isEmpty else { return nil }
+        return ProjectGroups.path(forFolder: folder, in: projects)
     }
 
     private var foldedProjects: Set<String> { ProjectGroups.decode(foldedProjectsStored) }
@@ -698,18 +707,21 @@ struct SessionListView: View {
     /// the header folds it (remembered), and its "+" starts a new session right in that project.
     @ViewBuilder
     private var projectShelves: some View {
-        ForEach(ProjectGroups.group(rest) { $0.folder }) { project in
+        // Worked out once for every shelf, not per header.
+        let projects = startProjects
+        let folded = foldedProjects
+        ForEach(ProjectGroups.group(rest) { $0.projectKey }) { project in
             let key = Self.foldKey(project.folder)
-            let open = !foldedProjects.contains(key) || !query.isEmpty
+            let open = !folded.contains(key) || !query.isEmpty
             let name = project.folder.isEmpty ? String(localized: "No folder") : project.folder
             HStack(spacing: 0) {
                 NookShelfHeader(title: name, count: project.items.count, open: open) {
                     Haptics.tap()
-                    var folded = foldedProjects
-                    if folded.contains(key) { folded.remove(key) } else { folded.insert(key) }
-                    withAnimation(Theme.reveal) { foldedProjectsStored = ProjectGroups.encode(folded) }
+                    var next = foldedProjects
+                    if next.contains(key) { next.remove(key) } else { next.insert(key) }
+                    withAnimation(Theme.reveal) { foldedProjectsStored = ProjectGroups.encode(next) }
                 }
-                if let folder = startPath(project.folder) {
+                if let folder = startPath(project.folder, in: projects) {
                     Button {
                         Haptics.tap()
                         newSession(in: folder)
@@ -759,7 +771,7 @@ struct SessionListView: View {
                 Button(role: .destructive) { stopping = session } label: { Label("Stop", systemImage: "stop.circle") }
             }
         }
-        if let folder = startPath(session.folder) {
+        if let folder = startPath(session.projectKey) {
             Button { newSession(in: folder) } label: { Label("New session here", systemImage: "square.and.pencil") }
         }
     }

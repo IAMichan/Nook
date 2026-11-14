@@ -821,7 +821,8 @@ final class CompanionServer: ObservableObject {
                              canSteer: workspace.canSteer(run.id),
                              limitResetsAt: SnoozePolicy.limitResetEnd(limitedAt: run.limitedAt, resetAt: run.limitResetAt,
                                                                        now: now)?.timeIntervalSince1970,
-                             turn: workspace.turnIdentity(run.id))
+                             turn: workspace.turnIdentity(run.id),
+                             project: InboxProject.key(folder: AgentHub.projectName(run.workingDirectory), path: run.workingDirectory))
     }
 }
 

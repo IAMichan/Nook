@@ -121,9 +121,11 @@ struct SessionDetailView: View {
             // A push about this session arrives without a banner while it is on screen.
             .onAppear {
                 client.visibleSession = sessionID
-                // Opened to write to it: the keyboard comes up once the screen has slid in.
-                if client.focusComposer == sessionID {
-                    client.focusComposer = nil
+                // Opened to write to it: the keyboard comes up once the screen has slid in. Taken whichever session
+                // opens, so a request whose screen never came up does not surface later.
+                let wanted = client.focusComposer == sessionID
+                client.focusComposer = nil
+                if wanted, client.allows(.operate), session.canSend != false {
                     Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(350))
                         composerFocused = true

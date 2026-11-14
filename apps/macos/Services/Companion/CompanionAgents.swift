@@ -63,7 +63,10 @@ enum CompanionAgents {
                 attention: attention(session.status, approvals: !items.isEmpty), folder: folder, branch: nil,
                 updated: (session.updated ?? session.started ?? Date()).timeIntervalSince1970,
                 excerpt: CompanionPolicy.excerpt(session.summary), items: items.map(item), canSend: app.canReply(to: session),
-                actions: app.canEnd(session) ? [SessionAction.end.rawValue] : []
+                actions: app.canEnd(session) ? [SessionAction.end.rawValue] : [],
+                // Grouped as the Mac's Agents list groups it: a worktree under its repository.
+                project: session.cwd.isEmpty ? session.project
+                    : InboxProject.key(folder: AgentHub.projectName(session.cwd), path: session.cwd)
             ))
         }
         // Bridge requests, and any request whose terminal session is not in the list, newest first (a dictionary has no order).

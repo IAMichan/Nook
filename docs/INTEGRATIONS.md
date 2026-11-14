@@ -664,8 +664,9 @@ requests, a session's workspace) and every agent and chat app in them gets it at
 tablet-specific layout for Android yet.
 
 The companion's Agents list groups sessions by project as the Mac's list and the Tauri app's Agents tab already do
-(*Group by project*, a project's **+** for a new session in it). It reads only `SessionDigest.folder` and the folders of
-`LaunchOptions`, so it holds for every coding agent alike. The Linux, Windows and Android scaffolds have no Agents list
+(*Group by project*, a project's **+** for a new session in it). It reads `SessionDigest.project` (the Mac's `InboxProject.key`,
+filled for Nook's sessions and for agents in a terminal alike; bridge requests have no folder of their own and fall
+back to `folder`) and the folders of `LaunchOptions`, so it holds for every coding agent alike. The Linux, Windows and Android scaffolds have no Agents list
 yet.
 
 ## Open gaps

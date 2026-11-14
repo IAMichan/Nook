@@ -112,6 +112,21 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(SessionDigest.self, from: JSONEncoder().encode(terminal)), terminal)
     }
 
+    func testSessionDigestProjectFallsBackToTheFolderFromAnOlderMac() throws {
+        // An older Mac sends no project: the phone groups the session by its folder.
+        let old = #"{"id":"1","title":"","agent":"","attention":"idle","folder":"nook-fix-login","updated":0,"excerpt":"","items":[]}"#
+        let decoded = try JSONDecoder().decode(SessionDigest.self, from: Data(old.utf8))
+        XCTAssertNil(decoded.project)
+        XCTAssertEqual(decoded.projectKey, "nook-fix-login")
+        // A current Mac names the repository a worktree came from, or "" for no project at all.
+        let worktree = SessionDigest(id: "2", title: "", agent: "", attention: "working", folder: "nook-fix-login", branch: nil,
+                                     updated: 0, excerpt: "", items: [], project: "nook")
+        XCTAssertEqual(try JSONDecoder().decode(SessionDigest.self, from: JSONEncoder().encode(worktree)).projectKey, "nook")
+        var scratch = worktree
+        scratch.project = ""
+        XCTAssertEqual(scratch.projectKey, "")
+    }
+
     func testRequestResponseCodable() throws {
         let request = CompanionRequest(op: .decide, session: "s", item: "i", allow: true)
         XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)
