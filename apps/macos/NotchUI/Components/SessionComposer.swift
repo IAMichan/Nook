@@ -949,14 +949,38 @@ struct SessionComposer<Controls: View>: View {
 
     /// AppKit selects a text field's whole text when it gets the keyboard, so coming back to a draft would leave it
     /// selected and the next key would replace it. A full selection becomes a caret at the end; a click keeps its spot.
+    /// Coming back from a dropdown (the model picker) its popover is still the key window for a moment and the field
+    /// takes the keyboard a little later, so this looks in the main window too and tries again a few times, until it
+    /// finds the field with its text.
     static func placeCaretAtEnd() {
+        placeCaretAtEnd(retries: [0.05, 0.15, 0.3])
+    }
+
+    private static func placeCaretAtEnd(retries: [TimeInterval]) {
         DispatchQueue.main.async {
-            guard let editor = (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder as? NSTextView else { return }
-            let length = (editor.string as NSString).length
-            let selected = editor.selectedRange()
-            guard length > 0, selected.location == 0, selected.length == length else { return }
-            editor.setSelectedRange(NSRange(location: length, length: 0))
+            if caretPlaced() { return }
+            guard let delay = retries.first else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { placeCaretAtEnd(retries: Array(retries.dropFirst())) }
         }
+    }
+
+    /// True once a field editor with text has the keyboard (in the key or the main window), after its full selection
+    /// became a caret at the end.
+    private static func caretPlaced() -> Bool {
+        // A dropdown's own search field is in its popover window, not the composer's.
+        let windows = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 }
+            .filter { !String(describing: type(of: $0)).contains("Popover") }
+        for window in windows {
+            guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else { continue }
+            let length = (editor.string as NSString).length
+            guard length > 0 else { continue }
+            let selected = editor.selectedRange()
+            if selected.location == 0, selected.length == length {
+                editor.setSelectedRange(NSRange(location: length, length: 0))
+            }
+            return true
+        }
+        return false
     }
 
     /// Cmd-V with a picture on the clipboard adds it here; with text it pastes as always.
