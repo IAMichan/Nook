@@ -30,7 +30,7 @@
       {#if i > 0 || title}<div class="gap"></div>{/if}
       {#each section as item (item.label)}
         {#if item.onselect}
-          <button role="menuitem" class="item" class:destructive={item.destructive} disabled={item.disabled} onclick={() => { onclose(); item.onselect?.(); }}>
+          <button role="menuitem" class="item" class:destructive={item.destructive} disabled={item.disabled} onclick={() => { item.onselect?.(); onclose(); }}>
             <span class="check">{#if item.checked}<Ico name="check" size={14} stroke={2.6} />{/if}</span>
             <span class="text"><span>{item.label}</span>{#if item.detail}<small>{item.detail}</small>{/if}</span>
             {#if item.icon}<Ico name={item.icon} size={17} />{/if}

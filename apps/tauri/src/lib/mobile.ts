@@ -9,6 +9,9 @@ declare global {
       insets(): string;
       /** Tekst die een andere app met Nook deelde, één keer. */
       takeShared(): string | null;
+      /** Starts dictation in a BCP 47 language (empty: the phone's own); words come as event `nook-dictation`. */
+      dictate?(language: string): void;
+      stopDictating?(): void;
     };
   }
 }

@@ -161,9 +161,14 @@ the phone itself (its own brain) is in Settings › *Nook on this phone*, and is
   instead (`CompanionClient::stream`, `src-tauri/src/companion/poll.rs`).
 - **Requests:** `ClientCall` in `core/src/companion/client.rs` sends every op the phone uses; the phone offers only what
   the computer lists in `features` and allows in `scopes`, and sends `protocolVersion` and `appVersion`.
-- **Not on Android yet:** pull requests, review and diffs, files and terminals, pictures and files in a message,
-  dictation, older sessions and the Mac's search, several Macs, prompt links, the relay, the outbox, compression, the
-  snooze time picker, widgets, Live Activities and push notifications (planned through FCM).
+- **Review and pull requests:** *Changes* in a session's bar (`diff`, line comments into the message as
+  `<review_comment>`, `lib/patch.ts`), and Pull requests from the Agents header and a session's menu (`pulls`, `pull`,
+  `pullAct` with line comments at the head the phone saw, `pullWork`).
+- **Pictures and dictation:** up to two pictures with a message or a new session, made JPEGs under 90 KB on the phone
+  (`lib/images.ts`, `images`); the microphone in every composer uses Android's speech recognizer through `MainActivity.kt`
+  (`NookAndroid.dictate`), on the device where it can, the words landing in the field (`lib/dictation.svelte.ts`).
+- **Not on Android yet:** see [ANDROID-COMPANION-TODO.md](ANDROID-COMPANION-TODO.md), which also lists what the project's
+  owner has to set up (Firebase for push, the relay key, testing on a real phone).
 
 ## Compression
 

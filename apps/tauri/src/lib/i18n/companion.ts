@@ -3,6 +3,14 @@
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "1 comment": { de: "1 Kommentar", fr: "1 commentaire", es: "1 comentario" },
+  "1 file": { de: "1 Datei", fr: "1 fichier", es: "1 archivo" },
+  "Comment on these lines": { de: "Diese Zeilen kommentieren", fr: "Commenter ces lignes", es: "Comentar estas líneas" },
+  "Merge this pull request?": { de: "Diesen Pull Request zusammenführen?", fr: "Fusionner cette pull request ?", es: "¿Fusionar esta pull request?" },
+  "That picture could not be made small enough.": { de: "Dieses Bild ließ sich nicht klein genug machen.", fr: "Impossible de rendre cette image assez petite.", es: "No se pudo hacer esa imagen lo bastante pequeña." },
+  "The phone's language": { de: "Sprache des Telefons", fr: "Langue du téléphone", es: "Idioma del teléfono" },
+  "This language is heard by Google's speech service, not on this phone.": { de: "Diese Sprache hört der Sprachdienst von Google, nicht dieses Telefon.", fr: "Cette langue est entendue par le service vocal de Google, pas sur ce téléphone.", es: "Este idioma lo escucha el servicio de voz de Google, no este teléfono." },
+  "Your comment": { de: "Dein Kommentar", fr: "Votre commentaire", es: "Tu comentario" },
   "Checking…": { de: "Wird geprüft…", fr: "Vérification…", es: "Comprobando…" },
   "Nook on this phone": { de: "Nook auf diesem Telefon", fr: "Nook sur ce téléphone", es: "Nook en este teléfono" },
   "Nook's own brain on your phone, without your Mac.": { de: "Nooks eigenes Gehirn auf deinem Telefon, ohne deinen Mac.", fr: "Le propre cerveau de Nook sur votre téléphone, sans votre Mac.", es: "El propio cerebro de Nook en tu teléfono, sin tu Mac." },

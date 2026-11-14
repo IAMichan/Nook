@@ -176,7 +176,7 @@ export function looksLikePairingLink(text: string): boolean {
 // phone only offers what the computer lists in `features`, and what its `scopes` allow.
 
 export type Op =
-  | "watch" | "watchChat"
+  | "watch" | "watchChat" | "diff" | "pulls" | "pull" | "pullAct" | "pullWork"
   | "list" | "decide" | "answer" | "send" | "stop" | "options" | "start" | "timeline" | "chats" | "chat" | "ask" | "chatStop"
   | "home" | "usage" | "music" | "inbox" | "inboxChat" | "inboxSend" | "inboxMark" | "manage";
 
@@ -202,6 +202,31 @@ export interface ClientCall {
   replyTo?: string;
   steer?: boolean;
   turn?: string;
+  images?: { jpeg: string }[];
+  pullAction?: PullAction;
+  pullWork?: { url: string; agent: string; task: string; model?: string };
+}
+
+export interface DiffFile { path: string; kind: string; added?: number; removed?: number; patch?: string; truncated: boolean }
+
+export interface PullDigest {
+  url: string; repo: string; number: number; title: string; author: string; state: string; ci: string; review: string;
+  conflict: boolean; additions?: number; deletions?: number; updated?: number; group: string; headBranch?: string; baseBranch?: string;
+}
+
+export interface PullDetail {
+  url: string; repo: string; number: number; title: string; body: string; author: string; state: string;
+  baseBranch: string; headBranch: string; headSHA: string; additions: number; deletions: number; changedFiles: number;
+  updated?: number; checks: { name: string; outcome: string; detail: string }[];
+  files: { path: string; status: string; additions: number; deletions: number; patch?: string; truncated: boolean; viewed: string }[];
+  verdicts: { author: string; approved: boolean }[]; methods: string[]; blocker?: string; verdictsAllowed: boolean; lineComments: boolean; fetched: number;
+}
+
+export interface LineComment { path: string; line: number; side: "LEFT" | "RIGHT"; body: string; startLine?: number }
+
+export interface PullAction {
+  kind: "approve" | "requestChanges" | "comment" | "merge" | "viewed" | "unviewed";
+  body?: string; comments?: LineComment[]; method?: string; path?: string; head?: string;
 }
 
 export interface LaunchOptions {
@@ -288,12 +313,16 @@ export interface CompanionResponse {
   timelineAfter?: string;
   inboxChat?: string;
   revoked?: boolean;
+  diff?: DiffFile[];
+  pulls?: PullDigest[];
+  pull?: PullDetail;
 }
 
 export interface CallResult { view: ClientView; response: CompanionResponse | null }
 
 /** `CompanionFeature` names this phone reads. */
 export const Feature = {
+  diff: "diff", pullRequests: "pullRequests", images: "images",
   stream: "stream", liveTimeline: "liveTimeline", liveChats: "liveChats", usage: "usage",
   start: "start", timeline: "timeline", chat: "chat", home: "home", music: "music", inbox: "inbox", manage: "manage", steer: "steer",
 } as const;

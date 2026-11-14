@@ -5,6 +5,7 @@
   import type { Snippet } from "svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import Ico from "./Ico.svelte";
+  import DictationButton from "./DictationButton.svelte";
 
   let {
     value = $bindable(""), placeholder, onsend, onstop, canSend = true, sending = false, minHeight = 32, controls, autofocus = false,
@@ -48,6 +49,7 @@
 </div>
 
 {#snippet button()}
+  <DictationButton bind:value />
   {#if onstop && !typed}
     <button class="send on" aria-label={tr("Stop", "Stop")} onclick={(e) => { e.stopPropagation(); onstop?.(); }}><span class="stopsq"></span></button>
   {:else}

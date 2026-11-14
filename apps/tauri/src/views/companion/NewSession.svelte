@@ -14,6 +14,9 @@
   import Banner from "./ui/Banner.svelte";
   import Ico from "./ui/Ico.svelte";
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import PhotoButton from "./ui/PhotoButton.svelte";
+  import ImageTray from "./ui/ImageTray.svelte";
+  import { has, Feature } from "../../lib/companion";
 
   let { view, task: initial = "", onback, took, onstarted }: {
     view: ClientView;
@@ -34,6 +37,7 @@
   let worktree = $state(false);
   let mainThread = $state(false);
   let starting = $state(false);
+  let images = $state<string[]>([]);
   let menu = $state<{ anchor: DOMRect; sections: MenuItem[][] } | null>(null);
 
   $effect(() => {
@@ -75,6 +79,7 @@
         plan: chosenAgent.canPlan && plan, worktree: chosenProject.canWorktree && worktree,
         model: model || undefined, mainThread: chosenAgent.canMainThread ? mainThread : undefined,
       },
+      images: images.length ? images.map((jpeg) => ({ jpeg })) : undefined,
     });
     starting = false;
     if (r.response) {
@@ -106,6 +111,7 @@
       <button class="heading" onclick={(e) => pick(e, [options!.projects.map((p) => ({ label: p.name, checked: p.path === project, onselect: () => (project = p.path) }))])}>
         {headingParts[0]}<span class="project">{chosenProject?.name}</span>{headingParts[1] ?? ""}
       </button>
+      <ImageTray {images} onremove={(i) => (images = images.filter((_, j) => j !== i))} />
       <div class="composer">
         <SessionComposer bind:value={task} placeholder={tr("Wat moet de agent doen?", "What should the agent do?")} minHeight={88} onsend={start} sending={starting} autofocus>
           {#snippet controls()}
@@ -115,6 +121,10 @@
             {#if (chosenAgent?.models?.length ?? 0) > 1}
               <span class="div"></span>
               <ComposerPill label={modelName} icon="cpu" onclick={(e) => pick(e, [chosenAgent!.models!.map((m) => ({ label: m.name, checked: m.id === model, onselect: () => (model = m.id) }))])} />
+            {/if}
+            {#if has(view, Feature.images)}
+              <span class="div"></span>
+              <PhotoButton count={images.length} onpick={(more) => (images = [...images, ...more])} ontoolarge={() => (refused = tr("Die foto kon niet klein genoeg worden gemaakt.", "That picture could not be made small enough."))} />
             {/if}
             {#if chosenAgent?.canPlan}
               <span class="div"></span>

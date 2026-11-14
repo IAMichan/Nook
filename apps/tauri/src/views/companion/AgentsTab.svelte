@@ -17,6 +17,8 @@
   import AgentRow from "./ui/AgentRow.svelte";
   import EmptyState from "./ui/EmptyState.svelte";
   import Menu, { type MenuItem } from "./ui/Menu.svelte";
+  import Sheet from "./ui/Sheet.svelte";
+  import PullRequests from "./PullRequests.svelte";
 
   let { view, act, took, onorb, ongear, onopen, onnew }: {
     view: ClientView;
@@ -34,6 +36,7 @@
   let header = $state<HTMLDivElement | null>(null);
   let menu = $state<{ session: SessionDigest; anchor: DOMRect } | null>(null);
   let blocked = $state<string | null>(null);
+  let pulls = $state(false);
   let open = $state<Record<string, boolean>>(readShelves());
 
   function readShelves(): Record<string, boolean> {
@@ -90,6 +93,7 @@
     <div bind:this={header}>
       <PanelHeader title={tr("Agents", "Agents")} {view} onorb={() => header && onorb((header.querySelector(".orb") as HTMLElement).getBoundingClientRect())} {ongear}>
         {#snippet buttons()}
+          {#if has(view, Feature.pullRequests) && may(view, "read")}<IconButton icon="git-pull-request" label={tr("Pull requests", "Pull requests")} onclick={() => { haptic(); pulls = true; }} />{/if}
           <IconButton icon="square-pen" label={tr("Nieuwe sessie", "New session")} onclick={newSession} />
         {/snippet}
       </PanelHeader>
@@ -125,6 +129,9 @@
   </div>
 </div>
 
+{#if pulls}
+  <Sheet onclose={() => (pulls = false)}><PullRequests {view} {took} onclose={() => (pulls = false)} onstarted={(id) => { pulls = false; onopen(id); }} /></Sheet>
+{/if}
 {#if menu}<Menu sections={menuSections} anchor={menu.anchor} onclose={() => (menu = null)} />{/if}
 {#if blocked}
   <div class="alert-scrim"><div class="alert"><p>{blocked}</p><button onclick={() => (blocked = null)}>OK</button></div></div>

@@ -176,6 +176,9 @@ pub struct ClientCall {
     pub reply_to: Option<String>,
     pub steer: Option<bool>,
     pub turn: Option<String>,
+    pub images: Option<Vec<CompanionImage>>,
+    pub pull_action: Option<serde_json::Value>,
+    pub pull_work: Option<serde_json::Value>,
 }
 
 struct Inner {
@@ -350,6 +353,16 @@ impl CompanionClient {
         r.reply_to = call.reply_to;
         r.steer = call.steer;
         r.turn = call.turn;
+        // Pictures go only as the Mac takes them: JPEGs within the limit, at most two.
+        if let Some(images) = call.images {
+            if images.len() > CompanionImage::MAX_COUNT || !images.iter().all(CompanionImage::is_valid) {
+                self.lock().notice = Some("Die foto is te groot of geen JPEG.".into());
+                return (self.snapshot(), None);
+            }
+            r.images = Some(images).filter(|i| !i.is_empty());
+        }
+        r.pull_action = call.pull_action;
+        r.pull_work = call.pull_work;
         self.exchange(r).await
     }
 

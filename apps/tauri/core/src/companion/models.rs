@@ -185,6 +185,14 @@ pub enum CompanionOp {
     /// The chat the phone has open in the Chats tab (`item`; none when it closed it): its messages follow by themselves
     /// (`feature::LIVE_CHATS`). Answered like `inboxChat`.
     WatchChat,
+    /// What a session changed in its folder (`session`; `diff` in the answer, `feature::DIFF`).
+    Diff,
+    /// Pull requests (`feature::PULL_REQUESTS`): the list (a session's linked ones with `session`), one in full by its
+    /// address (`item`), an action on it (`item`, `pullAction`) and a new session that works on it (`pullWork`).
+    Pulls,
+    Pull,
+    PullAct,
+    PullWork,
 }
 
 impl CompanionOp {
@@ -215,6 +223,9 @@ pub mod feature {
     pub const LIVE_TIMELINE: &str = "liveTimeline";
     pub const LIVE_CHATS: &str = "liveChats";
     pub const FOREGROUND: &str = "foreground";
+    pub const DIFF: &str = "diff";
+    pub const PULL_REQUESTS: &str = "pullRequests";
+    pub const IMAGES: &str = "images";
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
@@ -270,6 +281,33 @@ pub struct CompanionRequest {
     /// With `subscribe` and `ping`: the app is in front, so the Mac leaves out pushes the open connection shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreground: Option<bool>,
+    /// Pictures with `send` or `start` (`CompanionImage`: `{ "jpeg": base64 }`, `feature::IMAGES`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<CompanionImage>>,
+    /// What `pullAct` does (`CompanionPullAction`), passed through as the interface wrote it; the Mac checks it.
+    #[serde(default, rename = "pullAction", skip_serializing_if = "Option::is_none")]
+    pub pull_action: Option<serde_json::Value>,
+    /// The new session of `pullWork` (`PullWorkRequest`), passed through likewise.
+    #[serde(default, rename = "pullWork", skip_serializing_if = "Option::is_none")]
+    pub pull_work: Option<serde_json::Value>,
+}
+
+/// A picture that goes with a message (`CompanionImage`): a JPEG of at most `MAX_BYTES`, at most `MAX_COUNT` per message.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompanionImage {
+    pub jpeg: String,
+}
+
+impl CompanionImage {
+    pub const MAX_BYTES: usize = 90 * 1024;
+    pub const MAX_COUNT: usize = 2;
+
+    /// Whether this is a JPEG within the limit, as the Mac checks it.
+    pub fn is_valid(&self) -> bool {
+        base64::engine::general_purpose::STANDARD
+            .decode(&self.jpeg)
+            .is_ok_and(|d| d.len() > 3 && d.len() <= Self::MAX_BYTES && d[..3] == [0xFF, 0xD8, 0xFF])
+    }
 }
 
 impl CompanionRequest {
@@ -291,6 +329,9 @@ impl CompanionRequest {
             steer: None,
             turn: None,
             foreground: None,
+            images: None,
+            pull_action: None,
+            pull_work: None,
         }
     }
 
@@ -377,6 +418,13 @@ pub struct CompanionResponse {
     /// The Mac removed this phone: pair again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revoked: Option<bool>,
+    /// `[DiffFileDigest]`, `[PullDigest]` and `PullDetailDigest`, passed through to the interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pulls: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<serde_json::Value>,
 }
 
 impl CompanionResponse {
@@ -817,6 +865,26 @@ mod tests {
         }))
         .unwrap();
         assert_eq!((digest.can_send, digest.can_steer, digest.turn.as_deref()), (Some(false), Some(true), Some("T")));
+    }
+
+    #[test]
+    fn pictures_and_pull_requests_travel_as_the_mac_reads_them() {
+        use base64::Engine;
+        let jpeg = |n: usize| {
+            let mut d = vec![0xFF, 0xD8, 0xFF];
+            d.resize(n, 0);
+            CompanionImage { jpeg: base64::engine::general_purpose::STANDARD.encode(d) }
+        };
+        assert!(jpeg(1000).is_valid());
+        assert!(!jpeg(CompanionImage::MAX_BYTES + 1).is_valid());
+        assert!(!CompanionImage { jpeg: base64::engine::general_purpose::STANDARD.encode(b"PNG....") }.is_valid());
+        let mut r = CompanionRequest::new(CompanionOp::PullAct);
+        r.item = Some("https://github.com/o/r/pull/1".into());
+        r.pull_action = Some(serde_json::json!({"kind": "approve", "head": "abc"}));
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["op"], "pullAct");
+        assert_eq!(json["pullAction"]["kind"], "approve");
+        assert!(json.get("images").is_none());
     }
 
     #[test]

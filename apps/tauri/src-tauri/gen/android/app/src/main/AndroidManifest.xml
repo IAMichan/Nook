@@ -3,6 +3,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- De companion: een Mac of pc als naam.local vinden (mDNS) terwijl Nook voor staat. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Dictation in the companion's composers: Android's speech recognizer, on the device where it can. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

@@ -23,6 +23,12 @@
   import Dialog from "./ui/Dialog.svelte";
   import ConversationScroll from "./ConversationScroll.svelte";
   import TranscriptView from "./TranscriptView.svelte";
+  import ChangesView from "./ChangesView.svelte";
+  import PhotoButton from "./ui/PhotoButton.svelte";
+  import ImageTray from "./ui/ImageTray.svelte";
+  import PullRequests from "./PullRequests.svelte";
+  import Sheet from "./ui/Sheet.svelte";
+  import { withReviewComment } from "../../lib/patch";
 
   let { view, id, onback, act, took }: {
     view: ClientView;
@@ -53,6 +59,13 @@
   let dialog = $state<null | { kind: "stop" | "end" | "archive" } | { kind: "rename"; name: string }>(null);
   let now = $state(Date.now() / 1000);
   let titleEl = $state<HTMLButtonElement | null>(null);
+  let sub = $state<null | "changes" | "pulls">(null);
+  let images = $state<string[]>([]);
+  const canPicture = $derived(has(view, Feature.images));
+  const tooLarge = () => took({ ...view, notice: tr("Die foto kon niet klein genoeg worden gemaakt.", "That picture could not be made small enough.") });
+  let moreMenu = $state<DOMRect | null>(null);
+  const showChanges = $derived(has(view, Feature.diff) && may(view, "read") && session?.canSend !== false);
+  const showPulls = $derived(has(view, Feature.pullRequests) && may(view, "read"));
 
   function readSteer(): boolean {
     try { return localStorage.getItem("companion.steer") === "1"; } catch { return false; }
@@ -99,11 +112,12 @@
     sending = true;
     haptic();
     const steering = steerable && steer;
-    const r = await companion.call({ op: "send", session: session.id, text, steer: steering || undefined, turn: steering ? session.turn : undefined });
+    const r = await companion.call({ op: "send", session: session.id, text, steer: steering || undefined, turn: steering ? session.turn : undefined, images: images.length ? images.map((jpeg) => ({ jpeg })) : undefined });
     sending = false;
     took(r.view);
     if (r.response) {
       message = "";
+      images = [];
       haptic("success");
       if (!live) watch();
     }
@@ -170,7 +184,14 @@
 </script>
 
 <div class="session">
+{#if sub === "changes" && session}
+  <ChangesView session={session.id} onback={() => (sub = null)} {took} oncomment={(block) => { message = withReviewComment(message, block); sub = null; }} />
+{:else}
   <NavBar onback={onback}>
+    {#snippet trailing()}
+      {#if showChanges}<button class="navbtn" aria-label={tr("Wijzigingen", "Changes")} onclick={() => { haptic(); sub = "changes"; }}><Ico name="diff" size={19} /></button>{/if}
+      {#if showPulls}<button class="navbtn" aria-label={tr("Bestanden, terminals en pull requests", "Files, terminals and pull requests")} onclick={(e) => (moreMenu = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="circle-ellipsis" size={19} /></button>{/if}
+    {/snippet}
     {#snippet center()}
       <button bind:this={titleEl} class="title" disabled={!hasMenu} onclick={() => titleEl && (menu = titleEl.getBoundingClientRect())}>
         {#if session}
@@ -241,7 +262,12 @@
           <div class="fieldcard"><Ico name="lock" size={12} />{tr("Berichten sturen staat uit voor deze iPhone in Nook op je Mac.", "Sending messages is turned off for this phone in Nook on your Mac.")}</div>
         {:else if session.canSend === false}
           <div class="fieldcard"><Ico name="terminal" size={12} />{tr("Deze agent draait in een terminal op je Mac; beantwoord hem daar.", "This agent runs in a terminal on your Mac; answer it there.")}</div>
-        {:else if steerable}
+        {:else}
+          <ImageTray {images} onremove={(i) => (images = images.filter((_, j) => j !== i))} />
+          <div class="withphoto">
+          {#if canPicture}<PhotoButton count={images.length} onpick={(more) => (images = [...images, ...more])} ontoolarge={tooLarge} />{/if}
+          <div class="grow">
+        {#if steerable}
           <SessionComposer bind:value={message} placeholder={steer ? tr("Stuur de agent bij", "Steer the agent") : tr("Bericht voor na deze beurt", "Message for after this turn")} onsend={send} {sending}
             onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined}>
             {#snippet controls()}
@@ -252,11 +278,21 @@
           <SessionComposer bind:value={message} placeholder={tr("Bericht aan de agent", "Message to the agent")} onsend={send} {sending}
             onstop={canStopIt ? () => (dialog = { kind: "stop" }) : undefined} />
         {/if}
+          </div>
+          </div>
+        {/if}
       </div>
     {/if}
   {/if}
+{/if}
 </div>
 
+{#if sub === "pulls" && session}
+  <Sheet onclose={() => (sub = null)}><PullRequests {view} session={session.id} {took} onclose={() => (sub = null)} onstarted={() => (sub = null)} /></Sheet>
+{/if}
+{#if moreMenu}
+  <Menu anchor={moreMenu} onclose={() => (moreMenu = null)} sections={[[{ label: tr("Pull requests", "Pull requests"), icon: "git-pull-request", onselect: () => (sub = "pulls") }]]} />
+{/if}
 {#if menu}<Menu sections={menuSections} anchor={menu} onclose={() => (menu = null)} />{/if}
 {#if steerMenu}
   <Menu title={tr("Terwijl de agent werkt", "While the agent works")} anchor={steerMenu} onclose={() => (steerMenu = null)} sections={[[
@@ -289,6 +325,7 @@
 
 <style>
   .session { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .navbtn { width: 36px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper) !important; }
   .title { max-width: 260px; display: flex; flex-direction: column; align-items: center; min-width: 0; opacity: 1 !important; }
   .l1 { display: flex; align-items: center; gap: 4px; max-width: 100%; font: var(--pt-strong); white-space: nowrap; }
   .folder { color: var(--text3); flex: none; }
@@ -316,6 +353,8 @@
   .otext pre { margin: 0 0 0 12px; font: var(--pt-code); font-size: 12px; color: var(--text2); white-space: pre; overflow-x: auto; max-height: 10lh; }
   .morewait { font: var(--pt-caption); color: var(--text3); text-align: center; }
   .dock { padding: 8px 12px; background: linear-gradient(transparent, var(--canvas) 30%); }
+  .withphoto { display: flex; align-items: flex-end; gap: 6px; }
+  .grow { flex: 1; min-width: 0; }
   .fieldcard { display: flex; align-items: baseline; gap: 6px; padding: 12px; background: var(--field); border-radius: 12px; font: var(--pt-detail); color: var(--text2); }
   @keyframes rise { from { transform: translateY(16px); opacity: 0; } }
 </style>

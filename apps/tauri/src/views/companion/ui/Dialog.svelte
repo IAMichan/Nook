@@ -21,7 +21,7 @@
     </div>
     <div class="buttons" class:row={buttons.length === 2}>
       {#each buttons as b (b.label)}
-        <button class:destructive={b.destructive} class:bold={b.bold} onclick={() => { onclose(); b.onselect(); }}>{b.label}</button>
+        <button class:destructive={b.destructive} class:bold={b.bold} onclick={() => { b.onselect(); onclose(); }}>{b.label}</button>
       {/each}
     </div>
   </div>
