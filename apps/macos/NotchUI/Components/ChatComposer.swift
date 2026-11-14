@@ -1111,8 +1111,7 @@ private struct ChatPollForm: View {
                 }
             }
             Toggle(tr("chat.compose.poll.multiple"), isOn: $model.poll.multiple)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+                .compactSwitch(.mini)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
             HStack(spacing: NookTheme.Spacing.sm) {

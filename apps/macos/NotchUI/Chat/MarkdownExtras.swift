@@ -181,9 +181,7 @@ struct TableCopyMenu: View {
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .help(copied ? tr("button.copied") : tr("table.copy"))
         .accessibilityLabel(tr("table.copy"))
     }

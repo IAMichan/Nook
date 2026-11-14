@@ -55,8 +55,7 @@ struct UsageLimitCard: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+                .compactSwitch(.mini)
                 .tint(NookTheme.amber)
                 .help(tr("ws.limit.resumeHelp"))
                 // A banked reset credit of this account frees it now, instead of waiting for the reset.

@@ -383,8 +383,7 @@ struct CICheckLogView: View {
                 if index > 0 { NookDivider() }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        GitHubAvatar(login: note.author, size: 16)
-                        Text(note.author).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textStrong).lineLimit(1)
+                        GitHubPerson(login: note.author)
                         if let date = note.date {
                             Text("· " + NookDates.ago(date)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
                         }

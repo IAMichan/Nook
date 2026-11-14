@@ -94,10 +94,8 @@ struct WorkflowRunDetail: View {
             if !current.sha.isEmpty { fact(symbol: "number", text: current.shortSHA, mono: true) }
             fact(symbol: "bolt", text: WorkflowRunWords.event(current.event))
             if !current.actor.isEmpty {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    GitHubAvatar(login: current.actor, size: 14)
-                    Text("@" + current.actor)
-                }
+                GitHubPerson(login: current.actor, size: 14, font: NookTheme.TextStyle.caption, tint: NookTheme.textTertiary,
+                             handle: true)
             }
         }
         .font(NookTheme.TextStyle.caption)
@@ -105,7 +103,7 @@ struct WorkflowRunDetail: View {
         .lineLimit(1)
         .contextMenu {
             if !current.branch.isEmpty {
-                Button(tr("agents.pr.copyBranch")) { Pasteboard.copy(current.branch) }
+                Button(tr("agents.pr.copyBranch")) { Pasteboard.copy(current.branch, toast: tr("agents.pr.copiedBranch")) }
             }
             if !current.sha.isEmpty {
                 Button(tr("actions.copySHA")) { Pasteboard.copy(current.sha) }

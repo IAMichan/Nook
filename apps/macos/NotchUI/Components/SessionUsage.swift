@@ -169,8 +169,7 @@ struct SessionUsageSection: View {
                     Spacer(minLength: NookTheme.Spacing.sm)
                     Toggle(tr("compose.context.compactFirst"), isOn: Binding(get: { compactFirst }, set: { _ in toggleCompactFirst() }))
                         .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
+                        .compactSwitch(.mini)
                 }
                 .help(tr(compactFirst ? "compose.compactFirst.compactHelp" : "compose.compactFirst.keepHelp",
                          ContextMeter.tokensText(usage.usedTokens)))

@@ -278,8 +278,7 @@ struct PullRequestMoreMenu: View {
     }
 
     private func copy(_ text: String, _ toast: String) {
-        Pasteboard.copy(text)
-        ToastCenter.shared.success(toast)
+        Pasteboard.copy(text, toast: toast)
     }
 }
 

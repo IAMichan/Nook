@@ -94,10 +94,7 @@ struct ActionsRepoTab: View {
             if let url = URL(string: "https://github.com/\(repo)/actions") {
                 Button(tr("actions.openOnGitHub")) { NSWorkspace.shared.open(url) }
             }
-            Button(tr("actions.repo.copyName")) {
-                Pasteboard.copy(repo)
-                ToastCenter.shared.success(tr("actions.repo.copiedName"))
-            }
+            Button(tr("actions.repo.copyName")) { Pasteboard.copy(repo, toast: tr("actions.repo.copiedName")) }
             if closable {
                 Divider()
                 Button(tr("actions.repo.close"), action: onClose)

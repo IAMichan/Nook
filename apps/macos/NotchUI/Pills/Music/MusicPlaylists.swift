@@ -207,9 +207,7 @@ private struct MusicPlaylistDetailView: View {
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .help(tr("music.playlists.more"))
         .accessibilityLabel(tr("music.playlists.more"))
     }
@@ -573,9 +571,7 @@ struct MusicTrackMenu: View {
                 .roundedBackground(hovering ? NookTheme.graphite : Color.clear, radius: NookTheme.Radius.chip)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .onHover { hovering = $0 }
         .help(tr("music.track.more"))
         .accessibilityLabel(tr("music.track.more"))
@@ -665,9 +661,7 @@ struct MusicAddToPlaylistButton: View {
                     .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
                     .contentShape(Circle())
             }
-            .menuStyle(.nookBorderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .nookMenuButton()
             .onHover { hovering = $0 }
             .help(tr("music.playlists.addTo"))
             .accessibilityLabel(tr("music.playlists.addTo"))

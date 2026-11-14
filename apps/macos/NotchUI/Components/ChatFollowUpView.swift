@@ -118,9 +118,7 @@ private struct ChatFollowUpRow: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 24, height: 24)
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .accessibilityLabel(tr("chats.snooze"))
     }
 }

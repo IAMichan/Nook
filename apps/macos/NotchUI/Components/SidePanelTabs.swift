@@ -91,17 +91,8 @@ private struct SidePanelTab<Value: Hashable>: View {
                     }
                     .opacity(hovering && !item.pinned ? 0 : 1)
                     .accessibilityHidden(true)
-                Button(action: close) {
-                    Image(icon: "xmark")
-                        .font(NookTheme.font(9, .bold))
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.nookPlain)
-                .opacity(hovering && !item.pinned ? 1 : 0)
-                .allowsHitTesting(hovering && !item.pinned)
-                .help(tr("tab.close"))
-                .accessibilityLabel(tr("tab.close") + " " + item.title)
+                TabCloseButton(tr("tab.close"), spoken: tr("tab.close") + " " + item.title, tint: nil, action: close)
+                    .revealOnHover(hovering && !item.pinned)
             }
             .frame(width: 16, height: 16)
             Button(action: select) {

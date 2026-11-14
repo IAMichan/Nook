@@ -299,19 +299,7 @@ struct WorkflowRunRow: View {
         .help(run.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {
-            if let url = run.url {
-                Button(tr("actions.openOnGitHub")) { NSWorkspace.shared.open(url) }
-                Button(tr("agents.pr.copyLink")) {
-                    Pasteboard.copy(url.absoluteString)
-                    ToastCenter.shared.success(tr("agents.pr.copiedLink"))
-                }
-            }
-            if !run.branch.isEmpty {
-                Button(tr("agents.pr.copyBranch")) {
-                    Pasteboard.copy(run.branch)
-                    ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
-                }
-            }
+            GitHubLinkMenuItems(url: run.url, branch: run.branch, openTitle: tr("actions.openOnGitHub"))
         }
     }
 }

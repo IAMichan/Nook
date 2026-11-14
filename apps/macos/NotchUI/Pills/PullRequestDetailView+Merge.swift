@@ -47,9 +47,7 @@ extension PullRequestDetailView {
             .frame(height: 28)
             .contentShape(Rectangle())
         }
-        .menuStyle(.nookBorderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .nookMenuButton()
         .help(tr("agents.pulls.stack.position", index, shownStack.count))
     }
 

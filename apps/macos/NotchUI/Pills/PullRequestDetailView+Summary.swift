@@ -381,11 +381,7 @@ extension PullRequestDetailView {
     func people(_ logins: [String]) -> some View {
         ChipFlow(spacing: NookTheme.Spacing.sm) {
             ForEach(logins, id: \.self) { login in
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    GitHubAvatar(login: login, size: 18)
-                    Text(login).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textStrong).lineLimit(1)
-                }
-                .help("@" + login)
+                GitHubPerson(login: login, size: 18, font: NookTheme.TextStyle.detail)
             }
         }
     }

@@ -634,7 +634,7 @@ struct AutocompleteSettingsSection: View {
             }
             Button(tr("settings2.manage")) { editingApp = app.bundleID }
                 .controlSize(.small)
-            Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().compactSwitch()
                 .help(tr("autocomplete.enable"))
         }
     }
@@ -696,7 +696,7 @@ struct AutocompleteSettingsSection: View {
                         SiteIcon(domain: site, fallback: "globe", tint: NookTheme.textSecondary, size: 18)
                         Text(site)
                         Spacer()
-                        Toggle("", isOn: siteEnabled(site)).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                        Toggle("", isOn: siteEnabled(site)).labelsHidden().compactSwitch()
                     }
                 }
             }

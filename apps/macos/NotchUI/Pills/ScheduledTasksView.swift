@@ -133,8 +133,7 @@ private struct TaskRow: View {
                 NookIconButton(systemName: "trash", label: tr("sched.delete"), size: 28, action: delete)
                 Toggle(tr("sched.enabled"), isOn: Binding(get: { task.enabled }, set: toggle))
                     .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                    .compactSwitch()
                     .padding(.leading, NookTheme.Spacing.sm)
             }
         }
@@ -568,8 +567,7 @@ private struct ScheduledTaskEditor: View {
                         Toggle(tr("automation.hook.coalesce.on"), isOn: Binding(
                             get: { rules.coalesceSeconds > 0 },
                             set: { rules.coalesceSeconds = $0 ? 120 : 0 }))
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
+                            .compactSwitch()
                         if rules.coalesceSeconds > 0 {
                             TextField("", value: $rules.coalesceSeconds, format: .number)
                                 .textFieldStyle(.plain)

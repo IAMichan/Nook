@@ -86,8 +86,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                 if let isOn {
                     Toggle("", isOn: isOn)
                         .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
+                        .compactSwitch()
                         .help(isOn.wrappedValue ? tr("connection.switchOff") : tr("connection.switchOn"))
                         .accessibilityLabel(tr("connection.use", title))
                 }
@@ -153,9 +152,7 @@ struct ConnectionRow<Icon: View, Menu: View, Detail: View>: View {
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.nookBorderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .nookMenuButton()
             .help(tr("connection.more"))
             .accessibilityLabel(tr("connection.more"))
         } else {
@@ -233,9 +230,7 @@ struct ConnectionListMenuHeader<Items: View>: View {
             } label: {
                 ConnectionListAddLabel(title: add, symbol: "plus")
             }
-            .menuStyle(.nookBorderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .nookMenuButton()
         }
     }
 }
