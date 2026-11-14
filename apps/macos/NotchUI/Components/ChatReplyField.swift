@@ -78,6 +78,8 @@ struct ChatReplyField: View {
     private var tagPeople: () -> [ChatTagPerson] = { [] }
     /// Runs what Nook proposed, after your click; nil leaves "@nook …" to messages only.
     private var act: (([PlannedAction]) async -> (results: [String], failure: String?))?
+    /// Who the message goes to and what they said last, for the grey rest of the sentence (`ComposerCompleter`).
+    private var situation: () -> ComposerCompletion.Situation = { ComposerCompletion.Situation() }
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
          sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
@@ -145,6 +147,14 @@ struct ChatReplyField: View {
     func editsLastMessage(_ edit: (() -> Bool)?) -> Self {
         var copy = self
         copy.editLast = edit
+        return copy
+    }
+
+    /// The grey rest of the sentence after the caret, as in the composers (`ComposerCompleter`, Tab takes a word, ⇧Tab all
+    /// of it), written for `situation`: the chat's name and what was said in it last.
+    func completes(_ situation: @escaping () -> ComposerCompletion.Situation) -> Self {
+        var copy = self
+        copy.situation = situation
         return copy
     }
 
@@ -294,7 +304,17 @@ struct ChatReplyField: View {
                 .accessibilityLabel(placeholder)
                 .focused(focus)
                 // A restored draft is selected whole when the field gets the keyboard: put the caret at its end.
-                .onChange(of: focus.wrappedValue) { _, now in if now { SessionComposer<EmptyView>.placeCaretAtEnd() } }
+                .onChange(of: focus.wrappedValue) { _, now in
+                    if now {
+                        SessionComposer<EmptyView>.placeCaretAtEnd()
+                        // The field suggests the rest of the sentence itself: autocomplete leaves it alone meanwhile.
+                        AutocompleteController.shared.standAside(ComposerCompleter.shared.suggestsItself, for: "composer")
+                    } else {
+                        letGoOfGhost()
+                    }
+                }
+                // A field that goes while it has the keyboard (another chat opened) takes its grey text along.
+                .onDisappear { if focus.wrappedValue { letGoOfGhost() } }
                 // Return sends, as in every chat app; with the `@` menu open Return chooses a line there, and on
                 // "@nook …" Return lets Nook write. ⌥Return adds a line; ⌘Return (send) and ⇧Return (a line) are
                 // keybinding commands, run by the panel's key monitor while this field has the keyboard.
@@ -307,12 +327,12 @@ struct ChatReplyField: View {
                 .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
                 .onKeyPress(.leftArrow) { () -> KeyPress.Result in walkFiles(-1) }
                 .onKeyPress(.rightArrow) { () -> KeyPress.Result in walkFiles(1) }
-                .onKeyPress(.tab) { () -> KeyPress.Result in
-                    guard menu.isOpen else { return .ignored }
-                    chooseSelected()
-                    return .handled
-                }
+                .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { (press: KeyPress) -> KeyPress.Result in tabKey(press) }
                 .onKeyPress(.escape) { () -> KeyPress.Result in
+                    if ComposerInlineGhost.shared.shown(for: ComposerFieldStyle.focusedEditor(expecting: text)) != nil {
+                        ComposerInlineGhost.shared.dismiss()
+                        return .handled
+                    }
                     if menu.isOpen {
                         menu.close()
                         return .handled
@@ -325,8 +345,9 @@ struct ChatReplyField: View {
                     onEscape()
                     return .handled
                 }
-                .onChange(of: text) { _, new in
+                .onChange(of: text) { old, new in
                     updateMenu(new)
+                    updateGhost(old: old, new: new)
                     // Emptied (sent): the draft is gone. A new "@nook …" keeps it, as that steers the draft (see
                     // `steering`).
                     if !drafting, drafted != nil, new.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -445,6 +466,55 @@ struct ChatReplyField: View {
                 return true
             },
         ]
+    }
+
+    /// Tab chooses the menu's line; on the grey rest of the sentence Tab takes a word of it, ⇧Tab all of it.
+    private func tabKey(_ press: KeyPress) -> KeyPress.Result {
+        let all = press.modifiers.contains(.shift) || press.key.character == "\u{19}"
+        if menu.isOpen, !all {
+            chooseSelected()
+            return .handled
+        }
+        guard let (value, caret) = ComposerInlineGhost.shared.acceptingText(
+            all: all, in: text, editor: ComposerFieldStyle.focusedEditor(expecting: text)) else { return .ignored }
+        text = value
+        ComposerFieldStyle.placeCaret(caret, expecting: value)
+        return .handled
+    }
+
+    /// The grey rest of the sentence (`ComposerInlineGhost`) once the field shows `new`: the one on screen carried on
+    /// (typed through, or a word taken), or after a pause in typing a new suggestion. Anything else hides it straight
+    /// away, so Tab never takes what is no longer on screen. Not on "@nook …" or with the `@` menu open: those are Nook's.
+    private func updateGhost(old: String, new: String) {
+        let ghost = ComposerInlineGhost.shared
+        let completer = ComposerCompleter.shared
+        let editor = { ComposerFieldStyle.focusedEditor(expecting: new) }
+        if let carried = ghost.carried(into: new) {
+            completer.cancel()
+            DispatchQueue.main.async { ghost.show(carried, in: editor()) }
+            return
+        }
+        ghost.hide()
+        let focused = focus.wrappedValue
+        // Autocomplete may have started or stopped since the focus came: the sentence is its own or the field's, never both.
+        if focused { AutocompleteController.shared.standAside(completer.suggestsItself, for: "composer") }
+        guard focused, old != new, !drafting, !busy, !menu.isOpen, ChatDraft.instruction(in: new) == nil, completer.suggestsItself,
+              let selection = ComposerFieldStyle.focusedSelection(expecting: new), selection.length == 0,
+              let caretIndex = String.Index(exactUTF16: selection.location, in: new) else { return completer.cancel() }
+        let caret = selection.location
+        completer.suggest(before: String(new[..<caretIndex]), after: String(new[caretIndex...]),
+                          situation: situation(), hint: placeholder) { suggestion in
+            // Still the same words and the keyboard here: a suggestion for older text is not shown.
+            guard let suggestion, focus.wrappedValue, text == new, !menu.isOpen, !drafting else { return }
+            ghost.show(.text(suggestion, words: new, caret: caret), in: editor())
+        }
+    }
+
+    /// The field lost the keyboard or went: its grey text and the request for it go too, and autocomplete may come back.
+    private func letGoOfGhost() {
+        ComposerInlineGhost.shared.hide()
+        ComposerCompleter.shared.cancel()
+        AutocompleteController.shared.standAside(false, for: "composer")
     }
 
     /// With words in the field these keys move the caret.
@@ -1356,5 +1426,12 @@ private struct ReplyingBar: View {
         .padding(.leading, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.xs)
         .accessibilityElement(children: .contain)
+    }
+}
+
+extension ComposerCompletion.Situation {
+    /// A chat's: who it is with, and their last message, which what you type most likely answers.
+    static func chat(_ name: String?, bubbles: [ChatBubble]) -> Self {
+        Self(recipient: name, lastAnswer: bubbles.last { !$0.fromMe && !$0.text.isEmpty }?.text)
     }
 }

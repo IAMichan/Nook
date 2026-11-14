@@ -103,7 +103,7 @@ struct BrowserExtensionsSettings: View {
                 }
                 HStack(spacing: NookTheme.Spacing.sm) {
                     TextField(tr("settings.browser.extensions.link"), text: $link)
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField()
                         .onSubmit(addLink)
                     Button(tr(extensions.installing == nil ? "browser.extensions.add" : "browser.extensions.adding"), action: addLink)
                         .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty || extensions.installing != nil)

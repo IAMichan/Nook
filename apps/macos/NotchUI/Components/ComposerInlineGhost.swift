@@ -104,6 +104,19 @@ final class ComposerInlineGhost {
         return nil
     }
 
+    /// Tab (one word) or ⇧Tab (all of it) on the sentence on screen in `editor`, drawn for `words`: those words with the
+    /// piece put in at the caret, and the caret after it. Nil when no sentence for these words is on screen. What is left
+    /// stays grey through `carried(into:)` once the field shows the new words.
+    func acceptingText(all: Bool, in words: String, editor: NSTextView?) -> (value: String, caret: Int)? {
+        guard case .text(var suggestion, let shownWords, let caret)? = shown(for: editor), shownWords == words,
+              let index = String.Index(exactUTF16: caret, in: words) else { return nil }
+        let prefs = AutocompleteStore.shared.prefs
+        let piece = all ? suggestion.remaining
+            : suggestion.acceptNextChunk(.init(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.punctuationWithWord))
+        guard !piece.isEmpty else { return nil }
+        return (String(words[..<index]) + piece + String(words[index...]), caret + piece.utf16.count)
+    }
+
     /// The sentence on screen, carried over to `words` (the draft's words now): what is left of it when the change put its
     /// beginning in at its caret (typed through, or a word taken with Tab). Nil otherwise.
     func carried(into words: String) -> Shown? {
