@@ -2,7 +2,7 @@
 :root{
   --canvas:#000;--well:#080808;--rowRest:#0A0A0A;--field:#111;--surface:#121212;--graphite:#1A1A1A;--bubble:#1C1C1C;--smoke:#242424;
   --hair:#1E1E1E;--border:#1F1F1F;--sep:#262626;--fieldStroke:#282828;
-  --paper:#F5F5F5;--strong:#DADADA;--t2:#A8A8A8;--t3:#949494;--muted:#999;
+  --paper:#F5F5F5;--strong:#DADADA;--t2:#A8A8A8;--t3:#949494;--t4:#5E5E5E;--muted:#999;
   --iris:#F4F4F6;--mint:#5ED6A6;--amber:#F2B866;--coral:#EF7B73;--violet:#AE94F2;--blue:#8FB3F0;--music:#F0936A;
   --chatMine:#17493A;--chatTheirs:#232525;--stamp:#A3B0AB;
   --r-chip:6px;--r-control:8px;--r-card:10px;--r-panel:12px;--r-sheet:14px;--r-bubble:16px;--r-pill:20px;
@@ -44,8 +44,6 @@ nav .right{margin-left:auto;display:flex;gap:8px}
 
 /* hero */
 .hero{position:relative;padding:96px 0 0;text-align:center;overflow:hidden}
-.hello{display:inline-flex;align-items:center;gap:10px;font-size:14px;color:var(--t2);padding:6px 14px 6px 6px;border-radius:99px;background:var(--surface)}
-.hello .dots{display:flex;gap:4px;margin-left:4px}.hello .dots i{width:6px;height:6px;border-radius:50%}
 h1{font-size:clamp(40px,5.6vw,68px);font-weight:600;letter-spacing:-.032em;line-height:1.04;margin:30px auto 22px;max-width:1100px}
 h1 span{color:inherit}
 .lede{font-size:clamp(17px,1.5vw,19px);line-height:1.6;color:var(--t2);max-width:620px;margin:0 auto}
@@ -209,7 +207,6 @@ h1 span{color:inherit}
 /* ===== page sections ===== */
 section{padding:150px 0 0;position:relative}
 .label{font-size:13px;font-weight:500;color:var(--t3);display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.page-hero .label>.mascot{display:none}
 .label .st{font-size:14px}
 h2{font-size:clamp(30px,3.6vw,46px);font-weight:600;letter-spacing:-.025em;line-height:1.1;max-width:780px}
 h2 span{color:inherit}
@@ -395,12 +392,14 @@ nav .links .m-only{display:none}
   nav.open .menu-btn path{d:path("M6 6l12 12M18 6 6 18")}
 }
 
-/* page header */
-.page-hero{position:relative;padding:110px 0 20px;text-align:center;overflow:hidden}
-.page-hero .label{justify-content:center}
-.page-hero h1{margin-top:6px}
-.page-hero .lede{margin-top:0}
-.page-hero .ctas{margin-top:30px}
+/* page header: centred, no label above the title; a white statement with its second half in grey, the product right under it */
+.page-hero{position:relative;padding:120px 0 20px;text-align:center;overflow:hidden}
+.page-hero h1{margin:0 auto 24px;font-size:clamp(40px,5.6vw,72px);letter-spacing:-.04em;line-height:1.02}
+.page-hero h1 span{color:var(--t4)}
+.page-hero .lede{margin-top:0;max-width:580px}
+.page-hero .ctas{margin-top:32px}
+.page-hero .stage{margin-top:64px}
+@media (max-width:1000px){.page-hero{padding-top:88px}}
 
 /* section heads centred */
 .center{text-align:center}
