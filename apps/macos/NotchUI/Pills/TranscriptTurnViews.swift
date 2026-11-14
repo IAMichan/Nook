@@ -51,8 +51,8 @@ private struct RunGitWatcher: View {
     }
 }
 
-/// Under the answer of a turn that changed files (the changed-files card): "3 changed files +12 −4", the files
-/// as a folder tree with what each got, and "Open diff". A click on a file opens its diff in the side panel.
+/// Under the answer of a turn that changed files (the changed-files card, with the hairline of the conversation's
+/// other cards): "3 changed files +12 −4", the files as a folder tree with what each got, and "Open diff". A click on a file opens its diff in the side panel.
 struct TurnChangesCard: View {
     let turn: TurnDiff
     let directory: String?
@@ -83,7 +83,7 @@ struct TurnChangesCard: View {
                 .padding(.bottom, NookTheme.Spacing.sm)
             }
         }
-        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.control)
+        .cardBackground(NookTheme.well, stroke: NookTheme.border, radius: NookTheme.Radius.control)
     }
 
     private func header(_ tree: ChangedFilesTree) -> some View {
