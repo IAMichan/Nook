@@ -3,8 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  activityLine, browserName, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked, isRestricted,
-  normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError
+  activityLine, browserName, cleanLook, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked,
+  isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -164,4 +164,35 @@ test('serial tasks never interleave, and a failure does not stop the next', asyn
   await Promise.all([append(1), append(2), append(3), failing.catch(() => {})]);
   await assert.rejects(failing, /nope/);
   assert.deepEqual(store, [1, 2, 3]);
+});
+
+test('Nook\'s look is taken only as colors, never as other CSS', () => {
+  const look = cleanLook({
+    ok: true, appearance: 'light', textScale: 0.93, spacingScale: 9,
+    dark: { canvas: '#000000', paper: '#F5F5F5', accent: 'red; background: url(x)', unknown: '#123456' },
+    light: { canvas: '#FCFCFC', 'text-strong': '#27272a' }
+  });
+  assert.equal(look.appearance, 'light');
+  assert.equal(look.textScale, 0.93);
+  assert.equal(look.spacingScale, 1.4);
+  assert.deepEqual(look.dark, { canvas: '#000000', paper: '#f5f5f5' });
+  assert.deepEqual(look.light, { canvas: '#fcfcfc', 'text-strong': '#27272a' });
+  assert.equal(cleanLook({ ok: false, error: 'Nook does not know "look".' }), null);
+  assert.equal(cleanLook({ dark: { canvas: 'black' } }), null);
+  assert.equal(cleanLook({ appearance: 'neon', dark: { canvas: '#000000' } }).appearance, 'system');
+});
+
+test('the panel shows the appearance Nook is set to, or the system\'s', () => {
+  const look = (appearance) => ({ appearance, dark: {}, light: {} });
+  assert.equal(lookIsDark(look('dark'), false), true);
+  assert.equal(lookIsDark(look('light'), true), false);
+  assert.equal(lookIsDark(look('system'), true), true);
+  assert.equal(lookIsDark(null, false), false);
+});
+
+test('a look becomes the CSS variables of the appearance that shows', () => {
+  const look = cleanLook({ appearance: 'system', dark: { canvas: '#000000' }, light: { canvas: '#ffffff' } });
+  assert.deepEqual(lookVariables(look, true), { '--canvas': '#000000', '--text-scale': '1', '--space-scale': '1' });
+  assert.equal(lookVariables(look, false)['--canvas'], '#ffffff');
+  assert.deepEqual(lookVariables(null, true), {});
 });

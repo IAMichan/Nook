@@ -71,7 +71,7 @@ private struct MusicSidebarRow: View {
     let title: String
     let symbol: String
     let selected: Bool
-    /// Now Playing while music plays: a still waveform in the Music colour, so the row says it without an animation.
+    /// Now Playing while music plays: its own icon turns the Music colour, so the row says it without an animation.
     var playing = false
     /// How many tracks wait (Up next), as a quiet count on the right.
     var count = 0
@@ -82,7 +82,7 @@ private struct MusicSidebarRow: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 Image(icon: symbol)
                     .font(NookTheme.font(13, .medium))
-                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textTertiary)
+                    .foregroundStyle(playing ? NookTheme.music : (selected ? NookTheme.paper : NookTheme.textTertiary))
                     .frame(width: PanelSidebarMetrics.mark)
                     .accessibilityHidden(true)
                 Text(title)
@@ -96,12 +96,6 @@ private struct MusicSidebarRow: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .accessibilityLabel(tr("music.queue.count", count))
                 }
-                if playing {
-                    Image(icon: "waveform")
-                        .font(NookTheme.font(11, .semibold))
-                        .foregroundStyle(NookTheme.music)
-                        .accessibilityLabel(tr("music.playingNow"))
-                }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: PanelSidebarMetrics.row)
@@ -109,6 +103,7 @@ private struct MusicSidebarRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
+        .accessibilityValue(playing ? tr("music.playingNow") : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
