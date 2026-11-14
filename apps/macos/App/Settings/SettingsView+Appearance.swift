@@ -67,7 +67,75 @@ extension SettingsView {
             readingFold
 
             ColorTokensSettings()
+
+            shareLookSection
         }
+    }
+
+    // MARK: Sharing the look
+
+    /// Saves the whole look (accent, appearance, themes, custom colors, diff colors, density and Nook's face) as one
+    /// `.nooklook` file to hand to someone, and reads such a file back in (`NookLookShare`).
+    private var shareLookSection: some View {
+        Section {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Button(tr("look.share.export")) { exportLook() }
+                Button(tr("look.share.import")) { importLook() }
+                Spacer()
+            }
+        } header: {
+            Text(tr("look.share.header"))
+        } footer: {
+            SettingNote(tr("look.share.footer"))
+        }
+    }
+
+    private static var lookFileType: UTType {
+        UTType(filenameExtension: NookLookShare.fileExtension, conformingTo: .json) ?? .json
+    }
+
+    private func exportLook() {
+        let share = NookLookShare(accent: settings.accentHex, choice: settings.themeChoice,
+                                  customThemes: settings.customThemes, diffColors: settings.diffColors,
+                                  density: settings.density, look: settings.nookLook)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = tr("look.share.fileName") + "." + NookLookShare.fileExtension
+        panel.allowedContentTypes = [Self.lookFileType]
+        panel.canCreateDirectories = true
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        do {
+            try share.encoded().write(to: url, options: .atomic)
+            ToastCenter.shared.success(tr("look.share.exported"), detail: url.lastPathComponent)
+        } catch {
+            ToastCenter.shared.warning(tr("look.share.exportFailed"), detail: error.localizedDescription)
+        }
+    }
+
+    /// Reads a look file and uses it at once; what the file does not say keeps the current setting.
+    private func importLook() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [Self.lookFileType, .json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
+        guard let data = try? Data(contentsOf: url), let share = try? NookLookShare.decode(data) else {
+            ToastCenter.shared.warning(tr("look.share.importFailed"))
+            return
+        }
+        let themes = share.themes(mergedInto: settings.customThemes, darkTheme: settings.darkThemeID,
+                                  lightTheme: settings.lightThemeID)
+        withAnimation(NookTheme.reveal) {
+            if themes.customThemes != settings.customThemes { settings.customThemes = themes.customThemes }
+            settings.darkThemeID = themes.darkTheme
+            settings.lightThemeID = themes.lightTheme
+            settings.colorOverrides = share.overrides
+            if let accent = share.accent { settings.accentHex = accent }
+            if let mode = share.mode { settings.appearanceMode = mode }
+            if let diffColors = share.diffColors { settings.diffColors = diffColors }
+            if let density = share.density, density != settings.density { settings.density = density }
+            if let look = share.look { settings.nookLook = look }
+        }
+        ToastCenter.shared.success(tr("look.share.imported"))
     }
 
     /// Nook's color: the swatches, then any color of your own.

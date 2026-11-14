@@ -11,6 +11,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Share your look: Settings › Appearance › Share your look saves your accent, appearance, themes (an imported VS Code
+  theme travels along), custom colors, diff colors, density and Nook's face as one `.nooklook` file. Someone who imports
+  it gets the same look and feel; nothing else of theirs changes.
+
 - Nook in your browser: an extension for Chrome, Brave, Edge, Arc and Vivaldi. Click Nook's icon to ask Nook about the
   page you are on in the browser's side panel. Nook Chat and every coding agent can also read your tabs as you see them
   and open, click, type and press keys there (`chrome_*` tools), always after your approval. You can switch Nook off per
