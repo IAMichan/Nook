@@ -86,12 +86,12 @@ enum QuietPolicy {
 
     /// Call apps whose sharing bar or picker says "share" in its window name (Zoom's "zoom share toolbar window",
     /// Teams' "Sharing control bar", Webex's sharing bar).
-    static let sharingCallApps: [String] = ["zoom", "teams", "webex", "slack", "discord", "facetime", "whereby", "around", "gather"]
+    static var sharingCallApps: [String] { AppCatalog.callNames }
     /// Words for "sharing" in such a bar, in the languages these apps are used in.
     static let sharingWords: [String] = ["share", "sharing", "deelt", "delen", "gedeeld", "teilt", "freigabe", "freigeben",
                                          "partage", "compartiendo", "compartir"]
     /// Browsers: while a site shares your screen they show a small bar ("meet.google.com is sharing your screen.").
-    static let browsers: [String] = ["chrome", "chromium", "edge", "brave", "arc", "vivaldi", "opera", "firefox", "safari", "orion", "zen"]
+    static var browsers: [String] { AppCatalog.browserNames }
     /// The sentence in that bar, in the browser's language.
     static let browserSharingPhrases: [String] = ["is sharing", "sharing your screen", "sharing a window", "sharing this tab",
                                                   "deelt je scherm", "deelt een venster", "deelt dit tabblad", "deelt uw scherm",
@@ -154,23 +154,13 @@ enum QuietPolicy {
         var end: Date
     }
 
-    /// Apps you hold calls in, by bundle ID; while one of them has the microphone open, you are in a call.
-    static let callApps: Set<String> = ["us.zoom.xos", "com.microsoft.teams", "com.microsoft.teams2", "com.cisco.webexmeetingsapp",
-                                        "com.cisco.webex.meetings", "com.apple.FaceTime", "com.hnc.Discord", "com.tinyspeck.slackmacgap",
-                                        "co.teamport.around", "com.skype.skype", "net.whatsapp.WhatsApp", "ru.keepcoder.Telegram",
-                                        "com.gather.Gather"]
-    /// Browsers by bundle ID prefix (their helpers, which hold the microphone, share it).
-    static let browserBundles: [String] = ["com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser",
-                                           "com.vivaldi.Vivaldi", "com.operasoftware", "org.mozilla.firefox", "com.apple.Safari",
-                                           "com.apple.WebKit", "com.kagi.kagimacOS", "app.zen-browser", "org.chromium.Chromium"]
+    /// Apps you hold calls in, by bundle ID (`AppCatalog`); while one of them has the microphone open, you are in a call.
+    static var callApps: Set<String> { AppCatalog.callBundles }
 
-    static func isCallApp(_ bundleID: String) -> Bool {
-        callApps.contains { bundleID == $0 || bundleID.hasPrefix($0 + ".") }
-    }
+    static func isCallApp(_ bundleID: String) -> Bool { AppCatalog.isCallApp(bundleID) }
 
-    static func isBrowser(_ bundleID: String) -> Bool {
-        browserBundles.contains { bundleID.hasPrefix($0) }
-    }
+    /// Browsers by bundle ID prefix (`AppCatalog`): their helpers, which hold the microphone, share it.
+    static func isBrowser(_ bundleID: String) -> Bool { AppCatalog.isBrowser(bundleID) }
 
     /// The signals of a meeting.
     struct MeetingSignals: Equatable {

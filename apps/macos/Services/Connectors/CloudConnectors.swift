@@ -183,8 +183,7 @@ enum CloudHelp {
         let flat = text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard flat.count > max else { return flat }
-        return String(flat.prefix(max - 1)) + "…"
+        return TextKit.clip(flat, to: max)
     }
 
     static func plural(_ count: Int, _ one: String, _ many: String) -> String {

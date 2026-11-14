@@ -100,7 +100,7 @@ struct PalettePicks: Codable, Equatable, Sendable {
     /// The key of `query`; nil for an empty one, whose order is the use alone.
     static func key(_ query: PaletteQuery) -> String? {
         guard !query.isEmpty else { return nil }
-        return query.words.map { $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        return query.words.map(TextKit.fold)
             .joined(separator: " ")
     }
 

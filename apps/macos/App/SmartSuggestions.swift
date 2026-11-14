@@ -113,50 +113,37 @@ extension AppModel {
 
     /// Relevant suggestions based on the active frontmost application.
     private static func ideas(forApp app: String, bundleID: String, title: String) -> [(text: String, symbol: String)] {
-        let id = bundleID.lowercased()
-        let name = app.lowercased()
-        func any(_ needles: [String]) -> Bool { needles.contains { id.contains($0) || name.contains($0) } }
-
-        if any(["com.apple.mail", "outlook", "spark", "superhuman", "mimestream"]) {
+        // The kind of app is `AppCatalog`'s, the same list quiet mode and double tap use.
+        switch AppCatalog.kind(app: app, bundleID: bundleID) {
+        case .mail:
             return [(tr("suggest.mail.reply"), "arrowshape.turn.up.left"), (tr("suggest.mail.summarize"), "envelope")]
-        }
-        if any(["safari", "chrome", "firefox", "arc", "brave", "edge", "opera", "vivaldi", "orion"]) {
+        case .browser:
             return [(tr("suggest.web.summarize"), "safari"), (tr("suggest.web.remember"), "bookmark")]
-        }
-        if any(["xcode", "vscode", "com.microsoft.vscode", "cursor", "zed", "jetbrains", "sublime", "nova", "windsurf"]) {
+        case .editor:
             return [(tr("suggest.code.bug"), "ladybug"), (tr("suggest.code.explain"), "chevron.left.forwardslash.chevron.right")]
-        }
-        if any(["terminal", "iterm", "warp", "ghostty", "kitty", "alacritty"]) {
+        case .terminal:
             return [(tr("suggest.terminal.error"), "terminal")]
-        }
-        if any(["slack", "whatsapp", "telegram", "discord", "teams", "mobilesms", "messages", "signal"]) {
+        case .chat:
             return [(tr("suggest.chat.reply"), "bubble.left.and.bubble.right"), (tr("suggest.chat.plan"), "calendar.badge.plus")]
-        }
-        if any(["numbers", "excel", "sheets", "airtable"]) {
+        case .spreadsheet:
             return [(tr("suggest.sheet.insight"), "tablecells"), (tr("suggest.sheet.chart"), "chart.bar.xaxis")]
-        }
-        if any(["pages", "word", "notes", "notion", "obsidian", "bear", "craft", "docs", "textedit"]) {
+        case .document:
             return [(tr("suggest.doc.improve"), "wand.and.stars"), (tr("suggest.doc.summary"), "text.alignleft")]
-        }
-        if any(["ical", "calendar", "fantastical", "busycal", "notion-calendar"]) {
+        case .calendar:
             return [(tr("suggest.cal.free"), "calendar"), (tr("suggest.cal.chart"), "chart.bar.xaxis")]
-        }
-        if any(["preview", "pdf", "acrobat", "skim"]) {
+        case .pdf:
             return [(tr("suggest.pdf.summary"), "doc.text")]
-        }
-        if any(["figma", "sketch", "framer"]) {
+        case .design:
             return [(tr("suggest.design.feedback"), "paintpalette")]
-        }
-        if any(["zoom", "facetime", "meet", "webex"]) {
+        case .call:
             return [(tr("suggest.call.notes"), "waveform")]
+        case nil:
+            return title.isEmpty ? [] : [(tr("suggest.window.help", short(title, 30)), "macwindow")]
         }
-        return title.isEmpty ? [] : [(tr("suggest.window.help", short(title, 30)), "macwindow")]
     }
 
     private static func short(_ text: String, _ limit: Int) -> String {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard clean.count > limit else { return clean }
-        let cut = clean.prefix(limit)
-        return String(cut[..<(cut.lastIndex(of: " ") ?? cut.endIndex)]) + "…"
+        // `limit` characters of text, the ellipsis after them.
+        TextKit.clip(text.trimmingCharacters(in: .whitespacesAndNewlines), to: limit + 1, wordBoundary: true)
     }
 }

@@ -364,7 +364,7 @@ enum SearchText {
     static func fold(_ text: String) -> String { words(text).joined(separator: " ") }
 
     static func words(_ text: String) -> [String] {
-        let source = text.utf8.allSatisfy { $0 < 0x80 } ? text : text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let source = text.utf8.allSatisfy { $0 < 0x80 } ? text : TextKit.fold(text)
         var words: [String] = []
         var current = String.UnicodeScalarView()
         func flush() {

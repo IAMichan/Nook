@@ -90,7 +90,8 @@ enum Research {
         nachricht nachrichten bildschirm quelle quellen ungelesen gelesen beantwortet antwort offen offene unbeantwortet unbeantwortete \
         heute morgen gestern woche monat jahr montag dienstag mittwoch donnerstag freitag samstag sonntag letzte neueste neu vorige nächste
         """
-        return Set((dutch + " " + english + " " + german).split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
+        // The shared base (`TextKit.stopwords`) plus research's own: verbs of asking, source names and dates.
+        return TextKit.stopwords.union((dutch + " " + english + " " + german).split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
     }()
 
     static func terms(in text: String, history: [ChatTurn] = []) -> Terms {
@@ -652,7 +653,5 @@ enum Research {
     }
 
     /// Lowercase without accents, so "café" matches "cafe" and "Überweisung" matches "uberweisung".
-    static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    static func fold(_ text: String) -> String { TextKit.fold(text) }
 }

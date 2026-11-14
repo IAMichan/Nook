@@ -32,11 +32,7 @@ enum UIDriver {
 
     /// Browsers: text goes in with real key presses, so a web page sees typing as typing (its scripts may ignore a value
     /// that is only set).
-    static let browsers: Set<String> = [
-        "com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.google.Chrome", "com.google.Chrome.beta",
-        "com.google.Chrome.canary", "com.brave.Browser", "com.microsoft.edgemac", "company.thebrowser.Browser",
-        "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.mozilla.firefox", "ai.perplexity.comet", "com.openai.atlas"
-    ]
+    static var browsers: Set<String> { Set(AppCatalog.browsers.map(\.bundleID)) }
 
     static var tools: [ToolSpec] {
         [

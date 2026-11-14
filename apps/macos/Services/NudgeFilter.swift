@@ -22,7 +22,7 @@ enum NudgeFilter {
         }
         line = line.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
         if line.isEmpty { line = fallback ?? "" }
-        return line.count > 64 ? String(line.prefix(62)) + "…" : line
+        return TextKit.clip(line, to: 64)
     }
 
     /// True when the offer is about dates that are all well in the future: a renewal next year is no reason to speak up now.
@@ -50,7 +50,7 @@ enum NudgeFilter {
     /// An offer without an action must not ask anything: accepting a question ("Shall I…?") would then do nothing,
     /// wherever in the text the question sits.
     static func asksWithoutAction(_ body: String, hasActions: Bool) -> Bool {
-        !hasActions && body.contains("?")
+        !hasActions && TextKit.asksQuestion(body)
     }
 
     /// An offer must be about what is on screen: it names something visible there (a name, a number, a subject),
@@ -89,10 +89,7 @@ enum NudgeFilter {
 
     /// Two offers say the same thing when most of their meaningful words overlap, even if the brain rephrased them.
     static func similar(_ a: String, _ b: String) -> Bool {
-        let left = words(a), right = words(b)
-        guard !left.isEmpty, !right.isEmpty else { return normalize(a) == normalize(b) }
-        let overlap = Double(left.intersection(right).count) / Double(left.union(right).count)
-        return overlap >= 0.6
+        TextKit.similarity(a, b) >= 0.6
     }
 
     private static func words(_ text: String) -> Set<String> {

@@ -87,38 +87,26 @@ enum MemoryText {
     /// Content words, lowercased, without accents, lightly stemmed, so "afspraken" and "afspraak" or "meetings" and
     /// "meeting" meet.
     static func tokens(_ text: String) -> Set<String> {
-        let folded = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
-        var result = Set<String>()
-        for raw in folded.split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
-            let word = String(raw)
-            let isNumber = word.allSatisfy(\.isNumber)
-            guard isNumber ? word.count >= 2 : word.count >= 3 else { continue }
-            guard !Research.stopwords.contains(word), !filler.contains(word) else { continue }
-            result.insert(stem(word))
-        }
-        return result
+        TextKit.tokens(text, stem: true, stopwords: ignored, minLength: 3, minNumberLength: 2)
     }
 
-    static func stem(_ word: String) -> String {
-        guard word.count > 5 else { return word }
-        for suffix in ["ingen", "ing", "en", "es", "er", "s", "e"] where word.hasSuffix(suffix) && word.count - suffix.count >= 4 {
-            return String(word.dropLast(suffix.count))
-        }
-        return word
-    }
+    /// The research stopwords and the memory filler, together.
+    private static let ignored = Research.stopwords.union(filler)
+
+    static func stem(_ word: String) -> String { TextKit.stem(word) }
 
     /// Overlap of content words, 0…1 (Jaccard).
     static func similarity(_ a: String, _ b: String) -> Double {
         let left = tokens(a), right = tokens(b)
         guard !left.isEmpty, !right.isEmpty else { return a.lowercased() == b.lowercased() ? 1 : 0 }
-        return Double(left.intersection(right).count) / Double(left.union(right).count)
+        return TextKit.overlap(left, right)
     }
 
     /// Trimmed, on one line, at most `maxLength` characters.
     static func clean(_ text: String) -> String {
         let flat = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "-•*\"'")))
-        return flat.count > maxLength ? String(flat.prefix(maxLength - 1)) + "…" : flat
+        return TextKit.clip(flat, to: maxLength)
     }
 
     private static let instruction = try? NSRegularExpression(pattern: #"\b(ignore|ignoreer|negeer|ignoriere)\b[^.]{0,30}\b(instruct|instructie|opdracht|previous|vorige|eerdere|above|rules|regels|anweisung)|system ?prompt|\byou are now\b|\bje bent nu\b|\bdu bist jetzt\b|\bact as\b|<\/?[a-z_]+>|```|\b(run_command|send_to_source|github_merge\w*|compose_mail)\b|\bwithout (asking|confirmation|approval)\b|\bzonder (te vragen|bevestiging|toestemming)\b|\bohne (zu fragen|bestätigung)\b|\b(execute|voer uit|führe aus)\b"#, options: [.caseInsensitive])

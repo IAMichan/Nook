@@ -6,7 +6,7 @@ import Foundation
 enum Fuzzy {
     /// Lowercase, without accents, separators or a trailing ".app".
     static func fold(_ text: String) -> String {
-        var out = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        var out = TextKit.fold(text)
         if out.hasSuffix(".app") { out = String(out.dropLast(4)) }
         return out.split { !$0.isLetter && !$0.isNumber }.joined(separator: " ")
     }

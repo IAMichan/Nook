@@ -19,8 +19,8 @@ struct ChatFollowUpTurn: Equatable, Sendable {
     var lastText: String
     var unread: Int
 
-    /// The newest message asks something: a question mark ends a sentence in it.
-    var asksQuestion: Bool { lastText.contains("?") }
+    /// The newest message asks something (`TextKit.asksQuestion`).
+    var asksQuestion: Bool { TextKit.asksQuestion(lastText) }
 }
 
 extension ChatFollowUpTurn {
