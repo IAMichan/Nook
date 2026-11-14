@@ -83,7 +83,8 @@ Keys that are not commands stay with their view: Return, Tab, Escape and the pla
 `.cancelAction` / `.defaultAction`.
 
 In a session composer that shows a suggested next prompt (ghost text after a finished turn, Settings › Sessions ›
-Text generation), Tab puts the suggestion in the box and Escape dismisses it; typing anything dismisses it too.
+Text generation), Tab puts the suggestion in the box and Escape dismisses it; typing hides it, and it comes back
+when you clear the box again.
 
 ## Keys in the Agents list and the pickers
 
