@@ -411,9 +411,7 @@ private struct FoldedConversation: View {
                 Button(action: toggle) {
                     HStack(spacing: NookTheme.Spacing.xxs) {
                         Text(tr(item.root.resolved ? "agents.pr.thread.resolved" : "agents.pr.thread.dismissed"))
-                        Image(icon: "chevron.down")
-                            .font(NookTheme.font(8.5, .bold))
-                            .rotationEffect(.degrees(open ? 180 : 0))
+                        DisclosureChevron(open: open, size: 8.5, tint: nil, style: .vertical)
                     }
                     .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textSecondary)

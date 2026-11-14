@@ -77,10 +77,7 @@ struct TranscriptWorkLine: View {
                     .opacity(reveals || hovering ? 1 : 0)
             }
             if let link {
-                Image(icon: link)
-                    .font(NookTheme.font(9.5, .medium))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(hovering ? 1 : 0)
+                HoverGlyph(link, shown: hovering, size: 9.5, weight: .medium)
             }
             if let lines { EditLinesLabel(lines: lines, size: 11) }
             if !checks.isEmpty { VerificationChips(checks: checks) }
@@ -261,9 +258,7 @@ struct TranscriptFoldLine: View {
             HStack(spacing: NookTheme.Spacing.xs) {
                 // The sentence first; the checks beside it make do with what is left.
                 Text(text).lineLimit(1).layoutPriority(1)
-                Image(icon: "chevron.right")
-                    .font(NookTheme.font(11, .semibold))
-                    .rotationEffect(.degrees(open ? 90 : 0))
+                DisclosureChevron(open: open, size: 11, weight: .semibold, tint: nil)
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }

@@ -432,9 +432,7 @@ struct PullRequestsPanel: View {
                 Text("\(rows.count)").font(NookTheme.TextStyle.caption).monospacedDigit().foregroundStyle(NookTheme.textMuted)
                 if waiting > 0 { NookTag(tr("agents.pulls.toReview", waiting), tint: NookTheme.amber) }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Image(icon: "chevron.down")
-                    .font(NookTheme.font(8.5, .bold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
+                DisclosureChevron(open: open, size: 8.5, tint: nil)
                     .frame(width: 10)
             }
             .foregroundStyle(NookTheme.textTertiary)

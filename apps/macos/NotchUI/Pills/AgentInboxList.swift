@@ -627,9 +627,7 @@ struct AgentInboxList: View {
             withAnimation(NookTheme.reveal) { store.setThread(entry.id, open: !open) }
         } label: {
             HStack(spacing: NookTheme.Spacing.xs) {
-                Image(icon: "chevron.down")
-                    .font(NookTheme.font(9, .semibold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
+                DisclosureChevron(open: open, weight: .semibold, tint: nil)
                     .frame(width: NookTheme.Spacing.xl)
                 Text(count)
                     .font(NookTheme.TextStyle.detail)
@@ -1219,10 +1217,7 @@ private struct ProjectHeaderRow: View {
                     }
                 }
                 .frame(minWidth: newSession == nil ? 0 : Self.newSessionWidth, alignment: .trailing)
-                Image(icon: "chevron.down")
-                    .font(NookTheme.font(10, .semibold))
-                    .rotationEffect(.degrees(open ? 0 : -90))
-                    .foregroundStyle(NookTheme.textTertiary)
+                DisclosureChevron(open: open, size: 10, weight: .semibold)
                     .frame(width: Self.chevronWidth)
             }
             .padding(.horizontal, Self.gap)

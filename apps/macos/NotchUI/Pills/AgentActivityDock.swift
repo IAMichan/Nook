@@ -185,10 +185,7 @@ struct AgentActivityDock: View {
                             .fixedSize()
                     }
                     segments(kind)
-                    Image(icon: "chevron.up")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(open ? 180 : 0))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: open, size: 8.5, style: .upward)
                 }
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)

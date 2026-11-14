@@ -518,11 +518,8 @@ private struct StackedDiffTreeRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 if row.isDirectory {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(8, .bold))
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 8)
                         .frame(width: 10)
-                        .foregroundStyle(NookTheme.textTertiary)
                 } else {
                     Color.clear.frame(width: 10, height: 1)
                 }

@@ -174,10 +174,7 @@ private struct GlanceCard<Content: View>: View {
                             .foregroundStyle(statusColor)
                             .lineLimit(1)
                     }
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(9, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .opacity(hovering ? 1 : 0)
+                    HoverGlyph("chevron.right", shown: hovering, size: 9)
                 }
                 content()
             }

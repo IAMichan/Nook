@@ -79,7 +79,7 @@ struct CICheckLogView: View {
                 }
                 Spacer(minLength: 0)
                 if let text = log?.text ?? report?.plainText, !text.isEmpty {
-                    ToolbarIconButton("doc.on.doc", tr("ws.ci.copy")) { Pasteboard.copy(text) }
+                    CopyIconButton(tr("ws.ci.copy")) { text }
                 }
                 if let url = check.url {
                     ToolbarIconButton("arrow.up.right.square", tr("ws.ci.open")) { NSWorkspace.shared.open(url) }
@@ -166,9 +166,7 @@ struct CICheckLogView: View {
                     withAnimation(NookTheme.reveal) { showSteps.toggle() }
                 } label: {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        Image(icon: "chevron.right")
-                            .font(NookTheme.font(9, .semibold))
-                            .rotationEffect(.degrees(showSteps ? 90 : 0))
+                        DisclosureChevron(open: showSteps, weight: .semibold, tint: nil)
                         Text(tr("ws.ci.steps", log.steps.count))
                         if let failed = log.steps.first(where: { $0.outcome == .failing }) {
                             Text("·")

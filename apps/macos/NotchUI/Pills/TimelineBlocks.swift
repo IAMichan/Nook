@@ -136,9 +136,7 @@ struct QueuedMessagesStrip: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "chevron.down")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    DisclosureChevron(open: !collapsed, size: 8.5, tint: nil)
                     Text(tr("compose.queue.title", queue.count))
                         .font(NookTheme.TextStyle.label)
                     Spacer(minLength: 8)

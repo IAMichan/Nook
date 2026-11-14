@@ -188,10 +188,7 @@ struct NookList: View {
                         .fixedSize()
                     NookDivider()
                     // The shelf opens upwards: its chevron points up while closed, down while open.
-                    Image(icon: "chevron.down")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(showArchived ? 0 : 180))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: showArchived, size: 8.5, style: .upward)
                 }
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .frame(height: 30)

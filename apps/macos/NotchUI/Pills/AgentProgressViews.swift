@@ -153,10 +153,7 @@ struct TaskChecklistCard: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .monospacedDigit()
                     Spacer(minLength: 0)
-                    Image(icon: "chevron.down")
-                        .font(NookTheme.font(10, .semibold))
-                        .rotationEffect(.degrees(collapsed ? -90 : 0))
-                        .foregroundStyle(NookTheme.textTertiary)
+                    DisclosureChevron(open: !collapsed, size: 10, weight: .semibold)
                 }
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())

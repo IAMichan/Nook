@@ -94,9 +94,7 @@ struct TurnChangesCard: View {
                 withAnimation(NookTheme.reveal) { folded.toggle() }
             } label: {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(9, .bold))
-                        .rotationEffect(.degrees(folded ? 0 : 90))
+                    DisclosureChevron(open: !folded, tint: nil)
                     Text(tr("agents.turn.changedFiles", turn.files.count))
                         .foregroundStyle(NookTheme.paper)
                     EditLinesLabel(lines: turn.lines, size: 11)
@@ -140,9 +138,7 @@ private struct TurnChangesRow: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if row.isDirectory {
-                    Image(icon: "chevron.right")
-                        .font(NookTheme.font(8, .bold))
-                        .rotationEffect(.degrees(open ? 90 : 0))
+                    DisclosureChevron(open: open, size: 8, tint: nil)
                         .frame(width: 10)
                     Image(icon: "folder").font(NookTheme.font(10.5))
                 } else {
