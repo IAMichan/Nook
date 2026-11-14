@@ -58,6 +58,13 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(BridgePolicy.verdict(tool: .terminalStop, caller: run()), .allow)
     }
 
+    func testPullRequestTheUserAskedForOpensWithoutAsking() {
+        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run(), userAsked: true), .allow)
+        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run(.plan), userAsked: true), .refuse(.planMode))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: external, userAsked: true), .ask(.outward),
+                       "Nook cannot read what was asked of an agent in another terminal")
+    }
+
     func testBrowserOpensLocalPagesDirectlyAndAsksForOtherSites() {
         XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: external, localPage: true), .allow)
         XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: run(), localPage: true), .allow)

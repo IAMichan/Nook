@@ -507,9 +507,11 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     func verdict(_ tool: BridgeTool, _ caller: BridgeCaller, command: CommandAssessment.Level? = nil,
-                 localPage: Bool = false, nookAction: Bool = true, answers: Bool = true, ownTask: Bool = false) -> BridgeVerdict {
+                 localPage: Bool = false, nookAction: Bool = true, answers: Bool = true, ownTask: Bool = false,
+                 userAsked: Bool = false) -> BridgeVerdict {
         BridgePolicy.verdict(tool: tool, caller: caller, command: command, enabled: WorkspaceSettings.shared.agentTools,
-                             localPage: localPage, nookAction: nookAction, answers: answers, ownTask: ownTask)
+                             localPage: localPage, nookAction: nookAction, answers: answers, ownTask: ownTask,
+                             userAsked: userAsked)
     }
 
     /// The answer for a refused call, in words the agent can act on.
@@ -572,8 +574,8 @@ final class WorkspaceBridge: ObservableObject {
         lines.append("## Pull requests")
         if let remote = git.remote, let repo = GitHubRemote.repository(from: remote) {
             lines.append(GitHubPullRequests.isAvailable
-                ? "- \(repo): pull_request_create pushes the branch and opens the pull request with the user's GitHub connection, after their approval unless the session has full rights."
-                : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page in Nook's browser for the user to finish, after their approval unless the session has full rights.")
+                ? "- \(repo): pull_request_create pushes the branch and opens the pull request with the user's GitHub connection: without asking when the user asked for a pull request, after their approval when you propose it yourself, unless the session has full rights."
+                : "- \(repo): no GitHub connection in Nook; pull_request_create pushes the branch and opens GitHub's page in Nook's browser for the user to finish: without asking when the user asked for a pull request, after their approval when you propose it yourself, unless the session has full rights.")
         } else {
             lines.append("- this folder has no GitHub remote")
         }
@@ -911,7 +913,14 @@ final class WorkspaceBridge: ObservableObject {
         let written = (arguments["body"] as? String) ?? ""
         let body = AgentCredits.omitsFromCommits ? AgentCredits.strip(written) : written
         let draft = (arguments["draft"] as? Bool) ?? false
-        if case .refuse(let reason) = verdict(.pullRequestCreate, caller) { return .error(Self.refusal(reason)) }
+        // Asked for in the user's own words ("make a commit and PR"): no second approval. One the agent proposes on its
+        // own still asks.
+        let userAsked: Bool = {
+            guard case .run(let id) = caller.kind, let app else { return false }
+            return PullRequestAsked.asked(in: app.workspace.timeline(id), delegated: app.workspace.run(id)?.delegation != nil)
+        }()
+        let pullRequestVerdict = verdict(.pullRequestCreate, caller, userAsked: userAsked)
+        if case .refuse(let reason) = pullRequestVerdict { return .error(Self.refusal(reason)) }
         guard let git = GitService.shared else { throw NookError("Git is not available on this Mac.") }
 
         let directory = caller.directory
@@ -955,8 +964,13 @@ final class WorkspaceBridge: ObservableObject {
         var notes = [tr("bridge.approval.prPush", branch, facts.remote)]
         if let changed = facts.changed, changed > 0 { notes.append(tr("bridge.approval.prUncommitted", changed)) }
         if !viaConnector { notes.append(tr("bridge.approval.prBrowser")) }
-        let allowed = await ask(caller, tool: .pullRequestCreate, title: tr("bridge.approval.pr", caller.agent), detail: detail,
+        let allowed: Bool
+        if case .ask = pullRequestVerdict {
+            allowed = await ask(caller, tool: .pullRequestCreate, title: tr("bridge.approval.pr", caller.agent), detail: detail,
                                 note: notes.joined(separator: " "), danger: false, connection: context.connection)
+        } else {
+            allowed = true
+        }
         guard allowed else {
             audit(.pullRequestCreate, caller, "\(repo) \(branch) → \(base)", "niet toegestaan")
             return .error(Self.refusal(.outward))
