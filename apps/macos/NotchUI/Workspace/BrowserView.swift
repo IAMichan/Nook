@@ -836,9 +836,6 @@ struct BrowserView: View {
                     ToolbarIconButton(store.loading ? "xmark" : "arrow.clockwise", tr(store.loading ? "a11y.stopLoading" : "a11y.reload")) {
                         if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
                     }
-                    // Select an element: lit while on, the page highlights what the pointer is on.
-                    ToolbarIconButton("cursorarrow.rays", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
-                                      enabled: store.webView.url != nil, selected: picking) { annotate() }
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(icon: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
@@ -854,6 +851,10 @@ struct BrowserView: View {
                 .frame(height: SidePanelMetrics.toolbar)
                 .roundedBackground(addressHovering ? WS.subtle : .clear, radius: NookTheme.Radius.control)
                 .onHover { addressHovering = $0 }
+                // The pointer tool, first of what you do with the page: on, the page highlights what the pointer is on and
+                // a click hands that element to the composer. It stays selected until you click it again or press Escape.
+                ToolbarIconButton("cursorarrow", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
+                                  enabled: store.webView.url != nil, selected: picking) { annotate() }
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }
@@ -1022,7 +1023,7 @@ struct BrowserView: View {
     /// While selecting: what a click does, and how to stop.
     private var pickHint: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Image(icon: "cursorarrow.rays").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.iris)
+            Image(icon: "cursorarrow").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.iris)
             Text(tr(session == nil ? "browser.pick.hintChat" : "browser.pick.hint"))
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
